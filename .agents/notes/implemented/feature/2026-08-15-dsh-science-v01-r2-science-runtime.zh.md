@@ -111,8 +111,8 @@ Runtime package manifest 依据 RC5 同级 packages 重新推导：版本 `0.1.0
 
 ## 后果
 
-R2 为 Science 提供了 `science/environment-bound`、`science/run-started` 与 `science/run-finished` 的 host-local producer，同时不导入 downstream history、model-facing tools 或 shipped composition。代价是一次覆盖既有 Consumers 的 required-field subprocess migration，以及一个仍没有 model-visible Consumer 的 Runtime：后续 tools、preset 与 UI slices 仍为 OUT。
+R2 为 Science 提供了 `science/environment-bound`、`science/run-started` 与 `science/run-finished` 的 host-local producer，同时不导入 downstream history、model-facing tools 或 shipped composition。代价是一次覆盖既有 Consumers 的 required-field subprocess migration，以及一个在 R2 阶段仍没有 model-visible Consumer 的 Runtime；[R3](2026-08-16-dsh-science-v01-r3-science-tools.md)补上了该 Consumer，而 preset 与 UI slices 仍为 OUT。
 
 Exact-Session reservation 与 same-ID quarantine 位于每一次 durable append 之前；tests 覆盖 cancellation、timeout、detachment、service disposal、terminal-commit rejection 与 late quiescence，因此 failure path 不能在 proof 之前释放，也不能在 proof 之后继续持有 lease。File-write confinement 比 confidentiality 更窄：documentation 与 results 不声称对 file reads、networking、syscalls 或 scientifically incorrect code 的防护。
 
-真实 Python 与 R acceptance 仍为 opt-in，并依赖 host。Environment 或 host failure 在 recorded candidate 上成功 rerun 之前都是字面的 FAIL/`NOT-RUN`；historical downstream PASS 不能关闭 R2。下一项实现是 model-facing Science tool Consumer，并且只能发生在本 Note 仍然排除的 Runtime Context 与 filesystem read-only 工作之后。
+真实 Python 与 R acceptance 仍为 opt-in，并依赖 host。Environment 或 host failure 在 recorded candidate 上成功 rerun 之前都是字面的 FAIL/`NOT-RUN`；historical downstream PASS 不能关闭 R2。[R3](2026-08-16-dsh-science-v01-r3-science-tools.md)用 model-facing 的 `@deepseek-ai/dsh-tool-science` Consumer 补全了这个 Runtime，是在它同时新增的 generic runtime-context 与 filesystem read-only prerequisites 之后交付的；built-in Science preset 仍是下一项开放 slice。

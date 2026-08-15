@@ -2420,7 +2420,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-fs/src/index.ts:25`](../packages/fs/tool-fs/src/index.ts)
+Source: [`packages/fs/tool-fs/src/config.ts:15`](../packages/fs/tool-fs/src/config.ts)
 
 <a id="deepseek-aidsh-tool-fs-search"></a>
 
@@ -2564,6 +2564,24 @@ export interface Config {
 ```
 
 Source: [`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+Requires: `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Plugin config. Neither field has a default; both are deployment identity. */
+export interface Config {
+  /** Runtime allowlist profile this Consumer binds on first use. */
+  readonly profileId: string
+  /** Deployment-owned Science mode contract revision. */
+  readonly modeRevision: string
+}
+```
+
+Source: [`packages/science/tool-science/src/config.ts:14`](../packages/science/tool-science/src/config.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 

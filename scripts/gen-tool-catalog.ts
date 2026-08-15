@@ -63,6 +63,7 @@ import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
+import * as ToolScience from '@deepseek-ai/dsh-tool-science'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -550,6 +551,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-science',
+    dir: 'tool-science',
+    source: {
+      get_science_state: 'packages/science/tool-science/src/state.ts',
+      run_python: 'packages/science/tool-science/src/run.ts',
+      run_r: 'packages/science/tool-science/src/run.ts',
+    },
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, and each run_python/run_r call)'],
+    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolScience, { profileId: 'catalog', modeRevision: 'catalog' })
+    },
+    note:
+      'run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject.',
   },
 ]
 

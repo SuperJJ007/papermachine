@@ -2,9 +2,9 @@
 
 English | [中文](science.zh.md)
 
-The Science family owns required-on-read Session events and the host-local Runtime that produces environment and run facts. [`dsh-science-session`](../../packages/science/science-session) validates and projects those events. [`dsh-science-runtime`](../../packages/science/science-runtime) owns `ctx.scienceRuntime`: it observes configured existing Conda prefixes, binds a live Science Session, writes private scratch, and appends `science/environment-bound`, `science/run-started`, and `science/run-finished`. It registers no model tool, prompt, preset, or client UI.
+The Science family owns required-on-read Session events, the host-local Runtime that produces environment and run facts, and the model-facing Consumer. [`dsh-science-session`](../../packages/science/science-session) validates and projects those events. [`dsh-science-runtime`](../../packages/science/science-runtime) owns `ctx.scienceRuntime`: it observes configured existing Conda prefixes, binds a live Science Session, writes private scratch, and appends `science/environment-bound`, `science/run-started`, and `science/run-finished`. It registers no model tool, prompt, preset, or client UI. [`dsh-tool-science`](../../packages/science/tool-science) is the Consumer: it binds `science/mode-bound` and the environment on first use, renders the `science:environment` dynamic context, and registers `get_science_state`, `run_python`, and `run_r`. It appends no Runtime-owned event itself and ships in no built-in preset.
 
-Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts) and [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts)
+Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts), [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts), and [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
 ## Operations
 

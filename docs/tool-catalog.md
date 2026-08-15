@@ -39,6 +39,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+| `@deepseek-ai/dsh-tool-science` | `get_science_state`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, and each run_python/run_r call)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `tool/result` | - | run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -1871,3 +1872,64 @@ Search the web for current information. Returns an optional summary answer and a
 Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/index.ts)
 
 web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+### `get_science_state`
+
+Return the current Science session state: mode, bound environment, run history, charts, and the latest published outcome. Takes no arguments.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
+
+### `run_python`
+
+Run Python source in a fresh interpreter process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
+
+### `run_r`
+
+Run R source in a fresh Rscript process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
+
+run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject.

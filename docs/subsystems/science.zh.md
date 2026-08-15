@@ -2,9 +2,9 @@
 
 [English](science.md) | 中文
 
-Science 家族拥有 required-on-read 的 Session 事件，以及产生 environment 与 run 事实的宿主本地 Runtime。[`dsh-science-session`](../../packages/science/science-session) 校验并投影这些事件。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：它观测已配置的既有 Conda prefix，绑定一个活的 Science Session，写入私有 scratch，并追加 `science/environment-bound`、`science/run-started` 与 `science/run-finished`。它不注册模型工具、提示词、preset 或客户端 UI。
+Science 家族拥有 required-on-read 的 Session 事件、产生 environment 与 run 事实的宿主本地 Runtime，以及面向模型的 Consumer。[`dsh-science-session`](../../packages/science/science-session) 校验并投影这些事件。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：它观测已配置的既有 Conda prefix，绑定一个活的 Science Session，写入私有 scratch，并追加 `science/environment-bound`、`science/run-started` 与 `science/run-finished`。它不注册模型工具、提示词、preset 或客户端 UI。[`dsh-tool-science`](../../packages/science/tool-science) 是 Consumer：它在首次使用时绑定 `science/mode-bound` 与 environment，渲染 `science:environment` 动态上下文，并注册 `get_science_state`、`run_python` 与 `run_r`。它自身不追加任何 Runtime 拥有的事件，也不随任何内置 preset 一起发布。
 
-来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts) 与 [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts)
+来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)、[`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts) 与 [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
 ## 操作
 

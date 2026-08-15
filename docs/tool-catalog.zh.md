@@ -41,6 +41,7 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+| `@deepseek-ai/dsh-tool-science` | `get_science_state`、`run_python`、`run_r` | `ctx.tools`、`ctx.systemPrompt`、`ctx.scienceRuntime (first use, and each run_python/run_r call)` | `tool/call`、`science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`、`tool/result` | - | run_python 与 run_r 要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要它的操作时才读取，绝不作为硬性 inject。 |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -1876,3 +1877,64 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 来源：[`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/index.ts)
 
 web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+### `get_science_state`
+
+返回当前 Science session 状态：mode、已绑定的 environment、run 历史、charts，以及最近一次发布的 outcome。不接受任何参数。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
+
+### `run_python`
+
+在绑定到该 session 的 Science environment 上，用一个全新的解释器进程运行 Python 源码。每次调用都会启动一个新进程；调用之间不会在内存中保留任何状态。非零退出码或异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
+
+### `run_r`
+
+在绑定到该 session 的 Science environment 上，用一个全新的 Rscript 进程运行 R 源码。每次调用都会启动一个新进程；调用之间不会在内存中保留任何状态。非零退出码或 condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
+
+run_python 与 run_r 要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要它的操作时才读取，绝不作为硬性 inject。

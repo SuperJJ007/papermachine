@@ -1,6 +1,7 @@
 # Agent Note: DSH Science v0.1 RC5 release baseline
 
 Status: implemented
+Archived: 2026-08-15
 
 English | [中文](2026-08-15-dsh-science-v01-r0-release-baseline-scope.zh.md)
 

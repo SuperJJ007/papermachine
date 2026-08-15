@@ -1,6 +1,7 @@
-# Agent Note：DSH Science v0.1 RC5 发行基线
+# Agent Note: DSH Science v0.1 RC5 发行基线
 
 Status: implemented
+Archived: 2026-08-15
 
 [English](2026-08-15-dsh-science-v01-r0-release-baseline-scope.md) | 中文
 

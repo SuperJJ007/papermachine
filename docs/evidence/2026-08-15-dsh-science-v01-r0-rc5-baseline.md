@@ -2,7 +2,7 @@
 
 English | [中文](2026-08-15-dsh-science-v01-r0-rc5-baseline.zh.md)
 
-Investigated on 2026-08-15 on macOS 26.5.2 (Darwin 25.5.0, arm64), Node v24.14.0, pnpm 11.7.0. Scope authority: [implemented R0 decision](../../.agents/notes/implemented/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md). The later [closure record](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) owns the acceptance conclusion and workflow-platform follow-up; this record preserves the preliminary macOS observations.
+Investigated on 2026-08-15 on macOS 26.5.2 (Darwin 25.5.0, arm64), Node v24.14.0, pnpm 11.7.0. Historical scope: [archived R0 decision](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md). The later [closure record](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) owns the acceptance conclusion and workflow-platform follow-up; this record preserves the preliminary macOS observations.
 
 ## Investigated identity
 

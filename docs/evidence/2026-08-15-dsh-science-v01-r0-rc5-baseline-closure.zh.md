@@ -2,7 +2,7 @@
 
 [English](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | 中文
 
-调查与收口日期为 2026-08-15。范围 authority：[DSH Science v0.1 RC5 发行基线](../../.agents/notes/implemented/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)。本记录只取代[初步 macOS 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline.md)的验收结论；后者仍负责其 macOS FAIL 与适配安装诊断。
+调查与收口日期为 2026-08-15。本记录负责 R0 accepted identity 与 closure 结果；[已归档的 R0 scope](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)是冻结的 procedure 与 decision snapshot。本记录只取代[初步 macOS 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline.md)的验收结论；后者仍负责其 macOS FAIL 与适配安装诊断。
 
 ## 结论
 
@@ -19,7 +19,7 @@ R0A 在 `73c0e9c004157798682759e7d5b0280b9ec913c3` 验收。R0B 已检查的产�
 | 官方 workflow | [`Release (dsh)` run `31701562303`](https://github.com/deepseek-ai/deepseek-harness/actions/runs/31701562303)，job [`94451698870`](https://github.com/deepseek-ai/deepseek-harness/actions/runs/31701562303/job/94451698870)；push event；`head_sha` `47f943859bef60e4160492346772ded9b24f765a`；`.github/workflows/release.yml`；2026-08-13T12:45:35Z 开始、12:52:19Z 完成 | Primary exact-SHA `ubuntu-24.04` build、pack 与官方原文 packed-install evidence |
 | R0A | 分支 `codex/science-v01-r0a-governance-closure`；head `73c0e9c004157798682759e7d5b0280b9ec913c3`；tree `c53d3a9274ebf3f5986be5f42224f724c0324a91`；下游 `e5e8b29b435f67e0a5dde5e2132580966e78b27b` 后接 `50ff1552ca8ed138ecd162b52c46856e8493e0fb`、`73c0e9c004157798682759e7d5b0280b9ec913c3` | 已接受治理子集，不属于 R0B ancestry |
 | R0B 已检查内容 | `948693150e2fe8a9d38fbb1e125a2a106d9488ee`；tree `35062cb234e05176fa83132253ea797634700a1a`；直接 ancestry `47f943859bef60e4160492346772ded9b24f765a` → `3751f6fcc497e9e23385f69a0d5f3cfdbaac5a6e` → `922d60421a8a6a2983f27de266a02d3d7c5af3b3` → `3ca64b38867fe78792a4d95ff3ba39e26444db82` → `948693150e2fe8a9d38fbb1e125a2a106d9488ee` | source/build/packed 检查使用的精确产品输入 tree |
-| R0B accepted head | 对 scope 英文文件和本英文 evidence 文件分别运行 `git log -1 --format=%H -- <path>`；两者必须等于 branch tip，且 sole parent 为 `948693150e2fe8a9d38fbb1e125a2a106d9488ee` | 精确 closure commit，不使用自指 SHA 占位符 |
+| R0B accepted head | `f9bb7b4a91afe1cf69568184ff093fa9a8bd52f9`；tree `541637a9401577f9beab7caf026a539583469c0b`；sole parent `948693150e2fe8a9d38fbb1e125a2a106d9488ee`；subject `docs(evidence): close RC5 release baseline` | 精确的 accepted closure commit |
 | 已观察 npm 制品 | `@deepseek-ai/dsh@0.1.0-rc.6`；integrity `sha512-brpZfED7ieRa2PQ5tUxMhHrM1pb2CmKFVM/f6yMULBDMicahk+Z2OsHgTwTDnoiZm23Ftu9rQz0NN4pflaoJcg==`；未观察到 `gitHead` | 仅为 source-unmapped 观测；未采用且不等于 RC5 |
 | Science overlay | `https://github.com/omdsh-dev/dsh-science.git`；下表逐行列出完整 SHA 与路径 | 仅证明下游来源 |
 | Desktop 制品 | 无 | 不存在 Desktop build/runtime/installer/signing/release 证据 |
@@ -132,4 +132,4 @@ Implemented doc-tier 与 npm release-sequence notes 保持 active，因为它们
 
 ## 唯一下一步
 
-唯一的下一项实现是 R1：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 的 `GEN-SESSION-REGISTRY` 与 `SCI-SESSION` mapping、port 并验收到解析所得 R0B accepted head。其余 inventory rows 均保持 deferred。
+唯一的下一项实现由 [RC5 上的 R1 Science Session](../../.agents/notes/proposed/feature/2026-08-15-dsh-science-v01-r1-science-session.md)约束：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中边界明确的 `GEN-SESSION-REGISTRY` 前置项与 `SCI-SESSION` mapping、port 并验收到 accepted R0B line。其余 inventory rows 均保持 deferred。

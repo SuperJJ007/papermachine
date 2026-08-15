@@ -2,7 +2,7 @@
 
 English | [中文](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md)
 
-Investigated and closed on 2026-08-15. Scope authority: [DSH Science v0.1 RC5 release baseline](../../.agents/notes/implemented/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md). This record supersedes only the acceptance conclusion of the [preliminary macOS record](2026-08-15-dsh-science-v01-r0-rc5-baseline.md); that record remains the authority for its observed macOS failure and adapted-install diagnostic.
+Investigated and closed on 2026-08-15. This record owns the accepted R0 identity and closure result; the [archived R0 scope](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md) is the frozen procedure and decision snapshot. This record supersedes only the acceptance conclusion of the [preliminary macOS record](2026-08-15-dsh-science-v01-r0-rc5-baseline.md); that record remains the authority for its observed macOS failure and adapted-install diagnostic.
 
 ## Outcome
 
@@ -19,7 +19,7 @@ The required literal packed-install command passed in the official `Release (dsh
 | Official workflow | [`Release (dsh)` run `31701562303`](https://github.com/deepseek-ai/deepseek-harness/actions/runs/31701562303), job [`94451698870`](https://github.com/deepseek-ai/deepseek-harness/actions/runs/31701562303/job/94451698870); push event; `head_sha` `47f943859bef60e4160492346772ded9b24f765a`; `.github/workflows/release.yml`; started 2026-08-13T12:45:35Z, completed 2026-08-13T12:52:19Z | Primary exact-SHA `ubuntu-24.04` build, pack, and literal packed-install evidence |
 | R0A | Branch `codex/science-v01-r0a-governance-closure`; head `73c0e9c004157798682759e7d5b0280b9ec913c3`; tree `c53d3a9274ebf3f5986be5f42224f724c0324a91`; commits `50ff1552ca8ed138ecd162b52c46856e8493e0fb`, `73c0e9c004157798682759e7d5b0280b9ec913c3` after downstream `e5e8b29b435f67e0a5dde5e2132580966e78b27b` | Accepted governance subset; not R0B ancestry |
 | R0B checked content | `948693150e2fe8a9d38fbb1e125a2a106d9488ee`; tree `35062cb234e05176fa83132253ea797634700a1a`; direct ancestry `47f943859bef60e4160492346772ded9b24f765a` → `3751f6fcc497e9e23385f69a0d5f3cfdbaac5a6e` → `922d60421a8a6a2983f27de266a02d3d7c5af3b3` → `3ca64b38867fe78792a4d95ff3ba39e26444db82` → `948693150e2fe8a9d38fbb1e125a2a106d9488ee` | Exact product-input tree used by the source/build/packed checks |
-| R0B accepted head | Resolve with `git log -1 --format=%H -- .agents/notes/implemented/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md` and the same command for this English evidence file; both must equal branch tip and have `948693150e2fe8a9d38fbb1e125a2a106d9488ee` as the sole parent | Exact closure commit; no self-referential SHA placeholder |
+| R0B accepted head | `f9bb7b4a91afe1cf69568184ff093fa9a8bd52f9`; tree `541637a9401577f9beab7caf026a539583469c0b`; sole parent `948693150e2fe8a9d38fbb1e125a2a106d9488ee`; subject `docs(evidence): close RC5 release baseline` | Exact accepted closure commit |
 | Observed npm artifact | `@deepseek-ai/dsh@0.1.0-rc.6`; integrity `sha512-brpZfED7ieRa2PQ5tUxMhHrM1pb2CmKFVM/f6yMULBDMicahk+Z2OsHgTwTDnoiZm23Ftu9rQz0NN4pflaoJcg==`; no observed `gitHead` | Source-unmapped observation only; not adopted and not equivalent to RC5 |
 | Science overlay | `https://github.com/omdsh-dev/dsh-science.git`; source rows below name full SHAs and paths | Downstream provenance only |
 | Desktop artifact | None | Desktop build/runtime/installer/signing/release evidence is absent |
@@ -132,4 +132,4 @@ Real provider/model calls, key-required e2e or snapshot recording, real Python/R
 
 ## Sole next step
 
-The only next implementation is R1: map, port, and accept `GEN-SESSION-REGISTRY` plus `SCI-SESSION` from `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` onto the resolved accepted R0B head. Every other inventory row remains deferred.
+The sole next implementation is governed by [R1 Science Session on RC5](../../.agents/notes/proposed/feature/2026-08-15-dsh-science-v01-r1-science-session.md): map, port, and accept its bounded `GEN-SESSION-REGISTRY` prerequisite plus `SCI-SESSION` from `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` onto the accepted R0B line. Every other inventory row remains deferred.

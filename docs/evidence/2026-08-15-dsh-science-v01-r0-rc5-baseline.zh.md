@@ -2,7 +2,7 @@
 
 [English](2026-08-15-dsh-science-v01-r0-rc5-baseline.md) | 中文
 
-调查时间为 2026-08-15，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围 authority：[已实施的 R0 决定](../../.agents/notes/implemented/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)。后续 [closure 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md)负责最终验收结论和 workflow 平台复核；本记录保留初步 macOS 观测。
+调查时间为 2026-08-15，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。历史 scope：[已归档的 R0 决定](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)。后续 [closure 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md)负责最终验收结论和 workflow 平台复核；本记录保留初步 macOS 观测。
 
 ## 调查所得身份
 

@@ -132,4 +132,4 @@ Real provider/model calls, key-required e2e or snapshot recording, real Python/R
 
 ## Sole next step
 
-The sole next implementation is governed by [R1 Science Session on RC5](../../.agents/notes/proposed/feature/2026-08-15-dsh-science-v01-r1-science-session.md): map, port, and accept its bounded `GEN-SESSION-REGISTRY` prerequisite plus `SCI-SESSION` from `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` onto the accepted R0B line. Every other inventory row remains deferred.
+The sole next implementation is governed by [R1 Science Session on RC5](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.md): map, port, and accept its bounded `GEN-SESSION-REGISTRY` prerequisite plus `SCI-SESSION` from `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` onto the accepted R0B line. Every other inventory row remains deferred.

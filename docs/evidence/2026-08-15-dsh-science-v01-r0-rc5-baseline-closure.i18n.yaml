@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md
-2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md: b8975d42e6174ed737dc03f180e68b5b3ab180c3
-2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md: 532588e782323ff2fa8a1acfada582398c19b59e
+2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md: a6174731a359a4e9984560fd1dc788e95f68cc5a
+2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md: fa6fc8a9a1cb8c9fd4895b67078692477ca7b98e

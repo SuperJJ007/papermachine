@@ -132,4 +132,4 @@ Implemented doc-tier 与 npm release-sequence notes 保持 active，因为它们
 
 ## 唯一下一步
 
-唯一的下一项实现由 [RC5 上的 R1 Science Session](../../.agents/notes/proposed/feature/2026-08-15-dsh-science-v01-r1-science-session.md)约束：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中边界明确的 `GEN-SESSION-REGISTRY` 前置项与 `SCI-SESSION` mapping、port 并验收到 accepted R0B line。其余 inventory rows 均保持 deferred。
+唯一的下一项实现由 [RC5 上的 R1 Science Session](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.md)约束：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中边界明确的 `GEN-SESSION-REGISTRY` 前置项与 `SCI-SESSION` mapping、port 并验收到 accepted R0B line。其余 inventory rows 均保持 deferred。

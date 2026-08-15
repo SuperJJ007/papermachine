@@ -769,7 +769,8 @@ describe('ScienceRuntime.startRun', () => {
     await expect(harness.runtime.startRun({
       session, language: 'python', code: 'print(1)', ...authorizePythonRun(session, 'science-invalid-reobserve'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
-    expect(replayScience(session.events)?.environment).toMatchObject({ status: 'invalid', failureReason: expect.stringMatching(/no longer usable/) })
+    expect(replayScience(session.events)?.environment).toMatchObject({ status: 'invalid' })
+    expect(replayScience(session.events)?.environment?.failureReason).toMatch(/no longer usable/)
 
     createFakePythonPrefix(root)
     const terminalSession = createScienceSession(harness.ctx, 'science-terminal-append-failure')

@@ -79,6 +79,7 @@ class BrokenProbeSubprocess extends ControlledSubprocess {
     if (this.broken || (!spec.argv.includes('--version') && !spec.argv.includes('-c'))) return handle
     this.broken = true
     if (this.mode === 'error-rejection') return { ...handle, done: Promise.reject(new Error('Error subprocess rejection')) }
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- scripts a non-Error spawn rejection.
     if (this.mode === 'non-error-rejection') return { ...handle, done: Promise.reject('non-Error subprocess rejection') }
     if (this.mode === 'no-outcome') return { ...handle, done: Promise.resolve(undefined as never) }
     if (this.mode === 'unquiescent') return { ...handle, waitForExit: async () => false }
@@ -657,10 +658,14 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await expect(harness.runtime.bindEnvironment({
       session: createScienceSession(harness.ctx, 'science-static-prefix-loop'), profileId: ScienceEnvironmentProfileId('loop'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
-    expect(history.python).toMatchObject({ capability: 'invalid', reason: expect.stringMatching(/history/) })
-    expect(executable.python).toMatchObject({ capability: 'invalid', reason: expect.stringMatching(/interpreter/) })
-    expect(nonExecutableResult.python).toMatchObject({ capability: 'invalid', reason: expect.stringMatching(/regular executable/) })
-    expect(file.python).toMatchObject({ capability: 'invalid', reason: expect.stringMatching(/conda-meta\/history/) })
+    expect(history.python).toMatchObject({ capability: 'invalid' })
+    expect(history.python?.reason).toMatch(/history/)
+    expect(executable.python).toMatchObject({ capability: 'invalid' })
+    expect(executable.python?.reason).toMatch(/interpreter/)
+    expect(nonExecutableResult.python).toMatchObject({ capability: 'invalid' })
+    expect(nonExecutableResult.python?.reason).toMatch(/regular executable/)
+    expect(file.python).toMatchObject({ capability: 'invalid' })
+    expect(file.python?.reason).toMatch(/conda-meta\/history/)
     expect(harness.subprocess.specs).toEqual([])
   })
 
@@ -682,7 +687,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
       const binding = await harness.runtime.bindEnvironment({
         session: createScienceSession(harness.ctx, 'science-static-lstat-loss'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
       })
-      expect(binding.python).toMatchObject({ capability: 'invalid', reason: expect.stringMatching(/interpreter/) })
+      expect(binding.python).toMatchObject({ capability: 'invalid' })
+      expect(binding.python?.reason).toMatch(/interpreter/)
       staticFsFault.executable = ''
       staticFsFault.nonObject = executable
       await expect(harness.runtime.bindEnvironment({

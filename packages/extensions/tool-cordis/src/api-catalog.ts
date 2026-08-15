@@ -1006,6 +1006,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'scienceRuntime',
+    summary: 'Folded local Science Runtime provider with public types free of Host paths.',
+    description: 'Folded local Science Runtime provider with public types free of Host paths.',
+    methods: [
+      {
+        signature: 'async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>',
+        description: 'Observe one configured existing Conda profile and append its whole-value environment revision. Static unusability becomes an honest `invalid` revision; capability, cancellation, and I/O failures append nothing.',
+        parameters: [{ name: 'request', description: 'Exact live Session, profile identity, and caller signal.' }],
+        returns: 'The accepted durable environment revision.',
+      },
+      {
+        signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
+        description: 'Publish a direct-argv run start, then settle exactly one matching terminal fact after the shared subprocess provider proves tree quiescence.',
+        parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
+        returns: 'A handle exposed only after `science/run-started` committed.',
+      },
+    ],
+  },
+  {
     key: 'sessionPersistence',
     summary: 'Durable append-only session storage.',
     description: 'Durable append-only session storage. Implementations preserve contiguous, losslessly JSON-serializable events; append resolves only after durability, and load balances a complete interrupted tail without rewriting committed events.',
@@ -1673,6 +1692,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Abstract subprocess service.',
     description: 'Abstract subprocess service. Subclass, implement spawn, and load the subclass as a plugin — it registers as `ctx.subprocess` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Executable paths belong to one execution world shared with the mounted filesystem provider.\n- spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.\n- Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another\'s output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.\n- SubprocessHandle.terminate (and the spec\'s abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.\n- Disposal of the service terminates all still-running managed processes and awaits their exit.\n- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.',
     methods: [
+      {
+        signature: 'abstract readonly executionWorld: \'host-local\' | \'remote\'',
+        description: 'Whether this provider\'s process world shares the host kernel and host paths (`\'host-local\'`) or a remote execution world (`\'remote\'`). A host-path consumer such as Science must require `\'host-local\'` before creating owner records, directories, or Session events.',
+        parameters: [],
+      },
       {
         signature: 'abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>',
         description: 'Resolve one configured executable in this provider\'s execution world. Absolute paths are verified; bare names use the provider\'s scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.',
@@ -2730,6 +2754,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
+    name: 'BindScienceEnvironmentRequest',
+    declaration: 'export interface BindScienceEnvironmentRequest {\n    readonly session: Session;\n    readonly profileId: ScienceEnvironmentProfileId;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
@@ -3690,6 +3718,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
   },
   {
+    name: 'ScienceEnvironmentBinding',
+    declaration: 'export interface ScienceEnvironmentBinding {\n    readonly revision: number;\n    readonly profileId: ScienceEnvironmentProfileId;\n    readonly configuredAt: number;\n    readonly validatedAt: number;\n    readonly status: ScienceEnvironmentStatus;\n    readonly python?: ScienceInterpreterBinding;\n    readonly r?: ScienceInterpreterBinding;\n    readonly failureReason?: string;\n}',
+  },
+  {
+    name: 'ScienceEnvironmentProfileId',
+    declaration: 'export type ScienceEnvironmentProfileId = Branded<\'ScienceEnvironmentProfileId\'>;',
+  },
+  {
+    name: 'ScienceEnvironmentStatus',
+    declaration: 'export type ScienceEnvironmentStatus = \'applied\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceInterpreterAvailableBinding',
+    declaration: 'export type ScienceInterpreterAvailableBinding = ScienceInterpreterSelection & ScienceInterpreterIdentity & {\n    readonly capability: \'available\';\n    readonly reason?: never;\n};',
+  },
+  {
+    name: 'ScienceInterpreterBinding',
+    declaration: 'export type ScienceInterpreterBinding = ScienceInterpreterAvailableBinding | ScienceInterpreterUnavailableBinding;',
+  },
+  {
+    name: 'ScienceInterpreterCapability',
+    declaration: 'export type ScienceInterpreterCapability = \'available\' | \'unavailable\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceInterpreterIdentity',
+    declaration: 'export interface ScienceInterpreterIdentity {\n    readonly canonicalPrefix: string;\n    readonly executable: string;\n    readonly executableIdentity: string;\n    readonly languageVersion: string;\n    readonly condaHistorySha256: string;\n    readonly bindingFingerprint: string;\n}',
+  },
+  {
+    name: 'ScienceInterpreterSelection',
+    declaration: 'export interface ScienceInterpreterSelection {\n    readonly language: ScienceLanguage;\n    readonly configuredPrefix: string;\n}',
+  },
+  {
+    name: 'ScienceInterpreterUnavailableBinding',
+    declaration: 'export type ScienceInterpreterUnavailableBinding = ScienceInterpreterSelection & Partial<ScienceInterpreterIdentity> & {\n    readonly capability: Exclude<ScienceInterpreterCapability, \'available\'>;\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'ScienceLanguage',
+    declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
+  },
+  {
+    name: 'ScienceRunHandle',
+    declaration: 'export interface ScienceRunHandle {\n    readonly runId: ScienceRunId;\n    readonly done: Promise<ScienceRunResult>;\n    cancel(): void;\n}',
+  },
+  {
+    name: 'ScienceRunId',
+    declaration: 'export type ScienceRunId = Branded<\'ScienceRunId\'>;',
+  },
+  {
+    name: 'ScienceRunIdentity',
+    declaration: 'export interface ScienceRunIdentity {\n    readonly runId: ScienceRunId;\n    readonly language: ScienceLanguage;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly startedAt: number;\n    readonly codeSha256: string;\n    readonly scratchKey: ScienceScratchKey;\n    readonly runDirectoryRef: string;\n}',
+  },
+  {
+    name: 'ScienceRunOutput',
+    declaration: 'export interface ScienceRunOutput {\n    readonly text: string;\n    readonly bytes: number;\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'ScienceRunResult',
+    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
+  },
+  {
+    name: 'ScienceRunStarted',
+    declaration: 'export interface ScienceRunStarted extends ScienceRunIdentity {\n    readonly status: \'running\';\n}',
+  },
+  {
+    name: 'ScienceRunTerminal',
+    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly exitCode?: number;\n    readonly signal?: string;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n}',
+  },
+  {
+    name: 'ScienceRunTerminalStatus',
+    declaration: 'export type ScienceRunTerminalStatus = \'success\' | \'failed\' | \'timed-out\' | \'cancelled\';',
+  },
+  {
+    name: 'ScienceScratchKey',
+    declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
+  },
+  {
     name: 'Scoped',
     declaration: 'export type Scoped<T extends object> = object & {\n    readonly [ScopedBrand]: T;\n};',
   },
@@ -4078,6 +4182,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: CallId;\n    label: string;\n}',
   },
   {
+    name: 'StartScienceRunRequest',
+    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'StorageBackend',
     declaration: 'export interface StorageBackend {\n    readonly kv?: KvFacet;\n    close(): Promise<void>;\n}',
   },
@@ -4183,7 +4291,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessOutputRead',
-    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    spillPath?: string;\n}',
+    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    utf8Validity: \'valid\' | \'invalid\' | \'unknown\';\n    spillPath?: string;\n}',
   },
   {
     name: 'SubprocessOutputReader',
@@ -4191,7 +4299,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessSpawnSpec',
-    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    env?: NodeJS.ProcessEnv | undefined;\n}',
+    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    environmentBase: \'scrubbed-parent\' | \'empty\';\n    env?: NodeJS.ProcessEnv | undefined;\n}',
   },
   {
     name: 'SubprocessStdinMode',

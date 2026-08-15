@@ -115,6 +115,8 @@ export class ControlledRun {
 
   /** Reject the published completion before normal settlement. */
   rejectCompletion(error: unknown): void {
+    // The test scripts a provider that rejects with a non-Error value.
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
     Object.defineProperty(this.handle, 'done', { value: Promise.reject(error) })
   }
 }

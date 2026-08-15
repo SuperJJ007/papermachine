@@ -299,6 +299,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plugins register direct human commands without sending invocations to the model.',
   },
   {
+    key: 'scienceRuntime',
+    pkg: 'science-runtime',
+    title: 'Host-local Science Runtime',
+    mode: 'core',
+    note: 'Folded bind/start operations over existing Conda prefixes; R2 has no model-facing Consumer and appends only environment and run Session events.',
+  },
+  {
     key: 'sessionProjections',
     pkg: 'session-projection',
     title: 'Session projection units',

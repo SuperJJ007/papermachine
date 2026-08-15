@@ -517,6 +517,74 @@ function findSchemaExpr(ctx: FileCtx, pluginClass: ts.ClassDeclaration | null): 
   return null
 }
 
+/** Find an exported const initializer in one file, following same-package re-exports. */
+function findExportedConstInitializer(
+  world: World,
+  ctx: FileCtx,
+  name: string,
+  seen = new Set<string>(),
+): { ctx: FileCtx; expr: ts.Expression } | null {
+  const key = `${ctx.abs}#const:${name}`
+  if (seen.has(key)) return null
+  seen.add(key)
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    if (!stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) {
+        return { ctx, expr: decl.initializer }
+      }
+    }
+  }
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
+    const spec = stmt.moduleSpecifier.text
+    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
+    let lookFor: string | null = null
+    if (!stmt.exportClause) lookFor = name
+    else if (ts.isNamedExports(stmt.exportClause)) {
+      const el = stmt.exportClause.elements.find(e => e.name.text === name)
+      if (el) lookFor = (el.propertyName ?? el.name).text
+    }
+    if (lookFor === null) continue
+    const hit = findExportedConstInitializer(world, loadRelative(world, ctx, spec), lookFor, seen)
+    if (hit) return hit
+  }
+  return null
+}
+
+/**
+ * Follow a same-file binding or same-package imported `configSchema` to the
+ * schemastery call the catalog can walk. Remote or non-const referents stay
+ * unresolved so the existing hard error remains loud.
+ */
+function resolveSchemaExpr(
+  world: World,
+  ctx: FileCtx,
+  expr: ts.Expression,
+  seen = new Set<string>(),
+): { ctx: FileCtx; expr: ts.Expression } {
+  const unwrapped = unwrapExpr(expr)
+  if (!ts.isIdentifier(unwrapped)) return { ctx, expr: unwrapped }
+  const key = `${ctx.abs}#schema:${unwrapped.text}`
+  if (seen.has(key)) return { ctx, expr: unwrapped }
+  seen.add(key)
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.name.text === unwrapped.text && decl.initializer) {
+        return resolveSchemaExpr(world, ctx, decl.initializer, seen)
+      }
+    }
+  }
+  const imp = ctx.imports.get(unwrapped.text)
+  if (imp !== undefined && imp.specifier.startsWith('.') && imp.specifier.endsWith('.ts')) {
+    const exported = findExportedConstInitializer(world, loadRelative(world, ctx, imp.specifier), imp.imported)
+    if (exported) return resolveSchemaExpr(world, exported.ctx, exported.expr, seen)
+  }
+  return { ctx, expr: unwrapped }
+}
+
 /** Read an `inject` service-key list: `export const inject = […]` in the entry
  * file, else `static inject = […]` on the plugin class. */
 function findInject(ctx: FileCtx, pluginClass: ts.ClassDeclaration | null, violations: string[]): string[] {
@@ -719,7 +787,8 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // Statically walk the runtime schema (when one exists) for the subset check.
     const schemaExpr = findSchemaExpr(ctx, pluginClass)
     if (schemaExpr) {
-      const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
+      const resolved = resolveSchemaExpr(world, ctx, schemaExpr)
+      const { keys, composes } = walkSchemaExpr(resolved.ctx, resolved.expr, `${pkg} (${entryRel})`, violations)
       entry.schemaKeys = keys
       entry.schemaComposes = composes
     } else {

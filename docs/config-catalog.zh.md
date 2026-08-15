@@ -1522,6 +1522,34 @@ export interface Config {
 
 来源：[`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
 
+<a id="deepseek-aidsh-science-runtime"></a>
+
+## `@deepseek-ai/dsh-science-runtime`
+
+需要：`sessions` · `subprocess` · `sandbox`
+
+```ts config-catalog
+/** Runtime configuration supplied by one Cordis row. */
+export interface Config {
+  /** Explicit Harness home; omitted follows the shared resolver. */
+  readonly dshHome?: string
+  /** Non-empty map of profile identifiers to existing language prefixes. */
+  readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
+  /** One caller-independent bound for bind and run operations. */
+  readonly timeoutMs?: number
+}
+
+/** One allowlisted existing Conda prefix. */
+export interface ScienceEnvironmentProfileConfig {
+  /** Existing prefix containing `bin/python` or `python.exe`. */
+  readonly pythonPrefix?: string
+  /** Existing prefix containing `bin/Rscript` or `Scripts/Rscript.exe`. */
+  readonly rPrefix?: string
+}
+```
+
+来源：[`packages/science/science-runtime/src/config.ts:24`](../packages/science/science-runtime/src/config.ts)
+
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
 ## `@deepseek-ai/dsh-sdk-jsonrpc-server`

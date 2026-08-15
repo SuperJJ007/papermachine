@@ -519,6 +519,38 @@ describe('get_science_state', () => {
     expect(JSON.stringify(value)).not.toContain('host-file-id')
   })
 
+  it('retains a sanitized R-only environment without adding a Python binding', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 2,
+        status: 'applied',
+        r: {
+          language: 'r',
+          configuredPrefix: '/secret/prefix',
+          capability: 'available',
+          canonicalPrefix: '/secret/canonical',
+          executable: '/secret/canonical/bin/Rscript',
+          executableIdentity: 'host-file-id',
+          languageVersion: '4.5.0',
+          condaHistorySha256: 'a'.repeat(64),
+          bindingFingerprint: 'b'.repeat(64),
+        },
+      },
+    }), 1)
+    expect(value.environment).toEqual({
+      revision: 1,
+      profileId: 'fake',
+      validatedAt: 2,
+      status: 'applied',
+      r: {
+        language: 'r', capability: 'available', languageVersion: '4.5.0', fingerprint: 'b'.repeat(12),
+      },
+    })
+  })
+
   it.each(['Python at /secret/prefix', String.raw`Python at C:\secret\prefix`])(
     'omits a path-bearing interpreter version %s from context and state',
     (languageVersion) => {
@@ -598,6 +630,39 @@ describe('get_science_state', () => {
     expect(rendered).not.toContain('failureReason')
     expect(rendered).not.toContain('"reason"')
     expect(rendered).not.toContain('"signal"')
+  })
+
+  it('omits an absent signal and retains a path-free signal label', () => {
+    const run = (runId: string, signal?: string) => ({
+      runId: ScienceRunId(runId),
+      language: 'python' as const,
+      toolCallId: CallId(`call-${runId}`),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: 1,
+      codeSha256: 'b'.repeat(64),
+      scratchKey: 'c'.repeat(64) as never,
+      runDirectoryRef: `runs/${runId}/`,
+      status: 'failed' as const,
+      finishedAt: 2,
+      exitCode: 1,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      failureCode: 'NONZERO_EXIT',
+      failureMessage: 'process failed',
+      ...signal === undefined ? {} : { signal },
+    })
+    const value = stateValueFromProjection(projectionFixture({
+      runs: [run('without-signal'), run('with-signal', 'SIGTERM')],
+      metrics: { runCount: 2, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+    }), 2)
+    expect(value.runs[0]).not.toHaveProperty('signal')
+    expect(value.runs[0]).not.toHaveProperty('failureMessage')
+    expect(value.runs[1]).toMatchObject({ signal: 'SIGTERM' })
+    expect(value.runs[1]).not.toHaveProperty('failureMessage')
   })
 
   it('rejects without an initiating Agent', async () => {

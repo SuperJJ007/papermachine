@@ -24,7 +24,7 @@ function textOf(message: UserMessage): string | undefined {
 /** Tracks the last retained runtime-context snapshot without owning its commit. */
 export class RuntimeContextProjection {
   /** `undefined` means no snapshot ever existed; `null` means none is retained. */
-  private retained: { seq: number; text: string | undefined } | null | undefined
+  private retained: { seq: number; message: UserMessage; text: string | undefined } | null | undefined
 
   /**
    * Restore projection state once, then follow authoritative session events.
@@ -38,7 +38,7 @@ export class RuntimeContextProjection {
       if (event?.type !== 'user/message' || !isOwned(event.data)) continue
       this.retained ??= null
       if (surface.has(event.seq)) {
-        this.retained = { seq: event.seq, text: textOf(event.data) }
+        this.retained = { seq: event.seq, message: event.data, text: textOf(event.data) }
         break
       }
     }
@@ -46,13 +46,33 @@ export class RuntimeContextProjection {
     ctx.on('session/event', (subject, event) => {
       if (subject !== session) return
       if (event.type === 'user/message' && isOwned(event.data)) {
-        this.retained = { seq: event.seq, text: textOf(event.data) }
+        this.retained = { seq: event.seq, message: event.data, text: textOf(event.data) }
       } else if (this.retained
         && isReplacementSurfaceEvent(event)
         && event.sourceEventSeqs?.includes(this.retained.seq) === true) {
         this.retained = null
       }
     })
+  }
+
+  /**
+   * Return the exact owned message currently retained on the live surface.
+   * Callers may use it to capture an owned fallback or retry target.
+   * @returns the retained message, or `undefined` when the surface carries none.
+   */
+  retainedSnapshot(): UserMessage | undefined {
+    return this.retained?.message
+  }
+
+  /**
+   * Return a captured snapshot only when its message id is not retained.
+   * @param snapshot - caller-captured owned snapshot, if one exists.
+   * @returns the snapshot to append, or `undefined` when no restoration is needed.
+   */
+  restore(snapshot: UserMessage | undefined): UserMessage | undefined {
+    if (snapshot === undefined || !isOwned(snapshot)) return
+    if (this.retained?.message.id === snapshot.id) return
+    return snapshot
   }
 
   /**

@@ -2574,12 +2574,14 @@ export interface Config {
 需要：`tools` · `systemPrompt`
 
 ```ts config-catalog
-/** Plugin config. Neither field has a default; both are deployment identity. */
+/** Required deployment identity and model-facing history bound. */
 export interface Config {
   /** Runtime allowlist profile this Consumer binds on first use. */
   readonly profileId: string
   /** Deployment-owned Science mode contract revision. */
   readonly modeRevision: string
+  /** Maximum recent runs and chart versions returned by `get_science_state`, per collection. */
+  readonly stateHistoryLimit: number
 }
 ```
 

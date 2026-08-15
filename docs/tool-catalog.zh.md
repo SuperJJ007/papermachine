@@ -1884,7 +1884,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `get_science_state`
 
-返回当前 Science session 状态：mode、已绑定的 environment、run 历史、charts，以及最近一次发布的 outcome。不接受任何参数。
+返回当前 Science session 状态：mode、sanitized bound environment、带遗漏计数的最近 run 与 chart-version 历史，以及最近一次发布的 outcome。不接受任何参数。
 
 ```json
 {

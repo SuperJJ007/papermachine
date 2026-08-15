@@ -12,7 +12,7 @@ Downstream Phase 3 candidate 为 request-context restoration、filesystem read-o
 
 ## 决策
 
-R3 向已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` 依次增加三项结果，各自独立成 commit：每次 model request attempt 前的 generic runtime-context restoration、`@deepseek-ai/dsh-tool-fs/read-only` plugin entry，以及新的 `@deepseek-ai/dsh-tool-science` Consumer。它以 test-only real application composition 和 exact-candidate evidence 关闭组合后的 range。它不增加 built-in Science preset 或任何 shipped Host composition row。
+R3 向已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` 依次增加三项结果：遵守 authoritative pre-step selection 且跨 pressure compaction 与 request retry 恢复 runtime context、`@deepseek-ai/dsh-tool-fs/read-only` plugin entry，以及新的 `@deepseek-ai/dsh-tool-science` Consumer。Review 修复增加 keyless runnable-example snapshot 并更新 test-only real application composition；最终 closure 还需要本地 repair commit 与 exact-candidate acceptance。R3 不增加 built-in Science preset 或任何 shipped Host composition row。
 
 Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-tool-science` 追加一次性 mode binding，请求 `ctx.scienceRuntime` 追加 environment/run facts，replay `@deepseek-ai/dsh-science-session`，并注册 model-facing prompt 与 tool contributions。它绝不 spawn process、写入 run source、分类 termination、管理 Conda，或追加 Runtime-owned events。
 
@@ -26,7 +26,8 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | Read-only filesystem provenance | `omdsh-dev/dsh-science@8c7d5e01e3876b0c645f13f20ada8cf7add0c356` 与 loader correction `0073f6e0a11cd3444564cd1add5a252c70200b64` | 针对 RC5 重新推导的 read-only subpath 与 loader/package-resolution input |
 | Science Consumer provenance | `omdsh-dev/dsh-science@27c96d8e8b2431814fe70a2e94fe8feeaf207b63` | Package behavior 与 test input；generated output 和失败的 Phase 3 acceptance 均排除 |
 | 被拒绝的 whole-range candidate | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01` | 仅作为 negative scope evidence；其 preset、review verdict 与 check results 不是 R3 input |
-| R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774` | 精确已验收 R3 head；在 R2 head 之上有三个线性 commit |
+| 原始 R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774` | 在 R2 head 之上有三个线性 commit；因 review 修复而不再用于提升 |
+| 被 review 的 closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review 失败；repair candidate 正等待本地 commit 与最终 exact-SHA acceptance |
 
 [R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md#complete-overlay-inventory)负责 source identities 与 dependency order。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.md)负责 durable Science event 与 replay semantics。[R2 Science Runtime decision](2026-08-15-dsh-science-v01-r2-science-runtime.md)负责 environment/run operations、process lifecycle、confinement 与 real-runtime evidence meaning。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md)负责易变的 command output 与 platform facts。
 
@@ -34,7 +35,7 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 
 | 方向 | 区域 | R3 结果 |
 |---|---|---|
-| IN | `GEN-RUNTIME-CONTEXT` | 在每个 initial 或 retried request 前，从既有 step assembly 恢复当前 dynamic context；focused loop/resume/retry tests 与 owning architecture/package documentation |
+| IN | `GEN-RUNTIME-CONTEXT` | 遵守最终 pre-step Enter batch、在 pressure compaction 后恢复 unchanged current context，并在 request-error replacement 后恢复精确的 first-request value；focused loop/resume/retry tests 与 owning architecture/package documentation |
 | IN | `FS-READONLY` | 可独立 mount 的 `@deepseek-ai/dsh-tool-fs/read-only` function plugin，共享 root read configuration，且不注册 mutation tool |
 | IN | `FS-READONLY-LOAD-FIX` | Source Loader 与 built-package resolution、精确 shared `Config` identity、package metadata 与 disposal |
 | IN | `SCI-TOOLS` | `@deepseek-ai/dsh-tool-science`、其 required config、prompt/context rendering、三个 tools、invariant companion、package documentation、unit tests 与 real-composition coverage |
@@ -44,15 +45,15 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | OUT | 后续 Science product work | Charts、chart save tools、Outcome publication、persistent kernels、package/environment management、settings、sidebar、Details UI、client rendering 与 Desktop |
 | OUT | Distribution 与 migration | RC6 或 latest-upstream migration、installer、signing、notarization、Authenticode、tag、npm publication、GitHub release 与 release-readiness claims |
 
-每个 implementation slice 都落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。R3 在 closure 后停止；下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition。
+原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复仍未提交。R3 在最终 closure 后停止；下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition。
 
 ### Generic runtime-context restoration
 
-`ReactLoopAgent.preStep()` 继续 assemble prompt 一次、渲染 dynamic contexts、通过 `RuntimeContextProjection` project 它们，并把 candidate 与 claimed messages 一起 admit。`step()` 也会在每次 `buildRequest()` iteration 前从同一个 `PromptAssembly` 重新渲染 contexts、project 当前值，并在 derive messages 前追加缺失的 candidate。普通 first request 不会重复发送，因为 retained projection 已经观察到 pre-step snapshot。
+`ReactLoopAgent.preStep()` 只 assemble prompt 一次、渲染 dynamic contexts，并通过 `RuntimeContextProjection` project 一个 candidate。只有 projection 表明当前值已存在时，它才会在 dispatch waterfall 之前保留 exact fallback。最终 Enter batch 提交后，`step()` 仅在没有 owned value 留存时恢复这个此前已接受的 fallback，随后冻结实际 retained 的精确值供 retry 使用。它不会在 request loop 内再次 project assembly。
 
-Loop 不会在 request retry 期间再次调用 `systemPrompt.assemble()`：retry 属于同一个 step assembly，而 `PromptAssembly` 中的每个 `AssembledContext` 都已经持有 resolved text，因此重新渲染不会重复任何 provider I/O。Pressure compactor 或 request-error handler 可以替换 retained snapshot；下一次 request 只有在 projection 观察到 replacement，并恢复 current snapshot 或 clearing marker 后才会构建。
+Loop 不会在 request retry 期间再次调用 `systemPrompt.assemble()`：retry 属于同一个 step assembly，而 `PromptAssembly` 中的每个 `AssembledContext` 都已经持有 resolved text。当新投影出的 candidate 被移除、改写，或后面又追加了另一个 owned runtime-context message 时，最终 `agent/pre-step` Enter batch 具有权威性。如果 assembly 已与 retained context 一致，fallback 就是此前已接受的精确 message，用来在首次请求前修复 pressure compaction。随后 loop 会捕获该请求实际 retained 的精确 owned value；只有 request-error handling 将其移除时，retry 才恢复这个 captured value。
 
-`packages/core/agent-loop/tests/request-error.spec.ts` 中的 focused tests 针对以下场景断言实际 request messages 与 durable surface events：某次 compaction 在 retry 前替换 context 后被恢复、unchanged retry 不追加 duplicate、mid-retry compaction 移除 cleared context 后被恢复，以及 unrelated replacement 后不触发 restoration；既有 `loop.spec.ts` suite 继续覆盖本次改动未触及的 unchanged-first-request、malformed-retained-state 与 cross-turn-clearing 路径。`docs/architecture.md` 与 agent-loop README 描述了该 ordering。
+`packages/core/agent-loop/tests/request-error.spec.ts` 中的 focused tests 针对 candidate removal、exact rewrite、最终 owned Enter-batch value、首次 attempt 前的 pressure replacement、retry 前的 replacement、unchanged retry 不追加 duplicate、clearing-marker restoration 与 unrelated replacement，断言实际 request messages 与 durable surface events。既有 `loop.spec.ts` suite 继续覆盖 malformed retained state 与 cross-turn clearing。`docs/architecture.md` 与 agent-loop README 描述了该 ordering。
 
 该 generic correction 扩展当前 runtime-context mechanism；它不 supersede Web runtime-context decision，也不向 Core 增加 Science types。
 
@@ -70,7 +71,7 @@ Package 附带一个 `tsdown.config.ts`，把 `index`、`invariant` 与 `read-on
 
 #### Configuration 与 eligibility
 
-`@deepseek-ai/dsh-tool-science` 是一个 function plugin，拥有 required `profileId` 与 `modeRevision` configuration。`profileId` 使用 durable Science safe-ID grammar（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符），并选择一个 Runtime allowlist entry。`modeRevision` 会被 trim、非空，且不超过 128 个字符，并持久化到 `ScienceModeRef`。这两个值都没有 default、不来自 environment discovery，也不命名任何 shipped production profile。
+`@deepseek-ai/dsh-tool-science` 是一个 function plugin，拥有 required `profileId`、`modeRevision` 与 `stateHistoryLimit` configuration。`profileId` 使用 durable Science safe-ID grammar（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符），并选择一个 Runtime allowlist entry。`modeRevision` 会被 trim、非空，且不超过 128 个字符，并持久化到 `ScienceModeRef`。`stateHistoryLimit` 是正 safe integer，分别限制 `get_science_state` 返回的最近 run 与 chart-version 集合。这三个值都没有 default，也不来自 environment discovery；本包不命名 shipped production identity 或 history policy。
 
 Plugin 只 statically inject `tools` 与 `systemPrompt`。它在最早需要 Runtime 的 operation 上——首次使用绑定，以及每次 `run_python`/`run_r` 调用——用 `ctx.get('scienceRuntime')` 读取 optional Host-owned Runtime。Model-facing operations 需要 exact initiating Agent，且其 Session header 必须命名 `science` preset identity（`session.header.agentPreset === 'science'`）。没有 Agent 与 turn signal 的 diagnostic prompt assembly 不执行 Host I/O，并原样 delegate。
 
@@ -84,9 +85,9 @@ Context providers 会在 assembly waterfall 完成前 render。Binding 之后，
 
 #### Context 与 tool contracts
 
-一个静态的 `tool:science` prompt section 陈述每次 Python 或 R call 都会启动 fresh process、reusable state 属于 `SCIENCE_STATE_DIR` 或 `SCIENCE_ARTIFACT_DIR`、terminal program failure 是需要检查的 result，而 infrastructure failure 表示不存在 trustworthy run result。Deterministic 的 `science:environment` dynamic context 只包含 durable mode、environment、interpreter capability/version、bounded safe reasons 与一段截断后的 fingerprint、file-based state rule，以及 bounded latest-run summary。它省略 source、stdout、stderr、credentials 与 absolute Host paths，并在 Science mode 之外或没有 initiating Agent 时渲染为 `''`。
+一个静态的 `tool:science` prompt section 陈述每次 Python 或 R call 都会启动 fresh process、reusable state 属于 `SCIENCE_STATE_DIR` 或 `SCIENCE_ARTIFACT_DIR`、terminal program failure 是需要检查的 result，而 infrastructure failure 表示不存在 trustworthy run result。Deterministic 的 `science:environment` dynamic context 只包含 durable mode/environment identity 与 status、interpreter capability/version 与一段截断后的 fingerprint、file-based state rule，以及 bounded latest-run summary。它省略 Runtime-owned free-text reason、source、stdout、stderr、credentials 与 Host path/identity field，并在 Science mode 之外或没有 initiating Agent 时渲染为 `''`。
 
-Package 准确注册 `get_science_state`、`run_python` 与 `run_r`，使用 generic render intent，且没有 editor locations。`get_science_state` 不接受 arguments，并返回 exact Session 的 bounded durable projection（`mode`、`environment`、`runs`、`charts`、`outcome`、`metrics`、`lastScienceEventSeq`）。每个 run tool 只接受一个 non-empty `code` string，要求最新的 `request/header` 与 exact tool call ID，把 tool cancellation signal 转发给 `startRun()`，并 await returned handle。
+Package 准确注册 `get_science_state`、`run_python` 与 `run_r`，使用 generic render intent，且没有 editor locations。`get_science_state` 不接受 arguments，并返回 sanitized、bounded view：model-safe environment facts、最近的 runs 与 chart versions、遗漏计数、outcome、总量 metrics、mode 与最后一条 Science event sequence。Host prefix、executable path 与 identity、Conda history hash、environment reason 与 run `failureMessage` 都不会进入 tool result；chart 与 Outcome prose 仍是 model-authored durable content。每个 run tool 只接受一个 non-empty `code` string，要求最新的 `request/header` 与 exact tool call ID，把 tool cancellation signal 转发给 `startRun()`，并 await returned handle。
 
 Durably committed 的 `success`、`failed`、`timed-out` 或 `cancelled` terminal state 是 structured tool value，包含 bounded stdout/stderr text、exact byte counts 与 truncation facts——其 `ScienceRunValue` type 用 `InferValue<typeof runOutputSchema>` 推导而不是手动重复声明，因此在 `exactOptionalPropertyTypes` 下 schema 与 runtime 形状不会发生漂移。Start publication 前的 failure、未证明的 process-tree quiescence 或 terminal-commit failure 会成为 error tool result。Consumer 不重复验证 typed same-process Runtime values；config、durable events、tool JSON 与 service availability 继续作为 validation points。
 
@@ -96,7 +97,7 @@ Package 的 invariant companion 注册带说明的 empty installer，因为 Scie
 
 R3 source evidence 包括 changed Core、filesystem 与 Science source 的 focused per-file 100% coverage；shared behavior 的 adjacent package tests；typecheck；build；package invariants；documentation synchronization（包括每份被改动的英文文档的 bilingual pairing）；lint；以及 whitespace checks。Package/export changes 还通过了 publint、NodeNext consumer types、受影响的 hygiene checks，以及 plain-Node built-root/subpath smokes。
 
-Product-visible Consumer 需要 keyless REAL-composition test。`packages/science/tool-science/tests/loader-composition.spec.ts` 通过 Loader 启动一个 test-only `cordis.yml`，其中包含真实 agent loop、Session store、Science Session invariant、Science Runtime（用 deterministic fake subprocess/sandbox providers 组合，而不是真实 Conda prefix）、真实 session persistence（`@deepseek-ai/dsh-session-persistence-jsonl`）、tool pipeline 与 Consumer。它断言：实际 first model request 携带已记录的 `science:environment` context；durable event ordering（`science/mode-bound` 早于 `science/environment-bound` 早于 `step/start` 早于 `request/header` 早于 `tool/call` 早于 `science/run-started` 早于 `science/run-finished`）；精确的三个 Science schemas；通过真实 tool pipeline 的 `run_python` result；resume behavior（dispose 活跃 agent、resume 精确的已持久化 Session、再次运行且不重新 bind、不产生 duplicate mode/environment events）；以及同一 composition 中的 Standard（非 science-preset）session 不存在任何 `science/*` event 或 `science:environment` context text。
+Product-visible Consumer 有两项 assembled check。`packages/science/tool-science/tests/loader-composition.spec.ts` 通过 Loader 启动 test-only `cordis.yml`，其中包含真实 agent loop、Session store、Science Session invariant、Science Runtime、persistence、tool pipeline 与 Consumer；它覆盖 first-request context、durable ordering、三个 schemas、run execution、无重复 binding 的 resume，以及 Standard-session negative path。Keyless runnable example `examples/headless-agent/science-tools.cordis.snapshot.yml` 还会 snapshot 实际 model-facing guidance、Science schemas、sanitized bounded state result、structured durable run terminal、rendered `run_python` tool result，以及 durable Science event ordering。同一条真实 Loader request 只暴露 `@deepseek-ai/dsh-tool-fs/read-only` 的 filesystem `read` roster，不暴露 `write` 或 `edit`。
 
 针对明确授权的既有 Conda prefixes 的真实 Python 与 R Consumer acceptance，在 R3 中保持 `NOT-RUN`，与本 keyless evidence 分开追踪。Preset、Web、browser、Desktop、provider credentials、signing、publication 与 release 保持 `NOT-RUN`。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md)把每项 result 与 exception 绑定到已验收的 candidate SHA。
 
@@ -118,12 +119,12 @@ Downstream Phase 3 proposal 是 excluded lineage 的 provenance，未被复制�
 
 **在 Session creation 时绑定 environment 或 hard-inject Runtime。** 拒绝，因为 Session-start notification 无法 await 或 veto Host I/O，unused Sessions 不应 probe Conda，而且 Runtime 继续是 Host deployment configuration，而不是 agent-scope package dependency。首个真实 asynchronous assembly 拥有 exact Agent 与 cancellation signal，并可在 request 前失败。
 
-**在 retry 前重新 assemble system prompt。** 拒绝，因为 retries 属于同一个 step assembly，而 repeated assembly 可能重复 Host effects。重新 project existing assembly 只恢复被 replacement 移除的 logged context。
+**在 retry 前重新 assemble system prompt。** 拒绝，因为 retries 属于同一个 step assembly，而 repeated assembly 可能重复 Host effects。Loop 会捕获 first request 的 exact owned snapshot，并只在 retry handling 移除它时恢复该值。
 
 ## 后果
 
-R3 让 Science 拥有了第一个 model-facing Consumer，且没有引入 downstream history 或 shipped composition。现在每个 science-preset request 都携带一份可从 durable 记录重建的 mode/environment snapshot，`run_python`/`run_r` 通过普通 tool pipeline 到达 `ctx.scienceRuntime`，并得到 bounded、structured 的 results。代价是 generic agent loop 中新增了一条 per-retry re-projection path（由四个新的 focused tests 覆盖），而 Runtime 仍然没有 shipped composition：preset、Web 与 Desktop slices 仍然开放。
+R3 让 Science 拥有了第一个 model-facing Consumer，且没有引入 downstream history 或 shipped composition。现在每个 science-preset request 都携带一份可从 durable 记录重建的 mode/environment snapshot，`run_python`/`run_r` 通过普通 tool pipeline 到达 `ctx.scienceRuntime`，并得到 bounded、structured 的 results。代价是 generic agent loop 需要保存 authoritative first-request selection 与 exact retry restoration 的额外状态，并且每个 Consumer composition 都必须显式配置 state-history policy。Runtime 仍然没有 shipped composition：preset、Web 与 Desktop slices 仍然开放。
 
-First-use prompt assembly 会执行一次 Host environment observation，可能延迟 first request；request-path tests 覆盖了 cancellation、timeout、static invalid bindings、operational failure 与 matching-resume behavior，确保 slow/failed observation 不会发布 partial model contract。Retry restoration 依赖 existing step assembly 在该 step 中继续保持 authoritative；未来如果某个 feature 需要在 retries 之间引入新的 Host facts，就需要一个单独的 logged update operation，而不是重新运行 assembly。拥有独立 Cordis plugin identity 的 package subpath 不如单独 package 直观；shared schema identity、package documentation、source Loader coverage 与 built import coverage 让该 topology 保持显式，并以 `tool-subagent-control/list-agents` 先例作为后续拆分的命名范式。
+First-use prompt assembly 会执行一次 Host environment observation，可能延迟 first request；request-path tests 覆盖了 cancellation、timeout、static invalid bindings、operational failure 与 matching-resume behavior，确保 slow/failed observation 不会发布 partial model contract。Retry restoration 会冻结 first request 实际 retained 的 exact owned snapshot；未来如果某个 feature 需要在 retries 之间引入新的 Host facts，就需要一个单独的 logged update operation，而不是重新运行 assembly。拥有独立 Cordis plugin identity 的 package subpath 不如单独 package 直观；shared schema identity、package documentation、source Loader coverage 与 built import coverage 让该 topology 保持显式，并以 `tool-subagent-control/list-agents` 先例作为后续拆分的命名范式。
 
 真实 Python 与 R Consumer acceptance、preset composition、Web/Desktop application layers 与 release readiness，仍然与 R0 overlay inventory 中记录的一致：留给后续 slices 的开放工作。

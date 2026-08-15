@@ -266,6 +266,234 @@ describe('agent/request-error', () => {
     expect(adapter.requests).toHaveLength(2)
   })
 
+  it('does not bypass an authoritative pre-step removal on the first attempt or retry', async () => {
+    const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('ok')])
+    const ctx = await harness(adapter)
+    ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
+    const agent = ctx.agentLoop.create(SessionId('request-error-context-pre-step-removal'), { provider: 'mock', model: 'mock' })
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      return decision.kind === 'reject' ? decision : {
+        ...decision,
+        messages: decision.messages.filter(message =>
+          message.source.kind !== 'plugin'
+          || message.source.plugin !== '@deepseek-ai/dsh-system-prompt'),
+      }
+    })
+    ctx.on('agent/request-error', async () => ({ kind: 'retry' }))
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests.every(request => request.messages.every(message =>
+      message.source.kind !== 'plugin'
+      || message.source.plugin !== '@deepseek-ai/dsh-system-prompt'))).toBe(true)
+    expect(agent.session.events.some(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(false)
+  })
+
+  it('restores the exact pre-step rewrite after retry recovery removes it', async () => {
+    const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('ok')])
+    const ctx = await harness(adapter)
+    ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
+    const agent = ctx.agentLoop.create(SessionId('request-error-context-pre-step-rewrite'), { provider: 'mock', model: 'mock' })
+    const rewrittenText = 'Authoritative rewritten runtime context.'
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      return decision.kind === 'reject' ? decision : {
+        ...decision,
+        messages: decision.messages.map(message =>
+          message.source.kind === 'plugin'
+          && message.source.plugin === '@deepseek-ai/dsh-system-prompt'
+            ? { ...message, content: [{ type: 'text' as const, text: rewrittenText }] }
+            : message),
+      }
+    })
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
+      const contextEvent = subject.session.events.find(event =>
+        event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+      if (contextEvent?.type === 'user/message') {
+        subject.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'compacted summary' }],
+          source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), {
+          surfaceOp: { op: 'replace', start: contextEvent.seq, end: contextEvent.seq },
+          sourceEventSeqs: [contextEvent.seq],
+        })
+      }
+      return { kind: 'retry' }
+    })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    const runtimeContexts = agent.session.events.filter(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+    expect(runtimeContexts).toHaveLength(2)
+    expect(runtimeContexts.every(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'text' && block.text === rewrittenText))).toBe(true)
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests.every(request => request.messages.some(message =>
+      message.source.kind === 'plugin'
+      && message.source.plugin === '@deepseek-ai/dsh-system-prompt'
+      && message.content.some(block => block.type === 'text' && block.text === rewrittenText)))).toBe(true)
+  })
+
+  it('preserves the final owned context appended by the authoritative pre-step batch', async () => {
+    const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('ok')])
+    const ctx = await harness(adapter)
+    ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
+    const agent = ctx.agentLoop.create(SessionId('request-error-context-pre-step-final-owned'), { provider: 'mock', model: 'mock' })
+    const finalText = 'Final authoritative runtime context.'
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      return decision.kind === 'reject' ? decision : {
+        ...decision,
+        messages: [...decision.messages, createUserMessage({
+          content: [{ type: 'text', text: finalText }],
+          source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },
+        })],
+      }
+    })
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
+      const contextEvent = subject.session.events.findLast(event =>
+        event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+      if (contextEvent?.type === 'user/message') {
+        subject.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'compacted summary' }],
+          source: { kind: 'plugin', plugin: 'test-compaction' },
+        }), {
+          surfaceOp: { op: 'replace', start: contextEvent.seq, end: contextEvent.seq },
+          sourceEventSeqs: [contextEvent.seq],
+        })
+      }
+      return { kind: 'retry' }
+    })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests.every(request => request.messages.some(message =>
+      message.source.kind === 'plugin'
+      && message.source.plugin === '@deepseek-ai/dsh-system-prompt'
+      && message.content.some(block => block.type === 'text' && block.text === finalText)))).toBe(true)
+    const runtimeContexts = agent.session.events.filter(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+    expect(runtimeContexts).toHaveLength(3)
+    const last = runtimeContexts.at(-1)
+    expect(last?.type === 'user/message' && last.data.content.some(block =>
+      block.type === 'text' && block.text === finalText)).toBe(true)
+  })
+
+  it('restores the exact first-request message after a same-text replacement with a new id', async () => {
+    const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('ok')])
+    const ctx = await harness(adapter)
+    ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
+    const agent = ctx.agentLoop.create(SessionId('request-error-context-same-text-new-id'), { provider: 'mock', model: 'mock' })
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
+      const contextEvent = subject.session.events.findLast(event =>
+        event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+      if (contextEvent?.type === 'user/message') {
+        subject.session.append('user/message', createUserMessage({
+          content: contextEvent.data.content,
+          source: contextEvent.data.source,
+        }), {
+          surfaceOp: { op: 'replace', start: contextEvent.seq, end: contextEvent.seq },
+          sourceEventSeqs: [contextEvent.seq],
+        })
+      }
+      return { kind: 'retry' }
+    })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    const runtimeContexts = agent.session.events.filter(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+    expect(runtimeContexts).toHaveLength(3)
+    const ids = runtimeContexts.map(event => event.type === 'user/message' && event.data.id)
+    expect(ids[1]).not.toBe(ids[0])
+    expect(ids[2]).toBe(ids[0])
+  })
+
+  it('restores current context after pre-step pressure replacement and preserves it on retry', async () => {
+    const adapter = new MockAdapter([textResponse('first'), fail('busy', 'RATE_LIMIT'), textResponse('second')])
+    const ctx = await harness(adapter)
+    ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
+    const agent = ctx.agentLoop.create(SessionId('request-error-context-pre-step-surface-removal'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      const retained = subject.session.events.find(event =>
+        event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+      if (retained?.type === 'user/message') {
+        subject.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'pre-step replacement' }],
+          source: { kind: 'plugin', plugin: 'pre-step-owner' },
+        }), {
+          surfaceOp: { op: 'replace', start: retained.seq, end: retained.seq },
+          sourceEventSeqs: [retained.seq],
+        })
+      }
+      return next()
+    })
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
+      const retained = subject.session.events.findLast(event =>
+        event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+      if (retained?.type === 'user/message') {
+        subject.session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: 'request-error replacement' }],
+          source: { kind: 'plugin', plugin: 'request-error-owner' },
+        }), {
+          surfaceOp: { op: 'replace', start: retained.seq, end: retained.seq },
+          sourceEventSeqs: [retained.seq],
+        })
+      }
+      return { kind: 'retry' }
+    })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(3)
+    for (const request of adapter.requests.slice(1)) {
+      expect(request.messages.some(message =>
+        message.source.kind === 'plugin'
+        && message.source.plugin === '@deepseek-ai/dsh-system-prompt'
+        && message.content.some(block => block.type === 'text' && block.text.includes('Mode: read-only.')))).toBe(true)
+    }
+    const runtimeContexts = agent.session.events.filter(event =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+    expect(runtimeContexts).toHaveLength(3)
+    const restoredIds = runtimeContexts.map(event => event.type === 'user/message' && event.data.id)
+    expect(restoredIds[1]).toBe(restoredIds[0])
+    expect(restoredIds[2]).toBe(restoredIds[0])
+  })
+
   it('does not retry when the recovery listener fails before returning its action', async () => {
     const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('unused')])
     const ctx = await harness(adapter)

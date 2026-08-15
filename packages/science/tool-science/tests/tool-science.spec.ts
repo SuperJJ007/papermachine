@@ -26,6 +26,7 @@ import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
 import { isScienceSession, renderScienceProjection } from '../src/context.ts'
 import { formatRunResult, requireScienceSession, runValueFromResult } from '../src/run.ts'
+import { stateValueFromProjection } from '../src/state.ts'
 import { DirectSandbox, FakeSubprocess, createFakePythonPrefix } from './harness.ts'
 
 /** Minimal valid `ScienceProjection` fixture; callers override only what they test. */
@@ -64,6 +65,7 @@ interface SetupOptions {
   readonly withRuntime?: boolean
   readonly profileId?: string
   readonly modeRevision?: string
+  readonly stateHistoryLimit?: number
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -84,6 +86,7 @@ async function setup(options: SetupOptions = {}) {
   const fiber = await ctx.plugin(ToolScience, {
     profileId: options.profileId ?? 'fake',
     modeRevision: options.modeRevision ?? 'test-revision',
+    stateHistoryLimit: options.stateHistoryLimit ?? 2,
   })
   return { ctx, fiber }
 }
@@ -93,10 +96,11 @@ function scienceSession(ctx: Context, id: string): Session {
 }
 
 describe('config', () => {
-  it('accepts a valid profileId and modeRevision', () => {
-    expect(resolveConfig({ profileId: 'fake-1', modeRevision: 'rev.1' })).toEqual({
+  it('accepts a valid profileId, modeRevision, and stateHistoryLimit', () => {
+    expect(resolveConfig({ profileId: 'fake-1', modeRevision: 'rev.1', stateHistoryLimit: 2 })).toEqual({
       profileId: 'fake-1',
       modeRevision: 'rev.1',
+      stateHistoryLimit: 2,
     })
   })
 
@@ -106,7 +110,7 @@ describe('config', () => {
     ['-leading-dash', 'fake-1'],
     ['a'.repeat(129), 'fake-1'],
   ])('rejects invalid profileId %s', (profileId) => {
-    expect(() => resolveConfig({ profileId, modeRevision: 'rev' })).toThrow(/profileId/)
+    expect(() => resolveConfig({ profileId, modeRevision: 'rev', stateHistoryLimit: 2 })).toThrow(/profileId/)
   })
 
   it.each([
@@ -114,7 +118,12 @@ describe('config', () => {
     [' padded '],
     ['a'.repeat(129)],
   ])('rejects invalid modeRevision %s', (modeRevision) => {
-    expect(() => resolveConfig({ profileId: 'fake', modeRevision })).toThrow(/modeRevision/)
+    expect(() => resolveConfig({ profileId: 'fake', modeRevision, stateHistoryLimit: 2 })).toThrow(/modeRevision/)
+  })
+
+  it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid stateHistoryLimit %s', (stateHistoryLimit) => {
+    expect(() => resolveConfig({ profileId: 'fake', modeRevision: 'rev', stateHistoryLimit }))
+      .toThrow(/stateHistoryLimit/)
   })
 })
 
@@ -258,8 +267,9 @@ describe('renderScienceProjection', () => {
       },
     }))
     expect(text).toContain('status invalid')
-    expect(text).toContain('Environment reason: python is unavailable')
-    expect(text).toContain('Python: unavailable — missing interpreter')
+    expect(text).toContain('Python: unavailable.')
+    expect(text).not.toContain('python is unavailable')
+    expect(text).not.toContain('missing interpreter')
   })
 
   it('renders an available R interpreter with a truncated fingerprint', () => {
@@ -398,21 +408,196 @@ describe('get_science_state', () => {
     const session = scienceSession(ctx, 'science-state-unbound')
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('state-1'), name: 'get_science_state', arguments: {},
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
   })
 
-  it('returns the bounded projection after binding', async () => {
+  it('returns a sanitized bounded projection after binding', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-bound')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('state-2'), name: 'get_science_state', arguments: {},
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('"status": "applied"'))).toBe(true)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).toContain('"status": "applied"')
+    expect(text).toContain('"history"')
+    expect(text).not.toContain(root)
+    expect(text).not.toContain('configuredPrefix')
+    expect(text).not.toContain('canonicalPrefix')
+    expect(text).not.toContain('"executable"')
+    expect(text).not.toContain('executableIdentity')
+    expect(text).not.toContain('condaHistorySha256')
+  })
+
+  it.each([
+    { limit: 1, expected: ['run-3'], omitted: 2 },
+    { limit: 2, expected: ['run-2', 'run-3'], omitted: 1 },
+    { limit: 3, expected: ['run-1', 'run-2', 'run-3'], omitted: 0 },
+  ])('caps recent run history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+    const runs = ['run-1', 'run-2', 'run-3'].map((runId, index) => ({
+      runId: ScienceRunId(runId),
+      language: 'python' as const,
+      toolCallId: CallId(`call-${String(index + 1)}`),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: index + 1,
+      codeSha256: 'b'.repeat(64),
+      scratchKey: 'c'.repeat(64) as never,
+      runDirectoryRef: `runs/${runId}/`,
+      status: 'running' as const,
+    }))
+    const value = stateValueFromProjection(projectionFixture({
+      runs,
+      metrics: { runCount: 3, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+    }), limit)
+    expect(value.runs.map(run => (run as { runId: string }).runId)).toEqual(expected)
+    expect(value.history.runsOmitted).toBe(omitted)
+  })
+
+  it.each([
+    { limit: 1, expected: ['chart-3'], omitted: 2 },
+    { limit: 2, expected: ['chart-2', 'chart-3'], omitted: 1 },
+    { limit: 3, expected: ['chart-1', 'chart-2', 'chart-3'], omitted: 0 },
+  ])('caps recent chart-version history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+    const charts = ['chart-1', 'chart-2', 'chart-3'].map((chartId, index) => ({
+      chartId,
+      logicalName: chartId,
+      version: 1,
+      title: chartId,
+      attachment: { attachmentId: `attachment-${String(index + 1)}`, mediaType: 'image/png' },
+      runId: `run-${String(index + 1)}`,
+      toolCallId: `call-${String(index + 1)}`,
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      createdAt: index + 1,
+    })) as unknown as ScienceProjection['charts']
+    const value = stateValueFromProjection(projectionFixture({
+      charts,
+      metrics: { runCount: 0, successfulRunCount: 0, chartCount: 3, chartVersionCount: 3, outcomeRevision: 0 },
+    }), limit)
+    expect(value.charts.map(chart => (chart as { chartId: string }).chartId)).toEqual(expected)
+    expect(value.history.chartVersionsOmitted).toBe(omitted)
+  })
+
+  it('exposes only sanitized interpreter facts and a fingerprint preview', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 2,
+        status: 'applied',
+        python: {
+          language: 'python',
+          configuredPrefix: '/secret/prefix',
+          capability: 'available',
+          canonicalPrefix: '/secret/canonical',
+          executable: '/secret/canonical/bin/python',
+          executableIdentity: 'host-file-id',
+          languageVersion: '3.13.5',
+          condaHistorySha256: 'a'.repeat(64),
+          bindingFingerprint: 'b'.repeat(64),
+        },
+      },
+    }), 1)
+    expect(value.environment).toEqual({
+      revision: 1,
+      profileId: 'fake',
+      validatedAt: 2,
+      status: 'applied',
+      python: {
+        language: 'python', capability: 'available', languageVersion: '3.13.5', fingerprint: 'b'.repeat(12),
+      },
+    })
+    expect(JSON.stringify(value)).not.toContain('/secret')
+    expect(JSON.stringify(value)).not.toContain('host-file-id')
+  })
+
+  it.each(['Python at /secret/prefix', String.raw`Python at C:\secret\prefix`])(
+    'omits a path-bearing interpreter version %s from context and state',
+    (languageVersion) => {
+      const environment = {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 2,
+        status: 'applied' as const,
+        python: {
+          language: 'python' as const,
+          configuredPrefix: '/secret/prefix',
+          capability: 'available' as const,
+          canonicalPrefix: '/secret/canonical',
+          executable: '/secret/canonical/bin/python',
+          executableIdentity: 'host-file-id',
+          languageVersion,
+          condaHistorySha256: 'a'.repeat(64),
+          bindingFingerprint: 'b'.repeat(64),
+        },
+      }
+      const projection = projectionFixture({ environment })
+      const renderedContext = renderScienceProjection(projection)
+      const state = stateValueFromProjection(projection, 1)
+      expect(renderedContext).not.toContain(languageVersion)
+      expect(JSON.stringify(state)).not.toContain(languageVersion)
+      expect(renderedContext).toContain(`Python: available, fingerprint ${'b'.repeat(12)}.`)
+      expect(state.environment).toMatchObject({ python: { capability: 'available', fingerprint: 'b'.repeat(12) } })
+      expect((state.environment as { python?: { languageVersion?: string } }).python).not.toHaveProperty('languageVersion')
+    },
+  )
+
+  it('omits Runtime-owned free text that could disclose Host paths', () => {
+    const run = {
+      runId: ScienceRunId('failed-run'),
+      language: 'python',
+      toolCallId: CallId('failed-call'),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: 1,
+      codeSha256: 'b'.repeat(64),
+      scratchKey: 'c'.repeat(64) as never,
+      runDirectoryRef: 'runs/failed-run/',
+      status: 'failed',
+      finishedAt: 2,
+      exitCode: 1,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      signal: '/secret/runtime/signal',
+      failureCode: 'SPAWN_FAILED',
+      failureMessage: 'failed at /secret/runtime/bin/python',
+    } as const
+    const value = stateValueFromProjection(projectionFixture({
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 2,
+        status: 'invalid',
+        python: {
+          language: 'python',
+          configuredPrefix: '/secret/prefix',
+          capability: 'invalid',
+          reason: 'missing /secret/prefix/bin/python',
+        },
+        failureReason: 'python failed under /secret/prefix',
+      },
+      runs: [run],
+      metrics: { runCount: 1, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+    }), 1)
+    const rendered = JSON.stringify(value)
+    expect(rendered).not.toContain('/secret')
+    expect(rendered).not.toContain('failureMessage')
+    expect(rendered).not.toContain('failureReason')
+    expect(rendered).not.toContain('"reason"')
+    expect(rendered).not.toContain('"signal"')
   })
 
   it('rejects without an initiating Agent', async () => {
@@ -436,7 +621,7 @@ describe('run_python', () => {
     const session = await boundSession(ctx, 'science-run-empty')
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('run-1'), name: 'run_python', arguments: { code: '   ' },
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('non-empty'))).toBe(true)
@@ -448,7 +633,7 @@ describe('run_python', () => {
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('run-2'), name: 'run_python', arguments: { code: 'print(1)' },
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('request/header'))).toBe(true)
@@ -462,7 +647,7 @@ describe('run_python', () => {
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('run-3'), name: 'run_python', arguments: { code: 'print(1)' },
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no Science Runtime is mounted'))).toBe(true)
@@ -477,7 +662,7 @@ describe('run_python', () => {
     session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const result = await ctx.tools.execute({
       signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: 'print(1)' },
-      agent: fakeAgent(session) as never,
+      agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(true)

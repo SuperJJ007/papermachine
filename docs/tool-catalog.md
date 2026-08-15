@@ -1879,7 +1879,7 @@ web_search and web_fetch keep provider selection behind ctx.web so model-visible
 
 ### `get_science_state`
 
-Return the current Science session state: mode, bound environment, run history, charts, and the latest published outcome. Takes no arguments.
+Return the current Science session state: mode, sanitized bound environment, recent run and chart-version histories with omitted counts, and the latest published outcome. Takes no arguments.
 
 ```json
 {

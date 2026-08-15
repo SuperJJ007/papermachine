@@ -557,6 +557,12 @@ importers:
       '@deepseek-ai/dsh-sandbox-policy':
         specifier: workspace:^
         version: link:../packages/sandbox/sandbox-policy
+      '@deepseek-ai/dsh-science-runtime':
+        specifier: workspace:*
+        version: link:../packages/science/science-runtime
+      '@deepseek-ai/dsh-science-session':
+        specifier: workspace:*
+        version: link:../packages/science/science-session
       '@deepseek-ai/dsh-scope':
         specifier: workspace:*
         version: link:../packages/core/scope
@@ -635,6 +641,9 @@ importers:
       '@deepseek-ai/dsh-subagent-spawn-in-process':
         specifier: workspace:*
         version: link:../packages/subagent/subagent-spawn-in-process
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:*
+        version: link:../packages/subprocess/subprocess
       '@deepseek-ai/dsh-subprocess-e2b':
         specifier: workspace:*
         version: link:../packages/e2b/subprocess-e2b
@@ -692,6 +701,9 @@ importers:
       '@deepseek-ai/dsh-tool-ralph':
         specifier: workspace:*
         version: link:../packages/workflow/tool-ralph
+      '@deepseek-ai/dsh-tool-science':
+        specifier: workspace:*
+        version: link:../packages/science/tool-science
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:*
         version: link:../packages/session-query/tool-session-query

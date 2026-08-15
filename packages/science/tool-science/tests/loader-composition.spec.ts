@@ -114,6 +114,7 @@ async function boot(): Promise<Context> {
     '  config:',
     '    profileId: fake',
     '    modeRevision: test-revision',
+    '    stateHistoryLimit: 8',
     "- name: '@deepseek-ai/dsh-tool-science/invariant'",
     '',
   ].join('\n'))

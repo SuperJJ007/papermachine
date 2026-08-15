@@ -6,7 +6,7 @@
 
 ## 结果
 
-R3 产品工作在 `50d5b413e59a3425c8936717e2ee369341324774`（分支 `codex/science-v01-r3-science-tools-plan`）处被接受，位于已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` 之上三个线性提交。`git merge-base --is-ancestor dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa 50d5b413e59a3425c8936717e2ee369341324774` 成功。不存在来自 `0a940733e80d`/`e5e8b29b435f`/`8c7d5e01e387`/`0073f6e0a11c`/`27c96d8e8b24`/`fae091e1080e` 的 merge 或 cherry-pick parent。本记录与 implemented-Note 迁移在该 candidate 之上的同一个 closure commit 中落地。
+原始 R3 产品候选 `50d5b413e59a3425c8936717e2ee369341324774` 与 closure head `d1dc9f3d23cdb67f60d530db003a653fa4196194` 未通过后续深度 review。修复后的 worktree 仍基于已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa`，正等待本地 commit 与最终 exact-SHA 验收。本记录不会提升未提交的修复。
 
 ## 精确身份
 
@@ -14,7 +14,8 @@ R3 产品工作在 `50d5b413e59a3425c8936717e2ee369341324774`（分支 `codex/sc
 |---|---|
 | 官方 RC5 | `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a` |
 | 已验收 R2 head | `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` |
-| R3 产品候选 | `50d5b413e59a3425c8936717e2ee369341324774`，位于 R2 head 之上三个 commit |
+| 原始 R3 产品候选 | `50d5b413e59a3425c8936717e2ee369341324774`，位于 R2 head 之上三个 commit；因 review 修复而不再用于提升 |
+| 被 review 的 closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194`；review 失败，修复仍未提交 |
 | 提交 1 | `1cf4ef0ddd` —— `packages/core/agent-loop` 中的 generic runtime-context restoration |
 | 提交 2 | `35ae6b5399` —— `@deepseek-ai/dsh-tool-fs/read-only` subpath entry |
 | 提交 3 | `50d5b413e5` —— `@deepseek-ai/dsh-tool-science` Consumer package |
@@ -38,7 +39,8 @@ R3 产品工作在 `50d5b413e59a3425c8936717e2ee369341324774`（分支 `codex/sc
 | Cross-file duplication | `pnpm run duplication` | **FAIL —— pre-existing，确认无关。** 报告 8 组 clone pairs，全部位于本次改动未触及的文件中（`goal/goal`、`science-session`/`science-runtime` 内部、`bash-sandbox`/`pwsh-sandbox`、`gen-config-catalog.ts`）；本次改动新增的每个 `invariant.ts` 都带有既有的 `jscpd:ignore` marker，报告零个 clone |
 | Documentation | `pnpm run doc-sync`（28 个 gate）；`pnpm run lint` | PASS —— doc-sync 28/28，包含对每份被改动文档的 bilingual pairing（agent-loop README、tool-fs/fs READMEs、science/tool-science READMEs、architecture.md，以及 config/tool/event/module-graph catalogs）；lint exit 0 |
 | Agent Note lifecycle | `pnpm run verify-agent-note-format`；`pnpm run verify-agent-note-classification` | PASS —— 两次均检查了 544 个 Agent Notes |
-| Exact candidate review | 对 `50d5b413e59a3425c8936717e2ee369341324774` 处完整 R3 diff 的 fresh clean-context subagent review（Sonnet，xhigh effort） | 见下方[Review](#review) |
+| Exact candidate review | 对截至 closure head `d1dc9f3d23cdb67f60d530db003a653fa4196194` 的 R3 range 进行 fresh subagent review（GPT-5.6 sol，high effort） | FAIL —— 见下方[Review](#review) |
+| Review 修复检查 | Focused agent-loop 与 Science Consumer Vitest；选定的 keyless Science snapshot；`pnpm run typecheck` | PASS —— 未提交修复 worktree 上 14 个 agent-loop tests、48 个 Science Consumer tests、一个选定的 runnable snapshot，以及 typecheck exit 0 |
 
 ### 明确 NOT-RUN
 
@@ -46,20 +48,20 @@ Repository-wide unit suite（CI 负责 exhaustive matrix）、针对明确授权
 
 ## Review
 
-<!-- 在独立 clean-context subagent review 完成后填写。 -->
+Review 拒绝了已记录的 candidate，因为 retry restoration 可能覆盖 authoritative final `agent/pre-step` Enter batch，`get_science_state` 返回未设上限的 histories 与原始 Host environment fields，model-facing free text 可能携带 Host paths，且没有 runnable keyless snapshot 覆盖新增 schemas/results 与 filesystem read-only roster。修复会在 pre-step pressure replacement 之前捕获 exact retained fallback，在 Enter batch 之后为首次 request 与 retries 选择最终 retained value，按 message id restore，要求并测试每项 history 的 state limit，清理 model-facing environment/run/version data，并新增真实 Loader/headless snapshot，依次执行 `get_science_state` 与 `run_python`。最终 independent review 与 exact committed-SHA gates 仍待完成。
 
 ## Domain port provenance
 
-`packages/core/agent-loop` 中的 runtime-context restoration 是一次全新的 RC5 patch，参考了 recorded downstream SHAs 上的只读 behavior 与 test corrections，而不是 cherry-pick：本 candidate 新增的 retry-loop re-projection 既不存在于已验收的 R2 tree 中，也不存在于 downstream provenance commit 中——后者的 scope 早于这一精确 mechanism。`@deepseek-ai/dsh-tool-fs/read-only` entry 及其 loader-resolution behavior 是针对 RC5 的 `tool-fs` package 重新推导的，而不是从 downstream prerelease 复制；package metadata、exports 与 TypeScript project wiring 遵循 RC5 sibling-package template（version `0.1.0-rc.5`，public，MIT）。`@deepseek-ai/dsh-tool-science` 在已验收的 R1/R2 tree 上复现了 downstream Science Consumer provenance 的 behavior 与 test input；其 generated output 与 downstream Phase 3 range 失败的 whole-range acceptance 均被排除，而 real-composition test、`ScienceRunValue` 的 config-derivation，以及基于 waterfall 结果的 context replacement，都是 R3 原创，而不是 ported。
+`packages/core/agent-loop` 中的 runtime-context restoration 是一次全新的 RC5 patch，参考了 recorded downstream SHAs 上的只读 behavior 与 test corrections，而不是 cherry-pick：它的 authoritative final-Enter selection、用于 pre-request pressure compaction 的 exact retained fallback，以及 frozen first-request retry target，都不存在于已验收的 R2 tree 或 downstream provenance commit 中。`@deepseek-ai/dsh-tool-fs/read-only` entry 及其 loader-resolution behavior 是针对 RC5 的 `tool-fs` package 重新推导的，而不是从 downstream prerelease 复制；package metadata、exports 与 TypeScript project wiring 遵循 RC5 sibling-package template（version `0.1.0-rc.5`，public，MIT）。`@deepseek-ai/dsh-tool-science` 在已验收的 R1/R2 tree 上复现了 downstream Science Consumer provenance 的 behavior 与 test input；其 generated output 与 downstream Phase 3 range 失败的 whole-range acceptance 均被排除，而 real-composition test、schema-derived tool values、sanitized bounded state view、基于 waterfall 结果的 context replacement 与 runnable-example snapshot 都是 R3 原创，而不是 ported。
 
 ## Overlay inventory update
 
 | `delta_id` | 此前状态 | R3 状态 |
 |---|---|---|
-| `GEN-RUNTIME-CONTEXT` | 在 R0/R1/R2 inventory 中缺席，未作为具名 row 出现 | 在 `1cf4ef0ddd` 处 `verified` |
-| `FS-READONLY` | `deferred` | 在 `35ae6b5399` 处 `verified` |
-| `FS-READONLY-LOAD-FIX` | `deferred` | 在 `35ae6b5399` 处 `verified` |
-| `SCI-TOOLS` | 在 Runtime Context 与 filesystem read-only 被验收之前 `deferred` | 在 `50d5b413e59a3425c8936717e2ee369341324774` 处 `verified` |
+| `GEN-RUNTIME-CONTEXT` | 在 R0/R1/R2 inventory 中缺席，未作为具名 row 出现 | 修复等待最终 exact-SHA verification |
+| `FS-READONLY` | `deferred` | implementation 保留；assembled snapshot verification 等待最终 exact-SHA acceptance |
+| `FS-READONLY-LOAD-FIX` | `deferred` | implementation 保留；等待最终 exact-SHA acceptance |
+| `SCI-TOOLS` | 在 Runtime Context 与 filesystem read-only 被验收之前 `deferred` | 修复等待最终 exact-SHA verification |
 | `SCI-SESSION` / `SCI-RUNTIME` / `GEN-SESSION-REGISTRY` / `GEN-SUBPROCESS-RUNTIME-FACTS` / `GEN-SANDBOX-CLASSIFICATION` / `SCI-R-PROBE` | 在 R1/R2 中 `verified` | 不变 |
 | 其余 overlay rows | 与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) 中记录的一致 | 不变：`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER` |
 

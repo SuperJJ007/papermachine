@@ -4,18 +4,19 @@ English | [中文](README.zh.md)
 
 The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and the `get_science_state`, `run_python`, and `run_r` tools. This is the Consumer role of the Science capability seam — [`dsh-science-session`](../science-session) is its Service Definition (durable events, strict fold, invariant), and [`dsh-science-runtime`](../science-runtime) is its Service Provider (`ctx.scienceRuntime`: environment observation, private scratch, direct execution, terminal classification). This package never spawns a process, writes run source, classifies termination, manages Conda, or appends a Runtime-owned event; every operation it performs goes through `ctx.scienceRuntime`.
 
-A composition stacks, in order: `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-system-prompt`, `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-science-session` plus its `/invariant`, a host-local subprocess and sandbox provider, `@deepseek-ai/dsh-science-runtime` (configured with `dshHome` and `profiles`) plus its `/invariant`, then this package (configured with `profileId` and `modeRevision`) plus its own `/invariant`.
+A composition stacks, in order: `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-system-prompt`, `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-science-session` plus its `/invariant`, a host-local subprocess and sandbox provider, `@deepseek-ai/dsh-science-runtime` (configured with `dshHome` and `profiles`) plus its `/invariant`, then this package (configured with `profileId`, `modeRevision`, and `stateHistoryLimit`) plus its own `/invariant`.
 
 `ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, and each `run_python`/`run_r` call). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading.
 
 ## Config
 
-Both keys are required; neither has a default, an environment-discovered value, or a shipped production identity in this package.
+All three keys are required; none has a default or an environment-discovered value. This package supplies no shipped production identity or history policy.
 
 | Key | Meaning |
 |---|---|
 | `profileId` | Selects one allowlist entry in the composed `ctx.scienceRuntime`'s `profiles` config. Validated against the durable Science safe-ID grammar (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, ≤128 characters). |
 | `modeRevision` | Deployment-owned revision of the Science mode contract, persisted in every session's `ScienceModeRef`. Trimmed, non-empty, ≤128 characters. |
+| `stateHistoryLimit` | Positive safe-integer maximum applied independently to the recent runs and chart versions returned by each `get_science_state` call. |
 
 ## First model request
 
@@ -27,7 +28,7 @@ After binding, this package re-renders the `science:environment` context from th
 
 | Tool | Arguments | Behavior |
 |---|---|---|
-| `get_science_state` | none | Returns the exact session's bounded durable Science projection: mode, environment, run history, charts, and outcome. Rejects if Science mode is not yet bound. |
+| `get_science_state` | none | Returns a sanitized, bounded view of the session's durable Science projection: mode, model-safe environment facts, recent run and chart-version histories, omitted counts, outcome, and total metrics. Rejects if Science mode is not yet bound. |
 | `run_python` | `code` (non-empty string) | Runs `code` in a fresh Python interpreter process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
 | `run_r` | `code` (non-empty string) | Runs `code` in a fresh `Rscript` process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
 
@@ -59,7 +60,7 @@ Prefix-stable while the guidance text is unchanged; plugin lifecycle may invalid
 
 #### What the model sees
 
-For a `science`-preset session, the current mode revision; the bound environment's profile, revision, and status (with its failure reason when not applied); each configured interpreter's availability, version, and a truncated fingerprint, or its unavailable/invalid/drifted reason; the latest run's id, language, and status when one exists; and the fixed `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` state rule. It omits source, stdout, stderr, credentials, and absolute Host paths. Outside Science mode, or for a diagnostic assembly with no initiating Agent, it renders `''` and contributes nothing.
+For a `science`-preset session, the current mode revision; the bound environment's profile, revision, and status; each configured interpreter's capability plus its version and truncated fingerprint when available; the latest run's id, language, and status when one exists; and the fixed `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` state rule. It omits Runtime-owned free-text reasons, source, stdout, stderr, credentials, and Host path/identity fields. Outside Science mode, or for a diagnostic assembly with no initiating Agent, it renders `''` and contributes nothing.
 
 #### Token effect
 
@@ -101,11 +102,11 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-`get_science_state`'s result is the JSON-rendered bounded projection: `mode`, `environment`, `runs`, `charts`, `outcome`, `metrics`, and `lastScienceEventSeq`, exactly as [`dsh-science-session`](../science-session) replays them — no source, stdout, stderr, credentials, or absolute Host paths.
+`get_science_state` JSON-renders a sanitized, bounded view of the replayed projection: `mode`; model-safe `environment` identity, status, capabilities, versions, and fingerprint previews; the most recent `runs` with path-bearing Runtime-owned free text removed; the most recent `charts`; `outcome`; total `metrics`; `history.runsOmitted` and `history.chartVersionsOmitted`; and `lastScienceEventSeq`. It never returns configured/canonical prefixes, executable paths or identity, Conda history hashes, Runtime-owned free-text reasons, credentials, source, stdout, or stderr. Chart titles/captions and Outcome text remain model-authored durable content, not Host observation fields.
 
 #### Token effect
 
-Grows with run/chart/outcome history until compaction; unbounded by this package (the durable projection itself has no size cap in R3).
+Bounded independently to `stateHistoryLimit` recent run items and chart-version items; durable codecs bound every retained item. `metrics` and `history` report total and omitted counts without returning the omitted values.
 
 #### KV Cache effect
 

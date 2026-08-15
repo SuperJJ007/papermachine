@@ -10,18 +10,21 @@ export const MAX_ID_LENGTH = 128
 /** The same safe-ID grammar the durable Science Session domain requires. */
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-/** Plugin config. Neither field has a default; both are deployment identity. */
+/** Required deployment identity and model-facing history bound. */
 export interface Config {
   /** Runtime allowlist profile this Consumer binds on first use. */
   readonly profileId: string
   /** Deployment-owned Science mode contract revision. */
   readonly modeRevision: string
+  /** Maximum recent runs and chart versions returned by `get_science_state`, per collection. */
+  readonly stateHistoryLimit: number
 }
 
 /** Loader schema. {@link resolveConfig} validates the safe-ID grammar and bounded-trimmed rule. */
 export const Config: z<Config> = z.object({
   profileId: z.string().required(),
   modeRevision: z.string().required(),
+  stateHistoryLimit: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
 })
 
 /** Parsed immutable configuration. */
@@ -30,6 +33,8 @@ export interface ResolvedConfig {
   readonly profileId: ScienceEnvironmentProfileIdType
   /** Trimmed, non-empty, bounded mode-contract revision. */
   readonly modeRevision: string
+  /** Positive safe-integer bound applied independently to run and chart-version history. */
+  readonly stateHistoryLimit: number
 }
 
 /**
@@ -49,8 +54,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
   ) {
     throw new Error(`tool-science: modeRevision ${JSON.stringify(config.modeRevision)} is invalid`)
   }
+  if (!Number.isSafeInteger(config.stateHistoryLimit) || config.stateHistoryLimit < 1) {
+    throw new Error(`tool-science: stateHistoryLimit ${JSON.stringify(config.stateHistoryLimit)} is invalid`)
+  }
   return {
     profileId: ScienceEnvironmentProfileId(config.profileId),
     modeRevision: config.modeRevision,
+    stateHistoryLimit: config.stateHistoryLimit,
   }
 }

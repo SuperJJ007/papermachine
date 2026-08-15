@@ -4,18 +4,19 @@
 
 **面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及 `get_science_state`、`run_python` 与 `run_r` 工具。这是 Science 能力 seam 的 Consumer 角色——[`dsh-science-session`](../science-session) 是它的 Service Definition（durable event、严格 fold、invariant），[`dsh-science-runtime`](../science-runtime) 是它的 Service Provider（`ctx.scienceRuntime`：environment 观测、私有 scratch、直接执行、终态分类）。本包从不 spawn 进程、写入 run source、分类终止方式、管理 Conda，或追加 Runtime 拥有的事件；它执行的每一项操作都通过 `ctx.scienceRuntime` 完成。
 
-一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId` 与 `modeRevision` 配置）及其自身的 `/invariant`。
+一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
 `ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定，以及每次 `run_python`/`run_r` 调用）时才读取 `ctx.get('scienceRuntime')`。即使部署省略了 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰的错误拒绝，而不是悄悄降级。
 
 ## 配置
 
-两个键都是必填项；本包中都没有默认值、没有从环境发现的值，也没有已发布的生产身份。
+三个键都是必填项，均没有默认值或从环境发现的值。本包不提供已发布的生产身份或历史返回策略。
 
 | 键 | 含义 |
 |---|---|
 | `profileId` | 从已组合的 `ctx.scienceRuntime` 的 `profiles` 配置中选择一个 allowlist 条目。会按持久化 Science safe-ID grammar 校验（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符）。 |
 | `modeRevision` | 部署方拥有的 Science mode contract revision，会持久化在每个 session 的 `ScienceModeRef` 中。要求 trim 后非空且 ≤128 个字符。 |
+| `stateHistoryLimit` | 正 safe integer；每次 `get_science_state` 调用分别最多返回这么多条最近 run 与 chart version。 |
 
 ## 首次模型请求
 
@@ -27,7 +28,7 @@
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
-| `get_science_state` | 无 | 返回确切 session 的 bounded durable Science projection：mode、environment、run 历史、charts 与 outcome。如果 Science mode 尚未绑定则拒绝。 |
+| `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 chart-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
 | `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 Python 解释器进程中运行 `code`，并转发该工具调用的取消信号。 |
 | `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 `Rscript` 进程中运行 `code`，并转发该工具调用的取消信号。 |
 
@@ -59,7 +60,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status（未 applied 时附带其失败原因）；每个已配置解释器的可用性、版本与一段截断后的 fingerprint，或其 unavailable/invalid/drifted 原因；存在时最近一次 run 的 id、语言与 status；以及固定的 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 状态规则。它不包含 source、stdout、stderr、凭据或绝对 Host 路径。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
+对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；存在时最近一次 run 的 id、语言与 status；以及固定的 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 状态规则。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
 
 #### Token 影响
 
@@ -101,11 +102,11 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 #### 模型看到的内容
 
-`get_science_state` 的结果就是以 JSON 渲染出的 bounded projection：`mode`、`environment`、`runs`、`charts`、`outcome` 与 `lastScienceEventSeq`，与 [`dsh-science-session`](../science-session) 重放出的值完全一致——不包含 source、stdout、stderr、凭据或绝对 Host 路径。
+`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`；最近的 `charts`；`outcome`；总量 `metrics`；`history.runsOmitted` 与 `history.chartVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Chart title/caption 与 Outcome text 仍属于 model-authored durable content，而不是 Host observation field。
 
 #### Token 影响
 
-会随 run/chart/outcome 历史增长，直到被压缩；在 R3 中这个 durable projection 本身没有大小上限，因此不受本包约束。
+Run item 与 chart-version item 会分别限制为最近 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics` 与 `history` 会报告总量和遗漏数，但不会返回被遗漏的值。
 
 #### KV Cache 影响
 

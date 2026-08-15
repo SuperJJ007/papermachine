@@ -19,8 +19,23 @@ export const CONTEXT_NAME = 'science:environment'
 /** Prompt order for the Science context, alongside other tool-guidance entries. */
 export const CONTEXT_ORDER = 120
 
-/** Longest fingerprint prefix shown to the model. */
-const FINGERPRINT_PREVIEW = 12
+/**
+ * Render the stable fingerprint prefix shared by Science model-facing values.
+ * @param fingerprint - complete durable binding fingerprint.
+ * @returns the model-facing prefix.
+ */
+export function scienceFingerprintPreview(fingerprint: string): string {
+  return fingerprint.slice(0, 12)
+}
+
+/**
+ * Return a subprocess-observed label only when it cannot contain a Host path.
+ * @param label - subprocess-observed label.
+ * @returns the label, or `undefined` when it contains a path separator.
+ */
+export function scienceModelObservedLabel(label: string): string | undefined {
+  return /[\\/]/.test(label) ? undefined : label
+}
 
 const STATE_RULE = 'Each run_python/run_r call starts a fresh interpreter process. Reusable state belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.'
 
@@ -37,9 +52,10 @@ export function isScienceSession(session: Session): boolean {
 function renderInterpreter(label: string, binding: ScienceInterpreterBinding | undefined): string | undefined {
   if (binding === undefined) return undefined
   if (binding.capability === 'available') {
-    return `${label}: available, version ${binding.languageVersion}, fingerprint ${binding.bindingFingerprint.slice(0, FINGERPRINT_PREVIEW)}.`
+    const version = scienceModelObservedLabel(binding.languageVersion)
+    return `${label}: available${version === undefined ? '' : `, version ${version}`}, fingerprint ${scienceFingerprintPreview(binding.bindingFingerprint)}.`
   }
-  return `${label}: ${binding.capability} — ${binding.reason}`
+  return `${label}: ${binding.capability}.`
 }
 
 /**
@@ -55,9 +71,6 @@ export function renderScienceProjection(projection: ScienceProjection | null): s
     lines.push('Environment: not yet bound.')
   } else {
     lines.push(`Environment: profile "${environment.profileId}", revision ${environment.revision}, status ${environment.status}.`)
-    if (environment.status !== 'applied' && environment.failureReason !== undefined) {
-      lines.push(`Environment reason: ${environment.failureReason}`)
-    }
     const python = renderInterpreter('Python', environment.python)
     if (python !== undefined) lines.push(python)
     const r = renderInterpreter('R', environment.r)

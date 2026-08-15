@@ -49,7 +49,12 @@ type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }
 
 type PreparedStep =
   | { kind: 'reject' }
-  | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
+  | {
+    kind: 'enter'
+    messages: UserMessage[]
+    assembly: PromptAssembly
+    runtimeContextFallback: UserMessage | undefined
+  }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -231,6 +236,9 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
     const context = this.runtimeContext.project(joinContextSections(sections), sections)
+    const runtimeContextFallback = context === undefined
+      ? this.runtimeContext.retainedSnapshot()
+      : undefined
     const decision = await this.dispatch.waterfall(
       'agent/pre-step', { messages: claimed, ...position, signal },
       (): Promise<PreStepDecision> => Promise.resolve<PreStepDecision>({
@@ -239,7 +247,8 @@ export class ReactLoopAgent implements Agent {
       }),
     )
     signal.throwIfAborted()
-    return decision.kind === 'reject' ? decision : { ...decision, assembly }
+    if (decision.kind === 'reject') return decision
+    return { ...decision, assembly, runtimeContextFallback }
   }
 
   /** Open one turn before claiming its first proposed step. */
@@ -284,7 +293,7 @@ export class ReactLoopAgent implements Agent {
           }
           // max-tokens is sticky: once any step hits the ceiling, later steps
           // that complete normally must not downgrade the turn outcome.
-          const stepEnd = await this.step(decision.assembly)
+          const stepEnd = await this.step(decision.assembly, decision.runtimeContextFallback)
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
           if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -329,15 +338,23 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(assembly: PromptAssembly): Promise<StepEndReason | null> {
+  private async step(
+    assembly: PromptAssembly,
+    runtimeContextFallback: UserMessage | undefined,
+  ): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
     signal.throwIfAborted()
     const system = renderPrompt(assembly)
 
+    if (this.runtimeContext.retainedSnapshot() === undefined) {
+      this.restoreRuntimeContext(runtimeContextFallback)
+    }
+    const runtimeContext = this.runtimeContext.retainedSnapshot()
+    let retry = false
     while (true) {
-      this.restoreRuntimeContext(assembly)
+      if (retry) this.restoreRuntimeContext(runtimeContext)
       const { request, preparedCall } = await this.buildRequest(
         turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
       )
@@ -368,6 +385,7 @@ export class ReactLoopAgent implements Agent {
         if (action?.kind !== 'retry') {
           throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
         }
+        retry = true
         continue
       }
 
@@ -402,17 +420,11 @@ export class ReactLoopAgent implements Agent {
   }
 
   /**
-   * Re-render dynamic contexts from the step's retained {@link PromptAssembly}
-   * and restore the current runtime-context snapshot or clearing marker when
-   * the live Session no longer carries the value this step already
-   * published. Every {@link AssembledContext} in `assembly` already holds
-   * resolved text, so re-rendering repeats no provider I/O and never calls
-   * `systemPrompt.assemble()` again; only the comparison against the retained
-   * Session state changes between calls.
+   * Append a captured owned snapshot only when its message id is no longer
+   * retained. Each caller determines which fallback or retry target applies.
    */
-  private restoreRuntimeContext(assembly: PromptAssembly): void {
-    const sections = renderContextSections(assembly)
-    const context = this.runtimeContext.project(joinContextSections(sections), sections)
+  private restoreRuntimeContext(snapshot: UserMessage | undefined): void {
+    const context = this.runtimeContext.restore(snapshot)
     if (context !== undefined) {
       this.session.append('user/message', context, { surfaceOp: 'append' })
     }

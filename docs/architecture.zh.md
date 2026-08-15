@@ -89,7 +89,7 @@ turn/end
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
-`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。每个步骤读取插件注册的提示词片段和工具 schema。同一步骤内的重试请求会从日志重新派生模型历史，并恢复被压缩器或请求错误处理器在两次尝试之间移除的任何运行时上下文快照，而不会重复执行提示词组装（[agent-loop](../packages/core/agent-loop/README.md#loop-lifecycle-agentts)）。
+`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。每个步骤读取插件注册的提示词片段和工具 schema。对于新投影出的 runtime-context candidate，最终 Enter batch 具有权威性；但若 pressure compaction 在 waterfall 中移除了已保留且仍为当前值的 snapshot，loop 会将其恢复。首次请求的值确定后，retry 会从日志重新派生模型历史，并且仅在 request-error handler 移除该值时恢复当时精确保留的 snapshot，而不会重复执行提示词组装（[agent-loop](../packages/core/agent-loop/README.md#loop-lifecycle-agentts)）。
 
 详情见[时序图](agent-lifecycle.md)、[工具流水线](tool-execution-pipeline.md)和[取消与错误恢复](subsystems/core.md#the-agent-handle)。
 

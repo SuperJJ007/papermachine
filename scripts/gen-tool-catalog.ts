@@ -563,7 +563,11 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, and each run_python/run_r call)'],
     writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'tool/result'],
     async mount(ctx) {
-      await ctx.plugin(ToolScience, { profileId: 'catalog', modeRevision: 'catalog' })
+      await ctx.plugin(ToolScience, {
+        profileId: 'catalog',
+        modeRevision: 'catalog',
+        stateHistoryLimit: 8,
+      })
     },
     note:
       'run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject.',

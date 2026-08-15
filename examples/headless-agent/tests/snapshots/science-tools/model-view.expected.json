@@ -1,0 +1,74 @@
+{
+  "guidance": [
+    "Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process."
+  ],
+  "tools": [
+    {
+      "name": "get_science_state",
+      "description": "Return the current Science session state: mode, sanitized bound environment, recent run and chart-version histories with omitted counts, and the latest published outcome. Takes no arguments.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "run_python",
+      "description": "Run Python source in a fresh interpreter process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Non-empty source to execute."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "run_r",
+      "description": "Run R source in a fresh Rscript process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Non-empty source to execute."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    }
+  ],
+  "filesystemTools": [
+    "read"
+  ],
+  "runtimeContext": [
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nEach run_python/run_r call starts a fresh interpreter process. Reusable state belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nEach run_python/run_r call starts a fresh interpreter process. Reusable state belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR."
+  ],
+  "toolResults": [
+    {
+      "toolCallId": "science-state-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [],\n  \"charts\": [],\n  \"outcome\": null,\n  \"metrics\": {\n    \"runCount\": 0,\n    \"successfulRunCount\": 0,\n    \"chartCount\": 0,\n    \"chartVersionCount\": 0,\n    \"outcomeRevision\": 0\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"chartVersionsOmitted\": 0\n  },\n  \"lastScienceEventSeq\": 4\n}"
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-run-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "status: success exit 0\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)"
+        }
+      ]
+    }
+  ]
+}

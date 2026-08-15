@@ -6,7 +6,7 @@ Investigated on 2026-08-16 on macOS 26.5.2 (Darwin 25.5.0, arm64), Node v24.14.0
 
 ## Outcome
 
-R3 product work is accepted at `50d5b413e59a3425c8936717e2ee369341324774` on branch `codex/science-v01-r3-science-tools-plan`, three linear commits above the accepted R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa`. `git merge-base --is-ancestor dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa 50d5b413e59a3425c8936717e2ee369341324774` succeeds. No merge or cherry-pick parent from `0a940733e80d`/`e5e8b29b435f`/`8c7d5e01e387`/`0073f6e0a11c`/`27c96d8e8b24`/`fae091e1080e` is present. This record and the implemented-Note move land in one closure commit above that candidate.
+The original R3 product candidate `50d5b413e59a3425c8936717e2ee369341324774` and closure head `d1dc9f3d23cdb67f60d530db003a653fa4196194` did not pass the subsequent deep review. The repaired worktree remains based on the accepted R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` and is pending a local commit plus final exact-SHA acceptance. This record does not promote the uncommitted repair.
 
 ## Exact identities
 
@@ -14,7 +14,8 @@ R3 product work is accepted at `50d5b413e59a3425c8936717e2ee369341324774` on bra
 |---|---|
 | Official RC5 | `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a` |
 | Accepted R2 head | `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` |
-| R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774`, three commits above the R2 head |
+| Original R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774`, three commits above the R2 head; superseded for promotion by review repairs |
+| Reviewed closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194`; review failed and repairs remain uncommitted |
 | Commit 1 | `1cf4ef0ddd` — generic runtime-context restoration in `packages/core/agent-loop` |
 | Commit 2 | `35ae6b5399` — `@deepseek-ai/dsh-tool-fs/read-only` subpath entry |
 | Commit 3 | `50d5b413e5` — `@deepseek-ai/dsh-tool-science` Consumer package |
@@ -38,7 +39,8 @@ R3 product work is accepted at `50d5b413e59a3425c8936717e2ee369341324774` on bra
 | Cross-file duplication | `pnpm run duplication` | **FAIL — pre-existing, confirmed unrelated.** 8 clone pairs reported, all among files this change did not touch (`goal/goal`, `science-session`/`science-runtime` internals, `bash-sandbox`/`pwsh-sandbox`, `gen-config-catalog.ts`); every new `invariant.ts` this change adds carries the established `jscpd:ignore` markers and reports zero clones |
 | Documentation | `pnpm run doc-sync` (28 gates); `pnpm run lint` | PASS — doc-sync 28/28 including bilingual pairing for every touched document (agent-loop README, tool-fs/fs READMEs, science/tool-science READMEs, architecture.md, and the config/tool/event/module-graph catalogs); lint exit 0 |
 | Agent Note lifecycle | `pnpm run verify-agent-note-format`; `pnpm run verify-agent-note-classification` | PASS — 544 Agent Notes checked both times |
-| Exact candidate review | Fresh clean-context subagent review (Sonnet, xhigh effort) of the full R3 diff at `50d5b413e59a3425c8936717e2ee369341324774` | See [Review](#review) below |
+| Exact candidate review | Fresh subagent review (GPT-5.6 sol, high effort) of the R3 range through closure head `d1dc9f3d23cdb67f60d530db003a653fa4196194` | FAIL — see [Review](#review) below |
+| Review repair checks | Focused agent-loop and Science Consumer Vitest; selected keyless Science snapshot; `pnpm run typecheck` | PASS — 14 agent-loop tests, 48 Science Consumer tests, one selected runnable snapshot, and typecheck exit 0 on the uncommitted repair worktree |
 
 ### Explicitly NOT-RUN
 
@@ -46,20 +48,20 @@ Repository-wide unit suite (CI owns the exhaustive matrix), real Python and R Co
 
 ## Review
 
-<!-- Filled in after the independent clean-context subagent review completes. -->
+The review rejected the recorded candidate because retry restoration could override the authoritative final `agent/pre-step` Enter batch, `get_science_state` returned uncapped histories and raw Host environment fields, model-facing free text could carry Host paths, and no runnable keyless snapshot covered the new schemas and results or the filesystem read-only roster. The repair captures an exact retained fallback before pre-step pressure replacement, selects the final retained value after the Enter batch for the first request and retries, restores by message id, requires and tests a per-history state limit, sanitizes model-facing environment/run/version data, and adds a real Loader/headless snapshot that exercises `get_science_state` followed by `run_python`. Final independent review and exact committed-SHA gates remain pending.
 
 ## Domain port provenance
 
-Runtime-context restoration in `packages/core/agent-loop` is a fresh RC5 patch informed by the read-only behavior and test corrections at the recorded downstream SHAs, not a cherry-pick: the retry-loop re-projection this candidate adds does not exist in the accepted R2 tree or in the downstream provenance commit, whose scope predates this exact mechanism. The `@deepseek-ai/dsh-tool-fs/read-only` entry and its loader-resolution behavior are re-derived against the RC5 `tool-fs` package rather than copied from the downstream prerelease; package metadata, exports, and TypeScript project wiring follow the RC5 sibling-package template (version `0.1.0-rc.5`, public, MIT). `@deepseek-ai/dsh-tool-science` reproduces the downstream Science Consumer provenance's behavior and test input on the accepted R1/R2 tree; its generated output and the downstream Phase 3 range's failed whole-range acceptance are excluded, and the real-composition test, config-derivation of `ScienceRunValue`, and waterfall-result-based context replacement are R3-original rather than ported.
+Runtime-context restoration in `packages/core/agent-loop` is a fresh RC5 patch informed by the read-only behavior and test corrections at the recorded downstream SHAs, not a cherry-pick: its authoritative final-Enter selection, exact retained fallback for pre-request pressure compaction, and frozen first-request retry target do not exist in the accepted R2 tree or downstream provenance commit. The `@deepseek-ai/dsh-tool-fs/read-only` entry and its loader-resolution behavior are re-derived against the RC5 `tool-fs` package rather than copied from the downstream prerelease; package metadata, exports, and TypeScript project wiring follow the RC5 sibling-package template (version `0.1.0-rc.5`, public, MIT). `@deepseek-ai/dsh-tool-science` reproduces the downstream Science Consumer provenance's behavior and test input on the accepted R1/R2 tree; its generated output and the downstream Phase 3 range's failed whole-range acceptance are excluded, and the real-composition test, schema-derived tool values, sanitized bounded state view, waterfall-result-based context replacement, and runnable-example snapshot are R3-original rather than ported.
 
 ## Overlay inventory update
 
 | `delta_id` | Prior status | R3 status |
 |---|---|---|
-| `GEN-RUNTIME-CONTEXT` | absent from the R0/R1/R2 inventory as a named row | `verified` at `1cf4ef0ddd` |
-| `FS-READONLY` | `deferred` | `verified` at `35ae6b5399` |
-| `FS-READONLY-LOAD-FIX` | `deferred` | `verified` at `35ae6b5399` |
-| `SCI-TOOLS` | `deferred` until Runtime Context and filesystem read-only were accepted | `verified` at `50d5b413e59a3425c8936717e2ee369341324774` |
+| `GEN-RUNTIME-CONTEXT` | absent from the R0/R1/R2 inventory as a named row | repair pending final exact-SHA verification |
+| `FS-READONLY` | `deferred` | implementation retained; assembled snapshot verification pending final exact-SHA acceptance |
+| `FS-READONLY-LOAD-FIX` | `deferred` | implementation retained; pending final exact-SHA acceptance |
+| `SCI-TOOLS` | `deferred` until Runtime Context and filesystem read-only were accepted | repair pending final exact-SHA verification |
 | `SCI-SESSION` / `SCI-RUNTIME` / `GEN-SESSION-REGISTRY` / `GEN-SUBPROCESS-RUNTIME-FACTS` / `GEN-SANDBOX-CLASSIFICATION` / `SCI-R-PROBE` | `verified` in R1/R2 | unchanged |
 | Remaining overlay rows | as recorded in the [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | unchanged: `SCI-PRESET`, `SCI-CHARTS-OUTCOME`, `SCI-SETTINGS-SIDEBAR`, `DESKTOP-CARRIER` |
 

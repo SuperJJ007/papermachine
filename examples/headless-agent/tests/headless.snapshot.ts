@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
@@ -43,6 +43,9 @@ const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snaps
 // never dialed either way, because a supplied-but-unusable key fails credential
 // resolution exactly where an absent one does.
 const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
+const scienceToolsScenarioDir = join(snapshotsDir, 'science-tools')
+const scienceToolsConfigPath = fileURLToPath(new URL('../science-tools.cordis.snapshot.yml', import.meta.url))
+const scienceToolsDriver = fileURLToPath(new URL('./fixtures/science-driver.ts', import.meta.url))
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
 const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
@@ -218,7 +221,117 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
   ])
 }
 
+/** Materialize the static prefix facts consumed by the deterministic Science providers. */
+async function prepareScienceFixture(root: string): Promise<void> {
+  const prefix = join(root, 'fake-conda')
+  await Promise.all([
+    mkdir(join(prefix, 'bin'), { recursive: true }),
+    mkdir(join(prefix, 'conda-meta'), { recursive: true }),
+  ])
+  await Promise.all([
+    writeFile(join(prefix, 'bin', 'python'), '#!/bin/sh\nexit 0\n', { mode: 0o700 }),
+    writeFile(join(prefix, 'conda-meta', 'history'), '==> 2026-08-16 <==\n+python-3.13.5\n'),
+  ])
+}
+
+/** Remove host-file and wall-clock identities while retaining Science behavior. */
+function normalizeScienceValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeScienceValue)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+      if (['configuredAt', 'validatedAt', 'startedAt', 'finishedAt', 'createdAt', 'publishedAt'].includes(key)
+        && typeof item === 'number') return [key, 0]
+      if (key === 'executableIdentity' && typeof item === 'string') return [key, '<host-file-id>']
+      if (key === 'runId' && typeof item === 'string') return [key, '{{scienceRunId}}']
+      if (key === 'scratchKey' && typeof item === 'string') return [key, '<scratch-key>']
+      return [key, normalizeScienceValue(item)]
+    }))
+  }
+  if (typeof value !== 'string') return value
+  return value
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '{{scienceRunId}}')
+    .replace(/\b[0-9a-f]{64}\b/g, '<sha256>')
+    .replace(/fingerprint [0-9a-f]{12}\b/g, 'fingerprint <preview>')
+    .replace(/"fingerprint": "[0-9a-f]{12}"/g, '"fingerprint": "<preview>"')
+    .replace(/"(?:configured|validated|started|finished|created|published)At":\s*\d+/g, match => match.replace(/\d+$/, '0'))
+    .replace(/"runId":\s*"[^"]+"/g, '"runId": "{{scienceRunId}}"')
+    .replace(/"scratchKey":\s*"[^"]+"/g, '"scratchKey": "<scratch-key>"')
+}
+
+function normalizeScienceJson(content: string): string {
+  return `${JSON.stringify(normalizeScienceValue(JSON.parse(content) as unknown), undefined, 2)}\n`
+}
+
+function normalizeScienceStream(rawStdout: string, cwd: string, runtimeRoot: string): string {
+  const runIds = parseJsonl(rawStdout).flatMap((record) => {
+    if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return []
+    const event = record.event as JsonObject
+    if (event.type !== 'science/run-started') return []
+    const data = event.data as JsonObject | undefined
+    const run = data?.run as JsonObject | undefined
+    return typeof run?.runId === 'string' ? [run.runId] : []
+  })
+  const tokenized = runIds.reduce((content, runId) => content.replaceAll(runId, '{{scienceRunId}}'), rawStdout)
+  return parseJsonl(normalizeHeadlessStream(tokenized, cwd).replaceAll(runtimeRoot, '{{scienceRuntimeRoot}}'))
+    .map(record => JSON.stringify(normalizeScienceValue(record)))
+    .join('\n') + '\n'
+}
+
 describe('headless stream-json snapshots', () => {
+  it('exposes Science guidance, schemas, context, and state through a runnable keyless example', async () => {
+    let runCwd = ''
+    let modelViewSeen = false
+    const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
+    try {
+      const result = await runLoaderSmoke({
+        label: 'science tools headless stream-json snapshot',
+        tempDirPrefix: 'headless-snapshot-science-tools-',
+        binScript: scienceToolsDriver,
+        libBinScript: scienceToolsDriver,
+        configPath: scienceToolsConfigPath,
+        binArgs: [scienceToolsConfigPath, 'Inspect the current Science state.'],
+        tsconfigPath,
+        env: {
+          DSH_SNAPSHOT: 'replay',
+          DSH_SCIENCE_SNAPSHOT_ROOT: runtimeRoot,
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+        },
+        prepare: async (cwd) => {
+          runCwd = cwd
+          await prepareScienceFixture(runtimeRoot)
+        },
+        inspect: async (cwd) => {
+          const rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
+          if (rawModelView === undefined) return
+          modelViewSeen = true
+          const modelView = normalizeScienceJson(rawModelView)
+          const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
+          if (refreshing) await writeFile(modelViewExpected, modelView)
+          expect(modelView).toBe(await readFile(modelViewExpected, 'utf8'))
+          expect(modelView).not.toContain(cwd)
+          expect(modelView).not.toContain(runtimeRoot)
+          expect(modelView).not.toContain('configuredPrefix')
+          expect(modelView).not.toContain('canonicalPrefix')
+          expect(modelView).not.toContain('"executable"')
+          expect(modelView).not.toContain('executableIdentity')
+          expect(modelView).not.toContain('condaHistorySha256')
+          const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
+          expect(captured.filesystemTools).toEqual(['read'])
+        },
+      })
+
+      expect(result.stderr).toBe('')
+      if (!modelViewSeen) throw new Error(`science adapter did not capture a model request; stdout:\n${result.stdout}`)
+      const stream = normalizeScienceStream(result.stdout, runCwd, runtimeRoot)
+      const streamExpected = join(scienceToolsScenarioDir, 'stream-json.expected.jsonl')
+      if (refreshing) await writeFile(streamExpected, stream)
+      expect(stream).toBe(await readFile(streamExpected, 'utf8'))
+      expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
+    } finally {
+      await rm(runtimeRoot, { recursive: true, force: true })
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs one task through the product headless profile command', async () => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
     const result = await runLoaderSmoke({

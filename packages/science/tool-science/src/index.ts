@@ -37,7 +37,7 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   ctx.systemPrompt.section({ name: 'tool:science', order: 110, text: STATIC_GUIDANCE })
   applyScienceContext(ctx, resolved)
-  applyScienceStateTool(ctx)
+  applyScienceStateTool(ctx, resolved.stateHistoryLimit)
   applyRunTool(ctx, 'python')
   applyRunTool(ctx, 'r')
 }

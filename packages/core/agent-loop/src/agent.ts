@@ -337,6 +337,7 @@ export class ReactLoopAgent implements Agent {
     const system = renderPrompt(assembly)
 
     while (true) {
+      this.restoreRuntimeContext(assembly)
       const { request, preparedCall } = await this.buildRequest(
         turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
       )
@@ -397,6 +398,23 @@ export class ReactLoopAgent implements Agent {
         context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
       )
       return concluded ? { kind: 'completed' } : null
+    }
+  }
+
+  /**
+   * Re-render dynamic contexts from the step's retained {@link PromptAssembly}
+   * and restore the current runtime-context snapshot or clearing marker when
+   * the live Session no longer carries the value this step already
+   * published. Every {@link AssembledContext} in `assembly` already holds
+   * resolved text, so re-rendering repeats no provider I/O and never calls
+   * `systemPrompt.assemble()` again; only the comparison against the retained
+   * Session state changes between calls.
+   */
+  private restoreRuntimeContext(assembly: PromptAssembly): void {
+    const sections = renderContextSections(assembly)
+    const context = this.runtimeContext.project(joinContextSections(sections), sections)
+    if (context !== undefined) {
+      this.session.append('user/message', context, { surfaceOp: 'append' })
     }
   }
 

@@ -290,7 +290,12 @@ describe('docsPages locale routes', () => {
   it('indexes every subsystem page in both sides of the folder README', () => {
     const pages = globSync(join(repositoryRoot, 'docs/subsystems/*.md'))
       .map(page => basename(page))
-      .filter(page => !page.endsWith('.zh.md') && page !== 'README.md')
+      .filter(page => (
+        !page.endsWith('.zh.md')
+        && page !== 'README.md'
+        && page !== 'AGENTS.md'
+        && page !== 'CLAUDE.md'
+      ))
       .sort()
     expect(pages.length).toBeGreaterThan(0)
     for (const readme of ['README.md', 'README.zh.md']) {

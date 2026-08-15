@@ -1,12 +1,20 @@
 {
   "excluded": [
+    ".agents/AGENTS.md",
+    ".agents/CLAUDE.md",
     ".agents/notes/AGENTS.md",
+    ".agents/notes/CLAUDE.md",
     ".agents/notes/implemented/AGENTS.md",
     ".agents/notes/implemented/CLAUDE.md",
     "docs/AGENTS.md",
+    "docs/CLAUDE.md",
     "docs/cordis-api/inherited.md",
+    "docs/evidence/AGENTS.md",
+    "docs/evidence/CLAUDE.md",
     "docs/i18n/style-samples.md",
     "docs/i18n/terminology.md",
-    "docs/i18n/translation-prompt.md"
+    "docs/i18n/translation-prompt.md",
+    "docs/subsystems/AGENTS.md",
+    "docs/subsystems/CLAUDE.md"
   ]
 }

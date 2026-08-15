@@ -37,7 +37,7 @@ R0A 与 R0B 是两条历史互不相关的独立分支（`e5e8b29...` 与 `47f94
 | 发行家族打包（dsh） | `pnpm run release:pack --family dsh --out <worktree 外部>/npm` | PASS —— 221 个 tarball |
 | 发行家族打包（vendor） | `pnpm run release:pack --family vendor --out <worktree 外部>/npm-vendor` | PASS —— 9 个 tarball |
 | 发行家族打包（Landlock） | `pnpm --dir native/landlock-run run build:ts`，随后 `pnpm --dir native/landlock-run/packages/entry pack --pack-destination <worktree 外部>/npm-landlock` | PASS —— 1 个 tarball，`verify-entry-lib` 确认已构建的 `lib/` 存在 |
-| 已安装 CLI 身份（官方命令原文） | `pnpm run release:verify-packed-install --family dsh --from <npm> --from <npm-vendor> --from <npm-landlock>` | **FAIL —— 已诊断根因的环境阻塞，非产品/R0B 缺陷。** 经三次独立的宿主层面升级尝试后仍确定性复现（直接重试；关闭 agent 沙箱后重试；安装 CMake 后重试）。该脚本的 `npm install --omit=optional`——上游为跳过与之无关的按架构区分的 Landlock 平台包而选用——连带地也省略了 `koffi` 自身的可选预编译二进制 `@koromix/koffi-darwin-arm64`，迫使 `koffi` 通过 CMake 从源码构建；该从源码构建在本机 Mach-O/arm64 工具链上链接失败（`ld: symbol(s) not found for architecture arm64`，缺少 N-API 符号）。同一批打包 tarball 此前在 `pnpm install --frozen-lockfile` 下安装完全正常（预编译二进制被正常解析），且该 CI job 本身被定义为运行在 `ubuntu-24.04` 上，该平台不会出现此故障模式。R0 未对 `koffi`、发行工作流或任何依赖做任何变更来规避此问题 |
+| 已安装 CLI 身份（官方命令原文） | `pnpm run release:verify-packed-install --family dsh --from <npm> --from <npm-vendor> --from <npm-landlock>` | **FAIL —— 已诊断根因的环境阻塞，非产品/R0B 缺陷。** 经三次独立的宿主层面升级尝试后仍确定性复现（直接重试；关闭 agent 沙箱后重试；安装 CMake 后重试）。该脚本的 `npm install --omit=optional`——上游为跳过与之无关的按架构区分的 Landlock 平台包而选用——连带地也省略了 `koffi` 自身的可选预编译二进制 `@koromix/koffi-darwin-arm64`，迫使 `koffi` 通过 CMake 从源码构建；该从源码构建在本机 Mach-O/arm64 工具链上链接失败（`ld: symbol(s) not found for architecture arm64`，缺少 N-API 符号）。同一批打包 tarball 此前在 `pnpm install --frozen-lockfile` 下安装完全正常（预编译二进制被正常解析）。R0 未对 `koffi`、发行工作流或任何依赖做任何变更来规避此问题 |
 | 已安装 CLI 身份（改动过安装参数，同一批 tarball） | 将同样的 231 个打包 tarball 安装进另一个隔离的临时消费者目录，环境变量（`DSH_HOME`/`DSH_AGENTS_HOME`/`DSH_TELEMETRY_DISABLED`）完全一致，但不带 `--omit=optional`（673 个包，退出码 `0`）；`node <consumer>/node_modules/@deepseek-ai/dsh/lib/bin.js --version` | PASS —— 报告 `0.1.0-rc.5`，与打包身份完全一致 |
 | 打包后 Standard Web 就绪性 | 在同一改动过参数的消费者目录中，按照 `scripts/publish-npm-baseline.ts` 中确切的 PTY 探测逻辑（`POSIX_WEB_PROBE`）运行 `node <consumer>/node_modules/@deepseek-ai/dsh/lib/bin.js web --host 127.0.0.1 --port 0`：等待 `dsh web: http://127.0.0.1:`，发送 `SIGTERM`，要求退出码为 `0` | PASS —— 到达 `http://127.0.0.1:50914`，收到 `SIGTERM` 后以 `0` 退出 |
 | 受保护状态 | 重新记录每一个既有 worktree/ref（`main`、`origin/main`、治理、Phase 3、R-probe、task、Grok worktree） | PASS —— 每一个都与其入口快照完全一致；入口数值见范围记录中的受保护 worktree 表 |
@@ -45,7 +45,9 @@ R0A 与 R0B 是两条历史互不相关的独立分支（`e5e8b29...` 与 `47f94
 
 ### 验收标准缺口
 
-范围记录的验收标准将"已安装 CLI 身份"列为绑定到最小验证矩阵中该确切命令的必需 PASS 层级。该确切命令（`pnpm run release:verify-packed-install --family dsh ...`）在本机上因上述已诊断的、与本机相关的原因为 FAIL，而非因为 `<R0B_HEAD>` 的内容存在任何缺陷。上方紧邻的改动过参数的验证安装了完全相同的一批打包 tarball，并确认了该确切命令原本要证明的同一批底层事实（打包依赖图可解析，且已安装 CLI 报告预期版本）。此缺口被如实记录，而非被悄悄抹平；它也不通过修改 `koffi`、发行工作流或任何依赖来解决——R0 并未授权此类改动。
+范围记录的验收标准将"已安装 CLI 身份"列为绑定到最小验证矩阵中该确切命令的必需 PASS 层级。该确切命令（`pnpm run release:verify-packed-install --family dsh ...`）在本机上因上述已诊断的原因为 FAIL，而非因为 `<R0B_HEAD>` 的内容存在任何缺陷。上方紧邻的改动过参数的验证安装了完全相同的一批打包 tarball，并确认了打包依赖图可解析、已安装 CLI 报告预期版本——但它刻意没有带上 `--omit=optional`，因此并不能证明官方命令本身那个确切的参数组合在这批 tarball 上、在任何平台上都会成功；它只能孤立地说明：一旦允许可选依赖安装，tarball 闭包与已安装身份本身是正确的。此缺口被如实记录，而非被悄悄抹平；它也不通过修改 `koffi`、发行工作流或任何依赖来解决——R0 并未授权此类改动。
+
+`koffi` 是一个通用依赖（`packages/fs/fs-local`、`packages/host/directory-picker-native`、`packages/sandbox/sandbox-windows-acl`、`packages/session/session-persistence-jsonl`），而非仅限 Landlock 的依赖，因此同样的 `--omit=optional` 机制很可能在本工作流实际面向的 `ubuntu-24.04` runner 上，同样剥离掉 koffi 自身的 Linux 预编译二进制，迫使那里也走同一条从源码构建的路径。该构建在 Ubuntu 工具链上是否能成功，本记录并**未验证**——这里的诊断只是定位并确认了该机制在本机是可触发的，而不是说明它*仅在本机*才会触发。真实 CI 是否同样受影响是一个本次 R0 执行未解决的独立开放问题；后续的日期化证据记录，或按范围记录自身的上游 intake 机制记录一条观测，才是解决它的恰当之处，而不应在本记录中直接假定。
 
 ### 明确标记为 NOT-RUN
 

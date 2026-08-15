@@ -11,11 +11,12 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - `ctx.sessionProjections.register(definition): () => void` Register one domain's unit. Duplicate keys and invalid `stateVersion` throw; the registration is an effect on the calling fiber, so an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots — clients read that as capability absence.
 - `ctx.sessionProjections.onChanged(listener): () => void` Subscribe to the change feed: one call per unit whose state reference changed, per committed event, carrying the schema-validated view and the causing seq. Effect-tied like `register`.
 - `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` One consistent synchronous cut over every registered unit — `{ asOfSeq, values }` with `asOfSeq` = the seq of the last event every value reflects (`-1` for an empty log).
+- `ctx.sessionProjections.checkpoint(session): ProjectionCheckpoint`, `viewCheckpoint(checkpoint)`, `restoreFloor(checkpoint)`, `restore(checkpoint, events, baseSeq)` The persisted-cache write/read faces: state-level checkpoint rows, a zero-I/O view of stored rows, the tail-read floor a caller must supply, and cold restore from a checkpoint plus a stored log suffix.
 
 ### Key Types
 
 - `SessionProjectionMap` — the single merge-extensible type table for the whole chain (host unit, wire block, React hook). Values are wire-JSON whole values; rendering belongs to the slot system, never this layer.
-- `ProjectionDefinition<K, S>` — `{ key, schema, init(), apply(state, event), view(state), stateVersion }`: a state-driven computation unit of three pure synchronous functions plus declarations, never an opaque getter.
+- `ProjectionDefinition<K, S>` — `{ key, schema, checkpointStateSchema?, checkpointStateSeq?(state), init(), apply(state, event), view(state), viewChanged?(previous, next), stateVersion }`: a state-driven computation unit of three required pure synchronous functions plus declarations, never an opaque getter. The three optional members bind a unit's private state to the persisted checkpoint face: `checkpointStateSchema` admits a persisted row's state (validation-only — a transform whose output is not deeply equal to its input rejects the row), `checkpointStateSeq` requires every state the registry writes to or admits from a row to report exactly that row's outer `seq`, and `viewChanged` narrows public-change notification after `apply` already returned a different reference (it cannot turn a same-reference no-op into a change). All three are omittable; an omitting unit keeps the registry's unqualified behavior.
 
 ## Contract
 

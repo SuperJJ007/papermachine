@@ -18,6 +18,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { isDeepStrictEqual } from 'node:util'
 import type { ZodType } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 
@@ -45,6 +46,23 @@ export interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
   /** Validates the wire payload (`view` output) before it leaves the host. */
   schema: ZodType<SessionProjectionMap[K]>
   /**
+   * Admits persisted private state read back from a checkpoint row. Omitted
+   * for a unit whose state needs no admission beyond the outer row shape.
+   * Parsing is validation-only: a transform whose output is not deeply equal
+   * to its input rejects the row rather than silently migrating it.
+   */
+  checkpointStateSchema?: ZodType<S>
+  /**
+   * Extracts the committed-event watermark encoded inside private state, for
+   * a unit whose state carries its own provenance-derived watermark. When
+   * supplied, the registry requires every state it writes to or admits from
+   * a checkpoint row to report exactly that row's outer `seq`, so a
+   * valid-but-older state can never be spliced under a newer watermark.
+   * @param state - private state to extract the watermark from.
+   * @returns the committed-event seq this state was folded through.
+   */
+  checkpointStateSeq?(state: S): number
+  /**
    * State for the empty log.
    * @returns the initial state.
    */
@@ -64,6 +82,15 @@ export interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    * @returns the whole current value for this unit's key.
    */
   view(state: S): SessionProjectionMap[K]
+  /**
+   * Narrows public-change notification after `apply` already returned a
+   * different reference. It cannot turn a same-reference no-op into a
+   * change; omitted, every reference change notifies.
+   * @param previous - state before the committed event.
+   * @param next - state after the committed event (a different reference).
+   * @returns whether the change feed should notify for this transition.
+   */
+  viewChanged?(previous: S, next: S): boolean
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
@@ -121,11 +148,17 @@ export type ProjectionCheckpoint = Record<string, ProjectionCheckpointRow>
 interface ErasedDefinition {
   key: string
   schema: { parse(value: unknown): unknown }
+  checkpointStateSchema?: { safeParse(value: unknown): { success: true; data: unknown } | { success: false } }
+  checkpointStateSeq?(state: unknown): number
   init(): unknown
   apply(state: unknown, event: SessionEvent): unknown
   view(state: unknown): unknown
+  viewChanged?(previous: unknown, next: unknown): boolean
   stateVersion: number
 }
+
+/** Result of admitting one persisted checkpoint row's private state. */
+type CheckpointStateAdmission = { valid: true; state: unknown } | { valid: false }
 
 /** Per-session per-unit watermark cache row. */
 interface UnitCell {
@@ -271,12 +304,15 @@ export class SessionProjectionRegistry extends Service {
   checkpoint(session: Session): ProjectionCheckpoint {
     const rows: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
+      const def = registration.def
       const cell = this.cellFor(registration, session)
-      rows[registration.def.key] = {
-        ver: registration.def.stateVersion,
-        seq: cell.observedSeq,
-        val: structuredClone(cell.state),
+      const val = structuredClone(cell.state)
+      if (!this.checkpointStateMatchesSeq(def, val, cell.observedSeq)) {
+        throw new Error(
+          `session projection ${JSON.stringify(def.key)} private checkpoint watermark does not match seq ${String(cell.observedSeq)}`,
+        )
       }
+      rows[def.key] = { ver: def.stateVersion, seq: cell.observedSeq, val }
     }
     return rows
   }
@@ -300,10 +336,11 @@ export class SessionProjectionRegistry extends Service {
   restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined {
     let floor: number | undefined
     for (const registration of this.registrations.values()) {
-      const row = checkpoint[registration.def.key]
-      const need = row !== undefined && row.ver === registration.def.stateVersion
-        ? Math.max(row.seq + 1, 0)
-        : 0
+      const def = registration.def
+      const row = checkpoint[def.key]
+      const versionMatches = row !== undefined && row.ver === def.stateVersion
+      const admitted = versionMatches ? this.admitCheckpointState(def, row) : { valid: false as const }
+      const need = versionMatches && admitted.valid ? Math.max(row.seq + 1, 0) : 0
       floor = floor === undefined ? need : Math.min(floor, need)
     }
     return floor === undefined ? undefined : Math.max(floor - 1, 0)
@@ -325,7 +362,9 @@ export class SessionProjectionRegistry extends Service {
       const def = registration.def
       const row = checkpoint[def.key]
       if (row === undefined || row.ver !== def.stateVersion) continue
-      values[def.key] = def.schema.parse(def.view(row.val))
+      const admitted = this.admitCheckpointState(def, row)
+      if (!admitted.valid) continue
+      values[def.key] = def.schema.parse(def.view(admitted.state))
     }
     return values
   }
@@ -360,20 +399,27 @@ export class SessionProjectionRegistry extends Service {
     for (const registration of this.registrations.values()) {
       const def = registration.def
       const row = checkpoint[def.key]
-      const usable = row !== undefined
+      const coordinatesUsable = row !== undefined
         && row.ver === def.stateVersion
         && row.seq >= baseSeq - 1
         && row.seq <= endSeq
+      const admitted = coordinatesUsable ? this.admitCheckpointState(def, row) : { valid: false as const }
+      const usable = coordinatesUsable && admitted.valid
       if (!usable && baseSeq > 0) {
         throw new Error(
           `session projection ${JSON.stringify(def.key)} cannot restore from seq ${baseSeq}: `
-          + 'its checkpoint row is missing, version-mismatched, or beyond the supplied log end; re-read from seq 0',
+          + 'its checkpoint row is missing, version-mismatched, state-invalid, or beyond the supplied log end; re-read from seq 0',
         )
       }
-      let state = usable ? row.val : def.init()
+      let state = usable ? admitted.state : def.init()
       const from = usable ? row.seq : baseSeq - 1
       for (const event of events) {
         if (event.seq > from) state = def.apply(state, event)
+      }
+      if (!this.checkpointStateMatchesSeq(def, state, endSeq)) {
+        throw new Error(
+          `session projection ${JSON.stringify(def.key)} private checkpoint watermark does not match seq ${String(endSeq)}`,
+        )
       }
       values[def.key] = def.schema.parse(def.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }
@@ -382,6 +428,35 @@ export class SessionProjectionRegistry extends Service {
       snapshot: { asOfSeq: endSeq, values: values },
       checkpoint: refreshed,
     }
+  }
+
+  /**
+   * Admit one persisted checkpoint row's private state against its unit's
+   * optional `checkpointStateSchema`. A unit without the schema admits the
+   * row's `val` unchanged; the schema is validation-only, so a parse whose
+   * output is not deeply equal to its input rejects the row.
+   * @param def - active type-erased unit definition.
+   * @param row - persisted checkpoint row for this unit's key.
+   * @returns the admitted state, or rejection.
+   */
+  private admitCheckpointState(def: ErasedDefinition, row: ProjectionCheckpointRow): CheckpointStateAdmission {
+    if (def.checkpointStateSchema === undefined) return { valid: true, state: row.val }
+    const result = def.checkpointStateSchema.safeParse(row.val)
+    if (!result.success || !isDeepStrictEqual(result.data, row.val)) return { valid: false }
+    return { valid: true, state: result.data }
+  }
+
+  /**
+   * Check a domain-encoded watermark against its row seq, for a unit that
+   * supplies `checkpointStateSeq`. A unit without the extractor always
+   * matches.
+   * @param def - active type-erased unit definition.
+   * @param state - private state to check.
+   * @param seq - the seq this state is claimed to be folded through.
+   * @returns whether the extracted watermark equals `seq`.
+   */
+  private checkpointStateMatchesSeq(def: ErasedDefinition, state: unknown, seq: number): boolean {
+    return def.checkpointStateSeq === undefined || def.checkpointStateSeq(state) === seq
   }
 
   /** Fold one unit from init over `events`, producing a cell watermarked at the last folded event. */
@@ -411,11 +486,14 @@ export class SessionProjectionRegistry extends Service {
         cell = this.buildCell(registration.def, session.events.slice(0, event.seq))
         registration.cells.set(session, cell)
       }
-      const next = registration.def.apply(cell.state, event)
-      const changed = !Object.is(next, cell.state)
+      const previous = cell.state
+      const next = registration.def.apply(previous, event)
+      const changed = !Object.is(next, previous)
       cell.state = next
       cell.observedSeq = event.seq
       if (changed && this.listeners.size > 0) {
+        const publicChanged = registration.def.viewChanged?.(previous, next) ?? true
+        if (!publicChanged) continue
         const value = registration.def.schema.parse(registration.def.view(next))
         for (const listener of this.listeners) {
           listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)

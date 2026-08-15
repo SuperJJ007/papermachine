@@ -11,11 +11,12 @@
 - `ctx.sessionProjections.register(definition): () => void` 注册一个领域的单元。key 重复或 `stateVersion` 非法都会 throw；注册是挂在调用方 fiber 上的 effect，领域插件卸载后其 key（连同缓存的 cell）从后续驱动与快照中消失——客户端将其读作能力缺失。
 - `ctx.sessionProjections.onChanged(listener): () => void` 订阅变更流：每个已提交事件、每个状态引用发生变化的单元各回调一次，携带经 schema 校验的 view 与致因 seq。与 `register` 一样绑定 effect。
 - `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` 对全部已注册单元做一次一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` = 所有值共同反映到的最后一个事件的 seq（空日志为 `-1`）。
+- `ctx.sessionProjections.checkpoint(session): ProjectionCheckpoint`、`viewCheckpoint(checkpoint)`、`restoreFloor(checkpoint)`、`restore(checkpoint, events, baseSeq)` 持久缓存的写/读两面：状态级的 checkpoint 行、对已存储行的零 I/O 视图、调用方须提供的 tail-read 起点，以及从 checkpoint 加已存储日志尾段做冷恢复。
 
 ### 关键类型
 
 - `SessionProjectionMap`——整条链路唯一的 merge-extensible 类型表（host 侧单元、协议块、React 钩子）。值是协议层 JSON 全量值；渲染归 slot 体系管，永远不归本层。
-- `ProjectionDefinition<K, S>`——`{ key, schema, init(), apply(state, event), view(state), stateVersion }`：由三个纯同步函数外加若干声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。
+- `ProjectionDefinition<K, S>`——`{ key, schema, checkpointStateSchema?, checkpointStateSeq?(state), init(), apply(state, event), view(state), viewChanged?(previous, next), stateVersion }`：由三个必需的纯同步函数外加若干声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。三个可选成员把单元的私有状态绑定到持久 checkpoint 面：`checkpointStateSchema` admits 一行已持久化状态（仅做校验——若某次 parse 的输出与输入不深度相等，该行即被拒绝，而非被迁移）；`checkpointStateSeq` 要求注册表写入或从某行 admit 的每一份状态都精确报告该行的外层 `seq`；`viewChanged` 在 `apply` 已返回不同引用之后进一步收窄公开变更通知（它不能把同引用的 no-op 变成一次变更）。三者均可省略；省略的单元保持注册表原有的无条件行为。
 
 ## 约定
 

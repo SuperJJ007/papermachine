@@ -143,6 +143,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  // The independently loadable read-only entry ships beside the root plugin
+  // and invariant companion as its own bundle (see tool-fs's tsdown.config.ts).
+  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }

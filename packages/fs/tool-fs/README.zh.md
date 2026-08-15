@@ -16,6 +16,12 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `read_image` 只在持久 `ctx.attachments` 服务已挂载时注册：没有它，部署无法持久提交图像字节，工具就不会出现。执行时还要求确切路由的模型声明 `image` 输入（通过 `ctx.llm.resolveModelInfo` 从会话最新请求 header 解析，缺失时回退到 agent 选项）；未知或纯文本路由在任何文件系统 I/O 之前就得到拒绝结果，因此文本路由的持久历史不会出现图像块。
 
+### `@deepseek-ai/dsh-tool-fs/read-only`
+
+这是同一个包内第二个可独立加载的插件入口（`name`、`inject`、`apply` 均与根入口不同）。它只注册 `read` 和条件性的 `read_image`，从不注册 `write` 或 `edit`，也从不构造根入口用于这两者的可变更升级控制器。两个入口共享同一份 `Config` schema 值和同一个读取上限解析器，因此部署对二者的配置完全一致：加载一个 `ctx.fs` provider，可选地加载 `LocalAttachmentStore` 以获得持久化的 `read_image` 结果，然后加载来自 `@deepseek-ai/dsh-tool-fs/read-only` 的 `ToolFsReadOnly` 来代替根入口。
+
+该入口以同样的方式从 `cordis.yml` 中命名裸子路径标识符 `@deepseek-ai/dsh-tool-fs/read-only` 的行加载。它留在这个包中而不是拆成独立的包，是因为它的依赖、配置、实现与发布生命周期仍与完整工具共享；日后若要拆分，需要一次独立的归属权变更。
+
 ## 配置
 
 所有键均为可选；默认值是随产品交付的读取上限。
@@ -59,7 +65,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `read` 允许并发调度，因为它唯一会改变状态的操作是同步记录版本。稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此即使记录器发生竞态，系统也会安全地拒绝操作；两个变更工具仍保持互斥。见[并行工具调用 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)。
 
-包根目录只导出 Cordis 插件约定（`name`、`inject`、`Config` 和 `apply`）。读取渲染（行窗口与输出格式化）位于 `src/read-render.ts`（不依赖 Cordis，单独进行单元测试）；`src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` 是工具执行器，`src/index.ts` 负责组合。
+包根目录与 `./read-only` 各自只导出自己的 Cordis 插件约定（`name`、`inject`、`Config` 和 `apply`）；`./read-only` 从共享的 `src/config.ts` 重新导出与 `src/index.ts` 完全相同的 `Config` schema 值。读取渲染（行窗口与输出格式化）位于 `src/read-render.ts`（不依赖 Cordis，单独进行单元测试）；`src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` 是工具执行器，`src/index.ts` 组合出完整的根入口，`src/read-only.ts` 只组合 `read`/`read_image`。
 
 ## 模型体验
 

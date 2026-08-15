@@ -16,6 +16,12 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `read_image` registers only while a durable `ctx.attachments` service is mounted — without one the deployment cannot commit image bytes, so the tool never appears. Execution additionally requires the exact routed model to declare `image` input (resolved through `ctx.llm.resolveModelInfo` from the session's latest request header, falling back to agent options); an unknown or text-only route gets a refusal result before any filesystem I/O, so a text route's durable history stays free of image blocks.
 
+### `@deepseek-ai/dsh-tool-fs/read-only`
+
+A second, independently loadable plugin entry (`name`, `inject`, and `apply` distinct from the root) in this same package. It registers only `read` and conditional `read_image`; it never registers `write` or `edit`, and never constructs the mutation-escalation controller the root entry uses for them. Both entries share one `Config` schema value and one read-cap resolver, so a deployment configures the two identically: load a `ctx.fs` provider, optionally `LocalAttachmentStore` for durable `read_image` results, then `ToolFsReadOnly` from `@deepseek-ai/dsh-tool-fs/read-only` in place of the root entry.
+
+The entry loads the same way from a `cordis.yml` row naming the bare subpath specifier `@deepseek-ai/dsh-tool-fs/read-only`. It exists in this package rather than a separate one because its dependencies, configuration, implementation, and release lifecycle remain shared with the full tool; a later ownership change would be required to split it out.
+
 ## Config
 
 All keys are optional; the defaults are the shipped read caps.
@@ -59,7 +65,7 @@ When `ctx.fs.sandboxMode` reports confinement, write/edit advertise `sandbox_per
 
 `read` opts into concurrent scheduling because its only mutation is the synchronous version recorder. Recorder races fail closed when a later `write` or `edit` re-checks the version under its target lock; both mutation tools remain exclusive. See the [parallel tool-call Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md).
 
-The package root exports only the Cordis plugin contract (`name`, `inject`, `Config`, and `apply`). Read rendering (line windowing + output formatting) lives in `src/read-render.ts` (Cordis-free, independently unit-tested); `src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` are the tool executors and `src/index.ts` composes them.
+The package root and `./read-only` each export only their own Cordis plugin contract (`name`, `inject`, `Config`, and `apply`); `./read-only` re-exports the exact `Config` schema value `src/index.ts` also exports, from the shared `src/config.ts`. Read rendering (line windowing + output formatting) lives in `src/read-render.ts` (Cordis-free, independently unit-tested); `src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` are the tool executors, `src/index.ts` composes the full root entry, and `src/read-only.ts` composes only `read`/`read_image`.
 
 ## Model Experience
 

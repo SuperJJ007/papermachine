@@ -319,9 +319,11 @@ export class SessionProjectionRegistry extends Service {
 
   /**
    * The stored seq a {@link restore} tail read over `checkpoint` must start
-   * at: one event BELOW the lowest usable watermark (a row is usable when
-   * its `ver` matches the live unit's `stateVersion`; an absent or mismatched row
-   * pulls the floor to `0` — that key must refold the full log). The
+   * at: one event BELOW the lowest usable watermark. A row is usable when
+   * its `ver` matches the live unit's `stateVersion` and its private state
+   * passes the unit's optional schema and embedded-watermark admission; an
+   * absent, mismatched, or rejected row pulls the floor to `0` — that key
+   * must refold the full log. The
    * one-below anchor is load-bearing: the tail then proves how far the
    * stored log still extends, so {@link restore} can detect a log that
    * shrank below a row's watermark (crash-repair truncation) instead of
@@ -348,11 +350,11 @@ export class SessionProjectionRegistry extends Service {
 
   /**
    * View a checkpoint's rows without any log read: for every registered
-   * unit whose row's `ver` matches, serve the schema-validated
-   * `view` of the stored state; mismatched or absent rows leave their key
-   * absent (a cold or listing consumer treats it as not-yet-available and a
-   * fuller read path refolds it). The zero-I/O rung of the read ladder —
-   * values are as stale as their rows, never wrong.
+   * unit whose row's `ver` matches and whose private state passes optional
+   * admission, serve the schema-validated `view`; absent, mismatched, or
+   * rejected rows leave their key absent (a cold or listing consumer treats
+   * it as not-yet-available and a fuller read path refolds it). The zero-I/O
+   * rung of the read ladder — admitted values are as stale as their rows.
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @returns whole values per key with a usable row; empty when none.
    */
@@ -377,9 +379,10 @@ export class SessionProjectionRegistry extends Service {
    * `readFrom(id, restoreFloor(checkpoint))` and that same floor as
    * `baseSeq`; the floor's one-below anchor makes the supplied end honest,
    * so a shrunk log is detected here. A row is usable iff its
-   * `ver` matches the live unit's `stateVersion`, it does not predate `baseSeq`
-   * (`seq >= baseSeq - 1`), and it does not claim events past the
-   * supplied end (`seq <= endSeq`); an unusable row is discarded
+   * `ver` matches the live unit's `stateVersion`, its private state passes
+   * optional admission, it does not predate `baseSeq` (`seq >= baseSeq - 1`),
+   * and it does not claim events past the supplied end (`seq <= endSeq`);
+   * an unusable row is discarded
    * and its key refolds from `init` — which is only sound over the full
    * log, so a discarded row with `baseSeq > 0` throws (the caller re-reads
    * from seq 0, e.g. after a crash-repair truncation shrank the log below

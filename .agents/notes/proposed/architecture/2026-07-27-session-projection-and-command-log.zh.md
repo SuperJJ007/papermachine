@@ -34,12 +34,18 @@ export interface SessionProjectionMap {}   // the single type table for the whol
 export interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
   key: K
   schema: ZodType<SessionProjectionMap[K]>  // validates the payload before it leaves the host
+  /** Optional validation-only admission of persisted private state. */
+  checkpointStateSchema?: ZodType<S>
+  /** Optional private-state watermark that must equal the checkpoint row seq. */
+  checkpointStateSeq?(state: S): number
   /** State for the empty log. */
   init(): S
   /** Pure transition: previous state + one event → next state. The framework drives it; domains hold no subscriptions. */
   apply(state: S, event: SessionEvent): S
   /** State → wire payload (the read-side projection). */
   view(state: S): SessionProjectionMap[K]
+  /** Optional public-change test after apply returns a different state reference. */
+  viewChanged?(previous: S, next: S): boolean
   /** State must be plain JSON (persisted-cache precondition); bump to invalidate persisted rows. */
   stateVersion: number
 }
@@ -51,7 +57,7 @@ declare module 'cordis' {
 
 - 值就是协议层的 JSON 载荷；同一张类型表经 `import type` 端到端贯通（host 侧单元、协议块、React 钩子）——没有第二张 DTO 表，也没有独立的客户端「views」表。值如何*渲染*是 slot 体系的事，永远不归投影层管。
 - **host 是投影唯一的计算地点。** 框架主动驱动（eager drive）每个已注册的单元：每个已提交的会话事件都经过 `apply`；对某事件不感兴趣的单元返回同一个状态引用，而引用未变（`Object.is`）就不产生任何下游工作。客户端从不折叠领域事件——它们收到的是成品值（基线块 + 下文的推送帧）。这消除了双重实现陷阱（plan 的双事件折叠只在 host 写一遍），也消除了一切客户端侧领域代码。
-- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元的状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`），并在后续阶段进入 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**：形如 `(sessionId, key, ver, seq, val)` 的行（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。一行永远不会是错的，至多是陈旧的——其 `seq` 精确说明陈旧到哪。冷读与活读共用同一套读取配方：取缓存状态（或 `init()`），只对超出其水位线的事件做正向 `apply`，再对结果做 `view`。冷列表（跨全部 workspace 列出每个会话的标题）变成一次索引读，至多外加一小段尾部回放；session-persistence seam 在同一后续阶段为这段尾部补一个按 seq 起读的原语。写入策略：节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长一些，绝不会是值出错。
+- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`）以及 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**中，缓存行为 `(sessionId, key, ver, seq, val)`（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。持久行只是捷径而非权威：版本与日志坐标必须匹配，单元还可增加仅用于校验的私有状态 admission 和内嵌水位线 admission。缺失、不匹配或被拒绝的行要求从完整日志重新折叠；被接受的行仍可能陈旧，其 `seq` 精确说明陈旧到哪。冷读与活读共用同一套读取配方：取已通过 admission 的缓存状态（或 `init()`），只对超出其水位线的事件做正向 `apply`，再调用 `view`。冷列表使用缓存索引，打开会话时则通过尾部回放刷新。写入策略是节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长，而不是从不可用行派生出值。
 - 领域的输入事件集由领域自己选择：todos 只折叠 `todo/write`；plan 折叠 `plan/mode` 外加它自己的 `/plan` `command/run` 记录（见 plan 一节）；goal 折叠 `goal/change` 元数据；会话标题折叠其标题事件（顺带下线专设的 `session/title` 帧与客户端的标题快照表——这是该 seam 收编的第四个手工投影）。
 - 注册是 effect（disposer 随 fiber 走）：插件卸载后其 key 从后续响应中消失，客户端将其读作能力缺失——HMR（热模块替换）语义随之自动成立。key 重复直接 throw。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 - 该包拥有 `./invariant`（每个被服务的 key 都有一条存活的注册）。

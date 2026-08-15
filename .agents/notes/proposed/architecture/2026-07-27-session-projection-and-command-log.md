@@ -34,12 +34,18 @@ export interface SessionProjectionMap {}   // the single type table for the whol
 export interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
   key: K
   schema: ZodType<SessionProjectionMap[K]>  // validates the payload before it leaves the host
+  /** Optional validation-only admission of persisted private state. */
+  checkpointStateSchema?: ZodType<S>
+  /** Optional private-state watermark that must equal the checkpoint row seq. */
+  checkpointStateSeq?(state: S): number
   /** State for the empty log. */
   init(): S
   /** Pure transition: previous state + one event → next state. The framework drives it; domains hold no subscriptions. */
   apply(state: S, event: SessionEvent): S
   /** State → wire payload (the read-side projection). */
   view(state: S): SessionProjectionMap[K]
+  /** Optional public-change test after apply returns a different state reference. */
+  viewChanged?(previous: S, next: S): boolean
   /** State must be plain JSON (persisted-cache precondition); bump to invalidate persisted rows. */
   stateVersion: number
 }
@@ -51,7 +57,7 @@ declare module 'cordis' {
 
 - Values are wire JSON payloads; the same map typed end to end (host unit, wire block, React hook) via `import type` — no second DTO table, no separate client-side "views" map. How a value is *rendered* is the slot system's business, never the projection layer's.
 - **The host is the only place a projection is computed.** The framework drives every registered unit forward eagerly: each committed session event passes through `apply`; a unit uninterested in an event returns the same state reference, and an unchanged reference (`Object.is`) produces no downstream work. Clients never fold domain events — they receive finished values (baseline block + push frame below). This removes the double-implementation trap (plan's two-event fold written once, on the host) and any client-side domain code.
-- **State is always computed, never logged.** The log holds events only; the unit's state lives in the framework's per-session watermark cache (`{state, observedSeq}` per unit) and, in a later phase, in a **persisted projection cache** on the domain-KV storage seam: rows of `(sessionId, key, ver, seq, val)` (`ver` = the unit's `stateVersion`, `seq` = the watermark, `val` = the state JSON). A row is never wrong, only possibly stale — its `seq` says exactly how stale. The one read recipe, cold and live alike: take the cached state (or `init()`), forward-apply only the events past its watermark, `view` the result. Cold listings (every session's title across all workspaces) become an index read plus, at worst, a short tail replay; the session-persistence seam grows a read-from-seq primitive for that tail in the same later phase. Write policy: throttled (count/interval, configurable) plus two mandatory points — `turn/end` and detach (the live-to-cold moment). A crash between writes costs a longer tail replay, never a wrong value.
+- **State is always computed, never logged.** The log holds events only; the unit's state lives in the framework's per-session watermark cache (`{state, observedSeq}` per unit) and in a **persisted projection cache** on the domain-KV storage seam: rows of `(sessionId, key, ver, seq, val)` (`ver` = the unit's `stateVersion`, `seq` = the watermark, `val` = the state JSON). A persisted row is a shortcut, never authority: version and log coordinates must match, and a unit may add validation-only private-state and embedded-watermark admission. An absent, mismatched, or rejected row requires a full-log refold; an admitted row may be stale, and its `seq` says exactly how stale. The one read recipe, cold and live alike, takes admitted cached state (or `init()`), forward-applies only events past its watermark, then calls `view`. Cold listings use the cached index, while opening a session refreshes through tail replay. Write policy is throttled (count/interval, configurable) plus two mandatory points — `turn/end` and detach (the live-to-cold moment). A crash between writes costs a longer tail replay, not a value derived from an unusable row.
 - A domain's input event set is its own choice: todos folds `todo/write` alone; plan folds `plan/mode` plus its own `/plan` `command/run` records (see the plan section); goal folds `goal/change` metadata; session title folds its title events (retiring the bespoke `session/title` frame and the client's title-snapshot map — the fourth hand-rolled projection this seam absorbs).
 - Registration is an effect (disposer with the fiber): an unloaded plugin's key disappears from subsequent responses and the client reads it as capability absence — HMR semantics for free. Duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 - The package owns `./invariant` (every served key has a live registration).

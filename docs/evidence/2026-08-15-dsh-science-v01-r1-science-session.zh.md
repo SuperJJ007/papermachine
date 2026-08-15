@@ -31,7 +31,11 @@ R1 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a`（分支 `codex/science-v01-r1
 | Hygiene（逐项子检查） | `knip`、`constraints`、`verify-dsh-package-licenses`、`verify-package-invariants`、`verify-cordis-config`、`verify-node-next-types`、`verify-runtime-closure`、`verify-vendored-links` | 逐项单独运行，均 PASS |
 | Hygiene（`rescope-vendor:check`） | `pnpm run rescope-vendor:check` | **FAIL —— 已确认为与本变更无关的既有问题。** 在未修改的 plan-base 树上（先 `git stash` 再重跑）复现出完全相同的 26 条问题清单，分布在 `packages/extensions/*`、`docs/subsystems/extensions.*` 等本变更从未触碰的路径上。`hygiene` 复合脚本因 `&&` 在第一个子检查处短路，因此上面每个后续子检查都单独运行以获得真实信号 |
 | 文档 | `pnpm run doc-sync`；`pnpm run lint` | PASS —— doc-sync 28/28 个 gate；lint 退出码 0 |
-| 精确候选评审 | 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a` 处进行的全新 `sonnet` 评审，提供 scope note、精确 diff 与对每个声明数字的独立重跑指示 | PASS —— 从零独立重新推导了本记录中的每一个数字（对全部 17+11 个移植文件与 `omdsh-dev/dsh-science@e5e8b29` 做了 blob 哈希比对，确认除已记录的 `definitionToken` 移除之外逐字节一致；自行重跑了完整的测试/覆盖率/回归/typecheck/doc-sync/hygiene/rescope-vendor 命令并得到相同数字；对水位线 admission 修复做了手工追踪以核实其正确性，而非仅凭测试变绿）。在被评审的提交本身中未发现任何缺陷。两点说明：（1）为获得干净的 `doc-sync` 结果，需要对该确切 SHA 做一次隔离的 detached checkout，因为本 worktree 在评审期间还放着一份未追踪、尚未完成的本记录副本（缺少其 `.i18n.yaml`），与被评审的提交并存——这是评审期间的 worktree 卫生问题，而非 `741ec08af3` 自身的缺陷，已通过下方补全本记录的配对关系解决；（2）`packages/science/science-session/tsconfig.json` 的 TS project `references` 列表与下游源码也存在差异（去掉了 `vendor/cosmokit`——RC5 的同级包并不依赖它），这是机械上必需的改动，并已被 `typecheck` 通过覆盖，但提交信息中按文件范围限定的适配说明未提及它，此处予以更正 |
+| 精确候选评审 | 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a` 处进行的全新 `sonnet` 评审，提供 scope note、精确 diff 与独立重跑指示 | PASS —— 独立重跑测试、覆盖率、回归、typecheck、doc-sync、hygiene 与 rescope-vendor 命令并复现了记录结果；blob 哈希比对确认 17 个已复制源码文件与 11 个测试文件一致；手工追踪水位线 admission 后未发现缺陷。由于源码 worktree 中有一份未追踪且未完成的本证据记录副本，评审使用了精确 detached checkout；该副本不影响 `741ec08af3`。评审还识别出依据 RC5 推导的 `tsconfig.json` references 是下方记录的第二处适配。源码行数更正见本表下方 |
+
+### 更正
+
+精确候选评审确认了命令结果与 blob 身份，但没有正确重新推导源码行数。下方更正后的树清单仅取代该项计数；候选 SHA、逐字节一致结论、适配项与验证结果均不变。
 
 ### 明确标记为 NOT-RUN
 
@@ -39,7 +43,7 @@ R1 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a`（分支 `codex/science-v01-r1
 
 ## 领域移植溯源
 
-`packages/science/science-session/src/*.ts` 的全部 17 个文件（2101 行）与 `tests/*.ts` 的全部 11 个文件（2683 行），均从 `omdsh-dev/dsh-science@e5e8b29` 的 `packages/science/science-session` 完整读取后按原样直接复制文件，未做修改（评审期间已独立做 blob 哈希比对确认逐字节一致），因为它们都不涉及下游 session-projection 重构中被排除的部分（`definitionToken`、owner-aware 的 HMR 接管、callback containment、prototype-key hardening、文件拆分，或持久化/查询/生命周期相关改动）——复制前已逐一读取确认。存在两处适配，均在被复制的 17+11 个文件之外：`src/index.ts` 的 `ctx.sessionProjections.register(...)` 调用去掉了 `definitionToken` 字段，因为 RC5 更简单的 `ProjectionDefinition` 并未声明该字段；`tsconfig.json` 的 TS project `references` 列表是依据 RC5 重新推导而成、而非直接复制，去掉了 `vendor/cosmokit`（RC5 同级包并不共享此依赖），并指向 RC5 实际的包布局。`package.json` 与两份 README 均按 R1 note 的要求，从 RC5 同级包模板出发刻意重写，而非直接复制。
+对原记录的更正：该树包含 18 个 `packages/science/science-session/src/*.ts` 文件（2098 行）。排除经过适配的 `src/index.ts` 后，余下 17 个源码文件（2032 行）与 `omdsh-dev/dsh-science@e5e8b29` 逐字节一致；全部 11 个 `tests/*.ts` 文件（2683 行）也逐字节一致，因此逐字节一致部分共 4715 行，源码与测试合计共 4781 行。这 17 个已复制源码文件与 11 个测试均不涉及下游 session-projection 重构中被排除的部分（`definitionToken`、owner-aware 的 HMR 接管、callback containment、prototype-key hardening、文件拆分，或持久化/查询/生命周期相关改动）。17+11 个相同文件之外有两处适配：`src/index.ts` 从 `ctx.sessionProjections.register(...)` 中去掉 `definitionToken` 字段，因为 RC5 更简单的 `ProjectionDefinition` 未声明它；`tsconfig.json` 使用依据 RC5 推导的 TypeScript project `references`，去掉 `vendor/cosmokit` 并指向 RC5 的包布局。`package.json` 与两份 README 均从 RC5 同级包模板出发重写，而非直接复制。
 
 `packages/session/session-projection/src/index.ts` 是被扩展，而非被替换：RC5 现有的单文件 `SessionProjectionRegistry`（428 行：`register`、`onChanged`、`snapshot`、`checkpoint`、`restoreFloor`、`viewCheckpoint`、`restore`、`drive`）新增了三个可选的 `ProjectionDefinition` 成员，并恰好在 R1 scope note 指定的五个集成点（checkpoint 创建、零 I/O checkpoint 视图、restore-floor 选择、冷恢复、实时通知）应用它们——这些逻辑是针对 RC5 自身代码与约定重新推导而成，而非从下游那个文件拆分、感知 HMR 的六文件 registry 实现中复制而来。
 
@@ -59,7 +63,3 @@ R1 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a`（分支 `codex/science-v01-r1
 - `packages/extensions/tool-cordis/src/api-catalog.ts` 的改动是 `gen-cordis-catalog` 机械再生成的结果，反映了 Cordis catalog 中新的 `ProjectionDefinition` 形状；它不是手写改动，除确认其确为 generator 输出外未做逐行单独评审。
 - `rescope-vendor:check` 既有的 26 条问题缺口仍未解决；R1 既未修复也未扩大该缺口，对其应在何时被处理不表态。
 - Science Runtime、工具、preset、图表/Outcome、设置/侧边栏、客户端 UI 与 Desktop，均与 R0 closure overlay 清单中记录的状态完全一致——`not-started` 或 `deferred`，不受 R1 影响。
-
-## 唯一下一步
-
-唯一的下一项实现是 Science Runtime：在 `741ec08af3163475f55ffda3fb6188a801e3ff1a` 之上，将 `ctx.scienceRuntime` 与一个 host-local 的 `ctx.subprocess`、一个完整的 `ctx.sandbox`，以及已接受的 Science Session invariant 组合起来。其余每一条 overlay 行继续保持暂缓。

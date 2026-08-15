@@ -432,17 +432,24 @@ export class SessionProjectionRegistry extends Service {
 
   /**
    * Admit one persisted checkpoint row's private state against its unit's
-   * optional `checkpointStateSchema`. A unit without the schema admits the
-   * row's `val` unchanged; the schema is validation-only, so a parse whose
-   * output is not deeply equal to its input rejects the row.
+   * optional `checkpointStateSchema` and `checkpointStateSeq`. A unit without
+   * the schema admits the row's `val` unchanged; the schema is
+   * validation-only, so a parse whose output is not deeply equal to its
+   * input rejects the row. A unit that also supplies `checkpointStateSeq`
+   * additionally requires the admitted state's own encoded watermark to
+   * equal the row's outer `seq`, so a valid-but-differently-watermarked
+   * state can never be served under this row's seq.
    * @param def - active type-erased unit definition.
    * @param row - persisted checkpoint row for this unit's key.
    * @returns the admitted state, or rejection.
    */
   private admitCheckpointState(def: ErasedDefinition, row: ProjectionCheckpointRow): CheckpointStateAdmission {
-    if (def.checkpointStateSchema === undefined) return { valid: true, state: row.val }
+    if (def.checkpointStateSchema === undefined) {
+      return this.checkpointStateMatchesSeq(def, row.val, row.seq) ? { valid: true, state: row.val } : { valid: false }
+    }
     const result = def.checkpointStateSchema.safeParse(row.val)
     if (!result.success || !isDeepStrictEqual(result.data, row.val)) return { valid: false }
+    if (!this.checkpointStateMatchesSeq(def, result.data, row.seq)) return { valid: false }
     return { valid: true, state: result.data }
   }
 

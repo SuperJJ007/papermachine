@@ -25,6 +25,23 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
   /** Validates the wire payload (`view` output) before it leaves the host. */
   schema: ZodType<SessionProjectionMap[K]>
   /**
+   * Admits persisted private state read back from a checkpoint row. Omitted
+   * for a unit whose state needs no admission beyond the outer row shape.
+   * Parsing is validation-only: a transform whose output is not deeply equal
+   * to its input rejects the row rather than silently migrating it.
+   */
+  checkpointStateSchema?: ZodType<S>
+  /**
+   * Extracts the committed-event watermark encoded inside private state, for
+   * a unit whose state carries its own provenance-derived watermark. When
+   * supplied, the registry requires every state it writes to or admits from
+   * a checkpoint row to report exactly that row's outer `seq`, so a
+   * valid-but-older state can never be spliced under a newer watermark.
+   * @param state - private state to extract the watermark from.
+   * @returns the committed-event seq this state was folded through.
+   */
+  checkpointStateSeq?(state: S): number
+  /**
    * State for the empty log.
    * @returns the initial state.
    */
@@ -44,6 +61,15 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    * @returns the whole current value for this unit's key.
    */
   view(state: S): SessionProjectionMap[K]
+  /**
+   * Narrows public-change notification after `apply` already returned a
+   * different reference. It cannot turn a same-reference no-op into a
+   * change; omitted, every reference change notifies.
+   * @param previous - state before the committed event.
+   * @param next - state after the committed event (a different reference).
+   * @returns whether the change feed should notify for this transition.
+   */
+  viewChanged?(previous: S, next: S): boolean
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
@@ -258,5 +284,5 @@ restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseS
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:171`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:204`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

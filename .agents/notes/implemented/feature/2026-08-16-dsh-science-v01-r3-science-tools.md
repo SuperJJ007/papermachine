@@ -12,7 +12,7 @@ The downstream Phase 3 candidate contained useful provenance for request-context
 
 ## Decision
 
-R3 adds three ordered results to the accepted R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa`: authoritative runtime-context selection with restoration across pressure compaction and request retry, the `@deepseek-ai/dsh-tool-fs/read-only` plugin entry, and the new `@deepseek-ai/dsh-tool-science` Consumer. The reviewed repair adds a keyless runnable-example snapshot and updates the test-only real application composition; final closure requires a local repair commit and exact-candidate acceptance. R3 does not add a built-in Science preset or any shipped Host composition row.
+R3 adds three ordered results to the accepted R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa`: authoritative runtime-context selection with restoration across pressure compaction and request retry, the `@deepseek-ai/dsh-tool-fs/read-only` plugin entry, and the new `@deepseek-ai/dsh-tool-science` Consumer. The reviewed repair adds a keyless runnable-example snapshot and updates the test-only real application composition; the accepted repaired candidate is `9a668331bd54c0d267d982927b2c5f77db6147bc`. R3 does not add a built-in Science preset or any shipped Host composition row.
 
 The Session log remains the sole durable Science authority. `@deepseek-ai/dsh-tool-science` appends the one-time mode binding, asks `ctx.scienceRuntime` to append environment and run facts, replays `@deepseek-ai/dsh-science-session`, and registers model-facing prompt and tool contributions. It never spawns a process, writes run source, classifies termination, manages Conda, or appends Runtime-owned events.
 
@@ -27,7 +27,8 @@ The Session log remains the sole durable Science authority. `@deepseek-ai/dsh-to
 | Science Consumer provenance | `omdsh-dev/dsh-science@27c96d8e8b2431814fe70a2e94fe8feeaf207b63` | Package behavior and test input; generated output and failed Phase 3 acceptance are excluded |
 | Rejected whole-range candidate | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01` | Negative scope evidence only; its preset, review verdict, and check results are not R3 inputs |
 | Original R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774` | Three linear commits above the R2 head; superseded for promotion by review repairs |
-| Reviewed closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review failed; the repair candidate is pending a local commit and final exact-SHA acceptance |
+| Reviewed closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review failed; superseded for promotion by the repaired candidate |
+| Accepted repaired R3 candidate | `9a668331bd54c0d267d982927b2c5f77db6147bc` | Six linear commits above the R2 head; passed final independent review and exact-SHA gates |
 
 The [R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md#complete-overlay-inventory) owns the source identities and dependency order. The [R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.md) owns durable Science event and replay semantics. The [R2 Science Runtime decision](2026-08-15-dsh-science-v01-r2-science-runtime.md) owns environment/run operations, process lifecycle, confinement, and real-runtime evidence meaning. The [dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md) owns volatile command output and platform facts.
 
@@ -45,7 +46,7 @@ The [R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-
 | OUT | Later Science product work | Charts, chart save tools, Outcome publication, persistent kernels, package/environment management, settings, sidebar, Details UI, client rendering, and Desktop |
 | OUT | Distribution and migration | RC6 or latest-upstream migration, installer, signing, notarization, Authenticode, tag, npm publication, GitHub release, and release-readiness claims |
 
-The original implementation slices landed as separate commits: `1cf4ef0ddd` (runtime-context restoration), `35ae6b5399` (filesystem read-only entry), and `50d5b413e5` (Science Consumer). Review repairs remain uncommitted. R3 stops after final closure; the next proposed slice is the built-in Science preset and its shipped CLI/Web composition.
+The original implementation slices landed as separate commits: `1cf4ef0ddd` (runtime-context restoration), `35ae6b5399` (filesystem read-only entry), and `50d5b413e5` (Science Consumer). Review repairs landed as `be46f69b6e` (review findings) and `9a668331bd` (sanitization branch coverage). R3 stops after final closure; the next proposed slice is the built-in Science preset and its shipped CLI/Web composition.
 
 ### Generic runtime-context restoration
 
@@ -95,7 +96,7 @@ The package's invariant companion registers an explained empty installer because
 
 ### Verification and closure
 
-R3 source evidence includes focused per-file 100% coverage for changed Core, filesystem, and Science source; adjacent package tests for shared behavior; typecheck; build; package invariants; documentation synchronization (including bilingual pairing for every touched English document); lint; and whitespace checks. Package/export changes additionally passed publint, NodeNext consumer types, the affected hygiene checks, and plain-Node built-root/subpath smokes.
+R3 source evidence includes focused per-file 100% coverage for filesystem and Science source and every changed Core restoration path; the evidence record discloses the pre-existing Core `runMaintenance` guard that remains outside the focused suite. Adjacent package tests, typecheck, build, package invariants, documentation synchronization, lint, whitespace, publint, NodeNext consumer types, affected hygiene checks, and plain-Node built-root/subpath smokes cover the remaining accepted surfaces.
 
 The product-visible Consumer has two assembled checks. `packages/science/tool-science/tests/loader-composition.spec.ts` boots a test-only `cordis.yml` through the Loader with the real agent loop, Session store, Science Session invariant, Science Runtime, persistence, tool pipeline, and Consumer; it covers first-request context, durable ordering, the three schemas, run execution, resume without duplicate binding, and a Standard-session negative path. The keyless runnable example `examples/headless-agent/science-tools.cordis.snapshot.yml` additionally snapshots the actual model-facing guidance, Science schemas, sanitized bounded state result, structured durable run terminal, rendered `run_python` tool result, and durable Science event ordering. Its same real Loader request exposes only the filesystem `read` roster from `@deepseek-ai/dsh-tool-fs/read-only`, not `write` or `edit`.
 

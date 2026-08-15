@@ -12,7 +12,7 @@ Downstream Phase 3 candidate 为 request-context restoration、filesystem read-o
 
 ## 决策
 
-R3 向已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` 依次增加三项结果：遵守 authoritative pre-step selection 且跨 pressure compaction 与 request retry 恢复 runtime context、`@deepseek-ai/dsh-tool-fs/read-only` plugin entry，以及新的 `@deepseek-ai/dsh-tool-science` Consumer。Review 修复增加 keyless runnable-example snapshot 并更新 test-only real application composition；最终 closure 还需要本地 repair commit 与 exact-candidate acceptance。R3 不增加 built-in Science preset 或任何 shipped Host composition row。
+R3 向已验收 R2 head `dba4c1cdaaed209c8996e1a1bebca9b38c62d8aa` 依次增加三项结果：遵守 authoritative pre-step selection 且跨 pressure compaction 与 request retry 恢复 runtime context、`@deepseek-ai/dsh-tool-fs/read-only` plugin entry，以及新的 `@deepseek-ai/dsh-tool-science` Consumer。Review 修复增加 keyless runnable-example snapshot 并更新 test-only real application composition；已验收的修复候选为 `9a668331bd54c0d267d982927b2c5f77db6147bc`。R3 不增加 built-in Science preset 或任何 shipped Host composition row。
 
 Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-tool-science` 追加一次性 mode binding，请求 `ctx.scienceRuntime` 追加 environment/run facts，replay `@deepseek-ai/dsh-science-session`，并注册 model-facing prompt 与 tool contributions。它绝不 spawn process、写入 run source、分类 termination、管理 Conda，或追加 Runtime-owned events。
 
@@ -27,7 +27,8 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | Science Consumer provenance | `omdsh-dev/dsh-science@27c96d8e8b2431814fe70a2e94fe8feeaf207b63` | Package behavior 与 test input；generated output 和失败的 Phase 3 acceptance 均排除 |
 | 被拒绝的 whole-range candidate | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01` | 仅作为 negative scope evidence；其 preset、review verdict 与 check results 不是 R3 input |
 | 原始 R3 product candidate | `50d5b413e59a3425c8936717e2ee369341324774` | 在 R2 head 之上有三个线性 commit；因 review 修复而不再用于提升 |
-| 被 review 的 closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review 失败；repair candidate 正等待本地 commit 与最终 exact-SHA acceptance |
+| 被 review 的 closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review 失败；已被修复后的 candidate 取代，不再用于提升 |
+| 已验收的修复后 R3 candidate | `9a668331bd54c0d267d982927b2c5f77db6147bc` | 位于 R2 head 之上六个线性 commit；通过最终 independent review 与 exact-SHA gates |
 
 [R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md#complete-overlay-inventory)负责 source identities 与 dependency order。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.md)负责 durable Science event 与 replay semantics。[R2 Science Runtime decision](2026-08-15-dsh-science-v01-r2-science-runtime.md)负责 environment/run operations、process lifecycle、confinement 与 real-runtime evidence meaning。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md)负责易变的 command output 与 platform facts。
 
@@ -45,7 +46,7 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | OUT | 后续 Science product work | Charts、chart save tools、Outcome publication、persistent kernels、package/environment management、settings、sidebar、Details UI、client rendering 与 Desktop |
 | OUT | Distribution 与 migration | RC6 或 latest-upstream migration、installer、signing、notarization、Authenticode、tag、npm publication、GitHub release 与 release-readiness claims |
 
-原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复仍未提交。R3 在最终 closure 后停止；下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition。
+原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复分别落在 `be46f69b6e`（review findings）与 `9a668331bd`（sanitization branch coverage）。R3 在最终 closure 后停止；下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition。
 
 ### Generic runtime-context restoration
 
@@ -95,7 +96,7 @@ Package 的 invariant companion 注册带说明的 empty installer，因为 Scie
 
 ### 验证与关闭
 
-R3 source evidence 包括 changed Core、filesystem 与 Science source 的 focused per-file 100% coverage；shared behavior 的 adjacent package tests；typecheck；build；package invariants；documentation synchronization（包括每份被改动的英文文档的 bilingual pairing）；lint；以及 whitespace checks。Package/export changes 还通过了 publint、NodeNext consumer types、受影响的 hygiene checks，以及 plain-Node built-root/subpath smokes。
+R3 source evidence 包括 filesystem 与 Science source 的 focused per-file 100% coverage，以及每条 changed Core restoration path；evidence record 披露了仍不在 focused suite 内的 pre-existing Core `runMaintenance` guard。Adjacent package tests、typecheck、build、package invariants、documentation synchronization、lint、whitespace、publint、NodeNext consumer types、受影响的 hygiene checks 与 plain-Node built-root/subpath smokes 覆盖其余已验收 surfaces。
 
 Product-visible Consumer 有两项 assembled check。`packages/science/tool-science/tests/loader-composition.spec.ts` 通过 Loader 启动 test-only `cordis.yml`，其中包含真实 agent loop、Session store、Science Session invariant、Science Runtime、persistence、tool pipeline 与 Consumer；它覆盖 first-request context、durable ordering、三个 schemas、run execution、无重复 binding 的 resume，以及 Standard-session negative path。Keyless runnable example `examples/headless-agent/science-tools.cordis.snapshot.yml` 还会 snapshot 实际 model-facing guidance、Science schemas、sanitized bounded state result、structured durable run terminal、rendered `run_python` tool result，以及 durable Science event ordering。同一条真实 Loader request 只暴露 `@deepseek-ai/dsh-tool-fs/read-only` 的 filesystem `read` roster，不暴露 `write` 或 `edit`。
 

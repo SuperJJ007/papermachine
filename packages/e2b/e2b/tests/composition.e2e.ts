@@ -74,6 +74,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         cwd: '/home/user',
         stdio: { stdin: 'ignore', stdout: { maxBytes: 1_024 }, stderr: { maxBytes: 1_024 } },
         graceMs: 500,
+        environmentBase: 'scrubbed-parent',
         env: {},
       })
       await expect(environmentProbe.done).resolves.toEqual({ exitCode: 0, signal: null })

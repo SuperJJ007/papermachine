@@ -18,6 +18,7 @@ function spawnSpec(argv: readonly string[], cwd: string, env?: Record<string, st
     cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: 5_000,
+    environmentBase: 'scrubbed-parent',
     ...env === undefined ? {} : { env },
   }
 }

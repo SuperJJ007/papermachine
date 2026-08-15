@@ -63,6 +63,7 @@ try {
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 65_536 }, stderr: { maxBytes: 4_096 } },
     graceMs: 500,
+    environmentBase: 'scrubbed-parent',
     env: {
       'FOO-BAR': 'hyphen-value',
       DSH_EXPLICIT: 'managed-value',
@@ -87,6 +88,7 @@ try {
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 4_096 } },
     graceMs: 500,
+    environmentBase: 'scrubbed-parent',
     env: {},
   })
   const splitUtf8Outcome = await splitUtf8Handle.done
@@ -101,6 +103,7 @@ try {
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 64 }, stderr: { maxBytes: 4_096 } },
     graceMs: 250,
+    environmentBase: 'scrubbed-parent',
     env: {},
   })
   const outputDrainOutcome = await outputDrainHandle.done

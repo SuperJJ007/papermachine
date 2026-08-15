@@ -94,11 +94,20 @@ export interface SubprocessSpawnSpec {
    */
   signal?: AbortSignal | undefined
   /**
-   * Explicit environment entries merged onto the implementation's scrubbed
-   * parent base (see `scrubbedParentEnv`), with no namespace validation. A
-   * string is a deliberate caller opt-in, so a forwarded credential-shaped
-   * entry or current `DSH_*` fact survives the scrub; `undefined` is a
-   * tombstone that removes an ordinary ambient entry from the child.
+   * Base environment handed to the requested program before {@link env} is
+   * applied. `'scrubbed-parent'` is the historical harness child base
+   * (`scrubbedParentEnv`). `'empty'` starts from no inherited names so the
+   * child receives only the explicit `env` map. Provider control processes
+   * may retain their documented transport environment, but it must not become
+   * the target program's environment.
+   */
+  environmentBase: 'scrubbed-parent' | 'empty'
+  /**
+   * Explicit environment entries merged onto {@link environmentBase}, with no
+   * namespace validation. A string is a deliberate caller opt-in, so a
+   * forwarded credential-shaped entry or current `DSH_*` fact survives a
+   * scrubbed-parent base; `undefined` is a tombstone that removes an ordinary
+   * ambient entry from a scrubbed-parent child.
    */
   env?: NodeJS.ProcessEnv | undefined
 }
@@ -125,6 +134,13 @@ export interface SubprocessOutputRead {
   nextOffset: number
   /** True when the requested offset slid out of the in-memory tail window. */
   lossy: boolean
+  /**
+   * UTF-8 well-formedness of the exact byte slice represented by this read.
+   * A provider that retains those bytes reports `'valid'` or `'invalid'`
+   * from the slice before replacement decoding. `'unknown'` is only for a
+   * provider that already holds decoded text and has no recoverable bytes.
+   */
+  utf8Validity: 'valid' | 'invalid' | 'unknown'
   /** Path to the full-stream spill file, when one was created and remains intact. */
   spillPath?: string
 }

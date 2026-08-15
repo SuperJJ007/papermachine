@@ -84,6 +84,7 @@ class FakeReader implements SubprocessOutputReader {
       text: this.read.text,
       nextOffset: 0,
       lossy: this.read.lossy ?? false,
+      utf8Validity: 'valid',
       ...this.read.spillPath !== undefined ? { spillPath: this.read.spillPath } : {},
     }
   }
@@ -147,6 +148,7 @@ class FakeHandle implements SubprocessHandle {
  * assert on the exact spawn specs and settled handles.
  */
 class FakeSubprocess extends SubprocessRuntime {
+  override readonly executionWorld = 'host-local' as const
   spawns: SubprocessSpawnSpec[] = []
   override async resolveExecutable(command: string): Promise<string> { return command }
   override spawnTerminal(): Promise<never> { throw new Error('search tools spawn pipes, never terminals') }

@@ -50,6 +50,8 @@ function requireRepresentableGrace(graceMs: number): void {
 
 /** E2B command manager registered as `ctx.subprocess`. */
 export class E2BSubprocessRuntime extends SubprocessRuntime {
+  /** E2B commands run in a remote sandbox, not on host paths. */
+  override readonly executionWorld = 'remote' as const
   static inject = ['e2b']
 
   static Config: z<Config> = z.object({

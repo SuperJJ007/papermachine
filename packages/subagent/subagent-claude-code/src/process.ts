@@ -69,6 +69,7 @@ export function claudeSpawnSpec(
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
     graceMs,
     signal: options.signal,
+    environmentBase: 'scrubbed-parent',
     env,
   }
 }

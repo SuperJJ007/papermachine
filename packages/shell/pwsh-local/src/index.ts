@@ -237,6 +237,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       },
       graceMs: this.config.graceMs,
       signal,
+      environmentBase: 'scrubbed-parent',
       env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
     }
   }

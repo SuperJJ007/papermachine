@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PassThrough } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
-import { scrubbedParentEnv, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { scrubbedParentEnv, SubprocessRuntime, utf8ValidityOf } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessOutputRead,
@@ -16,12 +16,14 @@ import type {
  * is all an implementation owes the abstract class.
  */
 class StubSubprocessRuntime extends SubprocessRuntime {
+  override readonly executionWorld = 'host-local' as const
+
   async resolveExecutable(command: string): Promise<string> {
     return `/bin/${command}`
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    const read: SubprocessOutputRead = { text: '', nextOffset: 0, lossy: false }
+    const read: SubprocessOutputRead = { text: '', nextOffset: 0, lossy: false, utf8Validity: 'valid' }
     const collected = spec.stdio.stdout !== 'pipe' && spec.stdio.stdout !== 'inherit'
       ? { stdout: { readFrom: () => read } }
       : {}
@@ -59,9 +61,15 @@ describe('SubprocessRuntime seam', () => {
       cwd: '/stub',
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1 }, stderr: 'inherit' },
       graceMs: 1,
+      environmentBase: 'scrubbed-parent',
     })
     expect(handle.pid).toBe(1)
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({
+      text: '',
+      nextOffset: 0,
+      lossy: false,
+      utf8Validity: 'valid',
+    })
     handle.terminate()
     await expect(handle.waitForExit()).resolves.toBe(true)
     const outcome = await handle.done
@@ -96,5 +104,10 @@ describe('SubprocessRuntime seam', () => {
       delete process.env.SCRUB_PROBE_PASSWORD
       delete process.env.SCRUB_PROBE_PLAIN
     }
+  })
+
+  it('reports whether retained output bytes can be decoded as UTF-8 without replacement', () => {
+    expect(utf8ValidityOf(new TextEncoder().encode('dsh-科学-✓'))).toBe('valid')
+    expect(utf8ValidityOf(Uint8Array.of(0xff))).toBe('invalid')
   })
 })

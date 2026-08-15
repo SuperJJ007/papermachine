@@ -409,7 +409,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     const files = [
       { path: this.paths.pid, data: '' },
       { path: this.paths.status, data: '' },
-      { path: this.paths.environment, data: serializeRemoteEnvironment(ambient, this.spec.env) },
+      { path: this.paths.environment, data: serializeRemoteEnvironment(ambient, this.spec.env, this.spec.environmentBase) },
       ...(hasSpill(this.spec.stdio.stdout) ? [{ path: this.paths.stdout, data: '' }] : []),
       ...(hasSpill(this.spec.stdio.stderr) ? [{ path: this.paths.stderr, data: '' }] : []),
     ]

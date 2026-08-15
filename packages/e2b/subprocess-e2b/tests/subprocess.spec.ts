@@ -14,6 +14,7 @@ import E2BSubprocessRuntime from '@deepseek-ai/dsh-subprocess-e2b'
 import * as E2BSubprocessInvariant from '../src/invariant.ts'
 import { E2BBase64Decoder, E2B_OUTPUT_COMPLETE_FRAME, E2BOutputReader } from '../src/output.ts'
 import { E2BSubprocessHandle } from '../src/process.ts'
+import { serializeRemoteEnvironment } from '../src/environment.ts'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -308,6 +309,7 @@ function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec
       stderr: { maxBytes: 4 },
     },
     graceMs: 5,
+    environmentBase: 'scrubbed-parent',
     ...overrides,
   }
 }
@@ -365,22 +367,38 @@ describe('E2BOutputReader', () => {
     reader.push(Buffer.from('ab'))
     reader.push(Buffer.from('cdef'))
     expect(reader.size).toBe(6)
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, spillPath: '/remote/spill' })
-    expect(reader.readFrom(2)).toEqual({ text: 'cdef', nextOffset: 6, lossy: false })
-    expect(reader.readFrom(5)).toEqual({ text: 'f', nextOffset: 6, lossy: false })
-    expect(reader.readFrom(99)).toEqual({ text: '', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, utf8Validity: 'valid', spillPath: '/remote/spill' })
+    expect(reader.readFrom(2)).toEqual({ text: 'cdef', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
+    expect(reader.readFrom(5)).toEqual({ text: 'f', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
+    expect(reader.readFrom(99)).toEqual({ text: '', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
     reader.invalidateSpill()
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true })
+    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, utf8Validity: 'valid' })
   })
 
   it('drops whole head chunks and withholds absent or over-cap spills', () => {
     const withoutSpill = new E2BOutputReader(2, undefined, '/unused')
     withoutSpill.push(Buffer.from('ab'))
     withoutSpill.push(Buffer.from('cd'))
-    expect(withoutSpill.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(withoutSpill.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
     const overCap = new E2BOutputReader(2, 3, '/too-small')
     overCap.push(Buffer.from('abcd'))
-    expect(overCap.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(overCap.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
+  })
+
+  it('reports retained byte validity before replacement decoding', () => {
+    const reader = new E2BOutputReader(8, undefined, '/unused')
+    reader.push(Buffer.from('运行', 'utf8'))
+    expect(reader.readFrom(0)).toMatchObject({ text: '运行', utf8Validity: 'valid' })
+    reader.push(Buffer.from([0xff]))
+    expect(reader.readFrom(0)).toMatchObject({ utf8Validity: 'invalid' })
+  })
+
+  it('serializes an empty-base target environment without remote ambient entries', () => {
+    expect(serializeRemoteEnvironment(
+      'E2B_EMPTY_BASE_SENTINEL=ambient\0KEEP=ambient\0',
+      { E2B_EMPTY_BASE_EXPLICIT: 'present' },
+      'empty',
+    )).toBe('E2B_EMPTY_BASE_EXPLICIT=present\0')
   })
 })
 
@@ -537,6 +555,7 @@ describe('E2BSubprocessHandle', () => {
       text: 'tput',
       nextOffset: 13,
       lossy: true,
+      utf8Validity: 'valid',
     })
     expect(fake.removed).toContain('/runtime/drain-bound/stdout.log')
 
@@ -748,9 +767,10 @@ describe('E2BSubprocessHandle', () => {
       text: 'cdef',
       nextOffset: 6,
       lossy: true,
+      utf8Validity: 'valid',
       spillPath: '/runtime/two/stdout.log',
     })
-    expect(handle.collected.stderr!.readFrom(0)).toEqual({ text: '345', nextOffset: 5, lossy: true })
+    expect(handle.collected.stderr!.readFrom(0)).toEqual({ text: '345', nextOffset: 5, lossy: true, utf8Validity: 'valid' })
     expect(fake.removed).not.toContain('/runtime/two/stdout.log')
   })
 
@@ -764,7 +784,7 @@ describe('E2BSubprocessHandle', () => {
     await fake.stderr('')
     fake.finish()
     await handle.done
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
     expect(fake.removed).toContain('/runtime/oversize/stdout.log')
     const command = fake.commandsSeen.find(value => value.includes('dsh_e2b_tee='))!
     expect(command).toContain('"$dsh_e2b_head" -c 3')
@@ -1626,6 +1646,12 @@ describe('E2BSubprocessRuntime', () => {
     const fiber = await ctx.plugin(E2BSubprocessRuntime)
     return { ctx, fiber }
   }
+
+  it('reports remote execution world', async () => {
+    const { ctx, fiber } = await service()
+    expect(ctx.subprocess.executionWorld).toBe('remote')
+    await fiber.dispose()
+  })
 
   it('registers handles and disposal terminates and joins live remote groups regardless of sandbox policy', async () => {
     const fake = new FakeSandbox()

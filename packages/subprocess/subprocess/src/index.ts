@@ -35,6 +35,23 @@ export type {
 } from './types.ts'
 
 /**
+ * Compute UTF-8 well-formedness of one retained byte slice before replacement
+ * decoding. Providers that still hold those bytes must stamp this fact on
+ * {@link SubprocessOutputRead}; they report `'unknown'` only when the original
+ * bytes are no longer recoverable.
+ * @param bytes - exact byte slice represented by one output read.
+ * @returns `'valid'` when the slice is well-formed UTF-8, otherwise `'invalid'`.
+ */
+export function utf8ValidityOf(bytes: Uint8Array): 'valid' | 'invalid' {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    return 'valid'
+  } catch {
+    return 'invalid'
+  }
+}
+
+/**
  * Credential-shaped environment names are NOT forwarded to children (the
  * harness's own `DEEPSEEK_API_KEY`/secrets must not leak into a spawned
  * process implicitly). One heuristic for every in-repo spawner; a
@@ -100,6 +117,14 @@ declare module '@deepseek-ai/cordis' {
  *   when the top-level process exits.
  */
 export abstract class SubprocessRuntime extends Service {
+  /**
+   * Whether this provider's process world shares the host kernel and host
+   * paths (`'host-local'`) or a remote execution world (`'remote'`). A
+   * host-path consumer such as Science must require `'host-local'` before
+   * creating owner records, directories, or Session events.
+   */
+  abstract readonly executionWorld: 'host-local' | 'remote'
+
   constructor(ctx: Context) {
     super(ctx, 'subprocess')
   }

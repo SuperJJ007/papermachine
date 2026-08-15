@@ -98,6 +98,7 @@ export class LspConnection {
         stderr: { maxBytes: spec.maxStderrBytes },
       },
       graceMs: spec.killGraceMs,
+      environmentBase: 'scrubbed-parent',
       // The seam merges explicit config entries after its ambient scrub, so a
       // configured credential or DSH_* fact reaches the child deliberately.
       env: spec.env,

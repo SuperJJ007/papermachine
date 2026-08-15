@@ -42,6 +42,7 @@ if (kind === 'ordinary') {
       stderr: { maxBytes: 1024 },
     },
     graceMs: trigger === 'dispose' ? 100 : 30_000,
+    environmentBase: 'scrubbed-parent',
   })
 } else {
   await ctx.subprocess.spawnTerminal({

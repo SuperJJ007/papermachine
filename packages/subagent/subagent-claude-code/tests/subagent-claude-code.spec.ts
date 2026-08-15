@@ -436,6 +436,7 @@ describe('official spawn projection', () => {
       cwd: '/parent/workspace',
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
       graceMs: 321,
+      environmentBase: 'scrubbed-parent',
       signal,
     })
     expect(spawnSpec.env).toEqual(expect.objectContaining({

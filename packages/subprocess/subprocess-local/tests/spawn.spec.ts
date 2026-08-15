@@ -56,6 +56,7 @@ function spec(command: string, overrides: SpecOverrides = {}) {
       stderr: { maxBytes: stderrMaxBytes, spill: { maxBytes: maxSpillBytes } },
     },
     graceMs: 3_000,
+    environmentBase: 'scrubbed-parent' as const,
     ...rest,
   }
 }
@@ -342,6 +343,43 @@ describe('stdin and extra env (set by in-process plugins)', () => {
       env: { EXTRA_ONE: 'alpha', EXTRA_TWO: 'beta' },
     })))
     expect(result.stdout.text).toBe('alpha/beta\n')
+  })
+
+  it('starts an empty-base child with only its explicit environment entries', async () => {
+    process.env.SUBPROCESS_EMPTY_BASE_SENTINEL = 'ambient-value'
+    try {
+      const result = await finish(spawnSubprocess({
+        ...spec('unused', { environmentBase: 'empty', env: { SUBPROCESS_EMPTY_BASE_EXPLICIT: 'present' } }),
+        argv: [process.execPath, '--input-type=module', '--eval',
+          'process.stdout.write(JSON.stringify([process.env.SUBPROCESS_EMPTY_BASE_SENTINEL ?? "absent", process.env.SUBPROCESS_EMPTY_BASE_EXPLICIT]))'],
+      }))
+      expect(result.stdout.text).toBe('["absent","present"]')
+    } finally {
+      delete process.env.SUBPROCESS_EMPTY_BASE_SENTINEL
+    }
+  })
+
+  it('stamps utf8Validity from the retained byte slice before replacement decoding', async () => {
+    const running = spawnSubprocess({
+      ...spec('unused'),
+      argv: [process.execPath, '--input-type=module', '--eval',
+        'process.stdout.write(Buffer.from([0x61, 0xff, 0x62]))'],
+    })
+    await running.done
+    expect(running.collected.stdout!.readFrom(0)).toMatchObject({
+      text: 'a\ufffdb',
+      utf8Validity: 'invalid',
+    })
+    const valid = spawnSubprocess({
+      ...spec('unused'),
+      argv: [process.execPath, '--input-type=module', '--eval',
+        'process.stdout.write("dsh-科学")'],
+    })
+    await valid.done
+    expect(valid.collected.stdout!.readFrom(0)).toMatchObject({
+      text: 'dsh-科学',
+      utf8Validity: 'valid',
+    })
   })
 
   it('lets an explicit tombstone remove an ordinary ambient env entry', async () => {

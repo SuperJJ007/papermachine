@@ -127,6 +127,7 @@ export async function startCodexRun(
     cwd: spec.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
     graceMs: spec.disposeGraceMs,
+    environmentBase: 'scrubbed-parent',
     env: spec.env,
   })
 

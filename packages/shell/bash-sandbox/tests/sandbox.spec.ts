@@ -561,7 +561,7 @@ describe('background sandbox facts', () => {
   it('does not invent runner evidence when a spawn rejection has no structured reason', async () => {
     const { ctx, bash } = await setup()
     const emptyReader: SubprocessOutputReader = {
-      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      readFrom: () => ({ text: '', nextOffset: 0, lossy: false, utf8Validity: 'valid' }),
     }
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
       pid: -1,

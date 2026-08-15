@@ -211,6 +211,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     cwd: spec.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
     graceMs: spec.disposeGraceMs,
+    environmentBase: 'scrubbed-parent',
     env: spec.env,
   })
   /* v8 ignore start -- 'pipe' dispositions expose both streams by the seam contract; defensive. */

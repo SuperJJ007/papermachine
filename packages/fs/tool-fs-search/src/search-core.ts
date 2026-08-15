@@ -234,6 +234,7 @@ export async function runRipgrep(
       },
       graceMs,
       signal: exec.signal,
+      environmentBase: 'scrubbed-parent',
     } satisfies SubprocessSpawnSpec)
   } catch (error: unknown) {
     // Node's spawn() throws synchronously for a NUL in argv, and the local

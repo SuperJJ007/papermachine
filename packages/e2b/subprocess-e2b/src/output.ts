@@ -1,6 +1,7 @@
 /** Bounded host-side projection of a complete output file retained in E2B. */
 
 import { Buffer } from 'node:buffer'
+import { utf8ValidityOf } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 
 const BASE64_TEXT = /^[A-Za-z0-9+/]+={0,2}$/u
@@ -119,10 +120,12 @@ export class E2BOutputReader implements SubprocessOutputReader {
     const firstRetained = this.totalBytes - this.retainedBytes
     const lossy = fromByte < firstRetained
     const start = lossy ? 0 : Math.min(retained.length, Math.max(0, fromByte - firstRetained))
+    const slice = retained.subarray(start)
     return {
-      text: retained.subarray(start).toString('utf8'),
+      text: slice.toString('utf8'),
       nextOffset: this.totalBytes,
       lossy,
+      utf8Validity: utf8ValidityOf(slice),
       ...(lossy && this.spillValid && this.maxSpillBytes !== undefined && this.totalBytes <= this.maxSpillBytes
         ? { spillPath: this.spillPath }
         : {}),

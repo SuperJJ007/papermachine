@@ -14,7 +14,7 @@ import { closeSync, mkdtempSync, openSync, unlinkSync, writeSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
-import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { scrubbedParentEnv, utf8ValidityOf } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   CollectedOutput,
@@ -22,20 +22,26 @@ import type {
   SubprocessHandle,
   SubprocessOutcome,
   SubprocessOutputMode,
+  SubprocessOutputRead,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
 
 /**
- * Build a child environment: explicit caller entries override the scrubbed
- * parent base using the target platform's environment-key semantics. A string
+ * Build a child environment: explicit caller entries override the requested
+ * base using the target platform's environment-key semantics. A string
  * deliberately restores or overrides an entry; an explicit `undefined`
- * tombstone removes an ordinary ambient entry.
- * @param extra - explicit caller entries and tombstones, merged after the scrub.
+ * tombstone removes an ordinary ambient entry from a scrubbed-parent base.
+ * @param extra - explicit caller entries and tombstones, merged after the base.
+ * @param environmentBase - `'scrubbed-parent'` starts from {@link scrubbedParentEnv};
+ *   `'empty'` starts from no inherited names.
  * @returns the environment to hand to `spawn` for the child process.
  */
-export function childEnv(extra?: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv {
-  const env = scrubbedParentEnv()
+export function childEnv(
+  extra?: Readonly<NodeJS.ProcessEnv>,
+  environmentBase: 'scrubbed-parent' | 'empty' = 'scrubbed-parent',
+): NodeJS.ProcessEnv {
+  const env = environmentBase === 'empty' ? {} : scrubbedParentEnv()
   if (process.platform !== 'win32') return { ...env, ...extra }
   let entries: [string, string | undefined][] = Object.entries(env)
   for (const [key, value] of Object.entries(extra ?? {})) {
@@ -204,7 +210,7 @@ export class OutputCollector {
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 for the first read).
    * @returns the delta text, the offset for the next read, the `lossy` flag, and the spill path when one was created.
    */
-  readFrom(fromByte: number): { text: string; nextOffset: number; lossy: boolean; spillPath?: string } {
+  readFrom(fromByte: number): SubprocessOutputRead {
     const windowStart = this.total - this.bytes
     const buffer = Buffer.concat(this.chunks)
     const lossy = fromByte < windowStart
@@ -213,6 +219,7 @@ export class OutputCollector {
       text: slice.toString('utf8'),
       nextOffset: this.total,
       lossy,
+      utf8Validity: utf8ValidityOf(slice),
       ...this.spillFile !== undefined ? { spillPath: this.spillFile } : {},
     }
   }
@@ -346,7 +353,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   const errMode = spec.stdio.stderr
   const stdinMode = spec.stdio.stdin
 
-  const env = childEnv(spec.env)
+  const env = childEnv(spec.env, spec.environmentBase)
   const child = spawn(program, args, {
     cwd: spec.cwd,
     env,

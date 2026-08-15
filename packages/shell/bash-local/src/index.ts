@@ -190,6 +190,7 @@ export class LocalBashExecutor extends ShellExecutor {
       },
       graceMs: this.config.graceMs,
       signal,
+      environmentBase: 'scrubbed-parent',
       // One explicit env map for the seam, layered so the trusted dshEnv
       // snapshot beats both the caller's env and the terminal overrides; the
       // subprocess service merges the whole map after its ambient scrub.

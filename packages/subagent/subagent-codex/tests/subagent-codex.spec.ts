@@ -866,6 +866,7 @@ describe('run lifecycle and quiescence', () => {
       cwd: process.cwd(),
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
+      environmentBase: 'scrubbed-parent',
       env: { OPENAI_API_KEY: 'fake' },
     })
     expect(run.localAgent).toBeUndefined()

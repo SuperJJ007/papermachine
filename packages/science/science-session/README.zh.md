@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-Science Session 领域：持久化的 required-on-read Session 事件、严格确定性重放、一个 pre-commit invariant，以及可选的 `science` session projection。本包不暴露任何变更服务，不启动进程，不观测解释器，不注册任何面向模型的工具或提示词，也不渲染任何客户端 UI——后续的 Science Runtime 及其工具 Consumer 才会追加本包校验与投影的事件。
+Science Session 领域：持久化的 required-on-read Session 事件、严格确定性重放、一个 pre-commit invariant，以及可选的 `science` session projection。本包不暴露任何变更服务，不启动进程，不观测解释器，不注册任何面向模型的工具或提示词，也不渲染任何客户端 UI——`@deepseek-ai/dsh-science-runtime` 追加 environment 与 run 事件；后续工具 Consumer 才会追加本包校验与投影的其余事件。
 
 ## 持久化词汇
 
-六个 `science/*` Session 事件，各自 `version: 1`、无损 JSON、携带完整的领域值而非补丁，且 required on read（永不 `ignorable`）：`science/mode-bound`、`science/environment-bound`、`science/run-started`、`science/run-finished`、`science/chart-saved`、`science/outcome-published`。`science/mode-bound` 只能对 `agentPreset` 为 `science` 的 Session 合法绑定一次，且必须早于 Science preset 的首个 `step/start`、`request/header` 或 `tool/call` 事实。环境、运行、图表与 Outcome 类型作为持久化词汇存在，即便其生产方（Science Runtime、工具）属于后续切片。
+六个 `science/*` Session 事件，各自 `version: 1`、无损 JSON、携带完整的领域值而非补丁，且 required on read（永不 `ignorable`）：`science/mode-bound`、`science/environment-bound`、`science/run-started`、`science/run-finished`、`science/chart-saved`、`science/outcome-published`。`science/mode-bound` 只能对 `agentPreset` 为 `science` 的 Session 合法绑定一次，且必须早于 Science preset 的首个 `step/start`、`request/header` 或 `tool/call` 事实。图表与 Outcome 类型作为持久化词汇存在，即便其生产方（工具）属于后续切片。environment 与 run 事实由 `@deepseek-ai/dsh-science-runtime` 追加。
 
 ## 严格 fold 与 invariant
 
@@ -26,6 +26,6 @@ Science Session 领域：持久化的 required-on-read Session 事件、严格�
 
 ## 已知限制与暂缓事项
 
-- **尚无生产方存在。** 从真实 Python/R 执行中追加这些事件的 Science Runtime 及其工具 Consumer 属于后续切片；本包只校验并重放一份由测试或未来 Consumer 提供的持久化词汇。
+- **尚无 mode、图表或 Outcome 事件的生产方。** `@deepseek-ai/dsh-science-runtime` 追加 environment 与 run 事实；追加其余事件的工具 Consumer 属于后续切片。本包仍只校验并重放这份持久化词汇。
 - **稀疏的 projection witness 保留的是证据链，而非有界窗口。** 它会随保留的 Science 事实增长；不做常数时间或有界历史的承诺，这与通用 `session-projection` 注册表自身 checkpoint 约定中已被接受的取舍一致。
 - **没有 Science 专属的客户端 UI、设置或侧边栏。** 那些属于后续、受产品决策约束的切片；本包的 `ScienceProjection` 是一个不带渲染主张的纯协议值。

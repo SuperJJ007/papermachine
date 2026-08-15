@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-The Science Session domain: durable required-on-read Session events, strict deterministic replay, a pre-commit invariant, and the optional `science` session projection. This package exposes no mutation service, starts no process, observes no interpreter, registers no model-facing tool or prompt, and renders no client UI — a later Science Runtime and its tool Consumers append the events this package validates and projects.
+The Science Session domain: durable required-on-read Session events, strict deterministic replay, a pre-commit invariant, and the optional `science` session projection. This package exposes no mutation service, starts no process, observes no interpreter, registers no model-facing tool or prompt, and renders no client UI — `@deepseek-ai/dsh-science-runtime` appends environment and run events; later tool Consumers append the remaining events this package validates and projects.
 
 ## Durable vocabulary
 
-Six `science/*` Session events, each `version: 1`, lossless JSON, carrying a complete domain value rather than a patch, and required on read (never `ignorable`): `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/chart-saved`, `science/outcome-published`. `science/mode-bound` is legal once, only for a Session whose `agentPreset` is `science`, and before the first Science-preset `step/start`, `request/header`, or `tool/call` fact. Environment, run, chart, and Outcome types exist as durable vocabulary even though their producers (Science Runtime, tools) are a later slice.
+Six `science/*` Session events, each `version: 1`, lossless JSON, carrying a complete domain value rather than a patch, and required on read (never `ignorable`): `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/chart-saved`, `science/outcome-published`. `science/mode-bound` is legal once, only for a Session whose `agentPreset` is `science`, and before the first Science-preset `step/start`, `request/header`, or `tool/call` fact. Chart and Outcome types exist as durable vocabulary even though their producers (tools) are a later slice. Environment and run facts are appended by `@deepseek-ai/dsh-science-runtime`.
 
 ## Strict fold and invariant
 
@@ -26,6 +26,6 @@ None; this package never assembles or sends provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **No producer exists yet.** Science Runtime and its tool Consumers, which append these events from real Python/R execution, are a later slice; this package only validates and replays a durable vocabulary that a test or future Consumer supplies.
+- **No producer exists for mode, chart, or Outcome events.** `@deepseek-ai/dsh-science-runtime` appends environment and run facts; tool Consumers that append the remaining events are a later slice. This package still only validates and replays the durable vocabulary.
 - **The sparse projection witness retains provenance, not a bounded window.** It grows with retained Science facts; no constant-time or bounded-history claim is made, matching the accepted trade-off in the generic `session-projection` registry's own checkpoint contract.
 - **No Science-specific client UI, settings, or sidebar.** Those are later product-decision-gated slices; this package's `ScienceProjection` is a plain wire value with no rendering opinion.

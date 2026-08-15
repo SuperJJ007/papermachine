@@ -139,6 +139,7 @@
     { "path": "./packages/session/session-persistence-jsonl" },
     { "path": "./packages/session/session-persistence-sqlite" },
     { "path": "./packages/science/science-session" },
+    { "path": "./packages/science/science-runtime" },
     { "path": "./packages/session/session-projection" },
     { "path": "./packages/session/session-projection-cache" },
     { "path": "./packages/session/session-stats" },

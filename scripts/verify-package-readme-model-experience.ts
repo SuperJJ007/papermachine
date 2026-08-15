@@ -122,6 +122,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/sdk/client': { kind: 'none', reason: 'Client-process library; model-facing behavior lives in the spawned runtime\'s composed plugins.' },
   'packages/sdk/protocol': { kind: 'none', reason: 'Client-facing wire library; the runtime plugins behind the serving entry own model-facing behavior.' },
   'packages/science/science-session': { kind: 'none', reason: 'The domain validates and projects already-logged Science session events; it registers no prompt, tool schema, or model-facing surface of its own.' },
+  'packages/science/science-runtime': { kind: 'none', reason: 'The host-local Runtime exposes non-model-facing operations for a later Science tool Consumer and registers no prompt, tool schema, or model-facing surface of its own.' },
   'packages/session/session-projection': { kind: 'none', reason: 'The projection registry serves client-facing read models of already-logged session state and registers nothing model-facing.' },
   'packages/session/session-projection-cache': { kind: 'none', reason: 'The persisted cache accelerates host-side cold reads of projection state and registers nothing model-facing.' },
   'packages/session/session-stats': { kind: 'none', reason: 'The sessionStats unit folds already-logged step boundaries into a client-facing read model and registers nothing model-facing.' },

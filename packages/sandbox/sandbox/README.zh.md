@@ -38,6 +38,7 @@ sandbox mode "<mode>" is requested but no sandbox backend is usable on this host
 
 - **文件操作是完整的策略词汇**：该 seam 不表达网络、进程、系统调用、设备或凭据限制。
 - **只支持与宿主共享文件系统和内核的限制**：容器、microVM 与远程执行需要替换能力实现，而不是在此处增加提供方。
+- **共享的 runner 与拒绝分类**：`isRunnerSpawnFailure`、`classifyRunnerFailure`、`classifyDenial` 和 `matchesSignature` 都位于本 package。Bash、Pwsh 与 Science 都调用这一份实现。已正面识别的 runner 失败优先于拒绝签名；仅有退出状态永远不能证明任一结果；普通程序失败不会被报告为基础设施失败。
 - **拒绝报告是一种 stderr 方言**：该 seam 返回后端签名，而非类型化运行时拒绝通道，因此需要分类的消费方必须从子进程输出推断。
 - **Runner 诊断使用带内通道**：退出状态与 stderr 证据无法证明匹配行由哪个进程写入，因此受限子进程若故意模仿 runner，就可能造成可用性或诊断误归因。这无法绕过约束；带外 runner 状态通道暂缓实现。
 - **每个上下文只有一个提供方**：同时组合不同沙箱机制需要提供方级阶梯或独立 Cordis 上下文；调用方逐调用选择策略，而非后端标识。

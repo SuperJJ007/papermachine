@@ -18,6 +18,13 @@ export {
   validateEscalationArgs,
 } from './escalation.ts'
 export type { EscalationApproval, EscalationApprover, EscalationOutcome, EscalationRequest } from './escalation.ts'
+export {
+  classifyDenial,
+  classifyRunnerFailure,
+  isRunnerSpawnFailure,
+  matchesSignature,
+} from './classification.ts'
+export type { RunnerFailureMatch } from './classification.ts'
 export { canonicalPath, writableRoots } from './roots.ts'
 
 /**

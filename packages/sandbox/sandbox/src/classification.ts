@@ -1,15 +1,11 @@
 /**
- * Internal sandbox-result classification helpers — deliberate call-for-call
- * mirror of `@deepseek-ai/dsh-bash-sandbox/src/helpers.ts` (the pwsh twin of
- * the bash consumer shares the identical classification dialect).
- *
- * @module @deepseek-ai/dsh-pwsh-sandbox/helpers
+ * Shared runner-spawn, runner-fatal, and denial classification for confined
+ * executions. Bash, Pwsh, and Science call this one implementation.
+ * @module @deepseek-ai/dsh-sandbox/classification
  */
 
-/* jscpd:ignore-start */
 import { accessSync, constants, statSync } from 'node:fs'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
-import type { RunnerFailureRule } from '@deepseek-ai/dsh-sandbox'
+import type { RunnerFailureRule } from './index.ts'
 
 /** Node-local spawn codes proven to identify executable resolution or permission failure. */
 const EXECUTABLE_SPAWN_CODES = new Set(['EACCES', 'ENOENT'])
@@ -26,7 +22,7 @@ function isUsableWorkdir(path: string): boolean {
 }
 
 /**
- * Attribute only Node ENOENT/EACCES failures with positive argv[0] provenance
+ * Attribute only Node ENOENT/EACCES failures whose error path equals argv[0]
  * after independently ruling out the caller-owned cwd. A supplied error path
  * must exactly identify the runner; without one, the syscall must. With a
  * usable cwd, these codes describe resolution or execute permission for that
@@ -56,19 +52,9 @@ export function isRunnerSpawnFailure(
 }
 
 /** Fatal runner evidence retained for infrastructure-error detail. */
-interface RunnerFailureMatch {
+export interface RunnerFailureMatch {
   /** The original stderr line that matched a fatal signature. */
   detail: string
-}
-
-/**
- * Classify a failed run against the selected backend's denial dialect.
- * @param result - settled foreground run.
- * @param signatures - case-insensitive denial substrings from the active wrap.
- * @returns whether the failed run matches that denial dialect.
- */
-export function classifyDenial(result: ShellRunResult, signatures: readonly string[]): boolean {
-  return matchesSignature(result.exitCode, result.stderr.text, signatures)
 }
 
 /**
@@ -91,8 +77,6 @@ export function classifyRunnerFailure(
   for (const rule of rules) {
     if (rule.allowedExitCodes !== undefined && !rule.allowedExitCodes.includes(exitCode)) continue
     const informationalLines = new Set((rule.informationalLines ?? []).map(line => line.toLowerCase()))
-    // An empty or whitespace-only substring is not meaningful runner evidence.
-    // Ignore it while keeping any valid signatures beside it active.
     const fatalSignatures = rule.fatalSignatures
       .filter(signature => signature.trim().length > 0)
       .map(signature => signature.toLowerCase())
@@ -117,4 +101,20 @@ export function matchesSignature(exitCode: number | null, stderr: string, signat
   const lowered = stderr.toLowerCase()
   return signatures.some(signature => lowered.includes(signature.toLowerCase()))
 }
-/* jscpd:ignore-end */
+
+/**
+ * Classify a failed run against the selected backend's denial dialect.
+ * Runner failure must be ruled out first: it proves the requested interpreter
+ * never ran, while denial means confinement blocked an attempted file effect.
+ * @param exitCode - process exit code; null means signal termination.
+ * @param stderr - collected stderr text.
+ * @param signatures - case-insensitive denial substrings from the active wrap.
+ * @returns whether the failed run matches that denial dialect.
+ */
+export function classifyDenial(
+  exitCode: number | null,
+  stderr: string,
+  signatures: readonly string[],
+): boolean {
+  return matchesSignature(exitCode, stderr, signatures)
+}

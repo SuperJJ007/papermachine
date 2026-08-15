@@ -38,6 +38,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 - **File effects are the whole policy vocabulary** — the seam expresses no network, process, syscall, device, or credential restrictions.
 - **Same-world confinement only** — containers, microVMs, and remote execution require replacing capability implementations rather than adding a provider here.
+- **Shared runner and denial classification** — `isRunnerSpawnFailure`, `classifyRunnerFailure`, `classifyDenial`, and `matchesSignature` live in this package. Bash, Pwsh, and Science call this one owner. A positively identified runner failure outranks a denial signature; exit status alone never proves either; ordinary program failure is not reported as infrastructure failure.
 - **Denial reporting is a stderr dialect** — the seam returns backend signatures instead of a typed runtime denial channel, so consumers that need classification must infer it from the child process's output.
 - **Runner diagnostics are in-band** — exit status plus stderr evidence cannot prove which process wrote a matching line, so a confined child that deliberately mimics its runner can cause an availability/diagnostic false attribution. This cannot bypass confinement; an out-of-band runner-status channel is deferred.
 - **One provider per context** — composing different sandbox mechanisms simultaneously requires a provider-level ladder or separate Cordis contexts; callers choose policy per call, not backend identity.

@@ -171,6 +171,15 @@ class DelayedRVersionSubprocess extends ControlledSubprocess {
   }
 }
 
+/** Return a non-zero R version outcome while preserving the requested argv. */
+class FailingRVersionSubprocess extends ControlledSubprocess {
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (!spec.argv[0]?.endsWith('/Rscript') || !spec.argv.includes('--version')) return handle
+    return { ...handle, done: Promise.resolve({ exitCode: 1, signal: null }) }
+  }
+}
+
 describe('ScienceRuntime.bindEnvironment', () => {
   it.each(['error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'missing-output', 'version-both-streams', 'version-nul', 'version-stderr-only'] as const)('fails loudly when a probe provider is %s', async (mode) => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-broken-probe-'))
@@ -263,6 +272,60 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(sandbox.policies).toHaveLength(2)
     expect(sandbox.policies.every(policy => policy.mode === 'workspace-write')).toBe(true)
     expect(sandbox.policies.every(policy => policy.workspaceRoot.includes('/probes/'))).toBe(true)
+  })
+
+  it('uses a standalone R version argv and preserves strict flags on the UTF-8 probe', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-argv-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { r: { rPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-bind-r-argv')
+
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('r'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'applied',
+      r: { capability: 'available', languageVersion: 'Fake R 4.5.0' },
+    })
+    const executable = join(prefix, 'bin', 'Rscript')
+    expect(harness.subprocess.specs.map(spec => spec.argv)).toEqual([
+      [executable, '--version'],
+      [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")'],
+    ])
+  })
+
+  it('records a non-zero R version probe as an invalid environment observation', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-version-failure-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(FailingRVersionSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { r: { rPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-bind-r-version-failure')
+
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('r'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      r: {
+        capability: 'invalid',
+        reason: 'interpreter probes did not produce the required lossless output',
+      },
+    })
+    expect(session.events.map(event => event.type)).toEqual([
+      'science/mode-bound',
+      'science/environment-bound',
+    ])
   })
 
   it('rejects a configured prefix that overlaps the future writable Science root before it creates any scratch', async () => {

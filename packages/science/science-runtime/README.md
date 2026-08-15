@@ -33,7 +33,7 @@ The Runtime rejects pre-publication misuse or capability failures with `ScienceR
 
 ## Confinement and environment
 
-Every probe and run uses direct argv, an empty subprocess environment base, a fixed environment allowlist, owned cwd, and full `workspace-write` confinement. Python uses `-I -B -X utf8` for probes and adds `-u` for runs; R uses `Rscript --vanilla --encoding=UTF-8`. The Runtime refuses a Conda prefix that overlaps any writable root, and never grants the project directory as its workspace.
+Every probe and run uses direct argv, an empty subprocess environment base, a fixed environment allowlist, owned cwd, and full `workspace-write` confinement. Python uses `-I -B -X utf8` for probes and adds `-u` for runs. R version discovery uses standalone `Rscript --version`; its UTF-8 probe and runs use `Rscript --vanilla --encoding=UTF-8`. The Runtime refuses a Conda prefix that overlaps any writable root, and never grants the project directory as its workspace.
 
 The private root is derived under `DSH_HOME/science/v1/` with an exclusive mode-0600 owner marker and mode-0700 directories. Only the operation whose exclusive marker creation succeeds receives rollback ownership; a materialization failure removes that operation's exact marker and Session root after verifying the marker bytes, while concurrent or pre-existing ownership is retained. A live operation reserves the exact Session object; a same-ID successor remains quarantined until an older detached lifecycle proves all owned trees are quiescent. Accepted run directories remain for state and diagnostics, while unpublished probe directories are removed only after quiescence.
 

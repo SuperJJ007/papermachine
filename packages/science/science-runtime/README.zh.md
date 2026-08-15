@@ -33,7 +33,7 @@ Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。s
 
 ## 限制与环境
 
-每次 probe 和 run 都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd 和 full `workspace-write` confinement。Python probe 使用 `-I -B -X utf8`，run 额外使用 `-u`；R 使用 `Rscript --vanilla --encoding=UTF-8`。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。
+每次 probe 和 run 都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd 和 full `workspace-write` confinement。Python probe 使用 `-I -B -X utf8`，run 额外使用 `-u`。R 版本发现仅使用 `Rscript --version`；UTF-8 probe 和 run 使用 `Rscript --vanilla --encoding=UTF-8`。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。
 
 私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory。只有独占 marker 创建成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree 已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
 

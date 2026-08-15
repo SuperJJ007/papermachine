@@ -95,7 +95,7 @@ interface InvalidObservation {
   readonly value: ObservedInterpreter
 }
 
-/** Canonical direct argv for an interpreter version or Unicode proof. */
+/** Canonical direct argv; Rscript accepts `--version` only as its sole argument. */
 function probeArgv(language: ScienceLanguage, executable: string, kind: 'version' | 'utf8'): string[] {
   if (language === 'python') {
     return kind === 'version'
@@ -103,7 +103,7 @@ function probeArgv(language: ScienceLanguage, executable: string, kind: 'version
       : [executable, '-I', '-B', '-X', 'utf8', '-c', 'import sys;sys.stdout.buffer.write("dsh-科学-✓".encode("utf-8"))']
   }
   return kind === 'version'
-    ? [executable, '--vanilla', '--encoding=UTF-8', '--version']
+    ? [executable, '--version']
     : [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")']
 }
 

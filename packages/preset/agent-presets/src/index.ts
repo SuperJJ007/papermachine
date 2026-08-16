@@ -52,7 +52,7 @@ export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot } from './discovery.ts'
 export {
-  METADATA_FILE, readPresetMetadata, renderPresetMetadata, type PresetMetadata,
+  METADATA_FILE, PresetMetadataError, readPresetMetadata, renderPresetMetadata, type PresetMetadata,
 } from './metadata.ts'
 export {
   inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor,
@@ -374,8 +374,9 @@ export class AgentPresets extends Service {
    * primary source, so any trust is accepted.
    * @param id - the new preset's id, which becomes its directory name.
    * @param name - display name for the copy; absent falls back to the id.
-   * @throws when the source is unknown, the id is unusable or already taken,
-   * or the deployment configures no writable root.
+   * @throws when the source is unknown, broken, or explicitly non-copyable;
+   * the id is unusable or already taken; or the deployment configures no
+   * writable root.
    */
   async copy(from: string, id: string, name?: string): Promise<void> {
     const source = await this.resolve(from)

@@ -1,16 +1,17 @@
 /**
- * Display metadata is presentation, never capability: every way of getting it
- * wrong degrades to "this preset has no display text" rather than to a
- * preset that cannot be discovered or mounted. It also cannot carry identity
- * — `id` is the directory and `trust` is the root, so neither is readable
- * from the file a user can write.
+ * Display fields remain permissive, but `copyable` is behavioral policy:
+ * present metadata must be readable YAML containing a map, and a declared
+ * copy value must be boolean. Identity still comes only from the directory
+ * and root.
  */
 
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { METADATA_FILE, readPresetMetadata, renderPresetMetadata } from '../src/metadata.ts'
+import {
+  METADATA_FILE, PresetMetadataError, readPresetMetadata, renderPresetMetadata,
+} from '../src/metadata.ts'
 
 /** A preset directory holding exactly the given metadata text. */
 async function presetDir(content?: string): Promise<string> {
@@ -33,20 +34,24 @@ describe('reading display metadata', () => {
     expect(await readPresetMetadata(await presetDir())).toEqual({})
   })
 
-  it('treats malformed YAML as no metadata', async () => {
+  it('requires metadata for a shipped preset', async () => {
+    await expect(readPresetMetadata(await presetDir(), { required: true }))
+      .rejects.toThrow(/preset\.yml is required for shipped presets/)
+  })
+
+  it('rejects malformed YAML', async () => {
     const dir = await presetDir('name: [unclosed\n')
 
-    // Display text is not worth failing discovery over — the composition
-    // beside it still mounts.
-    expect(await readPresetMetadata(dir)).toEqual({})
+    await expect(readPresetMetadata(dir)).rejects.toThrow(PresetMetadataError)
+    await expect(readPresetMetadata(dir)).rejects.toThrow(/preset\.yml is not valid YAML/)
   })
 
   it.each([
     ['a list', '- name: x\n'],
     ['a scalar', 'just a string\n'],
     ['an empty document', ''],
-  ])('treats %s as no metadata', async (_label, content) => {
-    expect(await readPresetMetadata(await presetDir(content))).toEqual({})
+  ])('rejects %s because metadata must be a map', async (_label, content) => {
+    await expect(readPresetMetadata(await presetDir(content))).rejects.toThrow(/must be a map/)
   })
 
   it('ignores fields that are not text', async () => {
@@ -88,9 +93,11 @@ describe('reading display metadata', () => {
     expect(await readPresetMetadata(await presetDir('copyable: true\n'))).toEqual({ copyable: true })
   })
 
-  it('ignores a copyable value that is not a boolean', async () => {
-    expect(await readPresetMetadata(await presetDir('copyable: "no"\n'))).toEqual({})
-    expect(await readPresetMetadata(await presetDir('copyable: 0\n'))).toEqual({})
+  it('rejects a copyable value that is not a boolean', async () => {
+    await expect(readPresetMetadata(await presetDir('copyable: "no"\n')))
+      .rejects.toThrow(/copyable.*must be a boolean/)
+    await expect(readPresetMetadata(await presetDir('copyable: 0\n')))
+      .rejects.toThrow(/copyable.*must be a boolean/)
   })
 
   it('cannot carry identity or trust', async () => {

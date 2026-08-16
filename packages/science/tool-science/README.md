@@ -129,6 +129,5 @@ Append-only; newly visible content follows the reusable request prefix and does 
 ## Known Limitations and Deferred Work
 
 - **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset that ships with `apps/cli` (`apps/cli/config/agent-presets/science`) is a separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
-- **Tool schemas are not preset-scoped** — `get_science_state`/`run_python`/`run_r` register globally once this package is composed; a later preset slice owns restricting them to `science`-preset sessions rather than every session in the same Host tree.
 - **No chart or Outcome tools** — `science/chart-saved` and `science/outcome-published` remain durable vocabulary with no producer in this package; a later Science slice owns them.
 - **No persistent kernel** — every `run_python`/`run_r` call is a fresh interpreter process; only `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` files persist across calls.

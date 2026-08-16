@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -57,6 +57,7 @@ async function bootWeb(
   settingsFile: string,
   extra: PatchOptions[] = [],
   extraInstallAnchor?: string,
+  presetRoot = join(CONFIG_DIR, 'agent-presets'),
 ): Promise<Context> {
   const storageRoot = join(dirname(settingsFile), 'storages')
   const patches: PatchOptions[] = [
@@ -112,7 +113,7 @@ async function bootWeb(
       id: 'agent-presets',
       config: {
         default: 'standard',
-        roots: [{ path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' }],
+        roots: [{ path: presetRoot, trust: 'system' }],
         includeUserRoot: false,
       },
     },
@@ -503,6 +504,36 @@ describe('the shipped Web composition', () => {
 
     expect(await readFile(path, 'utf8')).toBe(before)
   })
+})
+
+describe('the shipped Science metadata policy', () => {
+  it.each([
+    ['is missing', undefined, /preset\.yml is required for shipped presets/],
+    ['is malformed', 'name: [unclosed\n', /preset\.yml is not valid YAML/],
+    ['declares a non-boolean copy policy', 'copyable: "no"\n', /copyable.*must be a boolean/],
+  ])('fails closed when preset.yml %s', async (_label, content, reason) => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-web-science-metadata-'))
+    const presetRoot = join(home, 'agent-presets')
+    await cp(join(CONFIG_DIR, 'agent-presets'), presetRoot, { recursive: true })
+    const metadataPath = join(presetRoot, 'science', 'preset.yml')
+    if (content === undefined) await rm(metadataPath)
+    else await writeFile(metadataPath, content)
+    const settingsFile = join(home, 'settings.yaml')
+    await writeFile(settingsFile, '{}\n')
+    const damaged = await bootWeb(settingsFile, [], undefined, presetRoot)
+    try {
+      const science = (await damaged.agentPresets.list()).find(preset => preset.id === 'science')
+      expect(science?.broken).toMatch(reason)
+      expect(science?.copyable).toBe(false)
+      // The booted composition resolves the built package while this test
+      // resolves TypeScript source, so class identity is not shared.
+      await expect(damaged.agentPresets.copy('science', 'science-copy'))
+        .rejects.toThrow(/source preset is broken/)
+    } finally {
+      await damaged.fiber.dispose()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
 
 describe('the science preset', () => {

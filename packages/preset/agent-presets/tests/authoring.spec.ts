@@ -188,6 +188,19 @@ describe('copying a preset whose metadata declares copyable: false', () => {
       .rejects.toThrow(PresetNotCopyableError)
   })
 
+  it('refuses a broken source with its discovery reason', async () => {
+    const source = {
+      id: 'damaged',
+      trust: 'user' as const,
+      path: join(userRoot, 'damaged', COMPOSITION_FILE),
+      copyable: false,
+      broken: 'the metadata field copyable in preset.yml must be a boolean',
+    }
+
+    await expect(copyComposition([{ path: userRoot, trust: 'user' as const }], source, 'mine'))
+      .rejects.toThrow(/source preset is broken:.*copyable.*must be a boolean/)
+  })
+
   it('resolves copyable: true for a preset that declares no copyable field at all', async () => {
     await seedPreset(userRoot, 'ordinary')
 

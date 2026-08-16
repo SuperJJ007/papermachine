@@ -1,12 +1,14 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { COMPOSITION_FILE, discoverPresets, scanRoot } from '@deepseek-ai/dsh-agent-presets'
+import {
+  COMPOSITION_FILE, discoverPresets, METADATA_FILE, scanRoot,
+} from '@deepseek-ai/dsh-agent-presets'
 
 const fsHarness = vi.hoisted(() => ({
-  nextReadError: undefined as NodeJS.ErrnoException | undefined,
+  readErrorFile: undefined as string | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -14,10 +16,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     readFile: (async (path: unknown, ...rest: never[]) => {
-      const error = fsHarness.nextReadError
-      if (error !== undefined) {
-        fsHarness.nextReadError = undefined
-        throw error
+      if (fsHarness.readErrorFile === basename(String(path))) {
+        fsHarness.readErrorFile = undefined
+        throw Object.assign(new Error('EACCES: injected read failure'), { code: 'EACCES' })
       }
       return (actual.readFile as (path: unknown, ...args: never[]) => Promise<unknown>)(path, ...rest)
     }) as typeof actual.readFile,
@@ -29,7 +30,7 @@ const SYSTEM = { path: join(FIXTURES, 'system'), trust: 'system' as const }
 const USER = { path: join(FIXTURES, 'user'), trust: 'user' as const }
 
 beforeEach(() => {
-  fsHarness.nextReadError = undefined
+  fsHarness.readErrorFile = undefined
 })
 
 describe('display order', () => {
@@ -43,6 +44,7 @@ describe('display order', () => {
     for (const id of ['bravo', 'yankee']) {
       await mkdir(join(root, id), { recursive: true })
       await writeFile(join(root, id, COMPOSITION_FILE), '[]\n')
+      await writeFile(join(root, id, METADATA_FILE), 'copyable: true\n')
     }
 
     const found = await scanRoot({ path: root, trust: 'system' })
@@ -69,12 +71,12 @@ describe('display order', () => {
 })
 
 describe('copy eligibility', () => {
-  it('resolves copyable: true when a preset declares none', async () => {
+  it('resolves copyable: true when a healthy user preset publishes no metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
     await mkdir(join(root, 'ordinary'), { recursive: true })
     await writeFile(join(root, 'ordinary', COMPOSITION_FILE), '[]\n')
 
-    const [found] = await scanRoot({ path: root, trust: 'system' })
+    const [found] = await scanRoot({ path: root, trust: 'user' })
 
     expect(found?.copyable).toBe(true)
   })
@@ -89,6 +91,46 @@ describe('copy eligibility', () => {
 
     expect(found?.copyable).toBe(false)
   })
+
+  it('marks a shipped preset with missing metadata broken and non-copyable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'pinned'), { recursive: true })
+    await writeFile(join(root, 'pinned', COMPOSITION_FILE), '[]\n')
+
+    const [found] = await scanRoot({ path: root, trust: 'system' })
+
+    expect(found?.broken).toMatch(/preset\.yml is required for shipped presets/)
+    expect(found?.copyable).toBe(false)
+  })
+
+  it.each([
+    ['malformed YAML', 'name: [unclosed\n', /preset\.yml is not valid YAML/],
+    ['a non-boolean copy policy', 'copyable: "no"\n', /copyable.*must be a boolean/],
+  ])('marks %s broken and non-copyable', async (_label, content, reason) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'pinned'), { recursive: true })
+    await writeFile(join(root, 'pinned', COMPOSITION_FILE), '[]\n')
+    await writeFile(join(root, 'pinned', METADATA_FILE), content)
+
+    const [found] = await scanRoot({ path: root, trust: 'user' })
+
+    expect(found?.broken).toMatch(reason)
+    expect(found?.copyable).toBe(false)
+  })
+
+  it('marks unreadable metadata broken and non-copyable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'pinned'), { recursive: true })
+    await writeFile(join(root, 'pinned', COMPOSITION_FILE), '[]\n')
+    await writeFile(join(root, 'pinned', METADATA_FILE), 'copyable: false\n')
+    fsHarness.readErrorFile = METADATA_FILE
+
+    const [found] = await scanRoot({ path: root, trust: 'user' })
+
+    expect(fsHarness.readErrorFile).toBeUndefined()
+    expect(found?.broken).toMatch(/preset\.yml cannot be read/)
+    expect(found?.copyable).toBe(false)
+  })
 })
 
 describe('preset discovery', () => {
@@ -100,8 +142,6 @@ describe('preset discovery', () => {
       id: 'minimal',
       trust: 'system',
       path: join(SYSTEM.path, 'minimal', COMPOSITION_FILE),
-      // No preset.yml at this fixture, so the metadata is entirely absent —
-      // copyable resolves to its default rather than reading the file.
       copyable: true,
     })
   })
@@ -226,11 +266,11 @@ describe('composition health', () => {
     await mkdir(join(root, 'sealed'))
     const path = join(root, 'sealed', COMPOSITION_FILE)
     await writeFile(path, '[]\n')
-    fsHarness.nextReadError = Object.assign(new Error('EACCES: injected read failure'), { code: 'EACCES' })
+    fsHarness.readErrorFile = COMPOSITION_FILE
 
     const [preset] = await scanRoot({ path: root, trust: 'user' })
 
-    expect(fsHarness.nextReadError).toBeUndefined()
+    expect(fsHarness.readErrorFile).toBeUndefined()
     expect(preset?.broken).toMatch(/cannot be read/)
   })
 

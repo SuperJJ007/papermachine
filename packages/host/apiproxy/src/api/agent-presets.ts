@@ -103,7 +103,7 @@ export interface AgentPresetsApi {
    * the roster did not already carry. The copy keeps the source's description
    * (the file is the author's to edit afterwards) but not its name — `name`
    * here or the id fallback is what distinguishes the rows. A source whose
-   * own metadata declares `copyable: false` answers `agent-preset-not-copyable`.
+   * resolved copy eligibility is false answers `agent-preset-not-copyable`.
    */
   copy(request: RpcRequest<{ from: string; agentPreset: string; name?: string }>):
   Promise<RpcResponse<{ agentPreset: string }>>

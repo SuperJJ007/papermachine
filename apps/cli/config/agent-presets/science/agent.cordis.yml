@@ -15,9 +15,9 @@
 # before any provider call — see `@deepseek-ai/dsh-agent-presets` (this file)
 # and `@deepseek-ai/dsh-science-runtime` (the Host-owned execution).
 #
-# This file is an AGENT-PLANE composition. It is mounted under one agent's
-# scope context, so every tool and prompt section it registers belongs to that
-# session alone. The host composition (`base.cordis.yml` + `web.cordis.yml`)
+# This file is an AGENT-PLANE composition. The preset registry mounts it once
+# under a standing scope; only agents that join the `science` preset inherit
+# its tools and prompt sections. The host composition (`base.cordis.yml` + `web.cordis.yml`)
 # keeps everything a preset must not own: the registries themselves, the
 # sandbox and approval stack, persistence, the model route, and the Science
 # Runtime row a usable deployment mounts separately.

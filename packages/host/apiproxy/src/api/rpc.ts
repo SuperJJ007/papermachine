@@ -50,7 +50,7 @@ export interface RpcErrorDetailsMap {
   'agent-preset-conflict': { sessionId: SessionId; requestedPreset: string; existingPreset?: string }
   'agent-preset-not-found': { agentPreset: string; available: string[] }
   'agent-preset-invalid': { agentPreset: string; reason: string }
-  /** The requested copy source declares `copyable: false` in its own metadata. */
+  /** The requested copy source is broken or explicitly non-copyable. */
   'agent-preset-not-copyable': { agentPreset: string; source: string; reason: string }
   'agent-busy': { reason: string }
   'attachment-error': { reason: string }

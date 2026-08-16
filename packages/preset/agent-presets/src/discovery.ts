@@ -1,9 +1,10 @@
 /**
  * Filesystem discovery of agent presets. A preset is a directory holding
- * {@link COMPOSITION_FILE}, optionally beside a {@link METADATA_FILE} carrying
- * its display text; the directory name is the preset id. Discovery
- * re-reads the roots on every call so a preset authored while the process is
- * running is visible without a restart.
+ * {@link COMPOSITION_FILE}, beside a metadata file carrying its display text
+ * and copy policy; the directory name is the preset id. Metadata is optional
+ * for user presets and required for shipped presets. Discovery re-reads the
+ * roots on every call so a preset authored while the process is running is
+ * visible without a restart.
  *
  * Discovery also owns preset HEALTH: a directory whose composition is
  * missing or unloadable is reported as a broken roster row rather than
@@ -19,7 +20,7 @@ import { join, resolve } from 'node:path'
 import { load } from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
-import { readPresetMetadata } from './metadata.ts'
+import { PresetMetadataError, readPresetMetadata, type PresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
 
 /** The composition file that makes a directory a preset. */
@@ -150,16 +151,21 @@ export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
     if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
     const directory = join(dir, child.name)
     const path = join(directory, COMPOSITION_FILE)
-    const broken = await isFile(path)
+    const compositionBroken = await isFile(path)
       ? await compositionProblem(path)
       : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
-    // Display text and copy eligibility, never fatal: a preset with
-    // unreadable metadata still mounts, it just shows its id and resolves
-    // as copyable — the default every preset without published metadata gets.
-    const metadata = await readPresetMetadata(directory)
+    let metadata: PresetMetadata = {}
+    let metadataBroken: string | undefined
+    try {
+      metadata = await readPresetMetadata(directory, { required: root.trust === 'system' })
+    } catch (error) {
+      if (!(error instanceof PresetMetadataError)) throw error
+      metadataBroken = error.reason
+    }
+    const broken = compositionBroken ?? metadataBroken
     found.push({
       id: child.name, trust: root.trust, path, ...metadata,
-      copyable: metadata.copyable ?? true,
+      copyable: broken === undefined && (metadata.copyable ?? true),
       ...broken === undefined ? {} : { broken },
     })
   }

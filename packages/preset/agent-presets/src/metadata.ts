@@ -1,6 +1,6 @@
 /**
- * A preset's own metadata: the display text a picker shows, plus whether the
- * preset may be a copy source.
+ * A preset's own metadata: the display text a picker shows, plus the validated
+ * policy that decides whether the preset may be a copy source.
  *
  * It lives in its own file because the composition is a top-level list of
  * plugin rows — YAML cannot carry sibling keys beside it, and faking a
@@ -12,15 +12,11 @@
  * discovered under, so neither is writable here — otherwise a locally
  * authored preset could claim to be a shipped one.
  *
- * Every read failure degrades to empty metadata, `copyable` included: a
- * preset whose file is missing, malformed, or unreadable still mounts and
- * still resolves as copyable. A shipped preset's file lives beside its
- * `agent.cordis.yml` under the same install permissions, so a tamper that
- * could flip `copyable` back on could equally rewrite the composition itself
- * — the read-only install tree, not this parse, is what actually protects a
- * durably-bound preset like `science`; the composition health check in
- * `./discovery.ts` is the one field here that fails loud, because an
- * unloadable composition blocks mounting rather than degrading.
+ * An absent optional file means no display text and the ordinary copyable
+ * default. A present file must be readable YAML containing a map, and a
+ * declared `copyable` value must be boolean. Discovery requires metadata for
+ * shipped presets so a missing or damaged non-copyable policy makes the row
+ * broken instead of silently authoring a copy that cannot execute.
  * @module @deepseek-ai/dsh-agent-presets/metadata
  */
 
@@ -54,6 +50,17 @@ export interface PresetMetadata {
   readonly copyable?: boolean
 }
 
+/** Metadata that cannot be used to make a copy-eligibility decision. */
+export class PresetMetadataError extends Error {
+  constructor(
+    /** Why the metadata is unusable, without this package's message prefix. */
+    readonly reason: string,
+    options?: ErrorOptions,
+  ) {
+    super(`agent-presets: ${reason}`, options)
+  }
+}
+
 /** A non-empty trimmed string, or undefined for anything else. */
 function text(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -62,38 +69,56 @@ function text(value: unknown): string | undefined {
 }
 
 /**
- * Read one preset directory's display metadata.
+ * Read one preset directory's display metadata and copy policy.
  *
- * Absent, unparsable, and wrongly-shaped files are all the same answer —
- * empty metadata — because the caller renders a picker, not a diagnostic.
+ * An absent optional file returns empty metadata. A required file that is
+ * absent, any unreadable or malformed file, a non-map document, or a declared
+ * non-boolean `copyable` value rejects so discovery can mark the preset broken.
  * @param directory - the preset directory.
- * @returns the display text the preset published, possibly empty.
+ * @param options - whether this root requires every preset to publish metadata.
+ * @returns the validated metadata the preset published, possibly empty.
+ * @throws {@link PresetMetadataError} when required or present metadata cannot
+ * provide a trustworthy copy-eligibility decision.
  */
-export async function readPresetMetadata(directory: string): Promise<PresetMetadata> {
+export async function readPresetMetadata(
+  directory: string,
+  options: { readonly required?: boolean } = {},
+): Promise<PresetMetadata> {
+  const path = join(directory, METADATA_FILE)
   let raw: string
   try {
-    raw = await readFile(join(directory, METADATA_FILE), 'utf8')
-  } catch {
-    // Absent is the common case: metadata is optional and most presets,
-    // including every one authored by duplicating another, carry none.
-    return {}
+    raw = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && options.required !== true) return {}
+    const reason = (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? `the metadata file ${METADATA_FILE} is required for shipped presets`
+      : `the metadata file ${METADATA_FILE} cannot be read`
+    throw new PresetMetadataError(reason, { cause: error })
   }
   let parsed: unknown
   try {
     parsed = yaml.load(raw)
-  } catch {
-    // Malformed display text is not worth failing discovery over; the picker
-    // falls back to the id, and the composition still mounts.
-    return {}
+  } catch (error) {
+    /* v8 ignore next -- js-yaml throws YAMLException (an Error) for every parse failure; the fallback keeps a hostile value readable */
+    const full = error instanceof Error ? error.message : String(error)
+    throw new PresetMetadataError(
+      `the metadata file ${METADATA_FILE} is not valid YAML: ${full.replace(/\n[\s\S]*$/, '')}`,
+      { cause: error },
+    )
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new PresetMetadataError(`the metadata file ${METADATA_FILE} must be a map`)
+  }
   const record = parsed as Record<string, unknown>
+  if ('copyable' in record && typeof record.copyable !== 'boolean') {
+    throw new PresetMetadataError(`the metadata field copyable in ${METADATA_FILE} must be a boolean`)
+  }
   const name = text(record.name)
   const description = text(record.description)
   const order = typeof record.order === 'number' && Number.isFinite(record.order)
     ? record.order
     : undefined
-  const copyable = typeof record.copyable === 'boolean' ? record.copyable : undefined
+  const copyable = record.copyable as boolean | undefined
   return {
     ...name === undefined ? {} : { name },
     ...description === undefined ? {} : { description },

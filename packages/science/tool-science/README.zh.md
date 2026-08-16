@@ -129,6 +129,5 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 ## 已知限制与暂缓事项
 
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
-- **工具 schema 不按 preset 限定范围** — 一旦本包被组合，`get_science_state`/`run_python`/`run_r` 就会全局注册；把它们限制到 `science`-preset session 而不是同一 Host 树中的每个 session，属于后续 preset 切片的职责。
 - **没有图表或 Outcome 工具** — `science/chart-saved` 与 `science/outcome-published` 仍是没有生产者的 durable 词汇；这属于后续某个 Science 切片的职责。
 - **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。

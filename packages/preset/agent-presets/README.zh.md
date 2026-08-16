@@ -21,10 +21,10 @@
 - `ctx.agentPresets.roots: readonly PresetRoot[]` 本 roster 实际扫描的根目录——全部已配置根目录按序在前，随后是推导出的 harness home 根目录。它不是 `config.roots`：判断「是否已组装 roster」应读它，从而由同一处推导决定。
 - `ctx.agentPresets.authorable: boolean` 上述根目录中是否有任一具备 `user` 信任级别，因而 preset 是否可创建。
 - `ctx.agentPresets.read(id): Promise<string>` 某个 preset 的组装文本，与存储内容逐字一致。
-- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——唯一的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。来源自身元信息声明 `copyable: false` 时被拒绝。
+- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——唯一的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。来源损坏或明确不可复制时被拒绝。
 - `ctx.agentPresets.remove(id): Promise<void>` 删除一个本地创作的 preset；已加入的会话保留其常驻挂载。若用户默认值恰好指向刚删除的 preset 则一并清除：存一个尚不存在的默认值是刻意的，但本次删除的这个再也不会有人提供，留着会让所有未显式指定的新会话无法启动。
 
-`AgentPreset` 携带 `id`（目录名）、`trust`（`system` 或 `user`，取自它所在的根目录）、`path`（组装文件的绝对路径），以及——仅当该 preset 无法组装会话时——`broken`（一条人类可读的原因，名单界面原样展示）。
+`AgentPreset` 携带 `id`（目录名）、`trust`（`system` 或 `user`，取自它所在的根目录）、`path`（组装文件的绝对路径），以及解析后的 `copyable` 资格。损坏的 preset 会报告一条人类可读的 `broken` 原因，并始终解析为 `copyable: false`，因此名单界面不会提供服务必然拒绝的复制操作。
 
 ### 应在何处调用 `mount()`
 
@@ -56,7 +56,7 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 
 - **不符合 `[a-z0-9][a-z0-9-]*` 的 id。** id 会成为目录名，因此约束是 id 自身的性质，而非事后再做一次路径检查——`../escape`、`a/b` 与绝对路径都作为 id 被拒绝。
 - **已被占用的 id。** 复制从不覆写：任一根目录已提供该 id 即拒绝（与随附 preset 同名的用户目录只会被它遮蔽），磁盘上占着该名字的目录同样拒绝。发现过程会把这样的目录列为损坏的 preset，所以这条拒绝的出路——删掉它——就在报告它的同一页面上。
-- **来源自身元信息声明 `copyable: false`。** 逐字节复制会挂载与来源相同的工具，却无法通过来源自身 id 以外的任何持久身份绑定或执行——`dsh-tool-science` 把 `ScienceModeRef.presetId` 与 Consumer 资格绑定到字面 `science` preset，因此其 `science/preset.yml` 设置 `copyable: false`，`PresetNotCopyableError` 点名来源。
+- **来源解析后的复制资格为 false。** Discovery 会把每个损坏的 preset 解析为不可复制。健康的 preset 也可以声明 `copyable: false`：逐字节复制 Science 会挂载同样的工具，却无法通过字面 `science` id 以外的持久身份绑定或执行，因此 `science/preset.yml` 禁用该操作。`PresetNotCopyableError` 会点名来源，并区分来源损坏与显式策略。
 - **未知的来源。** 来源可以是任何信任级别——复制随附 preset 正是主要用途——但必须存在；复制失败会回滚做到一半的目录，而不是留下一个 discovery 看不见的目录。
 
 复制出的目录树被收紧为仅属主可用（文件 `0o600` 并保留属主执行位，目录 `0o700`），符号链接被解引用以保证副本自包含，且根目录在首次复制时创建——部署配置了尚不存在的用户根目录，正是首次运行的正常状态。复制出的 `preset.yml` 会被重写：保留来源的描述供作者就地编辑，但丢弃其名称与 roster `order`——副本若与来源呈现得一模一样、或按随附集合声明的顺序排序，roster 就不再能区分它们。`remove()` 拒绝随部署提供的 preset；随附集合正是副本的已知良好起点。
@@ -71,7 +71,7 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 
 ### 展示用元信息
 
-preset 可以在组装文件旁的可选 `preset.yml` 里发布展示文本：
+用户 preset 可以在组装文件旁的可选 `preset.yml` 里发布展示文本；每个随附的 `system` preset 都必须提供该文件：
 
 ```yaml
 name: 极简模式
@@ -80,16 +80,16 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 
 `id` 是目录名，`trust` 取自 preset 被发现时所在的根目录，两者都不可写在这里——否则本地创作的 preset 就能把自己命名进随附集合。之所以是独立文件：组装是插件行的顶层列表，YAML 无法在其旁携带同级键，而伪造一个元信息行等于递给 Loader 一个要加载的东西。
 
-同一份文件还携带可复制性：`copyable: false` 标记该 preset 不能作为 `copy()` 的来源，未发布该字段的 preset 默认为 `true`。
+同一份文件还携带复制资格：`copyable: false` 标记一个健康 preset 不能作为 `copy()` 的来源。健康 preset 未发布该字段时默认为 `true`。
 
-任何读取失败都退化为「空元信息」，`copyable` 也在其中——缺失、格式错误、类型不对、内容为空，含义相同，选择器回退到 id，`copy()` 则回退到默认值。即便对 `science` 这样身份持久绑定的 preset 也是刻意如此：其 `preset.yml` 与 `agent.cordis.yml` 处于同一只读安装权限之下，能篡改回 `copyable` 的攻击者同样能改写组装本身——真正保护它的是安装目录的权限，而不是这次解析。展示不是能力：名字坏掉的 preset 依然能挂载。
+用户 preset 可以省略 `preset.yml`；discovery 此时不使用展示文本，并采用普通的默认复制资格。文件一旦存在，就必须是可读取、内容为 map 的合法 YAML，且声明的 `copyable` 值必须是布尔值。随附 preset 必须提供该文件。违反这些要求会把该行标为损坏且不可复制，避免 Science 策略缺失或损坏后创作出无法使用的副本。无效展示字段仍只影响展示：各字段会被单独忽略，选择器回退到 id，但有效的复制决策不变。
 
 ## 配置
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `default` | 必填 | 调用方未指定时挂载的 preset id |
-| `roots` | `[]` | 按优先级排列的扫描目录；每项提供 `path`（开头的 `~` 会展开）与 `trust`（默认为 `user`） |
+| `roots` | `[]` | 按优先级排列的扫描目录；每项提供 `path`（开头的 `~` 会展开）与 `trust`（默认为 `user`；`system` 要求每个 preset 都有合法元数据） |
 | `includeUserRoot` | `true` | 在全部已配置根目录之后，追加 `<dshHome>/.agent-presets` 作为 `user` 根目录 |
 
 根目录不存在时视为不提供任何 preset，而非失败：用户根目录在写出第一个本地 preset 之前并不存在，而指定了没有任何根目录提供的默认值，在解析时本就会明确报错。

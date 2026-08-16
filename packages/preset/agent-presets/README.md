@@ -21,10 +21,10 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 - `ctx.agentPresets.roots: readonly PresetRoot[]` The roots this roster scans — every configured root in order, then the derived harness-home root. Not `config.roots`: read this to answer whether a roster is composed at all, so one derivation decides it.
 - `ctx.agentPresets.authorable: boolean` Whether any of those roots has `user` trust, and therefore whether a preset can be created at all.
 - `ctx.agentPresets.read(id): Promise<string>` One preset's composition text, exactly as stored.
-- `ctx.agentPresets.copy(from, id, name?): Promise<void>` Create a locally authored preset by copying an existing one's whole directory — the only authoring write. No composition text crosses this seam, so a copy is exactly as loadable as its source; the copied metadata keeps the source's description but never its name or roster order, and `name` (or the id fallback) is what distinguishes the rows. A source whose own metadata declares `copyable: false` is refused.
+- `ctx.agentPresets.copy(from, id, name?): Promise<void>` Create a locally authored preset by copying an existing one's whole directory — the only authoring write. No composition text crosses this seam, so a copy is exactly as loadable as its source; the copied metadata keeps the source's description but never its name or roster order, and `name` (or the id fallback) is what distinguishes the rows. A broken or explicitly non-copyable source is refused.
 - `ctx.agentPresets.remove(id): Promise<void>` Delete a locally authored preset; joined sessions keep their standing mount. Clears the user default when it named the preset just deleted: storing a default that does not exist yet is deliberate, but one this call removed will never be supplied again and would fail every session created without an explicit pick.
 
-`AgentPreset` carries `id` (the directory name), `trust` (`system` or `user`, from the root it was found under), `path` (the absolute composition file), and — only when the preset cannot compose a session — `broken` (one human-readable reason, shown verbatim on roster surfaces).
+`AgentPreset` carries `id` (the directory name), `trust` (`system` or `user`, from the root it was found under), `path` (the absolute composition file), and resolved `copyable` eligibility. A broken preset reports one human-readable `broken` reason and always resolves `copyable: false` so roster surfaces cannot offer a copy that the service will reject.
 
 ### Where to call `mount()`
 
@@ -56,7 +56,7 @@ Authoring is copy-only. A new preset is a whole-directory copy of an existing on
 
 - **An id that is not `[a-z0-9][a-z0-9-]*`.** The id becomes a directory name, so containment is a property of the id itself rather than of a path check after the fact — `../escape`, `a/b`, and an absolute path are all rejected as ids.
 - **An id that is already taken.** A copy never overwrites: any root supplying the id refuses it (a user directory named like a shipped preset would be shadowed by it), and a directory occupying the name on disk refuses it too. Discovery lists such a directory as a broken preset, so the refusal's way out — delete it — is on the same page that reported it.
-- **A source whose own metadata declares `copyable: false`.** A byte-for-byte copy would mount the same tools the source does but cannot bind or execute through any other durable identity than the source's own id — `dsh-tool-science` binds `ScienceModeRef.presetId` and Consumer eligibility to the literal `science` preset, so its `science/preset.yml` sets `copyable: false` and `PresetNotCopyableError` names the source.
+- **A source whose resolved copy eligibility is false.** Discovery resolves every broken preset as non-copyable. A healthy preset may also declare `copyable: false`: a byte-for-byte Science copy would mount the same tools but cannot bind or execute through any durable identity other than the literal `science` id, so `science/preset.yml` disables the operation. `PresetNotCopyableError` names the source and distinguishes a broken source from an explicit policy.
 - **An unknown source.** The source may be any trust — copying a shipped preset is the primary case — but it must exist; a failed copy rolls its half-made directory back rather than leaving one discovery cannot see.
 
 The copied tree is re-tightened to owner-only (`0o600` files keeping their owner-execute bit, `0o700` directories), symlinks are dereferenced so the copy is self-contained, and the root is created on first copy — a deployment configuring a user root that does not exist yet is the normal first-run state. The copied `preset.yml` is rewritten: the source's description is kept for the author to edit in place, but its name and roster `order` are dropped — a copy presenting itself identically to its source, or sorted into the shipped set's declared order, would make the roster stop distinguishing them. `remove()` refuses a preset that ships with the deployment; the shipped set is the known-good compositions copies start from.
@@ -71,7 +71,7 @@ An **absolute** filesystem path keeps its own location. The mount converts it to
 
 ### Display metadata
 
-A preset may publish display text in an optional `preset.yml` beside its composition:
+A user preset may publish display text in an optional `preset.yml` beside its composition; every shipped `system` preset must provide the file:
 
 ```yaml
 name: 极简模式
@@ -80,16 +80,16 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 
 `id` is the directory name and `trust` comes from the root the preset was discovered under, so neither is writable here — otherwise a locally authored preset could name itself into the shipped set. It is a separate file because the composition is a top-level list of plugin rows: YAML cannot carry sibling keys beside it, and a fake metadata row would hand the Loader something to load.
 
-The same file also carries copy eligibility: `copyable: false` marks the preset unusable as a `copy()` source, defaulting to `true` for any preset that publishes no such field.
+The same file also carries copy eligibility: `copyable: false` marks a healthy preset unusable as a `copy()` source. A healthy preset that publishes no such field defaults to `true`.
 
-Every read failure degrades to empty metadata, `copyable` included — absent, malformed, wrongly typed, or blank all mean the same thing, and a picker falls back to the id while `copy()` resolves the default. This is deliberate even for a durably-bound preset like `science`: its `preset.yml` sits under the same read-only install permissions as its `agent.cordis.yml`, so a tamper that could flip `copyable` back on could equally rewrite the composition itself — the install tree's permissions, not this parse, is what actually protects it. Presentation is not capability: a preset with a broken name still mounts.
+A user preset may omit `preset.yml`; discovery then uses no display text and the ordinary copyable default. A present file must be readable YAML containing a map, and a declared `copyable` value must be boolean. Shipped presets require the file. Violations mark the row broken and non-copyable, preventing a missing or damaged Science policy from authoring an unusable copy. Invalid display-field values remain presentation-only: they are ignored individually and the picker falls back to the id without changing a valid copy decision.
 
 ## Config
 
 | Field | Default | Meaning |
 |---|---|---|
 | `default` | required | Preset id mounted when a caller names none |
-| `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`) |
+| `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`; `system` requires valid metadata for every preset) |
 | `includeUserRoot` | `true` | Append `<dshHome>/.agent-presets` as a `user` root, after every configured root |
 
 An absent root supplies no presets rather than failing: the user root does not exist until the first locally authored preset, and naming a default no root supplies already fails loud at resolution.

@@ -46,23 +46,26 @@ export class PresetExistsError extends Error {
 }
 
 /**
- * A copy source whose own metadata declares `copyable: false`.
+ * A copy source whose resolved eligibility forbids copying.
  *
  * A byte-for-byte copy would mount the same tools the source does, but a
  * preset whose durable identity is bound to its literal id — `dsh-tool-science`
  * binds `ScienceModeRef.presetId` and Consumer eligibility to the literal
  * `science` preset — cannot bind or execute through any other id. Refusing
  * the copy up front keeps that failure from reaching a caller as successful
- * authoring.
+ * authoring. A broken source is also refused because discovery cannot prove
+ * that its copied directory would be loadable or honor its copy policy.
  */
 export class PresetNotCopyableError extends Error {
   constructor(
     /** The source preset that refused to be copied. */
     readonly sourceId: string,
+    /** Why discovery resolved this source as non-copyable. */
+    readonly reason = 'its own metadata declares copyable: false',
   ) {
     super(
       `agent-presets: preset "${sourceId}" cannot be copied — `
-      + 'its own metadata declares copyable: false',
+      + reason,
     )
   }
 }
@@ -152,8 +155,9 @@ async function tightenModes(dir: string): Promise<void> {
  * @param id - the new preset's id, which becomes its directory name.
  * @param name - display name for the copy; omitted falls back to the id.
  * @returns the absolute path of the new preset directory.
- * @throws when the id is unusable or already occupied on disk, the source
- * declares itself non-copyable, or the deployment configures no writable root.
+ * @throws when the id is unusable or already occupied on disk, the source is
+ * broken or otherwise non-copyable, or the deployment configures no writable
+ * root.
  */
 export async function copyComposition(
   roots: readonly PresetRoot[],
@@ -162,7 +166,14 @@ export async function copyComposition(
   name?: string,
 ): Promise<string> {
   if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
-  if (!source.copyable) throw new PresetNotCopyableError(source.id)
+  if (!source.copyable) {
+    throw new PresetNotCopyableError(
+      source.id,
+      source.broken === undefined
+        ? 'its own metadata declares copyable: false'
+        : `the source preset is broken: ${source.broken}`,
+    )
+  }
   const dir = join(writableRoot(roots), id)
   // The roster check upstream only sees discovered presets; a directory with
   // no composition file still occupies the name and deserves a readable

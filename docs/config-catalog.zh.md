@@ -190,7 +190,10 @@ export interface Config {
 export interface PresetRoot {
   /** Directory holding one subdirectory per preset; a leading `~` expands. */
   path: string
-  /** Trust recorded on every preset discovered under this root. */
+  /**
+   * Trust recorded on every preset discovered under this root. System presets
+   * must provide valid metadata; user presets may omit the metadata file.
+   */
   trust: PresetTrust
 }
 
@@ -202,7 +205,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-来源：[`packages/preset/agent-presets/src/preset.ts:59`](../packages/preset/agent-presets/src/preset.ts)
+来源：[`packages/preset/agent-presets/src/preset.ts:61`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-spine-demo"></a>
 

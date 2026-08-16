@@ -1,0 +1,4 @@
+name: Science 模式
+description: 面向可复现 Python/R 分析的受限 Agent，提供只读工作区、技能和持久 Science 状态工具。
+order: 5
+copyable: false

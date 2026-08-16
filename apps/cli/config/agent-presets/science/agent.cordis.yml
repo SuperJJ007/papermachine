@@ -1,0 +1,119 @@
+# The `science` agent preset: a restricted agent for reproducible Python/R
+# analysis, read-only over the workspace, with durable Science state.
+#
+# It composes the R3 `@deepseek-ai/dsh-tool-science` Consumer plus a narrow
+# supporting roster: discovery and reading of the workspace, skills, and the
+# generic ask-user/todo tools. It carries no shell, no filesystem write or
+# edit, no delegation, no Web search, and no chart/Outcome publication — a
+# capability this preset lacks is a separate product decision, not a YAML edit.
+#
+# TRUST: `run_python`/`run_r` execute real code through the Host-owned Science
+# Runtime (`ctx.scienceRuntime`), confined to whatever existing Conda prefix
+# the deployment's `science` Runtime profile allowlists. A deployment with no
+# such profile still lists and can select this preset; the first real Science
+# request then fails loudly, naming the missing Host service or profile,
+# before any provider call — see `@deepseek-ai/dsh-agent-presets` (this file)
+# and `@deepseek-ai/dsh-science-runtime` (the Host-owned execution).
+#
+# This file is an AGENT-PLANE composition. It is mounted under one agent's
+# scope context, so every tool and prompt section it registers belongs to that
+# session alone. The host composition (`base.cordis.yml` + `web.cordis.yml`)
+# keeps everything a preset must not own: the registries themselves, the
+# sandbox and approval stack, persistence, the model route, and the Science
+# Runtime row a usable deployment mounts separately.
+#
+# A service row here MUST sit inside a group carrying an `isolate` realm.
+# Without one it publishes into the root realm, where it is process-global —
+# another preset publishing the same name collides, and a host reader would
+# resolve one preset's instance for every session; `dsh-agent-presets` rejects
+# that at mount. `true` means an entry-local realm: this standing mount's own
+# private instance, apart from every other preset's.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The preset's own persona, shadowing the deployment default for this agent.
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: |-
+      You are a Science agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}, mounted read-only.
+
+      You run reproducible Python and R analyses through `run_python` and `run_r`. Read, search, and inspect the workspace with `read`, `glob`, and `grep`; you cannot create, edit, or delete files. Call `get_science_state` to recover durable Science identity, environment, and recent-run history rather than assuming it from earlier turns.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── science ─────────────────────────────────────────────────────────────────
+
+# The model-facing Science Consumer: durable mode/environment binding,
+# `science:environment` runtime context, and the three Science tools. These
+# values are explicit preset policy — not package defaults, not environment
+# discovery — and changing any of them changes model-visible output.
+- id: tool-science
+  name: '@deepseek-ai/dsh-tool-science'
+  config:
+    profileId: science
+    modeRevision: science-v1
+    stateHistoryLimit: 8
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# The read-only subpath entry: `read` and conditional `read_image`, never
+# `write` or `edit`. It shares the root `@deepseek-ai/dsh-tool-fs` package's
+# `Config` and read-capability resolution, so the `fs` service and its policy
+# stay host-owned exactly as they do for `standard`.
+- id: tool-fs-read-only
+  name: '@deepseek-ai/dsh-tool-fs/read-only'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner
+# must share this realm rather than sit outside it. The token meter stays on
+# the HOST plane and is resolved through it, same as `standard`.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# The skill REGISTRY lives in the host composition and is layered per scope:
+# these rows register into THIS preset's layer of it, so they need no realm.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true

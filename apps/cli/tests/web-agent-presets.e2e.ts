@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -7,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -14,6 +16,13 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle, SubprocessOutputRead, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
+import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -140,6 +149,74 @@ function enablePresetTool(composition: string, id: string): string {
   return composition.slice(0, disabled) + composition.slice(disabled + '      disabled: true\n'.length)
 }
 
+// ── fake-backed Science Runtime ──────────────────────────────────────────
+//
+// The science preset's `ctx.scienceRuntime` is deployment configuration the
+// shipped Web Host does not mount (R4 scope); this section proves the
+// preset's WIRING to that Host-owned service — not Runtime execution
+// semantics, which `dsh-tool-science`'s own real-composition test already
+// covers in full. The real `@deepseek-ai/dsh-science-runtime` package is
+// mounted directly (bypassing the Loader/YAML patch layer, since a fake
+// subprocess/sandbox provider is test scaffolding, not a shipped row) over
+// fake subprocess/sandbox providers, mirroring
+// `packages/science/tool-science/tests/harness.ts`'s technique so no real
+// Conda prefix or process confinement is required.
+
+/** Full-enforcement test double that preserves direct argv. */
+class DirectSandbox extends SandboxProvider {
+  confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+  }
+}
+
+function reader(text: string): { readFrom(fromByte: number): SubprocessOutputRead } {
+  return { readFrom: () => ({ text, nextOffset: Buffer.byteLength(text), lossy: false, utf8Validity: 'valid' }) }
+}
+
+function settledHandle(stdout: string, stderr: string): SubprocessHandle {
+  return {
+    pid: 4242,
+    stdin: undefined,
+    stdout: undefined,
+    stderr: undefined,
+    collected: { stdout: reader(stdout), stderr: reader(stderr) },
+    done: Promise.resolve({ exitCode: 0, signal: null }),
+    terminate: () => {},
+    waitForExit: async () => true,
+  }
+}
+
+/** Host-local fake subprocess provider: frozen probes plus a fixed successful run output. */
+class FakeSubprocess extends SubprocessRuntime {
+  override executionWorld: 'host-local' | 'remote' = 'host-local'
+
+  override async resolveExecutable(command: string): Promise<string> {
+    return command
+  }
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    if (spec.argv.includes('--version')) return settledHandle('Fake Python 3.13.5\n', '')
+    if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
+    return settledHandle('fake run output\n', '')
+  }
+
+  override async spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    throw new Error('FakeSubprocess does not allocate terminals')
+  }
+}
+
+/** Write a fake Python Conda prefix with the frozen probe/run outputs `FakeSubprocess` returns. */
+function createFakePythonPrefix(root: string): string {
+  const prefix = join(root, 'fake-conda')
+  mkdirSync(join(prefix, 'bin'), { recursive: true })
+  mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
+  writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-16 <==\n+python-3.13.5\n')
+  const executable = join(prefix, 'bin', 'python')
+  writeFileSync(executable, '#!/bin/sh\nprintf \'fake run output\\n\'\n')
+  chmodSync(executable, 0o700)
+  return prefix
+}
+
 let ctx: Context
 beforeAll(async () => {
   const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-presets-')), 'settings.yaml')
@@ -184,12 +261,16 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies exactly the shipped presets from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'science', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
+    // Every preset copies by default; `science` is the one deliberate exception,
+    // since its durable identity is bound to the literal `science` preset id.
+    expect(listed.find(preset => preset.id === 'science')?.copyable).toBe(false)
+    expect(listed.filter(preset => preset.id !== 'science').every(preset => preset.copyable)).toBe(true)
   })
 
   it('composes the full agent from `standard`', async () => {
@@ -422,6 +503,143 @@ describe('the shipped Web composition', () => {
 
     expect(await readFile(path, 'utf8')).toBe(before)
   })
+})
+
+describe('the science preset', () => {
+  it('composes exactly the approved model tool roster', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-science-roster'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'science').then(() => undefined),
+    })
+    try {
+      // `glob`/`grep` excluded for the same ripgrep-availability reason the
+      // `standard` roster assertion above excludes them.
+      expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
+        'ask_user_question', 'get_science_state', 'read', 'read_image',
+        'run_python', 'run_r', 'skill', 'todo_write',
+      ])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('keeps its narrow roster out of `standard`, and `standard`\'s roster out of it', async () => {
+    const science = await ctx.agents.create({
+      sessionId: SessionId('preset-science-isolation'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'science').then(() => undefined),
+    })
+    const standard = await ctx.agents.create({
+      sessionId: SessionId('preset-science-isolation-standard'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      const scienceTools = toolNames(ctx, science.agent)
+      const standardTools = toolNames(ctx, standard.agent)
+      expect(scienceTools).toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
+      expect(standardTools).not.toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
+      // No shell, no filesystem mutation, no delegation, no chart/Outcome
+      // publication: this preset gives up every capability `standard` has
+      // that Science does not name.
+      for (const forbidden of ['bash', 'write', 'edit', 'subagent', 'web_search']) {
+        expect(scienceTools).not.toContain(forbidden)
+        expect(standardTools).toContain(forbidden)
+      }
+    } finally {
+      await standard.dispose()
+      await science.dispose()
+    }
+  })
+
+  it('fails loudly before any provider request when no Science Runtime is mounted', async () => {
+    // The shipped Web Host mounts no `scienceRuntime` row (R4 scope); a
+    // deployment that wants Science usable must mount one separately.
+    expect(ctx.get('scienceRuntime')).toBeUndefined()
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-science-no-runtime'),
+      // The header's `agentPreset` — set here, not by `mount()` — is what
+      // `isScienceSession()` reads to decide whether first-use binding
+      // applies at all.
+      meta: { agentPreset: 'science' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'science').then(() => undefined),
+    })
+    try {
+      // A bare `{ scope }` assembly is the diagnostic path tool-science
+      // deliberately skips binding for; only an agent+signal assembly — what
+      // the real agent loop's `preStep()` builds through `assembleContextFor` —
+      // triggers first-use binding and therefore this failure.
+      await expect(ctx.systemPrompt.assemble(assembleContextFor(handle.agent, new AbortController().signal)))
+        .rejects.toThrow(/no Science Runtime is mounted \(ctx\.scienceRuntime\)/)
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('refuses to copy the preset, naming it as the source', async () => {
+    // Not an `instanceof` check: this file resolves `dsh-agent-presets` as TS
+    // source while the booted Web composition resolves the same package from
+    // its own built `node_modules` copy — two module instances of one class.
+    await expect(ctx.agentPresets.copy('science', 'science-copy')).rejects.toThrow(/"science" cannot be copied/)
+    await expect(ctx.agentPresets.copy('science', 'science-copy'))
+      .rejects.toThrow(/copyable: false/)
+  })
+})
+
+describe('a fake-backed Science Runtime mounted for the science preset', () => {
+  let runtimeCtx: Context
+  let scratch: string
+
+  beforeAll(async () => {
+    const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-science-runtime-')), 'settings.yaml')
+    await writeFile(settingsFile, '{}\n')
+    runtimeCtx = await bootWeb(settingsFile)
+    // Repo-relative, not os.tmpdir(): Science Runtime scratch roots must not
+    // overlap a generic sandbox temp grant (same reason `dsh-tool-science`'s
+    // own real-composition test picks its scratch root the same way).
+    scratch = await mkdtemp(join(REPO_ROOT, '.web-science-runtime-scratch-'))
+    // The shipped Web bundle already provides real `subprocess`/`sandbox`
+    // Host rows (bash/pwsh need them) — a second plugin providing the same
+    // service name collides. Isolating just those two names gives the fake
+    // providers their own scope for the Science Runtime to inject, while its
+    // OWN `scienceRuntime` registration — not isolated — still reaches the
+    // outer context, exactly like a preset's `isolate` realm.
+    const isolated = runtimeCtx.isolate('subprocess').isolate('sandbox')
+    await isolated.plugin(FakeSubprocess)
+    await isolated.plugin(DirectSandbox)
+    await isolated.plugin(ScienceRuntime, {
+      dshHome: join(scratch, 'dsh-home'),
+      profiles: { science: { pythonPrefix: createFakePythonPrefix(scratch) } },
+    })
+  }, 120_000)
+
+  afterAll(async () => {
+    await runtimeCtx.fiber.dispose()
+    await rm(scratch, { recursive: true, force: true })
+  })
+
+  it('binds a real environment through the fake-backed Runtime and assembles a real request', async () => {
+    const handle = await runtimeCtx.agents.create({
+      sessionId: SessionId('preset-science-fake-runtime'),
+      meta: { agentPreset: 'science' },
+      setup: agentCtx => runtimeCtx.agentPresets.mount(agentCtx, 'science').then(() => undefined),
+    })
+    try {
+      const assembly = await runtimeCtx.systemPrompt.assemble(
+        assembleContextFor(handle.agent, new AbortController().signal))
+      const environmentText = assembly.contexts.find(context => context.name === 'science:environment')?.text ?? ''
+      expect(environmentText).toContain('Science mode: revision science-v1.')
+      expect(environmentText).toContain('Environment: profile "science", revision 1, status applied.')
+      expect(assembly.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
+
+      // The durable events a real bind commits, in order — the CLI evidence
+      // this file owns, distinct from the package-level request-transcript
+      // evidence `dsh-tool-science`'s own real-composition test carries.
+      const types = handle.agent.session.events.map(event => event.type)
+      expect(types.indexOf('science/mode-bound')).toBeGreaterThanOrEqual(0)
+      expect(types.indexOf('science/environment-bound')).toBeGreaterThan(types.indexOf('science/mode-bound'))
+    } finally {
+      await handle.dispose()
+    }
+  }, 30_000)
 })
 
 describe('product subagent rows in user presets', () => {

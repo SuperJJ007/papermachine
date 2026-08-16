@@ -100,6 +100,15 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     expect(snapshot).toContain('查看: 标准模式')
     expect(snapshot).not.toContain('删除: 标准模式')
     expect(snapshot).not.toContain('打开目录')
+    // The fifth built-in preset: selectable and viewable like any other, but
+    // its own metadata declares copyable: false, so the section disables
+    // exactly the copy action — with its own localized reason, distinct from
+    // a broken preset's — rather than offering a copy the host would refuse.
+    expect(snapshot).toContain('Science 模式')
+    expect(snapshot).toContain('设为默认: Science 模式')
+    expect(snapshot).toContain('查看: Science 模式')
+    expect(snapshot).toContain('复制: Science 模式" [disabled]')
+    expect(snapshot).toContain('该预设不能被复制')
   }, 60_000)
 
   it('views a shipped composition read-only instead of editing it', async () => {

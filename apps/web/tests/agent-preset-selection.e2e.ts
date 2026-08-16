@@ -218,6 +218,11 @@ describe('web e2e: agent-preset selection', () => {
     // the id alone never said what a preset does.
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('Creator mode')
+    // The fifth built-in preset, localized and ordered last: the picker
+    // offers it exactly like any other selectable preset — copy eligibility
+    // is an authoring-surface fact, not a selection-surface one.
+    expect(snapshot).toContain('Science mode')
+    expect(snapshot.indexOf('Creator mode')).toBeLessThan(snapshot.indexOf('Science mode'))
     await page.keyboard.press('Escape')
   })
 

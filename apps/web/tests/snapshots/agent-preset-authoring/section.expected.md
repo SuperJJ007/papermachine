@@ -61,6 +61,16 @@
       - 'button "复制: 创造模式"':
         - img
         - text: 复制
+    - listitem:
+      - 'button "设为默认: Science 模式"':
+        - text: Science 模式 内置 面向可复现 Python/R 分析的受限 Agent，提供只读工作区、技能和持久 Science 状态工具。
+        - code: science
+      - 'button "查看: Science 模式"':
+        - img
+        - text: 查看
+      - 'button "复制: Science 模式" [disabled]':
+        - img
+        - text: 该预设不能被复制
   - heading "自定义" [level=3]
   - button "用「创造模式」创作自定义预设":
     - img

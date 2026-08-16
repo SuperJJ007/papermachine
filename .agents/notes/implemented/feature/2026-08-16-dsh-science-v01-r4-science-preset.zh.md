@@ -24,18 +24,18 @@ R4 加入内置 `science` preset、针对其固定持久身份的显式不可复
 |---|---|---|
 | 官方源码基线 | `deepseek-ai/deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`，版本 `0.1.0-rc.5` | 不可变的上游产品基线 |
 | 已验收 R3 文档收口 head（R4 plan base） | `92ee890e8da762ba789e74610551b4fd3351ed27` | R4 实现的精确起点 |
-| 已验收 R4 candidate | `ac57329b7a2a6912734dee84774ea67b84859007`，位于 plan base 之上七个线性 commit | 内置 preset 及其可复制性前置条件的精确已验收源码行为 |
+| 修复后的 R4 行为 candidate | `cda69a9e5f6fb729c4699f70e06dc23745f0788f`，位于 plan base 之上九个线性 commit | 最终复制策略修复后的精确已验收源码行为 |
 | 下游 preset 来源 | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01`；仅 preset commit | 只读名单、locale 与测试输入；不继承补丁或验收 |
 | 被否决的下游区间 | 截止 `fae091e1080e830bed8ad0456e4cbced29101b01` 的 Phase 3 区间 | 仅用作负向范围与评审证据 |
 
-下游测试、snapshot、评审结论、真实机器报告、脏 worktree、RC6 artifact 或更晚的上游源码都不是 R4 验收证据。[带日期的 R4 evidence 记录](../../../../docs/evidence/2026-08-16-dsh-science-v01-r4-science-preset.md)持有七个 commit 身份、worktree 状态、精确工具链、命令、结果、平台事实、例外和 `NOT-RUN` 层。
+下游测试、snapshot、评审结论、真实机器报告、脏 worktree、RC6 artifact 或更晚的上游源码都不是 R4 验收证据。[带日期的 R4 evidence 记录](../../../../docs/evidence/2026-08-16-dsh-science-v01-r4-science-preset.md)持有九个 commit 身份、worktree 状态、精确工具链、命令、结果、平台事实、例外和 `NOT-RUN` 层。
 
 ### 范围
 
 | 方向 | 区域 | R4 结果 |
 |---|---|---|
 | IN | `SCI-PRESET` | `apps/cli/config/agent-presets/science/{agent.cordis.yml,preset.yml}`，包含精确受限名单、项目指令、元数据与显式 Science Consumer 策略 |
-| IN | 可安全复制的 preset 创作 | 通用且显式的 preset 可复制字段，默认允许复制；内置 `science` 元数据禁止复制，`ctx.agentPresets.copy()` 与 `agentPreset.copy` 拒绝复制，Web 不提供可执行的复制路径 |
+| IN | 可安全复制的 preset 创作 | 通用且显式的 preset 可复制字段，仅健康 preset 默认允许复制；随附元数据必须存在且通过校验，每个损坏来源都 fail-closed，内置 `science` 元数据禁止复制，`ctx.agentPresets.copy()` 与 `agentPreset.copy` 拒绝复制，Web 不提供可执行的复制路径 |
 | IN | 应用集成 | `apps/cli` 依赖、lockfile importer 变化、preset 发现、内置项本地化文案和聚焦 CLI/client 组装测试 |
 | IN | 浏览器与模型可见验收 | 更新随附名单的 ARIA golden，并新增无密钥 `apps/web` snapshot：挂载精确随附 preset，通过 Web scaffold、Loader、preset registry 与 agent loop 驱动真实请求 |
 | IN | 当前文档与收口 | 受影响的包/应用文档和生成物、本 Note 的生命周期变化，以及带日期的 R4 evidence 记录 |
@@ -55,7 +55,7 @@ Preset 组装 Science persona、设置 `maxBytes: 65536` 的 `@deepseek-ai/dsh-a
 
 在具备图片 attachment 与随附 ripgrep 的 Web Host 中，精确模型工具名单为 `ask_user_question`、`get_science_state`、`glob`、`grep`、`read`、`read_image`、`run_python`、`run_r`、`skill` 与 `todo_write`。名单排除 bash/pwsh、文件系统写入/编辑、`str_replace_editor`、jobs、Goal、plan mode、subagents、workflows、Ralph、Code Mode、self-modification、Web search、chart/Outcome 发布，以及所有未在上文点名的工具。`apps/cli/tests/web-agent-presets.e2e.ts` 断言组装后的名单与每个 preset 的作用域；YAML 中没有某行不能单独作为证据。
 
-R1 与 R3 刻意把 `ScienceModeRef.presetId` 和 Consumer 资格绑定到字面 `science` preset。逐字节复制出的 `science-copy` 会挂载三个 Science 工具，却无法绑定或执行它们。R4 不把这条用户可达故障伪装成成功创作：preset 元数据新增显式 `copyable` 布尔值，既有元数据默认 `true`，`science/preset.yml` 设置 `copyable: false`，服务与 Host API 以点名来源的诊断拒绝直接复制请求（`PresetNotCopyableError`，wire 代码 `agent-preset-not-copyable`），Web 以本地化原因（`notCopyable`，独立于损坏 preset 的 `brokenNoCopy`）禁用 Science 复制操作。[仅复制创作决策](../simplification/2026-08-08-copy-only-preset-authoring.md)继续持有创作机制；R4 只增加来源资格，不改变损坏行健康语义或其他复制行为。支持派生 Science preset id 仍须另行决定 R1/R3 持久身份。
+R1 与 R3 刻意把 `ScienceModeRef.presetId` 和 Consumer 资格绑定到字面 `science` preset。逐字节复制出的 `science-copy` 会挂载三个 Science 工具，却无法绑定或执行它们。R4 不把这条用户可达故障伪装成成功创作：preset 元数据新增显式 `copyable` 布尔值，`science/preset.yml` 设置 `copyable: false`，服务与 Host API 以点名来源的诊断拒绝直接复制请求（`PresetNotCopyableError`，wire 代码 `agent-preset-not-copyable`），Web 以本地化原因（`notCopyable`，独立于损坏 preset 的 `brokenNoCopy`）禁用 Science 复制操作。健康的用户 preset 可以省略元数据并默认为可复制；随附 system preset 必须提供可读取的 map 元数据，声明的 `copyable` 必须是布尔值，每个损坏 preset 都解析为不可复制。因此，策略缺失、YAML 损坏、无法读取、顶层类型错误或字段类型错误都会在 discovery 与直接创作中 fail-closed。[仅复制创作决策](../simplification/2026-08-08-copy-only-preset-authoring.md)继续持有创作机制；支持派生 Science preset id 仍须另行决定 R1/R3 持久身份。
 
 ### Host、Session 与 Runtime 归属
 
@@ -83,7 +83,7 @@ Loader、随附 preset registry/mount、agent loop、Session store、system-prom
 
 ### 验证与收口
 
-R4 源码证据包括 copyability/API/client unit 套件（372 个测试，17 个文件）、CLI e2e 组装文件（35 个测试）、两条 Web 浏览器 lane 加新增 Web snapshot（14 个测试）、已构建 artifact 的 lib-mode snapshot 重跑、`typecheck`、`build`、`check:ci:artifacts`（5/5）、`verify-cordis-config`、`doc-sync`（28/28）、`verify-agent-note-format` 与 `lint`。两项 hygiene 子检查——`rescope-vendor:check` 与 `knip`——与 R4 plan base 上的结果完全一致，作为 pre-existing 披露而非报告为通过；pre-existing 的 8-clone `duplication` gap 同样没有任何 R4 新增文件。一次针对完整区间的独立 clean-context review 未发现任何 `BLOCK` 或 `HIGH` finding；唯一被关闭的 nit（`AgentPreset.copyable` 再生成扰动的一处过期生成行号交叉引用）已在已验收 candidate 中修复。[带日期的 R4 evidence 记录](../../../../docs/evidence/2026-08-16-dsh-science-v01-r4-science-preset.md)把每项结果与例外绑定到已验收 candidate SHA。
+修复后行为 candidate 上的 R4 源码证据包括 copyability/API/client unit 套件（378 个测试，17 个文件）、CLI e2e 组装文件（38 个测试）、两条 Web 浏览器 lane 与 Web snapshot（14 个测试）、已构建 artifact 的 lib-mode snapshot、Node 24 Host build、五项 artifact 检查（其中 sandbox 阻塞的 built-bin 命令在 Host 上原样重跑）、`verify-cordis-config`、`doc-sync` 与 lint。最终验收 audit 否决了此前 candidate，因为损坏或缺失的策略可能 fail-open，且 Science 工具 README 仍称 schema 全局生效。本次修复让损坏行不可复制、要求随附元数据合法、通过真实 CLI 组装覆盖随附策略缺失／格式错误／类型错误，删除过期限制，并重新生成受影响目录。对修复范围的最终语义与 diff 复审未发现剩余 blocker 或 high-severity finding。历史 repository-wide hygiene 例外与本次修复分层处理。[带日期的 R4 evidence 记录](../../../../docs/evidence/2026-08-16-dsh-science-v01-r4-science-preset.md)把每项结果与例外绑定到 `cda69a9e5f6fb729c4699f70e06dc23745f0788f`。
 
 真实 Python 与 R Consumer acceptance 针对明确授权的既有 Conda prefix，对 R4 仍为 `NOT-RUN`。Desktop、provider credentials、签名、发布与 release 仍为 `NOT-RUN`。
 
@@ -113,7 +113,7 @@ R4 不 supersede R1 Science Session、R2 Science Runtime 或 R3 Science 工具�
 
 ## Consequences
 
-R4 让 Science 产品线获得第一个随产品交付的应用组装，且不引入下游历史。Preset 根目录把 `science` 列为显示顺序 `5` 的 system preset，携带已决定的中文 fallback 元数据；`standard` 仍是组装与设置默认项。Science preset 提供 `profileId: science`、`modeRevision: science-v1`、`stateHistoryLimit: 8`、项目 `AGENTS.md` 指令与精确获批工具名单，不贡献 process-global service 或禁用工具。通用 preset 约定把 `copyable` 默认为 true，Science 元数据将其设为 false，直接 service/API 复制以点名来源的诊断失败，Web authoring golden 不出现已启用的 Science 复制操作。随附 Web Host 不增加 invariant、invariant companion、Science Session projection 行或 Runtime 行；生成的 known-event types 保持事件准入权威。Runtime service 或 `science` profile 缺失时在任何 provider request 前失败，点名缺失 Host 对象，且绝不回退到其他 profile、Standard mode 或发现出的机器路径。`apps/web/tests/science-preset.snapshot.ts` 挂载精确随附 preset，并记录真实模型请求；其中 persona、项目指令、runtime context、工具、结果与持久事件可以相互重建，且不含 Host 路径。两条既有 Web 浏览器 lane 与 ARIA golden 按顺序展示五个内置项、本地化 Science 文案、保留的 Standard 默认值，以及禁用的 Science 创作操作。
+R4 让 Science 产品线获得第一个随产品交付的应用组装，且不引入下游历史。Preset 根目录把 `science` 列为显示顺序 `5` 的 system preset，携带已决定的中文 fallback 元数据；`standard` 仍是组装与设置默认项。Science preset 提供 `profileId: science`、`modeRevision: science-v1`、`stateHistoryLimit: 8`、项目 `AGENTS.md` 指令与精确获批工具名单，不贡献 process-global service 或禁用工具。通用 preset 约定让健康用户 preset 默认可复制、要求随附 preset 提供合法元数据、把每个损坏 preset 解析为不可复制，并接受健康 preset 的显式 false。Science 声明 false；直接 service/API 复制以点名来源的诊断失败，Web authoring golden 不出现已启用的 Science 复制操作。随附 Web Host 不增加 invariant、invariant companion、Science Session projection 行或 Runtime 行；生成的 known-event types 保持事件准入权威。Runtime service 或 `science` profile 缺失时在任何 provider request 前失败，点名缺失 Host 对象，且绝不回退到其他 profile、Standard mode 或发现出的机器路径。`apps/web/tests/science-preset.snapshot.ts` 挂载精确随附 preset，并记录真实模型请求；其中 persona、项目指令、runtime context、工具、结果与持久事件可以相互重建，且不含 Host 路径。两条既有 Web 浏览器 lane 与 ARIA golden 按顺序展示五个内置项、本地化 Science 文案、保留的 Standard 默认值，以及禁用的 Science 创作操作。
 
 没有 Science Runtime 的 Host 仍可发现该 preset，因此用户可能选择一个首次真实请求会失败的模式；R4 在诊断能于 provider call 前点名缺失 service 或 profile，且不作就绪声明的前提下接受这项产品取舍。通用 copyability 字段同时改变 preset、Host API 与 client 行为——unit、wire 与 browser 证据彼此一致，补上了仅 UI 检查或仅 service 检查都会留下的缺口。手工复制文件系统目录仍可绕过 `agentPreset.copy`，并产生不合资格的 Science 组装；在另行决定持久身份并支持派生 Science id 之前，mount 或首次使用继续保留 R3 的字面身份诊断。`science-v1` 是持久 Session 身份，偶然修改字符串会按 R3 刻意 mismatch 规则搁置可恢复 Session，因此 revision 变化需要单独的兼容性决策。受限名单放弃 shell、mutation、delegation、Web search 与 chart publication；为方便而加入任一能力会改变产品/安全承诺，必须显式评审，不能只改 YAML。R4 没有生产 projection consumer——未来若没有具体 Web 读路径就加入 `@deepseek-ai/dsh-science-session`，会增加 checkpoint 工作与 Host 范围事件处理，却没有对应产品行为。
 

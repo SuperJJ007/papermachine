@@ -322,8 +322,8 @@ describe('the copy dialog', () => {
 
 describe('the copy blocker', () => {
   const rows: PresetRow[] = [
-    { id: 'standard', trust: 'system', isDefault: true },
-    { id: 'mine', trust: 'user', isDefault: false },
+    { id: 'standard', trust: 'system', isDefault: true, copyable: true },
+    { id: 'mine', trust: 'user', isDefault: false, copyable: true },
   ]
   const draft = (id: string): CopyDraft =>
     ({ from: 'standard', fromTitle: '标准模式', id, name: '', saving: false, error: null })

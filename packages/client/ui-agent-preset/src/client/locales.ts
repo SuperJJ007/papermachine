@@ -8,10 +8,11 @@ export type AgentPresetSettingsKey =
   | 'presetCodeName' | 'presetCodeDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetScienceName' | 'presetScienceDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
-  | 'brokenBadge' | 'brokenNoCopy'
+  | 'brokenBadge' | 'brokenNoCopy' | 'notCopyable'
   | 'composition' | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
@@ -46,6 +47,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: 'Creator mode',
   presetCordisDescription:
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+  presetScienceName: 'Science mode',
+  presetScienceDescription:
+    'Restricted agent for reproducible Python/R analysis with a read-only workspace, skills, and durable Science state tools.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -59,6 +63,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   noDescription: 'No description.',
   brokenBadge: 'Failed to load',
   brokenNoCopy: 'A preset that failed to load cannot be duplicated',
+  notCopyable: 'This preset cannot be duplicated',
   copyOf: 'Copied from',
   composition: 'Composition (agent.cordis.yml)',
   cancel: 'Cancel',
@@ -106,6 +111,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetScienceName: 'Science 模式',
+  presetScienceDescription: '面向可复现 Python/R 分析的受限 Agent，提供只读工作区、技能和持久 Science 状态工具。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -119,6 +126,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   noDescription: '暂无描述。',
   brokenBadge: '加载失败',
   brokenNoCopy: '预设加载失败，不能复制',
+  notCopyable: '该预设不能被复制',
   copyOf: '复制自',
   composition: '组装（agent.cordis.yml）',
   cancel: '取消',
@@ -171,6 +179,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   code: { name: 'presetCodeName', description: 'presetCodeDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
+  science: { name: 'presetScienceName', description: 'presetScienceDescription' },
 }
 
 /**

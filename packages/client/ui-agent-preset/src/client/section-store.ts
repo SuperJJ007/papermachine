@@ -34,6 +34,12 @@ export interface PresetRow {
   /** Whether a session that names no preset gets this one. */
   isDefault: boolean
   /**
+   * Whether the copy action may use this preset as a source. `false` disables
+   * the card's copy button with a localized reason rather than offering an
+   * action the host will refuse.
+   */
+  copyable: boolean
+  /**
    * Why the preset cannot compose a session, absent when it can. A broken
    * row renders marked and unselectable — its directory still occupies the
    * id, so deleting it (or fixing the files) is the way out, and this page

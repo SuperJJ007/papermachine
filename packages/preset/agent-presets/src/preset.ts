@@ -32,6 +32,13 @@ export interface AgentPreset {
   /** Declared position within its group; absent sorts after those that declare one. */
   readonly order?: number
   /**
+   * Whether `agentPresets.copy()` may use this preset as a source, resolved
+   * from the preset's own metadata with an absent declaration read as `true`
+   * — the default every ordinary preset gets without publishing the field
+   * at all.
+   */
+  readonly copyable: boolean
+  /**
    * Why this preset cannot compose a session, absent when it can. A broken
    * preset stays on the roster — hiding it would leave its directory blocking
    * the id with nothing to see or delete — but every mounting path refuses it

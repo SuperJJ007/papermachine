@@ -78,6 +78,21 @@ describe('reading display metadata', () => {
     expect(await readPresetMetadata(await presetDir('order: .inf\n'))).toEqual({})
   })
 
+  it('reads a declared copyable: false', async () => {
+    const dir = await presetDir('name: Science 模式\ncopyable: false\n')
+
+    expect(await readPresetMetadata(dir)).toEqual({ name: 'Science 模式', copyable: false })
+  })
+
+  it('reads a declared copyable: true explicitly, same as absent', async () => {
+    expect(await readPresetMetadata(await presetDir('copyable: true\n'))).toEqual({ copyable: true })
+  })
+
+  it('ignores a copyable value that is not a boolean', async () => {
+    expect(await readPresetMetadata(await presetDir('copyable: "no"\n'))).toEqual({})
+    expect(await readPresetMetadata(await presetDir('copyable: 0\n'))).toEqual({})
+  })
+
   it('cannot carry identity or trust', async () => {
     const dir = await presetDir('name: mine\nid: standard\ntrust: system\n')
 
@@ -97,6 +112,17 @@ describe('rendering display metadata', () => {
 
   it('stores a declared order', () => {
     expect(renderPresetMetadata({ name: '标准模式', order: 1 })).toBe('name: 标准模式\norder: 1\n')
+  })
+
+  it('stores a declared copyable: false', () => {
+    expect(renderPresetMetadata({ name: 'Science 模式', copyable: false }))
+      .toBe('name: Science 模式\ncopyable: false\n')
+  })
+
+  it('treats copyable: false alone as something to store, not nothing', () => {
+    // false is a meaningful, falsy value — the emptiness check must not
+    // mistake it for an absent field the way it would treat "".
+    expect(renderPresetMetadata({ copyable: false })).toBe('copyable: false\n')
   })
 
   it('omits an absent field rather than writing it blank', () => {

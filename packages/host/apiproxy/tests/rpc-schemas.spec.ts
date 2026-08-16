@@ -547,10 +547,22 @@ describe('respond payload schemas', () => {
 
 describe('agent-preset schemas', () => {
   it('accepts a roster row and rejects an unknown trust', () => {
-    expect(agentPresetEntrySchema.parse({ id: 'standard', trust: 'system', isDefault: true }))
-      .toEqual({ id: 'standard', trust: 'system', isDefault: true })
-    expect(() => agentPresetEntrySchema.parse({ id: 'x', trust: 'root', isDefault: false })).toThrow()
-    expect(() => agentPresetEntrySchema.parse({ id: '', trust: 'user', isDefault: false })).toThrow()
+    expect(agentPresetEntrySchema.parse({ id: 'standard', trust: 'system', isDefault: true, copyable: true }))
+      .toEqual({ id: 'standard', trust: 'system', isDefault: true, copyable: true })
+    expect(() => agentPresetEntrySchema.parse({ id: 'x', trust: 'root', isDefault: false, copyable: true })).toThrow()
+    expect(() => agentPresetEntrySchema.parse({ id: '', trust: 'user', isDefault: false, copyable: true })).toThrow()
+  })
+
+  it('requires copyable rather than defaulting it on the wire', () => {
+    // The default lives in `dsh-agent-presets` discovery, which always
+    // resolves the field before it reaches this schema; a row missing it here
+    // is a Host bug, not an ordinary preset with unpublished metadata.
+    expect(() => agentPresetEntrySchema.parse({ id: 'standard', trust: 'system', isDefault: true })).toThrow()
+  })
+
+  it('accepts a non-copyable row', () => {
+    expect(agentPresetEntrySchema.parse({ id: 'science', trust: 'system', isDefault: false, copyable: false }))
+      .toEqual({ id: 'science', trust: 'system', isDefault: false, copyable: false })
   })
 
   it('accepts an empty roster', () => {

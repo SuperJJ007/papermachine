@@ -69,6 +69,13 @@ export interface RosterPreset {
   trust: 'system' | 'user'
   /** Whether a session that names no preset gets this one. */
   isDefault: boolean
+  /**
+   * Whether `agentPreset.copy` may use this preset as a source. `false` for a
+   * preset whose own metadata declares itself non-copyable — its durable
+   * identity is bound to its literal id, so a byte-for-byte copy would mount
+   * the same tools but never bind or execute them.
+   */
+  copyable: boolean
   /** Display name the preset published, absent when it published none. */
   name?: string
   /** One sentence on what the preset is for. */

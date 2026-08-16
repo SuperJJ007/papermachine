@@ -153,11 +153,13 @@ export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
     const broken = await isFile(path)
       ? await compositionProblem(path)
       : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
-    // Display text only, and never fatal: a preset with unreadable metadata
-    // still mounts, it just shows its id.
+    // Display text and copy eligibility, never fatal: a preset with
+    // unreadable metadata still mounts, it just shows its id and resolves
+    // as copyable — the default every preset without published metadata gets.
     const metadata = await readPresetMetadata(directory)
     found.push({
       id: child.name, trust: root.trust, path, ...metadata,
+      copyable: metadata.copyable ?? true,
       ...broken === undefined ? {} : { broken },
     })
   }

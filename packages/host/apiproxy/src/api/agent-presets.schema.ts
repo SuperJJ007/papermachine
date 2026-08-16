@@ -14,6 +14,7 @@ export const agentPresetEntrySchema = z.object({
   id: z.string().min(1),
   trust: z.union([z.literal('system'), z.literal('user')]),
   isDefault: z.boolean(),
+  copyable: z.boolean(),
   name: z.string().optional(),
   description: z.string().optional(),
   broken: z.string().min(1).optional(),

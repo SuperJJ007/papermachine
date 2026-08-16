@@ -16,7 +16,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
 import type { HostFrame } from '../src/api/events.ts'
 import {
-  InvalidPresetIdError, PresetExistsError, resolveSessionPreset, UnknownPresetError,
+  InvalidPresetIdError, PresetExistsError, PresetNotCopyableError, resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { GoalId } from '@deepseek-ai/dsh-goal'
@@ -36,13 +36,16 @@ function stubAgent(session: Session): Agent {
 /**
  * A roster whose `mount` is a no-op: this spec is about the gateway's identity
  * rules, and the composition itself is covered by the real-composition test in
- * `apps/cli`. Ids listed in `userIds` present as locally authored; the rest
- * ship with the deployment.
+ * `apps/cli`. Ids listed in `userIds` present as locally authored; ids listed
+ * in `nonCopyableIds` resolve `copyable: false`; the rest ship with the
+ * deployment and resolve as ordinary copy sources.
  */
-function roster(ids: readonly string[], userIds: readonly string[] = []): unknown {
+function roster(
+  ids: readonly string[], userIds: readonly string[] = [], nonCopyableIds: readonly string[] = [],
+): unknown {
   const trustOf = (id: string): 'system' | 'user' => (userIds.includes(id) ? 'user' : 'system')
   const presetOf = (id: string): object =>
-    ({ id, trust: trustOf(id), path: `/presets/${id}/agent.cordis.yml` })
+    ({ id, trust: trustOf(id), path: `/presets/${id}/agent.cordis.yml`, copyable: !nonCopyableIds.includes(id) })
   return {
     defaultId: ids[0],
     list: () => Promise.resolve(ids.map(presetOf)),
@@ -63,6 +66,7 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
     read: (id: string) => Promise.resolve(`# ${id}\n- id: x\n  name: y\n`),
     copy: (from: string, id: string) => {
       if (!ids.includes(from)) return Promise.reject(new UnknownPresetError(from, ids))
+      if (nonCopyableIds.includes(from)) return Promise.reject(new PresetNotCopyableError(from))
       if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return Promise.reject(new InvalidPresetIdError(id))
       if (ids.includes(id)) return Promise.reject(new PresetExistsError(id))
       return Promise.resolve()
@@ -104,7 +108,7 @@ const services = new Map<string, Record<string, unknown>>()
 async function harness(
   presets?: readonly string[],
   persistence?: unknown,
-  options: { userIds?: readonly string[]; defaults?: Record<string, unknown> } = {},
+  options: { userIds?: readonly string[]; nonCopyableIds?: readonly string[]; defaults?: Record<string, unknown> } = {},
 ) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-preset-')))
   const ctx = new Context()
@@ -112,7 +116,9 @@ async function harness(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
   ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
-  if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
+  if (presets !== undefined) {
+    ctx.provide('agentPresets', roster(presets, options.userIds, options.nonCopyableIds) as never)
+  }
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
@@ -319,10 +325,23 @@ describe('agentPreset.list', () => {
     expect(response.result.ok).toBe(true)
     if (!response.result.ok) throw new Error('unreachable')
     expect(response.result.value.presets).toEqual([
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'minimal', trust: 'system', isDefault: false },
+      { id: 'standard', trust: 'system', isDefault: true, copyable: true },
+      { id: 'minimal', trust: 'system', isDefault: false, copyable: true },
     ])
     expect(response.result.value.authorable).toBe(true)
+  })
+
+  it('carries a non-copyable preset\'s copyable: false through to the wire', async () => {
+    const { api } = await harness(['standard', 'science'], undefined, { nonCopyableIds: ['science'] })
+
+    const response = await api.agentPresets.list(request({}))
+
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.presets).toEqual([
+      { id: 'standard', trust: 'system', isDefault: true, copyable: true },
+      { id: 'science', trust: 'system', isDefault: false, copyable: false },
+    ])
   })
 
   it('answers with an empty roster when the deployment composes no presets', async () => {
@@ -511,6 +530,19 @@ describe('authoring over the wire', () => {
     if (response.result.ok) throw new Error('unreachable')
     expect(response.result.error.code).toBe('agent-preset-invalid')
     expect(response.result.error.message).toMatch(/already exists/)
+  })
+
+  it('rejects a copy whose source declares copyable: false, naming the source', async () => {
+    const { api } = await harness(['standard', 'science'], undefined, { nonCopyableIds: ['science'] })
+
+    const response = await api.agentPresets.copy(request({ from: 'science', agentPreset: 'science-copy' }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-not-copyable')
+    expect(response.result.error.details).toEqual({
+      agentPreset: 'science-copy', source: 'science', reason: response.result.error.message,
+    })
   })
 
   it('rejects a copy whose source is unknown', async () => {

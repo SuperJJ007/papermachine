@@ -16,7 +16,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, {
-  COMPOSITION_FILE, copyComposition, METADATA_FILE,
+  COMPOSITION_FILE, copyComposition, METADATA_FILE, PresetNotCopyableError,
 } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -158,6 +158,7 @@ describe('copying a preset', () => {
       id: 'gone',
       trust: 'user' as const,
       path: join(userRoot, 'gone', COMPOSITION_FILE),
+      copyable: true,
     }
 
     // The source vanished between resolve and copy: the half-made target is
@@ -166,6 +167,33 @@ describe('copying a preset', () => {
       [{ path: userRoot, trust: 'user' as const }], source, 'mine',
     )).rejects.toThrow()
     expect(existsSync(join(userRoot, 'mine'))).toBe(false)
+  })
+})
+
+describe('copying a preset whose metadata declares copyable: false', () => {
+  it('refuses through the service, naming the source', async () => {
+    await seedPreset(userRoot, 'pinned', { metadata: 'copyable: false\n' })
+
+    await expect(ctx.agentPresets.copy('pinned', 'pinned-copy')).rejects.toThrow(PresetNotCopyableError)
+    await expect(ctx.agentPresets.copy('pinned', 'pinned-copy')).rejects.toThrow(/"pinned" cannot be copied/)
+    expect(existsSync(join(userRoot, 'pinned-copy'))).toBe(false)
+  })
+
+  it('refuses through copyComposition directly, the enforcement choke point', async () => {
+    const source = {
+      id: 'pinned', trust: 'user' as const, path: join(userRoot, 'pinned', COMPOSITION_FILE), copyable: false,
+    }
+
+    await expect(copyComposition([{ path: userRoot, trust: 'user' as const }], source, 'mine'))
+      .rejects.toThrow(PresetNotCopyableError)
+  })
+
+  it('resolves copyable: true for a preset that declares no copyable field at all', async () => {
+    await seedPreset(userRoot, 'ordinary')
+
+    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'ordinary')?.copyable).toBe(true)
+    await ctx.agentPresets.copy('ordinary', 'ordinary-copy')
+    expect(existsSync(join(userRoot, 'ordinary-copy'))).toBe(true)
   })
 })
 

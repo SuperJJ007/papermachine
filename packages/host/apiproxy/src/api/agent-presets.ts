@@ -25,6 +25,14 @@ export interface AgentPresetEntry {
   /** Whether a session that names no preset gets this one. */
   readonly isDefault: boolean
   /**
+   * Whether `agentPreset.copy` may use this preset as a source. A surface
+   * disables its copy action when this is `false` rather than offering an
+   * action the wire will refuse — `dsh-tool-science` binds its durable
+   * identity to the literal preset id, so a byte-for-byte copy could mount
+   * the same tools but never bind or execute them.
+   */
+  readonly copyable: boolean
+  /**
    * Display name the preset published, absent when it published none. A
    * surface falls back to {@link id}; it is never a second identity, and it
    * never decides trust — a locally authored preset cannot name itself into
@@ -94,7 +102,8 @@ export interface AgentPresetsApi {
    * roots, so a copy is exactly as loadable as its source and grants nothing
    * the roster did not already carry. The copy keeps the source's description
    * (the file is the author's to edit afterwards) but not its name — `name`
-   * here or the id fallback is what distinguishes the rows.
+   * here or the id fallback is what distinguishes the rows. A source whose
+   * own metadata declares `copyable: false` answers `agent-preset-not-copyable`.
    */
   copy(request: RpcRequest<{ from: string; agentPreset: string; name?: string }>):
   Promise<RpcResponse<{ agentPreset: string }>>

@@ -30,7 +30,7 @@ import {
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
-  PresetNotWritableError, resolveSessionPreset,
+  PresetNotCopyableError, PresetNotWritableError, resolveSessionPreset,
   SETTINGS_NAMESPACE as AGENT_PRESET_SETTINGS_NAMESPACE, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
@@ -1021,6 +1021,13 @@ function presetError(agentPreset: string, error: unknown): RpcError {
   }
   if (error instanceof InvalidPresetIdError || error instanceof PresetExistsError) {
     return { code: 'agent-preset-invalid', message: error.message, details: { agentPreset, reason: error.message } }
+  }
+  if (error instanceof PresetNotCopyableError) {
+    return {
+      code: 'agent-preset-not-copyable',
+      message: error.message,
+      details: { agentPreset, source: error.sourceId, reason: error.message },
+    }
   }
   return { code: 'internal', message: `agent preset "${agentPreset}": ${String(error)}`, details: {} }
 }
@@ -3071,6 +3078,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             id: preset.id,
             trust: preset.trust,
             isDefault: preset.id === defaultId,
+            copyable: preset.copyable,
             ...preset.name === undefined ? {} : { name: preset.name },
             ...preset.description === undefined ? {} : { description: preset.description },
             ...preset.broken === undefined ? {} : { broken: preset.broken },

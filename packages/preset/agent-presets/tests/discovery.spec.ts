@@ -68,6 +68,29 @@ describe('display order', () => {
   })
 })
 
+describe('copy eligibility', () => {
+  it('resolves copyable: true when a preset declares none', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'ordinary'), { recursive: true })
+    await writeFile(join(root, 'ordinary', COMPOSITION_FILE), '[]\n')
+
+    const [found] = await scanRoot({ path: root, trust: 'system' })
+
+    expect(found?.copyable).toBe(true)
+  })
+
+  it('resolves the declared copyable: false', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'pinned'), { recursive: true })
+    await writeFile(join(root, 'pinned', COMPOSITION_FILE), '[]\n')
+    await writeFile(join(root, 'pinned', 'preset.yml'), 'copyable: false\n')
+
+    const [found] = await scanRoot({ path: root, trust: 'system' })
+
+    expect(found?.copyable).toBe(false)
+  })
+})
+
 describe('preset discovery', () => {
   it('reports one preset per directory holding a composition, ordered by id', async () => {
     const found = await scanRoot(SYSTEM)
@@ -77,6 +100,9 @@ describe('preset discovery', () => {
       id: 'minimal',
       trust: 'system',
       path: join(SYSTEM.path, 'minimal', COMPOSITION_FILE),
+      // No preset.yml at this fixture, so the metadata is entirely absent —
+      // copyable resolves to its default rather than reading the file.
+      copyable: true,
     })
   })
 

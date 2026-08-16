@@ -1537,10 +1537,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
    * constants so the settings editor's save and delete are exercisable: the
    * roster a GUI journey sees after writing is the text it wrote.
    */
-  const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string }>([
-    ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" }],
-    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n" }],
-    ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
+  const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string; copyable: boolean }>([
+    ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n", copyable: true }],
+    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n", copyable: true }],
+    ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n", copyable: true }],
   ])
   let fixtureDefaultPreset = 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
@@ -2703,6 +2703,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           id,
           trust: preset.trust,
           isDefault: id === fixtureDefaultPreset,
+          copyable: preset.copyable,
         })),
         authorable: true,
         hasDocument: true,
@@ -2737,6 +2738,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             details: { agentPreset: from, available: [...fixturePresets.keys()] },
           })
         }
+        if (!source.copyable) {
+          return err(request, {
+            code: 'agent-preset-not-copyable',
+            message: `agent preset "${from}" cannot be copied — its own metadata declares copyable: false`,
+            details: { agentPreset, source: from, reason: 'copyable: false' },
+          })
+        }
         if (fixturePresets.has(agentPreset)) {
           return err(request, {
             code: 'agent-preset-invalid',
@@ -2744,7 +2752,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             details: { agentPreset, reason: 'already exists' },
           })
         }
-        fixturePresets.set(agentPreset, { trust: 'user', content: source.content })
+        fixturePresets.set(agentPreset, { trust: 'user', content: source.content, copyable: true })
         return ok(request, { agentPreset })
       },
       // Native opens are deterministic no-op successes in this fixture, so the

@@ -74,7 +74,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-模型会看到生成的 [`get_science_state`、`run_python` 与 `run_r` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。这些 schema 由本包无条件注册；目前没有任何已发布的 preset 将本包组合进某个 Host profile。
+模型会看到生成的 [`get_science_state`、`run_python` 与 `run_r` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
 
 #### Token 影响
 
@@ -128,7 +128,7 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 ## 已知限制与暂缓事项
 
-- **没有已发布的组合** — 本包不注册任何内置 Science preset、CLI/Web profile 行，或默认 Runtime 配置；部署方需要显式选择接入。参见 [R3 Agent Note](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md)。
+- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/proposed/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
 - **工具 schema 不按 preset 限定范围** — 一旦本包被组合，`get_science_state`/`run_python`/`run_r` 就会全局注册；把它们限制到 `science`-preset session 而不是同一 Host 树中的每个 session，属于后续 preset 切片的职责。
 - **没有图表或 Outcome 工具** — `science/chart-saved` 与 `science/outcome-published` 仍是没有生产者的 durable 词汇；这属于后续某个 Science 切片的职责。
 - **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。

@@ -26,7 +26,7 @@ Options and the current default both come from one `agentPreset.list` call. The 
 
 A locally authored preset is exactly as privileged as the plugins it names, so the list marks `user` rows rather than presenting every preset as shipped and vetted.
 
-Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the four shipped ids (`standard`, `code`, `minimal`, and `cordis`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the five shipped ids (`standard`, `code`, `minimal`, `cordis`, and `science`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
 
 The row re-reads on `settings/changed` for its own namespace and on `connection/reset`: the roster is a live directory and the default is a settings field, so an external edit or a reconnect can both move it.
 

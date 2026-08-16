@@ -46,7 +46,7 @@ The [R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-
 | OUT | Later Science product work | Charts, chart save tools, Outcome publication, persistent kernels, package/environment management, settings, sidebar, Details UI, client rendering, and Desktop |
 | OUT | Distribution and migration | RC6 or latest-upstream migration, installer, signing, notarization, Authenticode, tag, npm publication, GitHub release, and release-readiness claims |
 
-The original implementation slices landed as separate commits: `1cf4ef0ddd` (runtime-context restoration), `35ae6b5399` (filesystem read-only entry), and `50d5b413e5` (Science Consumer). Review repairs landed as `be46f69b6e` (review findings) and `9a668331bd` (sanitization branch coverage). R3 stops after final closure; the next proposed slice is the built-in Science preset and its shipped CLI/Web composition.
+The original implementation slices landed as separate commits: `1cf4ef0ddd` (runtime-context restoration), `35ae6b5399` (filesystem read-only entry), and `50d5b413e5` (Science Consumer). Review repairs landed as `be46f69b6e` (review findings) and `9a668331bd` (sanitization branch coverage). R3 stops after final closure; the [R4 built-in Science preset and shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) is the next slice.
 
 ### Generic runtime-context restoration
 
@@ -106,7 +106,7 @@ Real Python and R Consumer acceptance against explicitly authorized existing Con
 
 R3 does not supersede the R1 Science Session or R2 Science Runtime decisions. It consumes their public responsibilities and completes the current Runtime capability with a model-facing Consumer. The generic runtime-context correction extends the active system-prompt/session mechanism, and the read-only entry extends the current filesystem package; their existing decisions remain independently useful and active.
 
-The downstream Phase 3 proposal is provenance from the excluded lineage and was not copied into the active tree. The next proposed slice is the built-in Science preset and its shipped CLI/Web composition; custom deployments may compose `@deepseek-ai/dsh-tool-science` explicitly before that slice lands, but project documentation must not call Science Mode shipped or release-ready until the preset, application, product UI, artifact, and release layers pass their own decisions and evidence.
+The downstream Phase 3 proposal is provenance from the excluded lineage and was not copied into the active tree. The [R4 built-in Science preset and shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) completes that shipped application layer; project documentation must not call Science Mode release-ready until the product UI, artifact, and release layers pass their own decisions and evidence.
 
 ## Alternatives considered
 

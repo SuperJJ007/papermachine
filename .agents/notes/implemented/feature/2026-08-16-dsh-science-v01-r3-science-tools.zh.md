@@ -46,7 +46,7 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | OUT | 后续 Science product work | Charts、chart save tools、Outcome publication、persistent kernels、package/environment management、settings、sidebar、Details UI、client rendering 与 Desktop |
 | OUT | Distribution 与 migration | RC6 或 latest-upstream migration、installer、signing、notarization、Authenticode、tag、npm publication、GitHub release 与 release-readiness claims |
 
-原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复分别落在 `be46f69b6e`（review findings）与 `9a668331bd`（sanitization branch coverage）。R3 在最终 closure 后停止；下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition。
+原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复分别落在 `be46f69b6e`（review findings）与 `9a668331bd`（sanitization branch coverage）。R3 在最终 closure 后停止；[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) 是下一个 slice。
 
 ### Generic runtime-context restoration
 
@@ -106,7 +106,7 @@ Product-visible Consumer 有两项 assembled check。`packages/science/tool-scie
 
 R3 不 supersede R1 Science Session 或 R2 Science Runtime decisions。它消费二者的 public responsibilities，并用 model-facing Consumer 完成当前 Runtime capability。Generic runtime-context correction 扩展 active system-prompt/session mechanism，read-only entry 扩展当前 filesystem package；它们的既有 decisions 继续独立有用并保持 active。
 
-Downstream Phase 3 proposal 是 excluded lineage 的 provenance，未被复制到 active tree。下一项 proposed slice 是 built-in Science preset 及其 shipped CLI/Web composition；在该 slice 落地前，自定义部署可以用 explicit config 显式组合 `@deepseek-ai/dsh-tool-science`，但在 preset、application、product UI、artifact 与 release layers 通过各自 decision/evidence 之前，project documentation 不得宣称 Science Mode 已 shipped 或 release-ready。
+Downstream Phase 3 proposal 是 excluded lineage 的 provenance，未被复制到 active tree。[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) 完成了这个随产品交付的应用层；在 product UI、artifact 与 release layers 通过各自 decision/evidence 之前，project documentation 不得宣称 Science Mode 已 release-ready。
 
 ## 考虑过的替代方案
 

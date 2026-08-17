@@ -15,6 +15,7 @@
     { "path": "../../util/timeout" },
     { "path": "../../core/session" },
     { "path": "../../sandbox/sandbox" },
+    { "path": "../../settings/settings" },
     { "path": "../../subprocess/subprocess" },
     { "path": "../science-session" },
     { "path": "../../runtime-diagnostics/invariants" }

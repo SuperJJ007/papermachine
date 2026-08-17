@@ -12,7 +12,7 @@ R6 只能关闭 `SCI-SETTINGS-SIDEBAR` inventory 行。它必须保留 Runtime �
 
 ## Proposal
 
-在 R5 收口 head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`——即已验收产品 candidate `69045ba510f90380f5ed83ca1acbd955e7178fbf` 加上其 implemented Note 与 dated evidence——之上，用三个分别验收的检查点实施 R6：Runtime settings 归属、通用 Details 路由，以及 Science settings/Details 产品表层。Web bundle 将挂载一个刻意未配置的 Science Runtime，为已交付的 `science` profile 提供专用 Science 设置页，并在现有右侧 Details column 中增加 Science entry。Headless 与自定义 deployment 继续显式提供 Runtime composition。
+在 R5 收口 head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`——即已验收产品 candidate `69045ba510f90380f5ed83ca1acbd955e7178fbf`，外加单独验收的 R5 module-graph 更正 `58aee8561ca665fc7056f2dc013e7012aafc4da5` 加上其 implemented Note 与 dated evidence——之上，用三个分别验收的检查点实施 R6：Runtime settings 归属、通用 Details 路由，以及 Science settings/Details 产品表层。Web bundle 将挂载一个刻意未配置的 Science Runtime，为已交付的 `science` profile 提供专用 Science 设置页，并在现有右侧 Details column 中增加 Science entry。Headless 与自定义 deployment 继续显式提供 Runtime composition。
 
 R6 改变设置路径，不改变执行权威。用户可以为固定 `science` profile 填写既有 Python 与 R Conda 的绝对 prefix，然后重启 Host。Runtime 继续按 R2 规则观察、约束并执行这些 prefix；它不发现、创建、clone、求解、安装、更新、修复或删除环境。Science Details entry 保持只读，从已验收且对 Client 安全的 Session projection 派生 mode、environment summary、runs、charts 与最新 Outcome。
 
@@ -31,15 +31,17 @@ R6-0 是 hard stop，而不是实施检查点。修改 source 之前，在准确
 
 ### Runtime settings ownership
 
-扩展 `@deepseek-ai/dsh-science-runtime`：当 `ctx.settings` 可用时，把现有 `profiles` 配置同时作为 `science-runtime` 用户设置 namespace 的 composition `base`。该 namespace 只包含 profile map；`dshHome`、执行 timeout 与 artifact diagnostic bounds 继续由 Cordis 配置，因为 R6 没有编辑它们的产品需求。
+增加 `@deepseek-ai/dsh-science-runtime/with-settings` 入口：它以同一份 `Config` 提供同一个 service，并额外把现有 `profiles` 配置作为 `science-runtime` 用户设置 namespace 的 composition `base`。该 namespace 只包含 profile map；`dshHome`、执行 timeout 与 artifact diagnostic bounds 继续由 Cordis 配置，因为 R6 没有编辑它们的产品需求。根入口保持当前行为，永不读取 settings。
+
+settings capability 是该入口声明的 Cordis injection，而不是 Runtime 在 load 时去探测的东西。Loader 并发创建兄弟 entries，因此“此刻是否存在 settings provider”回答的是哪个 module 先完成 import，而不是 composition 包含什么；挂载了该入口却没有 settings provider 的 deployment 会因未满足的 injection 停在 PENDING，而不是静默地只用 Cordis map 解析 profiles。
 
 设置 schema 将空 profile map 视为刻意未配置状态。每个已声明 profile 仍使用 R2 safe-id grammar，至少包含 `pythonPrefix` 或 `rPrefix` 之一，并使用绝对路径。无效的已声明 profile 会让注册或设置写入失败。请求的 profile 缺失时仍在 provider I/O 与任何 Science event append 之前失败；不得回退到其他 profile 或发现的路径。
 
-Runtime 使用 `applies: 'restart'` 注册 namespace，在 plugin load 时只捕获一次 resolved profile map，并且不 watch。Cordis entry configuration 继续作为低优先级 deployment base；用户文档可以通过现有 settings revision 与 mutation 规则覆盖或移除字段。成功写入只改变下一次 Host 启动；不能在 live Session 下替换环境。
+该入口使用 `applies: 'restart'` 注册 namespace，在 plugin load 时只捕获一次 resolved profile map，并且不 watch。Cordis entry configuration 继续作为低优先级 deployment base；用户文档可以通过现有 settings revision 与 mutation 规则覆盖或移除字段。成功写入只改变下一次 Host 启动；不能在 live Session 下替换环境。
 
 `pythonPrefix` 与 `rPrefix` 在面向浏览器的 settings descriptor 中是 write-only secrets。Client 可以知道哪些 profile/language fields 已配置，以及是否存在 user override，但 settings response、forwarded event、diagnostic、snapshot 与 projection 都不得携带路径值。Host logs 与模型可见文字同样不含路径。
 
-Web bundle 将在 base settings、subprocess、sandbox、attachment 与 Science Session services 之后挂载 `@deepseek-ai/dsh-science-runtime`，配置为 `profiles: {}`。在设置并重启完成前，这会把默认 Web failure 从“Runtime service missing”改成更可执行的“science profile missing”。CLI/headless bundles 不增加该 row；其 deployment overlay 继续拥有权威。
+Web bundle 将与 base settings、subprocess、sandbox、attachment 与 Science Session services 一同挂载 `@deepseek-ai/dsh-science-runtime/with-settings`，配置为 `profiles: {}`；排在 settings provider 之后的是 Cordis，而不是 entry order。在设置并重启完成前，这会把默认 Web failure 从“Runtime service missing”改成更可执行的“science profile missing”。CLI/headless bundles 不增加该 row；其 deployment overlay 继续拥有权威。
 
 ### Generic Details routing
 
@@ -63,7 +65,7 @@ Details shell 从 slot registry 派生 labels 与 ordered entries，订阅 regis
 
 ### Checkpoints and executable sequence
 
-**R6a — Runtime settings ownership.** 从 accepted R5 head 开始。增加 `science-runtime` namespace、刻意允许的 empty configuration、restart snapshot semantics、secret-path redaction、聚焦 Runtime/settings tests、Loader composition 与当前 R2 Runtime 文档。在 R6b 开始前，独立 review 并验收准确 R6a head。此检查点不增加已交付 Web Runtime row 或 Client UI。
+**R6a — Runtime settings ownership.** 从 accepted R5 head 开始。增加 `with-settings` 入口及其 `science-runtime` namespace、刻意允许的 empty configuration、restart snapshot semantics、secret-path redaction、聚焦 Runtime/settings tests、覆盖两种 module import 顺序的 Loader composition 与当前 R2 Runtime 文档。在 R6b 开始前，独立 review 并验收准确 R6a head。此检查点不增加已交付 Web Runtime row 或 Client UI。
 
 **R6b — Generic Details routing.** 从 accepted R6a head 开始。增加 `conversation.details.view`、内置 `tool` entry、per-Session selection、header-owner opening callback、stale-entry fallback、HMR disposal coverage 与当前 `ui-conversation` 文档。在 R6c 开始前，独立 review 并验收准确 R6b head。此检查点不得包含 Science-specific component。
 
@@ -80,6 +82,8 @@ Details shell 从 slot registry 派生 labels 与 ordered entries，订阅 regis
 ## Alternatives considered
 
 **把 Runtime setup 留在 Cordis 文件，只增加只读 status page。** 否决，因为已交付 Web 应用仍会提供可选 Science preset，却没有产品设置路径。Settings seam 已支持 composition base、user override 与显式 restart timing，因此 R6 使用它，但不接管执行。
+
+**由一个在 load 时检查 settings service 的 Runtime 入口绑定 namespace。** 否决，因为 Cordis Loader 并发创建兄弟 entries，该检查报告的是哪个 module 先完成 import，而不是 composition 声明了什么。只要 settings provider 的 module 落在后面，namespace 就不会注册，已存 profile 被静默忽略——而这正是用户为应用它而执行的那次重启——且 cordis.yml entry order 无法修复。声明式 injection 让 Cordis 为两者排序，并把缺失的 provider 变成可见的未满足依赖。
 
 **Live 应用 prefix changes。** 否决，因为 live settings write 可能在 environment binding 与后续 run 之间改变 profile resolution，或要求迁移 exact-Session reservations 与 scratch ownership。Restart-only resolution 让每个 Host lifecycle 只使用一个 immutable Runtime configuration。
 
@@ -101,8 +105,9 @@ R6 验收后，本 triplet 移到 `implemented/feature`，`## Proposal` 改为�
 
 ## Acceptance criteria
 
-- R6 只从 clean 的 R5 收口 head `16f5ce76abf8483c42bf02214cf15d82a2300b9c` 开始，其 implemented Note、dated evidence 与 browser-safe projection 必须一致；任何后续 R5 correction 先单独验收。
-- Web bundle 挂载一个刻意未配置的 Science Runtime；设置页可以通过 revision-checked writes 创建或替换固定 `science` profile，并显式 remove/reset 其 user override，每次成功更改都标注 restart required。
+- R6 只从 clean 的 R5 收口 head `16f5ce76abf8483c42bf02214cf15d82a2300b9c` 开始，其 implemented Note、dated evidence 与 browser-safe projection 必须一致；任何后续 R5 correction 先单独验收。其唯一一处这样的更正 `58aee8561ca665fc7056f2dc013e7012aafc4da5` 重新生成了 R5 遗留陈旧的 module graph，并在 R5 evidence 中记录该遗漏。
+- Web bundle 挂载一个刻意未配置的、绑定 settings 的 Science Runtime；设置页可以通过 revision-checked writes 创建或替换固定 `science` profile，并显式 remove/reset 其 user override，每次成功更改都标注 restart required。
+- 无论绑定 settings 的入口与 settings provider 谁先完成 import，都解析到同一个已存 profile，由逐个延迟各 module 的真实 Loader composition 证明；在没有 settings provider 时挂载它会停在 PENDING，而不是从 Cordis map 解析。
 - Runtime configuration 在一个 Host lifecycle 内保持 immutable；empty 是显式 unconfigured state，malformed profiles 失败明确，缺失 `science` profile 在 provider I/O 之前失败，并且不会选择 alternate 或 discovered prefix。
 - Settings reads/events、Session projections、snapshots、diagnostics、model-visible output 与 browser text 均不含绝对 prefix 与 executable paths。聚焦 negative tests 使用可识别 sentinel paths，只要它们跨过任一输出就失败。
 - 通用 Details slot 保留 tool-call behavior，按 id 选择 domain entries，承受 locale updates，在 stale/HMR removal 后 fallback，证明 disposal，并且与现在一样在 Session 切换时关闭。

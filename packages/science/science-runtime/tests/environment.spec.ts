@@ -895,9 +895,9 @@ describe('ScienceRuntime.bindEnvironment', () => {
 })
 
 describe('Science Runtime configuration', () => {
-  it('requires a non-empty, closed profile map with absolute prefixes and a safe integer timeout', () => {
+  it('requires a closed profile map with absolute prefixes and a safe integer timeout, empty allowed', () => {
     expect(() => resolveConfig({ profiles: [] as never })).toThrow(/plain record/)
-    expect(() => resolveConfig({ profiles: {} })).toThrow(/non-empty/)
+    expect(resolveConfig({ profiles: {} }).profiles.size).toBe(0)
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: 'relative' } },
     })).toThrow(/absolute/)

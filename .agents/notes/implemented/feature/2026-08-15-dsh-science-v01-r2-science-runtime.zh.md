@@ -63,7 +63,7 @@ config-catalog generator 会跟随同一 package 内导入的 `configSchema`，�
 
 该 folded package 暴露 `bindEnvironment({ session, profileId, signal })`、`startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })`，以及只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。Public operation 与 result types 不含 PID、subprocess handle、Conda implementation type 或 host scratch path。后续 tool Consumer 调用这些 operations；它自身不得追加 Runtime 所拥有的 Science events。
 
-Profiles 命名已存在的绝对 Conda prefixes，并且至少包含一个 Python 或 R interpreter。Runtime 永不调用 Conda，也不写入 configured prefix。它会规范化 prefix 与 executable，要求 prefix 内的常规 interpreter/history files，记录稳定的 before/after identity，对一次变化的 observation 重试一次，并发布诚实的 invalid 或 drifted binding，而不是制造稳定性。
+空 profile map 是合法的显式未配置状态。每个已声明的 profile 命名已存在的绝对 Conda prefixes，并且至少包含一个 Python 或 R interpreter。独立的 `@deepseek-ai/dsh-science-runtime/with-settings` 入口注入 `settings`，并把 Cordis `profiles` map 当作 restart-scoped `science-runtime` namespace 的 composition `base`；它在 load 时对解析后的 map 做一次快照，因此一次 write 只影响下一次 Host start。根入口永不读取 settings。Runtime 永不调用 Conda，也不写入 configured prefix。它会规范化 prefix 与 executable，要求 prefix 内的常规 interpreter/history files，记录稳定的 before/after identity，对一次变化的 observation 重试一次，并发布诚实的 invalid 或 drifted binding，而不是制造稳定性。
 
 Binding 与 run setup 共享非排队的 exact-Session reservation。同一 live Session 上的第二次 operation 返回 `RUNTIME_BUSY`。Detached lifecycle 会保留 same-ID quarantine，直到每一个 owned probe 与 process tree 都 quiescent，并且 cleanup 已经 settled。每次 append 都会再次检查 `ctx.sessions.get(session.id) === session`，因此旧对象不能写入 same-ID successor。
 

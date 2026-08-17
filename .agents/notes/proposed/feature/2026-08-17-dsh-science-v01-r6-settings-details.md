@@ -20,7 +20,7 @@ R6 will change setup, not execution authority. Users may name existing absolute 
 
 | Subject | Identity or rule | R6 use |
 |---|---|---|
-| Accepted product base | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`, binding product candidate `69045ba510f90380f5ed83ca1acbd955e7178fbf` | Sole R6 implementation base |
+| Accepted product base | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`, binding product candidate `69045ba510f90380f5ed83ca1acbd955e7178fbf`, plus the separately accepted R5 module-graph correction `58aee8561ca665fc7056f2dc013e7012aafc4da5` | Sole R6 implementation base |
 | R6 inventory row | [`SCI-SETTINGS-SIDEBAR`](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | Sole product delta |
 | Runtime authority | [R2 Science Runtime](../../implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.md) | Existing-prefix observation, execution, confinement, leases, and real Python/R acceptance remain owned there |
 | Shipped composition | [R4 Science preset](../../implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) plus the accepted R5 composition | Preserve the fixed `science` preset identity and add only the R6 Host/Client rows |
@@ -31,15 +31,17 @@ R6-0 is a hard stop, not an implementation checkpoint. Before changing source, c
 
 ### Runtime settings ownership
 
-Extend `@deepseek-ai/dsh-science-runtime` so its existing `profiles` configuration is also the composition `base` of a `science-runtime` user-settings namespace when `ctx.settings` is available. The namespace will contain only the profile map; `dshHome`, execution timeout, and artifact-diagnostic bounds remain Cordis configuration because R6 has no product need to edit them.
+Add a `@deepseek-ai/dsh-science-runtime/with-settings` entry that provides the same service over the same `Config` and additionally treats the existing `profiles` configuration as the composition `base` of a `science-runtime` user-settings namespace. The namespace will contain only the profile map; `dshHome`, execution timeout, and artifact-diagnostic bounds remain Cordis configuration because R6 has no product need to edit them. The root entry keeps its current behavior and never reads settings.
+
+The settings capability is a declared Cordis injection of that entry, not something the Runtime probes for at load. The Loader creates sibling entries concurrently, so "is a settings provider present right now" answers which module finished importing first rather than what the composition contains; a deployment that mounts the settings-bound entry without a settings provider leaves it PENDING on the unmet injection instead of silently resolving profiles from the Cordis map alone.
 
 The settings schema will accept an empty profile map as the intentional unconfigured state. Every declared profile still uses the R2 safe-id grammar, contains at least one of `pythonPrefix` or `rPrefix`, and uses absolute paths. Invalid declared profiles fail registration or a settings write. A missing requested profile continues to fail before provider I/O and before any Science event is appended; it never falls back to another profile or a discovered path.
 
-The Runtime will register the namespace with `applies: 'restart'`, capture the resolved profile map once during plugin load, and not watch it. Cordis entry configuration remains the lower-precedence deployment base, while the user document may override or remove fields through the existing settings revision and mutation rules. A successful write changes the next Host start only; it cannot swap an environment underneath a live Session.
+That entry will register the namespace with `applies: 'restart'`, capture the resolved profile map once during plugin load, and not watch it. Cordis entry configuration remains the lower-precedence deployment base, while the user document may override or remove fields through the existing settings revision and mutation rules. A successful write changes the next Host start only; it cannot swap an environment underneath a live Session.
 
 `pythonPrefix` and `rPrefix` are write-only secrets on browser-facing settings descriptors. The Client may learn which profile/language fields are configured and whether a user override exists, but no settings response, forwarded event, diagnostic, snapshot, or projection may carry the path value. Host logs and model-visible text also remain path-free.
 
-The Web bundle will mount `@deepseek-ai/dsh-science-runtime` after the base settings, subprocess, sandbox, attachment, and Science Session services with `profiles: {}`. This changes the default Web failure from “Runtime service missing” to the more actionable “science profile missing” until setup and restart complete. CLI/headless bundles will not gain this row; their deployment overlay remains authoritative.
+The Web bundle will mount `@deepseek-ai/dsh-science-runtime/with-settings` alongside the base settings, subprocess, sandbox, attachment, and Science Session services with `profiles: {}`; Cordis, not entry order, sequences it after the settings provider. This changes the default Web failure from “Runtime service missing” to the more actionable “science profile missing” until setup and restart complete. CLI/headless bundles will not gain this row; their deployment overlay remains authoritative.
 
 ### Generic Details routing
 
@@ -63,7 +65,7 @@ Before the first Science event, the Details entry shows the selected preset and 
 
 ### Checkpoints and executable sequence
 
-**R6a — Runtime settings ownership.** Start from the accepted R5 head. Add the `science-runtime` namespace, intentional empty configuration, restart snapshot semantics, secret-path redaction, focused Runtime/settings tests, Loader composition, and current R2 Runtime documentation. Independently review and accept the exact R6a head before R6b starts. Do not add the shipped Web Runtime row or Client UI in this checkpoint.
+**R6a — Runtime settings ownership.** Start from the accepted R5 head. Add the `with-settings` entry and its `science-runtime` namespace, intentional empty configuration, restart snapshot semantics, secret-path redaction, focused Runtime/settings tests, Loader composition covering both module-import orders, and current R2 Runtime documentation. Independently review and accept the exact R6a head before R6b starts. Do not add the shipped Web Runtime row or Client UI in this checkpoint.
 
 **R6b — Generic Details routing.** Start from the accepted R6a head. Add `conversation.details.view`, the built-in `tool` entry, per-Session selection, header-owner opening callback, stale-entry fallback, HMR disposal coverage, and current `ui-conversation` documentation. Independently review and accept the exact R6b head before R6c starts. No Science-specific component belongs in this checkpoint.
 
@@ -80,6 +82,8 @@ Volatile SHAs, commands, platform versions, real prefix identities, browser chan
 ## Alternatives considered
 
 **Leave Runtime setup in Cordis files and add only a read-only status page.** Rejected because the shipped Web application would still expose a selectable Science preset without a product setup path. The settings seam already supports composition base plus user override and explicit restart timing, so R6 uses it without taking over execution.
+
+**Bind the namespace on one Runtime entry that checks for a settings service at load.** Rejected because the Cordis Loader creates sibling entries concurrently, so that check reports which module finished importing first, not what the composition declares. Whenever the settings provider's module landed second the namespace went unregistered and the stored profile was silently ignored — the exact restart the user performed to apply it — and cordis.yml entry order did not repair it. A declared injection makes Cordis sequence the two and turns a missing provider into a visible unmet dependency.
 
 **Apply prefix changes live.** Rejected because a live settings write could change profile resolution between environment binding and later runs, or require migrating exact-Session reservations and scratch ownership. Restart-only resolution gives one immutable Runtime configuration to each Host lifecycle.
 
@@ -101,8 +105,9 @@ When R6 is accepted, this triplet moves to `implemented/feature`, `## Proposal` 
 
 ## Acceptance criteria
 
-- R6 starts only from the clean R5 closure head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`, whose implemented Note, dated evidence, and browser-safe projection agree; any later R5 correction is accepted separately first.
-- The Web bundle mounts one intentionally unconfigured Science Runtime; its settings page can create or replace the fixed `science` profile and explicitly remove/reset its user override through revision-checked writes, and every successful change is labeled restart-required.
+- R6 starts only from the clean R5 closure head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`, whose implemented Note, dated evidence, and browser-safe projection agree; any later R5 correction is accepted separately first. Its one such correction, `58aee8561ca665fc7056f2dc013e7012aafc4da5`, regenerates the module graph R5 left stale and records the miss in the R5 evidence.
+- The Web bundle mounts one intentionally unconfigured settings-bound Science Runtime; its settings page can create or replace the fixed `science` profile and explicitly remove/reset its user override through revision-checked writes, and every successful change is labeled restart-required.
+- The settings-bound entry resolves the same stored profile whichever of it and the settings provider finishes importing first, proven by a real Loader composition that delays each module in turn; mounting it without a settings provider leaves it PENDING rather than resolving from the Cordis map.
 - Runtime configuration is immutable for one Host lifecycle; empty is an explicit unconfigured state, malformed profiles fail loud, a missing `science` profile fails before provider I/O, and no alternate or discovered prefix is selected.
 - Absolute prefix and executable paths are absent from settings reads/events, Session projections, snapshots, diagnostics, model-visible output, and browser text. Focused negative tests use recognizable sentinel paths and fail if any crosses those outputs.
 - The generic Details slot retains tool-call behavior, selects domain entries by id, survives locale updates, falls back after stale/HMR removal, proves disposal, and closes on Session change as before.

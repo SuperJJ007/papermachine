@@ -1534,7 +1534,12 @@ Requires: `attachments` · `sessions` · `subprocess` · `sandbox`
 export interface Config {
   /** Explicit Harness home; omitted follows the shared resolver. */
   readonly dshHome?: string
-  /** Non-empty map of profile identifiers to existing language prefixes. */
+  /**
+   * Map of profile identifiers to existing language prefixes. An empty map
+   * is a valid explicit unconfigured state — for example a deployment that
+   * defers every profile to the restart-scoped `science-runtime` settings
+   * namespace.
+   */
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number

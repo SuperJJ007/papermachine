@@ -21,7 +21,13 @@ The package configuration names existing absolute Conda prefixes. It does not in
         rPrefix: /absolute/conda/r
 ```
 
-`profiles` is a non-empty closed map keyed by `ScienceEnvironmentProfileId`; each value has at least one absolute `pythonPrefix` or `rPrefix`. `timeoutMs` defaults to 120,000 and accepts only safe integers from 1 through 600,000.
+`profiles` is a closed map keyed by `ScienceEnvironmentProfileId`. An empty map is a valid explicit unconfigured state; each declared value still has at least one absolute `pythonPrefix` or `rPrefix`. `timeoutMs` defaults to 120,000 and accepts only safe integers from 1 through 600,000.
+
+## Settings-bound entry
+
+`@deepseek-ai/dsh-science-runtime/with-settings` provides the same service over the same `Config`, and additionally resolves `profiles` through the restart-scoped `science-runtime` user-settings namespace, which holds only that map. The Cordis `profiles` map is its composition `base`. The Runtime snapshots the resolved map once at load and does not watch it, so a successful write changes only the next Host start. `pythonPrefix` and `rPrefix` are write-only secrets on every browser-facing settings descriptor.
+
+That entry declares `settings` among its injections, which is what fixes the resolution order: Cordis constructs it only once the settings provider is ACTIVE. A composition that mounts it without a settings provider leaves it PENDING on the unmet injection. Deployments that own their profile map in configuration alone mount the root entry, which never reads settings.
 
 ## Operations
 

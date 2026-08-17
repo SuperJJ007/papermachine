@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { readBoundedFile, resolveArtifactFile } from './chart.ts'
 import { configSchema, resolveConfig } from './config.ts'
@@ -27,6 +28,7 @@ import type { Config, ConfiguredProfile } from './config.ts'
 import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
 import { confineRun, planRun, settleRun, startCandidate } from './execution.ts'
 import { LeaseRegistry, OperationControl } from './lifecycle.ts'
+import { attachRuntimeSettings } from './settings.ts'
 import {
   createRunScratch,
   materializeSessionScratch,
@@ -57,6 +59,7 @@ export type {
   StartScienceRunRequest,
 } from './types.ts'
 export { ScienceRuntimeError } from './types.ts'
+export { SCIENCE_RUNTIME_SETTINGS_NAMESPACE, scienceRuntimeProfilesSchema } from './settings.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'science-runtime'
@@ -80,8 +83,15 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   static inject = inject
   static Config: z<Config> = configSchema
 
-  /** Parsed immutable profile selection owned by this provider. */
-  private readonly profiles: ReadonlyMap<string, ConfiguredProfile>
+  /**
+   * Parsed profile selection owned by this provider. This entry resolves it
+   * from Cordis configuration alone; the
+   * `@deepseek-ai/dsh-science-runtime/with-settings` entry replaces it once,
+   * during load, through {@link ScienceRuntime.bindSettings}.
+   */
+  private profiles: ReadonlyMap<string, ConfiguredProfile>
+  /** Cordis entry configuration, also the settings composition `base`. */
+  private readonly cordisConfig: Config
   /** Configured operation deadline. */
   private readonly timeoutMs: number
   /** Explicit or shared-resolver Harness home input. */
@@ -102,6 +112,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     super(ctx, 'scienceRuntime')
     const resolved = resolveConfig(config)
     this.profiles = resolved.profiles
+    this.cordisConfig = config
     this.timeoutMs = resolved.timeoutMs
     this.dshHome = resolved.dshHome
     this.artifactDiagnosticMaxEntries = resolved.artifactDiagnosticMaxEntries
@@ -114,6 +125,19 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         await this.leases.disposeAll()
       }
     }, 'science runtime teardown')
+  }
+
+  /**
+   * Adopt the restart-scoped `science-runtime` settings namespace as this
+   * Runtime's profile map for the whole Host lifecycle, with the Cordis entry
+   * configuration as the composition `base`. Reserved for the
+   * `with-settings` entry, whose Cordis injections make `settings` ACTIVE
+   * before construction; calling it from a composition that did not declare
+   * that dependency would reintroduce a load-order race.
+   * @param settings - the ACTIVE settings provider that entry injected.
+   */
+  protected bindSettings(settings: SettingsProvider): void {
+    this.profiles = attachRuntimeSettings(settings, this.cordisConfig)
   }
 
   /**

@@ -146,6 +146,12 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The independently loadable read-only entry ships beside the root plugin
   // and invariant companion as its own bundle (see tool-fs's tsdown.config.ts).
   '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js'],
+  // The settings-bound Runtime entry ships beside the root plugin and
+  // invariant companion. It subclasses the root entry, so the package builds
+  // all three from one multi-entry tsdown config: independent bundles would
+  // inline a second copy of the Runtime and give the two entries separate
+  // class identities. tsdown emits their shared code as a hashed chunk.
+  '@deepseek-ai/dsh-science-runtime': ['lib/with-settings.js', 'lib/types-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }

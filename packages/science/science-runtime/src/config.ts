@@ -38,7 +38,12 @@ export interface ScienceEnvironmentProfileConfig {
 export interface Config {
   /** Explicit Harness home; omitted follows the shared resolver. */
   readonly dshHome?: string
-  /** Non-empty map of profile identifiers to existing language prefixes. */
+  /**
+   * Map of profile identifiers to existing language prefixes. An empty map
+   * is a valid explicit unconfigured state — for example a deployment that
+   * defers every profile to the restart-scoped `science-runtime` settings
+   * namespace.
+   */
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
@@ -80,7 +85,7 @@ export const configSchema: z<Config> = z.object({
 export interface ResolvedConfig {
   /** Explicit Harness home, when configured. */
   readonly dshHome: string | undefined
-  /** Non-empty allowlisted profiles. */
+  /** Allowlisted profiles; an empty map is a valid explicit unconfigured state. */
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
   readonly timeoutMs: number
@@ -102,6 +107,9 @@ function assertKnownKeys(value: unknown, allowed: readonly string[], label: stri
 
 /**
  * Validate runtime-owned profile rules that are not expressible in the Loader schema.
+ * An empty map is a valid explicit unconfigured state, not a validation failure —
+ * every declared entry still uses the safe-id grammar, requires at least one
+ * absolute prefix, and rejects unknown fields.
  * @param profiles - Parsed Loader profile map.
  * @returns Immutable profiles keyed by their durable id string.
  */
@@ -110,7 +118,6 @@ export function parseProfiles(
 ): ReadonlyMap<string, ConfiguredProfile> {
   assertKnownKeys(profiles, Object.keys(profiles), 'profiles')
   const entries = Object.entries(profiles)
-  if (entries.length === 0) throw new Error('science-runtime: profiles must be non-empty')
   const parsed = new Map<string, ConfiguredProfile>()
   for (const [rawId, profile] of entries) {
     assertKnownKeys(profile, ['pythonPrefix', 'rPrefix'], `profile ${JSON.stringify(rawId)}`)

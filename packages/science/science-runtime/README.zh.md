@@ -21,7 +21,13 @@
         rPrefix: /absolute/conda/r
 ```
 
-`profiles` 是由 `ScienceEnvironmentProfileId` 键控的非空 closed map；每个值至少有一个 absolute `pythonPrefix` 或 `rPrefix`。`timeoutMs` 默认是 120,000，且只接受 1 至 600,000 的 safe integer。
+`profiles` 是由 `ScienceEnvironmentProfileId` 键控的 closed map。空 map 是合法的显式未配置状态；每个已声明的值仍至少有一个 absolute `pythonPrefix` 或 `rPrefix`。`timeoutMs` 默认是 120,000，且只接受 1 至 600,000 的 safe integer。
+
+## 绑定 settings 的入口
+
+`@deepseek-ai/dsh-science-runtime/with-settings` 以同一份 `Config` 提供同一个 service，并额外通过 restart-scoped `science-runtime` user-settings namespace 解析 `profiles`，该 namespace 只保存这张 map。Cordis `profiles` map 是它的 composition `base`。Runtime 在 load 时对解析后的 map 做一次快照，并且不 watch，因此一次成功 write 只影响下一次 Host start。`pythonPrefix` 与 `rPrefix` 在每份面向浏览器的 settings descriptor 上都是只写 secret。
+
+该入口把 `settings` 声明在自己的 injection 中，这正是解析顺序得以固定的原因：Cordis 只在 settings provider 处于 ACTIVE 后才构造它。若某个 composition 挂载了它却没有 settings provider，它会因未满足的 injection 停在 PENDING。仅凭配置拥有自己 profile map 的 deployment 挂载根入口，根入口永不读取 settings。
 
 ## 操作
 

@@ -24,6 +24,9 @@
       "path": "../ui-attachment"
     },
     {
+      "path": "../ui-conversation"
+    },
+    {
       "path": "../ui-tool"
     },
     {

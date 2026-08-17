@@ -16,15 +16,18 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: the two keyed toolview rows, the keyed settings
- * card, and the locale dictionaries are registry-owned registrations whose
- * disposal is proven by the HMR-safety spec. The toolview rows are pure
+ * card, the session-header action, the Details entry, and the locale
+ * dictionaries are registry-owned registrations whose disposal is proven by
+ * the HMR-safety spec. The toolview rows and the Details entry are pure
  * functions of the frozen call/result slice and the durable `science`
- * projection, both owned elsewhere. The settings card stages edits over the
- * `science-runtime` namespace it does not own; the write refusals, revision
- * fencing, and secret redaction it relies on are Host contracts covered by
- * the settings seam and the Science Runtime's own settings ownership. This
- * package emits no cordis event and owns no durable or cross-plugin mutable
- * state.
+ * projection, both owned elsewhere; the Details entry's own attachment
+ * loader (science-attachment-loader.ts) holds no state across calls. The
+ * header action reads only the Session summary's `agentPreset` field. The
+ * settings card stages edits over the `science-runtime` namespace it does
+ * not own; the write refusals, revision fencing, and secret redaction it
+ * relies on are Host contracts covered by the settings seam and the Science
+ * Runtime's own settings ownership. This package emits no cordis event and
+ * owns no durable or cross-plugin mutable state.
  */
 const install: InvariantInstaller = () => {}
 

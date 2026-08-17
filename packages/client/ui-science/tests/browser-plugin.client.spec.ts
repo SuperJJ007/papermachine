@@ -1,18 +1,22 @@
 /**
  * ui-science browser half: locale dictionary registration, the two keyed
  * toolview registrations (`save_chart`, `publish_outcome`), the keyed Science
- * settings card registration under the `science-runtime` namespace, plus
- * fiber-teardown removal (HMR safety).
+ * settings card registration under the `science-runtime` namespace, the
+ * session-header action and Details entry registrations (both id
+ * `science`), plus fiber-teardown removal (HMR safety).
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyHost } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { ScienceChartRow } from '../src/client/ScienceChartRow.tsx'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from '../src/client/ScienceSettingsCard.tsx'
+import { ScienceHeaderAction } from '../src/client/ScienceHeaderAction.tsx'
+import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { SCIENCE_RUNTIME_NS } from '../src/client/settings-card-controller.ts'
 
 interface PresentationCapture {
@@ -22,11 +26,14 @@ interface PresentationCapture {
 }
 
 /**
- * Provide the presentation, locale, connection/remote, and settings-scope
- * registries and capture the plugin's registrations. `connection`/`remote`
- * are stubbed rather than real (this plugin's own `bind: () => scope` stub
- * never reaches them) — they exist only to satisfy this plugin's declared
- * `inject`, which the fiber will not leave PENDING for otherwise.
+ * Provide the presentation, locale, connection/remote, settings-scope, and
+ * sessions registries and capture the plugin's registrations.
+ * `connection`/`remote`/`sessions` are stubbed rather than real (this
+ * plugin's own `bind: () => scope` stub never reaches connection/remote, and
+ * registering the Details entry never calls `sessions.binding` until its
+ * inject factory's returned `loadImage` is itself invoked) — they exist only
+ * to satisfy this plugin's declared `inject`, which the fiber will not leave
+ * PENDING for otherwise.
  */
 function providePresentation(ctx: Context): PresentationCapture {
   const slots = new SlotRegistry(ctx)
@@ -35,6 +42,8 @@ function providePresentation(ctx: Context): PresentationCapture {
     children: {
       'tool.call.toolview': { kind: 'keyed', scope: 'session' },
       'settings.plugin.item': { kind: 'keyed', scope: 'root' },
+      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.details.view': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   const capture: PresentationCapture = { slots, dictionaries: [], localeDisposed: false }
@@ -47,6 +56,7 @@ function providePresentation(ctx: Context): PresentationCapture {
   })
   ctx.provide('connection', {} as never)
   ctx.provide('remote', {} as never)
+  ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
   return capture
@@ -57,8 +67,8 @@ describe('apply', () => {
     expect(() => { applyHost() }).not.toThrow()
   })
 
-  it('declares the services it binds — locale/slots for the toolview rows, and connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller)', () => {
-    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'settingsScope'])
+  it('declares the services it binds — locale/slots for the toolview rows, connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller), and sessions for the Details entry\'s own attachment loader', () => {
+    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'settingsScope', 'sessions'])
   })
 
   it('registers the science locale dictionaries and the save_chart / publish_outcome toolview rows', async () => {
@@ -95,16 +105,54 @@ describe('apply', () => {
     expect(face?.hooks.scienceSettingsCard).toBeDefined()
   })
 
-  it('removes every row and the dictionaries when the owning fiber disposes (HMR safety)', async () => {
+  it('registers the Science session-header action, visible only for a built-in Science session', async () => {
+    const ctx = new Context()
+    const presentation = providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const entries = presentation.slots.entries('conversation.session.header.actions')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.options).toMatchObject({ id: 'science' })
+    expect(entries[0]?.component).toBe(ScienceHeaderAction)
+    expect(entries[0]?.locale).toBe('science')
+  })
+
+  it('registers the Science Details entry with id "science" and a registered label from the science namespace', async () => {
+    const ctx = new Context()
+    const presentation = providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const entries = presentation.slots.entries('conversation.details.view')
+    expect(entries).toHaveLength(1)
+    const options = entries[0]?.options as { id?: string; order?: number; label?: () => string } | undefined
+    expect(options?.id).toBe('science')
+    expect(options?.order).toBe(10)
+    expect(options?.label?.()).toBe('details.label')
+    expect(entries[0]?.component).toBe(ScienceDetailsView)
+    expect(entries[0]?.locale).toBe('science')
+
+    // The registration's inject factory hands the rendered entry its own
+    // session-scoped attachment loader — never an owner-supplied one, since
+    // DetailsViewOwnerProps carries nothing.
+    const injectFn = entries[0]?.inject as unknown as ((sessionId: SessionId) => ScienceDetailsInjected) | undefined
+    const face = injectFn?.('any-session' as SessionId)
+    expect(typeof face?.loadImage).toBe('function')
+  })
+
+  it('removes every row, the header action, the Details entry, and the dictionaries when the owning fiber disposes (HMR safety)', async () => {
     const ctx = new Context()
     const presentation = providePresentation(ctx)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(2)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.details.view')).toHaveLength(1)
     await fiber.dispose()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.details.view')).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
   })
 })

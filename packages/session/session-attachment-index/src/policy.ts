@@ -38,6 +38,18 @@ export const BUILT_IN_CARRIER_EVENT_TYPES: ReadonlySet<string> = new Set([
  * new known type without deliberately classifying it here — or registering
  * an extractor for it — is caught by the freshness test instead of silently
  * authorizing nothing forever.
+ *
+ * TODO(attachment-index-buckets): membership here is unasserted. The freshness
+ * test proves every known type appears in exactly one list, never that the
+ * chosen list is right, so a type whose payload can structurally carry
+ * `{ type: 'image', attachment }` may sit here and silently authorize nothing.
+ * `tool/code-dispatch` is the live example: its `content` is the sub-call's
+ * full model-facing outcome (`ContentBlock[]`), which the deleted upstream
+ * shape-driven scan would have reached. No route produces such an event today
+ * — code mode defers image-bearing content to `agent/inbox/spliced`, MCP error
+ * results degrade images to text, and `post-execute` strips them — so the
+ * consequence would be a broken image plus an omission from Session ZIP
+ * export, with no test turning red.
  */
 export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected',

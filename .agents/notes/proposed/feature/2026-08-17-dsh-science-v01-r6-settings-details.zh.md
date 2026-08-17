@@ -20,12 +20,13 @@ R6 改变设置路径，不改变执行权威。用户可以为固定 `science` 
 
 | Subject | Identity or rule | R6 use |
 |---|---|---|
-| 已验收产品基线 | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`，其绑定的产品 candidate 为 `69045ba510f90380f5ed83ca1acbd955e7178fbf` | 唯一 R6 实施基线 |
+| 已验收产品基线 | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c`，其绑定的产品 candidate 为 `69045ba510f90380f5ed83ca1acbd955e7178fbf` | R6a 与 R6b 起步所依据的基线 |
+| R6c 实施基线 | `24971d5f14c8b9dc692658a0bb1cab599a4ed526`——[基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)之后的 head，其独立评审一并验收了 R6a、R6b 与该次迁移 | 唯一 R6c 实施基线；R6a 与 R6b 迁移前的 SHA 属于历史，不是起步条件 |
 | R6 inventory 行 | [`SCI-SETTINGS-SIDEBAR`](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | 唯一产品 delta |
 | Runtime authority | [R2 Science Runtime](../../implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.md) | 既有 prefix 观察、执行、约束、lease 与真实 Python/R 验收继续由其归属 |
 | 已交付 composition | [R4 Science preset](../../implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) 加已验收的 R5 composition | 保留固定 `science` preset identity，只增加 R6 Host/Client rows |
 | R5 dependency | [R5 charts and Outcome](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.md) | R6 所依赖的持久 chart/Outcome 语义、`ui-science` 与对 Client 安全的 projection |
-| Source base | [rc.7 基线迁移](../process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)，上游 `4366528a38`（[由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)） | 注册一个 settings namespace 现在即意味着把它暴露出去；`settings.plugin.item` 是以命名空间为键的 slot。R6c 的产品表层瞄准这个机制，而不是 ApiProxy 白名单条目 |
+| Source base | [rc.7 基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)，上游 `4366528a38`（[由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)） | 注册一个 settings namespace 现在即意味着把它暴露出去；`settings.plugin.item` 是以命名空间为键的 slot。R6c 的产品表层瞄准这个机制，而不是 ApiProxy 白名单条目 |
 | 下游 source | Source base 行所指的上游提交 | 不再是全新的 RC5-line 产品决定：R6c 的 settings 卡片设计沿用上游已交付的通用机制，而不是自行发明一条本开发线要独自维护的 ApiProxy 暴露路径 |
 
 R6-0 是 hard stop，而不是实施检查点。修改 source 之前，在准确的起始 tree 上确认 worktree 干净、R5 Note 位于 `implemented/feature`，且 dated R5 evidence 绑定本 Note 指明的同一 head。在该 head 上重新检查 wire projection；若它暴露 `configuredPrefix`、`canonicalPrefix`、`executable`、其他绝对 Host 路径或未脱敏的完整 environment fingerprint，则拒绝该基线。R5 交付的对 Client 安全 projection 只携带十二位 fingerprint preview，不含 prefix、executable 或 digest 字段，因此这项检查是确认而非发现。任何后续隐私修复都属于它自己的验收 candidate，需在 R6 rebase 之前完成。
@@ -78,7 +79,7 @@ bundle-purity gate 禁止 Science 卡片以值导入方式引用 `ui-settings-pl
 
 **R6b — Generic Details routing.** 从 accepted R6a head 开始。增加 `conversation.details.view`、内置 `tool` entry、per-Session selection、header-owner opening callback、stale-entry fallback、HMR disposal coverage 与当前 `ui-conversation` 文档。在 R6c 开始前，独立 review 并验收准确 R6b head。此检查点不得包含 Science-specific component。
 
-**R6c — Science product composition and closure.** 从 accepted R6b head 开始。增加 Science settings 卡片/header action/Details entry、default Web Runtime row、package metadata 与 invariants、assembled keyless browser coverage、accessibility checks、packed Web evidence、真实 Python/R Runtime acceptance、current documentation、把本 Note 改写为 implemented，以及 dated R6 evidence triplet。最终 review 覆盖准确 R5 base 到 R6c head；任何 source、privacy、browser、packed 或 real-runtime failure 都会停止收口。
+**R6c — Science product composition and closure.** 从身份表中记录的那个已验收 R6c 实施基线开始。增加 Science settings 卡片/header action/Details entry、default Web Runtime row、package metadata 与 invariants、assembled keyless browser coverage、accessibility checks、packed Web evidence、真实 Python/R Runtime acceptance、current documentation、把本 Note 改写为 implemented，以及 dated R6 evidence triplet。最终 review 覆盖准确 R5 base 到 R6c head；任何 source、privacy、browser、packed 或 real-runtime failure 都会停止收口。
 
 每个检查点都记录准确 base/head identities，并在 SHA 变化后重新运行受影响证据。后续检查点不得静默修复已经验收的前序检查点；owner 必须把修复退回对应检查点、获得新的 accepted head，再 rebase 后续工作。
 

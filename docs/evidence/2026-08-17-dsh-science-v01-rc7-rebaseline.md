@@ -2,7 +2,7 @@
 
 English | [中文](2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md)
 
-Investigated on 2026-08-17 on macOS 26.5.2 (Darwin 25.5.0, arm64), Node v24.14.0, pnpm 11.7.0. Scope authority: [DSH Science v0.1 rc.7 rebaseline](../../.agents/notes/proposed/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md).
+Investigated on 2026-08-17 on macOS 26.5.2 (Darwin 25.5.0, arm64), Node v24.14.0, pnpm 11.7.0. Scope authority: [DSH Science v0.1 rc.7 rebaseline](../../.agents/notes/implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md).
 
 ## Outcome
 
@@ -73,7 +73,7 @@ No worktree outside `/Users/superjj/ccproj/DSHscience` (branch `codex/science-v0
 
 ## Risks, unknowns, and deferred product decisions
 
-- This evidence covers the source rebaseline only. R6a and R6b now sit on a different tree than when their commits (`f5bbcf0ff2`, `bb911b9c0c`) first landed; a future acceptance pass for either checkpoint must review them against this rebaseline's head, not their pre-rebaseline SHAs, per the [rebaseline note](../../.agents/notes/proposed/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)'s Risks section.
+- This evidence covers the source rebaseline only. R6a and R6b now sit on a different tree than when their commits (`f5bbcf0ff2`, `bb911b9c0c`) first landed; a future acceptance pass for either checkpoint must review them against this rebaseline's head, not their pre-rebaseline SHAs, per the [rebaseline note](../../.agents/notes/implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)'s Consequences section.
 - `rescope-vendor:check`'s pre-existing 26-problem gap remains open and unrelated to this pass.
 - `examples/acp-agent/tests/goal.snapshot.ts` and `apps/web/tests/smoke-real.e2e.ts` remain red locally for the same pre-existing, already-documented reasons; neither self-skips in this environment the way `test:e2e` does.
 - Real Python/R Conda acceptance and every Desktop/release layer are not exercised by this rebaseline; they carry no rc.7 evidence and must not be read as extended from R2's or R5's rc.5 acceptance runs.

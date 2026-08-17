@@ -2,7 +2,7 @@
 
 [English](2026-08-17-dsh-science-v01-rc7-rebaseline.md) | 中文
 
-调查于 2026-08-17，平台 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。Scope authority：[DSH Science v0.1 rc.7 基线迁移](../../.agents/notes/proposed/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)。
+调查于 2026-08-17，平台 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。Scope authority：[DSH Science v0.1 rc.7 基线迁移](../../.agents/notes/implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)。
 
 ## Outcome
 
@@ -73,7 +73,7 @@ DSH Science 开发线自 [R0](../../.agents/notes/archived/process/2026-08-15-ds
 
 ## Risks, unknowns, and deferred product decisions
 
-- 本证据只覆盖源码层面的基线迁移。R6a 与 R6b 现在落在与其提交（`f5bbcf0ff2`、`bb911b9c0c`）最初落地时不同的树上；未来对任一检查点的验收都必须针对本次基线迁移之后的 head 评审，而不是它们基线迁移前的 SHA，依据见[基线迁移 note](../../.agents/notes/proposed/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)的 Risks 部分。
+- 本证据只覆盖源码层面的基线迁移。R6a 与 R6b 现在落在与其提交（`f5bbcf0ff2`、`bb911b9c0c`）最初落地时不同的树上；未来对任一检查点的验收都必须针对本次基线迁移之后的 head 评审，而不是它们基线迁移前的 SHA，依据见[基线迁移 note](../../.agents/notes/implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)的 Consequences 部分。
 - `rescope-vendor:check` 既有的 26 个问题缺口仍然存在，与本次无关。
 - `examples/acp-agent/tests/goal.snapshot.ts` 与 `apps/web/tests/smoke-real.e2e.ts` 在本地仍然是红的，原因与既有记录完全相同；二者都不像 `test:e2e` 那样在本环境自动跳过。
 - 真实 Python/R Conda 验收与每一个 Desktop/release 层，本次基线迁移都未涉及；它们没有任何 rc.7 证据，不得被解读为 R2 或 R5 在 rc.5 上验收结果的延伸。

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-science",
   "description": "Model-facing Science mode Consumer: mode/environment binding, science:environment context, and get_science_state/run_python/run_r tools over ctx.scienceRuntime",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },

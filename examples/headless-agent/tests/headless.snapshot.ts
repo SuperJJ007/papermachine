@@ -692,6 +692,7 @@ describe('headless stream-json snapshots', () => {
       expect(result.stderr).toBe('')
       expect(server.requests).toHaveLength(1)
       expect(server.requests[0]?.max_tokens).toBe(256_000)
+      expect(server.requests[0]?.reasoning_effort).toBe('low')
       const header = (parseJsonl(result.stdout)
         .map(record => record.event)
         .find((event): event is JsonObject => (
@@ -706,7 +707,7 @@ describe('headless stream-json snapshots', () => {
           "maxTokens": 256000,
           "model": "deepseek-v4-flash",
           "provider": "deepseek-official",
-          "reasoningEffort": "off",
+          "reasoningEffort": "low",
         }
       `)
       expect(header?.adapterDefaults).toEqual({

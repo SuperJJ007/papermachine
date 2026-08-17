@@ -29,6 +29,8 @@ The package configuration names existing absolute Conda prefixes. It does not in
 
 That entry declares `settings` among its injections, which is what fixes the resolution order: Cordis constructs it only once the settings provider is ACTIVE. A composition that mounts it without a settings provider leaves it PENDING on the unmet injection. Deployments that own their profile map in configuration alone mount the root entry, which never reads settings.
 
+Both entries provide the same `ctx.scienceRuntime` Cordis service, and that service holds exactly one provider: they are alternatives, never mounted together. The shipped Web bundle mounts `with-settings` by default under the Cordis entry id `science-runtime`; a deployment that instead owns its profile map in Cordis configuration overrides that row by id (a patch replacing the row, matching every other bundle-row override) rather than `insert`ing a second Runtime row — inserting a second row throws `service "scienceRuntime" has been registered` at load.
+
 ## Operations
 
 `bindEnvironment({ session, profileId, signal })` requires the exact live Science Session object, observes the selected profile, and appends one complete `science/environment-bound` value. Static missing or unusable interpreters become an `invalid` value; cancellation, timeout, prefix I/O failure, partial confinement, or an overlapping writable root rejects without an environment event.

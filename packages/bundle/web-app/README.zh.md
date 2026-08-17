@@ -24,3 +24,4 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 - **前端 dist 必须已构建**：对 dist 的 `require.resolve` 在激活时明确报错并给出构建提示；没有从源码直接服务的回退路径。
 - **`lanAddresses` 是启动期快照**：启动后的网卡变化不会重新公告；打印的 LAN URL 始终与配置的信任栅栏一致。
+- **本 bundle 拥有 `science-runtime` 这一行的 id**：`cordis.patch.yml` 在 entry id `science-runtime` 下挂载 `@deepseek-ai/dsh-science-runtime/with-settings`（有意留空的配置档案映射；由设置卡片配置）。该入口与本包的根入口 `@deepseek-ai/dsh-science-runtime` 提供的是同一个只持有单一 provider 的 `ctx.scienceRuntime` Cordis service，因此若某个 deployment 想用显式 Cordis 配置覆盖本 bundle 的 Runtime，必须按 id 对 `science-runtime` 打 patch，而不是 `insert` 第二个 Runtime 行——插入第二行会在 load 时抛出 `service "scienceRuntime" has been registered`（参见 [`dsh-science-runtime` README](../../science/science-runtime/README.md#settings-bound-entry)）。

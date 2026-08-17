@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 /**
- * The Science settings card's rendering: the eight reachable states
- * (loading, unconfigured, configured, saving, a Host-rejected/stale-revision
- * write, a client-blocked invalid draft, saved-restart-required, and
- * reset-to-composition), accessible names and distinct accessible text per
- * state, and one end-to-end save through the real controller.
+ * The Science settings card's rendering: its own collapsed-by-default
+ * disclosure (equivalent in behavior and accessible naming to the Plugins
+ * section's sibling cards, owned locally rather than imported), the eight
+ * reachable states once expanded (loading, unconfigured, configured, saving,
+ * a Host-rejected/stale-revision write, a client-blocked invalid draft,
+ * saved-restart-required, and reset-to-composition), accessible names and
+ * distinct accessible text per state, and one end-to-end save through the
+ * real controller.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -44,20 +47,62 @@ function actions() {
   return { edit: vi.fn(), save: vi.fn(), discard: vi.fn(), reset: vi.fn() }
 }
 
-/** Render the card over one hand-built, static state (mirrors the sibling section's own card-render idiom). */
-function renderCard(state: Partial<ScienceSettingsCardState> = {}, over: Partial<ScienceSettingsCardProps> = {}) {
+/** The card's own disclosure toggle, addressed the same way in every state. */
+function toggle(name: 'Show settings: Science' | 'Hide settings: Science' = 'Show settings: Science') {
+  return screen.getByRole('button', { name })
+}
+
+/**
+ * Render the card over one hand-built, static state (mirrors the sibling
+ * section's own card-render idiom). Expands it by default: every state test
+ * below exercises what is visible once open, and collapsed-by-default gets
+ * its own dedicated coverage.
+ */
+function renderCard(
+  state: Partial<ScienceSettingsCardState> = {},
+  over: Partial<ScienceSettingsCardProps> = {},
+  options: { open?: boolean } = {},
+) {
   const props = {
     t,
     useScienceSettingsCard: (sel: (s: ScienceSettingsCardState) => unknown) => sel({ ...settled, ...state }),
     ...actions(),
     ...over,
   } as unknown as ScienceSettingsCardProps
-  return { view: render(<ScienceSettingsCard {...props} />), props }
+  const view = render(<ScienceSettingsCard {...props} />)
+  if (options.open !== false) fireEvent.click(toggle())
+  return { view, props }
 }
 
 function statusTexts(): string[] {
   return screen.getAllByRole('status').map(el => el.textContent ?? '')
 }
+
+describe('ScienceSettingsCard: collapsed by default', () => {
+  it('shows only the header — no field, hint, status, or action button — until expanded', () => {
+    renderCard({}, {}, { open: false })
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText('Science')).toBeTruthy()
+    expect(screen.getByText('Conda prefixes for the fixed science profile.')).toBeTruthy()
+    expect(screen.queryByLabelText('Python prefix')).toBeNull()
+    expect(screen.queryByLabelText('R prefix')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('exposes the expanded state to assistive technology and reveals the fields once toggled', () => {
+    renderCard({}, {}, { open: false })
+    fireEvent.click(toggle())
+    expect(toggle('Hide settings: Science').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Python prefix')).toBeTruthy()
+    expect(screen.getByLabelText('R prefix')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
+    fireEvent.click(toggle('Hide settings: Science'))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText('Python prefix')).toBeNull()
+  })
+})
 
 describe('ScienceSettingsCard: loading', () => {
   it('shows a loading status and no fields, before the first accepted section', () => {
@@ -200,6 +245,7 @@ describe('ScienceSettingsCard: end-to-end through the real controller', () => {
     } as unknown as ScienceSettingsCardProps)
 
     const view = render(<ScienceSettingsCard {...buildProps()} />)
+    fireEvent.click(toggle())
     fireEvent.change(screen.getByLabelText('Python prefix'), { target: { value: '/opt/conda/envs/science' } })
     view.rerender(<ScienceSettingsCard {...buildProps()} />)
     expect(screen.getByLabelText<HTMLInputElement>('Python prefix').value).toBe('/opt/conda/envs/science')

@@ -25,6 +25,10 @@
   - tabpanel "插件配置":
     - list:
       - listitem:
+        - 'button "展开设置: Science"':
+          - text: Science 固定 science 配置档案的 Conda 前缀。
+          - img
+      - listitem:
         - 'button "展开设置: 终端"':
           - text: 终端 限制 agent 运行的每一条命令。
           - img

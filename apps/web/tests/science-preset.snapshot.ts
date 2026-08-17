@@ -26,6 +26,7 @@ const MODE = webSnapshotMode()
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/science-preset', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
+const OVERLAY = fileURLToPath(new URL('./science-preset.overlay.yml', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const PROMPT = 'Call get_science_state now and report only the mode revision it returns, in one short sentence. Do not run any Python or R code.'
 const PNG = Uint8Array.from(Buffer.from(
@@ -33,12 +34,18 @@ const PNG = Uint8Array.from(Buffer.from(
   'base64',
 ))
 
-// The shipped Web Host mounts no Science Runtime row (R4 scope: preset
-// wiring, not deployment defaults), so this scenario mounts a fake-backed
-// one directly on the booted scaffold — the same technique as
+// The shipped Web Host now mounts its own settings-bound, intentionally
+// unconfigured Science Runtime row (R6c's default `with-settings` entry).
+// `OVERLAY` disables that row for this scenario alone, because Cordis's
+// single-object `scienceRuntime` service registration cannot hold two
+// providers at once (unlike `subprocess`/`sandbox` below, isolating the
+// name is not an option here: the agent this scenario creates resolves
+// services from the root context, not from the isolated child the fake
+// plugins mount under). The rest of the composition mounts a fake-backed
+// root entry directly on the booted scaffold — the same technique as
 // `apps/cli/tests/web-agent-presets.e2e.ts`'s "fake-backed Science Runtime"
-// section, isolated behind `ctx.isolate()` so it does not collide with the
-// shipped bundle's own real `subprocess`/`sandbox` Host rows.
+// section, isolated behind `ctx.isolate()` so `subprocess`/`sandbox` do not
+// collide with the shipped bundle's own real Host rows for those two.
 
 /** Full-enforcement test double that preserves direct argv. */
 class DirectSandbox extends SandboxProvider {
@@ -139,7 +146,7 @@ describe('science agent preset', () => {
   let scratch: string | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, extraOverlayPath: OVERLAY })
     // Repo-relative, not the scaffold's own os.tmpdir()-based world: Science
     // Runtime scratch roots must not overlap a generic sandbox temp grant.
     scratch = await mkdtemp(join(REPO_ROOT, '.web-science-preset-scratch-'))

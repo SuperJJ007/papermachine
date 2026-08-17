@@ -1,31 +1,86 @@
-/* Science settings card: header, per-prefix fields, and the save/discard/reset footer. */
+/* Science settings card: a collapsed-by-default disclosure — header always
+   visible, body (fields, hints, and the save/discard/reset footer) rendered
+   only while open, matching every sibling card in the Plugins section.
+   Prefix fields, the Configured/Not configured badge, and every action
+   button are the shared `Input`/`Pill`/`Button` primitives
+   (`@deepseek-ai/dsh-client-ui-primitives`); only the card container, the
+   header/chevron layout, and the two field-input overrides those primitives
+   do not provide are this file's own rules — the container's border,
+   radius, and background match the Plugins section's own card tokens. */
 
 .card {
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
 }
 
-.head {
+.cardOpen {
+  background: var(--dsw-alias-bg-layer-2);
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.header:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.headText {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .name {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--dsw-alias-label-primary);
 }
 
 .description {
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.chevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform .16s;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  margin: 0 16px;
+  padding: 12px 0 16px;
 }
 
 .notice {
@@ -58,27 +113,14 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.badge {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-secondary);
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
+/* `Input`'s own wrapper is inline-flex and content-sized; a settings field
+   needs it to fill the card body's width. */
+.fieldInput {
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.input {
-  padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-line-primary);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-primary);
-  color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.inputInvalid {
-  composes: input;
+.fieldInputInvalid {
   border-color: var(--dsw-alias-state-error-primary);
 }
 
@@ -102,17 +144,8 @@
   gap: 8px;
 }
 
-.reset {
+/* Layout only (left-align while Discard/Save stay right): `Button`'s ghost
+   variant already supplies the reset action's visual treatment. */
+.resetSlot {
   margin-inline-end: auto;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.reset:disabled {
-  cursor: default;
-  opacity: 0.5;
 }

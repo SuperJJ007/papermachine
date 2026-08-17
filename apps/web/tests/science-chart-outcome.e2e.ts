@@ -1,8 +1,13 @@
-// Web e2e scenario: cold Science chart and Outcome replay. A stored Session
-// and attachment fixture enters through the shipped Web composition so real
-// Chromium exercises projection replay, session-scoped attachment reads,
-// dedicated tool rows, reload, and lightbox keyboard behavior.
+// Web e2e scenario: cold Science chart and Outcome replay, plus the Science
+// session-header action and read-only Details entry it opens. A stored
+// Session and attachment fixture enters through the shipped Web composition
+// so real Chromium exercises projection replay, session-scoped attachment
+// reads, dedicated tool rows, reload, lightbox keyboard behavior, and the
+// routed Details column's client-safe environment/run/chart/Outcome
+// rendering.
 import { Buffer } from 'node:buffer'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -31,6 +36,14 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SEED_ID = 'science-chart-outcome-web-e2e'
+const SEED_TITLE = 'Science chart replay'
+// A shared, already-committed non-Science fixture (also seeded by
+// details-session-lifecycle.e2e.ts and others): a closed session with no
+// agentPreset, giving the header-action test a real non-Science Session
+// without inventing a second recording.
+const STANDARD_FIXTURE = fileURLToPath(new URL('./snapshots/seeded-history/seed.jsonl', import.meta.url))
+const STANDARD_SEED_ID = 'science-chart-outcome-standard-web-e2e'
+const STANDARD_SEED_TITLE = 'Use the read tool twice'
 const PNG = Uint8Array.from(Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -263,6 +276,10 @@ describe('web e2e: Science chart and Outcome replay', () => {
       name: 'observed.png',
     })
     await seedSession(scaffold, scienceFixture(stored), SEED_ID, 'science')
+    // A non-Science Session (no agentPreset), seeded alongside the Science
+    // one so the header-action test can assert real absence rather than an
+    // absence that only holds because no other Session exists yet.
+    await seedSession(scaffold, await readFile(STANDARD_FIXTURE, 'utf8'), STANDARD_SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -275,15 +292,49 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await scaffold?.close()
   })
 
+  /**
+   * Center-column content uniquely identifies which of the two seeded
+   * Sessions is current (a freshly seeded row's sidebar label falls back to
+   * the shared workspace basename until opened once, and selecting a row
+   * also promotes it to most-recently-used — reordering the list — so
+   * neither the label nor the row's position is a stable selector).
+   */
+  async function currentSeedIdentity(): Promise<'science' | 'standard' | 'unknown'> {
+    if (await page.getByText('Updated finding', { exact: true }).count() > 0) return 'science'
+    if (await page.getByText('DONE', { exact: true }).count() > 0) return 'standard'
+    return 'unknown'
+  }
+
+  /**
+   * Select the Session named `title` (one of {@link SEED_TITLE},
+   * {@link STANDARD_SEED_TITLE}) — the only two rows this scaffold ever
+   * seeds — by content rather than position: while the wrong one is current,
+   * click whichever sibling row is not `aria-selected` to reach the other.
+   */
+  async function openSessionByTitle(title: string): Promise<void> {
+    const groupRow = page.locator('[role="treeitem"]').first()
+    await groupRow.waitFor({ timeout: 15_000 })
+    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
+    const want = title === SEED_TITLE ? 'science' : 'standard'
+    await expect.poll(async () => {
+      if (await currentSeedIdentity() === want) return true
+      const rows = page.locator('[role="treeitem"]')
+      const rowCount = await rows.count()
+      for (let index = 1; index < rowCount; index += 1) {
+        const row = rows.nth(index)
+        if (await row.getAttribute('aria-selected') !== 'true') {
+          await row.click()
+          break
+        }
+      }
+      return false
+    }, { timeout: 20_000, interval: 500 }).toBe(true)
+  }
+
   it('replays stored and missing chart objects with both Outcome occurrences before and after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-chart-outcome'))
     const openSeed = async (): Promise<void> => {
-      const groupRow = page.locator('[role="treeitem"]').first()
-      await groupRow.waitFor({ timeout: 15_000 })
-      if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-      const sessionRow = page.locator('[role="treeitem"]').nth(1)
-      await sessionRow.waitFor({ timeout: 10_000 })
-      await sessionRow.click()
+      await openSessionByTitle(SEED_TITLE)
       await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
     }
 
@@ -323,6 +374,58 @@ describe('web e2e: Science chart and Outcome replay', () => {
       timeout: 15_000,
     }).toBe(2)
     expect(await page.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(2)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
+  }, 60_000)
+
+  it('shows the Science header action only for the Science session and opens client-safe Details', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-header-details'))
+    const detailsPanel = page.locator('[class*="detailsCol"]')
+    const scienceAction = page.getByRole('button', { name: 'Science details' })
+
+    // A Standard (non-Science) Session shows no action at all.
+    await openSessionByTitle(STANDARD_SEED_TITLE)
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await scienceAction.count()).toBe(0)
+
+    // The built-in `science` preset session shows the action; activating it
+    // opens the Details column on the routed `science` entry.
+    await openSessionByTitle(SEED_TITLE)
+    await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+    await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
+    await scienceAction.click()
+    await detailsPanel.getByText('Science', { exact: true }).waitFor({ timeout: 10_000 })
+
+    // Client-safe environment, run, chart, and Outcome states from the same
+    // projection the transcript rows already reused — no second reader.
+    expect(await detailsPanel.getByText('Profile: browser-profile', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Revision 1', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Available', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('version 3.13.5', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('fingerprint bbbbbbbbbbbb', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Success', { exact: true }).count()).toBe(1)
+    // Only the latest accepted chart version renders (v2, the missing object).
+    expect(await detailsPanel.getByText('Missing revision', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('v2', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
+
+    // No absolute Host path, executable identity, condaHistorySha256, or the
+    // full 64-character fingerprint ever reaches the rendered panel — only
+    // the twelve-character preview asserted above.
+    const detailsText = await detailsPanel.innerText()
+    expect(detailsText).not.toContain('/private/host/science')
+    expect(detailsText).not.toContain('/private/host/science/bin/python')
+    expect(detailsText).not.toContain('dev:1-ino:2')
+    expect(detailsText).not.toContain(FINGERPRINT)
+    expect(detailsText).not.toContain('a'.repeat(64))
+
+    // Switching to a non-Science Session shows no action either.
+    await openSessionByTitle(STANDARD_SEED_TITLE)
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await scienceAction.count()).toBe(0)
+
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)

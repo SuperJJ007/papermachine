@@ -1,0 +1,9 @@
+# This scenario needs full, exclusive control over the `science` preset's
+# Runtime — a fake-backed provider whose subprocess/sandbox test doubles
+# produce deterministic run/chart output. Cordis's `scienceRuntime` service
+# holds exactly one provider, so the shipped Web bundle's default
+# `@deepseek-ai/dsh-science-runtime/with-settings` row (R6c, intentionally
+# unconfigured `profiles: {}`) is disabled here; science-preset.snapshot.ts
+# mounts its own fake-backed root entry directly on the booted scaffold.
+- id: science-runtime
+  disabled: true

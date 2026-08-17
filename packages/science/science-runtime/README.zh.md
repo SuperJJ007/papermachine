@@ -29,6 +29,8 @@
 
 该入口把 `settings` 声明在自己的 injection 中，这正是解析顺序得以固定的原因：Cordis 只在 settings provider 处于 ACTIVE 后才构造它。若某个 composition 挂载了它却没有 settings provider，它会因未满足的 injection 停在 PENDING。仅凭配置拥有自己 profile map 的 deployment 挂载根入口，根入口永不读取 settings。
 
+两个入口提供的是同一个 `ctx.scienceRuntime` Cordis service，而该 service 只持有一个 provider：二者是互斥的替代关系，不会同时挂载。已发布的 Web bundle 默认在 Cordis entry id `science-runtime` 下挂载 `with-settings`；若某个 deployment 改为仅凭 Cordis 配置拥有自己的 profile map，应按 id 覆盖该行（与其它 bundle 行覆盖方式一致的 patch 替换），而不是 `insert` 第二个 Runtime 行——插入第二行会在 load 时抛出 `service "scienceRuntime" has been registered`。
+
 ## 操作
 
 `bindEnvironment({ session, profileId, signal })` 要求精确的 live Science Session object，观测所选 profile，并追加一个完整的 `science/environment-bound` 值。静态缺失或不可用的 interpreter 会成为 `invalid` 值；取消、超时、prefix I/O 失败、partial confinement 或可写 root 重叠会拒绝且不追加 environment event。

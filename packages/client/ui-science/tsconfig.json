@@ -30,6 +30,12 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../ui-settings"
+    },
+    {
+      "path": "../ui-settings-plugins"
+    },
+    {
       "path": "../ui-slots"
     },
     {

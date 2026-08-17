@@ -109,6 +109,21 @@
     - id: science-session
       name: '@deepseek-ai/dsh-science-session'
 
+    # The settings-bound Science Runtime: declares `settings` among its
+    # Cordis injections, so this row is what makes the `science-runtime`
+    # namespace present for the Plugins tab to dispatch a card into — Cordis,
+    # not row order, sequences its construction after the settings provider
+    # (the entry's own declared injection, not this row's position relative
+    # to `ui-settings`). `profiles: {}` is the intentional unconfigured
+    # state: the shipped `science` agent preset fixes `profileId: science`,
+    # and a person names its Python/R Conda prefixes through the settings
+    # card, then restarts the Host. CLI/headless bundles keep their explicit
+    # `profiles` composition and mount the root entry instead.
+    - id: science-runtime
+      name: '@deepseek-ai/dsh-science-runtime/with-settings'
+      config:
+        profiles: {}
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway

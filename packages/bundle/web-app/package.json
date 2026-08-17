@@ -95,6 +95,7 @@
     "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-message-feedback": "workspace:^",
+    "@deepseek-ai/dsh-science-runtime": "workspace:^",
     "@deepseek-ai/dsh-science-session": "workspace:^",
     "@deepseek-ai/dsh-session-attachment-index": "workspace:^",
     "@deepseek-ai/dsh-session-projection-cache": "workspace:^",

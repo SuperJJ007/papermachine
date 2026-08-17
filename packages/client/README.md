@@ -24,7 +24,7 @@ The browser side of the dsh web GUI: shell boot, browser-host communication, sha
 | [`ui-workspace/`](ui-workspace/README.md) | Provides workspace selection and creation surfaces. |
 | [`ui-conversation/`](ui-conversation/README.md) | Presents the active conversation and its input surface. |
 | [`ui-tool/`](ui-tool/README.md) | Composes Tool call trees and keyed per-Tool views. |
-| [`ui-science/`](ui-science/README.md) | Replays Science chart and Outcome Tool occurrences with authorized attachment previews. |
+| [`ui-science/`](ui-science/README.md) | Replays Science chart and Outcome Tool occurrences with authorized attachment previews, and hosts the Science settings card. |
 | [`ui-workflow-run/`](ui-workflow-run/README.md) | Replays durable workflow runs as nested Chat disclosures with live-only child navigation. |
 | [`ui-goal/`](ui-goal/README.md) | Presents and manages the current goal. |
 | [`ui-trajectory/`](ui-trajectory/README.md) | Presents alternate views of agent activity. |

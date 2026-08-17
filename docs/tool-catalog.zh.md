@@ -41,7 +41,7 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
-| `@deepseek-ai/dsh-tool-science` | `get_science_state`、`run_python`、`run_r` | `ctx.tools`、`ctx.systemPrompt`、`ctx.scienceRuntime (first use, and each run_python/run_r call)` | `tool/call`、`science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`、`tool/result` | - | run_python 与 run_r 要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要它的操作时才读取，绝不作为硬性 inject。 |
+| `@deepseek-ai/dsh-tool-science` | `get_science_state`、`publish_outcome`、`run_python`、`run_r`、`save_chart` | `ctx.tools`、`ctx.systemPrompt`、`ctx.scienceRuntime (first use, each run_python/run_r call, and save_chart)` | `tool/call`、`science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`、`science/chart-saved`、`science/outcome-published`、`tool/result` | - | 直接运行、保存图表与发布 Outcome 都要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要 Host 执行或导入 artifact 的操作时读取，绝不作为硬性 inject。 |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -1895,6 +1895,102 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 来源：[`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
 
+### `publish_outcome`
+
+将当前 Science 结果发布为该 Session 的下一版 Outcome：包含标题、Markdown 摘要，以及非空且不重复的证据列表；证据只能引用此前成功的运行、精确的已保存图表版本和／或此前消息。每次发布都以连续递增的新版本替换模型可见的当前 Outcome；它不会读取或修改 Goal 状态。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Human-readable result title."
+    },
+    "summary_markdown": {
+      "type": "string",
+      "description": "Markdown summary of the result."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "run"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "run_id"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chart"
+                ]
+              },
+              "chart_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "chart_id",
+              "version"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "message"
+                ]
+              },
+              "seq": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "seq"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "title",
+    "summary_markdown",
+    "evidence"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/publish-outcome.ts`](../packages/science/tool-science/src/publish-outcome.ts)
+
 ### `run_python`
 
 在绑定到该 session 的 Science environment 上，用一个全新的解释器进程运行 Python 源码。每次调用都会启动一个新进程；调用之间不会在内存中保留任何状态。非零退出码或异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
@@ -1937,4 +2033,44 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 来源：[`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
 
-run_python 与 run_r 要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要它的操作时才读取，绝不作为硬性 inject。
+### `save_chart`
+
+从一次成功运行的 SCIENCE_ARTIFACT_DIR 导入一张 PNG 图表（artifact_path 是相对于该运行自身目录的路径），并持久保存它。某个 logical_name 首次保存时成为版本 1；之后以相同 logical_name 保存，会为同一图表提交下一个版本。返回文本回执而不是图像字节；图表会显示在产品对话记录中。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "The exact successful run_python/run_r run to import from."
+    },
+    "artifact_path": {
+      "type": "string",
+      "description": "Forward-slash path relative to that run's SCIENCE_ARTIFACT_DIR, naming an existing PNG file."
+    },
+    "logical_name": {
+      "type": "string",
+      "description": "Stable name for this chart across versions (e.g. \"loss-curve\"). Reusing it commits the next version of the same chart."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable chart title."
+    },
+    "caption": {
+      "type": "string",
+      "description": "Optional human-readable caption."
+    }
+  },
+  "required": [
+    "run_id",
+    "artifact_path",
+    "logical_name",
+    "title"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/save-chart.ts`](../packages/science/tool-science/src/save-chart.ts)
+
+直接运行、保存图表与发布 Outcome 都要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要 Host 执行或导入 artifact 的操作时读取，绝不作为硬性 inject。

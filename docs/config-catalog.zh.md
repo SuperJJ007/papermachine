@@ -730,7 +730,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userInteraction` · `workspace`
+需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessionAttachments` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userInteraction` · `workspace`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -1529,7 +1529,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-science-runtime`
 
-需要：`sessions` · `subprocess` · `sandbox`
+需要：`attachments` · `sessions` · `subprocess` · `sandbox`
 
 ```ts config-catalog
 /** Runtime configuration supplied by one Cordis row. */
@@ -1540,6 +1540,10 @@ export interface Config {
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
+  /** Maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
+  readonly artifactDiagnosticMaxEntries?: number
+  /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
+  readonly artifactDiagnosticMaxBytes?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1551,7 +1555,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:24`](../packages/science/science-runtime/src/config.ts)
+来源：[`packages/science/science-runtime/src/config.ts:38`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
@@ -3099,6 +3103,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-model-selection`（[`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-permission-presets`（[`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-plan`（[`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-science`（[`packages/client/ui-science/src/index.ts`](../packages/client/ui-science/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
@@ -3129,6 +3134,7 @@ export interface Config {
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-science-session`（[`packages/science/science-session/src/index.ts`](../packages/science/science-session/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
+- `@deepseek-ai/dsh-session-attachment-index`（[`packages/session/session-attachment-index/src/index.ts`](../packages/session/session-attachment-index/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
 - `@deepseek-ai/dsh-session-log-export` — 需要 `commands`（[`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts)）
 - `@deepseek-ai/dsh-session-projection`（[`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts)）

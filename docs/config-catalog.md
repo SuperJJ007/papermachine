@@ -728,7 +728,7 @@ Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-c
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessionAttachments` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -1527,7 +1527,7 @@ Source: [`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/
 
 ## `@deepseek-ai/dsh-science-runtime`
 
-Requires: `sessions` · `subprocess` · `sandbox`
+Requires: `attachments` · `sessions` · `subprocess` · `sandbox`
 
 ```ts config-catalog
 /** Runtime configuration supplied by one Cordis row. */
@@ -1538,6 +1538,10 @@ export interface Config {
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
+  /** Maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
+  readonly artifactDiagnosticMaxEntries?: number
+  /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
+  readonly artifactDiagnosticMaxBytes?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1549,7 +1553,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:24`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:38`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
@@ -3097,6 +3101,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-science` ([`packages/client/ui-science/src/index.ts`](../packages/client/ui-science/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
@@ -3127,6 +3132,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-science-session` ([`packages/science/science-session/src/index.ts`](../packages/science/science-session/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
+- `@deepseek-ai/dsh-session-attachment-index` ([`packages/session/session-attachment-index/src/index.ts`](../packages/session/session-attachment-index/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
 - `@deepseek-ai/dsh-session-log-export` — requires `commands` ([`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts))
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))

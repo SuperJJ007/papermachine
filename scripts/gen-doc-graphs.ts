@@ -303,7 +303,16 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'science-runtime',
     title: 'Host-local Science Runtime',
     mode: 'core',
-    note: 'Folded bind/start operations over existing Conda prefixes; R2 has no model-facing Consumer and appends only environment and run Session events.',
+    consumers: ['tool-science'],
+    note: 'Owns bound Conda environments, confined runs, chart commits, and the environment, run, and chart Session events consumed by Science tools.',
+  },
+  {
+    key: 'sessionAttachments',
+    pkg: 'session-attachment-index',
+    title: 'Session attachment reference index',
+    mode: 'core',
+    consumers: ['apiproxy', 'science-session'],
+    note: 'Extracts complete attachment references from durable Session events for Host reads and exports; domain packages register lifecycle-owned extractors for their event types.',
   },
   {
     key: 'sessionProjections',

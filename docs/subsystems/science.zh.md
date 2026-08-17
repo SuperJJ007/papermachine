@@ -2,13 +2,15 @@
 
 [English](science.md) | 中文
 
-Science 家族拥有 required-on-read 的 Session 事件、产生 environment 与 run 事实的宿主本地 Runtime，以及面向模型的 Consumer。[`dsh-science-session`](../../packages/science/science-session) 校验并投影这些事件。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：它观测已配置的既有 Conda prefix，绑定一个活的 Science Session，写入私有 scratch，并追加 `science/environment-bound`、`science/run-started` 与 `science/run-finished`。它不注册模型工具、提示词、preset 或客户端 UI。[`dsh-tool-science`](../../packages/science/tool-science) 是 Consumer：它在首次使用时绑定 `science/mode-bound` 与 environment，渲染 `science:environment` 动态上下文，并注册 `get_science_state`、`run_python` 与 `run_r`。它自身不追加任何 Runtime 拥有的事件。内置 `science` agent preset（`apps/cli/config/agent-presets/science`）组装它，配以受限的支持名单——Science persona、`@deepseek-ai/dsh-tool-fs/read-only`、`@deepseek-ai/dsh-tool-fs-search`、skills，以及通用的 ask-user/todo 工具——并声明自身不可复制，因为其持久身份绑定到字面 `science` preset id。该 preset 不携带 Runtime 行：`ctx.scienceRuntime` 仍是显式部署配置，须由可用的 Host 另行挂载。
+Science 家族拥有六种 required-on-read Session 事件、产生 environment/run/chart 事实的 host-local Runtime、面向模型的 Consumer，以及浏览器会话记录展示。[`dsh-science-session`](../../packages/science/science-session) 严格校验完整 durable 值，暴露客户端安全的 `science` Session projection，并注册 chart 附件提取。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：观测已配置的既有 Conda prefix、写入私有 scratch、执行 Python/R，并通过 `ctx.attachments` 导入 run 生成的 PNG。[`dsh-tool-science`](../../packages/science/tool-science) 在首次使用时绑定 mode/environment，渲染 `science:environment`，注册五个 Science 工具，并在 evidence 校验后发布 Outcome。[`dsh-client-ui-science`](../../packages/client/ui-science) 通过共享附件加载器渲染 chart 与 Outcome tool occurrence。内置不可复制的 `science` preset 把 Consumer 与受限支持 roster 组装起来，但不携带 Runtime 行；具备实时能力的 Host 另行挂载显式 Runtime 配置。
 
 来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)、[`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts) 与 [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
 ## 操作
 
-`bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，在 spawn 前追加 `science/run-started`，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。同一活 Session 上的第二项操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。
+`bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，在 spawn 前追加 `science/run-started`，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。`commitChart` 只接受由精确 Session 本地启动且已成功的 run，解析其 artifact directory 内的普通非 symlink PNG，通过 `ctx.attachments` 持久化，并在不公开 Host path 的前提下追加下一条不可变 logical chart version。同一活 Session 上的第二项 Runtime 操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。
+
+注册给客户端的 projection 与完整 Host replay 分离。它保留无 path 的 environment 摘要、run status/history、chart 附件引用、最新 Outcome 与 metrics，同时省略 prefix/executable path、完整 fingerprint、source/scratch fact、授权 request identity，以及 Runtime free-text failure。
 
 每次 probe 和 run 都使用 direct argv、`environmentBase: 'empty'`、固定 allowlist、owned cwd 与 full `workspace-write` confinement。Python 使用冻结的 isolated UTF-8 标志。R 版本发现使用独立的 `Rscript --version`；UTF-8 probe 与 run 使用 `--vanilla --encoding=UTF-8`。file-write confinement 不是保密性：它不隔离 read、network、syscall 或科学正确性。
 
@@ -43,7 +45,19 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
+
+/**
+ * Import one PNG from a successful, non-inherited run's private artifact
+ * directory, persist it through `ctx.attachments`, then append the
+ * complete immutable chart version. Attachment persistence precedes the
+ * event: a failure before the event may leave only an unreferenced
+ * content-addressed object, but a committed event is never rolled back
+ * because a later step fails.
+ * @param request - Exact live Session, source run, artifact path, and cancellation.
+ * @returns The durable chart version this operation appended.
+ */
+async commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:65`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:79`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

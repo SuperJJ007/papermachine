@@ -93,6 +93,10 @@ flowchart LR
   svc_commands["ctx.commands<br/>Human command registry"]
   pkg_science_runtime["science-runtime"]
   svc_scienceRuntime["ctx.scienceRuntime<br/>Host-local Science Runtime"]
+  pkg_tool_science["tool-science"]
+  pkg_session_attachment_index["session-attachment-index"]
+  svc_sessionAttachments["ctx.sessionAttachments<br/>Session attachment reference index"]
+  pkg_science_session["science-session"]
   pkg_session_projection["session-projection"]
   svc_sessionProjections["ctx.sessionProjections<br/>Session projection units"]
   pkg_host_apiproxy["host-apiproxy"]
@@ -245,6 +249,7 @@ flowchart LR
   pkg_sandbox_policy --> svc_sandboxPolicy
   pkg_science_runtime --> svc_scienceRuntime
   pkg_session --> svc_sessions
+  pkg_session_attachment_index --> svc_sessionAttachments
   pkg_session_persistence --> svc_sessionPersistence
   pkg_session_persistence_jsonl --> svc_sessionPersistence
   pkg_session_persistence_sqlite --> svc_sessionPersistence
@@ -336,6 +341,9 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_scienceRuntime --> pkg_tool_science
+  svc_sessionAttachments --> pkg_apiproxy
+  svc_sessionAttachments --> pkg_science_session
   svc_sessionPersistence --> pkg_agent_loop
   svc_sessionPersistence --> pkg_hooks_claude_code
   svc_sessionPersistence --> pkg_hooks_codex
@@ -439,7 +447,8 @@ flowchart LR
 | `ctx.planMode` | `core` | [`plan-mode`](../packages/plan/plan-mode) | - | - | - | Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions. |
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm. |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
-| `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | - | - | Folded bind/start operations over existing Conda prefixes; R2 has no model-facing Consumer and appends only environment and run Session events. |
+| `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | Owns bound Conda environments, confined runs, chart commits, and the environment, run, and chart Session events consumed by Science tools. |
+| `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | `apiproxy`, [`science-session`](../packages/science/science-session) | - | Extracts complete attachment references from durable Session events for Host reads and exports; domain packages register lifecycle-owned extractors for their event types. |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title), [`host-apiproxy`](../packages/host/apiproxy) | - | Domains register state-driven fold units; the eager drive keeps per-session watermark states and api-proxy serves baselines and pushes changed values. |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs. |
 | `ctx.skills` | `seam` | [`skill`](../packages/skill/skill) | [`skill-badge`](../packages/skill/skill-badge), [`skill-filesystem`](../packages/skill/skill-filesystem) | [`tool-skill`](../packages/skill/tool-skill) | - | Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies. |

@@ -2,13 +2,15 @@
 
 English | [中文](science.zh.md)
 
-The Science family owns required-on-read Session events, the host-local Runtime that produces environment and run facts, and the model-facing Consumer. [`dsh-science-session`](../../packages/science/science-session) validates and projects those events. [`dsh-science-runtime`](../../packages/science/science-runtime) owns `ctx.scienceRuntime`: it observes configured existing Conda prefixes, binds a live Science Session, writes private scratch, and appends `science/environment-bound`, `science/run-started`, and `science/run-finished`. It registers no model tool, prompt, preset, or client UI. [`dsh-tool-science`](../../packages/science/tool-science) is the Consumer: it binds `science/mode-bound` and the environment on first use, renders the `science:environment` dynamic context, and registers `get_science_state`, `run_python`, and `run_r`. It appends no Runtime-owned event itself. The built-in `science` agent preset (`apps/cli/config/agent-presets/science`) composes it with a narrow supporting roster — a Science persona, `@deepseek-ai/dsh-tool-fs/read-only`, `@deepseek-ai/dsh-tool-fs-search`, skills, and the generic ask-user/todo tools — and declares itself non-copyable, since its durable identity is bound to the literal `science` preset id. The preset carries no Runtime row: `ctx.scienceRuntime` stays explicit deployment configuration a usable Host mounts separately.
+The Science family owns six required-on-read Session events, the host-local Runtime that produces environment/run/chart facts, the model-facing Consumer, and browser transcript presentation. [`dsh-science-session`](../../packages/science/science-session) strictly validates the complete durable values, exposes a client-safe `science` Session projection, and registers chart attachment extraction. [`dsh-science-runtime`](../../packages/science/science-runtime) owns `ctx.scienceRuntime`: it observes configured existing Conda prefixes, writes private scratch, executes Python/R, and imports run-produced PNG files through `ctx.attachments`. [`dsh-tool-science`](../../packages/science/tool-science) binds mode/environment on first use, renders `science:environment`, registers all five Science tools, and publishes Outcomes after evidence validation. [`dsh-client-ui-science`](../../packages/client/ui-science) renders chart and Outcome tool occurrences through the shared attachment loader. The built-in non-copyable `science` preset composes the Consumer with a narrow supporting roster but carries no Runtime row; a live-capable Host mounts explicit Runtime configuration separately.
 
 Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts), [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts), and [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
 ## Operations
 
-`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, appends `science/run-started` before spawn, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. A second live-Session operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
+`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, appends `science/run-started` before spawn, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. `commitChart` accepts one successful run started locally in the exact Session, resolves a regular non-symlink PNG inside its artifact directory, persists it through `ctx.attachments`, and appends the next immutable logical chart version without publishing a Host path. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
+
+The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history, chart attachment references, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures.
 
 Every probe and run uses direct argv, `environmentBase: 'empty'`, a fixed allowlist, owned cwd, and full `workspace-write` confinement. Python uses frozen isolated UTF-8 flags. R version discovery uses standalone `Rscript --version`; UTF-8 probes and runs use `--vanilla --encoding=UTF-8`. File-write confinement is not confidentiality: it does not isolate reads, network, syscalls, or scientific correctness.
 
@@ -43,7 +45,19 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
+
+/**
+ * Import one PNG from a successful, non-inherited run's private artifact
+ * directory, persist it through `ctx.attachments`, then append the
+ * complete immutable chart version. Attachment persistence precedes the
+ * event: a failure before the event may leave only an unreferenced
+ * content-addressed object, but a committed event is never rolled back
+ * because a later step fails.
+ * @param request - Exact live Session, source run, artifact path, and cancellation.
+ * @returns The durable chart version this operation appended.
+ */
+async commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:65`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:79`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -557,11 +557,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-science',
     source: {
       get_science_state: 'packages/science/tool-science/src/state.ts',
+      publish_outcome: 'packages/science/tool-science/src/publish-outcome.ts',
       run_python: 'packages/science/tool-science/src/run.ts',
       run_r: 'packages/science/tool-science/src/run.ts',
+      save_chart: 'packages/science/tool-science/src/save-chart.ts',
     },
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, and each run_python/run_r call)'],
-    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, each run_python/run_r call, and save_chart)'],
+    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/chart-saved', 'science/outcome-published', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ToolScience, {
         profileId: 'catalog',
@@ -570,7 +572,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       })
     },
     note:
-      'run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject.',
+      'Direct run, chart-save, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution or artifact import, never as a hard inject.',
   },
 ]
 

@@ -39,7 +39,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
-| `@deepseek-ai/dsh-tool-science` | `get_science_state`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, and each run_python/run_r call)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `tool/result` | - | run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject. |
+| `@deepseek-ai/dsh-tool-science` | `get_science_state`, `publish_outcome`, `run_python`, `run_r`, `save_chart` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, each run_python/run_r call, and save_chart)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `science/chart-saved`, `science/outcome-published`, `tool/result` | - | Direct run, chart-save, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution or artifact import, never as a hard inject. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -1890,6 +1890,102 @@ Return the current Science session state: mode, sanitized bound environment, rec
 
 Source: [`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
 
+### `publish_outcome`
+
+Publish the current Science result as the session's next Outcome revision: a title, a Markdown summary, and non-empty unique evidence citing only prior successful runs, exact saved chart versions, and/or prior messages. Each publish replaces the model-visible current Outcome with a new contiguous revision; it does not read or change Goal state.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Human-readable result title."
+    },
+    "summary_markdown": {
+      "type": "string",
+      "description": "Markdown summary of the result."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "run"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "run_id"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chart"
+                ]
+              },
+              "chart_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "chart_id",
+              "version"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "message"
+                ]
+              },
+              "seq": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "seq"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "title",
+    "summary_markdown",
+    "evidence"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/publish-outcome.ts`](../packages/science/tool-science/src/publish-outcome.ts)
+
 ### `run_python`
 
 Run Python source in a fresh interpreter process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.
@@ -1932,4 +2028,44 @@ Run R source in a fresh Rscript process bound to the session's Science environme
 
 Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
 
-run_python and run_r require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally, at the earliest operation that needs it, never as a hard inject.
+### `save_chart`
+
+Import one PNG chart from a successful run's SCIENCE_ARTIFACT_DIR (artifact_path is relative to that run's own directory) and durably save it. The first save of a logical_name becomes version 1; a later save with the same logical_name commits the next version of the same chart. Returns a text receipt, never image bytes; the chart becomes visible in the product transcript.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "The exact successful run_python/run_r run to import from."
+    },
+    "artifact_path": {
+      "type": "string",
+      "description": "Forward-slash path relative to that run's SCIENCE_ARTIFACT_DIR, naming an existing PNG file."
+    },
+    "logical_name": {
+      "type": "string",
+      "description": "Stable name for this chart across versions (e.g. \"loss-curve\"). Reusing it commits the next version of the same chart."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable chart title."
+    },
+    "caption": {
+      "type": "string",
+      "description": "Optional human-readable caption."
+    }
+  },
+  "required": [
+    "run_id",
+    "artifact_path",
+    "logical_name",
+    "title"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/save-chart.ts`](../packages/science/tool-science/src/save-chart.ts)
+
+Direct run, chart-save, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution or artifact import, never as a hard inject.

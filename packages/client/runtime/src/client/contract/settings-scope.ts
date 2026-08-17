@@ -63,17 +63,37 @@ export interface SettingsScope<T> {
    */
   subscribe(listener: () => void): () => void
   /**
-   * Queue one field write. Rapid writes preserve mutation order, each carries
-   * the latest known namespace revision, and only the latest settlement may
-   * publish; a rejected or failed latest write reloads Host state instead.
+   * Queue one path-addressed write, creating intermediate objects along
+   * `path` as needed — the primitive {@link set} delegates to with a
+   * one-element path. An empty `path` addresses the section root and
+   * replaces it wholesale, so `value` must then be a plain object. Rapid
+   * writes preserve mutation order, each carries the latest known namespace
+   * revision, and only the latest settlement may publish; a rejected or
+   * failed latest write reloads Host state instead.
+   * @param path - ordered field path from the section root; `[]` is the section root.
+   * @param value - JSON-shaped value selected by the user.
+   * @returns settlement after the write and any latest-write recovery read.
+   */
+  setPath(path: readonly string[], value: unknown): Promise<void>
+  /**
+   * Queue one field write; the single-segment convenience over {@link setPath}.
    * @param field - scalar field inside the namespace section.
    * @param value - JSON-shaped value selected by the user.
    * @returns settlement after the write and any latest-write recovery read.
    */
   set(field: string, value: unknown): Promise<void>
   /**
-   * Queue one field clear, so the field re-inherits the composition layer.
-   * Shares {@link set}'s ordering, revision, and recovery contract.
+   * Queue one path-addressed clear, so the field at `path` re-inherits the
+   * composition layer — the primitive {@link unset} delegates to with a
+   * one-element path. An empty `path` clears the whole section. Shares
+   * {@link setPath}'s ordering, revision, and recovery contract.
+   * @param path - ordered field path from the section root; `[]` is the section root.
+   * @returns settlement after the clear and any latest-write recovery read.
+   */
+  unsetPath(path: readonly string[]): Promise<void>
+  /**
+   * Queue one field clear, so the field re-inherits the composition layer;
+   * the single-segment convenience over {@link unsetPath}.
    * @param field - scalar field inside the namespace section.
    * @returns settlement after the clear and any latest-write recovery read.
    */

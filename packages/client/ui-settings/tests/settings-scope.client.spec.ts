@@ -364,6 +364,96 @@ describe('SettingsScopeController', () => {
 
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 5 })
   })
+
+  it('writes a nested field through setPath, reaching the wire as one set op with the full path and held revision', async () => {
+    const mutate = vi.fn().mockResolvedValueOnce(ok(view({ preference: 'system' }, 4)))
+    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 3))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall, mutate } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+
+    await scope.setPath(['profiles', 'science', 'pythonPrefix'], '/opt/conda/envs/science')
+
+    expect(mutate).toHaveBeenCalledWith({
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['profiles', 'science', 'pythonPrefix'], value: '/opt/conda/envs/science' }],
+      expectedRevision: 3,
+    })
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'system' }, revision: 4 })
+  })
+
+  it('clears a nested field through unsetPath, reaching the wire as one unset op with the full path and held revision', async () => {
+    const mutate = vi.fn().mockResolvedValueOnce(ok(view({ preference: 'system' }, 4)))
+    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 3))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall, mutate } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+
+    await scope.unsetPath(['profiles', 'science', 'pythonPrefix'])
+
+    expect(mutate).toHaveBeenCalledWith({
+      ns: 'ui-test',
+      ops: [{ op: 'unset', path: ['profiles', 'science', 'pythonPrefix'] }],
+      expectedRevision: 3,
+    })
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'system' }, revision: 4 })
+  })
+
+  it('serializes rapid setPath writes, carries revisions, and publishes only the latest settlement', async () => {
+    const first = deferred<RpcResponse<SettingsNamespaceView>>()
+    const describeCall = vi.fn().mockResolvedValue(described({ preference: 'system' }, 4))
+    const mutate = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(ok(view({ preference: 'light' }, 6)))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall, mutate } } as never,
+      { namespace: 'ui-test' },
+    )
+    const published = trackValues(scope)
+    await scope.load()
+    const writeA = scope.setPath(['profiles', 'science', 'pythonPrefix'], '/opt/a')
+    const writeB = scope.setPath(['profiles', 'science', 'pythonPrefix'], '/opt/b')
+    await vi.waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    first.resolve(ok(view({ preference: 'dark' }, 5)))
+    await Promise.all([writeA, writeB])
+    expect(published.map(section => section?.preference)).toEqual([undefined, 'system', 'light'])
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 6 })
+    expect(mutate).toHaveBeenNthCalledWith(1, {
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['profiles', 'science', 'pythonPrefix'], value: '/opt/a' }],
+      expectedRevision: 4,
+    })
+    expect(mutate).toHaveBeenNthCalledWith(2, {
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['profiles', 'science', 'pythonPrefix'], value: '/opt/b' }],
+      expectedRevision: 5,
+    })
+  })
+
+  it('refuses a stale nested write rather than overwriting, and recovers Host state', async () => {
+    const mutate = vi.fn().mockResolvedValueOnce(rejected())
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(described({ preference: 'dark' }, 3))
+      .mockResolvedValueOnce(described({ preference: 'light' }, 5))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall, mutate } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+
+    await scope.setPath(['profiles', 'science', 'pythonPrefix'], '/opt/stale')
+
+    expect(mutate).toHaveBeenCalledWith({
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['profiles', 'science', 'pythonPrefix'], value: '/opt/stale' }],
+      expectedRevision: 3,
+    })
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 5 })
+  })
 })
 describe('SettingsScopeBinder.bind', () => {
   it('subscribes before the initial read and converges to the latest queued invalidation', async () => {

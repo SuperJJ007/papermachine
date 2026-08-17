@@ -91,6 +91,17 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
   }
 
   /**
+   * Queue one path-addressed write; see {@link SettingsScope.setPath} for the
+   * ordering, revision, intermediate-object, and recovery contract.
+   * @param path - ordered field path from the section root; `[]` is the section root.
+   * @param value - JSON-shaped value selected by the user.
+   * @returns settlement after the write and any latest-write recovery read.
+   */
+  setPath(path: readonly string[], value: unknown): Promise<void> {
+    return this.write({ op: 'set', path: [...path], value })
+  }
+
+  /**
    * Queue one field write; see {@link SettingsScope.set} for the ordering,
    * revision, and recovery contract.
    * @param field - scalar field inside the namespace section.
@@ -98,7 +109,17 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * @returns settlement after the write and any latest-write recovery read.
    */
   set(field: string, value: unknown): Promise<void> {
-    return this.write({ op: 'set', path: [field], value })
+    return this.setPath([field], value)
+  }
+
+  /**
+   * Queue one path-addressed clear; see {@link SettingsScope.unsetPath} for
+   * the ordering, revision, and recovery contract.
+   * @param path - ordered field path from the section root; `[]` is the section root.
+   * @returns settlement after the clear and any latest-write recovery read.
+   */
+  unsetPath(path: readonly string[]): Promise<void> {
+    return this.write({ op: 'unset', path: [...path] })
   }
 
   /**
@@ -108,7 +129,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * @returns settlement after the clear and any latest-write recovery read.
    */
   unset(field: string): Promise<void> {
-    return this.write({ op: 'unset', path: [field] })
+    return this.unsetPath([field])
   }
 
   private write(op: SettingsPathOpView): Promise<void> {

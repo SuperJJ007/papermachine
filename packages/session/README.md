@@ -27,6 +27,14 @@ Serves current, log-derived per-session state to client carriers.
 | [`session-projection-cache/`](session-projection-cache/README.md) | Persists and restores projection checkpoints | `ctx.sessionProjectionCache` |
 | [`session-stats/`](session-stats/README.md) | Serves whole-log conversation counts and wall times (`sessionStats` unit) | registers on `ctx.sessionProjections` |
 
+## Attachments
+
+Authorizes which durable attachment references one Session log names, for both live reads and export.
+
+| Package | Role | ctx key |
+|---|---|---|
+| [`session-attachment-index/`](session-attachment-index/README.md) | Extracts trusted `ImageAttachmentRef` values from Session events | `ctx.sessionAttachments` |
+
 ## Titles
 
 Derives durable session titles from the session log, with an optional model-backed provider.

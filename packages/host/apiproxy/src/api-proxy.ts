@@ -17,6 +17,8 @@ import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+// Value import: resolves `ctx.sessionAttachments` (the sole event-to-attachment scanner).
+import { SessionAttachmentIndexError } from '@deepseek-ai/dsh-session-attachment-index'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
@@ -187,62 +189,9 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   return blocks
 }
 
-/** Search durable content for an image reference, including nested tool results. */
-function imageBlockIn(content: unknown, match: (ref: ImageAttachmentRef) => boolean): ImageAttachmentRef | undefined {
-  if (!Array.isArray(content)) return undefined
-  for (const value of content) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    const block = value as { type?: unknown; attachment?: unknown; content?: unknown }
-    if (block.type === 'image' && typeof block.attachment === 'object' && block.attachment !== null) {
-      const ref = block.attachment as ImageAttachmentRef
-      if (match(ref)) return ref
-    }
-    if (block.type === 'tool-result') {
-      const nested = imageBlockIn(block.content, match)
-      if (nested !== undefined) return nested
-    }
-  }
-  return undefined
-}
-
-/** Search every durable event carrier that can own model-visible content. */
-function imageInEvent(event: SessionEvent, match: (ref: ImageAttachmentRef) => boolean): ImageAttachmentRef | undefined {
-  const data = event.data as {
-    content?: unknown
-    message?: { content?: unknown }
-    inserted?: Array<{ content?: unknown }>
-    chunk?: { type?: unknown; block?: unknown }
-  }
-  const direct = imageBlockIn(data.content, match)
-  if (direct !== undefined) return direct
-  if (data.message !== undefined) {
-    const wrapped = imageBlockIn(data.message.content, match)
-    if (wrapped !== undefined) return wrapped
-  }
-  if (data.inserted !== undefined) {
-    for (const message of data.inserted) {
-      const inserted = imageBlockIn(message.content, match)
-      if (inserted !== undefined) return inserted
-    }
-  }
-  if (event.type === 'assistant/chunk' && data.chunk?.type === 'block-end') {
-    return imageBlockIn([data.chunk.block], match)
-  }
-  return undefined
-}
-
 /** True when the current model-visible surface contains an image. */
 function messagesHaveImage(messages: readonly { content: readonly ContentBlock[] }[]): boolean {
   return messages.some(message => contentHasImage(message.content))
-}
-
-/** Resolve the first reference matching one opaque id. */
-function referencedImage(events: readonly SessionEvent[], attachmentId: string): ImageAttachmentRef | undefined {
-  for (const event of events) {
-    const found = imageInEvent(event, ref => String(ref.attachmentId) === attachmentId)
-    if (found !== undefined) return found
-  }
-  return undefined
 }
 
 /**
@@ -2542,7 +2491,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: {},
           })
         }
-        const ref = referencedImage(state.events, String(attachmentId))
+        let ref: ImageAttachmentRef | undefined
+        try {
+          ref = ctx.sessionAttachments.findReferencedImage(state.events, String(attachmentId))
+        } catch (error: unknown) {
+          if (error instanceof SessionAttachmentIndexError) {
+            return err(request, {
+              code: 'internal',
+              message: error.message,
+              details: {},
+            })
+          }
+          throw error
+        }
         if (ref === undefined) {
           return err(request, {
             code: 'attachment-error',
@@ -3650,9 +3611,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // root artifact 404 before any zip byte is produced. The root content
         // read here is reused as the first zip entry, so nothing is read twice.
         const deps = sessionLogExportDeps(ctx)
-        if (deps.sessionQuery === undefined || deps.sessionPersistence === undefined || deps.attachments === undefined) {
+        if (deps.sessionQuery === undefined || deps.sessionPersistence === undefined || deps.attachments === undefined
+          || deps.sessionAttachments === undefined) {
           return new Response(
-            'session log export is unavailable: missing session-query, session-persistence, or attachments service',
+            'session log export is unavailable: missing session-query, session-persistence, attachments, or session-attachment-index service',
             { status: 500 },
           )
         }
@@ -3666,6 +3628,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           sessionQuery: deps.sessionQuery,
           sessionPersistence: deps.sessionPersistence,
           attachments: deps.attachments,
+          sessionAttachments: deps.sessionAttachments,
           sessions: deps.sessions,
         }
         let root: SessionRawArtifact | undefined

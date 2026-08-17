@@ -51,6 +51,9 @@
       "path": "../../core/tools"
     },
     {
+      "path": "../../session/session-attachment-index"
+    },
+    {
       "path": "../../session/session-persistence"
     },
     {

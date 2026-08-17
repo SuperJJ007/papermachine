@@ -24,6 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionLineageNode, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import type { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
+import type { ExtractableEvent, SessionAttachmentIndex } from '@deepseek-ai/dsh-session-attachment-index'
 import type { SessionPersistence, SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 
 /** Valid fflate DEFLATE levels accepted by session-log export. */
@@ -37,6 +38,7 @@ export interface SessionLogExportDeps {
   readonly sessionQuery: SessionQueryEngine | undefined
   readonly sessionPersistence: SessionPersistence | undefined
   readonly attachments: AttachmentStore | undefined
+  readonly sessionAttachments: SessionAttachmentIndex | undefined
   readonly sessions: SessionStore | undefined
 }
 
@@ -45,11 +47,13 @@ export interface SessionLogExportReady {
   readonly sessionQuery: SessionQueryEngine
   readonly sessionPersistence: SessionPersistence
   readonly attachments: AttachmentStore
+  readonly sessionAttachments: SessionAttachmentIndex
   readonly sessions: SessionStore | undefined
 }
 
 /**
- * Resolve the persistence, session-query, and attachment services a log export needs.
+ * Resolve the persistence, session-query, attachment, and attachment-index
+ * services a log export needs.
  * @param ctx - the composed host context.
  * @returns the export services (absent when the deployment does not mount them).
  */
@@ -58,6 +62,7 @@ export function sessionLogExportDeps(ctx: Context): SessionLogExportDeps {
     sessionQuery: ctx.get('sessionQuery'),
     sessionPersistence: ctx.get('sessionPersistence'),
     attachments: ctx.get('attachments'),
+    sessionAttachments: ctx.get('sessionAttachments'),
     sessions: ctx.get('sessions'),
   }
 }
@@ -109,73 +114,29 @@ function mediaEntryPath(ref: ImageAttachmentRef): string {
 }
 
 /**
- * Collect every image reference inside one content array, descending into
- * nested tool results the way the live attachment route does.
- * @param content - an event content array (or nested tool-result content).
- * @param refs - the dedupe map being filled (keyed by attachment id).
- */
-function collectImageRefs(content: unknown, refs: Map<string, ImageAttachmentRef>): void {
-  if (!Array.isArray(content)) return
-  const pending: unknown[] = []
-  for (const item of content) pending.push(item)
-  while (pending.length > 0) {
-    const value = pending.pop()
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    const block = value as { type?: unknown; attachment?: unknown; content?: unknown }
-    if (block.type === 'image' && typeof block.attachment === 'object' && block.attachment !== null) {
-      const ref = block.attachment as ImageAttachmentRef
-      refs.set(String(ref.attachmentId), ref)
-    }
-    if (Array.isArray(block.content)) {
-      for (const item of block.content) pending.push(item)
-    }
-  }
-}
-
-/**
- * Collect every image reference one session event carries, across the same
- * carriers the live attachment route scans (direct content, message content,
- * inserted messages, and completed assistant chunk blocks).
- * @param event - one parsed JSONL event object.
- * @param refs - the dedupe map being filled (keyed by attachment id).
- */
-function collectEventImageRefs(event: unknown, refs: Map<string, ImageAttachmentRef>): void {
-  const data = (event as { data?: unknown }).data
-  if (typeof data !== 'object' || data === null) return
-  const carrier = data as {
-    content?: unknown
-    message?: { content?: unknown }
-    inserted?: Array<{ content?: unknown }>
-    chunk?: { type?: unknown; block?: unknown }
-  }
-  collectImageRefs(carrier.content, refs)
-  if (carrier.message !== undefined) collectImageRefs(carrier.message.content, refs)
-  if (carrier.inserted !== undefined) {
-    for (const message of carrier.inserted) collectImageRefs(message.content, refs)
-  }
-  if (carrier.chunk?.type === 'block-end') collectImageRefs([carrier.chunk.block], refs)
-}
-
-/**
- * Collect the distinct media references one stored artifact text names.
- * Lines that fail to parse cannot reference media and are skipped (the
- * artifact text itself is exported verbatim regardless).
+ * Collect the distinct media references one stored artifact text names,
+ * through the generic attachment-reference registry — the same scanner and
+ * exhaustive event-type policy the live attachment route uses. Lines that
+ * fail to parse cannot reference media and are skipped (the artifact text
+ * itself is exported verbatim regardless). A known extractor-required event
+ * type with no live registration throws `SessionAttachmentIndexError`
+ * (propagated to the caller), so export fails loud before any archive entry
+ * for this artifact is produced rather than silently under-collecting media.
+ * @param registry - the generic attachment-reference registry.
  * @param content - the stored artifact text.
  * @returns the dedupe map keyed by attachment id.
  */
-function imageRefsInArtifact(content: string): Map<string, ImageAttachmentRef> {
-  const refs = new Map<string, ImageAttachmentRef>()
+function imageRefsInArtifact(registry: SessionAttachmentIndex, content: string): ReadonlyMap<string, ImageAttachmentRef> {
+  const events: unknown[] = []
   for (const line of content.split('\n')) {
     if (line === '') continue
-    let event: unknown
     try {
-      event = JSON.parse(line)
+      events.push(JSON.parse(line))
     } catch {
       continue
     }
-    collectEventImageRefs(event, refs)
   }
-  return refs
+  return registry.collectReferencedImages(events as unknown as ExtractableEvent[])
 }
 
 /**
@@ -225,7 +186,7 @@ export async function* sessionLogZipEntries(
 ): AsyncGenerator<SessionLogZipEntry> {
   const media = new Map<string, ImageAttachmentRef>()
   const rememberMedia = (content: string): void => {
-    for (const [id, ref] of imageRefsInArtifact(content)) media.set(id, ref)
+    for (const [id, ref] of imageRefsInArtifact(deps.sessionAttachments, content)) media.set(id, ref)
   }
   rememberMedia(root.content)
   yield { path: root.filename, content: root.content }

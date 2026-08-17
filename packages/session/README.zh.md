@@ -27,6 +27,14 @@
 | [`session-projection-cache/`](session-projection-cache/README.md) | 持久化并恢复投影检查点 | `ctx.sessionProjectionCache` |
 | [`session-stats/`](session-stats/README.md) | 提供全日志会话计数与墙钟时间（`sessionStats` 单元） | 注册到 `ctx.sessionProjections` |
 
+## 附件
+
+授权一个会话日志所命名的持久附件引用，同时服务于实时读取与导出。
+
+| 包 | 职责 | ctx 键 |
+|---|---|---|
+| [`session-attachment-index/`](session-attachment-index/README.md) | 从会话事件中提取可信的 `ImageAttachmentRef` 值 | `ctx.sessionAttachments` |
+
 ## 标题
 
 从会话日志派生持久会话标题，并支持可选的模型驱动提供方。

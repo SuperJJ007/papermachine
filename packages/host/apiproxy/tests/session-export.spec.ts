@@ -14,6 +14,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
+import SessionAttachmentIndex from '@deepseek-ai/dsh-session-attachment-index'
 import ApiProxyService, { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -61,6 +62,7 @@ async function buildApi(
     query?: boolean
     persistence?: boolean | 'throw' | 'unsupported'
     attachments?: boolean | ((ref: ImageAttachmentRef, signal?: AbortSignal) => Promise<ReturnType<typeof storedImage>>)
+    sessionAttachments?: boolean
     sessions?: {
       get(id: SessionId): { readonly id: SessionId } | undefined
       flush(session: { readonly id: SessionId }): Promise<boolean>
@@ -78,6 +80,7 @@ async function buildApi(
 ) {
   const ctx = new Context()
   await ctx.plugin(UserQuestionService)
+  if (services.sessionAttachments ?? true) await ctx.plugin(SessionAttachmentIndex)
   const query = services.query ?? true
   const persistence = services.persistence ?? true
   if (query) {
@@ -637,7 +640,7 @@ describe('session.export download endpoint', () => {
     const block = (id: string, mediaType: string) =>
       `{"type":"image","attachment":{"attachmentId":"${id}","mediaType":"${mediaType}","bytes":4,"width":2,"height":2}}`
     const wrapped = `{"type":"assistant/message","seq":2,"time":2000,"data":{"message":{"role":"assistant","content":["noise",${block('wrapped-1', 'image/jpeg')}]}}}`
-    const inserted = `{"type":"context/inserted","seq":3,"time":3000,"data":{"inserted":[{"content":[${block('inserted-1', 'image/gif')}]}]}}`
+    const inserted = `{"type":"agent/inbox/spliced","seq":3,"time":3000,"data":{"inserted":[{"content":[${block('inserted-1', 'image/gif')}]}]}}`
     const chunk = `{"type":"assistant/chunk","seq":4,"time":4000,"data":{"chunk":{"type":"block-end","block":${block('chunk-1', 'image/png')}}}}`
     const root = artifact('session-root', undefined, [
       '{"type":"session","version":0,"id":"session-root","createdAt":1000}',
@@ -719,5 +722,33 @@ describe('session.export download endpoint', () => {
     )
     expect(response.status).toBe(500)
     expect(await response.text()).toContain('attachments')
+  })
+
+  it('answers 500 when the deployment mounts no session-attachment-index service', async () => {
+    const api = await buildApi({ 'session-root': artifact('session-root') }, [], { sessionAttachments: false })
+    const response = await toFetchHandler(api).fetch(
+      new Request('http://host/api/session.export?sessionId=session-root'),
+    )
+    expect(response.status).toBe(500)
+    expect(await response.text()).toContain('session-attachment-index')
+  })
+
+  it('fails the whole export (no partial ZIP) when a known extractor-required event has no registered extractor', async () => {
+    const root = artifact('session-root', undefined, [
+      '{"type":"session","version":0,"id":"session-root","createdAt":1000}',
+      // A real known extractor-required type (dsh-science-session's producer
+      // registers it in a full composition); this suite mounts only the
+      // generic registry, so the type has no live extractor.
+      '{"type":"science/chart-saved","seq":1,"time":1000,"data":{}}',
+    ].join('\n') + '\n')
+    const api = await buildApi({ 'session-root': root })
+    const response = await toFetchHandler(api).fetch(
+      new Request('http://host/api/session.export?sessionId=session-root'),
+    )
+    // The failure surfaces while scanning the root artifact, before any zip
+    // entry is produced, so the stream errors rather than completing with a
+    // shorter or wrong archive.
+    expect(response.status).toBe(200)
+    await expect(response.arrayBuffer()).rejects.toThrow(/extractor-required/)
   })
 })

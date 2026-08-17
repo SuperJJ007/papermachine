@@ -15,6 +15,7 @@
     "apps/web/tests/scaffold-hermetic.e2e.ts",
     "apps/web/tests/minimal-preset.snapshot.ts",
     "apps/web/tests/science-preset.snapshot.ts",
+    "apps/web/tests/science-chart-outcome.e2e.ts",
     "apps/web/tests/message-feedback-protocol.snapshot.ts",
     "apps/web/tests/live-interactions.e2e.ts",
     "apps/web/tests/question-composer.e2e.ts",

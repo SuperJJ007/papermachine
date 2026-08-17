@@ -1,5 +1,8 @@
 /** Deterministic providers for the keyless Science tool snapshot. */
 
+import { Buffer } from 'node:buffer'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -11,6 +14,12 @@ import type {
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+
+/** Smallest valid PNG; `save_chart` imports these exact bytes from the run's artifact directory. */
+const PNG = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+))
 
 class DirectSandbox extends SandboxProvider {
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
@@ -45,6 +54,10 @@ class FakeSubprocess extends SubprocessRuntime {
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (spec.argv.includes('--version')) return settledHandle('Python 3.13.5\n')
     if (spec.argv.includes('-c')) return settledHandle('dsh-科学-✓')
+    const artifacts = spec.env?.SCIENCE_ARTIFACT_DIR
+    if (artifacts === undefined) throw new Error('science snapshot fixture: run received no SCIENCE_ARTIFACT_DIR')
+    mkdirSync(artifacts, { recursive: true })
+    writeFileSync(join(artifacts, 'plot.png'), PNG)
     return settledHandle('science snapshot run output\n')
   }
 

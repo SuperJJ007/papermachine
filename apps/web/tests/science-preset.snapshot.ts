@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -13,6 +14,7 @@ import type {
   SubprocessHandle, SubprocessOutputRead, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
+import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -26,6 +28,10 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/science-preset', import.
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const PROMPT = 'Call get_science_state now and report only the mode revision it returns, in one short sentence. Do not run any Python or R code.'
+const PNG = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+))
 
 // The shipped Web Host mounts no Science Runtime row (R4 scope: preset
 // wiring, not deployment defaults), so this scenario mounts a fake-backed
@@ -69,6 +75,10 @@ class FakeSubprocess extends SubprocessRuntime {
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (spec.argv.includes('--version')) return settledHandle('Fake Python 3.13.5\n', '')
     if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
+    const artifacts = spec.env?.SCIENCE_ARTIFACT_DIR
+    if (artifacts === undefined) throw new Error('FakeSubprocess run received no SCIENCE_ARTIFACT_DIR')
+    mkdirSync(artifacts, { recursive: true })
+    writeFileSync(join(artifacts, 'plot.png'), PNG)
     return settledHandle('fake run output\n', '')
   }
 
@@ -89,10 +99,44 @@ function createFakePythonPrefix(root: string): string {
   return prefix
 }
 
+/** Execute one direct Science tool through the assembled registry and append the same call/result pair the agent loop owns. */
+async function executeScienceTool(
+  agentHandle: AgentHandle,
+  turn: number,
+  name: string,
+  args: unknown,
+): Promise<ToolExecutionResult> {
+  const session: Session = agentHandle.agent.session
+  session.append('step/start', { turn, step: 1 })
+  session.append('request/header', {
+    header: { config: { provider: 'snapshot', model: 'science-r5' } },
+    reason: 'initial',
+  })
+  const callId = CallId(`science-r5-${name}-${String(turn)}`)
+  const argumentsJson = JSON.stringify(args)
+  const call = session.append('tool/call', { turn, step: 1, callId, name, arguments: argumentsJson })
+  const result = await agentHandle.agent.ctx.tools.execute({
+    callId,
+    name,
+    arguments: args,
+    agent: agentHandle.agent,
+    signal: new AbortController().signal,
+  })
+  session.append('tool/result', {
+    turn,
+    step: 1,
+    message: createToolResultMessage({ callId, content: result.content, isError: result.isError }),
+    ...result.error?.info === undefined ? {} : { error: result.error.info },
+    ...result.meta === undefined ? {} : { meta: result.meta },
+  }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+  session.append('step/end', { turn, step: 1 })
+  return result
+}
+
 describe('science agent preset', () => {
   let scaffold: WebScaffold
   let agentHandle: AgentHandle
-  let scratch: string
+  let scratch: string | undefined
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE })
@@ -124,12 +168,14 @@ describe('science agent preset', () => {
     const failures: unknown[] = []
     await agentHandle?.dispose().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
-    await rm(scratch, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (scratch !== undefined) {
+      await rm(scratch, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'science preset smoke teardown failed')
   })
 
-  it('binds mode/environment, sends the exact roster, and reports get_science_state', async () => {
+  it('binds the preset, then runs, versions, publishes, and replays the R5 Science transcript', async () => {
     agentHandle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: PROMPT }],
       source: { kind: 'user' },
@@ -166,7 +212,8 @@ describe('science agent preset', () => {
     const rosterTools = requestHeader.tools?.map(tool => tool.name)
       .filter(name => name !== 'glob' && name !== 'grep').sort()
     expect(rosterTools).toEqual([
-      'ask_user_question', 'get_science_state', 'read', 'read_image', 'run_python', 'run_r', 'skill', 'todo_write',
+      'ask_user_question', 'get_science_state', 'publish_outcome', 'read', 'read_image',
+      'run_python', 'run_r', 'save_chart', 'skill', 'todo_write',
     ])
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
       .toEqual(scaffold.ctx.tools.schemas(agentHandle.agent).toSorted((left, right) => left.name.localeCompare(right.name)))
@@ -210,7 +257,7 @@ describe('science agent preset', () => {
       : ''
     expect(environmentText).toContain('Science mode: revision science-v1.')
     expect(environmentText).toContain('Environment: profile "science", revision 1, status applied.')
-    expect(environmentText).not.toContain(scratch)
+    expect(environmentText).not.toContain(scratch!)
 
     // The `get_science_state` call and its structured, sanitized result.
     const call = log.find(event => event.type === 'tool/call' && event.data.name === 'get_science_state')
@@ -224,7 +271,84 @@ describe('science agent preset', () => {
       ? ''
       : toolResultBlock.content.flatMap(block => (block.type === 'text' ? [block.text] : [])).join('')
     expect(resultText).toContain('science-v1')
-    expect(resultText).not.toContain(scratch)
+    expect(resultText).not.toContain(scratch!)
+
+    const runResult = await executeScienceTool(agentHandle, 2, 'run_python', {
+      code: 'write a deterministic PNG to SCIENCE_ARTIFACT_DIR/plot.png',
+    })
+    expect(runResult.isError).toBe(false)
+    if (runResult.isError) throw new Error('R5 snapshot run failed')
+    const runValue = runResult.value as unknown as { runId: string; status: string }
+    expect(runValue.status).toBe('success')
+
+    const saveArgs = {
+      run_id: runValue.runId,
+      artifact_path: 'plot.png',
+      logical_name: 'main-plot',
+      title: 'Main plot',
+      caption: 'Deterministic snapshot chart',
+    }
+    const firstSave = await executeScienceTool(agentHandle, 3, 'save_chart', saveArgs)
+    const secondSave = await executeScienceTool(agentHandle, 4, 'save_chart', saveArgs)
+    expect(firstSave.isError).toBe(false)
+    expect(secondSave.isError).toBe(false)
+    if (firstSave.isError || secondSave.isError) throw new Error('R5 snapshot chart save failed')
+    const firstChart = firstSave.value as unknown as { chartId: string; version: number; attachmentId: string }
+    const secondChart = secondSave.value as unknown as { chartId: string; version: number; attachmentId: string }
+    expect(firstChart).toMatchObject({ version: 1 })
+    expect(secondChart).toMatchObject({ chartId: firstChart.chartId, version: 2 })
+
+    const publish = await executeScienceTool(agentHandle, 5, 'publish_outcome', {
+      title: 'Snapshot result',
+      summary_markdown: 'The deterministic run produced the cited chart.',
+      evidence: [
+        { kind: 'run', run_id: runValue.runId },
+        { kind: 'chart', chart_id: secondChart.chartId, version: 2 },
+      ],
+    })
+    expect(publish.isError).toBe(false)
+    if (publish.isError) throw new Error('R5 snapshot Outcome publication failed')
+    expect(publish.value).toMatchObject({ revision: 1, title: 'Snapshot result' })
+
+    const current = await executeScienceTool(agentHandle, 6, 'get_science_state', {})
+    expect(current.isError).toBe(false)
+    if (current.isError) throw new Error('R5 snapshot state replay failed')
+    const currentValue = current.value as unknown as {
+      charts: readonly Record<string, unknown>[]
+      outcome: { revision: number } | null
+      metrics: { chartCount: number; chartVersionCount: number; outcomeRevision: number }
+    }
+    expect(currentValue.charts).toHaveLength(2)
+    expect(currentValue.outcome?.revision).toBe(1)
+    expect(currentValue.metrics).toMatchObject({ chartCount: 1, chartVersionCount: 2, outcomeRevision: 1 })
+    for (const chartState of currentValue.charts) {
+      expect(chartState).not.toHaveProperty('attachmentId')
+      expect(chartState).not.toHaveProperty('environmentFingerprint')
+      expect(chartState).not.toHaveProperty('toolCallId')
+      expect(chartState).not.toHaveProperty('requestHeaderSeq')
+    }
+
+    const r5Events = agentHandle.agent.session.events.filter(event => event.seq > result!.seq)
+    expect(r5Events.filter(event => event.type === 'science/chart-saved')).toHaveLength(2)
+    expect(r5Events.filter(event => event.type === 'science/outcome-published')).toHaveLength(1)
+    const r5ToolResults = r5Events.filter(event => event.type === 'tool/result')
+    expect(r5ToolResults.every(event => event.type !== 'tool/result'
+      || event.data.message.content.every(block => block.type !== 'tool-result'
+        || block.content.every(content => content.type !== 'image')))).toBe(true)
+    const saveEvents = r5ToolResults.filter(event => event.type === 'tool/result'
+      && event.data.message.source.callId.toString().includes('save_chart'))
+    expect(saveEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
+      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 1 }),
+      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 2 }),
+    ])
+    const serializedR5 = JSON.stringify(r5Events)
+    expect(serializedR5).not.toContain(scratch!)
+    expect(serializedR5).not.toContain(Buffer.from(PNG).toString('base64'))
+
+    const chartEvent = r5Events.find(event => event.type === 'science/chart-saved')
+    if (chartEvent?.type !== 'science/chart-saved') throw new Error('R5 snapshot chart event is missing')
+    const stored = await scaffold.ctx.attachments.readImage(chartEvent.data.chart.attachment)
+    expect(Buffer.from(stored.data)).toEqual(Buffer.from(PNG))
 
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
   }, 30_000)

@@ -28,6 +28,13 @@
       - insert:
           - id: tool-fs-read-only
             name: '@deepseek-ai/dsh-tool-fs/read-only'
+          # `save_chart` persists chart bytes before its durable event, so the
+          # Science Runtime waits for an attachment store; this snapshot roots
+          # one beside the Runtime's own private home.
+          - id: attachment-local
+            name: '@deepseek-ai/dsh-attachment-local'
+            config:
+              dshHome: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/dsh-home'"
           - id: science-fixture-runtime
             name: ./tests/fixtures/science-runtime-fixture.ts
           - id: science-session

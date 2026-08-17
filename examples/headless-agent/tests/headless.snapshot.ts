@@ -46,6 +46,8 @@ const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
 const scienceToolsScenarioDir = join(snapshotsDir, 'science-tools')
 const scienceToolsConfigPath = fileURLToPath(new URL('../science-tools.cordis.snapshot.yml', import.meta.url))
 const scienceToolsDriver = fileURLToPath(new URL('./fixtures/science-driver.ts', import.meta.url))
+/** The exact PNG the Science fixture writes: neither artifact may carry its bytes. */
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
 const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
@@ -244,6 +246,9 @@ function normalizeScienceValue(value: unknown): unknown {
       if (key === 'executableIdentity' && typeof item === 'string') return [key, '<host-file-id>']
       if (key === 'runId' && typeof item === 'string') return [key, '{{scienceRunId}}']
       if (key === 'scratchKey' && typeof item === 'string') return [key, '<scratch-key>']
+      // The binding fingerprint covers the prefix path and host file identity,
+      // so both it and its model-facing preview move with the temporary root.
+      if (key === 'environmentFingerprintPreview' && typeof item === 'string') return [key, '<preview>']
       return [key, normalizeScienceValue(item)]
     }))
   }
@@ -252,26 +257,50 @@ function normalizeScienceValue(value: unknown): unknown {
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '{{scienceRunId}}')
     .replace(/\b[0-9a-f]{64}\b/g, '<sha256>')
     .replace(/fingerprint [0-9a-f]{12}\b/g, 'fingerprint <preview>')
-    .replace(/"fingerprint": "[0-9a-f]{12}"/g, '"fingerprint": "<preview>"')
+    .replace(/"(environmentFingerprintPreview|fingerprint)": "[0-9a-f]{12}"/g, '"$1": "<preview>"')
     .replace(/"(?:configured|validated|started|finished|created|published)At":\s*\d+/g, match => match.replace(/\d+$/, '0'))
     .replace(/"runId":\s*"[^"]+"/g, '"runId": "{{scienceRunId}}"')
     .replace(/"scratchKey":\s*"[^"]+"/g, '"scratchKey": "<scratch-key>"')
 }
 
-function normalizeScienceJson(content: string): string {
-  return `${JSON.stringify(normalizeScienceValue(JSON.parse(content) as unknown), undefined, 2)}\n`
+/** The exact Science identities one snapshot run minted, in durable event order. */
+interface ScienceIds {
+  readonly runIds: readonly string[]
+  readonly chartIds: readonly string[]
 }
 
-function normalizeScienceStream(rawStdout: string, cwd: string, runtimeRoot: string): string {
-  const runIds = parseJsonl(rawStdout).flatMap((record) => {
-    if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return []
+function scienceIds(rawStdout: string): ScienceIds {
+  const runIds: string[] = []
+  const chartIds: string[] = []
+  for (const record of parseJsonl(rawStdout)) {
+    if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') continue
     const event = record.event as JsonObject
-    if (event.type !== 'science/run-started') return []
     const data = event.data as JsonObject | undefined
     const run = data?.run as JsonObject | undefined
-    return typeof run?.runId === 'string' ? [run.runId] : []
-  })
-  const tokenized = runIds.reduce((content, runId) => content.replaceAll(runId, '{{scienceRunId}}'), rawStdout)
+    const chart = data?.chart as JsonObject | undefined
+    if (event.type === 'science/run-started' && typeof run?.runId === 'string') runIds.push(run.runId)
+    if (event.type === 'science/chart-saved' && typeof chart?.chartId === 'string') chartIds.push(chart.chartId)
+  }
+  return { runIds, chartIds }
+}
+
+/**
+ * Replace the exact minted run and chart identities before the generic UUID
+ * rule collapses both into one token; a chart cited as a run would otherwise
+ * normalize to the same expected text.
+ */
+function tokenizeScienceIds(content: string, ids: ScienceIds): string {
+  const withRuns = ids.runIds.reduce((text, runId) => text.replaceAll(runId, '{{scienceRunId}}'), content)
+  return ids.chartIds.reduce((text, chartId) => text.replaceAll(chartId, '{{scienceChartId}}'), withRuns)
+}
+
+function normalizeScienceJson(content: string, ids: ScienceIds): string {
+  const value = JSON.parse(tokenizeScienceIds(content, ids)) as unknown
+  return `${JSON.stringify(normalizeScienceValue(value), undefined, 2)}\n`
+}
+
+function normalizeScienceStream(rawStdout: string, cwd: string, runtimeRoot: string, ids: ScienceIds): string {
+  const tokenized = tokenizeScienceIds(rawStdout, ids)
   return parseJsonl(normalizeHeadlessStream(tokenized, cwd).replaceAll(runtimeRoot, '{{scienceRuntimeRoot}}'))
     .map(record => JSON.stringify(normalizeScienceValue(record)))
     .join('\n') + '\n'
@@ -280,7 +309,7 @@ function normalizeScienceStream(rawStdout: string, cwd: string, runtimeRoot: str
 describe('headless stream-json snapshots', () => {
   it('exposes Science guidance, schemas, context, and state through a runnable keyless example', async () => {
     let runCwd = ''
-    let modelViewSeen = false
+    let rawModelView: string | undefined
     const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
     try {
       const result = await runLoaderSmoke({
@@ -301,31 +330,40 @@ describe('headless stream-json snapshots', () => {
           await prepareScienceFixture(runtimeRoot)
         },
         inspect: async (cwd) => {
-          const rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
-          if (rawModelView === undefined) return
-          modelViewSeen = true
-          const modelView = normalizeScienceJson(rawModelView)
-          const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
-          if (refreshing) await writeFile(modelViewExpected, modelView)
-          expect(modelView).toBe(await readFile(modelViewExpected, 'utf8'))
-          expect(modelView).not.toContain(cwd)
-          expect(modelView).not.toContain(runtimeRoot)
-          expect(modelView).not.toContain('configuredPrefix')
-          expect(modelView).not.toContain('canonicalPrefix')
-          expect(modelView).not.toContain('"executable"')
-          expect(modelView).not.toContain('executableIdentity')
-          expect(modelView).not.toContain('condaHistorySha256')
-          const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
-          expect(captured.filesystemTools).toEqual(['read'])
+          rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
         },
       })
 
       expect(result.stderr).toBe('')
-      if (!modelViewSeen) throw new Error(`science adapter did not capture a model request; stdout:\n${result.stdout}`)
-      const stream = normalizeScienceStream(result.stdout, runCwd, runtimeRoot)
+      if (rawModelView === undefined) throw new Error(`science adapter did not capture a model request; stdout:\n${result.stdout}`)
+      // Both artifacts normalize against the same minted identities, so the
+      // model view and the durable stream name the same run and chart.
+      const ids = scienceIds(result.stdout)
+      const modelView = normalizeScienceJson(rawModelView, ids)
+      const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
+      if (refreshing) await writeFile(modelViewExpected, modelView)
+      expect(modelView).toBe(await readFile(modelViewExpected, 'utf8'))
+      expect(modelView).not.toContain(runCwd)
+      expect(modelView).not.toContain(runtimeRoot)
+      expect(modelView).not.toContain('configuredPrefix')
+      expect(modelView).not.toContain('canonicalPrefix')
+      expect(modelView).not.toContain('"executable"')
+      expect(modelView).not.toContain('executableIdentity')
+      expect(modelView).not.toContain('condaHistorySha256')
+      // The chart receipt and sanitized state carry no attachment handle and
+      // no image bytes; the Client reads those from the durable event instead.
+      expect(modelView).not.toContain('attachmentId')
+      expect(modelView).not.toContain(PNG_BASE64)
+      const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
+      expect(captured.filesystemTools).toEqual(['read'])
+
+      const stream = normalizeScienceStream(result.stdout, runCwd, runtimeRoot, ids)
       const streamExpected = join(scienceToolsScenarioDir, 'stream-json.expected.jsonl')
       if (refreshing) await writeFile(streamExpected, stream)
       expect(stream).toBe(await readFile(streamExpected, 'utf8'))
+      expect(stream).not.toContain(PNG_BASE64)
+      expect(ids.chartIds).toHaveLength(2)
+      expect(new Set(ids.chartIds).size).toBe(1)
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })

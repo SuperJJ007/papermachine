@@ -27,7 +27,7 @@ R5 明确采用双表面策略。模型侧 `save_chart` 结果是有界文字 re
 | 持久词汇 | [R1](2026-08-15-dsh-science-v01-r1-science-session.md) `science/chart-saved`、`science/outcome-published` values 与严格 transitions | 复用，不增加第二个 chart 或 Outcome authority |
 | Runtime 归属 | [R2](2026-08-15-dsh-science-v01-r2-science-runtime.md) 私有 Session/run scratch 与 exact-session lease rules | 为 artifact import 扩展；不暴露 Host path |
 | 模型 Consumer | [R3](2026-08-16-dsh-science-v01-r3-science-tools.md) `@deepseek-ai/dsh-tool-science` | 在现有三个工具旁增加两个直接工具与 guidance |
-| 已交付 composition | [R4](2026-08-16-dsh-science-v01-r4-science-preset.md) literal `science` preset 与 Web/CLI snapshot | 加入两个工具和 Client/Host rows；在 R5 阶段 Runtime row 仍由部署拥有（[R6](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 之后只在 Web bundle 中挂载它） |
+| 已交付 composition | [R4](2026-08-16-dsh-science-v01-r4-science-preset.md) literal `science` preset 与 Web/CLI snapshot | 加入两个工具和 Client/Host rows；在 R5 阶段 Runtime row 仍由部署拥有（[R6](2026-08-17-dsh-science-v01-r6-settings-details.md) 之后只在 Web bundle 中挂载它） |
 | 下游 source | 无 | R5 是全新的 RC5-line 设计，不继承下游实现或证据 |
 
 规划曾把 R5 拆成三个检查点——domain-neutral registry、Science 生产端、Web presentation——并要求在各自独立的 head 上验收。实现最终以一条按同样依赖顺序排列的六提交序列落在 R4 head 之上，所有 gate 都在最终合并 candidate 上运行，而不是在三个分别验收的 head 上运行。[dated R5 evidence record](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) 把每项结果绑定到该 candidate，并记录这一偏差。
@@ -102,7 +102,7 @@ chart row 展示 logical name、version、title、可选 caption、source run、
 
 Outcome row 渲染 publication title 与 Markdown summary，标注 run/chart/message evidence，并展示从 `science` projection 解析出的 cited chart version thumbnails。它是只读 transcript occurrence，不是第二个 editor 或 sidebar。旧 Outcome row 使用自己的 presentation metadata；当前 chart lookup 来自持久 projection。projection 或 cited attachment 不可用时，文字 publication 与 evidence ids 仍保持可见，并明确报告 visual 缺失，不制造替代内容。
 
-已交付 Web composition 挂载 `session-attachment-index`、Science Session Host plugin 与 `ui-science`；在 R5 阶段不增加 `science-runtime` row，R5 为每个 composition 都保留 R4 的部署归属。[R6](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 之后专门在已交付 Web bundle 中挂载带有意留空 profile map 的 settings-bound `@deepseek-ai/dsh-science-runtime/with-settings` row，因此具备实时能力的 Web 部署现在通过该 settings 卡片与一次 Host 重启命名其 `science` profile，而不再需要单独的 deployment overlay。base bundle 与没有 browser 的 CLI/headless composition 仍不增加 Runtime row，保留两个模型工具与文字 fallback，并保留现有首次使用时的 missing-service/profile diagnostic。准确 Science roster 是 R4 roster 加 `save_chart`、`publish_outcome`。Standard 与其他 preset 不会通过 process-global registration 获得任一工具或 Science UI behavior。
+已交付 Web composition 挂载 `session-attachment-index`、Science Session Host plugin 与 `ui-science`；在 R5 阶段不增加 `science-runtime` row，R5 为每个 composition 都保留 R4 的部署归属。[R6](2026-08-17-dsh-science-v01-r6-settings-details.md) 之后专门在已交付 Web bundle 中挂载带有意留空 profile map 的 settings-bound `@deepseek-ai/dsh-science-runtime/with-settings` row，因此具备实时能力的 Web 部署现在通过该 settings 卡片与一次 Host 重启命名其 `science` profile，而不再需要单独的 deployment overlay。base bundle 与没有 browser 的 CLI/headless composition 仍不增加 Runtime row，保留两个模型工具与文字 fallback，并保留现有首次使用时的 missing-service/profile diagnostic。准确 Science roster 是 R4 roster 加 `save_chart`、`publish_outcome`。Standard 与其他 preset 不会通过 process-global registration 获得任一工具或 Science UI behavior。
 
 ### Assembled scenarios 与文档
 
@@ -144,13 +144,13 @@ R5 不 supersede 任何 active Agent Note。R1-R4 保持 active，因为它们�
 
 **在 R5 增加 Science sidebar 或 current-result dashboard。** 拒绝，因为 R0 inventory 把 navigation 与 current-state product placement 交给 `SCI-SETTINGS-SIDEBAR`。R5 只在 transcript 中渲染 durable tool occurrences 与 cited visuals。
 
-**在 base 或 Web bundle 挂载默认 Science Runtime row。** 对 R5 而言拒绝，因为 R2 要求显式且非空的既有 Host Conda prefixes allowlist，而 R5 既不发现也不管理这些路径。已交付 Web bundle 增加 projection、attachment-index 与 UI consumers；实时创建继续要求 deployment overlay，replay acceptance 使用 stored fixture，不暗示存在默认 Runtime。[R6](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 之后仅对 Web bundle 修正了这一点：它在那里挂载一个 settings-bound Runtime row，但该 row 的 profile map 有意留空，依然不发现也不管理任何 Conda prefix——这正是本条 alternative 所保留的非空 allowlist 要求，只是现在通过一次显式 settings 写入与 Host 重启来满足，而不再需要单独的 deployment overlay。
+**在 base 或 Web bundle 挂载默认 Science Runtime row。** 对 R5 而言拒绝，因为 R2 要求显式且非空的既有 Host Conda prefixes allowlist，而 R5 既不发现也不管理这些路径。已交付 Web bundle 增加 projection、attachment-index 与 UI consumers；实时创建继续要求 deployment overlay，replay acceptance 使用 stored fixture，不暗示存在默认 Runtime。[R6](2026-08-17-dsh-science-v01-r6-settings-details.md) 之后仅对 Web bundle 修正了这一点：它在那里挂载一个 settings-bound Runtime row，但该 row 的 profile map 有意留空，依然不发现也不管理任何 Conda prefix——这正是本条 alternative 所保留的非空 allowlist 要求，只是现在通过一次显式 settings 写入与 Host 重启来满足，而不再需要单独的 deployment overlay。
 
 **采用通用 chart specification 或 plotting dependency。** 拒绝，因为 Python/R code 已经创建输出，attachment service 负责校验 raster bytes。R5 拥有 publication、provenance 与 presentation，而不是 plotting grammar 或 environment package manager。
 
 ## Consequences
 
-Science preset 准确暴露五个 Science tools——`get_science_state`、`run_python`、`run_r`、`save_chart`、`publish_outcome`——其他 preset 都不暴露两个新工具。已交付 base bundle 不增加 Runtime row，保留 R4 的显式 missing-service/profile behavior；自 [R6](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 起，已交付 Web bundle 挂载一个 settings-bound、有意未配置的 Runtime row，而 CLI/headless bundles 仍不增加任何 row 并保留 R4 的行为，因此其余具备实时能力的验收仍会挂载明确的 deployment 或 test overlay。没有 attachment store 的部署现在会让 Science Runtime 停在等待 `attachments` 的状态，这与缺少 `science` profile 是同一种显式失败姿态，并可在 Loader diagnostics 中看到。
+Science preset 准确暴露五个 Science tools——`get_science_state`、`run_python`、`run_r`、`save_chart`、`publish_outcome`——其他 preset 都不暴露两个新工具。已交付 base bundle 不增加 Runtime row，保留 R4 的显式 missing-service/profile behavior；自 [R6](2026-08-17-dsh-science-v01-r6-settings-details.md) 起，已交付 Web bundle 挂载一个 settings-bound、有意未配置的 Runtime row，而 CLI/headless bundles 仍不增加任何 row 并保留 R4 的行为，因此其余具备实时能力的验收仍会挂载明确的 deployment 或 test overlay。没有 attachment store 的部署现在会让 Science Runtime 停在等待 `attachments` 的状态，这与缺少 `science` profile 是同一种显式失败姿态，并可在 Loader diagnostics 中看到。
 
 `save_chart` 只从 `science/run-started` sequence 满足 `startedSeq >= (session.header.seedLength ?? 0)` 的成功 run 导入 PNG，因此规则在同一 Session restart 后仍成立，并拒绝 inherited-run scratch。它先持久化 bytes 再提交 chart event，不发布 Host path，保持 logical versions 连续，保留 environment provenance，且不返回模型可见 image block。`ctx.attachments.saveImage` 仍是唯一 image-admission authority。`publish_outcome` 追加一个连续 revision，携带非空唯一的先前有效 evidence set 与准确推导的 environment-revision list，并与 Runtime 和 Goal 保持独立。registry 是 authorized reads 与 export 使用的唯一 event-to-attachment scanner，一个已提交的 `science/chart-saved` event 本身足以授权其准确 attachment。
 

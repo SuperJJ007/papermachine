@@ -8,7 +8,7 @@ Status: implemented
 
 自 [R0](../../archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md) 起，DSH Science 开发线就把官方 rc.5（`47f943859bef60e4160492346772ded9b24f765a`）当作固定基线来跟踪，这是刻意的设计：R0 拒绝持续跟随上游，以免第一版尚未成形时，已接受的 overlay 证据反复失效。此后上游打出了 `dsh-v0.1.0-rc.7` 标签（`99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`），比 rc.5 标签多出 111 个提交，其中包括 [`4366528a38`](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)：注册一个 settings 命名空间即等于把它暴露出去，`settings.plugin.item` 也随之变成以命名空间为键的 slot，于是 `packages/host/apiproxy` 不再持有硬编码的暴露白名单，也不再有 `settings-not-exposed` 错误码。
 
-proposed 状态的 [R6 settings 与 Details](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 计划的第三个检查点 R6c，其目标正是那次删除所移除的架构：一个 Science settings 页面，只有当 `science-runtime` 加入某个本 Science 开发线并不拥有的包内部的白名单后才可达。若把 R6c 原样落地在 rc.5 上，要么在本开发线内 fork `api-proxy` 的暴露清单，要么请求一个共享包的所有者在上游已经构建出通用机制之前，先为 Science 单独承载一条清单项。两个选项都比直接采用上游已通用化的机制成本更高，而 R6a 与 R6b——两个不涉及 settings 暴露的检查点——都不依赖于自己落在哪个基线之上。
+proposed 状态的 [R6 settings 与 Details](../feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 计划的第三个检查点 R6c，其目标正是那次删除所移除的架构：一个 Science settings 页面，只有当 `science-runtime` 加入某个本 Science 开发线并不拥有的包内部的白名单后才可达。若把 R6c 原样落地在 rc.5 上，要么在本开发线内 fork `api-proxy` 的暴露清单，要么请求一个共享包的所有者在上游已经构建出通用机制之前，先为 Science 单独承载一条清单项。两个选项都比直接采用上游已通用化的机制成本更高，而 R6a 与 R6b——两个不涉及 settings 暴露的检查点——都不依赖于自己落在哪个基线之上。
 
 ## Decision
 
@@ -43,7 +43,7 @@ R6a（`f5bbcf0ff2`——Runtime settings 归属）与 R6b（`bb911b9c0c`——�
 
 ## Consequences
 
-R6c 只需针对通用机制设计与构建一次，而 `api-proxy` 的暴露行为仍归上游所有。代价付在身份上，而不是代码上：R6a 与 R6b 的提交如今所处的树与它们落地时已不相同，而带日期的 R1–R5 证据绑定的是迁移前的 SHA，因此没有任何更早的记录能凭继承延伸到这棵树上。R6c 的实现基座是 [R6 note](../../proposed/feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 身份表中记录的那个已验收的迁移后 head。
+R6c 只需针对通用机制设计与构建一次，而 `api-proxy` 的暴露行为仍归上游所有。代价付在身份上，而不是代码上：R6a 与 R6b 的提交如今所处的树与它们落地时已不相同，而带日期的 R1–R5 证据绑定的是迁移前的 SHA，因此没有任何更早的记录能凭继承延伸到这棵树上。R6c 的实现基座是 [R6 note](../feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 身份表中记录的那个已验收的迁移后 head。
 
 本开发线此后新增的每一个 settings 命名空间都是"注册即暴露"，不只是 `science-runtime`。已上线的 `pythonPrefix`/`rPrefix` 字段已经使用 `role('secret')`，而 seam 会同等地对解析值、组合基座与用户层做脱敏，因此今天没有任何路径值会跨越协议。未来任何新增的 Science settings 字段都必须显式携带同样的 role：已经没有白名单能在遗漏标注时兜底把一个未标注字段挡在浏览器之外。
 

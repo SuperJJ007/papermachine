@@ -9,28 +9,34 @@
   ],
   "references": [
     {
-      "path": "../../api/remotes/tsconfig.client.json"
-    },
-    {
       "path": "../../../vendor/cordis"
     },
     {
       "path": "../../attachment/attachment"
     },
     {
-      "path": "../runtime"
-    },
-    {
       "path": "../locale"
     },
     {
-      "path": "../ui-conversation"
+      "path": "../runtime"
+    },
+    {
+      "path": "../ui-attachment"
+    },
+    {
+      "path": "../ui-tool"
     },
     {
       "path": "../ui-primitives"
     },
     {
       "path": "../ui-slots"
+    },
+    {
+      "path": "../../science/science-session"
+    },
+    {
+      "path": "../../science/tool-science"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

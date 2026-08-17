@@ -66,6 +66,7 @@
     { "path": "./packages/client/ui-sidebar" },
     { "path": "./packages/client/ui-conversation" },
     { "path": "./packages/client/ui-tool" },
+    { "path": "./packages/client/ui-science" },
     { "path": "./packages/client/ui-deliverables" },
     { "path": "./packages/client/ui-workflow-run" },
     { "path": "./packages/client/ui-workspace" },

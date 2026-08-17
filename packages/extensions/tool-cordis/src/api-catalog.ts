@@ -1022,6 +1022,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
+      {
+        signature: 'async commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion>',
+        description: 'Import one PNG from a successful, non-inherited run\'s private artifact directory, persist it through `ctx.attachments`, then append the complete immutable chart version. Attachment persistence precedes the event: a failure before the event may leave only an unreferenced content-addressed object, but a committed event is never rolled back because a later step fails.',
+        parameters: [{ name: 'request', description: 'Exact live Session, source run, artifact path, and cancellation.' }],
+        returns: 'The durable chart version this operation appended.',
+      },
+    ],
+  },
+  {
+    key: 'sessionAttachments',
+    summary: 'Generic Session attachment-reference registry.',
+    description: 'Generic Session attachment-reference registry. Subscribes to no event bus itself — every method is a pure, synchronous read over event values the caller already holds (live `Session.events`, or rows parsed from a stored artifact).',
+    methods: [
+      {
+        signature: 'register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly ImageAttachmentRef[], ): () => void',
+        description: 'Register one domain\'s extractor for an extractor-required known event type. Effect-owned: disposing the calling fiber (or calling the returned disposer) removes the registration, and a subsequent read of that event type fails loud with SessionAttachmentIndexError instead of silently authorizing nothing.',
+        parameters: [{ name: 'eventType', description: 'a known event type this package does not itself classify `built-in` or `attachment-free`; typed against the merge-extensible {@link SessionAttachmentExtractorMap}.' }, { name: 'extractor', description: 'validates the event\'s own durable fields and returns every complete reference it authorizes (never a bare id).' }],
+        returns: 'the exact disposer that unregisters this extractor.',
+      },
+      {
+        signature: 'extract(event: ExtractableEvent): readonly ImageAttachmentRef[]',
+        description: 'Extract every complete attachment reference one durable event authorizes. A `built-in` type is scanned directly; an `attachment-free` type (or an unrecognized type, which persistence admits only when `ignorable` is set) authorizes nothing; a known type outside both closed lists requires a live registration and fails loud when one is absent.',
+        parameters: [{ name: 'event', description: 'one durable Session event (live or a parsed durable row).' }],
+        returns: 'every reference the event durably names, in encounter order.',
+        throws: ['{@link SessionAttachmentIndexError} when a known extractor-required type has no live registration.'],
+      },
+      {
+        signature: 'findReferencedImage(events: Iterable<ExtractableEvent>, attachmentId: string): ImageAttachmentRef | undefined',
+        description: 'Resolve the first reference matching one opaque attachment id across an ordered event sequence — the live single-reference authorization read.',
+        parameters: [{ name: 'events', description: 'the exact Session\'s events (or a prefix/suffix of them).' }, { name: 'attachmentId', description: 'the opaque id a client requested.' }],
+        returns: 'the matching reference, or `undefined` when no event names it.',
+      },
+      {
+        signature: 'collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef>',
+        description: 'Collect every distinct reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id) — the Session-export media-collection read.',
+        parameters: [{ name: 'events', description: 'one artifact\'s parsed durable rows, in log order.' }],
+        returns: 'every distinct reference, keyed by its string attachment id.',
+      },
     ],
   },
   {
@@ -2834,6 +2872,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CommandResult = {\n    readonly kind: \'success\';\n    readonly text?: string;\n    readonly sourceEventSeq?: number;\n} | {\n    readonly kind: \'error\';\n    readonly text: string;\n};',
   },
   {
+    name: 'CommitScienceChartRequest',
+    declaration: 'export interface CommitScienceChartRequest {\n    readonly session: Session;\n    readonly runId: ScienceRunId;\n    readonly artifactPath: string;\n    readonly logicalName: string;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceChartVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'CompactionAgentContext',
     declaration: 'export interface CompactionAgentContext {\n    session: Session;\n    options: {\n        provider?: string;\n        model?: string;\n    };\n}',
   },
@@ -3056,6 +3098,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'ExtractableEvent',
+    declaration: 'export type ExtractableEvent = Pick<SessionEvent, \'type\' | \'data\'> & {\n    readonly ignorable?: true;\n};',
   },
   {
     name: 'FileDiff',
@@ -3718,6 +3764,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
   },
   {
+    name: 'ScienceChartId',
+    declaration: 'export type ScienceChartId = Branded<\'ScienceChartId\'>;',
+  },
+  {
+    name: 'ScienceChartVersion',
+    declaration: 'export interface ScienceChartVersion {\n    readonly chartId: ScienceChartId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly attachment: ImageAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'ScienceEnvironmentBinding',
     declaration: 'export interface ScienceEnvironmentBinding {\n    readonly revision: number;\n    readonly profileId: ScienceEnvironmentProfileId;\n    readonly configuredAt: number;\n    readonly validatedAt: number;\n    readonly status: ScienceEnvironmentStatus;\n    readonly python?: ScienceInterpreterBinding;\n    readonly r?: ScienceInterpreterBinding;\n    readonly failureReason?: string;\n}',
   },
@@ -3824,6 +3878,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ServerResponse',
     declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
+  },
+  {
+    name: 'SessionAttachmentExtractorEventType',
+    declaration: 'export type SessionAttachmentExtractorEventType = keyof SessionAttachmentExtractorMap extends infer EventType ? EventType extends SessionEventType ? EventType : never : never;',
+  },
+  {
+    name: 'SessionAttachmentExtractorMap',
+    declaration: 'export interface SessionAttachmentExtractorMap {\n}',
   },
   {
     name: 'SessionAvailability',

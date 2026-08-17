@@ -3,6 +3,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
@@ -21,6 +22,17 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
 import type { Config } from '../src/config.ts'
+
+/**
+ * Mount a real local attachment store at the same Harness home a test's
+ * `ScienceRuntime` uses, satisfying the required `attachments` injection for
+ * tests that do not themselves exercise chart commit.
+ * @param ctx - the test context that will also mount `ScienceRuntime`.
+ * @param root - the same temp root passed to `ScienceRuntime`'s `dshHome`.
+ */
+export async function mountAttachments(ctx: Context, root: string): Promise<void> {
+  await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })
+}
 
 /** Full-enforcement test double that preserves direct argv for fake interpreters. */
 export class DirectSandbox extends SandboxProvider {
@@ -291,6 +303,8 @@ export async function createControlledRuntimeHarness(
   root: string,
   profiles: Config['profiles'],
   timeoutMs = 10_000,
+  /** Override the mounted `attachments` service, e.g. a `mediaTypes` allowlist that excludes PNG. */
+  attachmentsOverride?: (ctx: Context) => void,
 ): Promise<{
   readonly ctx: Context
   readonly runtime: ScienceRuntime
@@ -304,6 +318,11 @@ export async function createControlledRuntimeHarness(
   await ctx.plugin(ScienceSessionInvariant)
   await ctx.plugin(ControlledSubprocess)
   await ctx.plugin(DirectSandbox)
+  if (attachmentsOverride === undefined) {
+    await mountAttachments(ctx, root)
+  } else {
+    attachmentsOverride(ctx)
+  }
   const runtimeFiber = await ctx.plugin(ScienceRuntime, {
     dshHome: join(root, 'dsh-home'),
     profiles,
@@ -357,8 +376,8 @@ export function attachScienceSession(ctx: Context, id: string, seed?: readonly i
   return { session, detach }
 }
 
-/** Append the request/header and language-matched tool-call facts that authorize one run. */
-export function authorizeRun(session: Session, language: 'python' | 'r', id = 'science-runtime-run-call'): {
+/** Append the request/header and a named tool-call fact that authorizes one direct Science mutation. */
+function authorizeToolCall(session: Session, name: string, id: string): {
   readonly toolCallId: ReturnType<typeof CallId>
   readonly requestHeaderSeq: number
 } {
@@ -372,13 +391,26 @@ export function authorizeRun(session: Session, language: 'python' | 'r', id = 's
     turn: 1,
     step: 1,
     callId: toolCallId,
-    name: language === 'python' ? 'run_python' : 'run_r',
+    name,
     arguments: '{}',
   })
   return { toolCallId, requestHeaderSeq: header.seq }
 }
 
+/** Append the request/header and language-matched tool-call facts that authorize one run. */
+export function authorizeRun(session: Session, language: 'python' | 'r', id = 'science-runtime-run-call'): {
+  readonly toolCallId: ReturnType<typeof CallId>
+  readonly requestHeaderSeq: number
+} {
+  return authorizeToolCall(session, language === 'python' ? 'run_python' : 'run_r', id)
+}
+
 /** Append the request/header and run_python tool-call facts that authorize one Python run. */
 export function authorizePythonRun(session: Session, id = 'science-runtime-run-call') {
   return authorizeRun(session, 'python', id)
+}
+
+/** Append the request/header and save_chart tool-call facts that authorize one chart commit. */
+export function authorizeSaveChart(session: Session, id = 'science-runtime-save-chart-call') {
+  return authorizeToolCall(session, 'save_chart', id)
 }

@@ -7,7 +7,7 @@
  * tools, agent registry, agent loop, and this Consumer (+invariant) — then
  * drives it with a scripted deterministic model. It asserts the actual first
  * model request, durable event ordering, the logged environment context,
- * the exact three Science schemas, a run result through the real tool
+ * the exact five Science schemas, a run result through the real tool
  * pipeline, resume behavior through real session persistence, and absence
  * from a Standard (non-science) session in the same composition.
  */
@@ -21,6 +21,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createUserMessage, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import * as ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
@@ -46,6 +47,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-science-session/invariant', ScienceSessionInvariant],
   ['@deepseek-ai/dsh-subprocess-local', FakeSubprocess],
   ['@deepseek-ai/dsh-sandbox-local', DirectSandbox],
+  ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
   ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
   ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
@@ -97,6 +99,9 @@ async function boot(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-science-session/invariant'",
     "- name: '@deepseek-ai/dsh-subprocess-local'",
     "- name: '@deepseek-ai/dsh-sandbox-local'",
+    "- name: '@deepseek-ai/dsh-attachment-local'",
+    '  config:',
+    `    dshHome: ${JSON.stringify(dshHome)}`,
     "- name: '@deepseek-ai/dsh-science-runtime'",
     '  config:',
     `    dshHome: ${JSON.stringify(dshHome)}`,
@@ -165,8 +170,10 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
 
-    // Exactly three Science schemas — the whole composition's tool roster.
-    expect(ctx.tools.schemas().map(schema => schema.name).sort()).toEqual(['get_science_state', 'run_python', 'run_r'])
+    // Exactly five Science schemas — the whole composition's tool roster.
+    expect(ctx.tools.schemas().map(schema => schema.name).sort()).toEqual([
+      'get_science_state', 'publish_outcome', 'run_python', 'run_r', 'save_chart',
+    ])
 
     const sessionId = SessionId('tool-science-real-session')
     const handle = await ctx.agents.create({

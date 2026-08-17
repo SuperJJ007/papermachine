@@ -8,7 +8,7 @@ import type { ZodType } from 'zod'
 import { encodeScienceProjectionFold } from './projection-fold-codec.ts'
 import type { ScienceProjectionState, ScienceProjectionWitnessEvent } from './projection-private.ts'
 import { projectionExactKeys, projectionRecord, scienceProjectionSchema } from './projection-schema.ts'
-import { projectScienceFold } from './projection-value.ts'
+import { projectScienceClientFold } from './projection-value.ts'
 import { replayScienceProjectionWitness, scienceProjectionWitnessEvent } from './projection-witness.ts'
 
 function validProjectionState(value: unknown): value is ScienceProjectionState {
@@ -32,7 +32,7 @@ function validProjectionState(value: unknown): value is ScienceProjectionState {
     if ((witness.at(-1)?.seq ?? -1) > (observedSeq as number)) return false
     const replayed = replayScienceProjectionWitness(witness)
     if (!isDeepStrictEqual(encodeScienceProjectionFold(replayed), candidate['fold'])) return false
-    return scienceProjectionSchema.safeParse(projectScienceFold(replayed)).success
+    return scienceProjectionSchema.safeParse(projectScienceClientFold(replayed)).success
   } catch {
     return false
   }

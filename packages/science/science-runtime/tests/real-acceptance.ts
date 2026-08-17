@@ -1,13 +1,15 @@
 /** Opt-in real Conda acceptance with independent Python/R PASS, FAIL, or NOT-RUN reports. */
 
 import { createHash, randomUUID } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import { replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceLanguage, ScienceOutcomePublication } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
@@ -22,8 +24,11 @@ const TEST_OWNED = 'DSH_SCIENCE_RUNTIME_TEST_OWNED'
 const DSH_HOME = 'DSH_SCIENCE_RUNTIME_DSH_HOME'
 const PYTHON_PREFIX = 'DSH_SCIENCE_RUNTIME_PYTHON_PREFIX'
 const R_PREFIX = 'DSH_SCIENCE_RUNTIME_R_PREFIX'
+const CANDIDATE_SHA = 'DSH_SCIENCE_RUNTIME_CANDIDATE_SHA'
 const AMBIENT_SENTINEL = 'DSH_SCIENCE_RUNTIME_REAL_AMBIENT_SENTINEL'
 const TIMEOUT_MS = 5_000
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const PNG = new Uint8Array(Buffer.from(PNG_BASE64, 'base64'))
 
 /** Per-language real acceptance status; fake prefixes never produce this report. */
 type RealAcceptanceStatus = 'PASS' | 'FAIL' | 'NOT-RUN'
@@ -43,7 +48,9 @@ interface LanguageReport {
 /** Full real-machine report emitted as one JSON value. */
 interface RealAcceptanceReport {
   /** Stable report type for automation. */
-  readonly kind: 'dsh-science-runtime-real-acceptance-v1'
+  readonly kind: 'dsh-science-runtime-real-acceptance-v2'
+  /** Exact clean-archive source candidate supplied by the operator. */
+  readonly candidateSha: string | null
   /** Python outcome, never inferred from R. */
   readonly python: LanguageReport
   /** R outcome, never inferred from Python. */
@@ -80,19 +87,19 @@ function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
-/** Add one valid authorization immediately before a real Runtime start. */
-function authorize(session: import('@deepseek-ai/dsh-session').Session, language: ScienceLanguage, turn: number) {
+/** Add one valid authorization immediately before a real Science mutation. */
+function authorize(session: import('@deepseek-ai/dsh-session').Session, name: string, turn: number) {
   session.append('step/start', { turn, step: 1 })
   const header = session.append('request/header', {
     header: { config: { provider: 'real-acceptance', model: 'local-conda' } },
     reason: 'initial',
   })
-  const toolCallId = CallId(`science-real-${language}-${String(turn)}-${randomUUID()}`)
+  const toolCallId = CallId(`science-real-${name}-${String(turn)}-${randomUUID()}`)
   session.append('tool/call', {
     turn,
     step: 1,
     callId: toolCallId,
-    name: language === 'python' ? 'run_python' : 'run_r',
+    name,
     arguments: '{}',
   })
   return { toolCallId, requestHeaderSeq: header.seq }
@@ -102,12 +109,14 @@ function authorize(session: import('@deepseek-ai/dsh-session').Session, language
 function successSource(language: ScienceLanguage, prefix: string): string {
   if (language === 'python') {
     return [
+      'import base64',
       'import os',
       'from pathlib import Path',
       `assert os.environ.get(${JSON.stringify(AMBIENT_SENTINEL)}) is None`,
       `assert os.environ['PATH'] == ${JSON.stringify(`${join(prefix, 'bin')}:/usr/bin:/bin`)}`,
       "assert Path.cwd().is_dir() and Path(os.environ['HOME']).is_dir() and Path(os.environ['TMPDIR']).is_dir()",
       "assert Path(os.environ['SCIENCE_STATE_DIR']).is_dir() and Path(os.environ['SCIENCE_ARTIFACT_DIR']).is_dir()",
+      `Path(os.environ['SCIENCE_ARTIFACT_DIR'], 'real-chart.png').write_bytes(base64.b64decode(${JSON.stringify(PNG_BASE64)}))`,
       'print("dsh-real-运行-✓")',
       '',
     ].join('\n')
@@ -117,6 +126,7 @@ function successSource(language: ScienceLanguage, prefix: string): string {
     `stopifnot(Sys.getenv("PATH") == ${JSON.stringify(`${join(prefix, 'bin')}:/usr/bin:/bin`)})`,
     'stopifnot(dir.exists(getwd()), dir.exists(Sys.getenv("HOME")), dir.exists(Sys.getenv("TMPDIR")))',
     'stopifnot(dir.exists(Sys.getenv("SCIENCE_STATE_DIR")), dir.exists(Sys.getenv("SCIENCE_ARTIFACT_DIR")))',
+    `writeBin(as.raw(c(${[...PNG].join(',')})), file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), "real-chart.png"))`,
     'cat("dsh-real-运行-✓\\n")',
     '',
   ].join('\n')
@@ -171,6 +181,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     await context.plugin(SessionStore)
     await context.plugin(InvariantRegistry, { enabled: true })
     await context.plugin(ScienceSessionInvariant)
+    await context.plugin(LocalAttachmentStore, { dshHome })
     await context.plugin(LocalSubprocessRuntime)
     await context.plugin(LocalSandboxProvider)
     await context.plugin(ScienceRuntime, {
@@ -212,7 +223,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: successSource(language, canonicalPrefix),
-      ...authorize(session, language, 1),
+      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 1),
       signal: new AbortController().signal,
     })
     const successResult = await success.done
@@ -226,7 +237,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: waitingSource(language),
-      ...authorize(session, language, 2),
+      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 2),
       signal: new AbortController().signal,
     })
     setTimeout(() => {
@@ -239,7 +250,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: waitingSource(language),
-      ...authorize(session, language, 3),
+      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 3),
       signal: new AbortController().signal,
     })
     expectTerminal(await timedOut.done, 'timed-out', 'TIMEOUT')
@@ -250,11 +261,57 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: deniedWriteSource(language, deniedTarget),
-      ...authorize(session, language, 4),
+      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 4),
       signal: new AbortController().signal,
     })
     expectTerminal(await denied.done, 'failed', 'SANDBOX_DENIED')
     checks.push('configured-prefix write denial')
+
+    const chartAuthorization = authorize(session, 'save_chart', 5)
+    const chart = await context.scienceRuntime.commitChart({
+      session,
+      runId: success.runId,
+      artifactPath: 'real-chart.png',
+      logicalName: `${language}-real-chart`,
+      title: `${language} real acceptance chart`,
+      ...chartAuthorization,
+      signal: new AbortController().signal,
+    })
+    const stored = await context.attachments.readImage(chart.attachment)
+    if (String(stored.ref.attachmentId) !== String(chart.attachment.attachmentId)
+      || !Buffer.from(stored.data).equals(Buffer.from(PNG))) {
+      throw new Error('saved chart attachment did not read back with the exact generated PNG bytes')
+    }
+    checks.push('real PNG artifact creation', 'chart commit and attachment readback')
+
+    const chartProjection = replayScience(session.events)
+    const replayedChart = chartProjection?.charts.find(candidate => candidate.chartId === chart.chartId && candidate.version === 1)
+    if (replayedChart === undefined || String(replayedChart.attachment.attachmentId) !== String(chart.attachment.attachmentId)) {
+      throw new Error('chart event did not replay to the exact committed attachment')
+    }
+    checks.push('chart replay')
+
+    const outcomeAuthorization = authorize(session, 'publish_outcome', 6)
+    const outcome: ScienceOutcomePublication = {
+      revision: 1,
+      title: `${language} real acceptance outcome`,
+      summaryMarkdown: 'The real interpreter produced and saved the cited chart.',
+      evidence: [
+        { kind: 'run', runId: success.runId },
+        { kind: 'chart', chartId: chart.chartId, version: chart.version },
+      ],
+      publishedAt: Date.now(),
+      ...outcomeAuthorization,
+      environmentRevisions: [chart.environmentRevision],
+    }
+    session.append('science/outcome-published', { version: 1, outcome })
+    const outcomeProjection = replayScience(session.events)
+    if (outcomeProjection?.outcome?.revision !== 1
+      || outcomeProjection.outcome.evidence.length !== 2
+      || outcomeProjection.outcome.environmentRevisions[0] !== chart.environmentRevision) {
+      throw new Error('Outcome publication did not replay with its run and chart evidence')
+    }
+    checks.push('Outcome publication and replay')
   } catch (error) {
     recordFailure(error)
   } finally {
@@ -300,15 +357,33 @@ function notRun(detail: string): LanguageReport {
 
 /** Run only when an operator explicitly supplies isolated, test-owned real inputs. */
 async function report(): Promise<RealAcceptanceReport> {
+  const candidateSha = process.env[CANDIDATE_SHA]
   if (process.env[ENABLE] !== '1') {
     const detail = `set ${ENABLE}=1 to opt in to real Conda acceptance`
-    return { kind: 'dsh-science-runtime-real-acceptance-v1', python: notRun(detail), r: notRun(detail) }
+    return { kind: 'dsh-science-runtime-real-acceptance-v2', candidateSha: null, python: notRun(detail), r: notRun(detail) }
   }
   const dshHome = process.env[DSH_HOME]
-  const homeDetail = dshHome === undefined || !isAbsolute(dshHome) || !nonTemporaryHome(dshHome) || process.env[TEST_OWNED] !== '1'
+  let homeIsPrivate = false
+  if (dshHome !== undefined && isAbsolute(dshHome) && nonTemporaryHome(dshHome)) {
+    try {
+      const info = await stat(dshHome)
+      homeIsPrivate = info.isDirectory() && (info.mode & 0o777) === 0o700
+    } catch {
+      homeIsPrivate = false
+    }
+  }
+  const candidateDetail = candidateSha === undefined || !/^[0-9a-f]{40}$/.test(candidateSha)
+    ? `set ${CANDIDATE_SHA} to the exact lowercase 40-hex clean-archive candidate`
+    : undefined
+  const nodeDetail = Number(process.versions.node.split('.')[0]) < 24
+    ? 'run real acceptance with Node 24 or newer'
+    : undefined
+  const homeDetail = dshHome === undefined || !isAbsolute(dshHome) || !nonTemporaryHome(dshHome) || !homeIsPrivate || process.env[TEST_OWNED] !== '1'
     ? `set absolute non-temporary ${DSH_HOME} and ${TEST_OWNED}=1 for a test-owned Harness home`
     : undefined
   const run = async (language: ScienceLanguage, variable: string): Promise<LanguageReport> => {
+    if (candidateDetail !== undefined) return notRun(candidateDetail)
+    if (nodeDetail !== undefined) return notRun(nodeDetail)
     if (homeDetail !== undefined) return notRun(homeDetail)
     const prefix = process.env[variable]
     if (prefix === undefined || !isAbsolute(prefix)) return notRun(`set absolute ${variable} for real ${language} acceptance`)
@@ -321,7 +396,8 @@ async function report(): Promise<RealAcceptanceReport> {
   const python = await run('python', PYTHON_PREFIX)
   const r = await run('r', R_PREFIX)
   return {
-    kind: 'dsh-science-runtime-real-acceptance-v1',
+    kind: 'dsh-science-runtime-real-acceptance-v2',
+    candidateSha: candidateSha ?? null,
     python,
     r,
   }

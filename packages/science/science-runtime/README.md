@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-`@deepseek-ai/dsh-science-runtime` provides the folded, host-local Conda Runtime for durable Science environment and run facts. It owns `ctx.scienceRuntime`, private per-Session scratch, direct Python/R argv construction, stable prefix observation, exact-Session leases, and terminal result classification. It has no model-facing Consumer: it registers no tool, prompt, preset, UI, chart, or Outcome behavior.
+`@deepseek-ai/dsh-science-runtime` provides the folded, host-local Conda Runtime for durable Science environment, run, and chart facts. It owns `ctx.scienceRuntime`, private per-Session scratch, direct Python/R argv construction, stable prefix observation, exact-Session leases, terminal result classification, and PNG import into the attachment store. It registers no model-facing tool, prompt, preset, or UI.
 
 ## Composition
 
-Load `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-science-session`, `@deepseek-ai/dsh-subprocess-local`, `@deepseek-ai/dsh-sandbox-local`, and this package on the Host; select `@deepseek-ai/dsh-science-session/invariant` where Science Session facts are admitted. The Runtime requires a `host-local` subprocess provider and a sandbox provider that reports full enforcement. Its `./invariant` companion has no duplicate event relation because the Science Session invariant owns durable stream validation.
+Load `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-science-session`, `@deepseek-ai/dsh-attachment-local`, `@deepseek-ai/dsh-subprocess-local`, `@deepseek-ai/dsh-sandbox-local`, and this package on the Host; select `@deepseek-ai/dsh-science-session/invariant` where Science Session facts are admitted. The Runtime requires attachment, `host-local` subprocess, and full-enforcement sandbox providers. Its `./invariant` companion has no duplicate event relation because the Science Session invariant owns durable stream validation.
 
 The package configuration names existing absolute Conda prefixes. It does not invoke Conda or create, clone, update, install into, repair, or delete a prefix.
 
@@ -28,6 +28,8 @@ The package configuration names existing absolute Conda prefixes. It does not in
 `bindEnvironment({ session, profileId, signal })` requires the exact live Science Session object, observes the selected profile, and appends one complete `science/environment-bound` value. Static missing or unusable interpreters become an `invalid` value; cancellation, timeout, prefix I/O failure, partial confinement, or an overlapping writable root rejects without an environment event.
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` re-observes the applied binding, writes unchanged UTF-8 source into a private run directory, appends `science/run-started`, and returns a `ScienceRunHandle`. The handle exposes only `runId`, `done`, and idempotent `cancel()`; it exposes neither a PID nor Host scratch paths. Its resolved result carries the committed terminal record plus bounded operational stdout/stderr tails, exact byte counts, and truncation facts. Output text never enters a Science Session event.
+
+`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` accepts only a successful run started locally in the exact Session, resolves one regular non-symlink PNG below that run's private `SCIENCE_ARTIFACT_DIR`, and reads at most the attachment store's byte cap plus one. `ctx.attachments.saveImage` remains the media admission authority. The Runtime persists the attachment before appending a complete `science/chart-saved` version, retains a stable chart id across one logical name's contiguous versions, and publishes no Host path.
 
 The Runtime rejects pre-publication misuse or capability failures with `ScienceRuntimeError`. After a start event commits, ordinary process, runner, denial, cancellation, and timeout outcomes append one matching terminal event. If bounded settlement cannot prove whole-tree quiescence, `done` rejects while the Runtime retains the lease; a later positive proof appends the terminal fact before releasing a still-live Session, while a false or rejected proof keeps it quarantined. `done` also rejects when a still-live Session cannot commit the terminal fact or an unexpected detached Session makes a commit forbidden.
 
@@ -56,7 +58,7 @@ The command reports Python and R independently as `PASS`, `FAIL`, or `NOT-RUN`; 
 
 ## Model Experience
 
-None, as the Runtime exposes non-model-facing operations for a later Science tool Consumer and registers no prompt context.
+None, as the Runtime exposes non-model-facing operations consumed by `@deepseek-ai/dsh-tool-science` and registers no prompt context.
 
 #### KV Cache effect
 
@@ -64,7 +66,7 @@ None; the Runtime neither assembles nor sends provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **No production Consumer** — R2 supplies no Science tool, preset, prompt, UI, chart, or Outcome consumer; a later Consumer injects `ctx.scienceRuntime` rather than appending runtime events itself.
+- **No environment management** — the Runtime consumes explicit existing prefixes; it does not discover, create, install into, update, repair, or delete Conda environments.
 - **Existing local prefixes only** — observations are fingerprints, not reproducible-environment locks, and the Runtime never manages Conda packages or environments.
 - **File-write confinement only** — full sandbox enforcement limits documented file writes but does not claim file-read, network, syscall, or scientific-validity isolation.
 - **Host-local execution only** — a remote subprocess provider and a partial sandbox backend fail closed because this implementation owns private Host scratch.

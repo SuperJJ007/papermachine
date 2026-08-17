@@ -10,6 +10,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
+    { "path": "../../attachment/attachment" },
     { "path": "../../util/home-paths" },
     { "path": "../../util/timeout" },
     { "path": "../../core/session" },

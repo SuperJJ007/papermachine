@@ -2,12 +2,12 @@
 
 English | [中文](README.zh.md)
 
-The Science domain: required-on-read Session events, host-local Runtime operations, strict replay, invariant validation, the optional `science` session projection, and the model-facing Consumer. Preset and client packages remain later slices.
+The Science domain: required-on-read Session events, host-local Runtime operations, strict replay, invariant validation, the client-safe `science` Session projection, and the five-tool model-facing Consumer. The built-in preset and browser transcript rows are application/client compositions; settings and current-state Details remain later work.
 
 | Package | Role | ctx key |
 |---|---|---|
-| [`science-session/`](science-session/README.md) | Owns the six Science Session events, their strict fold, the pre-commit invariant, and the optional `science` projection. | (registers on `ctx.sessionProjections` when composed) |
-| [`science-runtime/`](science-runtime/README.md) | Folded host-local Conda Runtime: `bindEnvironment`, `startRun`, private scratch, and the environment/run Session events those operations append. | `ctx.scienceRuntime` |
-| [`tool-science/`](tool-science/README.md) | Model-facing Consumer: first-use mode/environment binding, the `science:environment` dynamic context, and the `get_science_state`/`run_python`/`run_r` tools, all through `ctx.scienceRuntime`. No shipped composition. | (registers on `ctx.tools`/`ctx.systemPrompt`) |
+| [`science-session/`](science-session/README.md) | Owns six Science Session events, strict Host replay, the pre-commit invariant, client-safe projection, and chart attachment extraction. | registers on `ctx.sessionProjections` / `ctx.sessionAttachments` when composed |
+| [`science-runtime/`](science-runtime/README.md) | Host-local Conda Runtime: environment binding, Python/R execution, private scratch, and PNG chart import. | `ctx.scienceRuntime` |
+| [`tool-science/`](tool-science/README.md) | Model-facing Consumer: first-use binding/context plus `get_science_state`, `run_python`, `run_r`, `save_chart`, and `publish_outcome`. | registers on `ctx.tools` / `ctx.systemPrompt` |
 
-The child READMEs own the event, replay, projection, Runtime, and Consumer contracts.
+The child READMEs own the event, replay, projection, Runtime, and Consumer contracts. Browser presentation lives in [`client/ui-science`](../client/ui-science/README.md).

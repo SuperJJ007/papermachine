@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及 `get_science_state`、`run_python` 与 `run_r` 工具。这是 Science 能力 seam 的 Consumer 角色——[`dsh-science-session`](../science-session) 是它的 Service Definition（durable event、严格 fold、invariant），[`dsh-science-runtime`](../science-runtime) 是它的 Service Provider（`ctx.scienceRuntime`：environment 观测、私有 scratch、直接执行、终态分类）。本包从不 spawn 进程、写入 run source、分类终止方式、管理 Conda，或追加 Runtime 拥有的事件；它执行的每一项操作都通过 `ctx.scienceRuntime` 完成。
+**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`save_chart` 与 `publish_outcome`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类与 chart 附件导入。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Outcome 发布不需要 Host operation，因此本包在 durable evidence 校验后直接追加 `science/outcome-published`；其余 environment、run 与 chart fact 由 Runtime 追加。
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
-`ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定，以及每次 `run_python`/`run_r` 调用）时才读取 `ctx.get('scienceRuntime')`。即使部署省略了 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰的错误拒绝，而不是悄悄降级。
+`ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `save_chart`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。`publish_outcome` 可对已经持久化的证据工作，不需要 Runtime access。
 
 ## 配置
 
@@ -31,8 +31,10 @@
 | `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 chart-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
 | `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 Python 解释器进程中运行 `code`，并转发该工具调用的取消信号。 |
 | `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 `Rscript` 进程中运行 `code`，并转发该工具调用的取消信号。 |
+| `save_chart` | `run_id`、`artifact_path`、`logical_name`、`title`、可选 `caption` | 通过 `ctx.scienceRuntime.commitChart` 导入先前成功本地 run 生成的一张 PNG；返回文本 receipt 与客户端展示元数据，绝不返回 image block。 |
+| `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/chart/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
 
-每个 run 工具都要求 session 中记录的最新 `request/header`，以及确切的 tool-call ID；两者都会填入 `StartScienceRunRequest`。一次 durable 提交的 `success`、`failed`、`timed-out` 或 `cancelled` 终态就是该工具的结构化 canonical 值——包含受限的 stdout/stderr 文本、精确字节数与截断事实，绝不是原始的无边界输出。在 run-started 事实发布之前失败、process-tree 静止未被证明，或终态提交失败，都会改为 error tool 结果：意味着没有可信的 run 发生过。三个工具都使用通用（generic）渲染意图，不带编辑器位置信息。
+四个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Chart 与 Outcome success 值为所有客户端渲染有用文本，并为专用 Web 行保留带标签、带版本的 presentation metadata。五个工具都使用 generic render intent，不带 editor location。
 
 ## 模型体验
 
@@ -45,7 +47,7 @@
 ##### Science 工具指引
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process.
+Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. After a successful run writes a PNG under SCIENCE_ARTIFACT_DIR, use save_chart to durably save it; the tool returns a text receipt, never image bytes, and the chart becomes visible in the product transcript. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved chart versions, and/or prior messages) supports it.
 ```
 
 #### Token 影响
@@ -74,7 +76,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-模型会看到生成的 [`get_science_state`、`run_python` 与 `run_r` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
+模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`save_chart` 与 `publish_outcome` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
 
 #### Token 影响
 
@@ -112,11 +114,25 @@ Run item 与 chart-version item 会分别限制为最近 `stateHistoryLimit` 条
 
 Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
 
+### Chart 与 Outcome 结果
+
+#### 模型看到的内容
+
+`save_chart` 以文本渲染稳定 chart id、逻辑名、版本、标题、可选 caption、来源 run、PNG 尺寸、字节数与创建时间；绝不输出 image bytes 或 image content block。`publish_outcome` 渲染 revision、标题、Markdown 摘要，以及每条 run/chart/message evidence reference。带标签的客户端 presentation value 留在 durable tool-result metadata 中，不会增加独立模型内容。
+
+#### Token 影响
+
+受 chart receipt field 以及 durable Outcome 标题、摘要与 evidence 上限约束；保留的调用/结果会在 compaction 前重复发送。
+
+#### KV Cache 影响
+
+Append-only；新出现的结果文本位于可复用 request prefix 之后。
+
 ### 工具错误
 
 #### 模型看到的内容
 
-配置与前置条件失败会被规范化为 `Error: <message>`：`tool-science: code must be a non-empty string`、`tool-science: this tool requires an initiating Agent`、`tool-science: this tool requires a session bound to the science preset`、`tool-science: no request/header is recorded for this session`、`tool-science: no Science Runtime is mounted (ctx.scienceRuntime)`，以及 `tool-science: Science mode is not bound for this session`。
+配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source 或 publication field、嵌套 mutation dispatch、不成功或继承的 chart source run、artifact selection/admission 失败，以及无效或重复 Outcome evidence。
 
 #### Token 影响
 
@@ -129,5 +145,5 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 ## 已知限制与暂缓事项
 
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
-- **没有图表或 Outcome 工具** — `science/chart-saved` 与 `science/outcome-published` 仍是没有生产者的 durable 词汇；这属于后续某个 Science 切片的职责。
+- **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成 PNG，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。
 - **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。

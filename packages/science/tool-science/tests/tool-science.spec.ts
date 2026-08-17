@@ -1,30 +1,40 @@
 /**
  * Focused behavior tests for `@deepseek-ai/dsh-tool-science`: config
  * validation, registration/disposal, first-use binding, context rendering,
- * and the three tools — composed directly with `ctx.plugin(...)` (not
+ * and the five tools — composed directly with `ctx.plugin(...)` (not
  * through the real agent loop; see `loader-composition.spec.ts` for the
  * required REAL-composition coverage).
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
+import { planSessionScratch, runArtifactDirectory } from '@deepseek-ai/dsh-science-runtime/src/scratch.ts'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import { ScienceChartId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
 import { isScienceSession, renderScienceProjection } from '../src/context.ts'
+import { scienceChartPresentation } from '../src/presentation.ts'
+import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
+import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
+import { chartReceiptFromChart, formatChartReceipt } from '../src/save-chart.ts'
+import type { ScienceChartReceiptValue } from '../src/save-chart.ts'
 import { formatRunResult, requireScienceSession, runValueFromResult } from '../src/run.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { DirectSandbox, FakeSubprocess, createFakePythonPrefix } from './harness.ts'
@@ -45,8 +55,37 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
 
 const testSignal = new AbortController().signal
 
+const PNG = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+))
+
 function fakeAgent(session: Session): Agent {
   return { session } as unknown as Agent
+}
+
+/** Append the durable request and named tool-call facts for one turn. */
+function authorizeToolCall(
+  session: Session, turn: number, name: string, id: string,
+): ReturnType<typeof CallId> {
+  session.append('step/start', { turn, step: 1 })
+  session.append('request/header', {
+    header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial',
+  })
+  const toolCallId = CallId(id)
+  session.append('tool/call', { turn, step: 1, callId: toolCallId, name, arguments: '{}' })
+  return toolCallId
+}
+
+/** Write one artifact file below a run's real Host artifact directory. */
+async function writeArtifact(
+  root: string, session: Session, runId: string, relativePath: string, data: Uint8Array,
+): Promise<void> {
+  const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
+  const artifacts = runArtifactDirectory(sessionScratch, runId as never)
+  const target = join(artifacts, relativePath)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, data)
 }
 
 let root: string
@@ -78,6 +117,7 @@ async function setup(options: SetupOptions = {}) {
   if (options.withRuntime !== false) {
     await ctx.plugin(FakeSubprocess)
     await ctx.plugin(DirectSandbox)
+    await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: createFakePythonPrefix(root) } },
@@ -93,6 +133,15 @@ async function setup(options: SetupOptions = {}) {
 
 function scienceSession(ctx: Context, id: string): Session {
   return ctx.sessions.create(SessionId(id), { meta: { agentPreset: 'science' } })
+}
+
+/** Bind Science mode/environment on first use, then open turn 1's step/start and request/header. */
+async function boundSession(ctx: Context, id: string): Promise<Session> {
+  const session = scienceSession(ctx, id)
+  await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+  session.append('step/start', { turn: 1, step: 1 })
+  session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
+  return session
 }
 
 describe('config', () => {
@@ -673,14 +722,6 @@ describe('get_science_state', () => {
 })
 
 describe('run_python', () => {
-  async function boundSession(ctx: Context, id: string): Promise<Session> {
-    const session = scienceSession(ctx, id)
-    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
-    session.append('step/start', { turn: 1, step: 1 })
-    session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    return session
-  }
-
   it('rejects empty code before starting a run', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-empty')
@@ -736,5 +777,432 @@ describe('run_python', () => {
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('status: success')
     expect(text).toContain('fake run output')
+  })
+
+  it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-run-nested')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('run-5'), name: 'run_python', arguments: { code: 'print(1)' },
+      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('nested Code Mode sub-dispatch'))).toBe(true)
+    // No side effect reached: no run was published and no scratch/Runtime work occurred.
+    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
+  it('rejects a nested run_r sub-dispatch the same way', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-run-r-nested')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('run-6'), name: 'run_r', arguments: { code: '1 + 1' },
+      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('run_r cannot run'))).toBe(true)
+  })
+})
+
+describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation', () => {
+  it('omits caption and the attachment name when both are absent from the durable chart', () => {
+    const value = chartReceiptFromChart({
+      chartId: ScienceChartId('chart-1'),
+      logicalName: 'main',
+      version: 1,
+      title: 'Main plot',
+      attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+      runId: ScienceRunId('run-1'),
+      toolCallId: CallId('call-1'),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      createdAt: 1000,
+    })
+    expect(value).not.toHaveProperty('caption')
+    expect(value).not.toHaveProperty('attachmentName')
+    expect(formatChartReceipt(value)).not.toContain('caption:')
+    const presentation = scienceChartPresentation(value) as { caption?: string; attachment: { name?: string } }
+    expect(presentation).not.toHaveProperty('caption')
+    expect(presentation.attachment).not.toHaveProperty('name')
+  })
+})
+
+describe('isMessageFact', () => {
+  function withEvents(events: readonly { seq: number; type: string }[]): Session {
+    return { events } as unknown as Session
+  }
+
+  it('recognizes every message-bearing carrier the durable fold tracks', () => {
+    expect(isMessageFact(withEvents([{ seq: 1, type: 'user/message' }]), 1)).toBe(true)
+    expect(isMessageFact(withEvents([{ seq: 1, type: 'assistant/message' }]), 1)).toBe(true)
+    expect(isMessageFact(withEvents([{ seq: 1, type: 'tool/result' }]), 1)).toBe(true)
+  })
+
+  it('rejects a seq naming a non-message event or no event at all', () => {
+    expect(isMessageFact(withEvents([{ seq: 1, type: 'tool/call' }]), 1)).toBe(false)
+    expect(isMessageFact(withEvents([]), 1)).toBe(false)
+  })
+})
+
+describe('save_chart', () => {
+  /** Bind, then run_python to a durable success, through the real tool registry. */
+  async function runSuccessfully(ctx: Context, session: Session, id: string): Promise<string> {
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    const toolCallId = authorizeToolCall(session, 1, 'run_python', id)
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: 'print(1)' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const started = session.events.find(event => event.type === 'science/run-started')
+    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+    return String(started.data.run.runId)
+  }
+
+  it('imports a chart from a successful run and returns a text receipt without image bytes or the internal attachment id', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-chart-success')
+    const runId = await runSuccessfully(ctx, session, 'science-chart-run')
+    await writeArtifact(root, session, runId, 'plot.png', PNG)
+    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-save')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'save_chart',
+      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot', caption: 'A caption' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).toContain('chart "main" v1')
+    expect(text).toContain('title: Main plot')
+    expect(text).toContain('caption: A caption')
+    expect(text).not.toMatch(/sha256:/)
+    expect(session.events.some(event => event.type === 'science/chart-saved')).toBe(true)
+    if (result.isError) throw new Error('unreachable')
+    const value = result.value as unknown as ScienceChartReceiptValue
+    expect(value.chartId).toBeTypeOf('string')
+    expect(value).toMatchObject({ version: 1, mediaType: 'image/png', caption: 'A caption' })
+    expect(result.meta).toMatchObject({ kind: 'science/chart', version: 1, chartVersion: 1, caption: 'A caption', attachment: { mediaType: 'image/png' } })
+  })
+
+  it('rejects an empty title before it reaches the Runtime', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-chart-empty-title')
+    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-empty-title-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'save_chart',
+      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: '   ' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('title must be a non-empty string'))).toBe(true)
+  })
+
+  it('rejects when no request/header is recorded', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-chart-no-header')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-chart-no-header-call'), name: 'save_chart',
+      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
+  })
+
+  it('commits contiguous versions for a repeat logical_name', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-chart-versions')
+    const runId = await runSuccessfully(ctx, session, 'science-chart-versions-run')
+    await writeArtifact(root, session, runId, 'plot.png', PNG)
+    const firstCall = authorizeToolCall(session, 2, 'save_chart', 'science-chart-versions-1')
+    const first = await ctx.tools.execute({
+      signal: testSignal, callId: firstCall, name: 'save_chart',
+      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'v1' },
+      agent: fakeAgent(session),
+    })
+    const secondCall = authorizeToolCall(session, 3, 'save_chart', 'science-chart-versions-2')
+    const second = await ctx.tools.execute({
+      signal: testSignal, callId: secondCall, name: 'save_chart',
+      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'v2' },
+      agent: fakeAgent(session),
+    })
+    if (first.isError || second.isError) throw new Error('unreachable')
+    const firstValue = first.value as unknown as ScienceChartReceiptValue
+    const secondValue = second.value as unknown as ScienceChartReceiptValue
+    expect(secondValue.chartId).toBe(firstValue.chartId)
+    expect(secondValue.version).toBe(2)
+  })
+
+  it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-chart-nested')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-chart-nested-call'), name: 'save_chart',
+      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('save_chart cannot run'))).toBe(true)
+  })
+
+  it('rejects when no Science Runtime is mounted', async () => {
+    const { ctx } = await setup({ withRuntime: false })
+    const session = scienceSession(ctx, 'science-chart-no-runtime')
+    session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' } })
+    const toolCallId = authorizeToolCall(session, 1, 'save_chart', 'science-chart-no-runtime-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'save_chart',
+      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('no Science Runtime is mounted'))).toBe(true)
+  })
+
+  it('surfaces the Runtime rejection for a source run that is not durably successful', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-chart-bad-run')
+    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-bad-run-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'save_chart',
+      arguments: { run_id: 'not-a-real-run', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('does not exist or is not a durably successful run'))).toBe(true)
+  })
+})
+
+describe('publish_outcome', () => {
+  it('publishes revision 1 citing a successful run, then revision 2 citing a message', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-success')
+    const runCall = authorizeToolCall(session, 2, 'run_python', 'science-outcome-run')
+    const runResult = await ctx.tools.execute({
+      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: 'print(1)' },
+      agent: fakeAgent(session),
+    })
+    expect(runResult.isError).toBe(false)
+    const started = session.events.find(event => event.type === 'science/run-started')
+    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+    const runId = String(started.data.run.runId)
+    const messageSeq = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' }).seq
+    const publishCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-publish-1')
+    const first = await ctx.tools.execute({
+      signal: testSignal, callId: publishCall, name: 'publish_outcome',
+      arguments: {
+        title: 'First result', summary_markdown: 'It worked.',
+        evidence: [{ kind: 'run', run_id: runId }],
+      },
+      agent: fakeAgent(session),
+    })
+    expect(first.isError).toBe(false)
+    if (first.isError) throw new Error('unreachable')
+    expect(first.value).toMatchObject({ revision: 1, title: 'First result' })
+    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(true)
+    const secondCall = authorizeToolCall(session, 4, 'publish_outcome', 'science-outcome-publish-2')
+    const second = await ctx.tools.execute({
+      signal: testSignal, callId: secondCall, name: 'publish_outcome',
+      arguments: {
+        title: 'Updated result', summary_markdown: 'Still true, see the note.',
+        evidence: [{ kind: 'message', seq: messageSeq }],
+      },
+      agent: fakeAgent(session),
+    })
+    if (second.isError) throw new Error('unreachable')
+    const secondValue = second.value as unknown as ScienceOutcomeResultValue
+    expect(secondValue.revision).toBe(2)
+    expect(second.meta).toMatchObject({ kind: 'science/outcome', version: 1, revision: 2 })
+
+    await writeArtifact(root, session, runId, 'plot.png', PNG)
+    const saveCall = authorizeToolCall(session, 5, 'save_chart', 'science-outcome-save-chart')
+    const saved = await ctx.tools.execute({
+      signal: testSignal, callId: saveCall, name: 'save_chart',
+      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot' },
+      agent: fakeAgent(session),
+    })
+    if (saved.isError) throw new Error('unreachable')
+    const savedValue = saved.value as unknown as ScienceChartReceiptValue
+    const thirdCall = authorizeToolCall(session, 6, 'publish_outcome', 'science-outcome-publish-3')
+    const third = await ctx.tools.execute({
+      signal: testSignal, callId: thirdCall, name: 'publish_outcome',
+      arguments: {
+        title: 'With a chart', summary_markdown: 'See the chart.',
+        evidence: [{ kind: 'chart', chart_id: savedValue.chartId, version: 1 }],
+      },
+      agent: fakeAgent(session),
+    })
+    if (third.isError) throw new Error('unreachable')
+    const thirdValue = third.value as unknown as ScienceOutcomeResultValue
+    expect(third.value).toMatchObject({
+      revision: 3, evidence: [{ kind: 'chart', chart_id: savedValue.chartId, version: 1 }],
+    })
+    expect(formatOutcomeResult(thirdValue)).toContain(`- chart ${savedValue.chartId}@1`)
+  })
+
+  it('rejects an empty title before it reaches the durable codec', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-empty-title')
+    const messageSeq = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' }).seq
+    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-empty-title-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
+      arguments: { title: '   ', summary_markdown: 's', evidence: [{ kind: 'message', seq: messageSeq }] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('title must be a non-empty string'))).toBe(true)
+  })
+
+  it('rejects when Science mode is not yet bound', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-outcome-not-bound')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-outcome-not-bound-call'), name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('Science mode is not bound'))).toBe(true)
+  })
+
+  it('rejects when no request/header is recorded', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-outcome-no-header')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-outcome-no-header-call'), name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
+  })
+
+  it('rejects a nested Code Mode sub-dispatch before validation or append', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-nested')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-outcome-nested-call'), name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
+      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('publish_outcome cannot run'))).toBe(true)
+    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(false)
+  })
+
+  it('rejects empty evidence', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-empty-evidence')
+    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-empty-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('evidence must be non-empty'))).toBe(true)
+  })
+
+  it('rejects duplicate evidence references', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-dup-evidence')
+    const messageSeq = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' }).seq
+    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-dup-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
+      arguments: {
+        title: 't', summary_markdown: 's',
+        evidence: [{ kind: 'message', seq: messageSeq }, { kind: 'message', seq: messageSeq }],
+      },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('duplicate evidence reference'))).toBe(true)
+  })
+
+  it('rejects evidence citing a run, chart, or message that does not exist', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-missing-evidence')
+    const runCall = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-missing-run')
+    const runRejection = await ctx.tools.execute({
+      signal: testSignal, callId: runCall, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'run', run_id: 'nope' }] },
+      agent: fakeAgent(session),
+    })
+    expect(runRejection.isError).toBe(true)
+    expect(runRejection.content.some(block => block.type === 'text' && block.text.includes('is not a successful prior run'))).toBe(true)
+
+    const chartCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-missing-chart')
+    const chartRejection = await ctx.tools.execute({
+      signal: testSignal, callId: chartCall, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'nope', version: 1 }] },
+      agent: fakeAgent(session),
+    })
+    expect(chartRejection.isError).toBe(true)
+    expect(chartRejection.content.some(block => block.type === 'text' && block.text.includes('does not exist'))).toBe(true)
+
+    const messageCall = authorizeToolCall(session, 4, 'publish_outcome', 'science-outcome-missing-message')
+    const messageRejection = await ctx.tools.execute({
+      signal: testSignal, callId: messageCall, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 999_999 }] },
+      agent: fakeAgent(session),
+    })
+    expect(messageRejection.isError).toBe(true)
+    expect(messageRejection.content.some(block => block.type === 'text' && block.text.includes('does not name a prior message'))).toBe(true)
+  })
+})
+
+describe('get_science_state chart sanitization', () => {
+  it('omits the internal attachment id, full fingerprint, tool call, and request-header sequence for a saved chart', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-state-chart')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
+    const runCallId = CallId('science-state-chart-run')
+    session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
+    const runResult = await ctx.tools.execute({
+      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: 'print(1)' }, agent: fakeAgent(session),
+    })
+    expect(runResult.isError).toBe(false)
+    const started = session.events.find(event => event.type === 'science/run-started')
+    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+    const runId = String(started.data.run.runId)
+    await writeArtifact(root, session, runId, 'plot.png', PNG)
+    session.append('step/start', { turn: 2, step: 1 })
+    session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
+    const saveCallId = CallId('science-state-chart-save')
+    session.append('tool/call', { turn: 2, step: 1, callId: saveCallId, name: 'save_chart', arguments: '{}' })
+    const saveResult = await ctx.tools.execute({
+      signal: testSignal, callId: saveCallId, name: 'save_chart',
+      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot', caption: 'A caption' },
+      agent: fakeAgent(session),
+    })
+    expect(saveResult.isError).toBe(false)
+    const state = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-state-chart-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+    })
+    expect(state.isError).toBe(false)
+    if (state.isError) throw new Error('unreachable')
+    const value = state.value as unknown as { charts: readonly Record<string, unknown>[] }
+    expect(value.charts).toHaveLength(1)
+    const chart = value.charts[0]
+    expect(chart?.chartId).toBeTypeOf('string')
+    expect(chart).toMatchObject({ logicalName: 'main', version: 1, mediaType: 'image/png', caption: 'A caption' })
+    expect(chart).not.toHaveProperty('attachmentId')
+    expect(chart).not.toHaveProperty('toolCallId')
+    expect(chart).not.toHaveProperty('requestHeaderSeq')
+    expect(chart).not.toHaveProperty('environmentFingerprint')
+    expect(chart?.environmentFingerprintPreview).toBeTypeOf('string')
   })
 })

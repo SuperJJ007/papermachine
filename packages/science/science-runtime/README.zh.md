@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-science-runtime` 提供折叠的、host-local 的 Conda Science Runtime。它拥有 `ctx.scienceRuntime`、按 Session 隔离的私有 scratch、Python/R direct argv 构造、稳定 prefix 观测、精确 Session lease 与终态结果分类。它没有面向模型的 Consumer：不注册工具、提示词、preset、UI、图表或 Outcome 行为。
+`@deepseek-ai/dsh-science-runtime` 提供折叠的、host-local 的 Conda Science Runtime，用于持久化 environment、run 与 chart 事实。它拥有 `ctx.scienceRuntime`、按 Session 隔离的私有 scratch、Python/R direct argv 构造、稳定 prefix 观测、精确 Session lease、终态结果分类，以及把 PNG 导入附件存储的能力。它不注册面向模型的工具、提示词、preset 或 UI。
 
 ## 组装
 
-在 Host 加载 `@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-science-session`、`@deepseek-ai/dsh-subprocess-local`、`@deepseek-ai/dsh-sandbox-local` 和本包；在准入 Science Session fact 的组合中选择 `@deepseek-ai/dsh-science-session/invariant`。Runtime 要求 `host-local` subprocess provider 和报告 full enforcement 的 sandbox provider。它的 `./invariant` 配套模块不重复事件关系，因为 Science Session invariant 负责 durable stream 校验。
+在 Host 加载 `@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-science-session`、`@deepseek-ai/dsh-attachment-local`、`@deepseek-ai/dsh-subprocess-local`、`@deepseek-ai/dsh-sandbox-local` 和本包；在准入 Science Session fact 的组合中选择 `@deepseek-ai/dsh-science-session/invariant`。Runtime 要求附件 provider、`host-local` subprocess provider 和报告 full enforcement 的 sandbox provider。它的 `./invariant` 配套模块不重复事件关系，因为 Science Session invariant 负责 durable stream 校验。
 
 包配置只命名现有的 absolute Conda prefix。它不调用 Conda，也不创建、克隆、更新、安装到、修复或删除 prefix。
 
@@ -28,6 +28,8 @@
 `bindEnvironment({ session, profileId, signal })` 要求精确的 live Science Session object，观测所选 profile，并追加一个完整的 `science/environment-bound` 值。静态缺失或不可用的 interpreter 会成为 `invalid` 值；取消、超时、prefix I/O 失败、partial confinement 或可写 root 重叠会拒绝且不追加 environment event。
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` 会重新观测 applied binding，把未改变的 UTF-8 source 写入私有 run directory，追加 `science/run-started`，并返回 `ScienceRunHandle`。该 handle 只暴露 `runId`、`done` 和幂等的 `cancel()`；它不暴露 PID 或 Host scratch path。它解析出的 result 包含已提交的 terminal record、受限的运行期 stdout/stderr tail、精确 byte count 与截断事实。output text 永不进入 Science Session event。
+
+`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` 只接受由精确 Session 本地启动且已成功的 run，并只解析该 run 私有 `SCIENCE_ARTIFACT_DIR` 下的普通非 symlink PNG；读取上限是附件存储字节上限加一。`ctx.attachments.saveImage` 仍是媒体接纳权威。Runtime 先持久化附件，再追加完整的 `science/chart-saved` 版本；同一逻辑名的连续版本共用稳定 chart id，且不会公开 Host path。
 
 Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。start event 提交后，普通 process、runner、denial、取消与超时 outcome 都会追加一个匹配的 terminal event。如果有界结算无法证明整棵 process tree 静止，`done` 会拒绝，但 Runtime 会保留 lease；后续 positive proof 会先向 still-live Session 追加 terminal fact，再释放 lease，而 false 或 rejected proof 会继续保持 quarantine。still-live Session 不能提交 terminal fact，或意外 detached Session 使提交被禁止时，`done` 也会拒绝。
 
@@ -56,7 +58,7 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 
 ## 模型体验
 
-无。本 Runtime 为后续 Science 工具 Consumer 提供非模型可见的操作，不注册任何提示词上下文。
+无。本 Runtime 为 `@deepseek-ai/dsh-tool-science` 提供非模型可见的操作，不注册任何提示词上下文。
 
 #### KV Cache 影响
 
@@ -64,7 +66,7 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 
 ## 已知限制与暂缓事项
 
-- **没有生产 Consumer** — R2 不提供 Science 工具、preset、提示词、UI、图表或 Outcome consumer；后续 Consumer 注入 `ctx.scienceRuntime`，而不是自行追加 runtime event。
+- **不管理 environment** — Runtime 消费显式指定的既有 prefix；不发现、创建、安装、更新、修复或删除 Conda environment。
 - **只使用已有的本地 prefix** — observation 是 fingerprint，不是可复现环境锁；Runtime 从不管理 Conda package 或 environment。
 - **仅 file-write confinement** — full sandbox enforcement 限制所述的 file write，但不宣称隔离 file read、network、syscall 或科学有效性。
 - **仅 host-local execution** — remote subprocess provider 和 partial sandbox backend 会 fail closed，因为此实现拥有私有 Host scratch。

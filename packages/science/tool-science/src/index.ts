@@ -12,7 +12,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import { applyScienceContext } from './context.ts'
 import { Config, resolveConfig } from './config.ts'
+import { applyPublishOutcomeTool } from './publish-outcome.ts'
 import { applyRunTool } from './run.ts'
+import { applySaveChartTool } from './save-chart.ts'
 import { applyScienceStateTool } from './state.ts'
 
 export { Config }
@@ -30,6 +32,8 @@ const STATIC_GUIDANCE = [
   'A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction.',
   'A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed.',
   'Use get_science_state to read the current mode, environment, and run history without starting a process.',
+  'After a successful run writes a PNG under SCIENCE_ARTIFACT_DIR, use save_chart to durably save it; the tool returns a text receipt, never image bytes, and the chart becomes visible in the product transcript.',
+  'Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved chart versions, and/or prior messages) supports it.',
 ].join(' ')
 
 /** Register the Science Consumer's prompt, context, and tool contributions. */
@@ -40,4 +44,6 @@ export function apply(ctx: Context, config: Config): void {
   applyScienceStateTool(ctx, resolved.stateHistoryLimit)
   applyRunTool(ctx, 'python')
   applyRunTool(ctx, 'r')
+  applySaveChartTool(ctx)
+  applyPublishOutcomeTool(ctx)
 }

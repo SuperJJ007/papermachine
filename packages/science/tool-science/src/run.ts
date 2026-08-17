@@ -8,6 +8,7 @@ import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
 import type { ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isScienceSession } from './context.ts'
+import { requireDirectDispatch } from './guard.ts'
 
 const outputStreamSchema = {
   type: 'object',
@@ -51,8 +52,12 @@ export function requireScienceSession(exec: ToolExecution): Session {
   return session
 }
 
-/** Find the latest `request/header` event, required to authorize a run. */
-function latestRequestHeaderSeq(session: Session): number | undefined {
+/**
+ * Find the latest `request/header` event required to authorize a direct Science mutation.
+ * @param session - exact Session whose request history authorizes the mutation.
+ * @returns the latest request-header sequence, or `undefined` when none exists.
+ */
+export function latestRequestHeaderSeq(session: Session): number | undefined {
   return session.events.findLast(event => event.type === 'request/header')?.seq
 }
 
@@ -121,6 +126,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
       render: (_args, value) => [{ type: 'text', text: formatRunResult(value) }],
     },
     async execute(args, exec) {
+      requireDirectDispatch(exec, language === 'python' ? 'run_python' : 'run_r')
       const session = requireScienceSession(exec)
       const scienceRuntime = ctx.get('scienceRuntime')
       if (scienceRuntime === undefined) {

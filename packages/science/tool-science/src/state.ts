@@ -6,12 +6,14 @@ import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
+  ScienceChartVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceProjection,
 } from '@deepseek-ai/dsh-science-session'
 import { scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
 import { requireScienceSession } from './run.ts'
+import { scienceChartSchemaProperties } from './chart-schema.ts'
 
 const stateInterpreterSchema = {
   type: 'object',
@@ -42,6 +44,21 @@ const stateEnvironmentSchema = {
   ],
 } as const
 
+const stateChartSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ...scienceChartSchemaProperties,
+    environmentRevision: { type: 'integer', required: true },
+    environmentFingerprintPreview: { type: 'string', required: true },
+    mediaType: { type: 'string', required: true },
+    bytes: { type: 'integer', required: true },
+    width: { type: 'integer', required: true },
+    height: { type: 'integer', required: true },
+    createdAt: { type: 'integer', required: true },
+  },
+} as const
+
 const stateOutputSchema = {
   type: 'object',
   additionalProperties: false,
@@ -49,7 +66,7 @@ const stateOutputSchema = {
     mode: { type: 'json', required: true },
     environment: { ...stateEnvironmentSchema, required: true },
     runs: { type: 'array', items: { type: 'json' }, required: true },
-    charts: { type: 'array', items: { type: 'json' }, required: true },
+    charts: { type: 'array', items: stateChartSchema, required: true },
     outcome: { type: 'json', required: true },
     metrics: { type: 'json', required: true },
     history: {
@@ -106,6 +123,31 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
 }
 
 /**
+ * Remove the internal attachment id, full environment fingerprint,
+ * authorizing tool call, and request-header sequence from one durable chart
+ * version. The full `ImageAttachmentRef` remains available only to the
+ * durable projection, authorization, export, and Client presentation paths —
+ * never to model state.
+ */
+function stateChart(chart: ScienceChartVersion): InferValue<typeof stateChartSchema> {
+  return {
+    chartId: String(chart.chartId),
+    logicalName: chart.logicalName,
+    version: chart.version,
+    title: chart.title,
+    ...chart.caption === undefined ? {} : { caption: chart.caption },
+    runId: String(chart.runId),
+    environmentRevision: chart.environmentRevision,
+    environmentFingerprintPreview: scienceFingerprintPreview(chart.environmentFingerprint),
+    mediaType: chart.attachment.mediaType,
+    bytes: chart.attachment.bytes,
+    width: chart.attachment.width,
+    height: chart.attachment.height,
+    createdAt: chart.createdAt,
+  }
+}
+
+/**
  * Build the bounded model-facing value from one exact replay projection.
  * Durable codecs bound every retained item; this owner additionally caps both
  * growing history collections and reports the omitted counts.
@@ -123,7 +165,7 @@ export function stateValueFromProjection(
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
-    charts: projection.charts.slice(-historyItemLimit) as unknown as JsonValue[],
+    charts: projection.charts.slice(-historyItemLimit).map(stateChart),
     outcome: projection.outcome as unknown as JsonValue,
     metrics: projection.metrics as unknown as JsonValue,
     history: { runsOmitted, chartVersionsOmitted },

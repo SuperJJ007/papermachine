@@ -12,6 +12,20 @@ export const MIN_TIMEOUT_MS = 1
 /** Highest accepted configured operation timeout. */
 export const MAX_TIMEOUT_MS = 600_000
 
+/** Default maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
+export const DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 200
+/** Lowest accepted configured diagnostic entry bound. */
+export const MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 1
+/** Highest accepted configured diagnostic entry bound. */
+export const MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 10_000
+
+/** Default maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
+export const DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 8192
+/** Lowest accepted configured diagnostic byte bound. */
+export const MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 256
+/** Highest accepted configured diagnostic byte bound. */
+export const MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 262_144
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -28,6 +42,10 @@ export interface Config {
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
+  /** Maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
+  readonly artifactDiagnosticMaxEntries?: number
+  /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
+  readonly artifactDiagnosticMaxBytes?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -50,6 +68,12 @@ export const configSchema: z<Config> = z.object({
     rPrefix: z.string(),
   })).required(),
   timeoutMs: z.number().step(1).min(MIN_TIMEOUT_MS).max(MAX_TIMEOUT_MS).default(DEFAULT_TIMEOUT_MS),
+  artifactDiagnosticMaxEntries: z.number().step(1)
+    .min(MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES).max(MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)
+    .default(DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES),
+  artifactDiagnosticMaxBytes: z.number().step(1)
+    .min(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES).max(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)
+    .default(DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -60,6 +84,10 @@ export interface ResolvedConfig {
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
   readonly timeoutMs: number
+  /** Explicitly resolved artifact-selection diagnostic entry bound. */
+  readonly artifactDiagnosticMaxEntries: number
+  /** Explicitly resolved artifact-selection diagnostic byte bound. */
+  readonly artifactDiagnosticMaxBytes: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -114,7 +142,11 @@ export function parseProfiles(
  * @returns One immutable local Runtime configuration.
  */
 export function resolveConfig(config: Config): ResolvedConfig {
-  assertKnownKeys(config, ['dshHome', 'profiles', 'timeoutMs'], 'config')
+  assertKnownKeys(
+    config,
+    ['dshHome', 'profiles', 'timeoutMs', 'artifactDiagnosticMaxEntries', 'artifactDiagnosticMaxBytes'],
+    'config',
+  )
   if (config.dshHome !== undefined && typeof config.dshHome !== 'string') {
     throw new Error('science-runtime: dshHome must be a string when configured')
   }
@@ -122,9 +154,23 @@ export function resolveConfig(config: Config): ResolvedConfig {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`science-runtime: timeoutMs must be a safe integer from ${String(MIN_TIMEOUT_MS)} through ${String(MAX_TIMEOUT_MS)}`)
   }
+  const artifactDiagnosticMaxEntries = config.artifactDiagnosticMaxEntries ?? DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES
+  if (!Number.isSafeInteger(artifactDiagnosticMaxEntries)
+    || artifactDiagnosticMaxEntries < MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES
+    || artifactDiagnosticMaxEntries > MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES) {
+    throw new Error(`science-runtime: artifactDiagnosticMaxEntries must be a safe integer from ${String(MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)} through ${String(MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)}`)
+  }
+  const artifactDiagnosticMaxBytes = config.artifactDiagnosticMaxBytes ?? DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES
+  if (!Number.isSafeInteger(artifactDiagnosticMaxBytes)
+    || artifactDiagnosticMaxBytes < MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES
+    || artifactDiagnosticMaxBytes > MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES) {
+    throw new Error(`science-runtime: artifactDiagnosticMaxBytes must be a safe integer from ${String(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES)} through ${String(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)}`)
+  }
   return {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
+    artifactDiagnosticMaxEntries,
+    artifactDiagnosticMaxBytes,
   }
 }

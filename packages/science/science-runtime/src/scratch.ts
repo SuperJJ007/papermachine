@@ -364,6 +364,16 @@ export async function createProbeScratch(
   return planned
 }
 
+/** Language-independent run directory and reference, shared by every path derived below it. */
+function runDirectory(sessionScratch: ScienceSessionScratch, runId: ScienceRunId): { readonly ref: string; readonly directory: string } {
+  const name = String(runId)
+  const directory = join(sessionScratch.runs, name)
+  if (!containsPath(sessionScratch.runs, directory) || directory === sessionScratch.runs) {
+    throw new Error('science-runtime: run directory escapes the owned runs directory')
+  }
+  return { ref: `runs/${name}/`, directory }
+}
+
 /**
  * Plan one run tree and source path without creating any Host path.
  * @param sessionScratch - Planned or existing retained Session paths.
@@ -376,18 +386,26 @@ export function planRunScratch(
   runId: ScienceRunId,
   language: ScienceLanguage,
 ): ScienceRunScratch {
-  const name = String(runId)
-  const directory = join(sessionScratch.runs, name)
-  if (!containsPath(sessionScratch.runs, directory) || directory === sessionScratch.runs) {
-    throw new Error('science-runtime: run directory escapes the owned runs directory')
-  }
+  const { ref, directory } = runDirectory(sessionScratch, runId)
   return {
-    ref: `runs/${name}/`,
+    ref,
     directory,
     source: join(directory, language === 'python' ? 'code.py' : 'code.R'),
     tmp: join(directory, 'tmp'),
     artifacts: join(directory, 'artifacts'),
   }
+}
+
+/**
+ * Rederive one already-published run's artifact directory without a source
+ * filename — used to import a chart from a durably successful run, where the
+ * language is not needed to locate `SCIENCE_ARTIFACT_DIR`.
+ * @param sessionScratch - Retained private root that owns the run directory.
+ * @param runId - The exact successful run's durable identifier.
+ * @returns the private Host artifact directory for that run.
+ */
+export function runArtifactDirectory(sessionScratch: ScienceSessionScratch, runId: ScienceRunId): string {
+  return join(runDirectory(sessionScratch, runId).directory, 'artifacts')
 }
 
 /**

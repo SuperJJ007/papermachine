@@ -4,11 +4,11 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ScienceSessionDomain from '../src/index.ts'
-import type { ScienceProjection } from '../src/index.ts'
+import type { ScienceClientProjection } from '../src/index.ts'
 import type { ScienceProjectionState } from '../src/projection-private.ts'
 import { mode } from './fixtures.ts'
 
-const scienceValue = (ctx: Context, session: Session): ScienceProjection | null | undefined =>
+const scienceValue = (ctx: Context, session: Session): ScienceClientProjection | null | undefined =>
   ctx.sessionProjections.snapshot(session).values.science
 
 describe('Science projection registry', () => {

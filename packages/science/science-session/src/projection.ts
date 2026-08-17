@@ -3,8 +3,8 @@
 import { decodeScienceProjectionFold } from './projection-fold-codec.ts'
 import type { ScienceProjectionState } from './projection-private.ts'
 import { scienceProjectionSchema } from './projection-schema.ts'
-import { projectScienceFold } from './projection-value.ts'
-import type { ScienceProjection } from './types.ts'
+import { projectScienceClientFold } from './projection-value.ts'
+import type { ScienceClientProjection } from './types.ts'
 
 export { scienceProjectionStateSchema, scienceProjectionStateSeq } from './projection-checkpoint.ts'
 export { applyScienceProjectionState, emptyScienceProjectionState } from './projection-state.ts'
@@ -16,8 +16,8 @@ export type { ScienceProjectionState } from './projection-private.ts'
  * @param state - admitted or same-process private projection state.
  * @returns the client-safe Science value.
  */
-export function viewScienceProjectionState(state: ScienceProjectionState): ScienceProjection | null {
-  return projectScienceFold(decodeScienceProjectionFold(state.fold))
+export function viewScienceProjectionState(state: ScienceProjectionState): ScienceClientProjection | null {
+  return projectScienceClientFold(decodeScienceProjectionFold(state.fold))
 }
 
 /**

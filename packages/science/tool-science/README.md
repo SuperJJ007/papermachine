@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and the `get_science_state`, `run_python`, and `run_r` tools. This is the Consumer role of the Science capability seam — [`dsh-science-session`](../science-session) is its Service Definition (durable events, strict fold, invariant), and [`dsh-science-runtime`](../science-runtime) is its Service Provider (`ctx.scienceRuntime`: environment observation, private scratch, direct execution, terminal classification). This package never spawns a process, writes run source, classifies termination, manages Conda, or appends a Runtime-owned event; every operation it performs goes through `ctx.scienceRuntime`.
+The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and five tools: `get_science_state`, `run_python`, `run_r`, `save_chart`, and `publish_outcome`. [`dsh-science-session`](../science-session) owns the durable vocabulary, strict fold, projection, and invariant; [`dsh-science-runtime`](../science-runtime) owns environment observation, private scratch, direct execution, terminal classification, and chart attachment import. This package never spawns a process, writes run source, classifies termination, or manages Conda. It appends `science/outcome-published` directly after durable evidence validation because Outcome publication needs no Host operation; Runtime appends the remaining environment, run, and chart facts.
 
 A composition stacks, in order: `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-system-prompt`, `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-science-session` plus its `/invariant`, a host-local subprocess and sandbox provider, `@deepseek-ai/dsh-science-runtime` (configured with `dshHome` and `profiles`) plus its `/invariant`, then this package (configured with `profileId`, `modeRevision`, and `stateHistoryLimit`) plus its own `/invariant`.
 
-`ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, and each `run_python`/`run_r` call). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading.
+`ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, each `run_python`/`run_r` call, and `save_chart`). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading. `publish_outcome` remains usable over already-durable evidence without Runtime access.
 
 ## Config
 
@@ -31,8 +31,10 @@ After binding, this package re-renders the `science:environment` context from th
 | `get_science_state` | none | Returns a sanitized, bounded view of the session's durable Science projection: mode, model-safe environment facts, recent run and chart-version histories, omitted counts, outcome, and total metrics. Rejects if Science mode is not yet bound. |
 | `run_python` | `code` (non-empty string) | Runs `code` in a fresh Python interpreter process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
 | `run_r` | `code` (non-empty string) | Runs `code` in a fresh `Rscript` process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
+| `save_chart` | `run_id`, `artifact_path`, `logical_name`, `title`, optional `caption` | Imports one PNG produced by a prior successful local run through `ctx.scienceRuntime.commitChart`; returns a text receipt plus client presentation metadata, never an image block. |
+| `publish_outcome` | `title`, `summary_markdown`, non-empty `evidence` | Appends the next contiguous Outcome revision after resolving unique prior run/chart/message references and deriving their environment revisions. |
 
-Each run tool requires the latest `request/header` recorded in the session and the exact tool-call ID; both feed `StartScienceRunRequest`. A durably committed `success`, `failed`, `timed-out`, or `cancelled` terminal state is the tool's structured canonical value — bounded stdout/stderr text, exact byte counts, and truncation facts, never raw unbounded output. Failure before the run-started fact publishes, unproven process-tree quiescence, or terminal-commit failure becomes an error tool result instead: no trustworthy run occurred. All three tools use generic render intent with no editor locations.
+The four mutation tools require direct top-level dispatch, the latest `request/header`, and the exact tool-call ID; nested Code Mode dispatch rejects before Runtime lookup or Session mutation. A durably committed run terminal state is a structured canonical value with bounded output. Chart and Outcome success values render useful text for every client and preserve tagged versioned presentation metadata for the dedicated Web rows. All five tools use generic render intent with no editor locations.
 
 ## Model Experience
 
@@ -45,7 +47,7 @@ This package contributes one fixed static section describing the run tools' proc
 ##### Science tool guidance
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process.
+Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. After a successful run writes a PNG under SCIENCE_ARTIFACT_DIR, use save_chart to durably save it; the tool returns a text receipt, never image bytes, and the chart becomes visible in the product transcript. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved chart versions, and/or prior messages) supports it.
 ```
 
 #### Token effect
@@ -74,7 +76,7 @@ Append-only while the rendered snapshot is unchanged: [`dsh-agent-loop`](../../c
 
 #### What the model sees
 
-The model sees the generated [`get_science_state`, `run_python`, and `run_r` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science). They are registered unconditionally by this package whenever it is composed; the built-in `science` agent preset (`apps/cli/config/agent-presets/science`) is the shipped composition that does so.
+The model sees the generated [`get_science_state`, `run_python`, `run_r`, `save_chart`, and `publish_outcome` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science). They are registered unconditionally by this package whenever it is composed; the built-in `science` agent preset (`apps/cli/config/agent-presets/science`) is the shipped composition that does so.
 
 #### Token effect
 
@@ -112,11 +114,25 @@ Bounded independently to `stateHistoryLimit` recent run items and chart-version 
 
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
+### Chart and Outcome results
+
+#### What the model sees
+
+`save_chart` renders the stable chart id, logical name, version, title, optional caption, source run, PNG dimensions, byte count, and creation time as text; it never emits image bytes or an image content block. `publish_outcome` renders the revision, title, Markdown summary, and each run/chart/message evidence reference. The tagged client presentation values stay in durable tool-result metadata and do not add separate model content.
+
+#### Token effect
+
+Bounded by the chart receipt fields and the durable Outcome title, summary, and evidence limits; retained call/results are resent until compaction.
+
+#### KV Cache effect
+
+Append-only; newly visible result text follows the reusable request prefix.
+
 ### Tool errors
 
 #### What the model sees
 
-Configuration and precondition failures are normalized as `Error: <message>`: `tool-science: code must be a non-empty string`, `tool-science: this tool requires an initiating Agent`, `tool-science: this tool requires a session bound to the science preset`, `tool-science: no request/header is recorded for this session`, `tool-science: no Science Runtime is mounted (ctx.scienceRuntime)`, and `tool-science: Science mode is not bound for this session`.
+Configuration and precondition failures are normalized as `Error: <message>`. They distinguish missing initiating Agent/preset/mode/request header/Runtime, empty source or publication fields, nested mutation dispatch, unsuccessful or inherited chart source runs, artifact selection/admission failures, and invalid or duplicate Outcome evidence.
 
 #### Token effect
 
@@ -129,5 +145,5 @@ Append-only; newly visible content follows the reusable request prefix and does 
 ## Known Limitations and Deferred Work
 
 - **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset that ships with `apps/cli` (`apps/cli/config/agent-presets/science`) is a separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
-- **No chart or Outcome tools** — `science/chart-saved` and `science/outcome-published` remain durable vocabulary with no producer in this package; a later Science slice owns them.
+- **No chart specification or Outcome editor** — the model produces PNG files in Python/R and publishes immutable evidence-backed Outcome revisions; this package does not provide a plotting grammar or mutable report document.
 - **No persistent kernel** — every `run_python`/`run_r` call is a fresh interpreter process; only `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` files persist across calls.

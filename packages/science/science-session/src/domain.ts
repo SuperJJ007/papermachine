@@ -62,6 +62,16 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
+// This package owns the sole `ctx.sessionAttachments.register()` call for
+// `science/chart-saved` (see `./index.ts`); the merge widens that generic
+// registry's typed key set to include it, alongside the `SessionEventMap`
+// merge above for the same event.
+declare module '@deepseek-ai/dsh-session-attachment-index/types' {
+  interface SessionAttachmentExtractorMap {
+    'science/chart-saved': true
+  }
+}
+
 /** The six required Science event types owned by this package. */
 export type ScienceDomainEventType =
   | 'science/mode-bound'

@@ -1,6 +1,8 @@
 /**
- * Client-safe durable vocabulary and projection contract for Science sessions.
- * Runtime validation and event declaration merging live in the host entry.
+ * Durable Science vocabulary and the client-safe Session projection contract.
+ * Runtime validation and event declaration merging live in the host entry;
+ * durable event values may contain Host-only provenance and must not be sent
+ * to a client without the projection conversion.
  *
  * @module @deepseek-ai/dsh-science-session/types
  */
@@ -269,7 +271,7 @@ export interface ScienceProjectionMetrics {
   readonly outcomeRevision: number
 }
 
-/** Client-safe replay projection for a Science-bound session. */
+/** Complete strict replay value for Host-side Science decisions. */
 export interface ScienceProjection {
   /** The session's one durable Science mode binding. */
   readonly mode: ScienceModeRef
@@ -287,12 +289,103 @@ export interface ScienceProjection {
   readonly lastScienceEventSeq: number
 }
 
+/** Browser-safe interpreter summary derived from one durable binding. */
+export interface ScienceClientInterpreterBinding {
+  readonly language: ScienceLanguage
+  readonly capability: ScienceInterpreterCapability
+  readonly languageVersion?: string
+  readonly fingerprintPreview?: string
+}
+
+/** Browser-safe environment revision with every Host path and free-text failure omitted. */
+export interface ScienceClientEnvironmentBinding {
+  readonly revision: number
+  readonly profileId: ScienceEnvironmentProfileId
+  readonly configuredAt: number
+  readonly validatedAt: number
+  readonly status: ScienceEnvironmentStatus
+  readonly python?: ScienceClientInterpreterBinding
+  readonly r?: ScienceClientInterpreterBinding
+}
+
+/** Browser-safe fields shared by every Science run state. */
+export interface ScienceClientRunIdentity {
+  readonly runId: ScienceRunId
+  readonly language: ScienceLanguage
+  readonly environmentRevision: number
+  readonly environmentFingerprintPreview: string
+  readonly startedAt: number
+}
+
+/** Browser-safe running state. */
+export interface ScienceClientRunStarted extends ScienceClientRunIdentity {
+  readonly status: 'running'
+}
+
+/** Browser-safe durable terminal state; free-text failure output is omitted. */
+export interface ScienceClientRunTerminal extends ScienceClientRunIdentity {
+  readonly status: ScienceRunTerminalStatus
+  readonly finishedAt: number
+  readonly exitCode?: number
+  readonly signal?: string
+  readonly stdoutBytes: number
+  readonly stderrBytes: number
+  readonly stdoutTruncated: boolean
+  readonly stderrTruncated: boolean
+  readonly failureCode?: string
+}
+
+/** Browser-safe replay-derived interruption state. */
+export interface ScienceClientRunInterrupted extends ScienceClientRunIdentity {
+  readonly status: 'interrupted'
+  readonly finishedAt: number
+  readonly interruptedAtSeq: number
+}
+
+/** One run state served to Session projection clients. */
+export type ScienceClientRun = ScienceClientRunStarted | ScienceClientRunTerminal | ScienceClientRunInterrupted
+
+/** Browser-safe chart version retaining the attachment reference needed for authorized reads. */
+export interface ScienceClientChartVersion {
+  readonly chartId: ScienceChartId
+  readonly logicalName: string
+  readonly version: number
+  readonly title: string
+  readonly caption?: string
+  readonly attachment: ImageAttachmentRef
+  readonly runId: ScienceRunId
+  readonly environmentRevision: number
+  readonly environmentFingerprintPreview: string
+  readonly createdAt: number
+}
+
+/** Browser-safe Outcome publication without authorizing request facts. */
+export interface ScienceClientOutcomePublication {
+  readonly revision: number
+  readonly title: string
+  readonly summaryMarkdown: string
+  readonly evidence: readonly ScienceEvidenceRef[]
+  readonly publishedAt: number
+  readonly environmentRevisions: readonly number[]
+}
+
+/** Browser-safe Session projection for a Science-bound session. */
+export interface ScienceClientProjection {
+  readonly mode: ScienceModeRef
+  readonly environment: ScienceClientEnvironmentBinding | null
+  readonly runs: readonly ScienceClientRun[]
+  readonly charts: readonly ScienceClientChartVersion[]
+  readonly outcome: ScienceClientOutcomePublication | null
+  readonly metrics: ScienceProjectionMetrics
+  readonly lastScienceEventSeq: number
+}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /**
      * Replayed Science state, or `null` before a valid Science mode binding.
      * An absent key means this package was not composed in the host.
      */
-    science: ScienceProjection | null
+    science: ScienceClientProjection | null
   }
 }

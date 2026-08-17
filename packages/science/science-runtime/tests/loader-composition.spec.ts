@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionPlugin from '@deepseek-ai/dsh-science-session'
@@ -48,6 +49,9 @@ async function loadRuntime(): Promise<Context> {
     '  config:',
     `    runnerCommand: [${quote(runner)}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
+    "- name: '@deepseek-ai/dsh-attachment-local'",
+    '  config:',
+    `    dshHome: ${quote(dshHome)}`,
     "- name: '@deepseek-ai/dsh-science-runtime'",
     '  config:',
     `    dshHome: ${quote(dshHome)}`,
@@ -69,6 +73,7 @@ async function loadRuntime(): Promise<Context> {
     ['@deepseek-ai/dsh-science-session/invariant', ScienceSessionInvariant],
     ['@deepseek-ai/dsh-science-runtime/test-subprocess', ControlledSubprocess],
     ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
+    ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
     ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
     ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ])

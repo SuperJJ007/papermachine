@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
+  decodeScienceChart,
   decodeScienceEnvironment,
   decodeScienceDomainEvent,
   decodeScienceOutcome,
@@ -170,6 +171,7 @@ describe('strict Science fold', () => {
   })
 
   it('enforces outcome normalization and exposes stable vocabulary helpers', () => {
+    expect(decodeScienceChart(chart())).toEqual(chart())
     expect(() => decodeScienceOutcome(outcome({
       evidence: [
         { kind: 'run', runId: RUN_ID },

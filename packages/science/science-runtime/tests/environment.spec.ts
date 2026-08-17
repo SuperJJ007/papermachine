@@ -23,6 +23,7 @@ import {
   createScienceSession,
   authorizePythonRun,
   DirectSandbox,
+  mountAttachments,
 } from './harness.ts'
 
 const staticFsFault = vi.hoisted(() => ({
@@ -193,6 +194,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(BrokenProbeSubprocess)
     await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as BrokenProbeSubprocess).mode = mode
     const session = createScienceSession(ctx, `science-broken-probe-${mode}`)
@@ -309,6 +311,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(FailingRVersionSubprocess)
     await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { r: { rPrefix: prefix } } })
     const session = createScienceSession(ctx, 'science-bind-r-version-failure')
 
@@ -341,6 +344,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome, profiles: { overlap: { pythonPrefix: prefix } } })
     const session = ctx.sessions.create(SessionId('science-bind-overlap'), { meta: { agentPreset: 'science' } })
     session.append('science/mode-bound', {
@@ -562,6 +566,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(DelayedRVersionSubprocess)
     await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { both: { pythonPrefix, rPrefix } },
@@ -711,6 +716,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await cleanupContext.plugin(ScienceSessionInvariant)
     await cleanupContext.plugin(ProbeFailureAndCleanupSubprocess)
     await cleanupContext.plugin(ProbeFailureAndCleanupSandbox)
+    await mountAttachments(cleanupContext, root)
     await cleanupContext.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     const cleanupSession = createScienceSession(cleanupContext, 'science-probe-cleanup-failure')
     const cleanup = cleanupContext.scienceRuntime.bindEnvironment({
@@ -801,6 +807,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     const session = createScienceSession(ctx, 'science-observe-drift')
@@ -822,6 +829,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(RetryPartialSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome, profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     const session = createScienceSession(ctx, 'science-retry-confinement')
@@ -846,6 +854,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(RetryPartialSandbox)
+    await mountAttachments(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     ;(ctx.sandbox as RetryPartialSandbox).failRollback = true
@@ -916,5 +925,23 @@ describe('Science Runtime configuration', () => {
     expect(resolveConfig({ profiles: { r: { rPrefix: '/prefix' } } }).profiles.get('r')).toEqual({
       id: 'r', rPrefix: '/prefix',
     })
+  })
+
+  it('validates the artifact-diagnostic entry and byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxEntries: 0,
+    })).toThrow(/artifactDiagnosticMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxEntries: 10_001,
+    })).toThrow(/artifactDiagnosticMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxBytes: 255,
+    })).toThrow(/artifactDiagnosticMaxBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxBytes: 262_145,
+    })).toThrow(/artifactDiagnosticMaxBytes/)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.artifactDiagnosticMaxEntries).toBe(200)
+    expect(resolved.artifactDiagnosticMaxBytes).toBe(8192)
   })
 })

@@ -5,7 +5,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ScienceSessionDomain from '../src/index.ts'
-import { replayScience } from '../src/index.ts'
+import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { SCIENCE_PROJECTION_STATE_VERSION } from '../src/ids.ts'
 import {
   applyScienceProjectionState,
@@ -75,7 +75,7 @@ describe('Science cold replay', () => {
     })
     appendPreModeMessageOutcome(liveSession)
     const live = liveCtx.sessionProjections.snapshot(liveSession).values.science
-    expect(live).toEqual(replayScience(liveSession.events))
+    expect(live).toEqual(toClientScienceProjection(replayScience(liveSession.events)))
 
     const coldCtx = await harness()
     const coldSession = coldCtx.sessions.create(SessionId('science-pre-mode-message-cold'), {
@@ -93,7 +93,7 @@ describe('Science cold replay', () => {
     })
     appendFixtureEvents(liveSession)
     const live = liveCtx.sessionProjections.snapshot(liveSession).values.science
-    expect(live).toEqual(replayScience(liveSession.events))
+    expect(live).toEqual(toClientScienceProjection(replayScience(liveSession.events)))
     const seed = JSON.parse(JSON.stringify(liveSession.events)) as SessionEvent[]
 
     const coldCtx = await harness()
@@ -103,7 +103,7 @@ describe('Science cold replay', () => {
     })
     const cold = coldCtx.sessionProjections.snapshot(coldSession).values.science
     expect(cold).toEqual(live)
-    expect(cold).toEqual(replayScience(coldSession.events))
+    expect(cold).toEqual(toClientScienceProjection(replayScience(coldSession.events)))
   })
 
   it('round-trips a projection checkpoint and preserves the cold value', async () => {
@@ -163,7 +163,7 @@ describe('Science cold replay', () => {
       .toThrow(/re-read from seq 0/)
 
     const restored = ctx.sessionProjections.restore(spliced, events, 0)
-    expect(restored.snapshot.values.science).toEqual(replayScience(events))
+    expect(restored.snapshot.values.science).toEqual(toClientScienceProjection(replayScience(events)))
     expect((restored.checkpoint.science?.val as ScienceCheckpointState).observedSeq)
       .toBe(events.at(-1)!.seq)
   })
@@ -213,6 +213,6 @@ describe('Science cold replay', () => {
       interruptedAtSeq: seed.length,
     })
     expect(resumedCtx.sessionProjections.snapshot(resumed).values.science)
-      .toEqual(replayScience(resumed.events))
+      .toEqual(toClientScienceProjection(replayScience(resumed.events)))
   })
 })

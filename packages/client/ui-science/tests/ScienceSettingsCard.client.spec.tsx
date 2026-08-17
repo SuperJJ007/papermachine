@@ -5,9 +5,10 @@
  * section's sibling cards, owned locally rather than imported), the eight
  * reachable states once expanded (loading, unconfigured, configured, saving,
  * a Host-rejected/stale-revision write, a client-blocked invalid draft,
- * saved-restart-required, and reset-to-composition), accessible names and
- * distinct accessible text per state, and one end-to-end save through the
- * real controller.
+ * saved-restart-required, and reset-to-composition), the coherent rendering
+ * of a partial multi-field save (failed and restart-required together),
+ * accessible names and distinct accessible text per state, and one
+ * end-to-end save through the real controller.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -170,7 +171,25 @@ describe('ScienceSettingsCard: saving', () => {
 describe('ScienceSettingsCard: a Host-rejected write (stale revision)', () => {
   it('shows the save-failed status distinct from every other notice', () => {
     renderCard({ configured: true, failed: true, pythonPrefix: field({ configured: true, text: SENTINEL }) })
-    expect(statusTexts()).toEqual(['The deployment did not accept these values; they were left for you to correct.'])
+    expect(statusTexts()).toEqual(['The deployment did not accept every changed value; anything not accepted was left for you to correct.'])
+  })
+})
+
+describe('ScienceSettingsCard: partial multi-field save (one field landed, one rejected)', () => {
+  it('renders the save-failed and restart-required notices together, coherently', () => {
+    renderCard({
+      configured: true,
+      failed: true,
+      restartRequired: true,
+      pythonPrefix: field({ configured: true }),
+      rPrefix: field({ configured: false, text: SENTINEL }),
+    })
+    expect(statusTexts()).toEqual([
+      'The deployment did not accept every changed value; anything not accepted was left for you to correct.',
+      'Restart the Host to apply this change.',
+    ])
+    expect(screen.getByLabelText<HTMLInputElement>('Python prefix').value).toBe('')
+    expect(screen.getByLabelText<HTMLInputElement>('R prefix').value).toBe(SENTINEL)
   })
 })
 

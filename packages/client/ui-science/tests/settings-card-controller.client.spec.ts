@@ -3,8 +3,9 @@
  * `secrets` snapshot field, path-addressed writes fenced through the bound
  * scope, and the reachable card states (loading, unconfigured, configured,
  * saving, a Host-rejected write recovering to unconfigured/still-configured,
- * a client-blocked invalid draft, saved-restart-required, and
- * reset-to-composition).
+ * a client-blocked invalid draft, saved-restart-required,
+ * reset-to-composition, and a partial multi-field save where one field lands
+ * and the other is rejected).
  */
 import { describe, expect, it } from 'vitest'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
@@ -271,6 +272,52 @@ describe('ScienceSettingsCardController', () => {
     expect(state.failed).toBe(true)
     expect(state.restartRequired).toBe(false)
     expect(state.pythonPrefix.text).toBe(SENTINEL)
+  })
+
+  it('a partial multi-field save (pythonPrefix lands, rPrefix rejected) clears only the landed draft and marks both failed and restartRequired', async () => {
+    const stub = host()
+    stub.setPath.mockImplementation((path: readonly string[]) => {
+      const field = path[1] as 'pythonPrefix' | 'rPrefix'
+      if (field !== 'pythonPrefix') return // models a Host rejection: no republish
+      const current = stub.scope.getSnapshot()
+      stub.publish({ value: { ...current.value, science: {} }, secrets: [{ path: ['science', 'pythonPrefix'], set: true }] })
+    })
+    const controller = new ScienceSettingsCardController(stub.scope)
+    stub.publish(ready())
+    const face = controller.inject()
+    face.edit('pythonPrefix', '/opt/conda/envs/science')
+    face.edit('rPrefix', SENTINEL)
+    await controller.save()
+
+    const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
+    expect(state.saving).toBe(false)
+    expect(state.failed).toBe(true)
+    expect(state.restartRequired).toBe(true)
+    expect(state.pythonPrefix).toEqual({ text: '', configured: true, invalid: false })
+    expect(state.rPrefix).toEqual({ text: SENTINEL, configured: false, invalid: false })
+  })
+
+  it('a partial multi-field save (rPrefix lands, pythonPrefix rejected) clears only the landed draft and marks both failed and restartRequired', async () => {
+    const stub = host()
+    stub.setPath.mockImplementation((path: readonly string[]) => {
+      const field = path[1] as 'pythonPrefix' | 'rPrefix'
+      if (field !== 'rPrefix') return // models a Host rejection: no republish
+      const current = stub.scope.getSnapshot()
+      stub.publish({ value: { ...current.value, science: {} }, secrets: [{ path: ['science', 'rPrefix'], set: true }] })
+    })
+    const controller = new ScienceSettingsCardController(stub.scope)
+    stub.publish(ready())
+    const face = controller.inject()
+    face.edit('pythonPrefix', SENTINEL)
+    face.edit('rPrefix', '/opt/conda/envs/science-r')
+    await controller.save()
+
+    const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
+    expect(state.saving).toBe(false)
+    expect(state.failed).toBe(true)
+    expect(state.restartRequired).toBe(true)
+    expect(state.pythonPrefix).toEqual({ text: SENTINEL, configured: false, invalid: false })
+    expect(state.rPrefix).toEqual({ text: '', configured: true, invalid: false })
   })
 
   it('a later edit clears a stale failed flag', async () => {

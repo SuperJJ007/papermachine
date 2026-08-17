@@ -100,3 +100,19 @@ No worktree outside `/Users/superjj/ccproj/DSHscience` (branch `codex/science-v0
 - `rescope-vendor:check`'s 26-problem gap and `verify-client-domain-graph`'s 34 findings remain open and unrelated to this range; neither is R6's to fix.
 - Real Python/R acceptance proves the configured interpreters and Runtime lifecycle, not plotting-library availability, scientific correctness, Desktop packaging, installer behavior, signing, notarization, or release readiness.
 - Desktop, packed installers, signing, notarization, publication, tag, push, and PR creation carry no R6 evidence and remain `NOT-RUN`.
+
+## Independent review follow-up
+
+Independent review of this checkpoint at head `8c7ad720a8ba25949343af82cad340c8b56e5b31` (the head that closed the Verification matrix above) found a correctness defect in `ScienceSettingsCardController.save()` (`packages/client/ui-science/src/client/settings-card-controller.ts`): a save with two dirty fields judged landing as one all-or-nothing boolean across two independent `setPath` calls, so a Host that accepted one field's write and rejected the other left the accepted field's already-landed draft still staged, reported `restartRequired: false` despite a durable accepted change, and rendered `settings.saveFailed` copy claiming neither value was accepted. The fix — committed immediately after that head on `codex/science-v01-rc7-rebaseline` — tracks landing per field: only a landed field's staged draft clears, `restartRequired` is set when any field lands, `failed` is set when any field does not land, and the two are now allowed to be true together; the `settings.saveFailed` copy (English and Chinese) no longer claims every changed value was rejected.
+
+| Layer | Command / scope | Result |
+|---|---|---|
+| Focused `ui-science` | `pnpm exec vitest run packages/client/ui-science` | PASS — 8 files / 106 tests |
+| Scoped per-file coverage | `pnpm exec vitest run packages/client/ui-science/tests --coverage --coverage.include='packages/client/ui-science/src/**/*.ts' --coverage.include='packages/client/ui-science/src/**/*.tsx'` | PASS — 8 files / 106 tests; 100% statements/branches/functions/lines |
+| Typecheck | `pnpm run typecheck` | PASS — exit 0 |
+| Lint | `pnpm run lint` | PASS — exit 0 |
+| Documentation | `pnpm run doc-sync` | PASS — 29/29 gates |
+| Whitespace | `git diff --cached --check` | PASS — clean |
+| Web lane, fix commit | `npx vitest run --config vitest.web.config.ts apps/web/tests/plugin-config.e2e.ts` (after `pnpm run build`) | PASS — 1 file / 9 tests |
+
+The ARIA golden `apps/web/tests/snapshots/plugin-config/section.expected.md` needed no refresh: it captures the Science card collapsed after a listing pass, never the `settings.saveFailed` text, and `plugin-config.e2e.ts` asserts no other string this fix changed. Not run for this follow-up, matching the reviewing task's scope: the full `test:web` and `test:snapshot` lanes, `test:e2e`, real Conda acceptance, and `pnpm install`.

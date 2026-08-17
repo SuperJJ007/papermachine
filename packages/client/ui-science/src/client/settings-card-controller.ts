@@ -74,7 +74,12 @@ export interface ScienceSettingsCardState {
   invalid: boolean
   /** Whether a save or reset is crossing the wire. */
   saving: boolean
-  /** Whether the last save or reset did not land as staged; cleared by the next edit, save, or reset. */
+  /**
+   * Whether any field in the last save did not land, or the last reset was
+   * refused; cleared by the next edit, save, or reset. True together with
+   * `restartRequired` when a multi-field save lands some fields but not
+   * others.
+   */
   failed: boolean
   /** Whether any change has landed this session; every successful change requires a Host restart to apply. */
   restartRequired: boolean
@@ -166,10 +171,15 @@ export class ScienceSettingsCardController {
   }
 
   /**
-   * Write every staged non-blank, valid field, then read whether it landed
-   * off the scope's own republished secret-presence list — the write's
-   * settlement already reflects the Host's accepted view or its stale-write
-   * recovery read, so no separate poll is needed.
+   * Write every staged non-blank, valid field as its own `setPath` call, then
+   * read each field's landing off the scope's own republished
+   * secret-presence list — each write's settlement already reflects the
+   * Host's accepted view or its stale-write recovery read, so no separate
+   * poll is needed. Landing is judged per field, not as one all-or-nothing
+   * outcome across the whole dirty set: a field the Host accepts clears its
+   * staged draft and requires a restart; a field the Host rejects keeps its
+   * draft and marks the card failed. `failed` and `restartRequired` may both
+   * be true after a save where only some fields land.
    * @returns settlement after every write.
    */
   async save(): Promise<void> {
@@ -181,11 +191,17 @@ export class ScienceSettingsCardController {
     for (const entry of dirty) {
       await this.scope.setPath([PROFILE_ID, entry.field], entry.text)
     }
-    const landed = dirty.every(entry => this.isSet(entry.field))
-    if (landed) this.staged.clear()
+    let anyLanded = false
+    for (const entry of dirty) {
+      if (this.isSet(entry.field)) {
+        this.staged.delete(entry.field)
+        anyLanded = true
+      } else {
+        this.failed = true
+      }
+    }
     this.saving = false
-    this.failed = !landed
-    if (landed) this.restartRequired = true
+    if (anyLanded) this.restartRequired = true
     this.publish()
   }
 

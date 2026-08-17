@@ -100,3 +100,19 @@ R6 implemented Note 对 proposed note 计划所做的六处更正——写入路
 - `rescope-vendor:check` 的 26 项既有问题与 `verify-client-domain-graph` 的 34 项发现仍未解决，且与本范围无关；两者都不归 R6 负责修复。
 - 真实 Python/R acceptance 只证明已配置 interpreters 与 Runtime lifecycle，不证明 plotting-library availability、scientific correctness、Desktop packaging、installer behavior、signing、notarization 或 release readiness。
 - Desktop、packed installers、signing、notarization、publication、tag、push 与 PR creation 均无 R6 证据，保持 `NOT-RUN`。
+
+## Independent review follow-up
+
+对本检查点在 head `8c7ad720a8ba25949343af82cad340c8b56e5b31`（关闭上方 Verification matrix 的那个 head）的独立评审发现 `ScienceSettingsCardController.save()`（`packages/client/ui-science/src/client/settings-card-controller.ts`）中的一处正确性缺陷：当两个字段都处于 dirty 状态时，落地判定被当成横跨两次独立 `setPath` 调用的一个全有或全无 boolean，因此当 Host 接受了一个字段的写入却拒绝了另一个字段时，已落地字段本应清除的暂存草稿仍留在原处，`restartRequired` 在确有一次持久已接受变更的情况下仍报告为 `false`，渲染出的 `settings.saveFailed` 文案还宣称两个值都未被接受。这一修复——紧随该 head 之后提交到 `codex/science-v01-rc7-rebaseline`——按字段逐一跟踪落地情况：只有已落地字段清除其暂存草稿，只要有任意字段落地就设置 `restartRequired`，只要有任意字段未落地就设置 `failed`，二者现在允许同时为 true；`settings.saveFailed` 文案（英文与中文）不再宣称每一个已修改的值都被拒绝。
+
+| Layer | Command / scope | Result |
+|---|---|---|
+| 聚焦 `ui-science` | `pnpm exec vitest run packages/client/ui-science` | PASS——8 文件 / 106 测试 |
+| Scoped per-file coverage | `pnpm exec vitest run packages/client/ui-science/tests --coverage --coverage.include='packages/client/ui-science/src/**/*.ts' --coverage.include='packages/client/ui-science/src/**/*.tsx'` | PASS——8 文件 / 106 测试；语句/分支/函数/行覆盖率均为 100% |
+| Typecheck | `pnpm run typecheck` | PASS——exit 0 |
+| Lint | `pnpm run lint` | PASS——exit 0 |
+| Documentation | `pnpm run doc-sync` | PASS——29/29 gates |
+| Whitespace | `git diff --cached --check` | PASS——干净 |
+| Web lane，修复提交 | `npx vitest run --config vitest.web.config.ts apps/web/tests/plugin-config.e2e.ts`（先 `pnpm run build`） | PASS——1 文件 / 9 测试 |
+
+ARIA golden `apps/web/tests/snapshots/plugin-config/section.expected.md` 不需要刷新：它捕获的是 Science 卡片在一轮列举后折叠的状态，从不包含 `settings.saveFailed` 文案，而 `plugin-config.e2e.ts` 也不断言本次修复改动过的任何其他字符串。本次 follow-up 未运行（与被评审任务的范围一致）：完整的 `test:web` 与 `test:snapshot` lanes、`test:e2e`、真实 Conda acceptance，以及 `pnpm install`。

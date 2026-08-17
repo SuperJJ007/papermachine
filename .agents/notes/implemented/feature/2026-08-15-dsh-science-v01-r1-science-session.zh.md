@@ -6,13 +6,13 @@ Status: implemented
 
 ## 问题
 
-已被接受的 DSH Science v0.1 基线只包含官方 RC5 加上治理与证据，没有任何 Science 产品代码。下游的 Science Session 实现（`omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b`）是与一场更广泛的 projection、持久化、查询与生命周期重构一起构建的。直接复制其分支或 cherry-pick 其 Phase 1 提交，会连带引入 R1 既不拥有也不需要的改动。
+在当时，已被接受的 DSH Science v0.1 基线只包含官方 RC5 加上治理与证据，没有任何 Science 产品代码。下游的 Science Session 实现（`omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b`）是与一场更广泛的 projection、持久化、查询与生命周期重构一起构建的。直接复制其分支或 cherry-pick 其 Phase 1 提交，会连带引入 R1 既不拥有也不需要的改动。
 
 R1 需要一份可直接执行的 scope authority：既保留已接受的领域语义，又将其适配到 RC5 API；使第一个 Science 产品切片可独立评审；且不能把一次领域移植变成 Science Runtime、工具、preset、UI、Desktop、release 或上游版本迁移的工作。
 
 ## 决策
 
-R1 把持久化的 Science Session 领域加入到已接受的 RC5 主线，位于 `packages/science/science-session`，再加上恢复该领域所必需的最小可选通用 projection 能力。Session 日志仍是唯一的持久权威来源。该包不暴露任何公开的变更服务，不启动进程，不观测解释器，不注册任何模型工具或提示词，也不渲染任何客户端 UI。
+R1 把持久化的 Science Session 领域加入到 `packages/science/science-session`，再加上恢复该领域所必需的最小可选通用 projection 能力。本开发线此后已[迁移基线至 rc.7](../../proposed/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)；下文记录的 RC5 适配描述的是当时实际执行的移植过程，而非本开发线当前的上游基线。Session 日志仍是唯一的持久权威来源。该包不暴露任何公开的变更服务，不启动进程，不观测解释器，不注册任何模型工具或提示词，也不渲染任何客户端 UI。
 
 `packages/science/science-session/src/*.ts`（17 个文件）与 `tests/*.ts`（11 个文件）中的每一个文件，都是 `omdsh-dev/dsh-science@e5e8b29` 的 `packages/science/science-session` 中对应文件的直接、未修改的副本，因为它们都不涉及下游 session-projection 重构中被排除的部分。有两个文件是经过适配而非直接复制的：`src/index.ts` 在其 `ctx.sessionProjections.register(...)` 调用中去掉了 `definitionToken` 字段，因为 RC5 的 `ProjectionDefinition` 并未声明该字段；`tsconfig.json` 的 TypeScript project `references` 是针对 RC5 实际的包布局重新推导而成（去掉了 `vendor/cosmokit`——RC5 的同级包并不依赖它）。`package.json` 与两份 README 都是从 RC5 同级包模板出发全新撰写——版本 `0.1.0-rc.5`、`publishConfig.access: public`、MIT、共用的 repository 字段——而非从下游的 `0.0.1-rc.2`／`restricted`／BSD-3-Clause 元数据复制而来。
 

@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-已验收的 DSH Science v0.1 谱系包含官方 RC5 发行基线与 R1 Science Session 域，但还没有 `science/environment-bound`、`science/run-started` 或 `science/run-finished` 的 producer。`omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中的下游 Runtime 与 RC5 不具备的四项通用 subprocess 和 sandbox 扩展共同构建。其实现提交还混合了 package code、既有 Consumer migration、generated documentation 与无关的 repository repair。因此，复制下游分支或 cherry-pick 这些提交会导入 Runtime owner scope 之外的工作。
+在当时，已验收的 DSH Science v0.1 谱系包含官方 RC5 发行基线与 R1 Science Session 域，但还没有 `science/environment-bound`、`science/run-started` 或 `science/run-finished` 的 producer。`omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中的下游 Runtime 与 RC5 不具备的四项通用 subprocess 和 sandbox 扩展共同构建。其实现提交还混合了 package code、既有 Consumer migration、generated documentation 与无关的 repository repair。因此，复制下游分支或 cherry-pick 这些提交会导入 Runtime owner scope 之外的工作。
 
 R2 需要一份可执行的 RC5 计划：增加 host-local Science Runtime，但不提前引入 model-facing tools 或 shipped Science composition。该计划必须把 process ownership 保留在现有 subprocess 与 sandbox capabilities 中，按要求顺序执行 durable Session mutation，保留每个既有 Consumer 的 RC5 行为，并将 fake-prefix source proof 与真实 Python/R acceptance 分开。
 

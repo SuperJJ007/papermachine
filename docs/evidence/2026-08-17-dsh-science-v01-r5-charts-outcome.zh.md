@@ -45,6 +45,7 @@ R5 产品工作在分支 `codex/science-v01-r3-science-tools-plan` 的 `69045ba5
 | Web 真实 key smoke | `pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/smoke-real.e2e.ts` | **FAIL —— 既有问题，与本次无关。** 其 keyless CLI 用例通过；真实 key 用例无法到达 composer，因为 `9ee5aef98c` 引入的 onboarding 通知对话框在全新 `DSH_HOME` 中拦截指针事件，而 `b70a549714` 早已删除该文件的关闭步骤。R5 既未改动该文件也未改动该对话框 |
 | 静态检查 | `pnpm run typecheck`；`pnpm run lint:contracts-ready` | PASS —— 两者 exit 0 |
 | 文档 | `pnpm run doc-sync` | PASS —— 28/28 gates |
+| Module graph | `pnpm run verify-module-graph` | **在 candidate 上 FAIL，收口后已更正。** R5 新增了 `client-ui-science` 与 `session-attachment-index`，并给 `science-runtime` 添加了 `attachment` 依赖，却没有重新生成 `docs/module-graph.md`。上表遗漏它，是因为 `doc-sync` 不承载该 gate，hygiene 子检查清单也不含它；只有 `check-all` 与 CI 静态 lane 会运行。已在紧随此收口 head 的更正提交中重新生成并重录配对 |
 | Hygiene 子检查 | `knip`；`publint`；`constraints`；`verify-dsh-package-licenses`；`verify-package-invariants`；`verify-built-package-invariants`；`verify-cordis-config`；`verify-node-next-types`；`verify-runtime-closure`；`verify-vendored-links` | PASS —— 逐项单独运行；`knip` 自 R3 以来首次通过，因为 `examples/headless-agent` 的两个 Science fixtures 现已声明为 entries |
 | Hygiene（`rescope-vendor:check`） | 在 candidate 与一次性 worktree 中的 `fb04b0d273` 上运行 `pnpm exec tsx scripts/rescope-vendor.ts --check` | **FAIL —— 既有问题，已确认一致。** 同样的 26 个问题也出现在 R5 基线上；R5 既未新增也未修复 |
 | 跨文件重复 | 在 candidate 与同一一次性 worktree 的 `fb04b0d273` 上运行 `pnpm run duplication` | 作为对比 PASS —— 两个版本都是 8 组 clone，集合完全相同；R5 未引入新的 clone |

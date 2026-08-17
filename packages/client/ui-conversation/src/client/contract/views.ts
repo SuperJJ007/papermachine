@@ -13,6 +13,12 @@ export interface SelectionTarget { turnSeq: number; stepSeq?: number; callId?: C
 export interface ViewTab { id: string; label: string }
 
 /**
+ * One routed Details entry, projected from a 'conversation.details.view'
+ * slot entry's registration options (label falls back to the entry id).
+ */
+export interface DetailsViewEntry { id: string; label: string }
+
+/**
  * Per-session state shared by conversation, chat-view, and details slots.
  * Unknown persisted view ids fall back to the stable Chat view.
  */
@@ -29,4 +35,6 @@ export interface ChatStoreState {
    * persisted snapshots from before this field rehydrate without it.
    */
   inspect: { callId: CallId } | null
+  /** Active Details entry id ('conversation.details.view' entry id); null falls back to the built-in `tool` entry. */
+  detailsView: string | null
 }

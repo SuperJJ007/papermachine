@@ -276,6 +276,7 @@ function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES
         useInput={useInput}
         inputActions={inputActions}
         open={vi.fn()}
+        openDetailsView={vi.fn()}
         t={tConversation}
       />
       <ConversationSession

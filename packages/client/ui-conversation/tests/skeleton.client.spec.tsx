@@ -125,6 +125,7 @@ function mount(
   const inputActions = wiring.actions
   const stop = vi.fn()
   const open = vi.fn()
+  const openDetailsView = vi.fn()
   const slotCalls: string[] = []
   const viewTabs = options.viewTabs ?? [
     { id: 'chat', label: 'Chat' },
@@ -160,6 +161,7 @@ function mount(
           renderSlot={renderSlot as never}
           views={views}
           open={open}
+          openDetailsView={openDetailsView}
           t={t}
         />
       )
@@ -251,7 +253,7 @@ function mount(
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open,
+    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open, openDetailsView,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }

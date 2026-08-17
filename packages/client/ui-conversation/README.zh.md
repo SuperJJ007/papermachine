@@ -12,6 +12,8 @@
 
 视图环是一个 slot：严格会话主体注册在 `children` 表中声明会话作用域的 `'conversation.view'` 列表，并通过自身的 renderSlot share 渲染活跃配置项（`only: <active id>`）；视图标签页则从注册选项（`id`／`order`／`label`）投影而来。聊天视图是该包自身的配置项；ui-trajectory 等插件通过 `ctx.slots.register` 贡献标签页，每个视图负责自己的 chrome。
 
+详情列复用同一套模式：顶层 `details` 占位者（`DetailsPanel`，本包的壳层）在 `children` 表中声明会话作用域的 `'conversation.details.view'` 列表，并通过自身的 renderSlot share 渲染活跃配置项（`only: <active id>`），在所选 id 缺席、未注册或过期时回退到内建的 `tool` 配置项。`ToolDetailsView` 是本包自身的配置项——沿用此前的原始 Input/Output 渲染及其 `conversation.details.tool` 子 seat；领域包可以像 ui-trajectory 添加 `conversation.view` 标签页一样再添加一个配置项。工具行的激活（`ChatViewInjected.openDetails`）会先选中 `tool` 配置项与被寻址的调用，再打开该列；会话页头 action／utility owner 注入的 `openDetailsView(id)` 回调可以选中任意其他已注册配置项并打开同一列。`tool` 配置项活跃时壳层标题仍是被选中调用的名称，其余情况回退为活跃配置项的注册标签；关闭行为、列的几何尺寸与折叠时的挂载生命周期仍归 `ctx.layout`／`AppFrame`（`ui-layout`）所有。
+
 Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。Client 插件通过 declaration merging 增加类型化 `ChatNodeDataMap` key，在 `ctx.conversationEvents` 上注册 `ConversationNodeDefinition`，再向 `conversation.chat.node` 注册匹配的 keyed renderer；它无须修改会话 fold 或中央 renderer switch。稳定事件 id、append/prepend 回放、Location data 与 renderer 约束见 [Conversation Node 实操手册](../../../docs/cookbook/adding-a-conversation-node.md)。
 
 会话页头会在标题旁渲染会话作用域的 `'conversation.session.header.actions'` 列表，并在最右侧渲染独立的 `'conversation.session.header.utilities'` 列表。会话上下文和谱系控件保留在 `actions` 中；可选的会话工具不会改变它们的顺序或位置。编辑器链的 currency 包含当前对话 `session`；ui-subagent 会选取 one-shot 或 parent 不可用的已寻址会话，并按原因显示只读文案，而普通 InputBar 会让所有已寻址 child 仅保留 Send，因为继续执行服务不公开逐 Activation 取消操作，`session.cancel` 也会绕过其所有权。
@@ -20,7 +22,7 @@ Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。
 
 Think 行默认保持折叠，并在不展开思维链的情况下暴露实时推理（reasoning）吞吐：当推理块是流式输出尾部时，摘要从结算后的首行切换到最新的非空行，其单行滚动区会随每个 delta 追到行内末端。展开该行会移除移动摘要，让完整推理进入普通页面流，因此页面阅读不会与内部跟随器争夺滚动；结算后恢复左对齐的稳定首行摘要（[决策](../../../.agents/notes/implemented/feature/2026-08-02-web-thinking-tail-scroll.md)）。
 
-聊天视图保留工具的消息流位置，但委托其展示。每个已排序的 `tool-call` Conversation Node 都通过 `conversation.chat.node` 的同名 key 分发；详情壳层则通过 `conversation.details.tool` 传递当前选中的调用。组装后的 Web bundle 为该 Chat Node key 注册 [`ui-tool`](../ui-tool/README.md)，由后者渲染运行时已投影的递归 root/child 树，并负责按名称分发、通用展示和 render-intent 卡片；只有详情席位会在该 renderer 缺席时保留 raw-result fallback。
+聊天视图保留工具的消息流位置，但委托其展示。每个已排序的 `tool-call` Conversation Node 都通过 `conversation.chat.node` 的同名 key 分发；内建的 `tool` 详情配置项则通过 `conversation.details.tool` 传递当前选中的调用。组装后的 Web bundle 为该 Chat Node key 注册 [`ui-tool`](../ui-tool/README.md)，由后者渲染运行时已投影的递归 root/child 树，并负责按名称分发、通用展示和 render-intent 卡片；只有详情席位会在该 renderer 缺席时保留 raw-result fallback。
 
 聊天流会将跨重试轮次连续出现的模型重试节点投影为一个稳定的弱化状态行，并用最新一次尝试更新该行；每个重试事件仍保留在运行时快照与会话日志中。前端倒计时以客户端收到事件的时刻为计划延迟的起点，避免 Host 与浏览器的时钟偏差；剩余时间向上取整到秒，且下限为 1 秒。最近一次尚未完成的重试会显示从左到右的文字渐变动画。后续轮次事实用于区分已开始的尝试与在退避期间取消的尝试，Host 的 running 位只控制实时动画；随后该行会显示静态的已完成或已取消标签。normal 策略行显示有限重试上限；always 策略行显示 `∞`。激活该行会显示最近一次重试的精确延迟和失败消息。客户端运行时会在相应重试节点到达前移除每个失败步骤的流式输出尾部；后续某次尝试成功后，该状态仍保持可见。未进入重试的终态失败会在其轮次边界渲染为持久的内联状态，展示适合显示的持久消息与可选错误码，但不会提供 Host 无法兑现的操作；AUTH 文案绝不会回显提供方给出的凭据片段。
 
@@ -34,7 +36,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 键盘消息提交会根据所寻址会话的运行状态和 steering 能力解析投递方式。空闲时，Enter 和 Cmd/Ctrl+Enter 都执行普通 Queue 发送。主会话运行期间，由 Host settings 支撑的 `ui-conversation.busyEnter` General Settings 偏好会把普通 Enter 分配为 `Queue`（默认值）或 `Steer`，Cmd/Ctrl+Enter 则执行另一种行为；本地 settings 提供方将其存入 `$DSH_HOME/settings.yaml`，因此该选择会跟随同一个用户 home 跨越 Web 端口。Shift+Enter 仍然换行。草稿为空时，Cmd/Ctrl+Enter 改为按 FIFO 顺序把仍在排队的消息全部插话进运行中的轮次（把 dock 的逐条严格 steer 操作应用于整个队列）；空草稿 + 普通 Enter 仍是无操作。这个整队列手势可用时，文本框 placeholder 会提示该手势；owner 提供的 placeholder 仍然优先。已寻址 subagent 即使正在运行，也会让这两个手势都使用其仅支持 Queue 的继续执行传输。该偏好只影响支持 steering 的繁忙态手势对，发送按钮与非键盘提交操作仍使用 Queue。Composer Steer 复用现有尽力而为的 `session.prompt(mode: 'steer')` 约定：如果当前 next-step 窗口在接纳前关闭，AgentLoop 会把消息接纳为下一条唤醒 Queue 轮次，不显示失败，也不会丢失草稿事务。该持久化边界由[Host settings 支撑的偏好决策](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md)拥有。
 
-逐会话 UI 状态中的选择与活跃视图位于已声明的聊天 store（`stores.ts` `createChatStore`）中；InputHub 拥有输入区状态机，并将草稿镜像到该 store 以便持久化。apply 将同一个 store handle 传给严格限定于会话的子树、聊天视图和详情注册，因此每个会话内共享一个实例，框架拥有其生命周期。组件保持纯粹：框架标准工具包提供 `useSession`／`sessionId`、全局 `useSessions`／`useWorkspaces`，以及输入状态机的 `useInput`／`inputActions`；store 表层与 inject factory 提供其余状态和回调。
+逐会话 UI 状态中的选择、活跃视图与活跃详情配置项位于已声明的聊天 store（`stores.ts` `createChatStore`）中；InputHub 拥有输入区状态机，并将草稿镜像到该 store 以便持久化。apply 将同一个 store handle 传给严格限定于会话的子树、聊天视图、详情壳层与内建 `tool` 详情配置项注册，因此每个会话内共享一个实例，框架拥有其生命周期。组件保持纯粹：框架标准工具包提供 `useSession`／`sessionId`、全局 `useSessions`／`useWorkspaces`，以及输入状态机的 `useInput`／`inputActions`；store 表层与 inject factory 提供其余状态和回调。
 
 图片经粘贴与整页拖放进入：输入栏绑定 document 级拖拽监听（composer-bar slot 为 `kind: 'single'`，同一时刻至多一个 bar 绑定），文件拖拽悬停窗口时显示 `DropOverlay` 原子组件——纯文本拖拽不受影响，锁定或忙碌的 composer 显示禁用遮罩并拒绝 drop。两种手势共用一条对宿主 `imageLimits` 投影的加入预检（数量、单图字节、总字节）：会突破上限的加入整批拒收，立刻弹出点名上限的横幅，完全不进入附件栏。仍然到达的宿主侧拒绝按 `attachment-error` 原因映射为产品文案（`image-labels.ts` 的 `attachmentErrorText`）；用户无法解决的原因折叠为一条带原因码的发送失败文案，非附件错误码保留开发者可读的原文加错误码。
 

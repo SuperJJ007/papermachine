@@ -20,7 +20,7 @@ import type {
 import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
-import type { CallId, SelectionTarget, ViewTab } from './views.ts'
+import type { CallId, DetailsViewEntry, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
 export interface ComposerAttachment {
@@ -112,16 +112,27 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: AssistantActionOwnerProps
     }
     /**
-     * The body of the details panel for the tool call the user selected —
-     * one occupant, so taking it means rendering every tool's output, not just
-     * the ones you know. The owner passes a frozen `block` whose two lifecycle
-     * forms must both be handled: branch on `'kind' in block` (a settled
-     * `ToolResultNode` has it, a still-running call does not), and treat
-     * `cwd` as display-only, for shortening workspace-rooted paths.
-     * A per-tool renderer belongs in the keyed `tool.call.toolview` seat
-     * instead; this one is the whole panel.
+     * The body of the built-in `tool` Details entry for the tool call the
+     * user selected — one occupant, so taking it means rendering every
+     * tool's output, not just the ones you know. The owner passes a frozen
+     * `block` whose two lifecycle forms must both be handled: branch on
+     * `'kind' in block` (a settled `ToolResultNode` has it, a still-running
+     * call does not), and treat `cwd` as display-only, for shortening
+     * workspace-rooted paths. A per-tool renderer belongs in the keyed
+     * `tool.call.toolview` seat instead; this one is the whole tool entry.
      */
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
+    /**
+     * The Details column's routed body: one list entry per registered
+     * Details view (the built-in `tool` entry renders here; a domain package
+     * adds its own alongside it), dispatched one-at-a-time by the Details
+     * shell via `only: <selected id>`. Declared by this package's `details`
+     * entry (declaring is claiming) — a registrant never occupies the
+     * top-level `details` slot directly. Session scope: entries read the
+     * conversation snapshot and shared chat store through the standard kit,
+     * same as `conversation.view` entries; the owner passes nothing.
+     */
+    'conversation.details.view': { kind: 'list'; scope: 'session'; owner: DetailsViewOwnerProps }
     /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
@@ -263,7 +274,10 @@ export interface ConversationSessionOwnerProps {
 }
 
 /** Header actions derive their state from the standard session/global kit. */
-export interface ConversationHeaderActionOwnerProps {}
+export interface ConversationHeaderActionOwnerProps {
+  /** Select a registered `conversation.details.view` entry and open the Details column. */
+  openDetailsView: (id: string) => void
+}
 
 /**
  * The input-region slot currency: dock/left/right entries read
@@ -379,6 +393,13 @@ export interface DetailsToolOwnerProps {
 }
 
 /**
+ * Owner share of one routed Details entry: the shell supplies nothing —
+ * entries are self-sufficient standard-kit readers, same as
+ * `conversation.view` entries.
+ */
+export interface DetailsViewOwnerProps {}
+
+/**
  * Owner share of the per-command row slot: the frozen {@link CommandNode}
  * slice off the snapshot (cache-stable reference — memo premise). The node
  * carries the whole lifecycle (structured name/args, pairing id, and
@@ -448,6 +469,8 @@ export interface ConversationSessionHeaderInjected {
   }
   /** Select a real Session through the runtime navigation owner. */
   open: (sessionId: SessionId) => void
+  /** Select a registered `conversation.details.view` entry and open the Details column (forwarded to header action/utility entries). */
+  openDetailsView: (id: string) => void
 }
 
 /**
@@ -714,16 +737,28 @@ export type ChatViewSlotProps =
 
 /**
  * Injected share of the details slot: the panel is otherwise a pure reader of
- * the shared chat store, but its close button is a layout orchestration call.
+ * the shared chat store, but its close button is a layout orchestration call
+ * and its routed entries come from the `conversation.details.view` ledger.
  */
 export interface DetailsInjected {
   /** Close the details panel (layout geometry stays with ctx.layout). */
   closeDetails: () => void
+  /** Entries projected from the `conversation.details.view` slot ledger. */
+  views: {
+    list: () => readonly DetailsViewEntry[]
+    subscribe: (fn: () => void) => () => void
+    version: () => number
+  }
 }
 
-/** Full details-slot props: selection store, Tool output seat, injected close callback, and locale. */
-export type DetailsSlotProps = PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.tool'>
+/** Full details-slot props: selection store, routed entry ring, injected close callback + view ledger, and locale. */
+export type DetailsSlotProps = PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.view'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
+
+/** Full built-in `tool` Details entry props: runtime & its Tool output render share & store & locale seat. */
+export type ToolDetailsViewProps =
+  PropsRuntime<'conversation.details.view'> & PropsRenderSlots<'conversation.details.tool'>
+  & PropsStore<ChatStore> & PropsLocale<'conversation'>
 
 /** Owner share common to the hero / New-Session Workspace pickers. */
 export interface EmptyWorkspaceOwnerProps {

@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ViewTab } from './contract/views.ts'
+import type { DetailsViewEntry, ViewTab } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
   ComposerChainProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionInjected,
@@ -35,6 +35,7 @@ import { queueDockEntry } from './queue/QueueDock.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
+import { ToolDetailsView } from './skeleton/ToolDetailsView.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -165,6 +166,21 @@ export function apply(ctx: Context): void {
     version: () => slots.getVersion('conversation.view'),
   }
 
+  const detailsViewEntries = (): DetailsViewEntry[] => {
+    const list: DetailsViewEntry[] = []
+    for (const entry of slots.entries('conversation.details.view')) {
+      /* v8 ignore next -- unreachable: list registration validates id at load. */
+      if (entry.options.id === undefined) continue
+      list.push({ id: entry.options.id, label: resolveSlotLabel(entry.options.label) ?? entry.options.id })
+    }
+    return list
+  }
+  const detailsViews = {
+    list: detailsViewEntries,
+    subscribe: (fn: () => void) => slots.subscribe('conversation.details.view', fn),
+    version: () => slots.getVersion('conversation.details.view'),
+  }
+
   // The per-session input machine registry (SessionInputResolver face; published as
   // ctx.conversation.input by the service below sharing this one instance).
   const inputHub = new InputHub(ctx, t)
@@ -262,9 +278,13 @@ export function apply(ctx: Context): void {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
-    inject: (): ConversationSessionHeaderInjected => ({
+    inject: (_sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionHeaderInjected => ({
       views,
       open: (id) => { sessions.open(id) },
+      openDetailsView: (id) => {
+        actions.setDetailsView(id)
+        layout.openDetails()
+      },
     }),
   }, ConversationSessionHeader)
 
@@ -389,6 +409,7 @@ export function apply(ctx: Context): void {
       return {
         openDetails: (target) => {
           actions.select(target)
+          actions.setDetailsView('tool')
           layout.openDetails()
         },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
@@ -445,12 +466,29 @@ export function apply(ctx: Context): void {
     name: 'details',
     locale: NS,
     children: {
-      'conversation.details.tool': { kind: 'single', scope: 'session' },
+      'conversation.details.view': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
     inject: (): DetailsInjected => ({
       closeDetails: () => { layout.closeDetails() },
+      views: detailsViews,
     }),
   }, DetailsPanel)
+
+  // The built-in Details entry: the first (and, absent a domain package,
+  // only) rider of the ring this package just declared. Owns the same
+  // 'conversation.details.tool' child seat the top-level slot used to
+  // declare directly.
+  slots.register({
+    name: 'conversation.details.view',
+    id: 'tool',
+    order: 0,
+    label: () => t('details.tool'),
+    locale: NS,
+    children: {
+      'conversation.details.tool': { kind: 'single', scope: 'session' },
+    },
+    store: chatStore,
+  }, ToolDetailsView)
 
 }

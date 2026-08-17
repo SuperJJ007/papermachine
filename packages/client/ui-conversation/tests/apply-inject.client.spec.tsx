@@ -217,11 +217,12 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
-  it('openDetails (chat view face) writes the selection through the store actions and opens the panel', async () => {
+  it('openDetails (chat view face) writes the selection + tool entry through the store actions and opens the panel', async () => {
     const b = await bench()
     const { instance, injected } = b.chatViewApi(ROOT)
     injected.openDetails({ turnSeq: 2, callId: 'c1' })
     expect(instance.store.getSnapshot().selection).toEqual({ turnSeq: 2, callId: 'c1' })
+    expect(instance.store.getSnapshot().detailsView).toBe('tool')
     expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
     // The chat view shares the conversation entry's store instance: selection
     // writes land where the skeleton and details read.
@@ -333,20 +334,58 @@ describe('conversation slot inject API', () => {
     unsub()
     await b.runtime.dispose()
   })
+
+  it('openDetailsView (session-header face) selects a routed entry through the store actions and opens the panel', async () => {
+    const b = await bench()
+    const { instance, injected } = b.conversationHeaderApi(ROOT)
+    injected.openDetailsView('tool')
+    expect(instance.store.getSnapshot().detailsView).toBe('tool')
+    expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
+    // The header shares the conversation entry's store instance: the same
+    // one the details shell and chat view read.
+    const conv = b.conversationApi(ROOT)
+    expect(conv.instance).toBe(instance)
+    await b.runtime.dispose()
+  })
 })
 
 describe('details inject API', () => {
-  it('details injects the one layout callback; selection rides the shared store instead', async () => {
+  it('details injects the layout callback and the routed-entry ledger; selection rides the shared store instead', async () => {
     const b = await bench()
     const entry = b.entryOf('details')
     const injected = (entry.inject as unknown as () => DetailsInjected)()
-    expect(Object.keys(injected)).toEqual(['closeDetails'])
+    expect(Object.keys(injected)).toEqual(['closeDetails', 'views'])
     injected.closeDetails()
     expect(b.layoutFake.closeDetails).toHaveBeenCalledTimes(1)
+    // The built-in `tool` entry rides the same ledger projection as
+    // conversation.view's tabs.
+    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }])
     // The shared handle: details resolves the SAME instance conversation writes.
     const conv = b.runtime.storeOf('conversation.session', ROOT)
     const details = b.runtime.storeOf('details', ROOT)
     expect(details).toBe(conv)
+    await b.runtime.dispose()
+  })
+
+  it('the details view ledger projects a live registrant and drops it on disposal (HMR-safety)', async () => {
+    const b = await bench()
+    const entry = b.entryOf('details')
+    const injected = (entry.inject as unknown as () => DetailsInjected)()
+    const before = injected.views.version()
+    const listener = vi.fn()
+    const unsub = injected.views.subscribe(listener)
+    // A second rider (what a domain package such as ui-science registers).
+    const off = b.slots.register(
+      { name: 'conversation.details.view', id: 'science', order: 10, label: 'Science' } as never, (() => null) as never)
+    await Promise.resolve() // ledger notifications batch per microtask
+    expect(listener).toHaveBeenCalled()
+    expect(injected.views.version()).toBeGreaterThan(before)
+    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }, { id: 'science', label: 'Science' }])
+    // Disposal (the fiber tearing down / HMR reload) removes it from the
+    // ledger; the built-in entry survives.
+    off()
+    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }])
+    unsub()
     await b.runtime.dispose()
   })
 })

@@ -60,7 +60,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, t,
+  renderSlot, views, open, openDetailsView, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
@@ -100,11 +100,11 @@ export function ConversationSessionHeader({
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
               <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', {})}
+                {renderSlot('conversation.session.header.actions', { openDetailsView })}
               </div>
             </div>
             <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', {})}
+              {renderSlot('conversation.session.header.utilities', { openDetailsView })}
             </div>
           </div>
           {tabs.length > 1 && (

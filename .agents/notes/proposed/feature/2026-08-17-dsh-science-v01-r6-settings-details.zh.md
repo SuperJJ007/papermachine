@@ -51,6 +51,8 @@ Web bundle 将与 base settings、subprocess、sandbox、attachment 与 Science 
 
 Details shell 从 slot registry 派生 labels 与 ordered entries，订阅 registry/locale changes，并且只渲染所选 entry。Registrations 均为 effects；卸载 domain entry 会移除其 label 与 body，并保留内置 tool entry 可用。任何 domain package 都不得占用顶层 `details` slot 或导入 Details shell implementation。
 
+Title 文本是 shell 自行解析、而非纯粹读取 registry 的唯一例外：内置 `tool` entry 活跃时，shell 继续计算所选 call 自身的名称（回退到 selection 携带的 tool name，再回退到通用 label），与该 seat 存在之前完全一致，因为 per-session store 的 selection 无法表达 registration-time label；其余每个 entry 的 title 都是其注册的 label。若未来某个 entry 需要随 selection 实时变化的 title，应通过它自己的 selection state 表达该需求，而不是让 shell 获得更多内置认知。
+
 ### Science settings and Details product surface
 
 把 `@deepseek-ai/dsh-client-ui-science` 从 R5 transcript rows 扩展为 Science settings page、Science header action 与 Science Details entry 的 owner。该 package 注册一个 id 为 `science` 的 `settings.section` entry、一个 `conversation.session.header.actions` entry，以及一个 id 为 `science` 的 `conversation.details.view` entry；同时保留 R5 的 `save_chart` 与 `publish_outcome` toolview registrations。

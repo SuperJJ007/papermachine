@@ -9,13 +9,16 @@ import {
 import type { UseSession } from '@deepseek-ai/dsh-client-web-react'
 import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionProviderComponent } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DetailsSlotProps, DetailsToolOwnerProps, SelectionTarget } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {
+  DetailsSlotProps, DetailsToolOwnerProps, DetailsViewEntry, SelectionTarget, ToolDetailsViewProps,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { StatsLine } from '../src/client/chat/StatsLine.tsx'
 import { DetailsPanel } from '../src/client/skeleton/DetailsPanel.tsx'
+import { ToolDetailsView } from '../src/client/skeleton/ToolDetailsView.tsx'
 import { zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -36,15 +39,29 @@ afterEach(() => {
 })
 
 const SID = 's1' as SessionId
+const TOOL_ENTRY: DetailsViewEntry = { id: 'tool', label: '工具' }
 
-/** Minimal framework seat for direct DetailsPanel host tests. */
+/** Minimal framework seat for direct DetailsPanel/ToolDetailsView host tests. */
 const SessionProviderStub: SessionProviderComponent = ({ children }) => children(SID)
 
 /** Observe the owner currency without importing the Tool details renderer. */
-function renderToolDetailsProbe(owners?: DetailsToolOwnerProps[]): DetailsSlotProps['renderSlot'] {
+function renderToolDetailsProbe(owners?: DetailsToolOwnerProps[]): ToolDetailsViewProps['renderSlot'] {
   return (_key, owner) => {
     owners?.push(owner as unknown as DetailsToolOwnerProps)
     return <div data-testid="tool-details-seat" />
+  }
+}
+
+/** Fixed non-subscribing ledger of registered `conversation.details.view` entries. */
+function detailsViews(entries: readonly DetailsViewEntry[]): DetailsSlotProps['views'] {
+  return { list: () => entries, subscribe: () => () => {}, version: () => 0 }
+}
+
+/** Observe the routed dispatch without rendering the real entry component. */
+function renderDetailsViewProbe(calls?: { owner: unknown; only: string | undefined }[]): DetailsSlotProps['renderSlot'] {
+  return (_key, owner, opts) => {
+    calls?.push({ owner, only: opts?.only })
+    return <div data-testid="details-view-seat" />
   }
 }
 
@@ -55,6 +72,32 @@ function snapshotBase(): ConversationSnapshot {
     pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
   }
+}
+
+/** Shared standard-kit doubles both DetailsPanel and ToolDetailsView require. */
+function standardKit(snap: ConversationSnapshot) {
+  const emptyList = createSnapshotStore<SessionListState>(
+    { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+  const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
+    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    baselinesReady: true, recentWorkspaceId: undefined,
+  })
+  return {
+    sessionId: SID,
+    useSession: bindSnapshotSelector({ getSnapshot: () => snap, subscribe: () => () => {} }),
+    useSessions: bindSnapshotSelector(emptyList),
+    useWorkspaces: bindSnapshotSelector(emptyWorkspaces),
+    useProjection: (() => undefined),
+    useInput: (() => { throw new Error('unused') }),
+    inputActions: {
+      setDraft: () => {},
+      addImages: () => true,
+      removeImage: () => {},
+      pruneImages: () => {},
+      submit: () => {},
+    },
+    SessionProvider: SessionProviderStub,
+  } as const
 }
 
 describe('render branch tails', () => {
@@ -104,46 +147,196 @@ describe('render branch tails', () => {
     )
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
   })
+})
 
-  it('DetailsPanel title falls to 详情 when the selection has no toolName and no material', () => {
+describe('DetailsPanel routing shell', () => {
+  it('title falls to 详情 when the tool entry is active but the selection has no toolName and no material', () => {
     localStorage.clear()
     const snap = snapshotBase()
     const chat = createChatStore().create()
     chat.actions.select({ turnSeq: 1, callId: 'ghost' } satisfies SelectionTarget)
-    const emptyList = createSnapshotStore<SessionListState>(
-      { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
-    const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-      baselinesReady: true, recentWorkspaceId: undefined,
-    })
+    const calls: { owner: unknown; only: string | undefined }[] = []
     const view = render(
       <DetailsPanel
-        SessionProvider={SessionProviderStub}
-        renderSlot={renderToolDetailsProbe()}
-        sessionId={SID}
-        useSession={bindSnapshotSelector({ getSnapshot: () => snap, subscribe: () => () => {} })}
-        useSessions={bindSnapshotSelector(emptyList)}
-        useWorkspaces={bindSnapshotSelector(emptyWorkspaces)}
-        useProjection={(() => undefined)}
-        useInput={(() => { throw new Error('unused') })}
-        inputActions={{
-          setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
-          submit: () => {},
-        }}
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY])}
         t={t}
       />,
     )
     expect(view.getByText('详情')).toBeTruthy()
+    // Dispatch reaches the built-in tool entry: no stored detailsView falls
+    // back to it, same as an id naming an unregistered entry would.
+    expect(calls).toEqual([{ owner: {}, only: 'tool' }])
+  })
+
+  it('title falls to the selection\'s carried toolName when the tool entry is active but the call resolves no material', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    // Window-truncated: the call is outside the loaded snapshot, so
+    // materialFor resolves nothing — the carried toolName is what remains.
+    chat.actions.select({ turnSeq: 1, callId: 'ghost', toolName: 'bash' } satisfies SelectionTarget)
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe()}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('bash')).toBeTruthy()
+  })
+
+  it('title resolves the selected call name for a nested run_code leaf while the tool entry is active', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    snap.runningCalls = [{
+      callId: 'p1', name: 'run_code', argsRaw: '{}', turn: 1, step: 1,
+      time: 7_000, callView: null, subCalls: [{
+        kind: 'tool-result', seq: 8, time: 8_000, callId: 'p1:code:1',
+        call: { name: 'run_code', argsRaw: '{"code":"return 1"}' },
+        callTime: 8_000,
+        content: [], isError: false, callView: null, resultView: null,
+        subCalls: [{
+          kind: 'tool-result', seq: 9, time: 9_000, callId: 'p1:code:1:code:1',
+          call: { name: 'read', argsRaw: '{"path":"notes/demo.txt"}' },
+          callTime: 8_500,
+          content: [{ type: 'text', text: 'x' }], isError: false, callView: null, resultView: null,
+          subCalls: [],
+        }],
+      }],
+    }]
+    snap.chat = chatSnapshotFixture({ runningCalls: snap.runningCalls })
+    const chat = createChatStore().create()
+    chat.actions.select({ turnSeq: 9, callId: 'p1:code:1:code:1', toolName: 'read' } satisfies SelectionTarget)
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe()}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    // The resolved material's own name ('read') wins over the selection's
+    // carried toolName once the call is found in the current window.
+    expect(view.getByText('read')).toBeTruthy()
+  })
+
+  it('title falls to the registered label when a non-tool entry is active, ignoring a stale tool selection', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    // A leftover tool selection from before a header action switched entries.
+    chat.actions.select({ turnSeq: 1, callId: 'c1', toolName: 'bash' } satisfies SelectionTarget)
+    chat.actions.setDetailsView('science')
+    const calls: { owner: unknown; only: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('Science')).toBeTruthy()
+    expect(view.queryByText('bash')).toBeNull()
+    expect(calls).toEqual([{ owner: {}, only: 'science' }])
+  })
+
+  it('falls back to the built-in tool entry when the stored id names a removed/unregistered entry', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    chat.actions.setDetailsView('science') // HMR-disposed since the last write.
+    const calls: { owner: unknown; only: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('详情')).toBeTruthy()
+    expect(calls).toEqual([{ owner: {}, only: 'tool' }])
+  })
+
+  it('shows the generic empty state without dispatching when no entry is registered at all', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    const calls: { owner: unknown; only: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
+    expect(calls).toEqual([])
+  })
+
+  it('closeDetails fires on close-button activation', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    const closeDetails = vi.fn()
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe()}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={closeDetails}
+        views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    view.getByLabelText('关闭详情').click()
+    expect(closeDetails).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ToolDetailsView body', () => {
+  it('resolves to the not-in-window state when the selection has no material', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    chat.actions.select({ turnSeq: 1, callId: 'ghost' } satisfies SelectionTarget)
+    const view = render(
+      <ToolDetailsView
+        {...standardKit(snap)}
+        renderSlot={renderToolDetailsProbe()}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        t={t}
+      />,
+    )
     expect(view.getByText('该调用不在当前窗口内')).toBeTruthy()
   })
 
-  it('DetailsPanel resolves a nested run_code leaf to its full logged args and output', () => {
+  it('resolves a nested run_code leaf to its full logged args and output', () => {
     localStorage.clear()
     const snap = snapshotBase()
     const longText = 'x'.repeat(1_000)
@@ -166,39 +359,18 @@ describe('render branch tails', () => {
     snap.chat = chatSnapshotFixture({ runningCalls: snap.runningCalls })
     const chat = createChatStore().create()
     chat.actions.select({ turnSeq: 9, callId: 'p1:code:1:code:1', toolName: 'read' } satisfies SelectionTarget)
-    const emptyList = createSnapshotStore<SessionListState>(
-      { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
-    const emptyWorkspaces = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-      baselinesReady: true, recentWorkspaceId: undefined,
-    })
     const owners: DetailsToolOwnerProps[] = []
     const view = render(
-      <DetailsPanel
-        SessionProvider={SessionProviderStub}
+      <ToolDetailsView
+        {...standardKit(snap)}
         renderSlot={renderToolDetailsProbe(owners)}
-        sessionId={SID}
-        useSession={bindSnapshotSelector({ getSnapshot: () => snap, subscribe: () => () => {} })}
-        useSessions={bindSnapshotSelector(emptyList)}
-        useWorkspaces={bindSnapshotSelector(emptyWorkspaces)}
-        useProjection={(() => undefined)}
-        useInput={(() => { throw new Error('unused') })}
-        inputActions={{
-          setDraft: () => {},
-          addImages: () => true,
-          removeImage: () => {},
-          pruneImages: () => {},
-          submit: () => {},
-        }}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
-        closeDetails={vi.fn()}
         t={t}
       />,
     )
     // Conversation resolves the selected sub-call and hands its complete
     // frozen block to the Tool-owned details seat.
-    expect(view.getByText('read')).toBeTruthy()
     expect(view.getByTestId('tool-details-seat')).toBeTruthy()
     expect(owners).toHaveLength(1)
     expect(owners[0]?.block).toMatchObject({

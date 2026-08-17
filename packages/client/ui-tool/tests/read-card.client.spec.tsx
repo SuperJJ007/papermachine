@@ -24,7 +24,7 @@ import { CHAT_READ_MAX_LINES, readCardModel } from '../src/client/tool/models/re
 import { createChatStore } from '@deepseek-ai/dsh-client-ui-conversation/src/client/stores.ts'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
-import { DetailsPanel } from '@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/DetailsPanel.tsx'
+import { ToolDetailsView } from '@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/ToolDetailsView.tsx'
 import { ReadRow, readToolview } from '../src/client/tool/toolviews/read-row.tsx'
 import { renderToolDetails, SessionProviderStub, toolChatSnapshot } from './tool-details-render.client.tsx'
 
@@ -251,7 +251,7 @@ describe('ReadRow keyed toolview', () => {
   })
 })
 
-describe('DetailsPanel Output section (read)', () => {
+describe('ToolDetailsView Output section (read)', () => {
   function mount(snapshot: ConversationSnapshot, selection: SelectionTarget | null, cwd?: string) {
     localStorage.clear()
     const chat = createChatStore().create()
@@ -271,7 +271,7 @@ describe('DetailsPanel Output section (read)', () => {
       baselinesReady: true, recentWorkspaceId: undefined,
     })
     return render(
-      <DetailsPanel
+      <ToolDetailsView
         SessionProvider={SessionProviderStub}
         renderSlot={renderToolDetails(t)}
         sessionId={SID}
@@ -290,7 +290,6 @@ describe('DetailsPanel Output section (read)', () => {
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
-        closeDetails={vi.fn()}
       />,
     )
   }

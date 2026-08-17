@@ -104,7 +104,7 @@ describe('selection survives on the store seat', () => {
     // ...and a re-created same-id session starts from a FRESH instance.
     const reborn = storeFor(b, 'conversation.session', sid('s1'))
     expect(reborn).not.toBe(doomed)
-    expect(reborn.store.getSnapshot()).toEqual({ selection: null, draft: '', view: null, inspect: null })
+    expect(reborn.store.getSnapshot()).toEqual({ selection: null, draft: '', view: null, inspect: null, detailsView: null })
     await b.runtime.dispose()
   })
 })

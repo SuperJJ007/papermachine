@@ -51,6 +51,8 @@ Add a `detailsView` id to the per-Session conversation store and an action that 
 
 The Details shell will derive labels and ordered entries from the slot registry, subscribe to registry/locale changes, and render only the selected entry. Registrations remain effects; unloading a domain entry removes its label and body and leaves the built-in tool entry usable. No domain package may occupy the top-level `details` slot or import the Details shell implementation.
 
+Title text stays the one exception the shell resolves itself rather than reading purely off the registry: while the built-in `tool` entry is active, the shell keeps computing the selected call's own name (falling back to the selection's carried tool name, then the generic label) exactly as it did before this seat existed, because a per-session store selection cannot express a registration-time label; every other entry's title is its registered label. A future entry that wants a live per-selection title carries that need through its own selection state instead of the shell acquiring more built-in awareness.
+
 ### Science settings and Details product surface
 
 Expand `@deepseek-ai/dsh-client-ui-science` from R5 transcript rows into the owner of the Science settings page, Science header action, and Science Details entry. The package will register one `settings.section` entry with id `science`, one `conversation.session.header.actions` entry, and one `conversation.details.view` entry with id `science`; it will retain the R5 `save_chart` and `publish_outcome` toolview registrations.

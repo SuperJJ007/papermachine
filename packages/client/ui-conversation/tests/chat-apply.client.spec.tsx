@@ -72,6 +72,18 @@ describe('apply wiring', () => {
     await b.runtime.dispose()
   })
 
+  it('registers the built-in tool Details entry and its child tool seat', async () => {
+    const b = await bench()
+    const entries = b.slots.entries('conversation.details.view')
+    expect(entries.map(e => e.options.id)).toEqual(['tool'])
+    expect(resolveSlotLabel(entries[0]?.options.label)).toBe('工具')
+    expect(entries[0]?.options.order).toBe(0)
+    // Declaring is claiming: the tool entry's registration put the hole on
+    // the ledger with the contract's kind/scope.
+    expect(b.slots.spec('conversation.details.tool')).toMatchObject({ kind: 'single', scope: 'session' })
+    await b.runtime.dispose()
+  })
+
   it('occupies the slots + the ring; session entries share one store handle', async () => {
     const b = await bench()
     const conversation = renderEntryOf(b.slots, 'conversation')
@@ -119,6 +131,11 @@ describe('apply wiring', () => {
     expect(b.slots.entries('conversation.chat.node')).toHaveLength(0)
     expect(b.slots.spec('conversation.chat.node')).toBeUndefined()
     expect(b.slots.entries('details')).toHaveLength(0)
+    // The details shell's ring collapses with its declaring entry, and the
+    // built-in tool entry's own child hole collapses with it.
+    expect(b.slots.entries('conversation.details.view')).toHaveLength(0)
+    expect(b.slots.entries('conversation.details.tool')).toHaveLength(0)
+    expect(b.slots.spec('conversation.details.tool')).toBeUndefined()
     expect(b.slots.entries('settings.general.item')).toHaveLength(0)
     expect(b.runtime.ctx.get('conversation')).toBeUndefined()
     await b.runtime.dispose()

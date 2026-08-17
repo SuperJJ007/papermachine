@@ -13,7 +13,7 @@ import type {
 import { rehydrateSchema, validateDraft } from '@deepseek-ai/dsh-client-schema-form'
 import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot,
-  type SettingsScopeSpec, type SnapshotStore,
+  type SettingsScopeSpec, type SettingsSecretPresence, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only, and deliberately NOT `@deepseek-ai/dsh-api-remotes/client`: this
 // package is reachable from the Host build graph through its feature-package
@@ -61,6 +61,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
       value: undefined,
       base: undefined,
       user: undefined,
+      secrets: [],
       revision: undefined,
       writable: false,
       mode: persistence,
@@ -204,10 +205,17 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
 
   private accept(view: SettingsNamespaceView, publish: boolean, writable?: boolean): void {
     const decoded = publish ? this.decode(view) : undefined
+    // Compile-time assertion, checked on every call: fails to typecheck if the
+    // wire's redacted-secret view (`view.secrets`) stops being assignable to
+    // `SettingsSecretPresence`, the contract's structural presence type
+    // declared independently of it in `dsh-client-runtime` (which imports no
+    // wire type at all), so nothing else would catch the two drifting apart.
+    const secrets: readonly SettingsSecretPresence[] = view.secrets
     this.store.update((draft) => {
       draft.revision = view.revision
       draft.base = view.base
       draft.user = view.user
+      draft.secrets = secrets
       if (writable !== undefined) draft.writable = writable
       if (decoded === undefined) return
       draft.status = 'ready'

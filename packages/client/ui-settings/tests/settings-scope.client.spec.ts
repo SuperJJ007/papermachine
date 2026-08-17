@@ -30,13 +30,13 @@ function rejected<T>(): RpcResponse<T> {
   }
 }
 
-function view(value: unknown, revision = 0): SettingsNamespaceView {
+function view(value: unknown, revision = 0, secrets: SettingsNamespaceView['secrets'] = []): SettingsNamespaceView {
   return {
     ns: 'ui-test',
     schema: ENVELOPE,
     value,
     applies: 'live',
-    secrets: [],
+    secrets,
     revision,
   }
 }
@@ -70,11 +70,11 @@ describe('SettingsScopeController', () => {
       { namespace: 'ui-test' },
     )
     expect(scope.getSnapshot()).toEqual({
-      status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host',
+      status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host', secrets: [],
     })
     await scope.load()
     expect(scope.getSnapshot()).toEqual({
-      status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host',
+      status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host', secrets: [],
     })
   })
 
@@ -285,7 +285,7 @@ describe('SettingsScopeController', () => {
       'memory',
     )
     expect(scope.getSnapshot()).toEqual({
-      status: 'unavailable', value: undefined, revision: undefined, writable: false, mode: 'memory',
+      status: 'unavailable', value: undefined, revision: undefined, writable: false, mode: 'memory', secrets: [],
     })
     await scope.load()
     await scope.set('preference', 'dark')
@@ -453,6 +453,66 @@ describe('SettingsScopeController', () => {
       expectedRevision: 3,
     })
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 5 })
+  })
+
+  it('surfaces secret presence from a served view, with a dict-nested path intact', async () => {
+    const secrets = [
+      { path: ['profiles', 'science', 'pythonPrefix'], set: true },
+      { path: ['apiKey'], set: false },
+    ]
+    const describeCall = vi.fn().mockResolvedValueOnce(
+      ok({ writable: true, hasDocument: true, namespaces: [view({ preference: 'dark' }, 3, secrets)] }),
+    )
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+
+    await scope.load()
+
+    expect(scope.getSnapshot().secrets).toEqual(secrets)
+  })
+
+  it('leaves secret presence untouched while a namespace is not served, and refreshes it once it reappears', async () => {
+    const secrets = [{ path: ['apiKey'], set: true }]
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [view({ preference: 'light' }, 1, secrets)] }))
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [] }))
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [view({ preference: 'system' }, 2, [])] }))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+    expect(scope.getSnapshot().secrets).toEqual(secrets)
+
+    await scope.load()
+    expect(scope.getSnapshot()).toMatchObject({ status: 'unavailable', secrets })
+
+    await scope.load()
+    expect(scope.getSnapshot()).toMatchObject({ status: 'ready', secrets: [] })
+  })
+
+  it("republishes updated secret presence after a write's own read-back", async () => {
+    const describeCall = vi.fn().mockResolvedValueOnce(
+      ok({
+        writable: true, hasDocument: true,
+        namespaces: [view({ preference: 'dark' }, 3, [{ path: ['apiKey'], set: false }])],
+      }),
+    )
+    const mutate = vi.fn().mockResolvedValueOnce(
+      ok(view({ preference: 'dark' }, 4, [{ path: ['apiKey'], set: true }])),
+    )
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall, mutate } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+    expect(scope.getSnapshot().secrets).toEqual([{ path: ['apiKey'], set: false }])
+
+    await scope.set('preference', 'dark')
+
+    expect(scope.getSnapshot().secrets).toEqual([{ path: ['apiKey'], set: true }])
   })
 })
 describe('SettingsScopeBinder.bind', () => {

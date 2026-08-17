@@ -7,6 +7,20 @@
  * otherwise close a reference cycle.
  */
 
+/**
+ * Whether the Host currently holds a value for one schema-declared secret
+ * field — presence only; the value itself never reaches the browser, on this
+ * type or anywhere else. `path` is ordered from the section root, the same
+ * coordinates {@link SettingsScope.setPath} takes, and addresses a
+ * `dict`-nested secret by its key.
+ */
+export interface SettingsSecretPresence {
+  /** Ordered field path from the section root; a `dict` entry is addressed by its key. */
+  path: readonly string[]
+  /** Whether the Host currently holds a value at this path. */
+  set: boolean
+}
+
 /** Client-side sync state of one settings namespace. */
 export interface SettingsScopeSnapshot<T> {
   /**
@@ -28,6 +42,13 @@ export interface SettingsScopeSnapshot<T> {
    * default is still an override, and comparing values could not see it.
    */
   user: unknown
+  /**
+   * Every schema-declared secret field's presence — the only place this
+   * snapshot ever answers whether a `role('secret')` field holds a value,
+   * since that field's value is never present on {@link value}, {@link base},
+   * or {@link user}. Empty before the first accepted Host view.
+   */
+  secrets: readonly SettingsSecretPresence[]
   /** Namespace revision fencing the next write; undefined before the first Host view. */
   revision: number | undefined
   /** Whether the Host document accepts writes; memory mode never does. */

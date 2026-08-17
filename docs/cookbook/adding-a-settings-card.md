@@ -67,7 +67,7 @@ export function apply(ctx: ClientContext): void {
 }
 ```
 
-The scope snapshot carries what a form needs: the resolved `value`, the composition `base`, and the raw `user` layer, whose key **presence** — not its value — is what marks a field overridden. `scope.set(field, value)` stores one field and `scope.unset(field)` clears it back to the composition layer.
+The scope snapshot carries what a form needs: the resolved `value`, the composition `base`, and the raw `user` layer, whose key **presence** — not its value — is what marks a field overridden. For a `role('secret')` field, whose value never rides `value`, `base`, or `user` at all, the snapshot's `secrets` list is where a card learns whether the Host holds one: each entry gives the field's path from the section root and whether it is currently set. `scope.set(field, value)` stores one field and `scope.unset(field)` clears it back to the composition layer.
 
 ## 3. What the tab does with it
 

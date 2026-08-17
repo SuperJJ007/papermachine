@@ -67,7 +67,7 @@ export function apply(ctx: ClientContext): void {
 }
 ```
 
-scope 快照携带表单所需的一切：解析后的 `value`、组装层 `base`，以及原始的 `user` 层——字段是否被覆盖，取决于它在 `user` 层中是否**出现**，而非它的值。`scope.set(field, value)` 存一个字段，`scope.unset(field)` 把它清回组装层。
+scope 快照携带表单所需的一切：解析后的 `value`、组装层 `base`，以及原始的 `user` 层——字段是否被覆盖，取决于它在 `user` 层中是否**出现**，而非它的值。对于 `role('secret')` 字段，其值从不出现在 `value`、`base` 或 `user` 中的任何一处；卡片要判断 Host 是否持有该值，靠的是快照的 `secrets` 列表——其中每一项给出该字段从分节根部起算的路径，以及它当前是否已设置。`scope.set(field, value)` 存一个字段，`scope.unset(field)` 把它清回组装层。
 
 ## 3. 标签页拿它做什么
 

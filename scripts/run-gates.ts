@@ -235,7 +235,6 @@ export function gatesForMode(selected: Mode): Gate[] {
           docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
           docTypecheckScript: 'doc-typecheck:contracts-ready',
         }),
-        pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
       ]
     case 'doc-sync':
       return docSyncLeafGates()
@@ -267,7 +266,6 @@ function ciPrimaryGates(): Gate[] {
       docTypecheckNeeds: ['typert-contracts'],
       docTypecheckScript: 'doc-typecheck:contracts-ready',
     }),
-    pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
     // The prepared typecheck and build both drive Client tsc, while build also
     // repeats the Host contract pass. Wait for all three consumers so build
@@ -366,7 +364,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
         : {},
       docsBuildScript: 'docs:build:mpa',
     }),
-    pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
   ]
 }
@@ -589,6 +586,7 @@ function docSyncLeafGates(options: {
     pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
     pnpmScript('persistence-catalog', 'verify-persistence-catalog', { label: 'persistence catalog' }),
     pnpmScript('doc-graphs', 'verify-doc-graphs', { label: 'doc graphs' }),
+    pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('scoped-events', 'verify-scoped-events', { label: 'scoped events' }),
     pnpmScript('markdown-wrap', 'verify-md-wrap', { label: 'markdown wrap' }),
     pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links' }),

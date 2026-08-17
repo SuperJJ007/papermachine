@@ -94,6 +94,21 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Generic Session attachment-reference registry: the sole scanner the API
+    # gateway consumes for both live attachment-read authorization and
+    # Session ZIP export media collection. A domain package (e.g.
+    # science-session) registers its own extractor-required event types.
+    - id: session-attachment-index
+      name: '@deepseek-ai/dsh-session-attachment-index'
+
+    # The Science domain package named above: registers the
+    # `science/chart-saved` attachment extractor and the optional `science`
+    # session projection. It publishes no service of its own — every model-
+    # facing Science tool and the Runtime execution service are the science
+    # agent preset's and the Science Runtime row's, not this row's.
+    - id: science-session
+      name: '@deepseek-ai/dsh-science-session'
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -201,6 +216,11 @@
     # Tool call tree, generic fallback, and keyed business Tool views.
     - id: ui-tool
       name: '@deepseek-ai/dsh-client-ui-tool'
+
+    # Science chart/Outcome toolview rows: save_chart/publish_outcome keyed
+    # views over ui-tool's tool.call.toolview slot.
+    - id: ui-science
+      name: '@deepseek-ai/dsh-client-ui-science'
 
     - id: ui-cordis
       name: '@deepseek-ai/dsh-client-ui-cordis'

@@ -1,11 +1,12 @@
 # The `science` agent preset: a restricted agent for reproducible Python/R
 # analysis, read-only over the workspace, with durable Science state.
 #
-# It composes the R3 `@deepseek-ai/dsh-tool-science` Consumer plus a narrow
-# supporting roster: discovery and reading of the workspace, skills, and the
-# generic ask-user/todo tools. It carries no shell, no filesystem write or
-# edit, no delegation, no Web search, and no chart/Outcome publication — a
-# capability this preset lacks is a separate product decision, not a YAML edit.
+# It composes the `@deepseek-ai/dsh-tool-science` Consumer (run_python, run_r,
+# get_science_state, save_chart, publish_outcome) plus a narrow supporting
+# roster: discovery and reading of the workspace, skills, and the generic
+# ask-user/todo tools. It carries no shell, no filesystem write or edit, and
+# no delegation or Web search — a capability this preset lacks is a separate
+# product decision, not a YAML edit.
 #
 # TRUST: `run_python`/`run_r` execute real code through the Host-owned Science
 # Runtime (`ctx.scienceRuntime`), confined to whatever existing Conda prefix
@@ -49,7 +50,8 @@
 # ── science ─────────────────────────────────────────────────────────────────
 
 # The model-facing Science Consumer: durable mode/environment binding,
-# `science:environment` runtime context, and the three Science tools. These
+# `science:environment` runtime context, and all five Science tools
+# (run_python, run_r, get_science_state, save_chart, publish_outcome). These
 # values are explicit preset policy — not package defaults, not environment
 # discovery — and changing any of them changes model-visible output.
 - id: tool-science

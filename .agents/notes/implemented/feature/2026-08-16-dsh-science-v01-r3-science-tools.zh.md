@@ -74,7 +74,7 @@ Package 附带一个 `tsdown.config.ts`，把 `index`、`invariant` 与 `read-on
 
 `@deepseek-ai/dsh-tool-science` 是一个 function plugin，拥有 required `profileId`、`modeRevision` 与 `stateHistoryLimit` configuration。`profileId` 使用 durable Science safe-ID grammar（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符），并选择一个 Runtime allowlist entry。`modeRevision` 会被 trim、非空，且不超过 128 个字符，并持久化到 `ScienceModeRef`。`stateHistoryLimit` 是正 safe integer，分别限制 `get_science_state` 返回的最近 run 与 chart-version 集合。这三个值都没有 default，也不来自 environment discovery；本包不命名 shipped production identity 或 history policy。
 
-Plugin 只 statically inject `tools` 与 `systemPrompt`。它在最早需要 Runtime 的 operation 上——首次使用绑定，以及每次 `run_python`/`run_r` 调用——用 `ctx.get('scienceRuntime')` 读取 optional Host-owned Runtime。Model-facing operations 需要 exact initiating Agent，且其 Session header 必须命名 `science` preset identity（`session.header.agentPreset === 'science'`）。没有 Agent 与 turn signal 的 diagnostic prompt assembly 不执行 Host I/O，并原样 delegate。
+Plugin 只 statically inject `tools` 与 `systemPrompt`。它在最早需要 Runtime 的 operation 上——首次使用绑定，以及每次 `run_python`/`run_r` 调用——用 `ctx.get('scienceRuntime')` 读取 optional Host-owned Runtime。Model-facing operations 需要 exact initiating Agent，且其 Session 当前必须解析为 `science` preset identity（`isScienceSession`，即 `@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset`，以创建 header 为基础、被之后任意一条 `agent-preset/selected` 事件覆盖——为何仅凭 header 不够，参见 [Science 产品缺陷 Agent Note](../bug-fix/2026-08-18-science-mode-product-gaps.md)）。没有 Agent 与 turn signal 的 diagnostic prompt assembly 不执行 Host I/O，并原样 delegate。
 
 #### 首个 model request
 

@@ -27,6 +27,7 @@
     "tests/minimal-preset.snapshot.ts",
     "tests/science-preset.snapshot.ts",
     "tests/science-chart-outcome.e2e.ts",
+    "tests/science-artifact-types.e2e.ts",
     "tests/message-feedback-protocol.snapshot.ts",
     "tests/live-interactions.e2e.ts",
     "tests/question-composer.e2e.ts",

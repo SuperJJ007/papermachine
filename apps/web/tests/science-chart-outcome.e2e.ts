@@ -175,16 +175,17 @@ function scienceFixture(stored: ImageAttachmentRef): string {
     attachment: ImageAttachmentRef,
   ): void => {
     const call = session.append('tool/call', {
-      turn: 1, step: 1, callId, name: 'save_chart', arguments: '{}',
+      turn: 1, step: 1, callId, name: 'annotate_artifact', arguments: '{}',
     })
     const createdAt = eventTime(call.seq + 1)
+    const title = version === 1 ? 'Observed series' : 'Missing revision'
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         artifactId: CHART_ID,
         logicalName: 'observed-series',
         version,
-        title: version === 1 ? 'Observed series' : 'Missing revision',
+        title,
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
         origin: 'model',
         attachment,
@@ -196,24 +197,23 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt,
       },
     })
-    appendToolResult(session, callId, call.seq, `chart v${String(version)} saved`, {
-      kind: 'science/chart',
+    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, {
+      kind: 'science/artifact',
       version: 1,
-      chartId: CHART_ID,
-      logicalName: 'observed-series',
-      chartVersion: version,
-      title: version === 1 ? 'Observed series' : 'Missing revision',
-      caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
-      runId: RUN_ID,
-      attachment: {
-        attachmentId: attachment.attachmentId,
-        mediaType: attachment.mediaType,
-        bytes: attachment.bytes,
-        width: attachment.width,
-        height: attachment.height,
-        ...attachment.name === undefined ? {} : { name: attachment.name },
-      },
-      createdAt,
+      artifacts: [{
+        artifactId: CHART_ID,
+        logicalName: 'observed-series',
+        version,
+        title,
+        attachment: {
+          attachmentId: attachment.attachmentId,
+          mediaType: attachment.mediaType,
+          bytes: attachment.bytes,
+          width: attachment.width,
+          height: attachment.height,
+          ...attachment.name === undefined ? {} : { name: attachment.name },
+        },
+      }],
     })
   }
 
@@ -413,7 +413,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     // missing object), and the latest Outcome renders below it with its
     // evidence — the same projection the transcript rows already reused, no
     // second reader.
-    expect(await detailsPanel.getByRole('button', { name: 'Open chart Missing revision, version 2' }).count()).toBe(1)
+    expect(await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).count()).toBe(1)
     expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
     expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
     expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
@@ -424,7 +424,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     // Drill into the artifact's Provenance → Environment sub-tab: the same
     // client-safe projection, rendered as JSON.
-    await detailsPanel.getByRole('button', { name: 'Open chart Missing revision, version 2' }).click()
+    await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).click()
     await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
     await detailsPanel.getByRole('tab', { name: 'Environment' }).click()
     // Shiki-highlighted JSON tokenizes the text across spans, so poll the

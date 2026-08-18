@@ -349,8 +349,8 @@ describe('science agent preset', () => {
     const annotateEvents = r5ToolResults.filter(event => event.type === 'tool/result'
       && event.data.message.source.callId.toString().includes('annotate_artifact'))
     expect(annotateEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
-      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 2 }),
-      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 3 }),
+      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 2 })] }),
+      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 3 })] }),
     ])
     const serializedR5 = JSON.stringify(r5Events)
     expect(serializedR5).not.toContain(scratch!)

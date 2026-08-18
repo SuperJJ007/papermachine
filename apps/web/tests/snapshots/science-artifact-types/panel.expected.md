@@ -1,0 +1,32 @@
+## Details column — artifact viewer (csv/json/md/png)
+- text: Science
+- button "Close details"
+- tablist "Open artifacts":
+  - tab "summary.csv"
+  - button "Close summary.csv":
+    - img
+  - tab "metrics.json"
+  - button "Close metrics.json":
+    - img
+  - tab "report.md"
+  - button "Close report.md":
+    - img
+  - tab "plot.png" [selected]
+  - button "Close plot.png":
+    - img
+- text: plot.png
+- button "Previous version" [disabled]:
+  - img
+- text: v1
+- button "Next version" [disabled]:
+  - img
+- button "Provenance"
+- button "Download":
+  - img
+- button "Expand":
+  - img
+- button "Close tab":
+  - img
+- 'button "View original: plot.png"':
+  - img "plot.png"
+- text: from run run-types-1 1×1, 68 B

@@ -9,6 +9,8 @@ import type { ScienceArtifactVersion, ScienceLanguage } from '@deepseek-ai/dsh-s
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isScienceSession } from './context.ts'
 import { requireDirectDispatch } from './guard.ts'
+import { scienceArtifactPresentation } from './presentation.ts'
+import type { ScienceArtifactPresentationItem } from './presentation.ts'
 
 const outputStreamSchema = {
   type: 'object',
@@ -31,6 +33,16 @@ const capturedArtifactSchema = {
     bytes: { type: 'integer', required: true },
     width: { type: 'integer' },
     height: { type: 'integer' },
+    // `title` and the attachment identity/name are carried for
+    // `presentationMeta` (below) to build a clickable Client reference per
+    // file; `render()` deliberately omits both from the model-visible
+    // receipt text — `title` duplicates `logicalName` for every
+    // auto-captured file (see capture.ts's `basename` default), and
+    // attachmentId is an internal storage handle, not a fact the model
+    // reasons about — the same split `annotate_artifact`'s own receipt schema uses.
+    title: { type: 'string', required: true },
+    attachmentId: { type: 'string', required: true },
+    attachmentName: { type: 'string' },
   },
 } as const
 
@@ -100,6 +112,27 @@ function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typ
     mediaType: attachment.mediaType,
     bytes: attachment.bytes,
     ...isImage ? { width: attachment.width, height: attachment.height } : {},
+    title: artifact.title,
+    attachmentId: String(attachment.attachmentId),
+    ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
+  }
+}
+
+/** Flatten one captured artifact's bounded listing entry into its Client presentation reference. */
+function capturedArtifactPresentationItem(artifact: InferValue<typeof capturedArtifactSchema>): ScienceArtifactPresentationItem {
+  return {
+    artifactId: artifact.artifactId,
+    logicalName: artifact.logicalName,
+    version: artifact.version,
+    title: artifact.title,
+    attachment: {
+      attachmentId: artifact.attachmentId,
+      mediaType: artifact.mediaType,
+      bytes: artifact.bytes,
+      ...artifact.width === undefined ? {} : { width: artifact.width },
+      ...artifact.height === undefined ? {} : { height: artifact.height },
+      ...artifact.attachmentName === undefined ? {} : { name: artifact.attachmentName },
+    },
   }
 }
 
@@ -197,6 +230,9 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
     output: {
       schema: runOutputSchema,
       render: (_args, value) => [{ type: 'text', text: formatRunResult(value) }],
+      presentationMeta: (_args, value) => scienceArtifactPresentation(
+        (value.capturedArtifacts ?? []).map(capturedArtifactPresentationItem),
+      ),
     },
     async execute(args, exec) {
       requireDirectDispatch(exec, language === 'python' ? 'run_python' : 'run_r')

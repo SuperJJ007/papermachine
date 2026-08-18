@@ -88,7 +88,20 @@ export function applyAnnotateArtifactTool(ctx: Context): void {
     output: {
       schema: artifactReceiptSchema,
       render: (_args, value) => [{ type: 'text', text: formatArtifactReceipt(value) }],
-      presentationMeta: (_args, value) => scienceArtifactPresentation(value),
+      presentationMeta: (_args, value) => scienceArtifactPresentation([{
+        artifactId: value.artifactId,
+        logicalName: value.logicalName,
+        version: value.version,
+        title: value.title,
+        attachment: {
+          attachmentId: value.attachmentId,
+          mediaType: value.mediaType,
+          bytes: value.bytes,
+          ...value.width === undefined ? {} : { width: value.width },
+          ...value.height === undefined ? {} : { height: value.height },
+          ...value.attachmentName === undefined ? {} : { name: value.attachmentName },
+        },
+      }]),
     },
     async execute(args, exec) {
       requireDirectDispatch(exec, 'annotate_artifact')

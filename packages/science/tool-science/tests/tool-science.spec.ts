@@ -20,7 +20,7 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
@@ -526,7 +526,10 @@ describe('runValueFromResult / formatRunResult', () => {
     const image = artifactVersionFixture({
       logicalName: 'plot.png',
       version: 1,
-      attachment: { attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 500, width: 10, height: 20 },
+      attachment: {
+        attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 500, width: 10, height: 20,
+        name: 'plot.png',
+      },
     })
     const csv = artifactVersionFixture({
       logicalName: 'summary.csv',
@@ -540,8 +543,14 @@ describe('runValueFromResult / formatRunResult', () => {
       capture: { captured: [image, csv], skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false },
     })
     expect(value.capturedArtifacts).toEqual([
-      { artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500, width: 10, height: 20 },
-      { artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048 },
+      {
+        artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500, width: 10, height: 20,
+        title: 'file', attachmentId: `sha256:${'b'.repeat(64)}`, attachmentName: 'plot.png',
+      },
+      {
+        artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048,
+        title: 'file', attachmentId: `sha256:${'c'.repeat(64)}`,
+      },
     ])
     expect(value.captureSkippedOversizedCount).toBe(3)
     expect(value.captureTruncatedPerRun).toBe(true)
@@ -928,6 +937,56 @@ describe('run_python', () => {
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('status: success')
     expect(text).toContain('fake run output')
+    // FakeSubprocess writes no real artifact files, so capture ran and found
+    // nothing: the presentation is null, not an empty-artifacts card.
+    expect(result.meta).toBeNull()
+  })
+
+  it('presentationMeta projects every captured file (image and non-image) into one clickable-reference list', async () => {
+    const { ctx } = await setup()
+    const tool = ctx.tools.get('run_python')
+    if (tool?.output.presentationMeta === undefined) throw new Error('unreachable: run_python always declares presentationMeta')
+    const presentationMeta = (args: unknown, resultValue: JsonValue): JsonValue => tool.output.presentationMeta!(args, resultValue)
+    const value = {
+      status: 'success', runId: 'run-1', startedAt: 1, finishedAt: 2,
+      stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+      capturedArtifacts: [
+        {
+          artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500,
+          width: 10, height: 20, title: 'plot.png', attachmentId: 'sha256:abc', attachmentName: 'plot.png',
+        },
+        {
+          artifactId: 'artifact-2', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 8,
+          title: 'summary.csv', attachmentId: 'sha256:def',
+        },
+      ],
+    } as never
+    expect(presentationMeta({}, value)).toEqual({
+      kind: 'science/artifact',
+      version: 1,
+      artifacts: [
+        {
+          artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, title: 'plot.png',
+          attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 500, width: 10, height: 20, name: 'plot.png' },
+        },
+        {
+          artifactId: 'artifact-2', logicalName: 'summary.csv', version: 1, title: 'summary.csv',
+          attachment: { attachmentId: 'sha256:def', mediaType: 'text/csv', bytes: 8 },
+        },
+      ],
+    })
+  })
+
+  it('presentationMeta is null when capturedArtifacts is entirely absent (the non-quiescent settlement path)', async () => {
+    const { ctx } = await setup()
+    const tool = ctx.tools.get('run_python')
+    if (tool?.output.presentationMeta === undefined) throw new Error('unreachable: run_python always declares presentationMeta')
+    const presentationMeta = (args: unknown, resultValue: JsonValue): JsonValue => tool.output.presentationMeta!(args, resultValue)
+    const value = {
+      status: 'success', runId: 'run-1', startedAt: 1, finishedAt: 2,
+      stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+    } as never
+    expect(presentationMeta({}, value)).toBeNull()
   })
 
   it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
@@ -955,7 +1014,7 @@ describe('run_python', () => {
   })
 })
 
-describe('artifactReceiptFromArtifact / formatArtifactReceipt / scienceArtifactPresentation', () => {
+describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
   it('omits caption and the attachment name when both are absent from the durable artifact', () => {
     const value = artifactReceiptFromArtifact({
       artifactId: ScienceArtifactId('artifact-1'),
@@ -974,12 +1033,9 @@ describe('artifactReceiptFromArtifact / formatArtifactReceipt / scienceArtifactP
     expect(value).not.toHaveProperty('caption')
     expect(value).not.toHaveProperty('attachmentName')
     expect(formatArtifactReceipt(value)).not.toContain('caption:')
-    const presentation = scienceArtifactPresentation(value) as { caption?: string; attachment: { name?: string } }
-    expect(presentation).not.toHaveProperty('caption')
-    expect(presentation.attachment).not.toHaveProperty('name')
   })
 
-  it('curates a non-image artifact without width/height, and its presentation is null (no card, until a following change generalizes it)', () => {
+  it('curates a non-image artifact without width/height', () => {
     const value = artifactReceiptFromArtifact({
       artifactId: ScienceArtifactId('artifact-1'),
       logicalName: 'summary.csv',
@@ -997,7 +1053,41 @@ describe('artifactReceiptFromArtifact / formatArtifactReceipt / scienceArtifactP
     expect(value).not.toHaveProperty('width')
     expect(value).not.toHaveProperty('height')
     expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1) curated from run run-1\ntitle: Summary\ntext/csv, 10 bytes')
-    expect(scienceArtifactPresentation(value)).toBeNull()
+  })
+})
+
+describe('scienceArtifactPresentation', () => {
+  it('returns null for an empty artifact list', () => {
+    expect(scienceArtifactPresentation([])).toBeNull()
+  })
+
+  it('tags a single-item list as version 1', () => {
+    const presentation = scienceArtifactPresentation([{
+      artifactId: 'artifact-1', logicalName: 'plot.png', version: 2, title: 'Main plot',
+      attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+    }])
+    expect(presentation).toEqual({
+      kind: 'science/artifact',
+      version: 1,
+      artifacts: [{
+        artifactId: 'artifact-1', logicalName: 'plot.png', version: 2, title: 'Main plot',
+        attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+      }],
+    })
+  })
+
+  it('carries every entry in a multi-artifact list, in the given order', () => {
+    const presentation = scienceArtifactPresentation([
+      {
+        artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, title: 'summary.csv',
+        attachment: { attachmentId: 'sha256:a', mediaType: 'text/csv', bytes: 4 },
+      },
+      {
+        artifactId: 'artifact-2', logicalName: 'plot.png', version: 1, title: 'plot.png',
+        attachment: { attachmentId: 'sha256:b', mediaType: 'image/png', bytes: 8, width: 4, height: 4 },
+      },
+    ]) as { artifacts: { logicalName: string }[] }
+    expect(presentation.artifacts.map(item => item.logicalName)).toEqual(['summary.csv', 'plot.png'])
   })
 })
 
@@ -1055,10 +1145,13 @@ describe('annotate_artifact', () => {
     const value = result.value as unknown as ScienceArtifactReceiptValue
     expect(value.artifactId).toBeTypeOf('string')
     expect(value).toMatchObject({ version: 2, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
-    expect(result.meta).toMatchObject({ kind: 'science/chart', version: 1, chartVersion: 2, caption: 'A caption', attachment: { mediaType: 'image/png' } })
+    expect(result.meta).toMatchObject({
+      kind: 'science/artifact', version: 1,
+      artifacts: [{ version: 2, title: 'Main plot', attachment: { mediaType: 'image/png' } }],
+    })
   })
 
-  it('curates a captured non-image artifact; the receipt has no width/height and presentationMeta is null', async () => {
+  it('curates a captured non-image artifact into a clickable reference too, now that the presentation generalizes past image-only', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-text-success')
     const run = await runSuccessfully(ctx, session, 'science-annotate-text-run')
@@ -1074,7 +1167,44 @@ describe('annotate_artifact', () => {
     const value = result.value as unknown as ScienceArtifactReceiptValue
     expect(value).not.toHaveProperty('width')
     expect(value).not.toHaveProperty('height')
-    expect(result.meta).toBeNull()
+    expect(result.meta).toMatchObject({
+      kind: 'science/artifact', version: 1,
+      artifacts: [{ logicalName: 'summary.csv', title: 'Result summary', attachment: { mediaType: 'text/csv' } }],
+    })
+  })
+
+  it('omits the presentation attachment name when the durable attachment carries none', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-no-name')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-no-name-run')
+    const attachment = await ctx.attachments.saveImage({ data: PNG, mediaType: 'image/png' })
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: ScienceArtifactId(randomUUID()),
+        logicalName: 'plot.png',
+        version: 1,
+        title: 'plot.png',
+        origin: 'auto',
+        attachment,
+        runId: run.runId,
+        toolCallId: run.toolCallId,
+        requestHeaderSeq: run.requestHeaderSeq,
+        environmentRevision: run.environmentRevision,
+        environmentFingerprint: run.environmentFingerprint,
+        createdAt: Date.now(),
+      },
+    })
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-no-name-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'Main plot' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    expect(result.meta).toMatchObject({ artifacts: [{ attachment: { mediaType: 'image/png' } }] })
+    const meta = result.meta as { artifacts: { attachment: Record<string, unknown> }[] }
+    expect(meta.artifacts[0]?.attachment).not.toHaveProperty('name')
   })
 
   it('rejects an empty title before it reaches the Runtime', async () => {

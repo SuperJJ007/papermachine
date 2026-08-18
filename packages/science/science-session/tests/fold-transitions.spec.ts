@@ -17,6 +17,7 @@ import {
   RUN_CALL_ID,
   RUN_ID,
   artifact,
+  autoArtifact,
   environment,
   event,
   failedInterpreter,
@@ -166,7 +167,25 @@ describe('strict Science fold transitions', () => {
           version: 1,
           artifact: artifact({ createdAt: 159 }),
         }),
-      ], /successful prior run/],
+      ], /reference a run that reached a terminal status/],
+      ['auto artifact toolCallId does not match its source run', [
+        ...legalEvents().slice(0, 6),
+        event('science/artifact-saved', 6, 165, {
+          version: 1,
+          artifact: autoArtifact({ toolCallId: CallId('mismatched-call'), createdAt: 165 }),
+        }),
+      ], /must carry its source run's own toolCallId/],
+      ['auto artifact requestHeaderSeq does not match its source run', [
+        ...legalEvents().slice(0, 6),
+        event('request/header', 6, 165, {
+          header: { config: { provider: 'test', model: 'test-model' } },
+          reason: 'second',
+        }),
+        event('science/artifact-saved', 7, 170, {
+          version: 1,
+          artifact: autoArtifact({ requestHeaderSeq: 6, createdAt: 170 }),
+        }),
+      ], /must carry its source run's own toolCallId/],
       ['chart without tool call', legalEvents().slice(0, 8).map((candidate, index) => index === 7
         ? event('science/artifact-saved', 7, 170, {
           version: 1,

@@ -13,7 +13,7 @@ English | [中文](2026-08-18-science-artifact-saved-event.zh.md)
 `science/chart-saved` is retired and replaced by `science/artifact-saved`, carrying one `ScienceArtifactVersion`:
 
 ```ts
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CallId } from '@deepseek-ai/dsh-llm'
 import type { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 
@@ -24,7 +24,7 @@ export interface ScienceArtifactVersion {
   readonly title: string                        // always populated
   readonly caption?: string
   readonly origin: 'auto' | 'model'             // unattended capture vs. curated save
-  readonly attachment: ImageAttachmentRef        // image-only; see Consequences for the text-attachment scope boundary
+  readonly attachment: ImageAttachmentRef | TextAttachmentRef
   readonly runId: ScienceRunId
   readonly toolCallId: CallId
   readonly requestHeaderSeq: number
@@ -56,4 +56,4 @@ The fold applies no content-hash dedup: a curation-only re-save that repeats an 
 
 Every fixture embedding `science/chart-saved` needed regeneration in this same change: `science-session/tests` (11 spec files), `science-runtime/tests`, `tool-science/tests`, `ui-science/tests` (6 spec files), `session-attachment-index/tests`, `host/apiproxy/tests/session-export.spec.ts`, the `apps/web` Science e2e/snapshot fixtures, and `examples/headless-agent`'s keyless snapshot expectations (refreshed via `DSH_SNAPSHOT=refresh`, no model key needed since the scenario runs a scripted mock LLM). The generated `docs/persistence-catalog.md`, `docs/tool-catalog.md`, and the `## Cordis API` region of `docs/subsystems/science.md` (plus their `.zh.md` pairs) needed regeneration; `scripts/gen-tool-catalog.ts` carried a hardcoded `'science/chart-saved'` string in its catalog-row config (not derived from source) that needed a matching manual edit, and `scripts/gen-cordis-catalog.ts`'s `linkedTypePages` map needed `ScienceChartVersion` renamed to `ScienceArtifactVersion` before the generator's type-link coverage check would pass.
 
-`ScienceArtifactVersion.attachment` is typed `ImageAttachmentRef` only here, not the wider `ImageAttachmentRef | TextAttachmentRef` union file-centric artifact capture needs: `dsh-attachment` defines only an image attachment family at this point — [A parallel Text attachment family beside the image family](2026-08-18-attachment-text-family.md) records when `TextAttachmentRef` lands. The union widens, and a caller actually produces a text-attached artifact version, once [Science Runtime auto-capture of run-written files](2026-08-19-science-auto-capture.md) consumes it.
+The `attachment: ImageAttachmentRef | TextAttachmentRef` union this note originally deferred, and `applyArtifactSaved`'s success-only source-run gate and per-save fresh-tool-call consumption, landed together with runtime auto-capture; see [Science Runtime auto-capture of run-written files](2026-08-19-science-auto-capture.md).

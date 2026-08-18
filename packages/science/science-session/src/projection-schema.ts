@@ -147,9 +147,9 @@ function validRun(value: unknown): boolean {
     && (candidate['failureCode'] === undefined || typeof candidate['failureCode'] === 'string')
 }
 
-function validAttachment(value: unknown): boolean {
-  const candidate = projectionRecord(value)
-  if (candidate === undefined) return false
+const TEXT_ATTACHMENT_MEDIA_TYPES = ['text/csv', 'application/json', 'text/markdown', 'text/plain']
+
+function validImageAttachment(candidate: Record<string, unknown>): boolean {
   const keys = ['attachmentId', 'mediaType', 'bytes', 'width', 'height']
   if (candidate['name'] !== undefined) keys.push('name')
   return projectionExactKeys(candidate, keys)
@@ -160,6 +160,24 @@ function validAttachment(value: unknown): boolean {
     && safeInteger(candidate['width'], 1)
     && safeInteger(candidate['height'], 1)
     && (candidate['name'] === undefined || typeof candidate['name'] === 'string')
+}
+
+function validTextAttachment(candidate: Record<string, unknown>): boolean {
+  const keys = ['attachmentId', 'mediaType', 'bytes']
+  if (candidate['name'] !== undefined) keys.push('name')
+  return projectionExactKeys(candidate, keys)
+    && typeof candidate['attachmentId'] === 'string'
+    && candidate['attachmentId'].length > 0
+    && typeof candidate['mediaType'] === 'string'
+    && TEXT_ATTACHMENT_MEDIA_TYPES.includes(candidate['mediaType'])
+    && safeInteger(candidate['bytes'], 1)
+    && (candidate['name'] === undefined || typeof candidate['name'] === 'string')
+}
+
+function validAttachment(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  if (candidate === undefined) return false
+  return validImageAttachment(candidate) || validTextAttachment(candidate)
 }
 
 function validArtifact(value: unknown): boolean {

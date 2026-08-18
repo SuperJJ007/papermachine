@@ -49,6 +49,17 @@ const SAFE_ID = z.string()
   .min(1)
   .max(MAX_ID_LENGTH)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+/**
+ * An artifact's stable logical name: the file's forward-slash path relative
+ * to its run's artifact directory (auto-capture), or a flat name (curation).
+ * Each segment uses the same safe grammar as {@link SAFE_ID}.
+ */
+const SAFE_LOGICAL_NAME = z.string()
+  .min(1)
+  .max(MAX_PATH_LENGTH)
+  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
+    message: 'logicalName must be forward-slash segments each matching the safe artifact-name grammar',
+  })
 
 /** Require normalized, bounded durable text. */
 function text(maximum: number): z.ZodString {
@@ -212,25 +223,37 @@ const runTerminalSchema = z.object({
   }
 })
 
-const attachmentSchema = z.object({
+const attachmentNameSchema = text(MAX_LABEL_LENGTH).refine(value => !/[\\/]/.test(value), {
+  message: 'attachment name must not contain a path separator',
+}).optional()
+
+const imageAttachmentSchema = z.object({
   attachmentId: text(MAX_ID_LENGTH).transform(value => AttachmentId(value)),
   mediaType: z.literal('image/png'),
   bytes: POSITIVE_INTEGER,
   width: POSITIVE_INTEGER,
   height: POSITIVE_INTEGER,
-  name: text(MAX_LABEL_LENGTH).refine(value => !/[\\/]/.test(value), {
-    message: 'attachment name must not contain a path separator',
-  }).optional(),
+  name: attachmentNameSchema,
 }).strict()
+
+const textAttachmentSchema = z.object({
+  attachmentId: text(MAX_ID_LENGTH).transform(value => AttachmentId(value)),
+  mediaType: z.enum(['text/csv', 'application/json', 'text/markdown', 'text/plain']),
+  bytes: POSITIVE_INTEGER,
+  name: attachmentNameSchema,
+}).strict()
+
+/** Every media type an artifact version's `attachment` may carry: an image, or admitted UTF-8 text. */
+const artifactAttachmentSchema = z.union([imageAttachmentSchema, textAttachmentSchema])
 
 const artifactSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
-  logicalName: SAFE_ID,
+  logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
   title: text(MAX_LABEL_LENGTH),
   caption: text(MAX_REASON_LENGTH).optional(),
   origin: z.enum(['auto', 'model']),
-  attachment: attachmentSchema,
+  attachment: artifactAttachmentSchema,
   runId: SAFE_ID.transform(value => ScienceRunId(value)),
   toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
   requestHeaderSeq: SAFE_INTEGER,

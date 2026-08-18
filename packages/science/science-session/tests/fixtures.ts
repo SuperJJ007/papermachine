@@ -139,6 +139,23 @@ export const artifact = (
   ...overrides,
 })
 
+/** A durable auto-captured artifact version: carries its source run's own toolCallId/requestHeaderSeq, never a curation call's. */
+export const autoArtifact = (
+  overrides: Partial<ScienceArtifactVersion> = {},
+): ScienceArtifactVersion => artifact({
+  logicalName: 'summary.csv',
+  title: 'summary.csv',
+  origin: 'auto',
+  attachment: {
+    attachmentId: AttachmentId('attachment-2'),
+    mediaType: 'text/csv',
+    bytes: 32,
+    name: 'summary.csv',
+  },
+  toolCallId: RUN_CALL_ID,
+  ...overrides,
+})
+
 export const outcome = (
   overrides: Partial<ScienceOutcomePublication> = {},
 ): ScienceOutcomePublication => ({

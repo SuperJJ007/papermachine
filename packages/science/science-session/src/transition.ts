@@ -136,22 +136,38 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
   const artifact = event.data.artifact
   const source = state.runs.find(candidate => candidate.runId === artifact.runId)
-  if (source === undefined || source.status !== 'success') {
-    throw new Error('Science artifact must reference a successful prior run')
+  if (source === undefined || source.status === 'running' || source.status === 'interrupted') {
+    throw new Error('Science artifact must reference a run that reached a terminal status')
   }
   const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
-  const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['save_chart'])
+  // An auto-captured version (origin 'auto') is not a distinct model-issued
+  // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
+  // already proven and consumed by that run's science/run-started fact, so it
+  // never re-consumes a tool call — many captured files share one run's call.
+  // A curated version (origin 'model', today only save_chart) consumes a
+  // fresh tool call exactly once, as before.
+  let toolCallTime: number | undefined
+  let consumedToolCallSeq: number | undefined
+  if (artifact.origin === 'auto') {
+    if (artifact.toolCallId !== source.toolCallId || artifact.requestHeaderSeq !== source.requestHeaderSeq) {
+      throw new Error('an auto-captured Science artifact must carry its source run\'s own toolCallId and requestHeaderSeq')
+    }
+  } else {
+    const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['save_chart'])
+    toolCallTime = toolCall.time
+    consumedToolCallSeq = toolCall.seq
+  }
   if (artifact.environmentRevision !== source.environmentRevision
     || artifact.environmentFingerprint !== source.environmentFingerprint) {
     throw new Error('Science artifact environment provenance must match its source run')
   }
   const sourceFact = state.runFacts.find(candidate => candidate.runId === artifact.runId)
-  /* v8 ignore next -- a successful run always has its terminal fact */
+  /* v8 ignore next -- a terminal run always has its terminal fact */
   if (sourceFact?.terminalEventTime === undefined) throw new Error('Science artifact source-run event facts are missing')
   if (artifact.createdAt < source.finishedAt
     || artifact.createdAt < sourceFact.terminalEventTime
     || artifact.createdAt < requestHeader.time
-    || artifact.createdAt < toolCall.time
+    || (toolCallTime !== undefined && artifact.createdAt < toolCallTime)
     || artifact.createdAt > event.time) {
     throw new Error('Science artifact creation time is outside its supporting-fact event interval')
   }
@@ -172,7 +188,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   }
   state.artifacts.push(artifact)
   state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
-  state.consumedToolCallSeqs.push(toolCall.seq)
+  if (consumedToolCallSeq !== undefined) state.consumedToolCallSeqs.push(consumedToolCallSeq)
 }
 
 function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/outcome-published' }>): void {

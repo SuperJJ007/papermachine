@@ -13,7 +13,7 @@ Status: implemented
 `science/chart-saved` 被撤下，由 `science/artifact-saved` 取代，携带一个 `ScienceArtifactVersion`：
 
 ```ts
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CallId } from '@deepseek-ai/dsh-llm'
 import type { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 
@@ -24,7 +24,7 @@ export interface ScienceArtifactVersion {
   readonly title: string                        // always populated
   readonly caption?: string
   readonly origin: 'auto' | 'model'             // unattended capture vs. curated save
-  readonly attachment: ImageAttachmentRef        // image-only; see Consequences for the text-attachment scope boundary
+  readonly attachment: ImageAttachmentRef | TextAttachmentRef
   readonly runId: ScienceRunId
   readonly toolCallId: CallId
   readonly requestHeaderSeq: number
@@ -56,4 +56,4 @@ fold 本身不做任何基于内容哈希的去重：一次仅改动策展元数
 
 每一份内嵌 `science/chart-saved` 的 fixture 都需要在同一改动中重新生成：`science-session/tests`(11 个测试文件)、`science-runtime/tests`、`tool-science/tests`、`ui-science/tests`(6 个测试文件)、`session-attachment-index/tests`、`host/apiproxy/tests/session-export.spec.ts`、`apps/web` 的 Science e2e/snapshot fixture，以及 `examples/headless-agent` 的 keyless snapshot 期望值(通过 `DSH_SNAPSHOT=refresh` 刷新，无需模型 key，因为该场景运行的是脚本化 mock LLM)。生成的 `docs/persistence-catalog.md`、`docs/tool-catalog.md`，以及 `docs/subsystems/science.md` 的 `## Cordis API` 区块(连同它们的 `.zh.md` 对照文件)都需要重新生成；`scripts/gen-tool-catalog.ts` 在其 catalog 行配置里硬编码了一个 `'science/chart-saved'` 字符串(并非从源码派生),需要相应手工修改；`scripts/gen-cordis-catalog.ts` 的 `linkedTypePages` 映射也需要把 `ScienceChartVersion` 重命名为 `ScienceArtifactVersion`，生成器的类型链接覆盖检查才能通过。
 
-这里的 `ScienceArtifactVersion.attachment` 只标注为 `ImageAttachmentRef`，而不是以文件为中心的 artifact 捕获所需要的更宽的 `ImageAttachmentRef | TextAttachmentRef` union：目前 `dsh-attachment` 只定义了图像附件家族——[A parallel Text attachment family beside the image family](2026-08-18-attachment-text-family.md) 记录了 `TextAttachmentRef` 何时落地。等到 [Science Runtime auto-capture of run-written files](2026-08-19-science-auto-capture.md) 消费它、真正产出携带文本附件的 artifact version 时，这个 union 才会被扩宽。
+本笔记最初推迟的 `attachment: ImageAttachmentRef | TextAttachmentRef` union，连同 `applyArtifactSaved` 原本仅限成功来源 run 的校验、以及每次保存都消费一次全新 tool call 的做法，一并在 runtime 自动捕获中落地；参见 [Science Runtime auto-capture of run-written files](2026-08-19-science-auto-capture.md)。

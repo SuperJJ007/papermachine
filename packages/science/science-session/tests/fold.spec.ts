@@ -19,6 +19,7 @@ import {
   RUN_CALL_ID,
   RUN_ID,
   artifact,
+  autoArtifact,
   environment,
   environmentWithoutPython,
   event,
@@ -53,6 +54,18 @@ describe('strict Science fold', () => {
     expect(state.settledToolCallSeqs).toEqual([])
     expect(state.messageFacts).toEqual([])
     expect(state.consumedToolCallSeqs).toEqual([3, 6, 8])
+  })
+
+  it('folds an auto-captured text artifact that carries its source run\'s own toolCallId, consuming no fresh tool call', () => {
+    const events: SessionEvent[] = [
+      ...legalEvents().slice(0, 6),
+      event('science/artifact-saved', 6, 165, { version: 1, artifact: autoArtifact({ createdAt: 165 }) }),
+    ]
+    const state = foldScience(events)
+
+    expect(state.artifacts).toEqual([autoArtifact({ createdAt: 165 })])
+    expect(state.consumedToolCallSeqs).toEqual([3])
+    expect(decodeScienceArtifact(autoArtifact({ createdAt: 165 }))).toEqual(autoArtifact({ createdAt: 165 }))
   })
 
   it('uses strict payload schemas for every Science event', () => {
@@ -265,7 +278,7 @@ describe('strict Science fold', () => {
       version: 1,
       artifact: artifact({ runId: ScienceRunId('missing-run') }),
     })
-    expect(() => foldScience(missingRun)).toThrow(/successful prior run/)
+    expect(() => foldScience(missingRun)).toThrow(/reference a run that reached a terminal status/)
 
     const futureEvidence = legalEvents()
     futureEvidence[9] = event('science/outcome-published', 9, 180, {

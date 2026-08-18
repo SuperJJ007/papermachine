@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-science-session/types
  */
 
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CallId } from '@deepseek-ai/dsh-llm'
 import type {
   ScienceArtifactId,
@@ -230,8 +230,8 @@ export interface ScienceArtifactVersion {
   readonly caption?: string
   /** Whether this version reached the session through capture or curation. */
   readonly origin: ScienceArtifactOrigin
-  /** Immutable attachment metadata; Science version one requires PNG. */
-  readonly attachment: ImageAttachmentRef
+  /** Immutable attachment metadata: an image, or admitted UTF-8 text. */
+  readonly attachment: ImageAttachmentRef | TextAttachmentRef
   /** Successful run that produced this artifact. */
   readonly runId: ScienceRunId
   /** Model-issued call that authorized saving this artifact version. */
@@ -411,7 +411,7 @@ export interface ScienceClientArtifactVersion {
   readonly title: string
   readonly caption?: string
   readonly origin: ScienceArtifactOrigin
-  readonly attachment: ImageAttachmentRef
+  readonly attachment: ImageAttachmentRef | TextAttachmentRef
   readonly runId: ScienceRunId
   readonly toolCallId: CallId
   readonly requestHeaderSeq: number

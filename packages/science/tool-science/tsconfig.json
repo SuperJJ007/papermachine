@@ -19,6 +19,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../preset/agent-presets"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {

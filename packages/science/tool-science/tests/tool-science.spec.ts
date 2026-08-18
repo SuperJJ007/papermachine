@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
@@ -425,6 +426,20 @@ describe('isScienceSession / requireScienceSession', () => {
     const session = ctx.sessions.create(SessionId('standard-for-run'))
     expect(isScienceSession(session)).toBe(false)
     expect(() => requireScienceSession({ agent: fakeAgent(session) } as never)).toThrow(/science preset/)
+  })
+
+  it('resolves true for a session switched to `science` while blank, even though its frozen header still names the preset it was created with', async () => {
+    // `resolveSessionPreset` (`@deepseek-ai/dsh-agent-presets`), not the
+    // creation header alone: a blank session recomposed to `science` records
+    // only an `agent-preset/selected` event, and every host reader — the
+    // API gateway, transcript presenters, resume/adoption — already resolves
+    // the same way for the same reason.
+    const { ctx } = await setup()
+    const session = ctx.sessions.create(SessionId('standard-then-switched-to-science'), { meta: { agentPreset: 'standard' } })
+    expect(isScienceSession(session)).toBe(false)
+    session.append('agent-preset/selected', { agentPreset: 'science' })
+    expect(isScienceSession(session)).toBe(true)
+    expect(requireScienceSession({ agent: fakeAgent(session) } as never)).toBe(session)
   })
 })
 

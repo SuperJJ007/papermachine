@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-science-runtime'
+import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -40,12 +41,19 @@ export function scienceModelObservedLabel(label: string): string | undefined {
 const STATE_RULE = 'Each run_python/run_r call starts a fresh interpreter process. Reusable state belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.'
 
 /**
- * Whether the exact live Session is bound to the `science` preset and mode.
+ * Whether the exact live Session currently runs under the `science` preset.
+ *
+ * Reads the resolved preset (creation header, overridden by the last
+ * `agent-preset/selected` event), not the header alone: a session that
+ * switched preset while blank keeps its creation-time header forever, and
+ * every turn since the switch runs under the newer composition — the same
+ * fact `dsh-host-apiproxy` resolves this way for tool visibility, transcript
+ * presenters, and resume/adoption.
  * @param session - candidate Session.
- * @returns whether `session.header.agentPreset` is `'science'`.
+ * @returns whether the session's resolved agent preset is `'science'`.
  */
 export function isScienceSession(session: Session): boolean {
-  return session.header.agentPreset === 'science'
+  return resolveSessionPreset(session) === 'science'
 }
 
 /** Render one interpreter binding line, omitting source, credentials, and Host paths. */

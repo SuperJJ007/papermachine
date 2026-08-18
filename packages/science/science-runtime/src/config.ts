@@ -26,6 +26,20 @@ export const MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 256
 /** Highest accepted configured diagnostic byte bound. */
 export const MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 262_144
 
+/** Default maximum retained package-inventory entries per observed interpreter. */
+export const DEFAULT_PACKAGES_MAX_ENTRIES = 2_000
+/** Lowest accepted configured package-inventory entry bound. */
+export const MIN_PACKAGES_MAX_ENTRIES = 1
+/** Highest accepted configured package-inventory entry bound. */
+export const MAX_PACKAGES_MAX_ENTRIES = 20_000
+
+/** Default maximum retained package-inventory UTF-8 bytes (summed name and version) per observed interpreter. */
+export const DEFAULT_PACKAGES_MAX_BYTES = 65_536
+/** Lowest accepted configured package-inventory byte bound. */
+export const MIN_PACKAGES_MAX_BYTES = 1_024
+/** Highest accepted configured package-inventory byte bound. */
+export const MAX_PACKAGES_MAX_BYTES = 1_048_576
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -51,6 +65,19 @@ export interface Config {
   readonly artifactDiagnosticMaxEntries?: number
   /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
   readonly artifactDiagnosticMaxBytes?: number
+  /**
+   * Maximum package-inventory entries retained per observed interpreter.
+   * An inventory exceeding this cap is truncated and flagged; the digest
+   * still covers the complete pre-truncation inventory.
+   */
+  readonly packagesMaxEntries?: number
+  /**
+   * Maximum package-inventory UTF-8 bytes (summed name and version) retained
+   * per observed interpreter. An inventory exceeding this cap is truncated
+   * and flagged; the digest still covers the complete pre-truncation
+   * inventory.
+   */
+  readonly packagesMaxBytes?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -79,6 +106,12 @@ export const configSchema: z<Config> = z.object({
   artifactDiagnosticMaxBytes: z.number().step(1)
     .min(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES).max(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)
     .default(DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES),
+  packagesMaxEntries: z.number().step(1)
+    .min(MIN_PACKAGES_MAX_ENTRIES).max(MAX_PACKAGES_MAX_ENTRIES)
+    .default(DEFAULT_PACKAGES_MAX_ENTRIES),
+  packagesMaxBytes: z.number().step(1)
+    .min(MIN_PACKAGES_MAX_BYTES).max(MAX_PACKAGES_MAX_BYTES)
+    .default(DEFAULT_PACKAGES_MAX_BYTES),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -93,6 +126,10 @@ export interface ResolvedConfig {
   readonly artifactDiagnosticMaxEntries: number
   /** Explicitly resolved artifact-selection diagnostic byte bound. */
   readonly artifactDiagnosticMaxBytes: number
+  /** Explicitly resolved package-inventory entry bound. */
+  readonly packagesMaxEntries: number
+  /** Explicitly resolved package-inventory byte bound. */
+  readonly packagesMaxBytes: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -151,7 +188,10 @@ export function parseProfiles(
 export function resolveConfig(config: Config): ResolvedConfig {
   assertKnownKeys(
     config,
-    ['dshHome', 'profiles', 'timeoutMs', 'artifactDiagnosticMaxEntries', 'artifactDiagnosticMaxBytes'],
+    [
+      'dshHome', 'profiles', 'timeoutMs', 'artifactDiagnosticMaxEntries', 'artifactDiagnosticMaxBytes',
+      'packagesMaxEntries', 'packagesMaxBytes',
+    ],
     'config',
   )
   if (config.dshHome !== undefined && typeof config.dshHome !== 'string') {
@@ -173,11 +213,25 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || artifactDiagnosticMaxBytes > MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES) {
     throw new Error(`science-runtime: artifactDiagnosticMaxBytes must be a safe integer from ${String(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES)} through ${String(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)}`)
   }
+  const packagesMaxEntries = config.packagesMaxEntries ?? DEFAULT_PACKAGES_MAX_ENTRIES
+  if (!Number.isSafeInteger(packagesMaxEntries)
+    || packagesMaxEntries < MIN_PACKAGES_MAX_ENTRIES
+    || packagesMaxEntries > MAX_PACKAGES_MAX_ENTRIES) {
+    throw new Error(`science-runtime: packagesMaxEntries must be a safe integer from ${String(MIN_PACKAGES_MAX_ENTRIES)} through ${String(MAX_PACKAGES_MAX_ENTRIES)}`)
+  }
+  const packagesMaxBytes = config.packagesMaxBytes ?? DEFAULT_PACKAGES_MAX_BYTES
+  if (!Number.isSafeInteger(packagesMaxBytes)
+    || packagesMaxBytes < MIN_PACKAGES_MAX_BYTES
+    || packagesMaxBytes > MAX_PACKAGES_MAX_BYTES) {
+    throw new Error(`science-runtime: packagesMaxBytes must be a safe integer from ${String(MIN_PACKAGES_MAX_BYTES)} through ${String(MAX_PACKAGES_MAX_BYTES)}`)
+  }
   return {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
     artifactDiagnosticMaxEntries,
     artifactDiagnosticMaxBytes,
+    packagesMaxEntries,
+    packagesMaxBytes,
   }
 }

@@ -51,6 +51,14 @@ export interface ScienceInterpreterSelection {
   readonly configuredPrefix: string
 }
 
+/** One installed package name and version, as reported by the interpreter's own package manager. */
+export interface SciencePackage {
+  /** Package name exactly as reported. */
+  readonly name: string
+  /** Package version exactly as reported. */
+  readonly version: string
+}
+
 /** Complete identity facts captured after an interpreter was observed. */
 export interface ScienceInterpreterIdentity {
   /** Canonicalized environment prefix. */
@@ -63,8 +71,19 @@ export interface ScienceInterpreterIdentity {
   readonly languageVersion: string
   /** SHA-256 digest of the environment's Conda history. */
   readonly condaHistorySha256: string
-  /** Stable digest over the complete binding facts. */
+  /** Stable digest over the complete binding facts. Excludes {@link packagesSha256}. */
   readonly bindingFingerprint: string
+  /**
+   * Installed packages retained after the Runtime's configured entry and
+   * byte caps, sorted by name then version. Truncated when
+   * {@link packagesTruncated} is `true`; {@link packagesSha256} still covers
+   * the complete pre-truncation inventory.
+   */
+  readonly packages: readonly SciencePackage[]
+  /** SHA-256 digest over the complete sorted package inventory, before any cap truncation. */
+  readonly packagesSha256: string
+  /** Whether the configured entry or byte cap truncated {@link packages}. */
+  readonly packagesTruncated: boolean
 }
 
 /** Fully observed interpreter that is safe to authorize a run. */
@@ -289,12 +308,20 @@ export interface ScienceProjection {
   readonly lastScienceEventSeq: number
 }
 
-/** Browser-safe interpreter summary derived from one durable binding. */
+/**
+ * Browser-safe interpreter summary derived from one durable binding. Package
+ * names and versions carry no Host path, so {@link packages} passes through
+ * unredacted; only the inventory digest is truncated to a preview, matching
+ * {@link fingerprintPreview}.
+ */
 export interface ScienceClientInterpreterBinding {
   readonly language: ScienceLanguage
   readonly capability: ScienceInterpreterCapability
   readonly languageVersion?: string
   readonly fingerprintPreview?: string
+  readonly packages?: readonly SciencePackage[]
+  readonly packagesTruncated?: boolean
+  readonly packagesSha256Preview?: string
 }
 
 /** Browser-safe environment revision with every Host path and free-text failure omitted. */
@@ -308,10 +335,18 @@ export interface ScienceClientEnvironmentBinding {
   readonly r?: ScienceClientInterpreterBinding
 }
 
-/** Browser-safe fields shared by every Science run state. */
+/**
+ * Browser-safe fields shared by every Science run state. `toolCallId` and
+ * `requestHeaderSeq` are session-log identities the browser already holds
+ * (transcript tool nodes are keyed by the same `CallId`, and
+ * `requestHeaderSeq` addresses a `request/header` event the client already
+ * receives); they let a run join its authorizing transcript call.
+ */
 export interface ScienceClientRunIdentity {
   readonly runId: ScienceRunId
   readonly language: ScienceLanguage
+  readonly toolCallId: CallId
+  readonly requestHeaderSeq: number
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly startedAt: number
@@ -345,7 +380,12 @@ export interface ScienceClientRunInterrupted extends ScienceClientRunIdentity {
 /** One run state served to Session projection clients. */
 export type ScienceClientRun = ScienceClientRunStarted | ScienceClientRunTerminal | ScienceClientRunInterrupted
 
-/** Browser-safe chart version retaining the attachment reference needed for authorized reads. */
+/**
+ * Browser-safe chart version retaining the attachment reference needed for
+ * authorized reads. `toolCallId` and `requestHeaderSeq` are session-log
+ * identities the browser already holds; they let a chart version join its
+ * authorizing transcript call for provenance.
+ */
 export interface ScienceClientChartVersion {
   readonly chartId: ScienceChartId
   readonly logicalName: string
@@ -354,6 +394,8 @@ export interface ScienceClientChartVersion {
   readonly caption?: string
   readonly attachment: ImageAttachmentRef
   readonly runId: ScienceRunId
+  readonly toolCallId: CallId
+  readonly requestHeaderSeq: number
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly createdAt: number

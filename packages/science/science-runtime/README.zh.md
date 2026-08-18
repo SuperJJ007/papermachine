@@ -21,7 +21,7 @@
         rPrefix: /absolute/conda/r
 ```
 
-`profiles` 是由 `ScienceEnvironmentProfileId` 键控的 closed map。空 map 是合法的显式未配置状态；每个已声明的值仍至少有一个 absolute `pythonPrefix` 或 `rPrefix`。`timeoutMs` 默认是 120,000，且只接受 1 至 600,000 的 safe integer。
+`profiles` 是由 `ScienceEnvironmentProfileId` 键控的 closed map。空 map 是合法的显式未配置状态；每个已声明的值仍至少有一个 absolute `pythonPrefix` 或 `rPrefix`。`timeoutMs` 默认是 120,000，且只接受 1 至 600,000 的 safe integer。`packagesMaxEntries`（默认 2,000；1 至 20,000）与 `packagesMaxBytes`（默认 65,536；1,024 至 1,048,576）限定每个已观测 interpreter 保留的 package inventory，详见下方“操作”一节。
 
 ## 绑定 settings 的入口
 
@@ -33,7 +33,7 @@
 
 ## 操作
 
-`bindEnvironment({ session, profileId, signal })` 要求精确的 live Science Session object，观测所选 profile，并追加一个完整的 `science/environment-bound` 值。静态缺失或不可用的 interpreter 会成为 `invalid` 值；取消、超时、prefix I/O 失败、partial confinement 或可写 root 重叠会拒绝且不追加 environment event。
+`bindEnvironment({ session, profileId, signal })` 要求精确的 live Science Session object，观测所选 profile，并追加一个完整的 `science/environment-bound` 值。静态缺失或不可用的 interpreter 会成为 `invalid` 值；取消、超时、prefix I/O 失败、partial confinement 或可写 root 重叠会拒绝且不追加 environment event。每个可用 interpreter 的 identity 还携带一份 package inventory：对完整观测结果排序并计算 digest 后的 name/version pair，再按 `packagesMaxEntries`/`packagesMaxBytes` 截留；超出任一上限都会截断保留列表并置位 `packagesTruncated`，而 digest 仍覆盖截断前的完整 inventory。若 package-inventory probe 未产生可解析的输出，整个 interpreter 观测会成为 `invalid`，与 version 和 UTF-8 probe 的诚实失败行为一致。
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` 会重新观测 applied binding，把未改变的 UTF-8 source 写入私有 run directory，追加 `science/run-started`，并返回 `ScienceRunHandle`。该 handle 只暴露 `runId`、`done` 和幂等的 `cancel()`；它不暴露 PID 或 Host scratch path。它解析出的 result 包含已提交的 terminal record、受限的运行期 stdout/stderr tail、精确 byte count 与截断事实。output text 永不进入 Science Session event。
 
@@ -43,13 +43,13 @@ Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。s
 
 ## 限制与环境
 
-每次 probe 和 run 都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd 和 full `workspace-write` confinement。Python probe 使用 `-I -B -X utf8`，run 额外使用 `-u`。R 版本发现仅使用 `Rscript --version`；UTF-8 probe 和 run 使用 `Rscript --vanilla --encoding=UTF-8`。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。
+每次 probe 和 run 都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd 和 full `workspace-write` confinement。Python probe 使用 `-I -B -X utf8`，run 额外使用 `-u`；其 package-inventory probe 追加 `-m pip list --format=json`，报告 interpreter 自身所见。R 版本发现仅使用 `Rscript --version`；UTF-8 probe 和 run 使用 `Rscript --vanilla --encoding=UTF-8`；其 package-inventory probe 求值 `installed.packages()` 并以 TSV 打印 `Package`/`Version`，只使用 base R，因为无法保证 `jsonlite` 已安装。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。
 
 私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory。只有独占 marker 创建成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree 已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
 
 ## 验证
 
-fake-prefix 测试覆盖 Python-only、R-only、shared 与 distinct prefix；严格配置；稳定与漂移观测；无效 UTF-8 probe byte；scratch ownership；direct argv；空环境；output 上限；terminal 分类；取消；超时；detachment；同 ID quarantine；Loader 组合；以及 live/cold replay。只用 lstat 的 prefix manifest 记录相对路径、类型、symlink target、mode、size、mtime/ctime nanoseconds 与 regular-file digest，且不使用 atime；前后 diff 为空才表示 prefix 未改变。
+fake-prefix 测试覆盖 Python-only、R-only、shared 与 distinct prefix；严格配置；稳定与漂移观测；无效 UTF-8 probe byte；两种语言的 package-inventory 解析、排序、entry/byte 上限截断与 probe 失败处理；scratch ownership；direct argv；空环境；output 上限；terminal 分类；取消；超时；detachment；同 ID quarantine；Loader 组合；以及 live/cold replay。一个专门测试将 `bindingFingerprint` 与 package inventory 的独立性钉住：对同一静态 identity 重新绑定并观测到不同的 inventory 时，只会改变 `packagesSha256`，不会改变 `bindingFingerprint`。只用 lstat 的 prefix manifest 记录相对路径、类型、symlink target、mode、size、mtime/ctime nanoseconds 与 regular-file digest，且不使用 atime；前后 diff 为空才表示 prefix 未改变。
 
 真实 Conda 验收独立且 opt-in。它绝不把 fake-prefix evidence 当作真实机器 evidence。
 
@@ -78,3 +78,5 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 - **只使用已有的本地 prefix** — observation 是 fingerprint，不是可复现环境锁；Runtime 从不管理 Conda package 或 environment。
 - **仅 file-write confinement** — full sandbox enforcement 限制所述的 file write，但不宣称隔离 file read、network、syscall 或科学有效性。
 - **仅 host-local execution** — remote subprocess provider 和 partial sandbox backend 会 fail closed，因为此实现拥有私有 Host scratch。
+- **截断的 package inventory 无法回放为一个 environment** — digest 仍覆盖完整 inventory，因此截断是可检测的，但被截留的 name/version pair 列表不是可安装的规格说明。`bindingFingerprint` 从不纳入 package digest，因此调高或调低任一上限都不会改变 drift 检测。
+- **会话中途安装的 package 在下一次绑定前不可见** — inventory 按每次 environment 绑定采集一次，而非按每次 run 采集；`condaHistorySha256` 已在那个时点捕捉 conda 层面的变更。

@@ -81,6 +81,7 @@ class FakeSubprocess extends SubprocessRuntime {
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (spec.argv.includes('--version')) return settledHandle('Fake Python 3.13.5\n', '')
+    if (spec.argv.includes('-m')) return settledHandle('[{"name":"pip","version":"24.0"}]', '')
     if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
     const artifacts = spec.env?.SCIENCE_ARTIFACT_DIR
     if (artifacts === undefined) throw new Error('FakeSubprocess run received no SCIENCE_ARTIFACT_DIR')

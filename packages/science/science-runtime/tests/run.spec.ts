@@ -748,7 +748,7 @@ describe('ScienceRuntime.startRun', () => {
 
     expect(error).toBeInstanceOf(ScienceRuntimeError)
     expect(error).toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
-    expect(subprocess.specs).toHaveLength(before + 2)
+    expect(subprocess.specs).toHaveLength(before + 3)
     expect(session.events.filter(event => event.type === 'science/environment-bound').map(event => event.data.environment.status))
       .toEqual(['applied', 'drifted'])
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)

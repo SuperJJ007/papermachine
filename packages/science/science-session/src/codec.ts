@@ -35,6 +35,13 @@ const MAX_PATH_LENGTH = 4096
 const MAX_LABEL_LENGTH = 512
 const MAX_REASON_LENGTH = 4096
 const MAX_SUMMARY_BYTES = 32 * 1024
+/**
+ * Fixed decoder ceiling for a durable package inventory, independent of the
+ * Runtime's configurable `packagesMaxEntries` cap. Comfortably above that
+ * cap's own allowed maximum so the decoder accepts every value the Runtime
+ * can produce.
+ */
+const MAX_PACKAGES_ENTRIES = 50_000
 const SAFE_INTEGER = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
 const POSITIVE_INTEGER = SAFE_INTEGER.min(1)
 const SHA256 = z.string().regex(/^[a-f0-9]{64}$/)
@@ -77,6 +84,11 @@ const interpreterSelectionShape = {
   configuredPrefix: ABSOLUTE_PATH,
 } as const
 
+const sciencePackageSchema = z.object({
+  name: text(MAX_LABEL_LENGTH),
+  version: text(MAX_LABEL_LENGTH),
+}).strict()
+
 const interpreterIdentityShape = {
   canonicalPrefix: ABSOLUTE_PATH,
   executable: ABSOLUTE_PATH,
@@ -84,6 +96,9 @@ const interpreterIdentityShape = {
   languageVersion: text(MAX_LABEL_LENGTH),
   condaHistorySha256: SHA256,
   bindingFingerprint: SHA256,
+  packages: z.array(sciencePackageSchema).max(MAX_PACKAGES_ENTRIES),
+  packagesSha256: SHA256,
+  packagesTruncated: z.boolean(),
 } as const
 
 const observedInterpreterSchema = z.object({
@@ -100,6 +115,9 @@ const failedInterpreterShape = {
   languageVersion: interpreterIdentityShape.languageVersion.optional(),
   condaHistorySha256: interpreterIdentityShape.condaHistorySha256.optional(),
   bindingFingerprint: interpreterIdentityShape.bindingFingerprint.optional(),
+  packages: interpreterIdentityShape.packages.optional(),
+  packagesSha256: interpreterIdentityShape.packagesSha256.optional(),
+  packagesTruncated: interpreterIdentityShape.packagesTruncated.optional(),
   reason: text(MAX_REASON_LENGTH),
 } as const
 

@@ -20,6 +20,7 @@ import type {
 
 const HISTORY_SHA = 'a'.repeat(64)
 export const FINGERPRINT = 'b'.repeat(64)
+export const PACKAGES_SHA = 'f'.repeat(64)
 const CODE_SHA = 'c'.repeat(64)
 const SCRATCH_KEY = ScienceScratchKey('d'.repeat(64))
 export const RUN_ID = ScienceRunId('run-1')
@@ -39,6 +40,9 @@ export const interpreter = (
   languageVersion: '3.13.5',
   condaHistorySha256: HISTORY_SHA,
   bindingFingerprint: FINGERPRINT,
+  packages: [{ name: 'pip', version: '24.0' }],
+  packagesSha256: PACKAGES_SHA,
+  packagesTruncated: false,
   capability: 'available',
   ...overrides,
 })

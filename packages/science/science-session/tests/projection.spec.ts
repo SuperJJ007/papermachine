@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
-import { legalEvents, RUN_ID, CHART_ID, FINGERPRINT } from './fixtures.ts'
+import { CHART_CALL_ID, CHART_ID, FINGERPRINT, PACKAGES_SHA, RUN_CALL_ID, RUN_ID, legalEvents } from './fixtures.ts'
 
 describe('Science projection replay', () => {
   it('projects all six event types and derives stable metrics', () => {
     const state = toClientScienceProjection(replayScience(legalEvents()))
     expect(state).toMatchObject({
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'r3' },
-      environment: { revision: 1, status: 'applied' },
-      runs: [{ runId: RUN_ID, status: 'success' }],
-      charts: [{ chartId: CHART_ID, version: 1 }],
+      environment: {
+        revision: 1,
+        status: 'applied',
+        python: { packages: [{ name: 'pip', version: '24.0' }], packagesTruncated: false, packagesSha256Preview: PACKAGES_SHA.slice(0, 12) },
+      },
+      runs: [{ runId: RUN_ID, status: 'success', toolCallId: RUN_CALL_ID, requestHeaderSeq: 2 }],
+      charts: [{ chartId: CHART_ID, version: 1, toolCallId: CHART_CALL_ID, requestHeaderSeq: 2 }],
       outcome: { revision: 1 },
       metrics: {
         runCount: 1,
@@ -38,8 +42,8 @@ describe('Science projection replay', () => {
     expect(clientJson).not.toContain('configuredPrefix')
     expect(clientJson).not.toContain('canonicalPrefix')
     expect(clientJson).not.toContain('executable')
-    expect(clientJson).not.toContain('toolCallId')
-    expect(clientJson).not.toContain('requestHeaderSeq')
+    expect(clientJson).toContain('toolCallId')
+    expect(clientJson).toContain('requestHeaderSeq')
   })
 
   it('returns null before Science mode is bound', () => {
@@ -83,6 +87,7 @@ describe('Science projection replay', () => {
     expect(client.environment?.python).not.toHaveProperty('languageVersion')
     expect(client.environment?.r).not.toHaveProperty('languageVersion')
     expect(client.environment?.r).not.toHaveProperty('fingerprintPreview')
+    expect(client.environment?.r).not.toHaveProperty('packages')
     expect(client.runs[0]).not.toHaveProperty('exitCode')
     expect(client.runs[1]).toMatchObject({ signal: 'TERM', failureCode: 'RUN_FAILED' })
     expect(client.runs[2]).not.toHaveProperty('signal')

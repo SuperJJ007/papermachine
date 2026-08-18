@@ -173,6 +173,11 @@ export class ControlledSubprocess extends SubprocessRuntime {
   onSpawn: ((spec: SubprocessSpawnSpec) => void) | undefined
   /** Retained UTF-8 fact returned for fixed Unicode probes. */
   utf8Probe: FakeUtf8Probe = 'valid'
+  /** Fake package-inventory probe stdout for Python and R, overridable per test. */
+  packagesOutput: { readonly python: string; readonly r: string } = {
+    python: '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]',
+    r: 'base\t4.5.0\nutils\t4.5.0\n',
+  }
   private readonly queuedRuns: ControlledRun[] = []
   /** One injected source-spawn throw, consumed after probe requests complete. */
   spawnFailure: Error | undefined
@@ -193,6 +198,9 @@ export class ControlledSubprocess extends SubprocessRuntime {
     this.onSpawn?.(spec)
     const r = spec.argv[0]?.endsWith('/Rscript') ?? false
     if (spec.argv.includes('--version')) return settledHandle(r ? 'Fake R 4.5.0\n' : 'Fake Python 3.13.5\n', '')
+    if (spec.argv.includes('-m') || spec.argv.some(arg => arg.includes('installed.packages'))) {
+      return settledHandle(r ? this.packagesOutput.r : this.packagesOutput.python, '')
+    }
     if (spec.argv.includes('-c') || spec.argv.includes('-e')) {
       return settledHandle(this.utf8Probe === 'valid' ? 'dsh-科学-✓' : '�', '', this.utf8Probe)
     }

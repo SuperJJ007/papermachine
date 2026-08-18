@@ -24,7 +24,12 @@ const fingerprintPreview = (fingerprint: string): string => fingerprint.slice(0,
 const pathFreeLabel = (label: string | undefined): string | undefined =>
   label !== undefined && !/[\\/]/.test(label) ? label : undefined
 
-/** Remove paths, executable identity, digests, and free-text failure from an interpreter binding. */
+/**
+ * Remove paths, executable identity, digests, and free-text failure from an
+ * interpreter binding. Package names and versions carry no Host path, so
+ * `packages` and `packagesTruncated` pass through unredacted; only the
+ * inventory digest is truncated to a preview.
+ */
 function clientInterpreter(binding: ScienceInterpreterBinding): ScienceClientInterpreterBinding {
   const languageVersion = pathFreeLabel(binding.languageVersion)
   return {
@@ -34,6 +39,11 @@ function clientInterpreter(binding: ScienceInterpreterBinding): ScienceClientInt
     ...binding.bindingFingerprint === undefined
       ? {}
       : { fingerprintPreview: fingerprintPreview(binding.bindingFingerprint) },
+    ...binding.packages === undefined ? {} : { packages: binding.packages },
+    ...binding.packagesTruncated === undefined ? {} : { packagesTruncated: binding.packagesTruncated },
+    ...binding.packagesSha256 === undefined
+      ? {}
+      : { packagesSha256Preview: fingerprintPreview(binding.packagesSha256) },
   }
 }
 
@@ -50,11 +60,18 @@ function clientEnvironment(environment: ScienceEnvironmentBinding): ScienceClien
   }
 }
 
-/** Remove authorization, source, scratch, full fingerprint, and free-text failure fields from one run. */
+/**
+ * Remove source, scratch, full fingerprint, and free-text failure fields from
+ * one run. `toolCallId` and `requestHeaderSeq` pass through: the browser
+ * already holds both as session-log identities, and they let the client join
+ * a run to its authorizing transcript call.
+ */
 function clientRun(run: ScienceRun): ScienceClientRun {
   const common = {
     runId: run.runId,
     language: run.language,
+    toolCallId: run.toolCallId,
+    requestHeaderSeq: run.requestHeaderSeq,
     environmentRevision: run.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
     startedAt: run.startedAt,
@@ -83,7 +100,12 @@ function clientRun(run: ScienceRun): ScienceClientRun {
   }
 }
 
-/** Remove authorizing request facts and the full environment fingerprint from one chart version. */
+/**
+ * Remove the full environment fingerprint from one chart version.
+ * `toolCallId` and `requestHeaderSeq` pass through: the browser already
+ * holds both as session-log identities, and they let the client join a chart
+ * version to its authorizing transcript call for provenance.
+ */
 function clientChart(chart: ScienceChartVersion): ScienceClientChartVersion {
   return {
     chartId: chart.chartId,
@@ -93,6 +115,8 @@ function clientChart(chart: ScienceChartVersion): ScienceClientChartVersion {
     ...chart.caption === undefined ? {} : { caption: chart.caption },
     attachment: chart.attachment,
     runId: chart.runId,
+    toolCallId: chart.toolCallId,
+    requestHeaderSeq: chart.requestHeaderSeq,
     environmentRevision: chart.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(chart.environmentFingerprint),
     createdAt: chart.createdAt,

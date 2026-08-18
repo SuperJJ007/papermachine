@@ -7,7 +7,7 @@ import { SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { canonicalizeWatchPath } from '@deepseek-ai/dsh-home-paths'
-import type { ScienceInterpreterBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import type { ScienceInterpreterBinding, ScienceLanguage, SciencePackage } from '@deepseek-ai/dsh-science-session'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
@@ -17,6 +17,19 @@ import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
 const VERSION_MAX_BYTES = 1_024
 const UTF8_PROBE_TEXT = 'dsh-科学-✓'
+/**
+ * Fixed capture ceiling for the package-inventory probe's raw subprocess
+ * output — a defensive backstop against a runaway probe, not a
+ * deployment-varying choice (`MAX_OUTPUT_BYTES` in `execution.ts` is the
+ * analogous fixed bound for run output). Generous relative to
+ * `MAX_PACKAGES_MAX_BYTES` in `config.ts` so a probe transcript for any
+ * inventory within the configurable retention cap is never lossy at capture
+ * time, even with JSON/TSV formatting overhead.
+ */
+const PACKAGES_PROBE_MAX_BYTES = 8 * 1024 * 1024
+/** Base-R expression: TSV `Package<TAB>Version` lines, no header, no `jsonlite` dependency. */
+const R_PACKAGES_EXPR = "m <- installed.packages()[, c('Package', 'Version'), drop = FALSE]; "
+  + "write.table(m, file = stdout(), sep = '\\t', quote = FALSE, row.names = FALSE, col.names = FALSE)"
 const UNIX_EXECUTE_BITS = 0o111
 const POSIX_LOCALE = 'C.UTF-8'
 const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
@@ -67,6 +80,10 @@ export interface ObservationServices {
   readonly signal: AbortSignal
   /** Create or verify the planned Session tree after every required probe is fully wrapped. */
   readonly prepareSessionScratch?: () => Promise<void>
+  /** Configured maximum retained package-inventory entries. */
+  readonly packagesMaxEntries: number
+  /** Configured maximum retained package-inventory UTF-8 bytes. */
+  readonly packagesMaxBytes: number
 }
 
 interface StaticInterpreterFacts {
@@ -80,6 +97,7 @@ interface PreparedProbeAttempt {
   readonly scratch: ScienceProbeScratch
   readonly version: ConfinedArgv
   readonly utf8: ConfinedArgv
+  readonly packages: ConfinedArgv
 }
 
 interface PreparedObservation {
@@ -96,15 +114,18 @@ interface InvalidObservation {
 }
 
 /** Canonical direct argv; Rscript accepts `--version` only as its sole argument. */
-function probeArgv(language: ScienceLanguage, executable: string, kind: 'version' | 'utf8'): string[] {
+function probeArgv(language: ScienceLanguage, executable: string, kind: 'version' | 'utf8' | 'packages'): string[] {
   if (language === 'python') {
-    return kind === 'version'
-      ? [executable, '-I', '-B', '-X', 'utf8', '--version']
-      : [executable, '-I', '-B', '-X', 'utf8', '-c', 'import sys;sys.stdout.buffer.write("dsh-科学-✓".encode("utf-8"))']
+    if (kind === 'version') return [executable, '-I', '-B', '-X', 'utf8', '--version']
+    if (kind === 'utf8') {
+      return [executable, '-I', '-B', '-X', 'utf8', '-c', 'import sys;sys.stdout.buffer.write("dsh-科学-✓".encode("utf-8"))']
+    }
+    // `pip list` reports what the interpreter itself sees, requiring nothing outside the prefix.
+    return [executable, '-I', '-B', '-X', 'utf8', '-m', 'pip', 'list', '--format=json']
   }
-  return kind === 'version'
-    ? [executable, '--version']
-    : [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")']
+  if (kind === 'version') return [executable, '--version']
+  if (kind === 'utf8') return [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")']
+  return [executable, '--vanilla', '--encoding=UTF-8', '-e', R_PACKAGES_EXPR]
 }
 
 /** Fixed locale for a supported POSIX host. */
@@ -190,20 +211,96 @@ function normalizeVersion(stdout: string, stderr: string): string | undefined {
   return value
 }
 
+/** Parse `pip list --format=json` stdout; malformed or non-string entries fail the probe. */
+function parsePythonPackages(stdout: string): readonly SciencePackage[] | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    return undefined
+  }
+  if (!Array.isArray(parsed)) return undefined
+  const packages: SciencePackage[] = []
+  for (const entry of parsed as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return undefined
+    const { name, version } = entry as Record<string, unknown>
+    if (typeof name !== 'string' || typeof version !== 'string' || name.length === 0 || version.length === 0) return undefined
+    packages.push({ name, version })
+  }
+  return packages
+}
+
+/** Parse base-R TSV `Package<TAB>Version` lines; malformed lines fail the probe. */
+function parseRPackages(stdout: string): readonly SciencePackage[] | undefined {
+  const lines = stdout.replaceAll('\r\n', '\n').split('\n').filter(line => line.length > 0)
+  const packages: SciencePackage[] = []
+  for (const line of lines) {
+    const tab = line.indexOf('\t')
+    if (tab <= 0 || tab !== line.lastIndexOf('\t') || tab === line.length - 1) return undefined
+    packages.push({ name: line.slice(0, tab), version: line.slice(tab + 1) })
+  }
+  return packages
+}
+
+/** Parse one language's package-inventory probe stdout. */
+function parsePackages(language: ScienceLanguage, stdout: string): readonly SciencePackage[] | undefined {
+  return language === 'python' ? parsePythonPackages(stdout) : parseRPackages(stdout)
+}
+
+/** Stable digest over the complete sorted package inventory, before any retention truncation. */
+function packagesDigest(sorted: readonly SciencePackage[]): string {
+  return sha256(`dsh-science-packages-v1\0${sorted.map(entry => `${entry.name}\0${entry.version}`).join('\n')}`)
+}
+
+/** Sorted, digested, and cap-truncated package inventory ready for a durable identity record. */
+interface PackageInventory {
+  readonly packages: readonly SciencePackage[]
+  readonly packagesSha256: string
+  readonly packagesTruncated: boolean
+}
+
+/**
+ * Sort the observed inventory, digest the complete sorted value, then retain
+ * entries up to the configured entry and byte caps.
+ * @param raw - complete parsed inventory before sorting or truncation.
+ * @param maxEntries - configured maximum retained entries.
+ * @param maxBytes - configured maximum retained UTF-8 bytes (summed name and version).
+ * @returns the retained inventory, its complete-inventory digest, and whether either cap truncated it.
+ */
+function packageInventory(raw: readonly SciencePackage[], maxEntries: number, maxBytes: number): PackageInventory {
+  const sorted = [...raw].sort((first, second) => first.name === second.name
+    ? first.version.localeCompare(second.version)
+    : first.name.localeCompare(second.name))
+  const packages: SciencePackage[] = []
+  let bytes = 0
+  let truncated = false
+  for (const entry of sorted) {
+    const cost = Buffer.byteLength(entry.name, 'utf8') + Buffer.byteLength(entry.version, 'utf8')
+    if (packages.length >= maxEntries || bytes + cost > maxBytes) {
+      truncated = true
+      break
+    }
+    packages.push(entry)
+    bytes += cost
+  }
+  return { packages, packagesSha256: packagesDigest(sorted), packagesTruncated: truncated }
+}
+
 /** Run one fully confined direct argv probe and return exact retained bytes/text facts. */
 async function runProbe(
   services: ObservationServices,
   prefix: string,
   scratch: ScienceProbeScratch,
   confined: ConfinedArgv,
+  maxBytes: number,
 ): Promise<{ readonly stdout: string; readonly stderr: string; readonly ok: boolean }> {
   const handle = services.subprocess.spawn({
     argv: confined.argv,
     cwd: scratch.directory,
     stdio: {
       stdin: 'ignore',
-      stdout: { maxBytes: VERSION_MAX_BYTES },
-      stderr: { maxBytes: VERSION_MAX_BYTES },
+      stdout: { maxBytes },
+      stderr: { maxBytes },
     },
     graceMs: 3_000,
     environmentBase: 'empty',
@@ -364,6 +461,12 @@ function prepareProbeAttempt(
       scratch,
       probeArgv(language, staticFacts.executable, 'utf8'),
     ),
+    packages: confineProbe(
+      services,
+      staticFacts.prefix,
+      scratch,
+      probeArgv(language, staticFacts.executable, 'packages'),
+    ),
   }
 }
 
@@ -406,8 +509,9 @@ async function observePrepared(
     const scratch = await createProbeScratch(services.sessionScratch, preparedAttempt.scratch)
     let observationFailure: unknown
     try {
-      const version = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.version)
-      const utf8 = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.utf8)
+      const version = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.version, VERSION_MAX_BYTES)
+      const utf8 = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.utf8, VERSION_MAX_BYTES)
+      const packages = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.packages, PACKAGES_PROBE_MAX_BYTES)
       const normalized = version.ok ? normalizeVersion(version.stdout, version.stderr) : undefined
       const after = await staticInterpreter(language, configuredPrefix)
       const stable = after.prefix === staticFacts.prefix
@@ -433,6 +537,14 @@ async function observePrepared(
           binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'interpreter probes did not produce the required lossless output' },
         }
       }
+      const rawPackages = packages.ok ? parsePackages(language, packages.stdout) : undefined
+      if (rawPackages === undefined) {
+        return {
+          prefix: staticFacts.prefix,
+          executable: staticFacts.executable,
+          binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+        }
+      }
       const historySha = sha256(staticFacts.history)
       const fingerprint = sha256(`dsh-science-binding-v1\0${language}\0${staticFacts.prefix}\0${staticFacts.executable}\0${staticFacts.identity}\0${normalized}\0${historySha}`)
       return {
@@ -447,6 +559,7 @@ async function observePrepared(
           languageVersion: normalized,
           condaHistorySha256: historySha,
           bindingFingerprint: fingerprint,
+          ...packageInventory(rawPackages, services.packagesMaxEntries, services.packagesMaxBytes),
           capability: 'available',
         },
       }

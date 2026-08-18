@@ -54,6 +54,9 @@ export class FakeSubprocess extends SubprocessRuntime {
     if (spec.argv.includes('--version')) {
       return settledHandle(isR ? 'Fake R 4.5.0\n' : 'Fake Python 3.13.5\n', '')
     }
+    if (spec.argv.includes('-m') || spec.argv.some(arg => arg.includes('installed.packages'))) {
+      return settledHandle(isR ? 'base\t4.5.0\n' : '[{"name":"pip","version":"24.0"}]', '')
+    }
     if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
     return settledHandle(isR ? 'fake R run output\n' : 'fake run output\n', '')
   }

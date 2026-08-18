@@ -14,7 +14,7 @@ Science Session 领域：持久化的 required-on-read Session 事件、严格�
 
 ## Projection
 
-仅当 `ctx.sessionProjections` 注册表被组合时才注册可选的 `science` key（`ctx.inject(['sessionProjections'], …)`）；未组合该注册表的宿主，或 Standard（非 Science）会话，永远不会携带该 key。公开的 `ScienceClientProjection` 保留 mode、无 path 的 environment capability/version 摘要、run status/history、chart 附件引用、最新 Outcome 与 metrics。它省略 configured/canonical prefix、executable path 与 identity、完整 environment fingerprint、source/scratch fact、授权 tool/request identity，以及 Runtime 自由文本失败。持久化私有状态是 `stateVersion: 2` 的纯 JSON：已观测事件水位线、编码后的严格 fold，以及稀疏脱敏 witness。`checkpointStateSchema` 只在重放 witness 能重建编码 fold 且与外层 `seq` 一致时接纳状态；`checkpointStateSeq` 绑定同一水位线；`viewChanged` 只在真正移动 `lastScienceEventSeq` 时发布公开变化，因为支持性事件可能推进私有水位线却不改变公开值。
+仅当 `ctx.sessionProjections` 注册表被组合时才注册可选的 `science` key（`ctx.inject(['sessionProjections'], …)`）；未组合该注册表的宿主，或 Standard（非 Science）会话，永远不会携带该 key。公开的 `ScienceClientProjection` 保留 mode、无 path 的 environment capability/version/package-inventory 摘要、run status/history、chart 附件引用、最新 Outcome 与 metrics。run 与 chart 记录保留其授权用的 `toolCallId` 与 `requestHeaderSeq`——浏览器已经持有的 session-log identity——因此客户端无需额外的 Host 路由即可将一次 run 或 chart version 与其会话记录中的 tool call 关联起来。它省略 configured/canonical prefix、executable path 与 identity、完整的 environment 与 package-inventory fingerprint（仅保留十二字符预览）、source/scratch fact，以及 Runtime 自由文本失败。持久化私有状态是 `stateVersion: 2` 的纯 JSON：已观测事件水位线、编码后的严格 fold，以及稀疏脱敏 witness。`checkpointStateSchema` 只在重放 witness 能重建编码 fold 且与外层 `seq` 一致时接纳状态；`checkpointStateSeq` 绑定同一水位线；`viewChanged` 只在真正移动 `lastScienceEventSeq` 时发布公开变化，因为支持性事件可能推进私有水位线却不改变公开值。
 
 ## 附件授权
 

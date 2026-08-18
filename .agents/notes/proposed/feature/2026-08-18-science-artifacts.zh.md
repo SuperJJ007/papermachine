@@ -1,0 +1,129 @@
+# Agent Note: Science artifacts — versioned figures carrying their provenance
+
+Status: proposed
+
+[English](2026-08-18-science-artifacts.md) | 中文
+
+## Problem
+
+Science 第一版早已把每张图存成不可变记录，并在图内维护连续版本号，但没有任何产品界面按这个模型呈现它。转录里每个 `save_chart` 结果渲染成一张自足的卡片，Details 栏渲染一份扁平的当前状态摘要。做分析的人会对同一张图产出很多次修订，今天既看不出两个版本之间改了什么，也回答不了决定一个结果能否被辩护的那个问题：这张图是哪段代码、哪个环境、哪轮对话产生的？
+
+留存日志其实已经回答了这个问题的大部分。`ScienceChartVersion` 带着 `runId`、`toolCallId`、`requestHeaderSeq`、`environmentRevision` 和 `environmentFingerprint`；`ScienceRunIdentity` 带着 `codeSha256`、`scratchKey` 以及同样的调用与请求头引用。这份记录与一个可用的溯源界面之间隔着三道障碍：
+
+- **客户端投影把关联字段过滤掉了。** `clientChart` 和 `clientRun`（`packages/science/science-session/src/projection-value.ts`）把 `toolCallId` 与 `requestHeaderSeq` 当作"授权请求事实"去除。少了它们，浏览器手里有图也有转录，却无法把两者连起来。
+- **没有任何一层采集包清单。** `ScienceInterpreterIdentity` 记录 `languageVersion`、`condaHistorySha256` 和 `bindingFingerprint`，但没有任何字段记录环境里实际装了哪些包，因此环境记录说不出这次分析跑在什么之上。
+- **Details 条目无法贡献头部控件，转录行也无法打开 Details 栏。** `DetailsPanel` 独占一个固定的标题加关闭头部，而 `ToolCallViewProps` 不带 `openDetailsView` —— 这个能力今天只存在于 `ConversationHeaderActionOwnerProps`。
+
+## Proposal
+
+给日志里已经存在的概念命名。**Science artifact** 是一张逻辑图，由 `chartId` 标识；**artifact version** 是一条 `ScienceChartVersion`。不需要新的留存事件，也不需要新的领域概念：artifact 已经在日志里，连续版本化且不可变。
+
+每个 artifact 版本可解析出一个由四部分组成的**溯源包**：
+
+| 部分 | 来源 | 路径 |
+|---|---|---|
+| 代码 | `run_code` 调用参数 | 图的 `runId` → 运行的 `toolCallId` → 转录里的工具节点 |
+| 执行日志 | `run_code` 调用结果（stdout/stderr 正文、退出码） | 同一个工具节点；留存字节数与截断标志来自投影 |
+| 对话 | 发出该调用的那一轮 | 图/运行的 `toolCallId` 与 `requestHeaderSeq` |
+| 环境 | 图的 `environmentRevision` 处的 `science/environment-bound` | 投影，外加下述包清单 |
+
+这个分工是刻意的，而且本来就是对的：**留存的 Science 事件存身份与摘要，转录存正文。** `codeSha256` 是留存锚点，被渲染的那份副本是工具调用。因此溯源不需要为代码和日志新增任何 Host 读取路由，只需要补上让这个连接成立的投影字段。
+
+### 解锁改动（Host 侧）
+
+**在投影上恢复关联字段。** `ScienceClientChartVersion` 与 `ScienceClientRun` 增加 `toolCallId` 和 `requestHeaderSeq`。二者都是浏览器本来就持有的会话日志身份 —— 转录的工具节点用同一个 `CallId` 作键，`requestHeaderSeq` 指向客户端本来就收到的 `request/header` 事件。它们不属于投影过滤器存在的目的所要去除的那类事实（Host 路径、可执行文件、完整指纹、自由文本失败原因），而过滤器当前的宽度让溯源根本无法成立。`clientChart`/`clientRun` 的文档注释随字段一同更新。
+
+**采集包清单。** `science-runtime/environment.ts` 已经在受限沙箱下对配置前缀执行探测（`runProbe`、`probeArgv`、`confineProbe`），并用 `kind: 'version' | 'utf8'` 区分。增加 `'packages'`：
+
+- Python：`python -m pip list --format=json` —— 报告解释器自己看到的内容，不依赖前缀之外的任何东西。
+- R：用 `Rscript -e` 执行 `installed.packages()[, c("Package", "Version")]` 并以 TSV 打印。**只用 base R** —— `jsonlite` 不保证存在于用户环境，探测不能依赖它。
+
+新的 `SciencePackage { name, version }` 列表以 `packages` 落在 `ScienceInterpreterIdentity` 上，同时新增 `packagesSha256`（对排序后完整清单的稳定摘要）与 `packagesTruncated`。由于身份事实在非 `available` 绑定上是 `Partial` 的，失败的观测天然不带清单也不需要哨兵值 —— 现有的诚实能力记录形状本来就是对的。
+
+清单在完整保留值已知的那一点设界：一个经校验的 Runtime `Config` 字段限制条目数，另一个限制总字节数；超过任一上限即置 `packagesTruncated`，而摘要仍覆盖截断前的完整清单。上限随部署而变（基因组学环境不同于教学环境），因此它是可从 cordis.yml 修改的 `Config` 字段，而不是 `DEFAULT_*` 常量。
+
+`bindingFingerprint` 保持现有输入不变。把包摘要折进去会悄悄重新定义"同一个绑定"的含义并重设现有漂移行为的键；`packagesSha256` 单独记录，好让未来的漂移规则把它当作一个显式决定来消费。
+
+客户端投影原样透出 `packages`、`packagesTruncated` 和 `packagesSha256` 预览 —— 包名与版本不携带任何 Host 路径，因此 `clientInterpreter` 不需要新的脱敏。
+
+**打开两个客户端接缝。** `packages/client/ui-conversation`：
+
+- 声明 `conversation.details.header.actions`：一个由 `DetailsPanel` 在标题与自有关闭按钮之间渲染的键控列表槽，以 Details 条目 id 为键，因此只渲染当前活动条目的控件。关闭控件仍归面板所有；条目贡献自己的按钮。
+- 给 toolview 的 owner share 增加 `openDetailsView`，使转录行能够选中一个 Details 条目并打开该栏。这个能力、这个 owner 和这次 store 写入，正是 `ConversationHeaderActionOwnerProps` 已经在用的那一套；这是既有契约上多一个座位，不是一个新契约。
+
+### Artifact 面板 —— Details 栏
+
+`ScienceDetailsView` 变成 artifact 面板。它仍然是 `science` 投影的纯读者，并保留自己的无状态附件加载器。
+
+- **环境条** —— profile、修订号、状态，以及每种语言的能力、版本、指纹前缀和包数量。
+- **Artifact 画廊** —— 每个 `chartId` 一个条目：最新版本的缩略图、`logicalName`、标题和 `v{n}` 徽章。
+- **Artifact 详情** —— 选中某条目后大图显示该版本，附标题、caption、来源运行和尺寸，外加一条列出 `v1…vN` 的**版本条**。选择某个版本即切换所显示的图像。这正是整个提案存在的理由：这些版本本来就是留存且连续的，而今天没有任何界面让人走过它们。
+- **头部动作** —— 该条目通过新槽贡献两个按钮：**溯源**（为选中版本打开下述视图页签）与**放大**（打开共享的 `MessageImage` 灯箱）。面板原有的关闭按钮位置不变。
+
+选择状态属于 Science 的浏览状态，因此**归 ui-science 所有**：一个包内的按会话 store，持有 `{ chartId, version } | null`。它不进 `ChatStoreState` —— 那个 store 归 ui-conversation 所有，而且不会有第二个插件去读这个字段。
+
+### 溯源视图 —— conversation 视图页签
+
+ui-science 注册一个 `conversation.view` 条目，id 为 `science.provenance`，标签来自 `science` 命名空间，并用 `ScienceHeaderAction` 已经在用的同一个检查按 `science` preset 设门。它为选中的 artifact 版本渲染四个溯源部分：
+
+1. **代码** —— 该运行的 `code` 参数，按 `toolCallId` 从对话快照中读出，并展示留存的 `codeSha256` 作为锚点。
+2. **执行日志** —— 同一调用结果里的 stdout、stderr 和退出码，旁边并列展示投影里留存的 `stdoutBytes`/`stderrBytes` 与截断标志作为权威度量。
+3. **对话** —— 发出该调用的那一轮，附跳转到转录的动作。既有的一次性 `ChatStoreState.inspect` 交接已经能切换视图并定位一次调用，此处复用它而不是新增第二条通道。
+4. **环境** —— 该环境修订的 JSON 块：profile、修订号、状态、时间戳，以及每种语言的能力、版本、指纹前缀和包清单。
+
+未选中 artifact 时，以及每个单独不可用的部分，视图渲染各自独立的、有文档的状态。运行落在客户端已加载的对话窗口之外时，代码与日志渲染为"待历史加载"而非"不存在" —— 留存摘要与字节数仍然渲染，因此记录在仅仅是未加载时不会读起来像空的。
+
+### 转录行
+
+`ScienceChartRow` 不再是整张卡片，而变成导航：一行紧凑内容，含小缩略图、`logicalName`、`v{n}` 和标题。激活它会在 ui-science 的 store 里选中该 artifact 版本并调用 `openDetailsView('science')`。缩略图上一个悬浮显现的控件直接打开灯箱，因此全屏查看仍是一次操作。运行中、失败、中断和无法解析的回退保持现有文本行为。
+
+### 改动涉及的文件
+
+- `packages/science/science-session/src/` —— `types.ts`（客户端图/运行的关联字段、`SciencePackage`、清单字段）、`projection-value.ts`（`clientChart`、`clientRun`、`clientInterpreter`）、`projection-schema.ts`、`fold.ts` 解码器、`domain.ts` 事件载荷。
+- `packages/science/science-runtime/src/` —— `environment.ts`（`packages` 探测及其上限）、`config.ts`（两个上限字段）。
+- `packages/client/ui-conversation/src/client/` —— `contract/slots.ts`（新键控槽、toolview owner share）、`skeleton/DetailsPanel.tsx`、`apply.ts`。
+- `packages/client/ui-science/src/client/` —— `ScienceDetailsView.tsx`（artifact 面板）、`ScienceChartRow.tsx`（紧凑行）、新增 `ScienceProvenanceView.tsx`、新增选择 store、`index.ts` 注册、`locales.ts`。
+- 以上每个包的 README，在同一次改动内更新。
+
+## Alternatives considered
+
+**引入 `science/artifact-*` 事件族。** 否决：`ScienceChartVersion` 本身就是 artifact 版本 —— 不可变、连续版本化、携带附件。并行事件族会重复身份、割裂回放，并逼出一条"哪份记录说了算"的规则。
+
+**按运行而不是按环境绑定采集包清单。** 否决：清单是绑定的属性，而运行频繁且短暂，按运行采集会为完全相同的数据成倍增加留存字节与探测延迟。代价是会话中途安装的包直到下次绑定才可见；`condaHistorySha256` 已经会在那一刻捕获 conda 层面的变动。
+
+**用 `conda list --json` 拿 build string。** 否决：它要求在配置前缀之外定位 conda 可执行文件，给一条目前自足的探测路径引入外部依赖和新的沙箱面。`pip list` 与 `installed.packages()` 报告的是解释器自己看到的内容。代价是清单带包名与版本但没有 build string。
+
+**在 R 探测里用 `jsonlite`。** 否决：它是一个普通 CRAN 包，用户环境未必安装，而一个在合法环境上失败的溯源探测比解析 TSV 更糟。
+
+**把 `packagesSha256` 折进 `bindingFingerprint`。** 暂时否决：那会让"同一个绑定"的含义悄悄改变，并把漂移检测的键当作新增采集的副作用重设。单独记录摘要，把它留成未来的显式决定。
+
+**把 artifact 选择放进 `ChatStoreState`。** 否决：这是只有 ui-science 会读的 Science 领域浏览状态，而 ui-conversation 持有那个 store 是为了它自己的骨架所派发的状态。
+
+**在 Details 栏而不是视图页签里渲染溯源。** 否决：代码、执行日志和环境 JSON 块都很宽，而 Details 栏被钳制在 520px（`DETAILS_MAX`）并会在让位链中自动关闭。中间栏是唯一放得下的界面。
+
+**保留转录行的整张图卡片。** 否决：一旦面板带版本渲染 artifact，这张卡片就是把对话撑开的重复内容。行剩下的职责是导航。
+
+**把新增的清单字段设为可选，让既有日志仍能回放。** 在预发布立场下否决：可选的留存字段会携带本仓库明确不作出的兼容承诺，而必填字段会在解码处大声失败，而不是悄悄产生一条说不出自己有哪些包的环境记录。
+
+## Acceptance criteria
+
+- 图的客户端投影带有 `toolCallId` 与 `requestHeaderSeq`，浏览器无需任何额外 Host 路由即可从对话快照解析出该图的 `run_code` 调用。
+- 绑定环境时为每个可用解释器记录包清单，每条含包名与版本，并含一个对排序后完整清单的摘要和一个截断标志；不可用的解释器不记录清单。
+- 两个清单上限都是可从 cordis.yml 设置的、经校验的 `Config` 字段；超过任一上限的清单被截断、被标记，且摘要仍覆盖截断前的完整值。
+- `bindingFingerprint` 与同一环境在本次改动之前产生的值逐字节一致。
+- Details 栏展示每一张逻辑图，选中其一即出现版本条，可在该图的全部留存版本之间切换所渲染的版本。
+- Details 条目通过新键控槽贡献两个头部控件；面板自有的关闭控件不变，而另一个 Details 条目不贡献任何控件。
+- 激活转录中的图行会在 Science 条目上打开 Details 栏并精确选中该版本；缩略图上的悬浮控件打开灯箱且不打开该栏。
+- 溯源视图为选中版本渲染代码、执行日志、对话轮次和环境 JSON，并为每个单独不可用的部分、为落在已加载对话窗口之外的运行、以及为完全未选中，各渲染一个独立的、有文档的状态。
+- 溯源页签在 Standard 会话或自定义的非 Science 会话中不存在。
+- 释放 ui-science 与 ui-conversation 的 fiber 会移除每一项新注册。
+
+## Risks
+
+- **既有 Science 会话日志将无法回放。** 必填的清单字段意味着本次改动之前写入的 `science/environment-bound` 载荷会在其解码器处失败。预发布立场认可这一点（后端拒绝旧的落盘格式），不写迁移，但任何保留的、包含该事件的 fixture 或已录制快照必须在同一次改动内重录。
+- **探测成本落在环境绑定上。** 对一个大型 R 库执行 `installed.packages()` 并不瞬时，而绑定处在会话首次运行的路径上。探测运行在既有的限制与超时之下，因此失败模式是有界的延迟或一次不可用绑定，而不是挂起。
+- **被截断的清单是较弱的溯源记录。** 摘要仍覆盖完整清单，因此截断可被察觉，但一份被截断的列表无法被回放成一个环境。
+- **代码与执行日志依赖已加载的对话历史。** 它们来自转录，而客户端按窗口加载转录（`loadOlder`）。运行早于已加载窗口的 artifact 会渲染为不可用直至加载更多历史；留存摘要与字节数仍然可见，因此该状态是可读的而不是空的。
+- **`SessionEventMap` 载荷改动会波及两个 SDK。** TypeScript 与 Python SDK 的期望输出，以及无密钥快照（`apps/web/tests/snapshots/science-preset`、`examples/headless-agent/tests/snapshots/science-tools`）必须在同一个 PR 内更新；`pnpm run test` 一个都不覆盖。
+</content>
+</invoke>

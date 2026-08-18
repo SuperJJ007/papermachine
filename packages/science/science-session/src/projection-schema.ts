@@ -30,6 +30,8 @@ export function projectionExactKeys(value: Record<string, unknown>, keys: readon
 const RUN_IDENTITY_KEYS = [
   'runId',
   'language',
+  'toolCallId',
+  'requestHeaderSeq',
   'environmentRevision',
   'environmentFingerprintPreview',
   'startedAt',
@@ -39,19 +41,35 @@ function safeInteger(value: unknown, minimum = 0): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
 }
 
+function validPackage(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  return candidate !== undefined
+    && projectionExactKeys(candidate, ['name', 'version'])
+    && typeof candidate['name'] === 'string' && candidate['name'].length > 0
+    && typeof candidate['version'] === 'string' && candidate['version'].length > 0
+}
+
 function validInterpreter(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
   const keys = ['language', 'capability']
   if (candidate['languageVersion'] !== undefined) keys.push('languageVersion')
   if (candidate['fingerprintPreview'] !== undefined) keys.push('fingerprintPreview')
+  if (candidate['packages'] !== undefined) keys.push('packages')
+  if (candidate['packagesTruncated'] !== undefined) keys.push('packagesTruncated')
+  if (candidate['packagesSha256Preview'] !== undefined) keys.push('packagesSha256Preview')
   if (!projectionExactKeys(candidate, keys)) return false
   if (candidate['language'] !== 'python' && candidate['language'] !== 'r') return false
   if (!['available', 'unavailable', 'invalid', 'drifted'].includes(String(candidate['capability']))) return false
   if (candidate['languageVersion'] !== undefined
     && (typeof candidate['languageVersion'] !== 'string' || /[\\/]/.test(candidate['languageVersion']))) return false
-  return candidate['fingerprintPreview'] === undefined
-    || (typeof candidate['fingerprintPreview'] === 'string' && /^[a-f0-9]{12}$/.test(candidate['fingerprintPreview']))
+  if (candidate['fingerprintPreview'] !== undefined
+    && (typeof candidate['fingerprintPreview'] !== 'string' || !/^[a-f0-9]{12}$/.test(candidate['fingerprintPreview']))) return false
+  if (candidate['packages'] !== undefined
+    && (!Array.isArray(candidate['packages']) || !candidate['packages'].every(validPackage))) return false
+  if (candidate['packagesTruncated'] !== undefined && typeof candidate['packagesTruncated'] !== 'boolean') return false
+  return candidate['packagesSha256Preview'] === undefined
+    || (typeof candidate['packagesSha256Preview'] === 'string' && /^[a-f0-9]{12}$/.test(candidate['packagesSha256Preview']))
 }
 
 function validEnvironment(value: unknown): boolean {
@@ -82,6 +100,9 @@ function validRunIdentity(candidate: Record<string, unknown>): boolean {
   return typeof candidate['runId'] === 'string'
     && candidate['runId'].length > 0
     && (candidate['language'] === 'python' || candidate['language'] === 'r')
+    && typeof candidate['toolCallId'] === 'string'
+    && candidate['toolCallId'].length > 0
+    && safeInteger(candidate['requestHeaderSeq'])
     && safeInteger(candidate['environmentRevision'], 1)
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
@@ -142,7 +163,7 @@ function validChart(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
   const keys = [
-    'chartId', 'logicalName', 'version', 'title', 'attachment', 'runId',
+    'chartId', 'logicalName', 'version', 'title', 'attachment', 'runId', 'toolCallId', 'requestHeaderSeq',
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt',
   ]
   if (candidate['caption'] !== undefined) keys.push('caption')
@@ -154,6 +175,9 @@ function validChart(value: unknown): boolean {
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
     && validAttachment(candidate['attachment'])
     && typeof candidate['runId'] === 'string'
+    && typeof candidate['toolCallId'] === 'string'
+    && candidate['toolCallId'].length > 0
+    && safeInteger(candidate['requestHeaderSeq'])
     && safeInteger(candidate['environmentRevision'], 1)
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])

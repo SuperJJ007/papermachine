@@ -21,7 +21,7 @@ The package configuration names existing absolute Conda prefixes. It does not in
         rPrefix: /absolute/conda/r
 ```
 
-`profiles` is a closed map keyed by `ScienceEnvironmentProfileId`. An empty map is a valid explicit unconfigured state; each declared value still has at least one absolute `pythonPrefix` or `rPrefix`. `timeoutMs` defaults to 120,000 and accepts only safe integers from 1 through 600,000.
+`profiles` is a closed map keyed by `ScienceEnvironmentProfileId`. An empty map is a valid explicit unconfigured state; each declared value still has at least one absolute `pythonPrefix` or `rPrefix`. `timeoutMs` defaults to 120,000 and accepts only safe integers from 1 through 600,000. `packagesMaxEntries` (default 2,000; 1 through 20,000) and `packagesMaxBytes` (default 65,536; 1,024 through 1,048,576) bound the package inventory retained per observed interpreter, described under Operations below.
 
 ## Settings-bound entry
 
@@ -33,7 +33,7 @@ Both entries provide the same `ctx.scienceRuntime` Cordis service, and that serv
 
 ## Operations
 
-`bindEnvironment({ session, profileId, signal })` requires the exact live Science Session object, observes the selected profile, and appends one complete `science/environment-bound` value. Static missing or unusable interpreters become an `invalid` value; cancellation, timeout, prefix I/O failure, partial confinement, or an overlapping writable root rejects without an environment event.
+`bindEnvironment({ session, profileId, signal })` requires the exact live Science Session object, observes the selected profile, and appends one complete `science/environment-bound` value. Static missing or unusable interpreters become an `invalid` value; cancellation, timeout, prefix I/O failure, partial confinement, or an overlapping writable root rejects without an environment event. Each available interpreter's identity also carries a package inventory: name/version pairs sorted and digested over the complete observation, then retained up to `packagesMaxEntries`/`packagesMaxBytes`; exceeding either cap truncates the retained list and sets `packagesTruncated`, while the digest still covers the complete pre-truncation inventory. A package-inventory probe that does not produce parseable output makes the whole interpreter observation `invalid`, matching the version and UTF-8 probes' honest-failure behavior.
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` re-observes the applied binding, writes unchanged UTF-8 source into a private run directory, appends `science/run-started`, and returns a `ScienceRunHandle`. The handle exposes only `runId`, `done`, and idempotent `cancel()`; it exposes neither a PID nor Host scratch paths. Its resolved result carries the committed terminal record plus bounded operational stdout/stderr tails, exact byte counts, and truncation facts. Output text never enters a Science Session event.
 
@@ -43,13 +43,13 @@ The Runtime rejects pre-publication misuse or capability failures with `ScienceR
 
 ## Confinement and environment
 
-Every probe and run uses direct argv, an empty subprocess environment base, a fixed environment allowlist, owned cwd, and full `workspace-write` confinement. Python uses `-I -B -X utf8` for probes and adds `-u` for runs. R version discovery uses standalone `Rscript --version`; its UTF-8 probe and runs use `Rscript --vanilla --encoding=UTF-8`. The Runtime refuses a Conda prefix that overlaps any writable root, and never grants the project directory as its workspace.
+Every probe and run uses direct argv, an empty subprocess environment base, a fixed environment allowlist, owned cwd, and full `workspace-write` confinement. Python uses `-I -B -X utf8` for probes and adds `-u` for runs; its package-inventory probe adds `-m pip list --format=json`, reporting what the interpreter itself sees. R version discovery uses standalone `Rscript --version`; its UTF-8 probe and runs use `Rscript --vanilla --encoding=UTF-8`; its package-inventory probe evaluates `installed.packages()` and prints `Package`/`Version` as TSV using only base R, since `jsonlite` is not guaranteed present. The Runtime refuses a Conda prefix that overlaps any writable root, and never grants the project directory as its workspace.
 
 The private root is derived under `DSH_HOME/science/v1/` with an exclusive mode-0600 owner marker and mode-0700 directories. Only the operation whose exclusive marker creation succeeds receives rollback ownership; a materialization failure removes that operation's exact marker and Session root after verifying the marker bytes, while concurrent or pre-existing ownership is retained. A live operation reserves the exact Session object; a same-ID successor remains quarantined until an older detached lifecycle proves all owned trees are quiescent. Accepted run directories remain for state and diagnostics, while unpublished probe directories are removed only after quiescence.
 
 ## Verification
 
-Fake-prefix tests cover Python-only, R-only, shared and distinct prefixes; strict configuration; stable and drifted observations; invalid UTF-8 probe bytes; scratch ownership; direct argv; empty environments; output bounds; terminal classifications; cancellation; timeout; detachment; same-ID quarantine; Loader composition; and live/cold replay. The lstat-only prefix manifest records relative path, type, symlink target, mode, size, mtime/ctime nanoseconds, and regular-file digest without using atime; an empty before/after diff is the prefix-unchanged result.
+Fake-prefix tests cover Python-only, R-only, shared and distinct prefixes; strict configuration; stable and drifted observations; invalid UTF-8 probe bytes; package-inventory parsing, sorting, entry/byte-cap truncation, and probe-failure handling for both languages; scratch ownership; direct argv; empty environments; output bounds; terminal classifications; cancellation; timeout; detachment; same-ID quarantine; Loader composition; and live/cold replay. A dedicated test pins `bindingFingerprint` as independent of the package inventory: rebinding the same static identity with a different observed inventory changes `packagesSha256` but not `bindingFingerprint`. The lstat-only prefix manifest records relative path, type, symlink target, mode, size, mtime/ctime nanoseconds, and regular-file digest without using atime; an empty before/after diff is the prefix-unchanged result.
 
 Real Conda acceptance is separate and opt-in. It never treats fake-prefix evidence as real-machine evidence.
 
@@ -78,3 +78,5 @@ None; the Runtime neither assembles nor sends provider requests.
 - **Existing local prefixes only** — observations are fingerprints, not reproducible-environment locks, and the Runtime never manages Conda packages or environments.
 - **File-write confinement only** — full sandbox enforcement limits documented file writes but does not claim file-read, network, syscall, or scientific-validity isolation.
 - **Host-local execution only** — a remote subprocess provider and a partial sandbox backend fail closed because this implementation owns private Host scratch.
+- **A truncated package inventory cannot be replayed into an environment** — the digest still covers the complete inventory, so truncation is detectable, but a capped retained list is name/version pairs, not an installable specification. `bindingFingerprint` never folds in the package digest, so raising or lowering either cap does not change drift detection.
+- **A mid-session package install is invisible until the next binding** — the inventory is captured once per environment binding, not per run; `condaHistorySha256` already catches conda-level mutation at that point.

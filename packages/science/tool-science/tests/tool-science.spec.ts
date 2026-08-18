@@ -339,6 +339,9 @@ describe('renderScienceProjection', () => {
           languageVersion: '4.5.0',
           condaHistorySha256: 'a'.repeat(64),
           bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'base', version: '4.5.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
         },
       },
     }))
@@ -552,6 +555,9 @@ describe('get_science_state', () => {
           languageVersion: '3.13.5',
           condaHistorySha256: 'a'.repeat(64),
           bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'pip', version: '24.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
         },
       },
     }), 1)
@@ -586,6 +592,9 @@ describe('get_science_state', () => {
           languageVersion: '4.5.0',
           condaHistorySha256: 'a'.repeat(64),
           bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'base', version: '4.5.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
         },
       },
     }), 1)
@@ -619,6 +628,9 @@ describe('get_science_state', () => {
           languageVersion,
           condaHistorySha256: 'a'.repeat(64),
           bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'pip', version: '24.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
         },
       }
       const projection = projectionFixture({ environment })

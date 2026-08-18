@@ -100,6 +100,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly artifactDiagnosticMaxEntries: number
   /** Configured artifact-selection diagnostic byte bound. */
   private readonly artifactDiagnosticMaxBytes: number
+  /** Configured package-inventory entry bound. */
+  private readonly packagesMaxEntries: number
+  /** Configured package-inventory byte bound. */
+  private readonly packagesMaxBytes: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   private disposing = false
@@ -117,6 +121,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.dshHome = resolved.dshHome
     this.artifactDiagnosticMaxEntries = resolved.artifactDiagnosticMaxEntries
     this.artifactDiagnosticMaxBytes = resolved.artifactDiagnosticMaxBytes
+    this.packagesMaxEntries = resolved.packagesMaxEntries
+    this.packagesMaxBytes = resolved.packagesMaxBytes
     ctx.effect(() => {
       const stopSessionObserver = ctx.on('session/disposed', (session) => { this.leases.detach(session) }, { global: true })
       return async () => {
@@ -171,6 +177,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
           this.assertPrepublication(request.session, lease.control)
         },
+        packagesMaxEntries: this.packagesMaxEntries,
+        packagesMaxBytes: this.packagesMaxBytes,
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session)
@@ -252,6 +260,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
           this.assertPrepublication(request.session, lease.control)
         },
+        packagesMaxEntries: this.packagesMaxEntries,
+        packagesMaxBytes: this.packagesMaxBytes,
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       if (!this.matchesEnvironment(environment, observed.python?.binding, observed.r?.binding)) {

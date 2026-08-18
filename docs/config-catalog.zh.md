@@ -1549,6 +1549,19 @@ export interface Config {
   readonly artifactDiagnosticMaxEntries?: number
   /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
   readonly artifactDiagnosticMaxBytes?: number
+  /**
+   * Maximum package-inventory entries retained per observed interpreter.
+   * An inventory exceeding this cap is truncated and flagged; the digest
+   * still covers the complete pre-truncation inventory.
+   */
+  readonly packagesMaxEntries?: number
+  /**
+   * Maximum package-inventory UTF-8 bytes (summed name and version) retained
+   * per observed interpreter. An inventory exceeding this cap is truncated
+   * and flagged; the digest still covers the complete pre-truncation
+   * inventory.
+   */
+  readonly packagesMaxBytes?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1560,7 +1573,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:38`](../packages/science/science-runtime/src/config.ts)
+来源：[`packages/science/science-runtime/src/config.ts:52`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

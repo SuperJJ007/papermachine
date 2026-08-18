@@ -3807,7 +3807,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceInterpreterIdentity',
-    declaration: 'export interface ScienceInterpreterIdentity {\n    readonly canonicalPrefix: string;\n    readonly executable: string;\n    readonly executableIdentity: string;\n    readonly languageVersion: string;\n    readonly condaHistorySha256: string;\n    readonly bindingFingerprint: string;\n}',
+    declaration: 'export interface ScienceInterpreterIdentity {\n    readonly canonicalPrefix: string;\n    readonly executable: string;\n    readonly executableIdentity: string;\n    readonly languageVersion: string;\n    readonly condaHistorySha256: string;\n    readonly bindingFingerprint: string;\n    readonly packages: readonly SciencePackage[];\n    readonly packagesSha256: string;\n    readonly packagesTruncated: boolean;\n}',
   },
   {
     name: 'ScienceInterpreterSelection',
@@ -3820,6 +3820,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceLanguage',
     declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
+  },
+  {
+    name: 'SciencePackage',
+    declaration: 'export interface SciencePackage {\n    readonly name: string;\n    readonly version: string;\n}',
   },
   {
     name: 'ScienceRunHandle',

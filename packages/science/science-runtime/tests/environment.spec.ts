@@ -1,5 +1,6 @@
 /** Focused fake-prefix coverage for Science environment binding and probes. */
 
+import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +13,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
-import { resolveConfig } from '../src/config.ts'
+import { MIN_PACKAGES_MAX_BYTES, resolveConfig } from '../src/config.ts'
 import { observeProfile } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
@@ -121,7 +122,9 @@ class RetryPartialSandbox extends DirectSandbox {
   override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.wraps += 1
     const confined = super.confine(argv, policy)
-    if (this.wraps <= 2) return confined
+    // The first prepareProbeAttempt wraps three probes (version, utf8, packages) fully;
+    // only the retry's wraps report partial enforcement.
+    if (this.wraps <= 3) return confined
     if (this.failRollback) staticFsFault.cleanupPath = dirname(dirname(policy.workspaceRoot))
     return { ...confined, enforcement: 'partial' }
   }
@@ -182,6 +185,15 @@ class FailingRVersionSubprocess extends ControlledSubprocess {
   }
 }
 
+/** Return a non-zero package-inventory probe outcome while preserving the requested argv. */
+class FailingPackagesProbeSubprocess extends ControlledSubprocess {
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (!spec.argv.includes('-m')) return handle
+    return { ...handle, done: Promise.resolve({ exitCode: 1, signal: null }) }
+  }
+}
+
 describe('ScienceRuntime.bindEnvironment', () => {
   it.each(['error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'missing-output', 'version-both-streams', 'version-nul', 'version-stderr-only'] as const)('fails loudly when a probe provider is %s', async (mode) => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-broken-probe-'))
@@ -230,7 +242,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it('records two empty-base, fully confined probes and commits one applied revision', async () => {
+  it('records three empty-base, fully confined probes and commits one applied revision', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science runtime-environment-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -255,24 +267,35 @@ describe('ScienceRuntime.bindEnvironment', () => {
         canonicalPrefix: prefix,
         executable: join(prefix, 'bin', 'python'),
         languageVersion: 'Fake Python 3.13.5',
+        packages: [{ name: 'numpy', version: '1.26.4' }, { name: 'pip', version: '24.0' }],
+        packagesTruncated: false,
       },
     })
     expect(session.events.map(event => event.type)).toEqual([
       'science/mode-bound',
       'science/environment-bound',
     ])
-    expect(subprocess.specs).toHaveLength(2)
+    expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
       expect(spec.environmentBase).toBe('empty')
       expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
-      expect(spec.stdio).toEqual({
+      expect(spec.cwd).toContain('/probes/')
+    }
+    const [versionSpec, utf8Spec, packagesSpec] = subprocess.specs
+    for (const spec of [versionSpec, utf8Spec]) {
+      expect(spec?.stdio).toEqual({
         stdin: 'ignore',
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       })
-      expect(spec.cwd).toContain('/probes/')
     }
-    expect(sandbox.policies).toHaveLength(2)
+    expect(packagesSpec?.stdio).toEqual({
+      stdin: 'ignore',
+      stdout: { maxBytes: 8 * 1024 * 1024 },
+      stderr: { maxBytes: 8 * 1024 * 1024 },
+    })
+    expect(packagesSpec?.argv).toEqual([join(prefix, 'bin', 'python'), '-I', '-B', '-X', 'utf8', '-m', 'pip', 'list', '--format=json'])
+    expect(sandbox.policies).toHaveLength(3)
     expect(sandbox.policies.every(policy => policy.mode === 'workspace-write')).toBe(true)
     expect(sandbox.policies.every(policy => policy.workspaceRoot.includes('/probes/'))).toBe(true)
   })
@@ -291,12 +314,19 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
     })).resolves.toMatchObject({
       status: 'applied',
-      r: { capability: 'available', languageVersion: 'Fake R 4.5.0' },
+      r: {
+        capability: 'available',
+        languageVersion: 'Fake R 4.5.0',
+        packages: [{ name: 'base', version: '4.5.0' }, { name: 'utils', version: '4.5.0' }],
+      },
     })
     const executable = join(prefix, 'bin', 'Rscript')
     expect(harness.subprocess.specs.map(spec => spec.argv)).toEqual([
       [executable, '--version'],
       [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")'],
+      [executable, '--vanilla', '--encoding=UTF-8', '-e',
+        "m <- installed.packages()[, c('Package', 'Version'), drop = FALSE]; "
+          + "write.table(m, file = stdout(), sep = '\\t', quote = FALSE, row.names = FALSE, col.names = FALSE)"],
     ])
   })
 
@@ -471,6 +501,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
       sessionScratch: rOnlyScratch,
       sessionId: sharedSession.id,
       signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
     }, { id: ScienceEnvironmentProfileId('r-only'), rPrefix: sharedPrefix })).resolves.toMatchObject({ r: { binding: { capability: 'available' } } })
 
     const rPrefix = createFakeRPrefix(spaceRoot)
@@ -501,6 +533,9 @@ describe('ScienceRuntime.bindEnvironment', () => {
           languageVersion: 'Fake R 4.5.0',
           condaHistorySha256: 'a'.repeat(64),
           bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'base', version: '4.5.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
           capability: 'available',
         },
       },
@@ -767,6 +802,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
       sessionScratch: scratch,
       sessionId: session.id,
       signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toThrow(/observations failed after all probe cleanup settled/)
@@ -779,6 +816,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
       sessionScratch: scratch,
       sessionId: session.id,
       signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
@@ -790,6 +829,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
       sessionScratch: scratch,
       sessionId: session.id,
       signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toMatchObject({ errors: [expect.any(Error), 'injected non-Error observation failure'] })
@@ -892,6 +933,268 @@ describe('ScienceRuntime.bindEnvironment', () => {
       Object.defineProperty(process, 'platform', original)
     }
   })
+
+  it.each([
+    ['JSON.parse throws', 'not valid json'],
+    ['top-level value is not an array', '{}'],
+    ['an entry is not an object', '[42]'],
+    ['an entry is null', '[null]'],
+    ['name is not a string', '[{"name":1,"version":"1"}]'],
+    ['version is not a string', '[{"name":"pip","version":1}]'],
+    ['name is empty', '[{"name":"","version":"1"}]'],
+    ['version is empty', '[{"name":"pip","version":""}]'],
+  ] as const)('records an invalid Python observation when the package-inventory probe output is malformed: %s', async (_label, output) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-py-malformed-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = { ...harness.subprocess.packagesOutput, python: output }
+    const session = createScienceSession(harness.ctx, 'science-packages-py-malformed')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it.each([
+    ['no tab separator', 'base'],
+    ['leading tab (empty name)', '\t4.5.0'],
+    ['more than one tab', 'base\t4.5.0\textra'],
+    ['trailing tab (empty version)', 'base\t'],
+  ] as const)('records an invalid R observation when the package-inventory probe output is malformed: %s', async (_label, output) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-r-malformed-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { r: { rPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = { ...harness.subprocess.packagesOutput, r: output }
+    const session = createScienceSession(harness.ctx, 'science-packages-r-malformed')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('r'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      r: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it('records an invalid observation when the package-inventory probe itself fails', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-probe-failure-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(FailingPackagesProbeSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-packages-probe-failure')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it('truncates by exact UTF-8 byte length rather than by string character count', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-multibyte-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
+    // Each "中" is one UTF-16 code unit but three UTF-8 bytes: 341 of them
+    // plus "v1" cost 1,025 true UTF-8 bytes but only 343 JS string "length"
+    // units. The byte cap (the lowest allowed value) sits between the two,
+    // so a character-count implementation would wrongly retain this entry.
+    const name = '中'.repeat(341)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: MIN_PACKAGES_MAX_BYTES,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = { ...subprocess.packagesOutput, python: JSON.stringify([{ name, version: 'v1' }]) }
+    const session = createScienceSession(ctx, 'science-packages-multibyte')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([])
+    expect(environment.python.packagesTruncated).toBe(true)
+  })
+
+  it('sorts a package inventory with a repeated name by version', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-sort-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = {
+      ...harness.subprocess.packagesOutput,
+      python: '[{"name":"pip","version":"24.0"},{"name":"pip","version":"1.0"}]',
+    }
+    const session = createScienceSession(harness.ctx, 'science-packages-sort')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'applied',
+      python: {
+        packages: [{ name: 'pip', version: '1.0' }, { name: 'pip', version: '24.0' }],
+      },
+    })
+  })
+
+  it('truncates a package inventory exceeding the configured entry cap while digesting the complete sorted value', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxEntries: 1,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]',
+    }
+    const session = createScienceSession(ctx, 'science-packages-truncate')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([{ name: 'numpy', version: '1.26.4' }])
+    expect(environment.python.packagesTruncated).toBe(true)
+    const completeDigest = createHash('sha256')
+      .update('dsh-science-packages-v1\u0000numpy\u00001.26.4\npip\u000024.0')
+      .digest('hex')
+    expect(environment.python.packagesSha256).toBe(completeDigest)
+  })
+
+  it('retains a package inventory whose entries exactly fill the configured byte cap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-exact-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
+    // Two entries at the durable per-field 512-byte name cap, each costing
+    // exactly MIN_PACKAGES_MAX_BYTES / 2, sum to exactly MIN_PACKAGES_MAX_BYTES.
+    const first = { name: 'a'.repeat(500), version: '1'.repeat(12) }
+    const second = { name: 'b'.repeat(500), version: '2'.repeat(12) }
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: MIN_PACKAGES_MAX_BYTES,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = { ...subprocess.packagesOutput, python: JSON.stringify([second, first]) }
+    const session = createScienceSession(ctx, 'science-packages-exact')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([first, second])
+    expect(environment.python.packagesTruncated).toBe(false)
+  })
+
+  it('truncates a package inventory whose single oversized entry exceeds the configured byte cap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-bytes-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountAttachments(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: 1_024,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    const oversizedName = 'x'.repeat(1_050)
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: JSON.stringify([{ name: oversizedName, version: '1.0' }]),
+    }
+    const session = createScienceSession(ctx, 'science-packages-truncate-bytes')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([])
+    expect(environment.python.packagesTruncated).toBe(true)
+    const completeDigest = createHash('sha256')
+      .update(`dsh-science-packages-v1\0${oversizedName}\u00001.0`)
+      .digest('hex')
+    expect(environment.python.packagesSha256).toBe(completeDigest)
+  })
+
+  it('keeps bindingFingerprint independent of the package inventory', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-fingerprint-stable-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const first = await harness.runtime.bindEnvironment({
+      session: createScienceSession(harness.ctx, 'science-fingerprint-stable-first'),
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    harness.subprocess.packagesOutput = {
+      ...harness.subprocess.packagesOutput,
+      python: '[{"name":"an-entirely-different-package","version":"9.9.9"}]',
+    }
+    const second = await harness.runtime.bindEnvironment({
+      session: createScienceSession(harness.ctx, 'science-fingerprint-stable-second'),
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    if (first.python?.capability !== 'available' || second.python?.capability !== 'available') {
+      throw new Error('fixture bindings did not become available')
+    }
+    expect(second.python.packagesSha256).not.toBe(first.python.packagesSha256)
+    expect(second.python.bindingFingerprint).toBe(first.python.bindingFingerprint)
+
+    // The formula is exactly the six identity fields below, joined with the
+    // NUL domain separator — packagesSha256 is not one of them.
+    const expectedFingerprint = createHash('sha256')
+      .update([
+        'dsh-science-binding-v1', 'python', first.python.canonicalPrefix, first.python.executable,
+        first.python.executableIdentity, first.python.languageVersion, first.python.condaHistorySha256,
+      ].join('\0'))
+      .digest('hex')
+    expect(first.python.bindingFingerprint).toBe(expectedFingerprint)
+  })
 })
 
 describe('Science Runtime configuration', () => {
@@ -943,5 +1246,23 @@ describe('Science Runtime configuration', () => {
     const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
     expect(resolved.artifactDiagnosticMaxEntries).toBe(200)
     expect(resolved.artifactDiagnosticMaxBytes).toBe(8192)
+  })
+
+  it('validates the package-inventory entry and byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 0,
+    })).toThrow(/packagesMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 20_001,
+    })).toThrow(/packagesMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxBytes: 1_023,
+    })).toThrow(/packagesMaxBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxBytes: 1_048_577,
+    })).toThrow(/packagesMaxBytes/)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.packagesMaxEntries).toBe(2_000)
+    expect(resolved.packagesMaxBytes).toBe(65_536)
   })
 })

@@ -1,67 +1,19 @@
-## Details column — artifact panel
+## Details column — artifact viewer
 - text: Science
-- button "Provenance"
-- button "Expand":
-  - img
-  - text: Expand
 - button "Close details"
-- text: "Environment Profile: browser-profile Revision 1 Python Available version 3.13.5 fingerprint bbbbbbbbbbbb 1 packages Runs"
-- list:
-  - listitem: Python Success 8/18/2026, {{clock}}
-- text: Charts
-- button "Back to gallery":
-  - img
-  - text: Back to gallery
-- button "Failed to load, click to retry"
-- text: Missing revision v2
-- paragraph: Missing object fixture
-- text: from run run-browser-1 1×1, 68 B
-- list "Versions":
-  - listitem:
-    - button "v1"
-  - listitem:
-    - button "v2"
-- text: Outcome Updated finding revision 2
-- paragraph: The missing object is reported without hiding the publication.
-- list:
-  - listitem: chart chart-browser-1 v2
-
-## Center column — provenance view
-- banner:
-  - navigation "Session hierarchy":
-    - button "Science chart replay" [disabled]
-  - img
-  - text: Science mode
-  - button "Science details":
+- tablist "Open artifacts":
+  - tab "Missing revision" [selected]
+  - button "Close Missing revision":
     - img
-    - text: Science
-  - button "Session log":
-    - text: Session log
-    - img
-  - tablist:
-    - tab "Chat"
-    - tab "Trajectory"
-    - tab "Provenance" [selected]
-- text: Code
-- paragraph: SHA-256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-- status: The code is outside the loaded conversation history. Load more history to see it.
-- text: Execution log
+- navigation "Provenance":
+  - button "Missing revision"
+  - text: Provenance
+- tablist "Provenance":
+  - tab "Code"
+  - tab "Execution log" [selected]
+  - tab "Messages"
+  - tab "Environment"
 - paragraph: stdout 2 bytes, stderr 0 bytes
 - text: text
 - button "Copy"
 - code: run complete
-- text: Conversation
-- paragraph: Request 6, started 8/18/2026, {{clock}}
-- button "Jump to transcript"
-- text: Environment json
-- button "Copy"
-- code: "{ \"revision\": 1, \"profileId\": \"browser-profile\", \"configuredAt\": 1787025601000, \"validatedAt\": 1787025602000, \"status\": \"applied\", \"python\": { \"language\": \"python\", \"capability\": \"available\", \"languageVersion\": \"3.13.5\", \"fingerprintPreview\": \"bbbbbbbbbbbb\", \"packages\": [ { \"name\": \"pip\", \"version\": \"24.0\" } ], \"packagesTruncated\": false, \"packagesSha256Preview\": \"ffffffffffff\" } }"
-- textbox "This model is unavailable — select one to continue" [disabled]
-- button "Commands" [disabled]:
-  - img
-- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
-- button "Select model":
-  - text: Select model
-  - img
-- button "Send message" [disabled]
-- text: 1 turns · 1 steps Tool call {{duration}}

@@ -389,7 +389,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
 
-  it('shows the Science header action only for the Science session and opens client-safe Details', async () => {
+  it('shows the Science header action only for the Science session and opens the client-safe landing view', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-header-details'))
     const detailsPanel = page.locator('[class*="detailsCol"]')
     const scienceAction = page.getByRole('button', { name: 'Science details' })
@@ -400,32 +400,48 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await scienceAction.count()).toBe(0)
 
     // The built-in `science` preset session shows the action; activating it
-    // opens the Details column on the routed `science` entry.
+    // opens the Details column with no tab open — the landing view (gallery
+    // of latest chart versions, plus the latest Outcome below it).
     await openSessionByTitle(SEED_TITLE)
     await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
     await detailsPanel.getByText('Science', { exact: true }).waitFor({ timeout: 10_000 })
 
-    // Client-safe environment, run, chart, and Outcome states from the same
-    // projection the transcript rows already reused — no second reader.
-    expect(await detailsPanel.getByText('Profile: browser-profile', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Revision 1', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Available', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('version 3.13.5', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('fingerprint bbbbbbbbbbbb', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Success', { exact: true }).count()).toBe(1)
-    // Only the latest accepted chart version renders (v2, the missing object).
-    expect(await detailsPanel.getByText('Missing revision', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('v2', { exact: true }).count()).toBe(1)
+    // Only the latest accepted chart version renders in the gallery (v2, the
+    // missing object), and the latest Outcome renders below it with its
+    // evidence — the same projection the transcript rows already reused, no
+    // second reader.
+    expect(await detailsPanel.getByRole('button', { name: 'Open chart Missing revision, version 2' }).count()).toBe(1)
     expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
     expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
     expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
+    // No Environment strip or Runs list on the landing view (removed with
+    // the dashboard); those facts now live only in the per-artifact
+    // Provenance drill-in, checked below.
+    expect(await detailsPanel.getByText('Profile:', { exact: false }).count()).toBe(0)
 
+    // Drill into the artifact's Provenance → Environment sub-tab: the same
+    // client-safe projection, rendered as JSON.
+    await detailsPanel.getByRole('button', { name: 'Open chart Missing revision, version 2' }).click()
+    await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
+    await detailsPanel.getByRole('tab', { name: 'Environment' }).click()
+    // Shiki-highlighted JSON tokenizes the text across spans, so poll the
+    // panel's flattened text rather than matching a single text node.
+    await expect.poll(async () => (await detailsPanel.innerText()).includes('"profileId"'), { timeout: 10_000 }).toBe(true)
+
+    const detailsText = await detailsPanel.innerText()
+    // Client-safe facts reach the panel: profile id, revision, per-language
+    // capability, language version, and the twelve-character fingerprint
+    // preview.
+    expect(detailsText).toContain('"profileId": "browser-profile"')
+    expect(detailsText).toContain('"revision": 1')
+    expect(detailsText).toContain('"capability": "available"')
+    expect(detailsText).toContain('"languageVersion": "3.13.5"')
+    expect(detailsText).toContain('"fingerprintPreview": "bbbbbbbbbbbb"')
     // No absolute Host path, executable identity, condaHistorySha256, or the
     // full 64-character fingerprint ever reaches the rendered panel — only
     // the twelve-character preview asserted above.
-    const detailsText = await detailsPanel.innerText()
     expect(detailsText).not.toContain('/private/host/science')
     expect(detailsText).not.toContain('/private/host/science/bin/python')
     expect(detailsText).not.toContain('dev:1-ino:2')
@@ -441,66 +457,79 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
 
-  it('activating a transcript chart row opens the exact version, the version rail walks both, and provenance is session-gated', async () => {
+  it('activating a transcript chart row opens its tab, the toolbar steps versions, and the provenance drill-in jumps to the transcript', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-provenance'))
     const detailsPanel = page.locator('[class*="detailsCol"]')
+    const centerCol = page.locator('[class*="centerCol"]')
 
     await openSessionByTitle(SEED_TITLE)
     // Scoped to the transcript: an earlier case leaves the Details column
-    // open, and the artifact panel's Outcome section renders this same title.
-    await page.locator('[class*="centerCol"]').getByText('Updated finding', { exact: true })
-      .waitFor({ timeout: 15_000 })
+    // open, and the artifact viewer's landing view renders this same title.
+    await centerCol.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
 
     // Activating the v2 transcript row (the one with the missing attachment)
-    // selects that exact version and opens the Details column directly in
-    // detail mode — no intermediate gallery click.
+    // opens that exact version's tab directly in the content view — no
+    // intermediate gallery click.
     await page.getByText('Missing revision', { exact: true }).first().click()
-    const rail = detailsPanel.getByLabel('Versions')
-    await rail.waitFor({ timeout: 10_000 })
-    expect(await rail.getByRole('button').count()).toBe(2)
-    expect(await detailsPanel.getByText('Missing revision', { exact: true }).count()).toBe(1)
+    const tab = detailsPanel.getByRole('tab', { name: 'Missing revision' })
+    await tab.waitFor({ timeout: 10_000 })
+    expect(await tab.getAttribute('aria-selected')).toBe('true')
 
-    // The rail walks to the other durable version.
-    await rail.getByText('v1', { exact: true }).click()
-    await detailsPanel.getByText('Observed series', { exact: true }).waitFor({ timeout: 10_000 })
+    // The version stepper walks to the other durable version and back.
+    const prevVersion = detailsPanel.getByRole('button', { name: 'Previous version' })
+    const nextVersion = detailsPanel.getByRole('button', { name: 'Next version' })
+    expect(await nextVersion.isDisabled()).toBe(true)
+    await prevVersion.click()
+    // The stepped-to title shows twice: once as the tab label, once in the toolbar.
+    await detailsPanel.getByText('Observed series', { exact: true }).first().waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('Durable browser fixture', { exact: true }).count()).toBe(1)
-    await rail.getByText('v2', { exact: true }).click()
-    await detailsPanel.getByText('Missing revision', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await prevVersion.isDisabled()).toBe(true)
 
-    // Header controls appear once a version is selected; provenance opens
-    // the wide center-column tab with all four parts.
-    const provenanceButton = detailsPanel.getByRole('button', { name: 'Provenance' })
-    await provenanceButton.waitFor({ timeout: 10_000 })
-    expect(await detailsPanel.getByRole('button', { name: 'Expand' }).count()).toBe(1)
-    await provenanceButton.click()
-    // Scoped to the center column: the Details panel stays open beside it and
-    // labels its own Environment section with the same word.
-    const centerCol = page.locator('[class*="centerCol"]')
-    await centerCol.getByText('Execution log', { exact: true }).waitFor({ timeout: 10_000 })
-    expect(await centerCol.getByText('Code', { exact: true }).count()).toBe(1)
-    expect(await centerCol.getByText('Conversation', { exact: true }).count()).toBe(1)
-    expect(await centerCol.getByText('Environment', { exact: true }).count()).toBe(1)
+    // Maximize opens the shared lightbox from the toolbar (not the image's
+    // own click-to-open state) — v1's attachment is stored, so the load
+    // resolves. (v2's is the deliberately missing object; maximize on it is
+    // covered by the loader-rejection unit coverage instead.)
+    await detailsPanel.getByRole('button', { name: 'Expand' }).click()
+    await page.getByRole('dialog', { name: 'Original' }).waitFor({ timeout: 10_000 })
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
+
+    await nextVersion.click()
+    await detailsPanel.getByText('Missing revision', { exact: true }).first().waitFor({ timeout: 10_000 })
+
+    // Provenance drills in: a breadcrumb over four sub-tabs. The sub-tab
+    // selection is a sticky preference carried across tabs (not reset here),
+    // so select Code explicitly rather than assuming a fresh default.
+    await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
+    await detailsPanel.getByRole('navigation', { name: 'Provenance' }).waitFor({ timeout: 10_000 })
+    await detailsPanel.getByRole('tab', { name: 'Code' }).click()
     // The durable digest anchor renders even though the fixture's run
     // arguments carry no `code` field (the code part itself reports unavailable).
-    expect(await centerCol.getByText(`SHA-256 ${'c'.repeat(64)}`, { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText(`SHA-256 ${'c'.repeat(64)}`, { exact: true }).count()).toBe(1)
 
-    // The assembled golden for both new surfaces: the artifact panel sitting
-    // on a selected version (its version rail and header controls) beside the
-    // provenance view's four parts. Assertions above pin individual facts;
-    // this pins the whole rendered accessibility tree, so a regression that
-    // drops or reorders a region changes this file.
-    await compareOrRefreshGolden(ARTIFACTS_EXPECTED, [
-      '## Details column — artifact panel',
-      await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd),
-      '',
-      '## Center column — provenance view',
-      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
-    ].join('\n'), MODE)
+    await detailsPanel.getByRole('tab', { name: 'Execution log' }).click()
+    await detailsPanel.getByText('stdout 2 bytes, stderr 0 bytes', { exact: true }).waitFor({ timeout: 10_000 })
 
-    // The provenance tab is absent (not merely empty) for a Standard session.
-    await openSessionByTitle(STANDARD_SEED_TITLE)
-    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await page.getByRole('tab', { name: 'Provenance' }).count()).toBe(0)
+    // The assembled golden: the tab strip, toolbar (version label, expand,
+    // download, close tab), and the drill-in's breadcrumb/sub-tabs/Execution
+    // log body, all inside the Details column — the whole rendered
+    // accessibility tree, so a regression that drops or reorders a region
+    // changes this file.
+    await compareOrRefreshGolden(
+      ARTIFACTS_EXPECTED,
+      [
+        '## Details column — artifact viewer',
+        await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd),
+      ].join('\n'),
+      MODE,
+    )
+
+    // The Messages sub-tab's jump reaches the real transcript: the center
+    // column switches to Trajectory and reveals the target call.
+    await detailsPanel.getByRole('tab', { name: 'Messages' }).click()
+    await detailsPanel.getByRole('button', { name: 'Jump to transcript' }).click()
+    await expect.poll(() => centerCol.getByRole('tab', { name: 'Trajectory' }).getAttribute('aria-selected'))
+      .toBe('true')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])

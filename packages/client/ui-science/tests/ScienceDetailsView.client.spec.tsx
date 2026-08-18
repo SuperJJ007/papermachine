@@ -45,6 +45,8 @@ function chart(over: Partial<ScienceClientChartVersion> = {}): ScienceClientChar
     title: 'Loss curve',
     attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
     runId: 'run-1' as never,
+    toolCallId: 'call-chart-1' as never,
+    requestHeaderSeq: 4,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     createdAt: 500,
@@ -56,6 +58,8 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
   return {
     runId: 'run-1' as never,
     language: 'python',
+    toolCallId: 'call-run-1' as never,
+    requestHeaderSeq: 3,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     startedAt: 1_000,

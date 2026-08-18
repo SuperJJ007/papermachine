@@ -59,7 +59,8 @@ function projectionWithChart(): ScienceClientProjection {
     charts: [{
       chartId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve',
       attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
-      runId: 'run-1' as never, environmentRevision: 1,
+      runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4,
+      environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
     }],
     outcome: null,

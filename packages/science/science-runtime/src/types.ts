@@ -31,14 +31,8 @@ export type ScienceRuntimeErrorCode =
   | 'INFRASTRUCTURE_FAILURE'
   | 'QUIESCENCE_UNPROVEN'
   | 'TERMINAL_COMMIT_FAILED'
-  /** `save_chart` named a run that does not exist, or is not durably successful. */
-  | 'SOURCE_RUN_NOT_SUCCESSFUL'
-  /** `save_chart` named a run inherited through a fork; only a local run's scratch may be imported. */
-  | 'INHERITED_RUN'
-  /** `save_chart` named a path that does not resolve to a regular non-symlink file inside the source run's artifact directory. */
+  /** `annotate_artifact` named a `logical_name` (or an exact `version` of it) that does not exist in this session. */
   | 'ARTIFACT_NOT_FOUND'
-  /** The deployment's configured attachment `mediaTypes` allowlist excludes `image/png`. */
-  | 'IMAGE_TYPE_NOT_ALLOWED'
 
 /** Typed error for a Runtime operation that cannot return a durable value. */
 export class ScienceRuntimeError extends Error {
@@ -112,19 +106,17 @@ export interface ScienceRunResult {
   readonly capture?: CaptureRunArtifactsResult
 }
 
-/** Inputs for importing one PNG chart from a successful run's private artifact directory. */
-export interface CommitScienceChartRequest {
-  /** Exact live Science Session that will own the chart version. */
+/** Inputs for curating one existing artifact version with a title and optional caption. */
+export interface AnnotateScienceArtifactRequest {
+  /** Exact live Science Session that will own the new curated version. */
   readonly session: Session
-  /** The exact successful, non-inherited run whose artifact directory is imported from. */
-  readonly runId: ScienceRunId
-  /** Slash-separated path relative to the source run's `SCIENCE_ARTIFACT_DIR`. */
-  readonly artifactPath: string
-  /** Stable logical chart name within the session; a repeat commits the next version. */
+  /** Stable logical artifact name within the session. */
   readonly logicalName: string
-  /** Human-readable chart title. */
+  /** Exact existing version of `logicalName` to annotate; defaults to its latest version. */
+  readonly version?: number
+  /** Human-readable artifact title. */
   readonly title: string
-  /** Optional human-readable chart caption. */
+  /** Optional human-readable artifact caption. */
   readonly caption?: string
   /** Model-issued call already recorded in the Session log. */
   readonly toolCallId: ScienceArtifactVersion['toolCallId']
@@ -159,11 +151,13 @@ export interface ScienceRuntimeService {
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
   /**
-   * Import one PNG from a successful, non-inherited run's private artifact
-   * directory, persist it through `ctx.attachments`, then append the
-   * complete immutable chart version.
-   * @param request - Exact Session, source run, artifact path, and cancellation.
-   * @returns The durable chart version this operation appended.
+   * Re-commit an existing artifact version's exact attachment reference as a
+   * new curated version, carrying a model-supplied title and optional
+   * caption. Never touches the filesystem or the attachment store: the
+   * content-addressed `attachment` is reused unchanged.
+   * @param request - Exact Session, target logical artifact (and optional
+   *   version), title/caption, and cancellation.
+   * @returns The durable curated version this operation appended.
    */
-  commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>
+  annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
 }

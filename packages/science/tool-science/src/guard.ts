@@ -4,7 +4,7 @@ import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 
 /**
  * Reject a nested Code Mode sub-dispatch before Runtime lookup, filesystem
- * work, or a Session append. `run_python`, `run_r`, `save_chart`, and
+ * work, or a Session append. `run_python`, `run_r`, `annotate_artifact`, and
  * `publish_outcome` all durably require the direct `tool/call` provenance
  * every R1 Science transition checks; a nested dispatch instead logs
  * `tool/code-dispatch*` and core tools omit `presentationMeta` for nested

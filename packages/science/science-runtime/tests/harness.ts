@@ -421,7 +421,7 @@ export function authorizePythonRun(session: Session, id = 'science-runtime-run-c
   return authorizeRun(session, 'python', id)
 }
 
-/** Append the request/header and save_chart tool-call facts that authorize one chart commit. */
-export function authorizeSaveChart(session: Session, id = 'science-runtime-save-chart-call') {
-  return authorizeToolCall(session, 'save_chart', id)
+/** Append the request/header and annotate_artifact tool-call facts that authorize one curated re-save. */
+export function authorizeAnnotateArtifact(session: Session, id = 'science-runtime-annotate-artifact-call') {
+  return authorizeToolCall(session, 'annotate_artifact', id)
 }

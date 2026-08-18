@@ -2,7 +2,7 @@
 # analysis, read-only over the workspace, with durable Science state.
 #
 # It composes the `@deepseek-ai/dsh-tool-science` Consumer (run_python, run_r,
-# get_science_state, save_chart, publish_outcome) plus a narrow supporting
+# get_science_state, annotate_artifact, publish_outcome) plus a narrow supporting
 # roster: discovery and reading of the workspace, skills, and the generic
 # ask-user/todo tools. It carries no shell, no filesystem write or edit, and
 # no delegation or Web search — a capability this preset lacks is a separate
@@ -51,7 +51,7 @@
 
 # The model-facing Science Consumer: durable mode/environment binding,
 # `science:environment` runtime context, and all five Science tools
-# (run_python, run_r, get_science_state, save_chart, publish_outcome). These
+# (run_python, run_r, get_science_state, annotate_artifact, publish_outcome). These
 # values are explicit preset policy — not package defaults, not environment
 # discovery — and changing any of them changes model-visible output.
 - id: tool-science

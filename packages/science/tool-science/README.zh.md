@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`save_chart` 与 `publish_outcome`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类与 chart 附件导入。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Outcome 发布不需要 Host operation，因此本包在 durable evidence 校验后直接追加 `science/outcome-published`；其余 environment、run 与 chart fact 由 Runtime 追加。
+**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`annotate_artifact` 与 `publish_outcome`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类、run 写出文件的自动捕获，以及纯元数据的 artifact 策展。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Outcome 发布不需要 Host operation，因此本包在 durable evidence 校验后直接追加 `science/outcome-published`；其余 environment、run 与 artifact fact 由 Runtime 追加。
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
-`ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `save_chart`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。`publish_outcome` 可对已经持久化的证据工作，不需要 Runtime access。
+`ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `annotate_artifact`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。`publish_outcome` 可对已经持久化的证据工作，不需要 Runtime access。
 
 ## 配置
 
@@ -16,7 +16,7 @@
 |---|---|
 | `profileId` | 从已组合的 `ctx.scienceRuntime` 的 `profiles` 配置中选择一个 allowlist 条目。会按持久化 Science safe-ID grammar 校验（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符）。 |
 | `modeRevision` | 部署方拥有的 Science mode contract revision，会持久化在每个 session 的 `ScienceModeRef` 中。要求 trim 后非空且 ≤128 个字符。 |
-| `stateHistoryLimit` | 正 safe integer；每次 `get_science_state` 调用分别最多返回这么多条最近 run 与 chart version。 |
+| `stateHistoryLimit` | 正 safe integer；每次 `get_science_state` 调用分别最多返回这么多条最近 run 与 artifact version。 |
 
 ## 首次模型请求
 
@@ -28,13 +28,13 @@
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
-| `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 chart-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
-| `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 Python 解释器进程中运行 `code`，并转发该工具调用的取消信号。 |
-| `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 `Rscript` 进程中运行 `code`，并转发该工具调用的取消信号。 |
-| `save_chart` | `run_id`、`artifact_path`、`logical_name`、`title`、可选 `caption` | 通过 `ctx.scienceRuntime.commitChart` 导入先前成功本地 run 生成的一张 PNG；返回文本 receipt 与客户端展示元数据，绝不返回 image block。 |
-| `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/chart/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
+| `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 artifact-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
+| `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 Python 解释器进程中运行 `code`，并转发该工具调用的取消信号。其结果还会列出本次 run 被自动捕获持久保存的文件（见“Run 结果”）。 |
+| `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 `Rscript` 进程中运行 `code`，并转发该工具调用的取消信号。其结果同样会列出本次 run 被自动捕获持久保存的文件。 |
+| `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，把既有的内容寻址附件重新提交为一个新的策展版本。返回文本 receipt，绝不返回文件字节。 |
+| `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/artifact/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
 
-四个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Chart 与 Outcome success 值为所有客户端渲染有用文本，并为专用 Web 行保留带标签、带版本的 presentation metadata。五个工具都使用 generic render intent，不带 editor location。
+四个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact 与 Outcome success 值为所有客户端渲染有用文本；当 `annotate_artifact` 策展的是一张图片时，还会额外保留带标签、带版本的 presentation metadata 供专用 Web 行使用（见“已知限制”）。五个工具都使用 generic render intent，不带 editor location。
 
 ## 模型体验
 
@@ -47,7 +47,7 @@
 ##### Science 工具指引
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. After a successful run writes a PNG under SCIENCE_ARTIFACT_DIR, use save_chart to durably save it; the tool returns a text receipt, never image bytes, and the chart becomes visible in the product transcript. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved chart versions, and/or prior messages) supports it.
+Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.
 ```
 
 #### Token 影响
@@ -76,7 +76,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`save_chart` 与 `publish_outcome` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
+模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact` 与 `publish_outcome` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
 
 #### Token 影响
 
@@ -90,11 +90,11 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-一次 durable 提交的 run 会渲染为 `status: <status>`，可能附带 ` exit <code>` 和/或 ` signal <signal>` 后缀，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。非 success 的 status 是需要阅读的一等结果，而不是一个错误。
+一次 durable 提交的 run 会渲染为 `status: <status>`，可能附带 ` exit <code>` 和/或 ` signal <signal>` 后缀，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出：`` Captured 2 artifacts: `summary.csv` v1 (text/csv, 4.1 KB), `plots/loss.png` v1 (image/png, 812x600). ``；跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是一个错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的那些 durable `science/artifact-saved` 事件。
 
 #### Token 影响
 
-受 Runtime 的 stdout/stderr 捕获上限约束；保留的调用与结果会在压缩之前被重复发送。
+受 Runtime 的 stdout/stderr 捕获上限，以及 `captureMaxFilesPerRun` 条被捕获 artifact 条目共同约束；保留的调用与结果会在压缩之前被重复发送。
 
 #### KV Cache 影响
 
@@ -104,25 +104,25 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 #### 模型看到的内容
 
-`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`；最近的 `charts`；`outcome`；总量 `metrics`；`history.runsOmitted` 与 `history.chartVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Chart title/caption 与 Outcome text 仍属于 model-authored durable content，而不是 Host observation field。
+`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`；最近的 `artifacts`（覆盖每种被捕获的媒体类型，带 `origin: 'auto' | 'model'`，`width`/`height` 只在图片时出现）；`outcome`；总量 `metrics`；`history.runsOmitted` 与 `history.artifactVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Artifact title/caption 与 Outcome text 仍属于 model-authored 或 capture-authored 的 durable content，而不是 Host observation field。
 
 #### Token 影响
 
-Run item 与 chart-version item 会分别限制为最近 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics` 与 `history` 会报告总量和遗漏数，但不会返回被遗漏的值。
+Run item 与 artifact-version item 会分别限制为最近 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics` 与 `history` 会报告总量和遗漏数，但不会返回被遗漏的值。
 
 #### KV Cache 影响
 
 Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
 
-### Chart 与 Outcome 结果
+### Artifact 与 Outcome 结果
 
 #### 模型看到的内容
 
-`save_chart` 以文本渲染稳定 chart id、逻辑名、版本、标题、可选 caption、来源 run、PNG 尺寸、字节数与创建时间；绝不输出 image bytes 或 image content block。`publish_outcome` 渲染 revision、标题、Markdown 摘要，以及每条 run/chart/message evidence reference。带标签的客户端 presentation value 留在 durable tool-result metadata 中，不会增加独立模型内容。
+`annotate_artifact` 以文本渲染稳定 artifact id、逻辑名、版本、标题、可选 caption、来源 run、媒体类型、策展版本为图片时的尺寸、字节数与创建时间；绝不输出文件字节或 image content block。`publish_outcome` 渲染 revision、标题、Markdown 摘要，以及每条 run/artifact/message evidence reference。被策展的图片会保留带标签的客户端 presentation value 于 durable tool-result metadata 中；策展一个非图片 artifact 则不会增加独立模型内容（见“已知限制”）。
 
 #### Token 影响
 
-受 chart receipt field 以及 durable Outcome 标题、摘要与 evidence 上限约束；保留的调用/结果会在 compaction 前重复发送。
+受 artifact receipt field 以及 durable Outcome 标题、摘要与 evidence 上限约束；保留的调用/结果会在 compaction 前重复发送。
 
 #### KV Cache 影响
 
@@ -132,7 +132,7 @@ Append-only；新出现的结果文本位于可复用 request prefix 之后。
 
 #### 模型看到的内容
 
-配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source 或 publication field、嵌套 mutation dispatch、不成功或继承的 chart source run、artifact selection/admission 失败，以及无效或重复 Outcome evidence。
+配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source 或 publication field、嵌套 mutation dispatch、未知的 artifact `logical_name`/`version`，以及无效或重复的 Outcome evidence。
 
 #### Token 影响
 
@@ -145,6 +145,6 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 ## 已知限制与暂缓事项
 
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
-- **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成 PNG，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。
+- **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成输出文件，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。
 - **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。
-- **自动捕获的非图片 artifact 已持久化写入日志，但本包尚未使其对模型可见** — `dsh-science-runtime` 现在会把 run 写出的每个合格 csv/json/md/png/txt 文件自动捕获为带版本的 `science/artifact-saved` 事实(不再局限于通过 `save_chart` 保存的 PNG)，但 `get_science_state` 的 `charts` 字段与 `run_python`/`run_r` 的结果文本目前分别仍只覆盖 PNG、且不带捕获回执，直到后续改动将二者分别泛化(`charts` 覆盖每种被捕获的媒体类型，并在 run 结果中追加捕获回执)。
+- **`annotate_artifact` 对非图片策展没有带标签的 Client presentation** — 它的 `presentationMeta` 目前仍只投射图片专属的 `ScienceChartPresentation` 形状；策展一个 csv/json/md/txt artifact 会返回 `null`（这是 transcript 行对无法识别 presentation 的既有优雅降级，不是错误），直到后续改动把这一 presentation 泛化到每种被捕获的媒体类型为止。

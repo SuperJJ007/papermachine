@@ -220,8 +220,8 @@ describe('science agent preset', () => {
     const rosterTools = requestHeader.tools?.map(tool => tool.name)
       .filter(name => name !== 'glob' && name !== 'grep').sort()
     expect(rosterTools).toEqual([
-      'ask_user_question', 'get_science_state', 'publish_outcome', 'read', 'read_image',
-      'run_python', 'run_r', 'save_chart', 'skill', 'todo_write',
+      'annotate_artifact', 'ask_user_question', 'get_science_state', 'publish_outcome', 'read', 'read_image',
+      'run_python', 'run_r', 'skill', 'todo_write',
     ])
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
       .toEqual(scaffold.ctx.tools.schemas(agentHandle.agent).toSorted((left, right) => left.name.localeCompare(right.name)))
@@ -286,32 +286,34 @@ describe('science agent preset', () => {
     })
     expect(runResult.isError).toBe(false)
     if (runResult.isError) throw new Error('R5 snapshot run failed')
-    const runValue = runResult.value as unknown as { runId: string; status: string }
-    expect(runValue.status).toBe('success')
-
-    const saveArgs = {
-      run_id: runValue.runId,
-      artifact_path: 'plot.png',
-      logical_name: 'main-plot',
-      title: 'Main plot',
-      caption: 'Deterministic snapshot chart',
+    const runValue = runResult.value as unknown as {
+      runId: string
+      status: string
+      capturedArtifacts?: readonly { logicalName: string; version: number }[]
     }
-    const firstSave = await executeScienceTool(agentHandle, 3, 'save_chart', saveArgs)
-    const secondSave = await executeScienceTool(agentHandle, 4, 'save_chart', saveArgs)
-    expect(firstSave.isError).toBe(false)
-    expect(secondSave.isError).toBe(false)
-    if (firstSave.isError || secondSave.isError) throw new Error('R5 snapshot chart save failed')
-    const firstChart = firstSave.value as unknown as { chartId: string; version: number; attachmentId: string }
-    const secondChart = secondSave.value as unknown as { chartId: string; version: number; attachmentId: string }
-    expect(firstChart).toMatchObject({ version: 1 })
-    expect(secondChart).toMatchObject({ chartId: firstChart.chartId, version: 2 })
+    expect(runValue.status).toBe('success')
+    // Auto-capture durably saves the run-written PNG with no separate save
+    // step: `FakeSubprocess.spawn` above writes it into SCIENCE_ARTIFACT_DIR
+    // before the run settles, so it is already version 1 (origin auto) here.
+    expect(runValue.capturedArtifacts).toEqual([expect.objectContaining({ logicalName: 'plot.png', version: 1 })])
+
+    const annotateArgs = { logical_name: 'plot.png', title: 'Main plot', caption: 'Deterministic snapshot chart' }
+    const firstAnnotate = await executeScienceTool(agentHandle, 3, 'annotate_artifact', annotateArgs)
+    const secondAnnotate = await executeScienceTool(agentHandle, 4, 'annotate_artifact', annotateArgs)
+    expect(firstAnnotate.isError).toBe(false)
+    expect(secondAnnotate.isError).toBe(false)
+    if (firstAnnotate.isError || secondAnnotate.isError) throw new Error('R5 snapshot artifact curation failed')
+    const firstArtifact = firstAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
+    const secondArtifact = secondAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
+    expect(firstArtifact).toMatchObject({ version: 2 })
+    expect(secondArtifact).toMatchObject({ artifactId: firstArtifact.artifactId, version: 3 })
 
     const publish = await executeScienceTool(agentHandle, 5, 'publish_outcome', {
       title: 'Snapshot result',
       summary_markdown: 'The deterministic run produced the cited chart.',
       evidence: [
         { kind: 'run', run_id: runValue.runId },
-        { kind: 'chart', chart_id: secondChart.chartId, version: 2 },
+        { kind: 'chart', chart_id: secondArtifact.artifactId, version: 3 },
       ],
     })
     expect(publish.isError).toBe(false)
@@ -322,42 +324,43 @@ describe('science agent preset', () => {
     expect(current.isError).toBe(false)
     if (current.isError) throw new Error('R5 snapshot state replay failed')
     const currentValue = current.value as unknown as {
-      charts: readonly Record<string, unknown>[]
+      artifacts: readonly Record<string, unknown>[]
       outcome: { revision: number } | null
-      metrics: { chartCount: number; chartVersionCount: number; outcomeRevision: number }
+      metrics: { artifactCount: number; artifactVersionCount: number; outcomeRevision: number }
     }
-    expect(currentValue.charts).toHaveLength(2)
+    // One auto-captured version plus two curated re-saves of the same logical artifact.
+    expect(currentValue.artifacts).toHaveLength(3)
     expect(currentValue.outcome?.revision).toBe(1)
-    expect(currentValue.metrics).toMatchObject({ chartCount: 1, chartVersionCount: 2, outcomeRevision: 1 })
-    for (const chartState of currentValue.charts) {
-      expect(chartState).not.toHaveProperty('attachmentId')
-      expect(chartState).not.toHaveProperty('environmentFingerprint')
-      expect(chartState).not.toHaveProperty('toolCallId')
-      expect(chartState).not.toHaveProperty('requestHeaderSeq')
+    expect(currentValue.metrics).toMatchObject({ artifactCount: 1, artifactVersionCount: 3, outcomeRevision: 1 })
+    for (const artifactState of currentValue.artifacts) {
+      expect(artifactState).not.toHaveProperty('attachmentId')
+      expect(artifactState).not.toHaveProperty('environmentFingerprint')
+      expect(artifactState).not.toHaveProperty('toolCallId')
+      expect(artifactState).not.toHaveProperty('requestHeaderSeq')
     }
 
     const r5Events = agentHandle.agent.session.events.filter(event => event.seq > result!.seq)
-    expect(r5Events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
+    expect(r5Events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(3)
     expect(r5Events.filter(event => event.type === 'science/outcome-published')).toHaveLength(1)
     const r5ToolResults = r5Events.filter(event => event.type === 'tool/result')
     expect(r5ToolResults.every(event => event.type !== 'tool/result'
       || event.data.message.content.every(block => block.type !== 'tool-result'
         || block.content.every(content => content.type !== 'image')))).toBe(true)
-    const saveEvents = r5ToolResults.filter(event => event.type === 'tool/result'
-      && event.data.message.source.callId.toString().includes('save_chart'))
-    expect(saveEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
-      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 1 }),
+    const annotateEvents = r5ToolResults.filter(event => event.type === 'tool/result'
+      && event.data.message.source.callId.toString().includes('annotate_artifact'))
+    expect(annotateEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
       expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 2 }),
+      expect.objectContaining({ kind: 'science/chart', version: 1, chartVersion: 3 }),
     ])
     const serializedR5 = JSON.stringify(r5Events)
     expect(serializedR5).not.toContain(scratch!)
     expect(serializedR5).not.toContain(Buffer.from(PNG).toString('base64'))
 
-    const chartEvent = r5Events.find(event => event.type === 'science/artifact-saved')
-    if (chartEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot chart event is missing')
-    const chartAttachment = chartEvent.data.artifact.attachment
-    if (!('width' in chartAttachment)) throw new Error('R5 snapshot artifact is not an image attachment')
-    const stored = await scaffold.ctx.attachments.readImage(chartAttachment)
+    const artifactEvent = r5Events.find(event => event.type === 'science/artifact-saved')
+    if (artifactEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot artifact event is missing')
+    const artifactAttachment = artifactEvent.data.artifact.attachment
+    if (!('width' in artifactAttachment)) throw new Error('R5 snapshot artifact is not an image attachment')
+    const stored = await scaffold.ctx.attachments.readImage(artifactAttachment)
     expect(Buffer.from(stored.data)).toEqual(Buffer.from(PNG))
 
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])

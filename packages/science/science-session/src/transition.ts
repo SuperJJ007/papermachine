@@ -144,8 +144,8 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
   // already proven and consumed by that run's science/run-started fact, so it
   // never re-consumes a tool call — many captured files share one run's call.
-  // A curated version (origin 'model', today only save_chart) consumes a
-  // fresh tool call exactly once, as before.
+  // A curated version (origin 'model', today only annotate_artifact) consumes
+  // a fresh tool call exactly once, as before.
   let toolCallTime: number | undefined
   let consumedToolCallSeq: number | undefined
   if (artifact.origin === 'auto') {
@@ -153,7 +153,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('an auto-captured Science artifact must carry its source run\'s own toolCallId and requestHeaderSeq')
     }
   } else {
-    const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['save_chart'])
+    const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['annotate_artifact'])
     toolCallTime = toolCall.time
     consumedToolCallSeq = toolCall.seq
   }

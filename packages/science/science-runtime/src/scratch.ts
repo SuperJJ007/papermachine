@@ -398,8 +398,8 @@ export function planRunScratch(
 
 /**
  * Rederive one already-published run's artifact directory without a source
- * filename — used to import a chart from a durably successful run, where the
- * language is not needed to locate `SCIENCE_ARTIFACT_DIR`.
+ * filename or language, the two facts a caller with only a `runId` may not
+ * have on hand.
  * @param sessionScratch - Retained private root that owns the run directory.
  * @param runId - The exact successful run's durable identifier.
  * @returns the private Host artifact directory for that run.

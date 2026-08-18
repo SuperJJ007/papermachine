@@ -1,6 +1,6 @@
 /**
- * Client-safe tagged, versioned presentation values for `save_chart` and
- * `publish_outcome`, persisted through `output.presentationMeta` and
+ * Client-safe tagged, versioned presentation values for `annotate_artifact`
+ * and `publish_outcome`, persisted through `output.presentationMeta` and
  * replayed by `@deepseek-ai/dsh-client-ui-science`. Each value is tagged
  * with a stable `kind` and `version` so an older or newer Client can fall
  * back to the generic tool row instead of misreading a shape it does not
@@ -19,7 +19,14 @@ export interface ScienceChartPresentationAttachment {
   readonly name?: string
 }
 
-/** Replayable presentation value for one `save_chart` direct top-level result. */
+/**
+ * Replayable presentation value for one `annotate_artifact` direct
+ * top-level result. Image-only: `annotate_artifact` can curate any captured
+ * media type, but this presentation still requires `attachment.width`/
+ * `height`, so curating a non-image artifact yields no presentation value
+ * (see `scienceArtifactPresentation`'s own docstring) until a following
+ * change generalizes this shape to every captured media type.
+ */
 export interface ScienceChartPresentation {
   readonly kind: 'science/chart'
   readonly version: 1

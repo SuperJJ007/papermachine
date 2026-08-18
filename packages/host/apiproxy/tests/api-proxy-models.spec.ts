@@ -284,6 +284,14 @@ describe('Web session model selection', () => {
     const readText = vi.fn(() => Promise.resolve({ ref, data: new TextEncoder().encode('ok') }))
     ctx.provide('attachments', { readText } as never)
     await ctx.plugin(SessionAttachmentIndex)
+    // host-apiproxy has no dependency on any domain package (dsh-science-session
+    // included), so this exercises the generic extractor-registration/
+    // authorization mechanism `sessions.textAttachment` shares with the image
+    // path, through a hand-registered extractor under a representative event
+    // type name rather than a real domain event. Science's own real
+    // `science/artifact-saved` text-attachment producers (auto-capture,
+    // annotate_artifact) are covered end to end in `dsh-tool-science` and
+    // `dsh-science-runtime`'s own test suites.
     ctx.sessionAttachments.register('science/artifact-saved', () => [ref])
     agent.session.append('science/artifact-saved', { version: 1, artifact: {} } as never)
     const api = createApiProxy(ctx, {

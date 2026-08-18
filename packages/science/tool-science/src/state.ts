@@ -13,7 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-science-session'
 import { scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
 import { requireScienceSession } from './run.ts'
-import { scienceChartSchemaProperties } from './chart-schema.ts'
+import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
 
 const stateInterpreterSchema = {
   type: 'object',
@@ -44,18 +44,13 @@ const stateEnvironmentSchema = {
   ],
 } as const
 
-const stateChartSchema = {
+const stateArtifactSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    ...scienceChartSchemaProperties,
+    ...scienceArtifactSchemaProperties,
     environmentRevision: { type: 'integer', required: true },
     environmentFingerprintPreview: { type: 'string', required: true },
-    mediaType: { type: 'string', required: true },
-    bytes: { type: 'integer', required: true },
-    width: { type: 'integer', required: true },
-    height: { type: 'integer', required: true },
-    createdAt: { type: 'integer', required: true },
   },
 } as const
 
@@ -66,7 +61,7 @@ const stateOutputSchema = {
     mode: { type: 'json', required: true },
     environment: { ...stateEnvironmentSchema, required: true },
     runs: { type: 'array', items: { type: 'json' }, required: true },
-    charts: { type: 'array', items: stateChartSchema, required: true },
+    artifacts: { type: 'array', items: stateArtifactSchema, required: true },
     outcome: { type: 'json', required: true },
     metrics: { type: 'json', required: true },
     history: {
@@ -75,7 +70,7 @@ const stateOutputSchema = {
       required: true,
       properties: {
         runsOmitted: { type: 'integer', required: true },
-        chartVersionsOmitted: { type: 'integer', required: true },
+        artifactVersionsOmitted: { type: 'integer', required: true },
       },
     },
     lastScienceEventSeq: { type: 'integer', required: true },
@@ -123,40 +118,36 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
 }
 
 /**
- * Narrow a durable artifact version to one carrying an image attachment.
- * `get_science_state`'s `charts` field is PNG-only until PR4's
- * `stateArtifact` generalization; an auto-captured text artifact is durably
- * logged (`science/artifact-saved`) but not yet surfaced through this tool —
- * see the runtime README's Known Limitations.
- */
-function hasImageAttachment(
-  artifact: ScienceArtifactVersion,
-): artifact is ScienceArtifactVersion & { attachment: Extract<ScienceArtifactVersion['attachment'], { width: number }> } {
-  return 'width' in artifact.attachment
-}
-
-/**
  * Remove the internal attachment id, full environment fingerprint,
- * authorizing tool call, and request-header sequence from one durable chart
- * version. The full `ImageAttachmentRef` remains available only to the
- * durable projection, authorization, export, and Client presentation paths —
- * never to model state.
+ * authorizing tool call, and request-header sequence from one durable
+ * artifact version. `width`/`height` are present only for an image
+ * attachment. The full `ImageAttachmentRef | TextAttachmentRef` remains
+ * available only to the durable projection, authorization, export, and
+ * Client presentation paths — never to model state.
+ *
+ * Reconstructs the shared fields' key order rather than spreading
+ * `scienceArtifactValueFields` as one block: this schema's pinned field
+ * order interleaves `environmentRevision`/`environmentFingerprintPreview`
+ * between `runId` and `mediaType`, which a trailing spread cannot produce.
  */
-function stateChart(chart: ScienceArtifactVersion & { attachment: Extract<ScienceArtifactVersion['attachment'], { width: number }> }): InferValue<typeof stateChartSchema> {
+function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stateArtifactSchema> {
+  const { artifactId, logicalName, version, title, caption, origin, runId, mediaType, bytes, width, height, createdAt } =
+    scienceArtifactValueFields(artifact)
   return {
-    chartId: String(chart.artifactId),
-    logicalName: chart.logicalName,
-    version: chart.version,
-    title: chart.title,
-    ...chart.caption === undefined ? {} : { caption: chart.caption },
-    runId: String(chart.runId),
-    environmentRevision: chart.environmentRevision,
-    environmentFingerprintPreview: scienceFingerprintPreview(chart.environmentFingerprint),
-    mediaType: chart.attachment.mediaType,
-    bytes: chart.attachment.bytes,
-    width: chart.attachment.width,
-    height: chart.attachment.height,
-    createdAt: chart.createdAt,
+    artifactId,
+    logicalName,
+    version,
+    title,
+    ...caption === undefined ? {} : { caption },
+    origin,
+    runId,
+    environmentRevision: artifact.environmentRevision,
+    environmentFingerprintPreview: scienceFingerprintPreview(artifact.environmentFingerprint),
+    mediaType,
+    bytes,
+    ...width === undefined ? {} : { width },
+    ...height === undefined ? {} : { height },
+    createdAt,
   }
 }
 
@@ -173,30 +164,29 @@ export function stateValueFromProjection(
   historyItemLimit: number,
 ): ScienceStateValue {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
-  const imageArtifacts = projection.artifacts.filter(hasImageAttachment)
-  const chartVersionsOmitted = Math.max(0, imageArtifacts.length - historyItemLimit)
+  const artifactVersionsOmitted = Math.max(0, projection.artifacts.length - historyItemLimit)
   return {
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
-    charts: imageArtifacts.slice(-historyItemLimit).map(stateChart),
+    artifacts: projection.artifacts.slice(-historyItemLimit).map(stateArtifact),
     outcome: projection.outcome as unknown as JsonValue,
     metrics: projection.metrics as unknown as JsonValue,
-    history: { runsOmitted, chartVersionsOmitted },
+    history: { runsOmitted, artifactVersionsOmitted },
     lastScienceEventSeq: projection.lastScienceEventSeq,
   }
 }
 
 /**
  * Register `get_science_state`, a no-argument read of the exact Session's
- * sanitized Science projection with bounded run and chart-version history.
+ * sanitized Science projection with bounded run and artifact-version history.
  * @param ctx - plugin context.
  * @param historyItemLimit - maximum recent entries returned per history collection.
  */
 export function applyScienceStateTool(ctx: Context, historyItemLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'get_science_state',
-    description: 'Return the current Science session state: mode, sanitized bound environment, recent run and chart-version histories with omitted counts, and the latest published outcome. Takes no arguments.',
+    description: 'Return the current Science session state: mode, sanitized bound environment, recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.',
     parameters: {},
     output: {
       schema: stateOutputSchema,

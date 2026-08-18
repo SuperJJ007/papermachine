@@ -1,0 +1,217 @@
+/**
+ * `ScienceRuntime.annotateArtifact`: metadata-only curation over an artifact
+ * version auto-capture already produced — `annotateArtifact` never imports
+ * bytes itself, so this suite seeds every annotated artifact through a real
+ * captured run.
+ */
+
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
+import {
+  attachScienceSession,
+  authorizeAnnotateArtifact,
+  authorizePythonRun,
+  createControlledRuntimeHarness,
+  createFakePythonPrefix,
+  createScienceSession,
+} from './harness.ts'
+
+const roots: string[] = []
+const contexts: Context[] = []
+
+afterEach(async () => {
+  await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function tmp(prefix: string): string {
+  const root = mkdtempSync(join(process.cwd(), prefix))
+  roots.push(root)
+  return root
+}
+
+/** Write one file below a run's real Host artifact directory. */
+async function writeArtifact(
+  root: string, session: Session, runId: ScienceRunId, relativePath: string, data: Uint8Array | string,
+): Promise<void> {
+  const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
+  const artifacts = runArtifactDirectory(sessionScratch, runId)
+  const target = join(artifacts, relativePath)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, data)
+}
+
+let captureCallCounter = 0
+
+/**
+ * Bind (once) or reuse the already-applied environment, run one Python
+ * script that writes `files`, and let auto-capture produce their artifact
+ * versions.
+ */
+async function captureFiles(
+  harness: Awaited<ReturnType<typeof createControlledRuntimeHarness>>,
+  root: string,
+  session: Session,
+  files: Readonly<Record<string, Uint8Array | string>>,
+): Promise<ScienceRunId> {
+  if (replayScience(session.events)?.environment === null) {
+    await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
+  }
+  captureCallCounter += 1
+  const run = harness.subprocess.queueRun('immediate')
+  const handle = await harness.runtime.startRun({
+    session, language: 'python', code: 'print(1)',
+    ...authorizePythonRun(session, `annotate-capture-${String(captureCallCounter)}`),
+    signal: new AbortController().signal,
+  })
+  for (const [relativePath, data] of Object.entries(files)) {
+    await writeArtifact(root, session, handle.runId, relativePath, data)
+  }
+  run.complete({ exitCode: 0, signal: null })
+  const result = await handle.done
+  expect(result.terminal.status).toBe('success')
+  return handle.runId
+}
+
+describe('ScienceRuntime.annotateArtifact', () => {
+  it('curates the latest version, reusing its attachment and provenance, with origin model', async () => {
+    const root = tmp('.science-annotate-latest-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-latest')
+    const runId = await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    expect(captured).toBeDefined()
+
+    const annotated = await harness.runtime.annotateArtifact({
+      session, logicalName: 'summary.csv', title: 'Result summary', caption: 'The final table',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+
+    expect(annotated.artifactId).toBe(captured?.artifactId)
+    expect(annotated.version).toBe(2)
+    expect(annotated.title).toBe('Result summary')
+    expect(annotated.caption).toBe('The final table')
+    expect(annotated.origin).toBe('model')
+    expect(annotated.attachment).toEqual(captured?.attachment)
+    expect(annotated.runId).toBe(runId)
+    expect(annotated.environmentRevision).toBe(captured?.environmentRevision)
+    expect(annotated.environmentFingerprint).toBe(captured?.environmentFingerprint)
+    expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1, 2])
+  })
+
+  it('curates a non-image artifact identically: no width/height required', async () => {
+    const root = tmp('.science-annotate-text-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-text')
+    await captureFiles(harness, root, session, { 'report.md': '# Report\n' })
+
+    const annotated = await harness.runtime.annotateArtifact({
+      session, logicalName: 'report.md', title: 'Final report',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+    expect(annotated.attachment.mediaType).toBe('text/markdown')
+    expect('width' in annotated.attachment).toBe(false)
+  })
+
+  it('curates an exact named version, not necessarily the latest, while still advancing the next contiguous version', async () => {
+    const root = tmp('.science-annotate-exact-version-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-exact-version')
+    await captureFiles(harness, root, session, { 'notes.txt': 'v1' })
+    await captureFiles(harness, root, session, { 'notes.txt': 'v2' })
+    const v1 = replayScience(session.events)?.artifacts.find(a => a.logicalName === 'notes.txt' && a.version === 1)
+    expect(v1).toBeDefined()
+
+    const annotated = await harness.runtime.annotateArtifact({
+      session, logicalName: 'notes.txt', version: 1, title: 'Original notes',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+    expect(annotated.version).toBe(3)
+    expect(annotated.attachment).toEqual(v1?.attachment)
+    expect(annotated.runId).toBe(v1?.runId)
+  })
+
+  it('supports a curation chain: repeated annotate calls keep the artifactId stable and versions contiguous', async () => {
+    const root = tmp('.science-annotate-chain-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-chain')
+    await captureFiles(harness, root, session, { 'plot.json': '{"ok":true}' })
+
+    const first = await harness.runtime.annotateArtifact({
+      session, logicalName: 'plot.json', title: 'draft',
+      ...authorizeAnnotateArtifact(session, 'science-annotate-chain-call-1'), signal: new AbortController().signal,
+    })
+    const second = await harness.runtime.annotateArtifact({
+      session, logicalName: 'plot.json', title: 'final',
+      ...authorizeAnnotateArtifact(session, 'science-annotate-chain-call-2'), signal: new AbortController().signal,
+    })
+    expect(second.artifactId).toBe(first.artifactId)
+    expect(second.version).toBe(first.version + 1)
+    expect(second.title).toBe('final')
+  })
+
+  it('rejects an unknown logical_name', async () => {
+    const root = tmp('.science-annotate-missing-name-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-missing-name')
+    await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'does-not-exist.csv', title: 'x',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+  })
+
+  it('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {
+    const root = tmp('.science-annotate-missing-version-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-missing-version')
+    await captureFiles(harness, root, session, { 'a.csv': 'x' })
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'a.csv', version: 9, title: 'x',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'a.csv', version: 9, title: 'x',
+      ...authorizeAnnotateArtifact(session, 'science-annotate-missing-version-call-2'), signal: new AbortController().signal,
+    })).rejects.toThrow(/Available: 1/)
+  })
+
+  it('rejects a detached or non-Science Session before it resolves any artifact version', async () => {
+    const root = tmp('.science-annotate-session-guards-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const plain = harness.ctx.sessions.create(SessionId('science-annotate-plain-session'))
+    await expect(harness.runtime.annotateArtifact({
+      session: plain, logicalName: 'x', title: 'x',
+      ...authorizeAnnotateArtifact(plain), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+    const attached = attachScienceSession(harness.ctx, 'science-annotate-detached-session')
+    attached.detach()
+    await expect(harness.runtime.annotateArtifact({
+      session: attached.session, logicalName: 'x', title: 'x',
+      ...authorizeAnnotateArtifact(attached.session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
+  })
+})

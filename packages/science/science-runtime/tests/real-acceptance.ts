@@ -267,26 +267,30 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     expectTerminal(await denied.done, 'failed', 'SANDBOX_DENIED')
     checks.push('configured-prefix write denial')
 
-    const chartAuthorization = authorize(session, 'save_chart', 5)
-    const chart = await context.scienceRuntime.commitChart({
+    const capturedChart = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.png')
+    if (capturedChart === undefined) throw new Error('auto-capture did not produce the real PNG artifact')
+    if (!('width' in capturedChart.attachment)) throw new Error('auto-capture returned a non-image attachment for a PNG file')
+    checks.push('real PNG artifact auto-capture')
+
+    const annotateAuthorization = authorize(session, 'annotate_artifact', 5)
+    const chart = await context.scienceRuntime.annotateArtifact({
       session,
-      runId: success.runId,
-      artifactPath: 'real-chart.png',
-      logicalName: `${language}-real-chart`,
+      logicalName: 'real-chart.png',
       title: `${language} real acceptance chart`,
-      ...chartAuthorization,
+      ...annotateAuthorization,
       signal: new AbortController().signal,
     })
-    if (!('width' in chart.attachment)) throw new Error('commitChart returned a non-image attachment')
+    if (!('width' in chart.attachment)) throw new Error('annotateArtifact returned a non-image attachment')
     const stored = await context.attachments.readImage(chart.attachment)
     if (String(stored.ref.attachmentId) !== String(chart.attachment.attachmentId)
       || !Buffer.from(stored.data).equals(Buffer.from(PNG))) {
-      throw new Error('saved chart attachment did not read back with the exact generated PNG bytes')
+      throw new Error('curated chart attachment did not read back with the exact generated PNG bytes')
     }
-    checks.push('real PNG artifact creation', 'chart commit and attachment readback')
+    checks.push('chart curation and attachment readback')
 
     const chartProjection = replayScience(session.events)
-    const replayedChart = chartProjection?.artifacts.find(candidate => candidate.artifactId === chart.artifactId && candidate.version === 1)
+    const replayedChart = chartProjection?.artifacts.find(candidate =>
+      candidate.artifactId === chart.artifactId && candidate.version === chart.version)
     if (replayedChart === undefined || String(replayedChart.attachment.attachmentId) !== String(chart.attachment.attachmentId)) {
       throw new Error('chart event did not replay to the exact committed attachment')
     }

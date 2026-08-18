@@ -57,14 +57,14 @@ describe('strict Science provenance', () => {
       ['chart request header', [
         event('request/header', 0, 90, {}),
         ...validRunPrefix,
-        toolCall(7, 160, ARTIFACT_CALL_ID, 'save_chart'),
+        toolCall(7, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
         event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ requestHeaderSeq: 0 }),
         }),
       ], /cannot follow pre-mode/],
       ['chart tool call', [
-        toolCall(0, 90, ARTIFACT_CALL_ID, 'save_chart'),
+        toolCall(0, 90, ARTIFACT_CALL_ID, 'annotate_artifact'),
         ...validRunPrefix,
         event('science/artifact-saved', 7, 170, {
           version: 1,
@@ -210,7 +210,7 @@ describe('strict Science provenance', () => {
         : candidate), /expected run_python/],
       ['chart', legalEvents().slice(0, 8).map((candidate, index) => index === 6
         ? toolCall(6, 160, ARTIFACT_CALL_ID, 'bash')
-        : candidate), /expected save_chart/],
+        : candidate), /expected annotate_artifact/],
       ['outcome', legalEvents().map((candidate, index) => index === 8
         ? toolCall(8, 175, OUTCOME_CALL_ID, 'bash')
         : candidate), /expected publish_outcome/],
@@ -266,7 +266,7 @@ describe('strict Science provenance', () => {
       ['request header', [
         ...legalEvents().slice(0, 6),
         event('request/header', 6, 165, {}),
-        toolCall(7, 160, ARTIFACT_CALL_ID, 'save_chart'),
+        toolCall(7, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
         event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ requestHeaderSeq: 6, createdAt: 164 }),
@@ -281,7 +281,7 @@ describe('strict Science provenance', () => {
       ['source terminal event', [
         ...legalEvents().slice(0, 5),
         event('science/run-finished', 5, 165, { version: 1, run: runTerminal() }),
-        toolCall(6, 150, ARTIFACT_CALL_ID, 'save_chart'),
+        toolCall(6, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
         event('science/artifact-saved', 7, 170, {
           version: 1,
           artifact: artifact({ createdAt: 164 }),

@@ -5,7 +5,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
-import type { ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isScienceSession } from './context.ts'
 import { requireDirectDispatch } from './guard.ts'
@@ -17,6 +17,20 @@ const outputStreamSchema = {
     text: { type: 'string', required: true },
     bytes: { type: 'integer', required: true },
     truncated: { type: 'boolean', required: true },
+  },
+} as const
+
+const capturedArtifactSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    artifactId: { type: 'string', required: true },
+    logicalName: { type: 'string', required: true },
+    version: { type: 'integer', required: true },
+    mediaType: { type: 'string', required: true },
+    bytes: { type: 'integer', required: true },
+    width: { type: 'integer' },
+    height: { type: 'integer' },
   },
 } as const
 
@@ -34,6 +48,14 @@ const runOutputSchema = {
     failureMessage: { type: 'string' },
     stdout: { ...outputStreamSchema, required: true },
     stderr: { ...outputStreamSchema, required: true },
+    // Absent entirely for a non-quiescent settlement's async capture walk,
+    // which has no synchronous result to attach to this call (see
+    // ScienceRunResult.capture's own docstring); present (possibly with an
+    // empty capturedArtifacts array) whenever capture ran synchronously.
+    capturedArtifacts: { type: 'array', items: capturedArtifactSchema },
+    captureSkippedOversizedCount: { type: 'integer' },
+    captureTruncatedPerRun: { type: 'boolean' },
+    captureTruncatedPerSession: { type: 'boolean' },
   },
 } as const
 
@@ -67,13 +89,27 @@ function nonEmptyCode(code: string): string {
   return code
 }
 
+/** Flatten one captured artifact version into the run result's bounded listing entry. */
+function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typeof capturedArtifactSchema> {
+  const { attachment } = artifact
+  const isImage = 'width' in attachment
+  return {
+    artifactId: String(artifact.artifactId),
+    logicalName: artifact.logicalName,
+    version: artifact.version,
+    mediaType: attachment.mediaType,
+    bytes: attachment.bytes,
+    ...isImage ? { width: attachment.width, height: attachment.height } : {},
+  }
+}
+
 /**
  * Flatten a Runtime result into the tool's bounded canonical value.
  * @param result - the durably committed run result from `ctx.scienceRuntime.startRun(...).done`.
  * @returns the bounded structured value the tool returns.
  */
 export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
-  const { terminal } = result
+  const { terminal, capture } = result
   return {
     status: terminal.status,
     runId: String(terminal.runId),
@@ -85,11 +121,29 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
     ...terminal.failureMessage === undefined ? {} : { failureMessage: terminal.failureMessage },
     stdout: result.stdout,
     stderr: result.stderr,
+    ...capture === undefined ? {} : {
+      capturedArtifacts: capture.captured.map(capturedArtifactValue),
+      ...capture.skippedOversizedCount > 0 ? { captureSkippedOversizedCount: capture.skippedOversizedCount } : {},
+      ...capture.truncatedPerRun ? { captureTruncatedPerRun: true } : {},
+      ...capture.truncatedPerSession ? { captureTruncatedPerSession: true } : {},
+    },
   }
 }
 
+/** Human-readable byte count, matching the compact style used across the Science surface. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 /**
- * Render one run result as plain text; failures stay inspectable, never hidden.
+ * Render one run result as plain text; failures stay inspectable, never
+ * hidden. When capture ran synchronously and produced new versions, a
+ * trailing listing names each — derived entirely from `value`'s own
+ * `capturedArtifacts`/`captureSkipped*`/`captureTruncated*` fields, so it
+ * cannot drift from the durable `science/artifact-saved` events those
+ * fields describe.
  * @param value - the bounded run value to render.
  * @returns the rendered Native text.
  */
@@ -104,6 +158,25 @@ export function formatRunResult(value: ScienceRunValue): string {
   if (value.stdout.truncated) lines.push('(stdout truncated)')
   lines.push('--- stderr ---', value.stderr.text.length > 0 ? value.stderr.text : '(empty)')
   if (value.stderr.truncated) lines.push('(stderr truncated)')
+  if (value.capturedArtifacts !== undefined && value.capturedArtifacts.length > 0) {
+    const items = value.capturedArtifacts.map((artifact) => {
+      const dimensions = artifact.width !== undefined && artifact.height !== undefined
+        ? `, ${String(artifact.width)}x${String(artifact.height)}`
+        : ''
+      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.mediaType}${dimensions}, ${formatBytes(artifact.bytes)})`
+    })
+    const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
+    lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)
+  }
+  if (value.captureSkippedOversizedCount !== undefined) {
+    lines.push(`(${String(value.captureSkippedOversizedCount)} eligible file(s) skipped: too large to capture)`)
+  }
+  if (value.captureTruncatedPerRun === true) {
+    lines.push('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
+  }
+  if (value.captureTruncatedPerSession === true) {
+    lines.push('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
+  }
   return lines.join('\n')
 }
 

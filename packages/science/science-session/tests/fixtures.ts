@@ -216,7 +216,7 @@ export function legalEvents(): SessionEvent[] {
     toolCall(3, 130, RUN_CALL_ID, 'run_python'),
     event('science/run-started', 4, 140, { version: 1, run: runStarted() }),
     event('science/run-finished', 5, 150, { version: 1, run: runTerminal() }),
-    toolCall(6, 160, ARTIFACT_CALL_ID, 'save_chart'),
+    toolCall(6, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
     event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact() }),
     toolCall(8, 175, OUTCOME_CALL_ID, 'publish_outcome'),
     event('science/outcome-published', 9, 180, { version: 1, outcome: outcome() }),
@@ -276,7 +276,7 @@ export function appendFixtureEvents(
     turn: 1,
     step: 1,
     callId: ARTIFACT_CALL_ID,
-    name: 'save_chart',
+    name: 'annotate_artifact',
     arguments: '{}',
   })
   if (events.length === 7) return

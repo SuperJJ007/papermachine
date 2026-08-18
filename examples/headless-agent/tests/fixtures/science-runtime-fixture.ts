@@ -15,7 +15,7 @@ import type {
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 
-/** Smallest valid PNG; `save_chart` imports these exact bytes from the run's artifact directory. */
+/** Smallest valid PNG; auto-capture durably saves these exact bytes from the run's artifact directory. */
 const PNG = Uint8Array.from(Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -58,6 +58,11 @@ class FakeSubprocess extends SubprocessRuntime {
     const artifacts = spec.env?.SCIENCE_ARTIFACT_DIR
     if (artifacts === undefined) throw new Error('science snapshot fixture: run received no SCIENCE_ARTIFACT_DIR')
     mkdirSync(artifacts, { recursive: true })
+    // One file per allowlisted auto-capture media type this snapshot pins —
+    // csv, json, md, and png — proving one science/artifact-saved event per file.
+    writeFileSync(join(artifacts, 'summary.csv'), 'metric,value\naccuracy,0.97\n')
+    writeFileSync(join(artifacts, 'meta.json'), '{"ok":true}\n')
+    writeFileSync(join(artifacts, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
     writeFileSync(join(artifacts, 'plot.png'), PNG)
     return settledHandle('science snapshot run output\n')
   }

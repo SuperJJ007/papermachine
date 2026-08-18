@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and five tools: `get_science_state`, `run_python`, `run_r`, `save_chart`, and `publish_outcome`. [`dsh-science-session`](../science-session) owns the durable vocabulary, strict fold, projection, and invariant; [`dsh-science-runtime`](../science-runtime) owns environment observation, private scratch, direct execution, terminal classification, and chart attachment import. This package never spawns a process, writes run source, classifies termination, or manages Conda. It appends `science/outcome-published` directly after durable evidence validation because Outcome publication needs no Host operation; Runtime appends the remaining environment, run, and chart facts.
+The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and five tools: `get_science_state`, `run_python`, `run_r`, `annotate_artifact`, and `publish_outcome`. [`dsh-science-session`](../science-session) owns the durable vocabulary, strict fold, projection, and invariant; [`dsh-science-runtime`](../science-runtime) owns environment observation, private scratch, direct execution, terminal classification, auto-capture of run-written files, and metadata-only artifact curation. This package never spawns a process, writes run source, classifies termination, or manages Conda. It appends `science/outcome-published` directly after durable evidence validation because Outcome publication needs no Host operation; Runtime appends the remaining environment, run, and artifact facts.
 
 A composition stacks, in order: `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-system-prompt`, `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-science-session` plus its `/invariant`, a host-local subprocess and sandbox provider, `@deepseek-ai/dsh-science-runtime` (configured with `dshHome` and `profiles`) plus its `/invariant`, then this package (configured with `profileId`, `modeRevision`, and `stateHistoryLimit`) plus its own `/invariant`.
 
-`ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, each `run_python`/`run_r` call, and `save_chart`). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading. `publish_outcome` remains usable over already-durable evidence without Runtime access.
+`ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, each `run_python`/`run_r` call, and `annotate_artifact`). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading. `publish_outcome` remains usable over already-durable evidence without Runtime access.
 
 ## Config
 
@@ -16,7 +16,7 @@ All three keys are required; none has a default or an environment-discovered val
 |---|---|
 | `profileId` | Selects one allowlist entry in the composed `ctx.scienceRuntime`'s `profiles` config. Validated against the durable Science safe-ID grammar (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, ≤128 characters). |
 | `modeRevision` | Deployment-owned revision of the Science mode contract, persisted in every session's `ScienceModeRef`. Trimmed, non-empty, ≤128 characters. |
-| `stateHistoryLimit` | Positive safe-integer maximum applied independently to the recent runs and chart versions returned by each `get_science_state` call. |
+| `stateHistoryLimit` | Positive safe-integer maximum applied independently to the recent runs and artifact versions returned by each `get_science_state` call. |
 
 ## First model request
 
@@ -28,13 +28,13 @@ After binding, this package re-renders the `science:environment` context from th
 
 | Tool | Arguments | Behavior |
 |---|---|---|
-| `get_science_state` | none | Returns a sanitized, bounded view of the session's durable Science projection: mode, model-safe environment facts, recent run and chart-version histories, omitted counts, outcome, and total metrics. Rejects if Science mode is not yet bound. |
-| `run_python` | `code` (non-empty string) | Runs `code` in a fresh Python interpreter process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
-| `run_r` | `code` (non-empty string) | Runs `code` in a fresh `Rscript` process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. |
-| `save_chart` | `run_id`, `artifact_path`, `logical_name`, `title`, optional `caption` | Imports one PNG produced by a prior successful local run through `ctx.scienceRuntime.commitChart`; returns a text receipt plus client presentation metadata, never an image block. |
-| `publish_outcome` | `title`, `summary_markdown`, non-empty `evidence` | Appends the next contiguous Outcome revision after resolving unique prior run/chart/message references and deriving their environment revisions. |
+| `get_science_state` | none | Returns a sanitized, bounded view of the session's durable Science projection: mode, model-safe environment facts, recent run and artifact-version histories, omitted counts, outcome, and total metrics. Rejects if Science mode is not yet bound. |
+| `run_python` | `code` (non-empty string) | Runs `code` in a fresh Python interpreter process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. Its result also lists any files auto-capture durably saved from this run (§ Run result). |
+| `run_r` | `code` (non-empty string) | Runs `code` in a fresh `Rscript` process through `ctx.scienceRuntime.startRun`, forwarding the tool's cancellation signal. Its result also lists any files auto-capture durably saved from this run. |
+| `annotate_artifact` | `logical_name`, optional `version`, `title`, optional `caption` | Adds a title/caption to an artifact `dsh-science-runtime`'s auto-capture already durably saved, through `ctx.scienceRuntime.annotateArtifact`; metadata-only, reusing the existing content-addressed attachment as a new curated version. Returns a text receipt, never file bytes. |
+| `publish_outcome` | `title`, `summary_markdown`, non-empty `evidence` | Appends the next contiguous Outcome revision after resolving unique prior run/artifact/message references and deriving their environment revisions. |
 
-The four mutation tools require direct top-level dispatch, the latest `request/header`, and the exact tool-call ID; nested Code Mode dispatch rejects before Runtime lookup or Session mutation. A durably committed run terminal state is a structured canonical value with bounded output. Chart and Outcome success values render useful text for every client and preserve tagged versioned presentation metadata for the dedicated Web rows. All five tools use generic render intent with no editor locations.
+The four mutation tools require direct top-level dispatch, the latest `request/header`, and the exact tool-call ID; nested Code Mode dispatch rejects before Runtime lookup or Session mutation. A durably committed run terminal state is a structured canonical value with bounded output. Artifact and Outcome success values render useful text for every client; `annotate_artifact` additionally preserves tagged versioned presentation metadata for the dedicated Web row when it curates an image (see Known Limitations). All five tools use generic render intent with no editor locations.
 
 ## Model Experience
 
@@ -47,7 +47,7 @@ This package contributes one fixed static section describing the run tools' proc
 ##### Science tool guidance
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. After a successful run writes a PNG under SCIENCE_ARTIFACT_DIR, use save_chart to durably save it; the tool returns a text receipt, never image bytes, and the chart becomes visible in the product transcript. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved chart versions, and/or prior messages) supports it.
+Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.
 ```
 
 #### Token effect
@@ -76,7 +76,7 @@ Append-only while the rendered snapshot is unchanged: [`dsh-agent-loop`](../../c
 
 #### What the model sees
 
-The model sees the generated [`get_science_state`, `run_python`, `run_r`, `save_chart`, and `publish_outcome` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science). They are registered unconditionally by this package whenever it is composed; the built-in `science` agent preset (`apps/cli/config/agent-presets/science`) is the shipped composition that does so.
+The model sees the generated [`get_science_state`, `run_python`, `run_r`, `annotate_artifact`, and `publish_outcome` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science). They are registered unconditionally by this package whenever it is composed; the built-in `science` agent preset (`apps/cli/config/agent-presets/science`) is the shipped composition that does so.
 
 #### Token effect
 
@@ -90,11 +90,11 @@ Prefix-stable while the visible tool definitions and order are unchanged. Plugin
 
 #### What the model sees
 
-A durably committed run renders `status: <status>`, optionally suffixed ` exit <code>` and/or ` signal <signal>`, then `failureCode`/`failureMessage` lines when present, then `--- stdout ---`/`--- stderr ---` sections each showing the captured text or `(empty)`, with a `(stdout truncated)`/`(stderr truncated)` line when the Runtime's capture bound was reached. A non-success status is a first-class result to read, not an error.
+A durably committed run renders `status: <status>`, optionally suffixed ` exit <code>` and/or ` signal <signal>`, then `failureCode`/`failureMessage` lines when present, then `--- stdout ---`/`--- stderr ---` sections each showing the captured text or `(empty)`, with a `(stdout truncated)`/`(stderr truncated)` line when the Runtime's capture bound was reached. When capture ran synchronously and produced new versions, a trailing line lists each: `` Captured 2 artifacts: `summary.csv` v1 (text/csv, 4.1 KB), `plots/loss.png` v1 (image/png, 812x600). `` A skipped-oversized count and per-run/per-session truncation flags render as further trailing lines when set. A non-success run status is a first-class result to read, not an error; the receipt derives entirely from the run's own bounded output fields, so it cannot drift from the durable `science/artifact-saved` events it describes.
 
 #### Token effect
 
-Bounded by the Runtime's stdout/stderr capture limits; the retained call and result are resent until compaction.
+Bounded by the Runtime's stdout/stderr capture limits plus `captureMaxFilesPerRun` captured-artifact entries; the retained call and result are resent until compaction.
 
 #### KV Cache effect
 
@@ -104,25 +104,25 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-`get_science_state` JSON-renders a sanitized, bounded view of the replayed projection: `mode`; model-safe `environment` identity, status, capabilities, versions, and fingerprint previews; the most recent `runs` with path-bearing Runtime-owned free text removed; the most recent `charts`; `outcome`; total `metrics`; `history.runsOmitted` and `history.chartVersionsOmitted`; and `lastScienceEventSeq`. It never returns configured/canonical prefixes, executable paths or identity, Conda history hashes, Runtime-owned free-text reasons, credentials, source, stdout, or stderr. Chart titles/captions and Outcome text remain model-authored durable content, not Host observation fields.
+`get_science_state` JSON-renders a sanitized, bounded view of the replayed projection: `mode`; model-safe `environment` identity, status, capabilities, versions, and fingerprint previews; the most recent `runs` with path-bearing Runtime-owned free text removed; the most recent `artifacts` (every captured media type, `origin: 'auto' | 'model'`, `width`/`height` present only for an image); `outcome`; total `metrics`; `history.runsOmitted` and `history.artifactVersionsOmitted`; and `lastScienceEventSeq`. It never returns configured/canonical prefixes, executable paths or identity, Conda history hashes, Runtime-owned free-text reasons, credentials, source, stdout, or stderr. Artifact titles/captions and Outcome text remain model- or capture-authored durable content, not Host observation fields.
 
 #### Token effect
 
-Bounded independently to `stateHistoryLimit` recent run items and chart-version items; durable codecs bound every retained item. `metrics` and `history` report total and omitted counts without returning the omitted values.
+Bounded independently to `stateHistoryLimit` recent run items and artifact-version items; durable codecs bound every retained item. `metrics` and `history` report total and omitted counts without returning the omitted values.
 
 #### KV Cache effect
 
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
-### Chart and Outcome results
+### Artifact and Outcome results
 
 #### What the model sees
 
-`save_chart` renders the stable chart id, logical name, version, title, optional caption, source run, PNG dimensions, byte count, and creation time as text; it never emits image bytes or an image content block. `publish_outcome` renders the revision, title, Markdown summary, and each run/chart/message evidence reference. The tagged client presentation values stay in durable tool-result metadata and do not add separate model content.
+`annotate_artifact` renders the stable artifact id, logical name, version, title, optional caption, source run, media type, dimensions when the curated version is an image, byte count, and creation time as text; it never emits file bytes or an image content block. `publish_outcome` renders the revision, title, Markdown summary, and each run/artifact/message evidence reference. A curated image's tagged client presentation value stays in durable tool-result metadata; curating a non-image artifact adds no separate model content (see Known Limitations).
 
 #### Token effect
 
-Bounded by the chart receipt fields and the durable Outcome title, summary, and evidence limits; retained call/results are resent until compaction.
+Bounded by the artifact receipt fields and the durable Outcome title, summary, and evidence limits; retained call/results are resent until compaction.
 
 #### KV Cache effect
 
@@ -132,7 +132,7 @@ Append-only; newly visible result text follows the reusable request prefix.
 
 #### What the model sees
 
-Configuration and precondition failures are normalized as `Error: <message>`. They distinguish missing initiating Agent/preset/mode/request header/Runtime, empty source or publication fields, nested mutation dispatch, unsuccessful or inherited chart source runs, artifact selection/admission failures, and invalid or duplicate Outcome evidence.
+Configuration and precondition failures are normalized as `Error: <message>`. They distinguish missing initiating Agent/preset/mode/request header/Runtime, empty source or publication fields, nested mutation dispatch, an unknown artifact `logical_name`/`version`, and invalid or duplicate Outcome evidence.
 
 #### Token effect
 
@@ -145,6 +145,6 @@ Append-only; newly visible content follows the reusable request prefix and does 
 ## Known Limitations and Deferred Work
 
 - **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset that ships with `apps/cli` (`apps/cli/config/agent-presets/science`) is a separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
-- **No chart specification or Outcome editor** — the model produces PNG files in Python/R and publishes immutable evidence-backed Outcome revisions; this package does not provide a plotting grammar or mutable report document.
+- **No chart specification or Outcome editor** — the model produces output files in Python/R and publishes immutable evidence-backed Outcome revisions; this package does not provide a plotting grammar or mutable report document.
 - **No persistent kernel** — every `run_python`/`run_r` call is a fresh interpreter process; only `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` files persist across calls.
-- **Auto-captured non-image artifacts are durably logged but not yet model-visible through this package** — `dsh-science-runtime` now auto-captures every eligible csv/json/md/png/txt file a run writes as a versioned `science/artifact-saved` fact (not only PNGs saved through `save_chart`), but `get_science_state`'s `charts` field and `run_python`/`run_r`'s result text remain PNG-only and receipt-free respectively until a following change generalizes them (`charts` to every captured media type, and a capture receipt appended to run results).
+- **`annotate_artifact` has no tagged Client presentation for a non-image curation** — its `presentationMeta` still projects only the image-only `ScienceChartPresentation` shape; curating a csv/json/md/txt artifact returns `null` (the transcript row's existing graceful fallback for an unrecognized presentation, not an error) until a following change generalizes this presentation to every captured media type.

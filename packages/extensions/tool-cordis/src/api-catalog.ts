@@ -1053,10 +1053,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
       {
-        signature: 'async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>',
-        description: 'Import one PNG from a successful, non-inherited run\'s private artifact directory, persist it through `ctx.attachments`, then append the complete immutable chart version. Attachment persistence precedes the event: a failure before the event may leave only an unreferenced content-addressed object, but a committed event is never rolled back because a later step fails.',
-        parameters: [{ name: 'request', description: 'Exact live Session, source run, artifact path, and cancellation.' }],
-        returns: 'The durable chart version this operation appended.',
+        signature: 'annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
+        description: 'Re-commit an existing artifact version\'s exact attachment reference as a new curated version: metadata-only, so it never reads or writes the filesystem and never calls the attachment store. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
+        returns: 'The durable curated version this operation appended.',
       },
     ],
   },
@@ -2754,6 +2754,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'AnnotateScienceArtifactRequest',
+    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -2916,10 +2920,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CommandResult',
     declaration: 'export type CommandResult = {\n    readonly kind: \'success\';\n    readonly text?: string;\n    readonly sourceEventSeq?: number;\n} | {\n    readonly kind: \'error\';\n    readonly text: string;\n};',
-  },
-  {
-    name: 'CommitScienceChartRequest',
-    declaration: 'export interface CommitScienceChartRequest {\n    readonly session: Session;\n    readonly runId: ScienceRunId;\n    readonly artifactPath: string;\n    readonly logicalName: string;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'CompactionAgentContext',

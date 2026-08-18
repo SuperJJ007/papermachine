@@ -28,9 +28,9 @@
       - insert:
           - id: tool-fs-read-only
             name: '@deepseek-ai/dsh-tool-fs/read-only'
-          # `save_chart` persists chart bytes before its durable event, so the
-          # Science Runtime waits for an attachment store; this snapshot roots
-          # one beside the Runtime's own private home.
+          # Auto-capture persists each run-written file's bytes before its
+          # durable event, so the Science Runtime waits for an attachment
+          # store; this snapshot roots one beside the Runtime's own private home.
           - id: attachment-local
             name: '@deepseek-ai/dsh-attachment-local'
             config:

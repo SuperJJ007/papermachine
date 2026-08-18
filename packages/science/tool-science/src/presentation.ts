@@ -1,13 +1,13 @@
 /**
- * Projections from a canonical `save_chart`/`publish_outcome` result to its
- * tagged, versioned `output.presentationMeta` value. The value shapes
+ * Projections from a canonical `annotate_artifact`/`publish_outcome` result
+ * to its tagged, versioned `output.presentationMeta` value. The value shapes
  * themselves are client-safe and live in `./types.ts`, importable without
  * this package's host-only runtime.
  */
 
 import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { ScienceArtifactReceiptValue } from './annotate-artifact.ts'
 import type { ScienceOutcomeResultValue } from './publish-outcome.ts'
-import type { ScienceChartReceiptValue } from './save-chart.ts'
 import type { ScienceChartPresentation, ScienceOutcomePresentation } from './types.ts'
 
 export type {
@@ -18,15 +18,21 @@ export type {
 } from './types.ts'
 
 /**
- * Project a `save_chart` canonical result into its tagged presentation value.
- * @param value - the canonical `save_chart` output value.
- * @returns the presentation value persisted as `tool/result.meta`.
+ * Project an `annotate_artifact` canonical result into its tagged
+ * presentation value. `ScienceChartPresentation` is image-only (see its own
+ * docstring); curating a non-image artifact (csv/json/md/txt) returns `null`
+ * — no card, the same graceful fallback the Client row already applies to
+ * any presentation value it does not recognize — until a following change
+ * generalizes this presentation to every captured media type.
+ * @param value - the canonical `annotate_artifact` output value.
+ * @returns the presentation value persisted as `tool/result.meta`, or `null` for a non-image artifact.
  */
-export function scienceChartPresentation(value: ScienceChartReceiptValue): JsonValue {
+export function scienceArtifactPresentation(value: ScienceArtifactReceiptValue): JsonValue {
+  if (value.width === undefined || value.height === undefined) return null
   const presentation: ScienceChartPresentation = {
     kind: 'science/chart',
     version: 1,
-    chartId: value.chartId,
+    chartId: value.artifactId,
     logicalName: value.logicalName,
     chartVersion: value.version,
     title: value.title,

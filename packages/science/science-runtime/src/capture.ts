@@ -14,7 +14,7 @@ import { applyScienceEvent, foldScience, projectScienceFold, ScienceArtifactId }
 import type { ScienceArtifactVersion, ScienceFoldState, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { canonicalWithin } from './scratch.ts'
-import { readBoundedFile, walkArtifactFiles } from './chart.ts'
+import { readBoundedFile, walkArtifactFiles } from './artifact-file.ts'
 
 /**
  * Fixed auto-capture extension allowlist, keyed by lower-cased extension.
@@ -132,8 +132,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     if (!entry.isFile() || entry.isSymbolicLink()) continue
     // A bounded read never pulls more than captureMaxFileBytes + 1 bytes
     // into memory, so an oversized file is caught by its returned length
-    // rather than a separate stat-based pre-check (readBoundedFile mirrors
-    // commitChart's own bounded-read precedent, chart.ts).
+    // rather than a separate stat-based pre-check (artifact-file.ts).
     const data = await readBoundedFile(canonical, request.captureMaxFileBytes)
     if (data.byteLength > request.captureMaxFileBytes) {
       skippedOversizedCount += 1

@@ -6,18 +6,18 @@
  * required REAL-composition coverage).
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
-import { planSessionScratch, runArtifactDirectory } from '@deepseek-ai/dsh-science-runtime/src/scratch.ts'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -25,16 +25,16 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceProjection } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
 import { isScienceSession, renderScienceProjection } from '../src/context.ts'
-import { scienceChartPresentation } from '../src/presentation.ts'
+import { scienceArtifactPresentation } from '../src/presentation.ts'
 import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
 import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
-import { chartReceiptFromChart, formatChartReceipt } from '../src/save-chart.ts'
-import type { ScienceChartReceiptValue } from '../src/save-chart.ts'
+import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annotate-artifact.ts'
+import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
 import { formatRunResult, requireScienceSession, runValueFromResult } from '../src/run.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { DirectSandbox, FakeSubprocess, createFakePythonPrefix } from './harness.ts'
@@ -49,6 +49,25 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
     outcome: null,
     metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     lastScienceEventSeq: 1,
+    ...overrides,
+  }
+}
+
+/** Minimal valid `ScienceArtifactVersion` fixture (image attachment); callers override only what they test. */
+function artifactVersionFixture(overrides: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
+  return {
+    artifactId: ScienceArtifactId('artifact-1'),
+    logicalName: 'file',
+    version: 1,
+    title: 'file',
+    origin: 'auto',
+    attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+    runId: ScienceRunId('run-1'),
+    toolCallId: CallId('call-1'),
+    requestHeaderSeq: 1,
+    environmentRevision: 1,
+    environmentFingerprint: 'a'.repeat(64),
+    createdAt: 1000,
     ...overrides,
   }
 }
@@ -77,15 +96,47 @@ function authorizeToolCall(
   return toolCallId
 }
 
-/** Write one artifact file below a run's real Host artifact directory. */
-async function writeArtifact(
-  root: string, session: Session, runId: string, relativePath: string, data: Uint8Array,
-): Promise<void> {
-  const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
-  const artifacts = runArtifactDirectory(sessionScratch, runId as never)
-  const target = join(artifacts, relativePath)
-  mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, data)
+/** The authorizing facts one durable run makes available to an artifact version it produces. */
+interface RunProvenance {
+  readonly runId: ReturnType<typeof ScienceRunId>
+  readonly toolCallId: ReturnType<typeof CallId>
+  readonly requestHeaderSeq: number
+  readonly environmentRevision: number
+  readonly environmentFingerprint: string
+}
+
+/**
+ * Directly append one `origin: 'auto'` artifact version citing `run`'s own
+ * authorizing facts — the durable shape `dsh-science-runtime`'s real capture
+ * walk appends, for a file `FakeSubprocess` cannot itself write (it returns
+ * fixed output, never a real process that writes to `SCIENCE_ARTIFACT_DIR`).
+ * Persists a real attachment through the mounted `ctx.attachments` first, so
+ * the seeded event references a real content-addressed ref exactly as
+ * capture would.
+ */
+async function seedAutoArtifact(
+  ctx: Context, session: Session, run: RunProvenance, logicalName: string,
+  data: Uint8Array, mediaType: 'image/png' | TextMediaType,
+): Promise<ScienceArtifactVersion> {
+  const attachment = mediaType === 'image/png'
+    ? await ctx.attachments.saveImage({ data, mediaType: 'image/png', name: logicalName })
+    : await ctx.attachments.saveText({ data, mediaType, name: logicalName })
+  const artifact: ScienceArtifactVersion = {
+    artifactId: ScienceArtifactId(randomUUID()),
+    logicalName,
+    version: 1,
+    title: logicalName,
+    origin: 'auto',
+    attachment,
+    runId: run.runId,
+    toolCallId: run.toolCallId,
+    requestHeaderSeq: run.requestHeaderSeq,
+    environmentRevision: run.environmentRevision,
+    environmentFingerprint: run.environmentFingerprint,
+    createdAt: Date.now(),
+  }
+  session.append('science/artifact-saved', { version: 1, artifact })
+  return artifact
 }
 
 let root: string
@@ -447,6 +498,93 @@ describe('runValueFromResult / formatRunResult', () => {
     const text = formatRunResult(value)
     expect(text).toBe('status: cancelled\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)')
   })
+
+  /** Bare success terminal shared by the capture-receipt tests below. */
+  function successTerminal(): Parameters<typeof runValueFromResult>[0]['terminal'] {
+    return {
+      runId: ScienceRunId('run-capture'),
+      language: 'python',
+      toolCallId: CallId('call-capture'),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: 1,
+      codeSha256: 'a'.repeat(64),
+      scratchKey: 'a'.repeat(64) as never,
+      runDirectoryRef: 'runs/run-capture/',
+      status: 'success',
+      finishedAt: 2,
+      exitCode: 0,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    }
+  }
+
+  it('appends a plural captured-artifacts receipt mixing image and non-image entries, and both skip/truncation flags', () => {
+    const image = artifactVersionFixture({
+      logicalName: 'plot.png',
+      version: 1,
+      attachment: { attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 500, width: 10, height: 20 },
+    })
+    const csv = artifactVersionFixture({
+      logicalName: 'summary.csv',
+      version: 1,
+      attachment: { attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), mediaType: 'text/csv', bytes: 2048 },
+    })
+    const value = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: { captured: [image, csv], skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false },
+    })
+    expect(value.capturedArtifacts).toEqual([
+      { artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500, width: 10, height: 20 },
+      { artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048 },
+    ])
+    expect(value.captureSkippedOversizedCount).toBe(3)
+    expect(value.captureTruncatedPerRun).toBe(true)
+    expect(value.captureTruncatedPerSession).toBe(true)
+    const text = formatRunResult(value)
+    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (image/png, 10x20, 500 B), `summary.csv` v1 (text/csv, 2.0 KB).')
+    expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
+    expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
+    expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
+  })
+
+  it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', () => {
+    const large = artifactVersionFixture({
+      logicalName: 'dataset.json',
+      version: 1,
+      attachment: { attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), mediaType: 'application/json', bytes: 3 * 1024 * 1024 },
+    })
+    const value = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: { captured: [large], skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false },
+    })
+    expect(value).not.toHaveProperty('captureSkippedOversizedCount')
+    expect(value).not.toHaveProperty('captureTruncatedPerRun')
+    expect(value).not.toHaveProperty('captureTruncatedPerSession')
+    const text = formatRunResult(value)
+    expect(text).toContain('Captured 1 artifact: `dataset.json` v1 (application/json, 3.0 MB).')
+    expect(text).not.toContain('eligible file(s) skipped')
+    expect(text).not.toContain('capture limit')
+  })
+
+  it('omits the captured-artifacts line entirely when capture ran but produced nothing', () => {
+    const value = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: { captured: [], skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false },
+    })
+    expect(value.capturedArtifacts).toEqual([])
+    const text = formatRunResult(value)
+    expect(text).not.toContain('Captured')
+  })
 })
 
 describe('get_science_state', () => {
@@ -512,11 +650,11 @@ describe('get_science_state', () => {
   })
 
   it.each([
-    { limit: 1, expected: ['chart-3'], omitted: 2 },
-    { limit: 2, expected: ['chart-2', 'chart-3'], omitted: 1 },
-    { limit: 3, expected: ['chart-1', 'chart-2', 'chart-3'], omitted: 0 },
-  ])('caps recent chart-version history at $limit and reports omissions', ({ limit, expected, omitted }) => {
-    const artifacts = ['chart-1', 'chart-2', 'chart-3'].map((artifactId, index) => ({
+    { limit: 1, expected: ['artifact-3'], omitted: 2 },
+    { limit: 2, expected: ['artifact-2', 'artifact-3'], omitted: 1 },
+    { limit: 3, expected: ['artifact-1', 'artifact-2', 'artifact-3'], omitted: 0 },
+  ])('caps recent artifact-version history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+    const artifacts = ['artifact-1', 'artifact-2', 'artifact-3'].map((artifactId, index) => ({
       artifactId,
       logicalName: artifactId,
       version: 1,
@@ -534,8 +672,8 @@ describe('get_science_state', () => {
       artifacts,
       metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 3, artifactVersionCount: 3, outcomeRevision: 0 },
     }), limit)
-    expect(value.charts.map(chart => (chart as { chartId: string }).chartId)).toEqual(expected)
-    expect(value.history.chartVersionsOmitted).toBe(omitted)
+    expect(value.artifacts.map(artifact => (artifact as { artifactId: string }).artifactId)).toEqual(expected)
+    expect(value.history.artifactVersionsOmitted).toBe(omitted)
   })
 
   it('exposes only sanitized interpreter facts and a fingerprint preview', () => {
@@ -817,11 +955,11 @@ describe('run_python', () => {
   })
 })
 
-describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation', () => {
-  it('omits caption and the attachment name when both are absent from the durable chart', () => {
-    const value = chartReceiptFromChart({
-      artifactId: ScienceArtifactId('chart-1'),
-      logicalName: 'main',
+describe('artifactReceiptFromArtifact / formatArtifactReceipt / scienceArtifactPresentation', () => {
+  it('omits caption and the attachment name when both are absent from the durable artifact', () => {
+    const value = artifactReceiptFromArtifact({
+      artifactId: ScienceArtifactId('artifact-1'),
+      logicalName: 'main.png',
       version: 1,
       title: 'Main plot',
       origin: 'model',
@@ -835,19 +973,19 @@ describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation'
     })
     expect(value).not.toHaveProperty('caption')
     expect(value).not.toHaveProperty('attachmentName')
-    expect(formatChartReceipt(value)).not.toContain('caption:')
-    const presentation = scienceChartPresentation(value) as { caption?: string; attachment: { name?: string } }
+    expect(formatArtifactReceipt(value)).not.toContain('caption:')
+    const presentation = scienceArtifactPresentation(value) as { caption?: string; attachment: { name?: string } }
     expect(presentation).not.toHaveProperty('caption')
     expect(presentation.attachment).not.toHaveProperty('name')
   })
 
-  it('throws defensively when given a non-image attachment, which commitChart never returns', () => {
-    expect(() => chartReceiptFromChart({
-      artifactId: ScienceArtifactId('chart-1'),
-      logicalName: 'main',
+  it('curates a non-image artifact without width/height, and its presentation is null (no card, until a following change generalizes it)', () => {
+    const value = artifactReceiptFromArtifact({
+      artifactId: ScienceArtifactId('artifact-1'),
+      logicalName: 'summary.csv',
       version: 1,
-      title: 'Main plot',
-      origin: 'auto',
+      title: 'Summary',
+      origin: 'model',
       attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'text/csv', bytes: 10 },
       runId: ScienceRunId('run-1'),
       toolCallId: CallId('call-1'),
@@ -855,7 +993,11 @@ describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation'
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
       createdAt: 1000,
-    })).toThrow(/non-image attachment/)
+    })
+    expect(value).not.toHaveProperty('width')
+    expect(value).not.toHaveProperty('height')
+    expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1) curated from run run-1\ntitle: Summary\ntext/csv, 10 bytes')
+    expect(scienceArtifactPresentation(value)).toBeNull()
   })
 })
 
@@ -876,9 +1018,9 @@ describe('isMessageFact', () => {
   })
 })
 
-describe('save_chart', () => {
+describe('annotate_artifact', () => {
   /** Bind, then run_python to a durable success, through the real tool registry. */
-  async function runSuccessfully(ctx: Context, session: Session, id: string): Promise<string> {
+  async function runSuccessfully(ctx: Context, session: Session, id: string): Promise<RunProvenance> {
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const toolCallId = authorizeToolCall(session, 1, 'run_python', id)
     const result = await ctx.tools.execute({
@@ -888,41 +1030,60 @@ describe('save_chart', () => {
     expect(result.isError).toBe(false)
     const started = session.events.find(event => event.type === 'science/run-started')
     if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
-    return String(started.data.run.runId)
+    return started.data.run
   }
 
-  it('imports a chart from a successful run and returns a text receipt without image bytes or the internal attachment id', async () => {
+  it('curates an already-captured artifact and returns a text receipt without file bytes or the internal attachment id', async () => {
     const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-chart-success')
-    const runId = await runSuccessfully(ctx, session, 'science-chart-run')
-    await writeArtifact(root, session, runId, 'plot.png', PNG)
-    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-save')
+    const session = scienceSession(ctx, 'science-annotate-success')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-run')
+    await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-call')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'save_chart',
-      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot', caption: 'A caption' },
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'Main plot', caption: 'A caption' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
-    expect(text).toContain('chart "main" v1')
+    expect(text).toContain('artifact "plot.png" v2')
     expect(text).toContain('title: Main plot')
     expect(text).toContain('caption: A caption')
     expect(text).not.toMatch(/sha256:/)
-    expect(session.events.some(event => event.type === 'science/artifact-saved')).toBe(true)
+    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
     if (result.isError) throw new Error('unreachable')
-    const value = result.value as unknown as ScienceChartReceiptValue
-    expect(value.chartId).toBeTypeOf('string')
-    expect(value).toMatchObject({ version: 1, mediaType: 'image/png', caption: 'A caption' })
-    expect(result.meta).toMatchObject({ kind: 'science/chart', version: 1, chartVersion: 1, caption: 'A caption', attachment: { mediaType: 'image/png' } })
+    const value = result.value as unknown as ScienceArtifactReceiptValue
+    expect(value.artifactId).toBeTypeOf('string')
+    expect(value).toMatchObject({ version: 2, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(result.meta).toMatchObject({ kind: 'science/chart', version: 1, chartVersion: 2, caption: 'A caption', attachment: { mediaType: 'image/png' } })
+  })
+
+  it('curates a captured non-image artifact; the receipt has no width/height and presentationMeta is null', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-text-success')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-text-run')
+    await seedAutoArtifact(ctx, session, run, 'summary.csv', Buffer.from('a,b\n1,2\n'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-text-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'summary.csv', title: 'Result summary' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('unreachable')
+    const value = result.value as unknown as ScienceArtifactReceiptValue
+    expect(value).not.toHaveProperty('width')
+    expect(value).not.toHaveProperty('height')
+    expect(result.meta).toBeNull()
   })
 
   it('rejects an empty title before it reaches the Runtime', async () => {
     const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-chart-empty-title')
-    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-empty-title-call')
+    const session = await boundSession(ctx, 'science-annotate-empty-title')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-empty-title-call')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'save_chart',
-      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: '   ' },
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: '   ' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
@@ -931,78 +1092,96 @@ describe('save_chart', () => {
 
   it('rejects when no request/header is recorded', async () => {
     const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-chart-no-header')
+    const session = scienceSession(ctx, 'science-annotate-no-header')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-chart-no-header-call'), name: 'save_chart',
-      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      signal: testSignal, callId: CallId('science-annotate-no-header-call'), name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'main' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
   })
 
-  it('commits contiguous versions for a repeat logical_name', async () => {
+  it('commits contiguous versions for a repeat logical_name, retaining the artifactId', async () => {
     const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-chart-versions')
-    const runId = await runSuccessfully(ctx, session, 'science-chart-versions-run')
-    await writeArtifact(root, session, runId, 'plot.png', PNG)
-    const firstCall = authorizeToolCall(session, 2, 'save_chart', 'science-chart-versions-1')
+    const session = scienceSession(ctx, 'science-annotate-versions')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-versions-run')
+    await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const firstCall = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-versions-1')
     const first = await ctx.tools.execute({
-      signal: testSignal, callId: firstCall, name: 'save_chart',
-      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'v1' },
+      signal: testSignal, callId: firstCall, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'v2' },
       agent: fakeAgent(session),
     })
-    const secondCall = authorizeToolCall(session, 3, 'save_chart', 'science-chart-versions-2')
+    const secondCall = authorizeToolCall(session, 3, 'annotate_artifact', 'science-annotate-versions-2')
     const second = await ctx.tools.execute({
-      signal: testSignal, callId: secondCall, name: 'save_chart',
-      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'v2' },
+      signal: testSignal, callId: secondCall, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'v3' },
       agent: fakeAgent(session),
     })
     if (first.isError || second.isError) throw new Error('unreachable')
-    const firstValue = first.value as unknown as ScienceChartReceiptValue
-    const secondValue = second.value as unknown as ScienceChartReceiptValue
-    expect(secondValue.chartId).toBe(firstValue.chartId)
-    expect(secondValue.version).toBe(2)
+    const firstValue = first.value as unknown as ScienceArtifactReceiptValue
+    const secondValue = second.value as unknown as ScienceArtifactReceiptValue
+    expect(firstValue.version).toBe(2)
+    expect(secondValue.artifactId).toBe(firstValue.artifactId)
+    expect(secondValue.version).toBe(3)
+  })
+
+  it('curates an exact named version rather than defaulting to latest', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-explicit-version')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-explicit-version-run')
+    await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-explicit-version-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', version: 1, title: 'Named version' },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('unreachable')
+    const value = result.value as unknown as ScienceArtifactReceiptValue
+    expect(value.version).toBe(2)
   })
 
   it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
     const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-chart-nested')
+    const session = await boundSession(ctx, 'science-annotate-nested')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-chart-nested-call'), name: 'save_chart',
-      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      signal: testSignal, callId: CallId('science-annotate-nested-call'), name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'main' },
       agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
     })
     expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('save_chart cannot run'))).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('annotate_artifact cannot run'))).toBe(true)
   })
 
   it('rejects when no Science Runtime is mounted', async () => {
     const { ctx } = await setup({ withRuntime: false })
-    const session = scienceSession(ctx, 'science-chart-no-runtime')
+    const session = scienceSession(ctx, 'science-annotate-no-runtime')
     session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' } })
-    const toolCallId = authorizeToolCall(session, 1, 'save_chart', 'science-chart-no-runtime-call')
+    const toolCallId = authorizeToolCall(session, 1, 'annotate_artifact', 'science-annotate-no-runtime-call')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'save_chart',
-      arguments: { run_id: 'anything', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'main' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no Science Runtime is mounted'))).toBe(true)
   })
 
-  it('surfaces the Runtime rejection for a source run that is not durably successful', async () => {
+  it('surfaces the Runtime rejection for an unknown logical_name', async () => {
     const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-chart-bad-run')
-    const toolCallId = authorizeToolCall(session, 2, 'save_chart', 'science-chart-bad-run-call')
+    const session = await boundSession(ctx, 'science-annotate-unknown-name')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-unknown-name-call')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'save_chart',
-      arguments: { run_id: 'not-a-real-run', artifact_path: 'plot.png', logical_name: 'main', title: 'main' },
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'does-not-exist.csv', title: 'main' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('does not exist or is not a durably successful run'))).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('no artifact named'))).toBe(true)
   })
 })
 
@@ -1019,6 +1198,12 @@ describe('publish_outcome', () => {
     const started = session.events.find(event => event.type === 'science/run-started')
     if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
     const runId = String(started.data.run.runId)
+    const run = started.data.run
+    // Auto-capture always runs immediately after its own source run's
+    // terminal fact commits, so the durable event it appends carries that
+    // run's own (necessarily latest-at-the-time) requestHeaderSeq; seeding it
+    // here, before any later turn's request/header exists, matches that.
+    const captured = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
     const messageSeq = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' }).seq
@@ -1049,30 +1234,21 @@ describe('publish_outcome', () => {
     expect(secondValue.revision).toBe(2)
     expect(second.meta).toMatchObject({ kind: 'science/outcome', version: 1, revision: 2 })
 
-    await writeArtifact(root, session, runId, 'plot.png', PNG)
-    const saveCall = authorizeToolCall(session, 5, 'save_chart', 'science-outcome-save-chart')
-    const saved = await ctx.tools.execute({
-      signal: testSignal, callId: saveCall, name: 'save_chart',
-      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot' },
-      agent: fakeAgent(session),
-    })
-    if (saved.isError) throw new Error('unreachable')
-    const savedValue = saved.value as unknown as ScienceChartReceiptValue
     const thirdCall = authorizeToolCall(session, 6, 'publish_outcome', 'science-outcome-publish-3')
     const third = await ctx.tools.execute({
       signal: testSignal, callId: thirdCall, name: 'publish_outcome',
       arguments: {
         title: 'With a chart', summary_markdown: 'See the chart.',
-        evidence: [{ kind: 'chart', chart_id: savedValue.chartId, version: 1 }],
+        evidence: [{ kind: 'chart', chart_id: String(captured.artifactId), version: 1 }],
       },
       agent: fakeAgent(session),
     })
     if (third.isError) throw new Error('unreachable')
     const thirdValue = third.value as unknown as ScienceOutcomeResultValue
     expect(third.value).toMatchObject({
-      revision: 3, evidence: [{ kind: 'chart', chart_id: savedValue.chartId, version: 1 }],
+      revision: 3, evidence: [{ kind: 'chart', chart_id: String(captured.artifactId), version: 1 }],
     })
-    expect(formatOutcomeResult(thirdValue)).toContain(`- chart ${savedValue.chartId}@1`)
+    expect(formatOutcomeResult(thirdValue)).toContain(`- chart ${String(captured.artifactId)}@1`)
   })
 
   it('rejects an empty title before it reaches the durable codec', async () => {
@@ -1193,14 +1369,14 @@ describe('publish_outcome', () => {
   })
 })
 
-describe('get_science_state chart sanitization', () => {
-  it('omits the internal attachment id, full fingerprint, tool call, and request-header sequence for a saved chart', async () => {
+describe('get_science_state artifact sanitization', () => {
+  it('omits the internal attachment id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
     const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-state-chart')
+    const session = scienceSession(ctx, 'science-state-artifact')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    const runCallId = CallId('science-state-chart-run')
+    const runCallId = CallId('science-state-artifact-run')
     session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const runResult = await ctx.tools.execute({
       signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: 'print(1)' }, agent: fakeAgent(session),
@@ -1208,32 +1384,58 @@ describe('get_science_state chart sanitization', () => {
     expect(runResult.isError).toBe(false)
     const started = session.events.find(event => event.type === 'science/run-started')
     if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
-    const runId = String(started.data.run.runId)
-    await writeArtifact(root, session, runId, 'plot.png', PNG)
+    await seedAutoArtifact(ctx, session, started.data.run, 'plot.png', PNG, 'image/png')
     session.append('step/start', { turn: 2, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    const saveCallId = CallId('science-state-chart-save')
-    session.append('tool/call', { turn: 2, step: 1, callId: saveCallId, name: 'save_chart', arguments: '{}' })
-    const saveResult = await ctx.tools.execute({
-      signal: testSignal, callId: saveCallId, name: 'save_chart',
-      arguments: { run_id: runId, artifact_path: 'plot.png', logical_name: 'main', title: 'Main plot', caption: 'A caption' },
+    const annotateCallId = CallId('science-state-artifact-annotate')
+    session.append('tool/call', { turn: 2, step: 1, callId: annotateCallId, name: 'annotate_artifact', arguments: '{}' })
+    const annotateResult = await ctx.tools.execute({
+      signal: testSignal, callId: annotateCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'plot.png', title: 'Main plot', caption: 'A caption' },
       agent: fakeAgent(session),
     })
-    expect(saveResult.isError).toBe(false)
+    expect(annotateResult.isError).toBe(false)
     const state = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-state-chart-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+      signal: testSignal, callId: CallId('science-state-artifact-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
     })
     expect(state.isError).toBe(false)
     if (state.isError) throw new Error('unreachable')
-    const value = state.value as unknown as { charts: readonly Record<string, unknown>[] }
-    expect(value.charts).toHaveLength(1)
-    const chart = value.charts[0]
-    expect(chart?.chartId).toBeTypeOf('string')
-    expect(chart).toMatchObject({ logicalName: 'main', version: 1, mediaType: 'image/png', caption: 'A caption' })
-    expect(chart).not.toHaveProperty('attachmentId')
-    expect(chart).not.toHaveProperty('toolCallId')
-    expect(chart).not.toHaveProperty('requestHeaderSeq')
-    expect(chart).not.toHaveProperty('environmentFingerprint')
-    expect(chart?.environmentFingerprintPreview).toBeTypeOf('string')
+    const value = state.value as unknown as { artifacts: readonly Record<string, unknown>[] }
+    expect(value.artifacts).toHaveLength(2)
+    const artifact = value.artifacts[1]
+    expect(artifact?.artifactId).toBeTypeOf('string')
+    expect(artifact).toMatchObject({ logicalName: 'plot.png', version: 2, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(artifact).not.toHaveProperty('attachmentId')
+    expect(artifact).not.toHaveProperty('toolCallId')
+    expect(artifact).not.toHaveProperty('requestHeaderSeq')
+    expect(artifact).not.toHaveProperty('environmentFingerprint')
+    expect(artifact?.environmentFingerprintPreview).toBeTypeOf('string')
+  })
+
+  it('includes an origin:auto artifact with no model title override, and its own bounded fields', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-state-artifact-auto')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
+    const runCallId = CallId('science-state-artifact-auto-run')
+    session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
+    const runResult = await ctx.tools.execute({
+      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: 'print(1)' }, agent: fakeAgent(session),
+    })
+    expect(runResult.isError).toBe(false)
+    const started = session.events.find(event => event.type === 'science/run-started')
+    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+    await seedAutoArtifact(ctx, session, started.data.run, 'summary.csv', Buffer.from('a,b\n1,2\n'), 'text/csv')
+    const state = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-state-artifact-auto-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+    })
+    expect(state.isError).toBe(false)
+    if (state.isError) throw new Error('unreachable')
+    const value = state.value as unknown as { artifacts: readonly Record<string, unknown>[] }
+    expect(value.artifacts).toHaveLength(1)
+    expect(value.artifacts[0]).toMatchObject({ logicalName: 'summary.csv', version: 1, origin: 'auto', title: 'summary.csv', mediaType: 'text/csv' })
+    expect(value.artifacts[0]).not.toHaveProperty('width')
+    expect(value.artifacts[0]).not.toHaveProperty('height')
   })
 })

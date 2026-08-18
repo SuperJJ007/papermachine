@@ -5,11 +5,9 @@
  * @module @deepseek-ai/dsh-science-runtime
  */
 
-import { randomUUID } from 'node:crypto'
-import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { ScienceArtifactId, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
@@ -20,12 +18,10 @@ import type {
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-science-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult } from './capture.ts'
-import { readBoundedFile, resolveArtifactFile } from './chart.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
 import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
@@ -39,12 +35,11 @@ import {
   planSessionScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
-  runArtifactDirectory,
 } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type {
+  AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
-  CommitScienceChartRequest,
   ScienceRunHandle,
   ScienceRunResult,
   ScienceRuntimeService,
@@ -52,8 +47,8 @@ import type {
 } from './types.ts'
 
 export type {
+  AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
-  CommitScienceChartRequest,
   ScienceRunHandle,
   ScienceRunOutput,
   ScienceRunResult,
@@ -68,12 +63,6 @@ export { SCIENCE_RUNTIME_SETTINGS_NAMESPACE, scienceRuntimeProfilesSchema } from
 export const name = 'science-runtime'
 /** Required shared services kept alive through terminal settlement. */
 export const inject = ['attachments', 'sessions', 'subprocess', 'sandbox']
-
-/** Find the durable start seq of one run, required to test the fork-lineage boundary. */
-function runStartedSeq(session: Session, runId: CommitScienceChartRequest['runId']): number | undefined {
-  return session.events.find((event: SessionEvent): boolean =>
-    event.type === 'science/run-started' && event.data.run.runId === runId)?.seq
-}
 
 /**
  * Classify a failed `captureRunArtifacts` call for `captureAfterFinish`'s
@@ -117,10 +106,6 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly timeoutMs: number
   /** Explicit or shared-resolver Harness home input. */
   private readonly dshHome: string | undefined
-  /** Configured artifact-selection diagnostic entry bound. */
-  private readonly artifactDiagnosticMaxEntries: number
-  /** Configured artifact-selection diagnostic byte bound. */
-  private readonly artifactDiagnosticMaxBytes: number
   /** Configured package-inventory entry bound. */
   private readonly packagesMaxEntries: number
   /** Configured package-inventory byte bound. */
@@ -146,8 +131,6 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.cordisConfig = config
     this.timeoutMs = resolved.timeoutMs
     this.dshHome = resolved.dshHome
-    this.artifactDiagnosticMaxEntries = resolved.artifactDiagnosticMaxEntries
-    this.artifactDiagnosticMaxBytes = resolved.artifactDiagnosticMaxBytes
     this.packagesMaxEntries = resolved.packagesMaxEntries
     this.packagesMaxBytes = resolved.packagesMaxBytes
     this.captureMaxFileBytes = resolved.captureMaxFileBytes
@@ -345,92 +328,86 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Import one PNG from a successful, non-inherited run's private artifact
-   * directory, persist it through `ctx.attachments`, then append the
-   * complete immutable chart version. Attachment persistence precedes the
-   * event: a failure before the event may leave only an unreferenced
-   * content-addressed object, but a committed event is never rolled back
-   * because a later step fails.
-   * @param request - Exact live Session, source run, artifact path, and cancellation.
-   * @returns The durable chart version this operation appended.
+   * Re-commit an existing artifact version's exact attachment reference as a
+   * new curated version: metadata-only, so it never reads or writes the
+   * filesystem and never calls the attachment store. A committed event is
+   * never rolled back because a later step fails; there is no later step
+   * here that can fail after the append.
+   * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
+   * @returns The durable curated version this operation appended.
    */
-  async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion> {
-    const projection = this.assertSession(request.session)
-    this.assertHostLocal()
-    const source = projection.runs.find(run => run.runId === request.runId)
-    if (source === undefined || source.status !== 'success') {
-      throw new ScienceRuntimeError(
-        'SOURCE_RUN_NOT_SUCCESSFUL',
-        `Science run ${JSON.stringify(request.runId)} does not exist or is not a durably successful run`,
-      )
-    }
-    const startedSeq = runStartedSeq(request.session, request.runId)
-    /* v8 ignore next 3 -- a run present in the projection always has its durable science/run-started event */
-    if (startedSeq === undefined) {
-      throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science run start event is missing from the Session log')
-    }
-    if (startedSeq < (request.session.header.seedLength ?? 0)) {
-      throw new ScienceRuntimeError(
-        'INHERITED_RUN',
-        `Science run ${JSON.stringify(request.runId)} was inherited through a fork; there is no local artifact directory for it in this session — rerun the code in this session before saving a chart from it`,
-      )
-    }
-    const lease = this.reserve(request.session, request.signal)
+  annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion> {
+    // Metadata-only: every step below is synchronous, so this avoids `async`
+    // (a function that never awaits) — but every failure, including
+    // `assertSession`'s own, must still reject rather than throw
+    // synchronously, matching every other `ScienceRuntimeService` operation's
+    // calling convention (a caller may `await` this without its own `async`
+    // wrapper already catching a synchronous throw).
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const sessionScratch = await planSessionScratch(this.dshHome, request.session)
-      const runArtifacts = runArtifactDirectory(sessionScratch, request.runId)
-      const filePath = await resolveArtifactFile(
-        runArtifacts, request.artifactPath, this.artifactDiagnosticMaxEntries, this.artifactDiagnosticMaxBytes,
-      )
-      this.assertPrepublication(request.session, lease.control)
-      const limits = this.ctx.attachments.imageLimits
-      if (!limits.mediaTypes.includes('image/png')) {
-        throw new ScienceRuntimeError('IMAGE_TYPE_NOT_ALLOWED', 'the configured attachment store does not accept image/png')
+      const projection = this.assertSession(request.session)
+      const lease = this.reserve(request.session, request.signal)
+      try {
+        this.assertPrepublication(request.session, lease.control)
+        const artifact = this.nextAnnotatedVersion(projection, request)
+        request.session.append('science/artifact-saved', { version: 1, artifact })
+        return Promise.resolve(artifact)
+      } catch (error) {
+        return Promise.reject(this.prepublicationError(lease.control, error))
+      } finally {
+        this.leases.release(lease)
       }
-      const data = await readBoundedFile(filePath, limits.maxImageBytes)
-      this.assertPrepublication(request.session, lease.control)
-      const attachment = await this.ctx.attachments.saveImage({
-        data, mediaType: 'image/png', name: basename(request.artifactPath),
-      })
-      // Recheck liveness, current projection, the exact source predicate, and
-      // authorizing facts before appending — the file read and attachment
-      // save may have taken long enough for the Session to change.
-      this.assertPrepublication(request.session, lease.control)
-      const current = this.assertSession(request.session)
-      const currentSource = current.runs.find(run => run.runId === request.runId)
-      /* v8 ignore next 5 -- a run's successful terminal status is monotonic.
-       * No fold path removes a run; this protects a future invariant
-       * relaxation, not a Runtime path reachable today. */
-      if (currentSource === undefined || currentSource.status !== 'success') {
-        throw new ScienceRuntimeError(
-          'SOURCE_RUN_NOT_SUCCESSFUL',
-          `Science run ${JSON.stringify(request.runId)} is no longer a durably successful run`,
-        )
-      }
-      const logical = current.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
-      const latest = logical.at(-1)
-      const artifact: ScienceArtifactVersion = {
-        artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
-        logicalName: request.logicalName,
-        version: latest === undefined ? 1 : latest.version + 1,
-        title: request.title,
-        ...(request.caption === undefined ? {} : { caption: request.caption }),
-        origin: 'model',
-        attachment,
-        runId: request.runId,
-        toolCallId: request.toolCallId,
-        requestHeaderSeq: request.requestHeaderSeq,
-        environmentRevision: currentSource.environmentRevision,
-        environmentFingerprint: currentSource.environmentFingerprint,
-        createdAt: Date.now(),
-      }
-      request.session.append('science/artifact-saved', { version: 1, artifact })
-      return artifact
     } catch (error) {
-      throw this.prepublicationError(lease.control, error)
-    } finally {
-      this.leases.release(lease)
+      // assertSession/reserve only ever throw ScienceRuntimeError (extends Error).
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+      return Promise.reject(error)
+    }
+  }
+
+  /**
+   * Resolve the exact source version `request` names (its exact `version`,
+   * or the logical artifact's latest version), then build the next
+   * contiguous curated version reusing that source's content-addressed
+   * `attachment` and originating-run provenance unchanged.
+   * @param projection - exact live Science projection.
+   * @param request - the annotate request naming the target logical artifact.
+   * @returns the complete curated version to append.
+   * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
+   *   (or its named `version`) does not exist in this session.
+   */
+  private nextAnnotatedVersion(
+    projection: ScienceProjection,
+    request: AnnotateScienceArtifactRequest,
+  ): ScienceArtifactVersion {
+    const logical = projection.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
+    const latest = logical.at(-1)
+    if (latest === undefined) {
+      throw new ScienceRuntimeError(
+        'ARTIFACT_NOT_FOUND',
+        `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
+      )
+    }
+    const source = request.version === undefined ? latest : logical.find(candidate => candidate.version === request.version)
+    if (source === undefined) {
+      const available = logical.map(candidate => candidate.version).join(', ')
+      throw new ScienceRuntimeError(
+        'ARTIFACT_NOT_FOUND',
+        `artifact ${JSON.stringify(request.logicalName)} has no version ${JSON.stringify(request.version)}. Available: ${available}.`,
+      )
+    }
+    return {
+      artifactId: latest.artifactId,
+      logicalName: request.logicalName,
+      version: latest.version + 1,
+      title: request.title,
+      ...(request.caption === undefined ? {} : { caption: request.caption }),
+      origin: 'model',
+      attachment: source.attachment,
+      runId: source.runId,
+      toolCallId: request.toolCallId,
+      requestHeaderSeq: request.requestHeaderSeq,
+      environmentRevision: source.environmentRevision,
+      environmentFingerprint: source.environmentFingerprint,
+      createdAt: Date.now(),
     }
   }
 

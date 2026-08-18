@@ -1230,24 +1230,6 @@ describe('Science Runtime configuration', () => {
     })
   })
 
-  it('validates the artifact-diagnostic entry and byte bounds, defaulting when omitted', () => {
-    expect(() => resolveConfig({
-      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxEntries: 0,
-    })).toThrow(/artifactDiagnosticMaxEntries/)
-    expect(() => resolveConfig({
-      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxEntries: 10_001,
-    })).toThrow(/artifactDiagnosticMaxEntries/)
-    expect(() => resolveConfig({
-      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxBytes: 255,
-    })).toThrow(/artifactDiagnosticMaxBytes/)
-    expect(() => resolveConfig({
-      profiles: { fake: { pythonPrefix: '/prefix' } }, artifactDiagnosticMaxBytes: 262_145,
-    })).toThrow(/artifactDiagnosticMaxBytes/)
-    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
-    expect(resolved.artifactDiagnosticMaxEntries).toBe(200)
-    expect(resolved.artifactDiagnosticMaxBytes).toBe(8192)
-  })
-
   it('validates the package-inventory entry and byte bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 0,

@@ -12,20 +12,6 @@ export const MIN_TIMEOUT_MS = 1
 /** Highest accepted configured operation timeout. */
 export const MAX_TIMEOUT_MS = 600_000
 
-/** Default maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
-export const DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 200
-/** Lowest accepted configured diagnostic entry bound. */
-export const MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 1
-/** Highest accepted configured diagnostic entry bound. */
-export const MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES = 10_000
-
-/** Default maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
-export const DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 8192
-/** Lowest accepted configured diagnostic byte bound. */
-export const MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 256
-/** Highest accepted configured diagnostic byte bound. */
-export const MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES = 262_144
-
 /** Default maximum retained package-inventory entries per observed interpreter. */
 export const DEFAULT_PACKAGES_MAX_ENTRIES = 2_000
 /** Lowest accepted configured package-inventory entry bound. */
@@ -82,10 +68,6 @@ export interface Config {
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
-  /** Maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
-  readonly artifactDiagnosticMaxEntries?: number
-  /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
-  readonly artifactDiagnosticMaxBytes?: number
   /**
    * Maximum package-inventory entries retained per observed interpreter.
    * An inventory exceeding this cap is truncated and flagged; the digest
@@ -130,12 +112,6 @@ export const configSchema: z<Config> = z.object({
     rPrefix: z.string(),
   })).required(),
   timeoutMs: z.number().step(1).min(MIN_TIMEOUT_MS).max(MAX_TIMEOUT_MS).default(DEFAULT_TIMEOUT_MS),
-  artifactDiagnosticMaxEntries: z.number().step(1)
-    .min(MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES).max(MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)
-    .default(DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES),
-  artifactDiagnosticMaxBytes: z.number().step(1)
-    .min(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES).max(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)
-    .default(DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES),
   packagesMaxEntries: z.number().step(1)
     .min(MIN_PACKAGES_MAX_ENTRIES).max(MAX_PACKAGES_MAX_ENTRIES)
     .default(DEFAULT_PACKAGES_MAX_ENTRIES),
@@ -161,10 +137,6 @@ export interface ResolvedConfig {
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
   readonly timeoutMs: number
-  /** Explicitly resolved artifact-selection diagnostic entry bound. */
-  readonly artifactDiagnosticMaxEntries: number
-  /** Explicitly resolved artifact-selection diagnostic byte bound. */
-  readonly artifactDiagnosticMaxBytes: number
   /** Explicitly resolved package-inventory entry bound. */
   readonly packagesMaxEntries: number
   /** Explicitly resolved package-inventory byte bound. */
@@ -234,7 +206,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   assertKnownKeys(
     config,
     [
-      'dshHome', 'profiles', 'timeoutMs', 'artifactDiagnosticMaxEntries', 'artifactDiagnosticMaxBytes',
+      'dshHome', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
     ],
@@ -246,18 +218,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`science-runtime: timeoutMs must be a safe integer from ${String(MIN_TIMEOUT_MS)} through ${String(MAX_TIMEOUT_MS)}`)
-  }
-  const artifactDiagnosticMaxEntries = config.artifactDiagnosticMaxEntries ?? DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES
-  if (!Number.isSafeInteger(artifactDiagnosticMaxEntries)
-    || artifactDiagnosticMaxEntries < MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES
-    || artifactDiagnosticMaxEntries > MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES) {
-    throw new Error(`science-runtime: artifactDiagnosticMaxEntries must be a safe integer from ${String(MIN_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)} through ${String(MAX_ARTIFACT_DIAGNOSTIC_MAX_ENTRIES)}`)
-  }
-  const artifactDiagnosticMaxBytes = config.artifactDiagnosticMaxBytes ?? DEFAULT_ARTIFACT_DIAGNOSTIC_MAX_BYTES
-  if (!Number.isSafeInteger(artifactDiagnosticMaxBytes)
-    || artifactDiagnosticMaxBytes < MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES
-    || artifactDiagnosticMaxBytes > MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES) {
-    throw new Error(`science-runtime: artifactDiagnosticMaxBytes must be a safe integer from ${String(MIN_ARTIFACT_DIAGNOSTIC_MAX_BYTES)} through ${String(MAX_ARTIFACT_DIAGNOSTIC_MAX_BYTES)}`)
   }
   const packagesMaxEntries = config.packagesMaxEntries ?? DEFAULT_PACKAGES_MAX_ENTRIES
   if (!Number.isSafeInteger(packagesMaxEntries)
@@ -294,8 +254,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
-    artifactDiagnosticMaxEntries,
-    artifactDiagnosticMaxBytes,
     packagesMaxEntries,
     packagesMaxBytes,
     captureMaxFileBytes,

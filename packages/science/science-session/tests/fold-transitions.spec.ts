@@ -54,7 +54,7 @@ describe('strict Science fold transitions', () => {
     ]
     const secondChart = (overrides: Partial<ScienceArtifactVersion>): SessionEvent[] => [
       ...legalEvents().slice(0, 8),
-      toolCall(8, 180, secondCall, 'save_chart'),
+      toolCall(8, 180, secondCall, 'annotate_artifact'),
       event('science/artifact-saved', 9, 190, {
         version: 1,
         artifact: artifact({
@@ -162,7 +162,7 @@ describe('strict Science fold transitions', () => {
       ], /prior mode binding/],
       ['chart from running run', [
         ...legalEvents().slice(0, 5),
-        toolCall(5, 150, ARTIFACT_CALL_ID, 'save_chart'),
+        toolCall(5, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
         event('science/artifact-saved', 6, 160, {
           version: 1,
           artifact: artifact({ createdAt: 159 }),
@@ -215,7 +215,7 @@ describe('strict Science fold transitions', () => {
       ['chart version skips', secondChart({ version: 3 }), /advance contiguously/],
       ['chart version moves creation time backwards', [
         ...legalEvents().slice(0, 8),
-        toolCall(8, 168, secondCall, 'save_chart'),
+        toolCall(8, 168, secondCall, 'annotate_artifact'),
         event('science/artifact-saved', 9, 190, {
           version: 1,
           artifact: artifact({
@@ -408,7 +408,7 @@ describe('strict Science fold transitions', () => {
 
     const chartVersionTwo = [
       ...legalEvents().slice(0, 8),
-      toolCall(8, 180, CallId('call-chart-2'), 'save_chart'),
+      toolCall(8, 180, CallId('call-chart-2'), 'annotate_artifact'),
       event('science/artifact-saved', 9, 190, {
         version: 1,
         artifact: artifact({
@@ -429,7 +429,7 @@ describe('strict Science fold transitions', () => {
     // as the next contiguous version.
     const events = [
       ...legalEvents().slice(0, 8),
-      toolCall(8, 180, CallId('call-chart-2'), 'save_chart'),
+      toolCall(8, 180, CallId('call-chart-2'), 'annotate_artifact'),
       event('science/artifact-saved', 9, 190, {
         version: 1,
         artifact: artifact({

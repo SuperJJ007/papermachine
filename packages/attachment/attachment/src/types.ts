@@ -46,3 +46,39 @@ export interface StoredImageAttachment {
   ref: ImageAttachmentRef
   data: Uint8Array
 }
+
+/** Text formats accepted by the version-one text attachment path. */
+export type TextMediaType = 'text/csv' | 'application/json' | 'text/markdown' | 'text/plain'
+
+/** Durable, serializable metadata for one immutable UTF-8 text object. */
+export interface TextAttachmentRef {
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Caller-declared media type; text formats carry no self-describing byte signature, so admission trusts it unverified. */
+  mediaType: TextMediaType
+  /** Exact encoded UTF-8 byte length. */
+  bytes: number
+  /** Optional display name stripped of local path information. */
+  name?: string
+}
+
+/** Deployment-resolved limits used by text upload admission. */
+export interface TextAttachmentLimits {
+  maxTextBytes: number
+  mediaTypes: readonly TextMediaType[]
+}
+
+/** Request to validate and durably commit one UTF-8 text file. */
+export interface SaveTextAttachment {
+  data: Uint8Array
+  /** Caller-declared media type; not verified against content (see {@link TextAttachmentRef.mediaType}). */
+  mediaType: TextMediaType
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Stored text bytes returned after reference and digest verification. */
+export interface StoredTextAttachment {
+  ref: TextAttachmentRef
+  data: Uint8Array
+}

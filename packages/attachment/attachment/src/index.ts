@@ -7,18 +7,27 @@ import type {
   ImageAttachmentRef,
   SaveImageAttachment,
   StoredImageAttachment,
+  SaveTextAttachment,
+  StoredTextAttachment,
+  TextAttachmentLimits,
+  TextAttachmentRef,
 } from './types.ts'
 
 export { AttachmentId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
-export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
+export type { AttachmentErrorCode, ImageAdmissionErrorCode, TextAdmissionErrorCode } from './error.ts'
 export type {
   AttachmentId as AttachmentIdType,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageMediaType,
   SaveImageAttachment,
+  SaveTextAttachment,
   StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentLimits,
+  TextAttachmentRef,
+  TextMediaType,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -36,6 +45,9 @@ export abstract class AttachmentStore extends Service {
   /** Deployment-resolved image policy used by authoritative and fast-path validation. */
   abstract readonly imageLimits: ImageAttachmentLimits
 
+  /** Deployment-resolved text policy used by authoritative and fast-path validation. */
+  abstract readonly textLimits: TextAttachmentLimits
+
   /**
    * Validate one image without persisting it.
    * Batch callers validate every member before saving any member.
@@ -43,6 +55,13 @@ export abstract class AttachmentStore extends Service {
    * @returns completion after the encoded raster has been fully decoded.
    */
   abstract validateImage(input: SaveImageAttachment): Promise<void>
+
+  /**
+   * Validate one text file without persisting it.
+   * @param input - encoded bytes, declared media type, and optional display name.
+   * @returns completion after the encoded bytes have been proven non-empty, valid UTF-8, and within the byte cap.
+   */
+  abstract validateText(input: SaveTextAttachment): Promise<void>
 
   /**
    * Validate one ordered image batch before committing any member.
@@ -81,6 +100,16 @@ export abstract class AttachmentStore extends Service {
   abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
   /**
+   * Validate and durably commit one text file before its owning session event is appended.
+   * No batch entry point exists here: no current caller uploads text files the way
+   * `saveImages` batches a chat message's images, so a Science capture caller
+   * saves each file with its own loop over single `saveText` calls.
+   * @param input - encoded bytes, declared media type, and optional display name.
+   * @returns a durable content-addressed reference.
+   */
+  abstract saveText(input: SaveTextAttachment): Promise<TextAttachmentRef>
+
+  /**
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.
    * @param signal - optional cancellation for backend read and verification work.
@@ -88,6 +117,15 @@ export abstract class AttachmentStore extends Service {
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Read one text file and verify that bytes still match the recorded reference.
+   * @param ref - durable reference from the session log.
+   * @param signal - optional cancellation for backend read and verification work.
+   * @returns the verified bytes and canonical reference.
+   * @throws the signal reason when aborted, or a storage error when verification fails.
+   */
+  abstract readText(ref: TextAttachmentRef, signal?: AbortSignal): Promise<StoredTextAttachment>
 }
 
 export default AttachmentStore

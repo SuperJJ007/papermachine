@@ -13,7 +13,15 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  SaveImageAttachment,
+  SaveTextAttachment,
+  StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import { type GenerateOptions, LlmAdapter, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -88,6 +96,7 @@ const IMAGE_LIMITS: ImageAttachmentLimits = {
 /** In-memory durable store for ACP wire-order and lifecycle tests. */
 class MemoryAttachmentStore extends AttachmentStore {
   readonly imageLimits = IMAGE_LIMITS
+  readonly textLimits = { maxTextBytes: 0, mediaTypes: [] }
   readonly saved: SaveImageAttachment[] = []
   readonly objects = new Map<string, StoredImageAttachment>()
   beforeValidate: (() => Promise<void>) | undefined
@@ -96,6 +105,10 @@ class MemoryAttachmentStore extends AttachmentStore {
   async validateImage(input: SaveImageAttachment): Promise<void> {
     await this.beforeValidate?.()
     if (input.data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
+  }
+
+  validateText(_input: SaveTextAttachment): Promise<void> {
+    throw new Error('not used')
   }
 
   saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
@@ -112,11 +125,19 @@ class MemoryAttachmentStore extends AttachmentStore {
     return Promise.resolve(ref)
   }
 
+  saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+    throw new Error('not used')
+  }
+
   async readImage(ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     await this.beforeRead?.()
     const stored = this.objects.get(ref.attachmentId)
     if (stored === undefined) throw new AttachmentError('Attachment object is missing.', 'ATTACHMENT_NOT_FOUND')
     return { ref: stored.ref, data: Uint8Array.from(stored.data) }
+  }
+
+  readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
+    throw new Error('not used')
   }
 }
 

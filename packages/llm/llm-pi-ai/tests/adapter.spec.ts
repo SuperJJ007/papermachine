@@ -5,7 +5,11 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   SaveImageAttachment,
+  SaveTextAttachment,
   StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentLimits,
+  TextAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
@@ -220,7 +224,13 @@ describe('PiAiAdapter provider routing', () => {
         mediaTypes: ['image/png'],
       }
 
+      readonly textLimits: TextAttachmentLimits = { maxTextBytes: 0, mediaTypes: [] }
+
       validateImage(_input: SaveImageAttachment): Promise<void> {
+        return Promise.reject(new Error('not used'))
+      }
+
+      validateText(_input: SaveTextAttachment): Promise<void> {
         return Promise.reject(new Error('not used'))
       }
 
@@ -228,8 +238,16 @@ describe('PiAiAdapter provider routing', () => {
         return Promise.reject(new Error('not used'))
       }
 
+      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+        return Promise.reject(new Error('not used'))
+      }
+
       readImage(value: ImageAttachmentRef): Promise<StoredImageAttachment> {
         return readImage(value)
+      }
+
+      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
+        return Promise.reject(new Error('not used'))
       }
     }
 

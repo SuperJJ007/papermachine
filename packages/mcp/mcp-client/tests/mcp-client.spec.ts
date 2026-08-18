@@ -3,7 +3,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  SaveImageAttachment,
+  SaveTextAttachment,
+  StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -79,10 +87,15 @@ const IMAGE_LIMITS: ImageAttachmentLimits = {
 /** Attachment fake that records exact decoded batches while using the real batch contract. */
 class RecordingAttachmentStore extends AttachmentStore {
   readonly imageLimits = IMAGE_LIMITS
+  readonly textLimits = { maxTextBytes: 0, mediaTypes: [] }
   readonly saved: SaveImageAttachment[] = []
 
   validateImage(_input: SaveImageAttachment): Promise<void> {
     return Promise.resolve()
+  }
+
+  validateText(_input: SaveTextAttachment): Promise<void> {
+    throw new Error('not used')
   }
 
   saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
@@ -97,7 +110,15 @@ class RecordingAttachmentStore extends AttachmentStore {
     })
   }
 
+  saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+    throw new Error('not used')
+  }
+
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+    throw new Error('not used')
+  }
+
+  readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
     throw new Error('not used')
   }
 }

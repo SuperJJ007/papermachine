@@ -358,10 +358,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'abstract readonly textLimits: TextAttachmentLimits',
+        description: 'Deployment-resolved text policy used by authoritative and fast-path validation.',
+        parameters: [],
+      },
+      {
         signature: 'abstract validateImage(input: SaveImageAttachment): Promise<void>',
         description: 'Validate one image without persisting it. Batch callers validate every member before saving any member.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
         returns: 'completion after the encoded raster has been fully decoded.',
+      },
+      {
+        signature: 'abstract validateText(input: SaveTextAttachment): Promise<void>',
+        description: 'Validate one text file without persisting it.',
+        parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
+        returns: 'completion after the encoded bytes have been proven non-empty, valid UTF-8, and within the byte cap.',
       },
       {
         signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
@@ -376,8 +387,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a durable content-addressed reference.',
       },
       {
+        signature: 'abstract saveText(input: SaveTextAttachment): Promise<TextAttachmentRef>',
+        description: 'Validate and durably commit one text file before its owning session event is appended. No batch entry point exists here: no current caller uploads text files the way `saveImages` batches a chat message\'s images, so a Science capture caller saves each file with its own loop over single `saveText` calls.',
+        parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
+        returns: 'a durable content-addressed reference.',
+      },
+      {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
+        parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
+        returns: 'the verified bytes and canonical reference.',
+        throws: ['the signal reason when aborted, or a storage error when verification fails.'],
+      },
+      {
+        signature: 'abstract readText(ref: TextAttachmentRef, signal?: AbortSignal): Promise<StoredTextAttachment>',
+        description: 'Read one text file and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
         returns: 'the verified bytes and canonical reference.',
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
@@ -3762,6 +3786,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
   },
   {
+    name: 'SaveTextAttachment',
+    declaration: 'export interface SaveTextAttachment {\n    data: Uint8Array;\n    mediaType: TextMediaType;\n    name?: string;\n}',
+  },
+  {
     name: 'SaveTextSpill',
     declaration: 'export interface SaveTextSpill {\n    owner: SpillOwner;\n    source: SpillSource;\n    suggestedName: string;\n    content: string;\n}',
   },
@@ -4278,6 +4306,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface StoredImageAttachment {\n    ref: ImageAttachmentRef;\n    data: Uint8Array;\n}',
   },
   {
+    name: 'StoredTextAttachment',
+    declaration: 'export interface StoredTextAttachment {\n    ref: TextAttachmentRef;\n    data: Uint8Array;\n}',
+  },
+  {
     name: 'StreamChunk',
     declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
   },
@@ -4508,6 +4540,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalWaitReason',
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
+  },
+  {
+    name: 'TextAttachmentLimits',
+    declaration: 'export interface TextAttachmentLimits {\n    maxTextBytes: number;\n    mediaTypes: readonly TextMediaType[];\n}',
+  },
+  {
+    name: 'TextAttachmentRef',
+    declaration: 'export interface TextAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: TextMediaType;\n    bytes: number;\n    name?: string;\n}',
+  },
+  {
+    name: 'TextMediaType',
+    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'TodoItem',

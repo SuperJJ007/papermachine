@@ -21,7 +21,16 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  SaveImageAttachment,
+  SaveTextAttachment,
+  StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentLimits,
+  TextAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import {
   applyReadImageTool,
@@ -339,15 +348,29 @@ describe('argument and service preconditions', () => {
         mediaTypes: Object.freeze(['image/jpeg'] as const),
       })
 
+      readonly textLimits: TextAttachmentLimits = Object.freeze({ maxTextBytes: 0, mediaTypes: Object.freeze([]) })
+
       validateImage(_input: SaveImageAttachment): Promise<void> {
         throw new Error('unreachable: admission refuses before validation')
+      }
+
+      validateText(_input: SaveTextAttachment): Promise<void> {
+        throw new Error('unreachable in this test')
       }
 
       saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         throw new Error('unreachable: admission refuses before save')
       }
 
+      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+        throw new Error('unreachable in this test')
+      }
+
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+        throw new Error('unreachable in this test')
+      }
+
+      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
         throw new Error('unreachable in this test')
       }
     }
@@ -418,15 +441,29 @@ describe('image admission failures', () => {
         mediaTypes: Object.freeze(['image/png'] as const),
       })
 
+      readonly textLimits: TextAttachmentLimits = Object.freeze({ maxTextBytes: 0, mediaTypes: Object.freeze([]) })
+
       validateImage(_input: SaveImageAttachment): Promise<void> {
         return Promise.resolve()
+      }
+
+      validateText(_input: SaveTextAttachment): Promise<void> {
+        throw new Error('unreachable in this test')
       }
 
       async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         return { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 }
       }
 
+      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+        throw new Error('unreachable in this test')
+      }
+
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+        throw new Error('unreachable in this test')
+      }
+
+      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
         throw new Error('unreachable in this test')
       }
     }

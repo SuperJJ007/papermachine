@@ -13,7 +13,11 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   SaveImageAttachment,
+  SaveTextAttachment,
   StoredImageAttachment,
+  StoredTextAttachment,
+  TextAttachmentLimits,
+  TextAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 
@@ -120,16 +124,33 @@ class TestAttachmentStore extends AttachmentStore {
     mediaTypes: ['image/png'],
   }
 
+  readonly textLimits: TextAttachmentLimits = {
+    maxTextBytes: 1,
+    mediaTypes: ['text/plain'],
+  }
+
   validateImage(_input: SaveImageAttachment): Promise<void> {
     return Promise.reject(new Error('test invariant attachment store does not validate images'))
+  }
+
+  validateText(_input: SaveTextAttachment): Promise<void> {
+    return Promise.reject(new Error('test invariant attachment store does not validate text'))
   }
 
   saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     return Promise.reject(new Error('test invariant attachment store does not save images'))
   }
 
+  saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+    return Promise.reject(new Error('test invariant attachment store does not save text'))
+  }
+
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('test invariant attachment store does not read images'))
+  }
+
+  readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
+    return Promise.reject(new Error('test invariant attachment store does not read text'))
   }
 }
 

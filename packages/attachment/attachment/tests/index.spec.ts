@@ -7,7 +7,10 @@ import AttachmentStore, {
   type ImageAttachmentRef,
   type ImageMediaType,
   type SaveImageAttachment,
+  type SaveTextAttachment,
   type StoredImageAttachment,
+  type StoredTextAttachment,
+  type TextAttachmentRef,
 } from '../src/index.ts'
 
 const LIMITS = {
@@ -18,8 +21,14 @@ const LIMITS = {
   mediaTypes: ['image/png'] as const,
 }
 
+const TEXT_LIMITS = {
+  maxTextBytes: 4,
+  mediaTypes: ['text/plain'] as const,
+}
+
 class RecordingStore extends AttachmentStore {
   readonly imageLimits = LIMITS
+  readonly textLimits = TEXT_LIMITS
   readonly calls: string[] = []
   rejectValidationAt: number | undefined
   rejectSaveAt: number | undefined
@@ -28,6 +37,10 @@ class RecordingStore extends AttachmentStore {
     const value = input.data[0] ?? 0
     this.calls.push(`validate:${value}`)
     if (value === this.rejectValidationAt) throw new Error(`invalid:${value}`)
+  }
+
+  async validateText(_input: SaveTextAttachment): Promise<void> {
+    throw new Error('not used')
   }
 
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
@@ -44,7 +57,15 @@ class RecordingStore extends AttachmentStore {
     }
   }
 
+  saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+    throw new Error('not used')
+  }
+
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+    throw new Error('not used')
+  }
+
+  readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
     throw new Error('not used')
   }
 }

@@ -98,9 +98,13 @@ describe('session.history projections block', () => {
     }
     await ctx.plugin(class extends AttachmentStore {
       readonly imageLimits = limits
+      readonly textLimits = { maxTextBytes: 0, mediaTypes: [] }
       validateImage(): Promise<void> { return Promise.resolve() }
+      validateText(): Promise<never> { return Promise.reject(new Error('unused')) }
       saveImage(): Promise<never> { return Promise.reject(new Error('unused')) }
+      saveText(): Promise<never> { return Promise.reject(new Error('unused')) }
       readImage(): Promise<never> { return Promise.reject(new Error('unused')) }
+      readText(): Promise<never> { return Promise.reject(new Error('unused')) }
     })
     const gateway = api(ctx)
     seedMessages(session, 2)

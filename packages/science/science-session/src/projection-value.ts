@@ -2,13 +2,13 @@
 
 import type { ScienceFoldState } from './fold-state.ts'
 import type {
-  ScienceClientChartVersion,
+  ScienceClientArtifactVersion,
   ScienceClientEnvironmentBinding,
   ScienceClientInterpreterBinding,
   ScienceClientOutcomePublication,
   ScienceClientProjection,
   ScienceClientRun,
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceOutcomePublication,
@@ -107,25 +107,26 @@ function clientRun(run: ScienceRun): ScienceClientRun {
 }
 
 /**
- * Remove the full environment fingerprint from one chart version.
+ * Remove the full environment fingerprint from one artifact version.
  * `toolCallId` and `requestHeaderSeq` pass through: the browser already
- * holds both as session-log identities, and they let the client join a chart
- * version to its authorizing transcript call for provenance.
+ * holds both as session-log identities, and they let the client join an
+ * artifact version to its authorizing transcript call for provenance.
  */
-function clientChart(chart: ScienceChartVersion): ScienceClientChartVersion {
+function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
   return {
-    chartId: chart.chartId,
-    logicalName: chart.logicalName,
-    version: chart.version,
-    title: chart.title,
-    ...chart.caption === undefined ? {} : { caption: chart.caption },
-    attachment: chart.attachment,
-    runId: chart.runId,
-    toolCallId: chart.toolCallId,
-    requestHeaderSeq: chart.requestHeaderSeq,
-    environmentRevision: chart.environmentRevision,
-    environmentFingerprintPreview: fingerprintPreview(chart.environmentFingerprint),
-    createdAt: chart.createdAt,
+    artifactId: artifact.artifactId,
+    logicalName: artifact.logicalName,
+    version: artifact.version,
+    title: artifact.title,
+    ...artifact.caption === undefined ? {} : { caption: artifact.caption },
+    origin: artifact.origin,
+    attachment: artifact.attachment,
+    runId: artifact.runId,
+    toolCallId: artifact.toolCallId,
+    requestHeaderSeq: artifact.requestHeaderSeq,
+    environmentRevision: artifact.environmentRevision,
+    environmentFingerprintPreview: fingerprintPreview(artifact.environmentFingerprint),
+    createdAt: artifact.createdAt,
   }
 }
 
@@ -144,20 +145,20 @@ function clientOutcome(outcome: ScienceOutcomePublication): ScienceClientOutcome
 /**
  * Derive stable projection counters from whole-value collections.
  * @param runs - projected run history.
- * @param charts - projected chart-version history.
+ * @param artifacts - projected artifact-version history.
  * @param outcomeRevision - latest Outcome revision, or zero.
  * @returns counters derived from the supplied values.
  */
 export function scienceProjectionMetrics(
   runs: readonly ScienceRun[],
-  charts: readonly ScienceChartVersion[],
+  artifacts: readonly ScienceArtifactVersion[],
   outcomeRevision: number,
 ): ScienceProjectionMetrics {
   return {
     runCount: runs.length,
     successfulRunCount: runs.filter(run => run.status === 'success').length,
-    chartCount: new Set(charts.map(chart => chart.chartId)).size,
-    chartVersionCount: charts.length,
+    artifactCount: new Set(artifacts.map(artifact => artifact.artifactId)).size,
+    artifactVersionCount: artifacts.length,
     outcomeRevision,
   }
 }
@@ -174,9 +175,9 @@ export function projectScienceFold(state: ScienceFoldState): ScienceProjection |
     mode: state.mode,
     environment: state.environments.at(-1) ?? null,
     runs: state.runs,
-    charts: state.charts,
+    artifacts: state.artifacts,
     outcome,
-    metrics: scienceProjectionMetrics(state.runs, state.charts, outcome?.revision ?? 0),
+    metrics: scienceProjectionMetrics(state.runs, state.artifacts, outcome?.revision ?? 0),
     lastScienceEventSeq: state.lastScienceEventSeq,
   }
 }
@@ -194,7 +195,7 @@ export function toClientScienceProjection(
     mode: projection.mode,
     environment: projection.environment === null ? null : clientEnvironment(projection.environment),
     runs: projection.runs.map(clientRun),
-    charts: projection.charts.map(clientChart),
+    artifacts: projection.artifacts.map(clientArtifact),
     outcome: projection.outcome === null ? null : clientOutcome(projection.outcome),
     metrics: projection.metrics,
     lastScienceEventSeq: projection.lastScienceEventSeq,

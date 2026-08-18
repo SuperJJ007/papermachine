@@ -6,7 +6,7 @@ import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceProjection,
@@ -129,9 +129,9 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
  * durable projection, authorization, export, and Client presentation paths —
  * never to model state.
  */
-function stateChart(chart: ScienceChartVersion): InferValue<typeof stateChartSchema> {
+function stateChart(chart: ScienceArtifactVersion): InferValue<typeof stateChartSchema> {
   return {
-    chartId: String(chart.chartId),
+    chartId: String(chart.artifactId),
     logicalName: chart.logicalName,
     version: chart.version,
     title: chart.title,
@@ -160,12 +160,12 @@ export function stateValueFromProjection(
   historyItemLimit: number,
 ): ScienceStateValue {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
-  const chartVersionsOmitted = Math.max(0, projection.charts.length - historyItemLimit)
+  const chartVersionsOmitted = Math.max(0, projection.artifacts.length - historyItemLimit)
   return {
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
-    charts: projection.charts.slice(-historyItemLimit).map(stateChart),
+    charts: projection.artifacts.slice(-historyItemLimit).map(stateChart),
     outcome: projection.outcome as unknown as JsonValue,
     metrics: projection.metrics as unknown as JsonValue,
     history: { runsOmitted, chartVersionsOmitted },

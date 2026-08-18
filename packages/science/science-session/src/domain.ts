@@ -1,7 +1,7 @@
 /** Durable Science event payloads and Session event declaration merging. */
 
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceModeRef,
   ScienceOutcomePublication,
@@ -33,10 +33,10 @@ export interface ScienceRunFinishedEvent {
   readonly run: ScienceRunTerminal
 }
 
-/** Payload that records one immutable chart version. */
-export interface ScienceChartSavedEvent {
+/** Payload that records one immutable artifact version. */
+export interface ScienceArtifactSavedEvent {
   readonly version: 1
-  readonly chart: ScienceChartVersion
+  readonly artifact: ScienceArtifactVersion
 }
 
 /** Payload that publishes one whole-value outcome revision. */
@@ -55,20 +55,20 @@ declare module '@deepseek-ai/dsh-session/types' {
     'science/run-started': ScienceRunStartedEvent
     /** Records one whole-value Science run terminal state. */
     'science/run-finished': ScienceRunFinishedEvent
-    /** Records one immutable Science chart attachment version. */
-    'science/chart-saved': ScienceChartSavedEvent
+    /** Records one immutable Science artifact attachment version. */
+    'science/artifact-saved': ScienceArtifactSavedEvent
     /** Publishes one whole-value Science outcome revision. */
     'science/outcome-published': ScienceOutcomePublishedEvent
   }
 }
 
 // This package owns the sole `ctx.sessionAttachments.register()` call for
-// `science/chart-saved` (see `./index.ts`); the merge widens that generic
+// `science/artifact-saved` (see `./index.ts`); the merge widens that generic
 // registry's typed key set to include it, alongside the `SessionEventMap`
 // merge above for the same event.
 declare module '@deepseek-ai/dsh-session-attachment-index/types' {
   interface SessionAttachmentExtractorMap {
-    'science/chart-saved': true
+    'science/artifact-saved': true
   }
 }
 
@@ -78,5 +78,5 @@ export type ScienceDomainEventType =
   | 'science/environment-bound'
   | 'science/run-started'
   | 'science/run-finished'
-  | 'science/chart-saved'
+  | 'science/artifact-saved'
   | 'science/outcome-published'

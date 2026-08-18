@@ -132,46 +132,46 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
   state.runFacts[factIndex] = { ...fact, terminalSeq: event.seq, terminalEventTime: event.time }
 }
 
-function applyChartSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/chart-saved' }>): void {
-  if (state.mode === undefined) throw new Error('Science chart requires a prior mode binding')
-  const chart = event.data.chart
-  const source = state.runs.find(candidate => candidate.runId === chart.runId)
+function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/artifact-saved' }>): void {
+  if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
+  const artifact = event.data.artifact
+  const source = state.runs.find(candidate => candidate.runId === artifact.runId)
   if (source === undefined || source.status !== 'success') {
-    throw new Error('Science chart must reference a successful prior run')
+    throw new Error('Science artifact must reference a successful prior run')
   }
-  const requestHeader = requireRequestHeader(state, chart.requestHeaderSeq)
-  const toolCall = requireToolCall(state, event.seq, chart.toolCallId, chart.requestHeaderSeq, ['save_chart'])
-  if (chart.environmentRevision !== source.environmentRevision
-    || chart.environmentFingerprint !== source.environmentFingerprint) {
-    throw new Error('Science chart environment provenance must match its source run')
+  const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
+  const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['save_chart'])
+  if (artifact.environmentRevision !== source.environmentRevision
+    || artifact.environmentFingerprint !== source.environmentFingerprint) {
+    throw new Error('Science artifact environment provenance must match its source run')
   }
-  const sourceFact = state.runFacts.find(candidate => candidate.runId === chart.runId)
+  const sourceFact = state.runFacts.find(candidate => candidate.runId === artifact.runId)
   /* v8 ignore next -- a successful run always has its terminal fact */
-  if (sourceFact?.terminalEventTime === undefined) throw new Error('Science chart source-run event facts are missing')
-  if (chart.createdAt < source.finishedAt
-    || chart.createdAt < sourceFact.terminalEventTime
-    || chart.createdAt < requestHeader.time
-    || chart.createdAt < toolCall.time
-    || chart.createdAt > event.time) {
-    throw new Error('Science chart creation time is outside its supporting-fact event interval')
+  if (sourceFact?.terminalEventTime === undefined) throw new Error('Science artifact source-run event facts are missing')
+  if (artifact.createdAt < source.finishedAt
+    || artifact.createdAt < sourceFact.terminalEventTime
+    || artifact.createdAt < requestHeader.time
+    || artifact.createdAt < toolCall.time
+    || artifact.createdAt > event.time) {
+    throw new Error('Science artifact creation time is outside its supporting-fact event interval')
   }
-  const logical = state.charts.filter(candidate => candidate.logicalName === chart.logicalName)
-  const reusedId = state.charts.find(candidate => candidate.chartId === chart.chartId)
+  const logical = state.artifacts.filter(candidate => candidate.logicalName === artifact.logicalName)
+  const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
   if (logical.length === 0) {
-    if (chart.version !== 1) throw new Error('the first logical chart version must be 1')
-    if (reusedId !== undefined) throw new Error('a chartId cannot name two logical charts')
+    if (artifact.version !== 1) throw new Error('the first logical artifact version must be 1')
+    if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
   } else {
     const latest = logical.at(-1)
     /* v8 ignore next -- the branch is entered only when logical is non-empty */
-    if (latest === undefined) throw new Error('logical chart history disappeared during synchronous replay')
-    if (chart.chartId !== latest.chartId
-      || chart.version !== latest.version + 1
-      || chart.createdAt < latest.createdAt) {
-      throw new Error('chart versions must retain chartId and advance contiguously')
+    if (latest === undefined) throw new Error('logical artifact history disappeared during synchronous replay')
+    if (artifact.artifactId !== latest.artifactId
+      || artifact.version !== latest.version + 1
+      || artifact.createdAt < latest.createdAt) {
+      throw new Error('artifact versions must retain artifactId and advance contiguously')
     }
   }
-  state.charts.push(chart)
-  state.chartFacts.push({ chartId: chart.chartId, version: chart.version, seq: event.seq, time: event.time })
+  state.artifacts.push(artifact)
+  state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
   state.consumedToolCallSeqs.push(toolCall.seq)
 }
 
@@ -213,19 +213,19 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
         break
       }
       case 'chart': {
-        const chart = state.charts.find(candidate => candidate.chartId === evidence.chartId
+        const artifact = state.artifacts.find(candidate => candidate.artifactId === evidence.chartId
           && candidate.version === evidence.version)
-        if (chart === undefined) {
+        if (artifact === undefined) {
           throw new Error(`outcome chart evidence ${JSON.stringify(evidence.chartId)}@${String(evidence.version)} is missing`)
         }
-        const fact = state.chartFacts.find(candidate => candidate.chartId === evidence.chartId
+        const fact = state.artifactFacts.find(candidate => candidate.artifactId === evidence.chartId
           && candidate.version === evidence.version)
-        /* v8 ignore next -- every accepted chart appends the matching fact */
+        /* v8 ignore next -- every accepted artifact appends the matching fact */
         if (fact === undefined) throw new Error('Science outcome chart event facts are missing')
         if (outcome.publishedAt < fact.time) {
           throw new Error('Science outcome publication time precedes cited chart evidence')
         }
-        citedEnvironmentRevisions.add(chart.environmentRevision)
+        citedEnvironmentRevisions.add(artifact.environmentRevision)
         break
       }
       case 'message': {
@@ -274,7 +274,7 @@ function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEv
     }
     case 'science/run-started': applyRunStarted(state, event); break
     case 'science/run-finished': applyRunFinished(state, event); break
-    case 'science/chart-saved': applyChartSaved(state, event); break
+    case 'science/artifact-saved': applyArtifactSaved(state, event); break
     case 'science/outcome-published': applyOutcomePublished(state, event); break
   }
   commitScienceTime(state, event)

@@ -10,7 +10,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
-import { ScienceChartId, ScienceRunId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { ScienceArtifactId, ScienceRunId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceEvidenceRef, ScienceOutcomePublication, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { requireDirectDispatch } from './guard.ts'
@@ -113,13 +113,13 @@ function resolveEvidence(
         break
       }
       case 'chart': {
-        const chart = projection.charts.find(candidate =>
-          candidate.chartId === ScienceChartId(item.chart_id) && candidate.version === item.version)
-        if (chart === undefined) {
+        const artifact = projection.artifacts.find(candidate =>
+          candidate.artifactId === ScienceArtifactId(item.chart_id) && candidate.version === item.version)
+        if (artifact === undefined) {
           throw new Error(`tool-science: evidence chart ${JSON.stringify(item.chart_id)}@${String(item.version)} does not exist`)
         }
-        revisions.add(chart.environmentRevision)
-        evidence.push({ kind: 'chart', chartId: chart.chartId, version: chart.version })
+        revisions.add(artifact.environmentRevision)
+        evidence.push({ kind: 'chart', chartId: artifact.artifactId, version: artifact.version })
         break
       }
       case 'message': {

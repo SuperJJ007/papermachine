@@ -6,11 +6,11 @@
 // (activating or stepping a tab id that isn't open).
 import { describe, expect, it } from 'vitest'
 import { createScienceSelectionStore } from '../src/client/selection-store.ts'
-import type { ScienceChartId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 
-const A = 'chart-a' as ScienceChartId
-const B = 'chart-b' as ScienceChartId
-const C = 'chart-c' as ScienceChartId
+const A = 'chart-a' as ScienceArtifactId
+const B = 'chart-b' as ScienceArtifactId
+const C = 'chart-c' as ScienceArtifactId
 
 function store() {
   return createScienceSelectionStore().create()

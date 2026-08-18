@@ -1,7 +1,7 @@
 /** Internal mutable state for strict Science replay. */
 
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceModeRef,
   ScienceOutcomePublication,
@@ -33,9 +33,9 @@ export interface IndexedRunFact {
   readonly terminalEventTime?: number
 }
 
-/** Event-envelope facts retained for one immutable chart version. */
-export interface IndexedChartFact extends IndexedSessionFact {
-  readonly chartId: string
+/** Event-envelope facts retained for one immutable artifact version. */
+export interface IndexedArtifactFact extends IndexedSessionFact {
+  readonly artifactId: string
   readonly version: number
 }
 
@@ -47,7 +47,7 @@ export interface ScienceFoldState {
   preModeStepStarted: boolean
   environments: ScienceEnvironmentBinding[]
   runs: ScienceRun[]
-  charts: ScienceChartVersion[]
+  artifacts: ScienceArtifactVersion[]
   outcomes: ScienceOutcomePublication[]
   requestHeaders: IndexedSessionFact[]
   toolCalls: IndexedToolCall[]
@@ -55,7 +55,7 @@ export interface ScienceFoldState {
   consumedToolCallSeqs: number[]
   messageFacts: IndexedSessionFact[]
   runFacts: IndexedRunFact[]
-  chartFacts: IndexedChartFact[]
+  artifactFacts: IndexedArtifactFact[]
   lastScienceTime: number | undefined
   lastScienceEventSeq: number | undefined
 }
@@ -72,7 +72,7 @@ export function emptyScienceFoldState(): ScienceFoldState {
     preModeStepStarted: false,
     environments: [],
     runs: [],
-    charts: [],
+    artifacts: [],
     outcomes: [],
     requestHeaders: [],
     toolCalls: [],
@@ -80,7 +80,7 @@ export function emptyScienceFoldState(): ScienceFoldState {
     consumedToolCallSeqs: [],
     messageFacts: [],
     runFacts: [],
-    chartFacts: [],
+    artifactFacts: [],
     lastScienceTime: undefined,
     lastScienceEventSeq: undefined,
   }
@@ -99,7 +99,7 @@ export function cloneScienceFoldState(state: ScienceFoldState): ScienceFoldState
     preModeStepStarted: state.preModeStepStarted,
     environments: [...state.environments],
     runs: [...state.runs],
-    charts: [...state.charts],
+    artifacts: [...state.artifacts],
     outcomes: [...state.outcomes],
     requestHeaders: [...state.requestHeaders],
     toolCalls: [...state.toolCalls],
@@ -107,7 +107,7 @@ export function cloneScienceFoldState(state: ScienceFoldState): ScienceFoldState
     consumedToolCallSeqs: [...state.consumedToolCallSeqs],
     messageFacts: [...state.messageFacts],
     runFacts: [...state.runFacts],
-    chartFacts: [...state.chartFacts],
+    artifactFacts: [...state.artifactFacts],
     lastScienceTime: state.lastScienceTime,
     lastScienceEventSeq: state.lastScienceEventSeq,
   }

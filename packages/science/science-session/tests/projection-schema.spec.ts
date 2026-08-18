@@ -29,7 +29,7 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     if (currentRun.status !== 'success') throw new Error('fixture run is not successful')
     const { exitCode: _exitCode, ...runWithoutExitCode } = currentRun
-    const currentChart = state.charts[0]!
+    const currentChart = state.artifacts[0]!
     const { name: _attachmentName, ...attachmentWithoutName } = currentChart.attachment
     const rRunningState = {
       ...runningState,
@@ -40,7 +40,7 @@ describe('Science projection wire schema', () => {
       runs: [{ ...runningState.runs[0], language: 'r' }],
     }
     const secondChart = {
-      ...state.charts[0]!,
+      ...state.artifacts[0]!,
       version: 2,
       createdAt: 179,
     }
@@ -68,7 +68,7 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
-        charts: [{
+        artifacts: [{
           ...currentChart,
           caption: 'Visible caption',
           attachment: attachmentWithoutName,
@@ -76,8 +76,8 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
-        charts: [state.charts[0], secondChart],
-        metrics: { ...state.metrics, chartVersionCount: 2 },
+        artifacts: [state.artifacts[0], secondChart],
+        metrics: { ...state.metrics, artifactVersionCount: 2 },
       },
       {
         ...state,
@@ -133,7 +133,7 @@ describe('Science projection wire schema', () => {
     const { languageVersion: _languageVersion, fingerprintPreview: _fingerprintPreview, ...minimalPython } = currentPython
     const { python: _python, ...environmentWithoutPython } = currentEnvironment
     const currentRun = state.runs[0]!
-    const currentChart = state.charts[0]!
+    const currentChart = state.artifacts[0]!
     const interruptedRun = interruptedState.runs[0]!
     const { metrics: _metrics, ...withoutMetrics } = state
     let statusReads = 0
@@ -198,11 +198,11 @@ describe('Science projection wire schema', () => {
       { ...state, runs: [{ ...interruptedRun, interruptedAtSeq: '3' }] },
       { ...state, runs: [{ ...interruptedRun, interruptedAtSeq: Number.NaN }] },
       { ...state, runs: [{ ...interruptedRun, interruptedAtSeq: -1 }] },
-      { ...state, charts: {} },
-      { ...state, charts: [null] },
-      { ...state, charts: [{ ...currentChart, caption: 1 }] },
-      { ...state, charts: [{ ...currentChart, attachment: null }] },
-      { ...state, charts: [{ ...state.charts[0], attachment: { mediaType: 'text/plain' } }] },
+      { ...state, artifacts: {} },
+      { ...state, artifacts: [null] },
+      { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
+      { ...state, artifacts: [{ ...currentChart, attachment: null }] },
+      { ...state, artifacts: [{ ...state.artifacts[0], attachment: { mediaType: 'text/plain' } }] },
       { ...state, outcome: { ...state.outcome, evidence: [] } },
       { ...state, outcome: 1 },
       { ...state, outcome: { ...state.outcome, evidence: [null] } },

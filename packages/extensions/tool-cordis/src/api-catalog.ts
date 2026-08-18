@@ -1029,7 +1029,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
       {
-        signature: 'async commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion>',
+        signature: 'async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>',
         description: 'Import one PNG from a successful, non-inherited run\'s private artifact directory, persist it through `ctx.attachments`, then append the complete immutable chart version. Attachment persistence precedes the event: a failure before the event may leave only an unreferenced content-addressed object, but a committed event is never rolled back because a later step fails.',
         parameters: [{ name: 'request', description: 'Exact live Session, source run, artifact path, and cancellation.' }],
         returns: 'The durable chart version this operation appended.',
@@ -2879,7 +2879,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CommitScienceChartRequest',
-    declaration: 'export interface CommitScienceChartRequest {\n    readonly session: Session;\n    readonly runId: ScienceRunId;\n    readonly artifactPath: string;\n    readonly logicalName: string;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceChartVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface CommitScienceChartRequest {\n    readonly session: Session;\n    readonly runId: ScienceRunId;\n    readonly artifactPath: string;\n    readonly logicalName: string;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'CompactionAgentContext',
@@ -3774,12 +3774,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
   },
   {
-    name: 'ScienceChartId',
-    declaration: 'export type ScienceChartId = Branded<\'ScienceChartId\'>;',
+    name: 'ScienceArtifactId',
+    declaration: 'export type ScienceArtifactId = Branded<\'ScienceArtifactId\'>;',
   },
   {
-    name: 'ScienceChartVersion',
-    declaration: 'export interface ScienceChartVersion {\n    readonly chartId: ScienceChartId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly attachment: ImageAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+    name: 'ScienceArtifactOrigin',
+    declaration: 'export type ScienceArtifactOrigin = \'auto\' | \'model\';',
+  },
+  {
+    name: 'ScienceArtifactVersion',
+    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
   },
   {
     name: 'ScienceEnvironmentBinding',

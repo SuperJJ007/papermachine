@@ -32,7 +32,7 @@ import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/clien
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ScienceChartId, ScienceClientChartVersion, ScienceClientOutcomePublication, ScienceClientProjection,
+  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientOutcomePublication, ScienceClientProjection,
   ScienceEvidenceRef,
 } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
@@ -67,18 +67,18 @@ function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): stri
 }
 
 /** Latest accepted version per logical chart, in first-appearance (commit) order. */
-function latestCharts(charts: readonly ScienceClientChartVersion[]): ScienceClientChartVersion[] {
-  const byId = new Map<string, ScienceClientChartVersion>()
+function latestCharts(charts: readonly ScienceClientArtifactVersion[]): ScienceClientArtifactVersion[] {
+  const byId = new Map<string, ScienceClientArtifactVersion>()
   for (const chart of charts) {
-    const current = byId.get(chart.chartId)
-    if (current === undefined || chart.version > current.version) byId.set(chart.chartId, chart)
+    const current = byId.get(chart.artifactId)
+    if (current === undefined || chart.version > current.version) byId.set(chart.artifactId, chart)
   }
   return [...byId.values()]
 }
 
 /** Every durable version of one logical chart, ascending — the version stepper's walk order. */
-function versionsOf(charts: readonly ScienceClientChartVersion[], chartId: ScienceChartId): ScienceClientChartVersion[] {
-  return charts.filter(chart => chart.chartId === chartId).sort((left, right) => left.version - right.version)
+function versionsOf(charts: readonly ScienceClientArtifactVersion[], chartId: ScienceArtifactId): ScienceClientArtifactVersion[] {
+  return charts.filter(chart => chart.artifactId === chartId).sort((left, right) => left.version - right.version)
 }
 
 /** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
@@ -100,7 +100,7 @@ function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
 }
 
 /** Trigger a browser save of the durable bytes behind one artifact version through a throwaway `data:`-URI anchor. */
-async function downloadChart(chart: ScienceClientChartVersion, loadImage: ImageLoader): Promise<void> {
+async function downloadChart(chart: ScienceClientArtifactVersion, loadImage: ImageLoader): Promise<void> {
   const url = await loadImage(chart.attachment)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -120,7 +120,7 @@ async function downloadChart(chart: ScienceClientChartVersion, loadImage: ImageL
  * ordinary click-to-open path.
  */
 function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
-  chart: ScienceClientChartVersion
+  chart: ScienceClientArtifactVersion
   loadImage: ImageLoader
   open: boolean
   onClose: () => void
@@ -152,7 +152,7 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
  * strip or toolbar.
  */
 function ArtifactContent({ chart, loadImage, t }: {
-  chart: ScienceClientChartVersion
+  chart: ScienceClientArtifactVersion
   loadImage: ImageLoader
   t: TranslateNS<'science'>
 }) {
@@ -181,8 +181,8 @@ function ArtifactContent({ chart, loadImage, t }: {
 }
 
 function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, t }: {
-  chart: ScienceClientChartVersion
-  versions: readonly ScienceClientChartVersion[]
+  chart: ScienceClientArtifactVersion
+  versions: readonly ScienceClientArtifactVersion[]
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
   onMaximize: () => void
@@ -245,16 +245,16 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
 
 function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
   tabs: readonly ScienceOpenArtifact[]
-  charts: readonly ScienceClientChartVersion[]
-  activeChartId: ScienceChartId | null
-  onActivate: (chartId: ScienceChartId) => void
-  onClose: (chartId: ScienceChartId) => void
+  charts: readonly ScienceClientArtifactVersion[]
+  activeChartId: ScienceArtifactId | null
+  onActivate: (chartId: ScienceArtifactId) => void
+  onClose: (chartId: ScienceArtifactId) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
       {tabs.map((tab) => {
-        const chart = charts.find(candidate => candidate.chartId === tab.chartId && candidate.version === tab.version)
+        const chart = charts.find(candidate => candidate.artifactId === tab.chartId && candidate.version === tab.version)
         const label = chart?.title ?? tab.chartId
         const active = tab.chartId === activeChartId
         return (
@@ -276,9 +276,9 @@ function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
 }
 
 function ArtifactGallery({ charts, loadImage, onOpen, t }: {
-  charts: readonly ScienceClientChartVersion[]
+  charts: readonly ScienceClientArtifactVersion[]
   loadImage: ImageLoader
-  onOpen: (selection: { chartId: ScienceChartId; version: number }) => void
+  onOpen: (selection: { chartId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
   const latest = latestCharts(charts)
@@ -286,7 +286,7 @@ function ArtifactGallery({ charts, loadImage, onOpen, t }: {
   return (
     <ul className={css.chartList}>
       {latest.map(chart => (
-        <li key={chart.chartId} className={css.chartItem}>
+        <li key={chart.artifactId} className={css.chartItem}>
           {/* A real <button> wrapping MessageImage's own thumbnail <button>
               is invalid HTML that also breaks click delivery (a nested
               button swallows clicks meant for its ancestor, even from a
@@ -302,11 +302,11 @@ function ArtifactGallery({ charts, loadImage, onOpen, t }: {
             role="button"
             aria-label={t('details.artifact.select', { title: chart.title, version: chart.version })}
             tabIndex={0}
-            onClick={() => { onOpen({ chartId: chart.chartId, version: chart.version }) }}
+            onClick={() => { onOpen({ chartId: chart.artifactId, version: chart.version }) }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
               event.preventDefault()
-              onOpen({ chartId: chart.chartId, version: chart.version })
+              onOpen({ chartId: chart.artifactId, version: chart.version })
             }}
           >
             <MessageImage attachment={chart.attachment} load={loadImage} variant="tile" labels={chartImageLabels(t)} />
@@ -351,10 +351,10 @@ function OutcomeSection({ outcome, t }: {
 
 /** No open tabs: a gallery of latest chart versions (opening one opens its tab), plus the Outcome kept reachable below it. */
 function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
-  charts: readonly ScienceClientChartVersion[]
+  charts: readonly ScienceClientArtifactVersion[]
   outcome: ScienceClientOutcomePublication | null
   loadImage: ImageLoader
-  onOpenTab: (selection: { chartId: ScienceChartId; version: number }) => void
+  onOpenTab: (selection: { chartId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
   return (
@@ -371,7 +371,7 @@ function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadImage, useStore, actions, inspectCall, t }: {
   science: ScienceClientProjection
-  chart: ScienceClientChartVersion
+  chart: ScienceClientArtifactVersion
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
@@ -382,7 +382,7 @@ function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadIma
   t: TranslateNS<'science'>
 }) {
   const lightboxOpen = useStore(s => s.lightboxOpen)
-  const versions = versionsOf(science.charts, chart.chartId)
+  const versions = versionsOf(science.artifacts, chart.artifactId)
 
   if (view === 'provenance') {
     const run = science.runs.find(candidate => candidate.runId === chart.runId)
@@ -407,10 +407,10 @@ function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadIma
       <ArtifactToolbar
         chart={chart}
         versions={versions}
-        onStepVersion={(version) => { actions.setTabVersion({ chartId: chart.chartId, version }) }}
+        onStepVersion={(version) => { actions.setTabVersion({ chartId: chart.artifactId, version }) }}
         onOpenProvenance={() => { actions.setView('provenance') }}
         onMaximize={() => { actions.setLightboxOpen(true) }}
-        onCloseTab={() => { actions.closeTab(chart.chartId) }}
+        onCloseTab={() => { actions.closeTab(chart.artifactId) }}
         loadImage={loadImage}
         t={t}
       />
@@ -445,7 +445,7 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
     return (
       <div className={css.body}>
         <LandingView
-          charts={science.charts}
+          charts={science.artifacts}
           outcome={science.outcome}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
@@ -458,13 +458,14 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
   // The one remaining way `activeChart` resolves to undefined is the
   // durable projection not having this exact (chartId, version) pair — a
   // stale tab, handled below as "artifact unavailable".
-  const activeChart = science.charts.find(candidate => candidate.chartId === activeTab.chartId && candidate.version === activeTab.version)
+  const activeChart = science.artifacts.find(candidate =>
+    candidate.artifactId === activeTab.chartId && candidate.version === activeTab.version)
 
   return (
     <div className={css.body}>
       <TabStrip
         tabs={openArtifacts}
-        charts={science.charts}
+        charts={science.artifacts}
         activeChartId={activeChartId}
         onActivate={(chartId) => { actions.activateTab(chartId) }}
         onClose={(chartId) => { actions.closeTab(chartId) }}

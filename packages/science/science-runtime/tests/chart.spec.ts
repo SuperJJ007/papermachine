@@ -246,14 +246,15 @@ describe('ScienceRuntime.commitChart', () => {
     expect(chart.logicalName).toBe('main')
     expect(chart.title).toBe('Main plot')
     expect(chart.caption).toBe('A caption')
+    expect(chart.origin).toBe('model')
     expect(chart.attachment.mediaType).toBe('image/png')
     expect(chart.attachment.name).toBe('plot.png')
     expect(chart.runId).toBe(runId)
     expect(chart.environmentRevision).toBe(startedRun?.environmentRevision)
     expect(chart.environmentFingerprint).toBe(startedRun?.environmentFingerprint)
     const projection = replayScience(session.events)
-    expect(projection?.charts).toEqual([chart])
-    expect(session.events.some(event => event.type === 'science/chart-saved')).toBe(true)
+    expect(projection?.artifacts).toEqual([chart])
+    expect(session.events.some(event => event.type === 'science/artifact-saved')).toBe(true)
   })
 
   it('increments the version and retains the chartId for a repeat logical name', async () => {
@@ -272,7 +273,7 @@ describe('ScienceRuntime.commitChart', () => {
       session, runId, artifactPath: 'plot.png', logicalName: 'main', title: 'v2',
       ...authorizeSaveChart(session, 'science-chart-repeat-call-2'), signal: new AbortController().signal,
     })
-    expect(second.chartId).toBe(first.chartId)
+    expect(second.artifactId).toBe(first.artifactId)
     expect(second.version).toBe(2)
   })
 
@@ -292,7 +293,7 @@ describe('ScienceRuntime.commitChart', () => {
       session, runId, artifactPath: 'plot.png', logicalName: 'secondary', title: 'secondary',
       ...authorizeSaveChart(session, 'science-chart-distinct-call-2'), signal: new AbortController().signal,
     })
-    expect(other.chartId).not.toBe(first.chartId)
+    expect(other.artifactId).not.toBe(first.artifactId)
     expect(other.version).toBe(1)
   })
 
@@ -387,6 +388,6 @@ describe('ScienceRuntime.commitChart', () => {
       session, runId, artifactPath: 'plot.png', logicalName: 'main', title: 'main',
       ...authorizeSaveChart(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'IMAGE_TYPE_NOT_ALLOWED' })
-    expect(replayScience(session.events)?.charts).toEqual([])
+    expect(replayScience(session.events)?.artifacts).toEqual([])
   })
 })

@@ -337,7 +337,7 @@ describe('science agent preset', () => {
     }
 
     const r5Events = agentHandle.agent.session.events.filter(event => event.seq > result!.seq)
-    expect(r5Events.filter(event => event.type === 'science/chart-saved')).toHaveLength(2)
+    expect(r5Events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
     expect(r5Events.filter(event => event.type === 'science/outcome-published')).toHaveLength(1)
     const r5ToolResults = r5Events.filter(event => event.type === 'tool/result')
     expect(r5ToolResults.every(event => event.type !== 'tool/result'
@@ -353,9 +353,9 @@ describe('science agent preset', () => {
     expect(serializedR5).not.toContain(scratch!)
     expect(serializedR5).not.toContain(Buffer.from(PNG).toString('base64'))
 
-    const chartEvent = r5Events.find(event => event.type === 'science/chart-saved')
-    if (chartEvent?.type !== 'science/chart-saved') throw new Error('R5 snapshot chart event is missing')
-    const stored = await scaffold.ctx.attachments.readImage(chartEvent.data.chart.attachment)
+    const chartEvent = r5Events.find(event => event.type === 'science/artifact-saved')
+    if (chartEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot chart event is missing')
+    const stored = await scaffold.ctx.attachments.readImage(chartEvent.data.artifact.attachment)
     expect(Buffer.from(stored.data)).toEqual(Buffer.from(PNG))
 
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])

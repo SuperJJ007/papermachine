@@ -24,7 +24,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import { ScienceChartId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import { ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
@@ -45,9 +45,9 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' },
     environment: null,
     runs: [],
-    charts: [],
+    artifacts: [],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     lastScienceEventSeq: 1,
     ...overrides,
   }
@@ -505,7 +505,7 @@ describe('get_science_state', () => {
     }))
     const value = stateValueFromProjection(projectionFixture({
       runs,
-      metrics: { runCount: 3, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 3, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     }), limit)
     expect(value.runs.map(run => (run as { runId: string }).runId)).toEqual(expected)
     expect(value.history.runsOmitted).toBe(omitted)
@@ -516,11 +516,12 @@ describe('get_science_state', () => {
     { limit: 2, expected: ['chart-2', 'chart-3'], omitted: 1 },
     { limit: 3, expected: ['chart-1', 'chart-2', 'chart-3'], omitted: 0 },
   ])('caps recent chart-version history at $limit and reports omissions', ({ limit, expected, omitted }) => {
-    const charts = ['chart-1', 'chart-2', 'chart-3'].map((chartId, index) => ({
-      chartId,
-      logicalName: chartId,
+    const artifacts = ['chart-1', 'chart-2', 'chart-3'].map((artifactId, index) => ({
+      artifactId,
+      logicalName: artifactId,
       version: 1,
-      title: chartId,
+      title: artifactId,
+      origin: 'model',
       attachment: { attachmentId: `attachment-${String(index + 1)}`, mediaType: 'image/png' },
       runId: `run-${String(index + 1)}`,
       toolCallId: `call-${String(index + 1)}`,
@@ -528,10 +529,10 @@ describe('get_science_state', () => {
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
       createdAt: index + 1,
-    })) as unknown as ScienceProjection['charts']
+    })) as unknown as ScienceProjection['artifacts']
     const value = stateValueFromProjection(projectionFixture({
-      charts,
-      metrics: { runCount: 0, successfulRunCount: 0, chartCount: 3, chartVersionCount: 3, outcomeRevision: 0 },
+      artifacts,
+      metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 3, artifactVersionCount: 3, outcomeRevision: 0 },
     }), limit)
     expect(value.charts.map(chart => (chart as { chartId: string }).chartId)).toEqual(expected)
     expect(value.history.chartVersionsOmitted).toBe(omitted)
@@ -683,7 +684,7 @@ describe('get_science_state', () => {
         failureReason: 'python failed under /secret/prefix',
       },
       runs: [run],
-      metrics: { runCount: 1, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 1, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     }), 1)
     const rendered = JSON.stringify(value)
     expect(rendered).not.toContain('/secret')
@@ -718,7 +719,7 @@ describe('get_science_state', () => {
     })
     const value = stateValueFromProjection(projectionFixture({
       runs: [run('without-signal'), run('with-signal', 'SIGTERM')],
-      metrics: { runCount: 2, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 2, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     }), 2)
     expect(value.runs[0]).not.toHaveProperty('signal')
     expect(value.runs[0]).not.toHaveProperty('failureMessage')
@@ -819,10 +820,11 @@ describe('run_python', () => {
 describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation', () => {
   it('omits caption and the attachment name when both are absent from the durable chart', () => {
     const value = chartReceiptFromChart({
-      chartId: ScienceChartId('chart-1'),
+      artifactId: ScienceArtifactId('chart-1'),
       logicalName: 'main',
       version: 1,
       title: 'Main plot',
+      origin: 'model',
       attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
       runId: ScienceRunId('run-1'),
       toolCallId: CallId('call-1'),
@@ -889,7 +891,7 @@ describe('save_chart', () => {
     expect(text).toContain('title: Main plot')
     expect(text).toContain('caption: A caption')
     expect(text).not.toMatch(/sha256:/)
-    expect(session.events.some(event => event.type === 'science/chart-saved')).toBe(true)
+    expect(session.events.some(event => event.type === 'science/artifact-saved')).toBe(true)
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceChartReceiptValue
     expect(value.chartId).toBeTypeOf('string')

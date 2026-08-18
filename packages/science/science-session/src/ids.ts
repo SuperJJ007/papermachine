@@ -6,7 +6,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 export const SCIENCE_EVENT_VERSION = 1 as const
 
 /** Persisted-cache invalidation version for the Science projection state. */
-export const SCIENCE_PROJECTION_STATE_VERSION = 2
+export const SCIENCE_PROJECTION_STATE_VERSION = 3
 
 /** Identifies one Science environment profile inside durable session facts. */
 export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>
@@ -14,8 +14,8 @@ export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>
 /** Identifies one Science run for the lifetime of its owning session. */
 export type ScienceRunId = Branded<'ScienceRunId'>
 
-/** Identifies one logical chart across its immutable attachment versions. */
-export type ScienceChartId = Branded<'ScienceChartId'>
+/** Identifies one logical artifact across its immutable versions. */
+export type ScienceArtifactId = Branded<'ScienceArtifactId'>
 
 /** Content-addressed key for one immutable Science scratch source. */
 export type ScienceScratchKey = Branded<'ScienceScratchKey'>
@@ -39,12 +39,12 @@ export function ScienceRunId(value: string): ScienceRunId {
 }
 
 /**
- * Brand a validated chart identifier.
+ * Brand a validated artifact identifier.
  * @param value - validated session-local identifier.
- * @returns the same string with its chart brand.
+ * @returns the same string with its artifact brand.
  */
-export function ScienceChartId(value: string): ScienceChartId {
-  return value as ScienceChartId
+export function ScienceArtifactId(value: string): ScienceArtifactId {
+  return value as ScienceArtifactId
 }
 
 /**

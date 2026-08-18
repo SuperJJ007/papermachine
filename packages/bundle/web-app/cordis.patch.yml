@@ -102,7 +102,7 @@
       name: '@deepseek-ai/dsh-session-attachment-index'
 
     # The Science domain package named above: registers the
-    # `science/chart-saved` attachment extractor and the optional `science`
+    # `science/artifact-saved` attachment extractor and the optional `science`
     # session projection. It publishes no service of its own — every model-
     # facing Science tool and the Runtime execution service are the science
     # agent preset's and the Science Runtime row's, not this row's.

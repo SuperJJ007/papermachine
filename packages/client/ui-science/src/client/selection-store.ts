@@ -10,11 +10,11 @@
 
 import { defineStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ScienceChartId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 
 /** One artifact tab open in the viewer: a logical chart and the durable version it currently shows. */
 export interface ScienceOpenArtifact {
-  readonly chartId: ScienceChartId
+  readonly chartId: ScienceArtifactId
   version: number
 }
 
@@ -42,7 +42,7 @@ export interface ScienceSelectionState {
   /** Ordered open tabs — one entry per logical chart, never per version. */
   openArtifacts: ScienceOpenArtifact[]
   /** The active tab's chart id, or `null` for the no-tab landing view (gallery + Outcome). */
-  activeChartId: ScienceChartId | null
+  activeChartId: ScienceArtifactId | null
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
   /** The last-selected provenance sub-tab. */
@@ -53,13 +53,13 @@ export interface ScienceSelectionState {
 
 type ScienceSelectionActions = {
   /** Open (or activate, if already open) the named chart's tab at exactly the given version. */
-  openTab: (draft: ScienceSelectionState, selection: { chartId: ScienceChartId; version: number }) => void
+  openTab: (draft: ScienceSelectionState, selection: { chartId: ScienceArtifactId; version: number }) => void
   /** Activate an already-open tab by chart id; a chart id not in `openArtifacts` is a no-op. */
-  activateTab: (draft: ScienceSelectionState, chartId: ScienceChartId) => void
+  activateTab: (draft: ScienceSelectionState, chartId: ScienceArtifactId) => void
   /** Close a tab; if it was active, activate its neighbor, or fall back to the landing view when none remain. */
-  closeTab: (draft: ScienceSelectionState, chartId: ScienceChartId) => void
+  closeTab: (draft: ScienceSelectionState, chartId: ScienceArtifactId) => void
   /** Step an already-open tab to a different durable version of the same chart. */
-  setTabVersion: (draft: ScienceSelectionState, next: { chartId: ScienceChartId; version: number }) => void
+  setTabVersion: (draft: ScienceSelectionState, next: { chartId: ScienceArtifactId; version: number }) => void
   /** Switch the active tab's body between content and the provenance drill-in. */
   setView: (draft: ScienceSelectionState, view: ScienceArtifactView) => void
   /** Switch the provenance drill-in's active sub-tab. */

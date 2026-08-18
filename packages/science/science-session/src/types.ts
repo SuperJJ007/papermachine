@@ -10,14 +10,14 @@
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { CallId } from '@deepseek-ai/dsh-llm'
 import type {
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceScratchKey,
 } from './ids.ts'
 
 export type {
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceScratchKey,
@@ -205,23 +205,36 @@ export interface ScienceRunInterrupted extends ScienceRunIdentity {
 /** Run state served by the Science projection. */
 export type ScienceRun = ScienceRunStarted | ScienceRunTerminal | ScienceRunInterrupted
 
-/** One immutable PNG version of a logical Science chart. */
-export interface ScienceChartVersion {
-  /** Stable chart identity shared by every version. */
-  readonly chartId: ScienceChartId
-  /** Stable logical chart name within the session. */
+/**
+ * Whether one artifact version reached the session through unattended
+ * capture or a model-directed curation call. Distinguishes every run-written
+ * file the Runtime captured automatically from a version the model
+ * explicitly imported or annotated.
+ */
+export type ScienceArtifactOrigin = 'auto' | 'model'
+
+/** One immutable version of a logical Science artifact. */
+export interface ScienceArtifactVersion {
+  /** Stable artifact identity shared by every version. */
+  readonly artifactId: ScienceArtifactId
+  /** Stable logical artifact name within the session. */
   readonly logicalName: string
-  /** Positive version, contiguous within the logical chart. */
+  /** Positive version, contiguous within the logical artifact. */
   readonly version: number
-  /** Human-readable chart title. */
+  /**
+   * Human-readable title: always populated, either model-supplied or the
+   * captured file's basename.
+   */
   readonly title: string
-  /** Optional human-readable chart caption. */
+  /** Optional human-readable caption; only ever model-supplied. */
   readonly caption?: string
+  /** Whether this version reached the session through capture or curation. */
+  readonly origin: ScienceArtifactOrigin
   /** Immutable attachment metadata; Science version one requires PNG. */
   readonly attachment: ImageAttachmentRef
-  /** Successful run that produced this chart. */
+  /** Successful run that produced this artifact. */
   readonly runId: ScienceRunId
-  /** Model-issued call that authorized saving this chart version. */
+  /** Model-issued call that authorized saving this artifact version. */
   readonly toolCallId: CallId
   /** Prior `request/header` carrying the authorizing request facts. */
   readonly requestHeaderSeq: number
@@ -239,10 +252,10 @@ export interface ScienceRunEvidenceRef {
   readonly runId: ScienceRunId
 }
 
-/** One exact chart version cited by a published Science outcome. */
+/** One exact artifact version cited by a published Science outcome. */
 export interface ScienceChartEvidenceRef {
   readonly kind: 'chart'
-  readonly chartId: ScienceChartId
+  readonly chartId: ScienceArtifactId
   readonly version: number
 }
 
@@ -285,8 +298,8 @@ export interface ScienceOutcomePublication {
 export interface ScienceProjectionMetrics {
   readonly runCount: number
   readonly successfulRunCount: number
-  readonly chartCount: number
-  readonly chartVersionCount: number
+  readonly artifactCount: number
+  readonly artifactVersionCount: number
   readonly outcomeRevision: number
 }
 
@@ -298,8 +311,8 @@ export interface ScienceProjection {
   readonly environment: ScienceEnvironmentBinding | null
   /** All durable and replay-derived run states in start order. */
   readonly runs: readonly ScienceRun[]
-  /** Every immutable chart version in commit order. */
-  readonly charts: readonly ScienceChartVersion[]
+  /** Every immutable artifact version in commit order. */
+  readonly artifacts: readonly ScienceArtifactVersion[]
   /** Latest published outcome revision, or `null` before publication. */
   readonly outcome: ScienceOutcomePublication | null
   /** Derived counters; never written independently to the session log. */
@@ -386,17 +399,18 @@ export interface ScienceClientRunInterrupted extends ScienceClientRunIdentity {
 export type ScienceClientRun = ScienceClientRunStarted | ScienceClientRunTerminal | ScienceClientRunInterrupted
 
 /**
- * Browser-safe chart version retaining the attachment reference needed for
- * authorized reads. `toolCallId` and `requestHeaderSeq` are session-log
- * identities the browser already holds; they let a chart version join its
- * authorizing transcript call for provenance.
+ * Browser-safe artifact version retaining the attachment reference needed
+ * for authorized reads. `toolCallId` and `requestHeaderSeq` are session-log
+ * identities the browser already holds; they let an artifact version join
+ * its authorizing transcript call for provenance.
  */
-export interface ScienceClientChartVersion {
-  readonly chartId: ScienceChartId
+export interface ScienceClientArtifactVersion {
+  readonly artifactId: ScienceArtifactId
   readonly logicalName: string
   readonly version: number
   readonly title: string
   readonly caption?: string
+  readonly origin: ScienceArtifactOrigin
   readonly attachment: ImageAttachmentRef
   readonly runId: ScienceRunId
   readonly toolCallId: CallId
@@ -421,7 +435,7 @@ export interface ScienceClientProjection {
   readonly mode: ScienceModeRef
   readonly environment: ScienceClientEnvironmentBinding | null
   readonly runs: readonly ScienceClientRun[]
-  readonly charts: readonly ScienceClientChartVersion[]
+  readonly artifacts: readonly ScienceClientArtifactVersion[]
   readonly outcome: ScienceClientOutcomePublication | null
   readonly metrics: ScienceProjectionMetrics
   readonly lastScienceEventSeq: number

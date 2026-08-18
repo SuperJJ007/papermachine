@@ -36,7 +36,7 @@ export function scienceProjectionWitnessEvent(event: SessionEvent): ScienceProje
     case 'science/environment-bound':
     case 'science/run-started':
     case 'science/run-finished':
-    case 'science/chart-saved':
+    case 'science/artifact-saved':
     case 'science/outcome-published':
       if (event.ignorable === true) throw new Error('Science projection witness cannot omit required-event semantics')
       return projectionWitnessEvent(event, event.data)

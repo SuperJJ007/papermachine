@@ -131,7 +131,7 @@ describe('Science stream invariant', () => {
       'science/environment-bound',
       'science/run-started',
       'science/run-finished',
-      'science/chart-saved',
+      'science/artifact-saved',
       'science/outcome-published',
     ])
   })

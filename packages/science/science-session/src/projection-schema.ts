@@ -162,20 +162,21 @@ function validAttachment(value: unknown): boolean {
     && (candidate['name'] === undefined || typeof candidate['name'] === 'string')
 }
 
-function validChart(value: unknown): boolean {
+function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
   const keys = [
-    'chartId', 'logicalName', 'version', 'title', 'attachment', 'runId', 'toolCallId', 'requestHeaderSeq',
+    'artifactId', 'logicalName', 'version', 'title', 'origin', 'attachment', 'runId', 'toolCallId', 'requestHeaderSeq',
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt',
   ]
   if (candidate['caption'] !== undefined) keys.push('caption')
   return projectionExactKeys(candidate, keys)
-    && typeof candidate['chartId'] === 'string'
+    && typeof candidate['artifactId'] === 'string'
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
+    && (candidate['origin'] === 'auto' || candidate['origin'] === 'model')
     && validAttachment(candidate['attachment'])
     && typeof candidate['runId'] === 'string'
     && typeof candidate['toolCallId'] === 'string'
@@ -234,7 +235,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     'mode',
     'environment',
     'runs',
-    'charts',
+    'artifacts',
     'outcome',
     'metrics',
     'lastScienceEventSeq',
@@ -243,7 +244,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     decodeScienceMode(candidate['mode'])
     if (!validEnvironment(candidate['environment'])) return false
     if (!Array.isArray(candidate['runs']) || !candidate['runs'].every(validRun)) return false
-    if (!Array.isArray(candidate['charts']) || !candidate['charts'].every(validChart)) return false
+    if (!Array.isArray(candidate['artifacts']) || !candidate['artifacts'].every(validArtifact)) return false
     if (!validOutcome(candidate['outcome'])) return false
     const lastScienceEventSeq = candidate['lastScienceEventSeq'] as number
     if (!Number.isSafeInteger(lastScienceEventSeq) || lastScienceEventSeq < 0) return false
@@ -251,17 +252,17 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     if (storedMetrics === undefined || !projectionExactKeys(storedMetrics, [
       'runCount',
       'successfulRunCount',
-      'chartCount',
-      'chartVersionCount',
+      'artifactCount',
+      'artifactVersionCount',
       'outcomeRevision',
     ])) return false
-    const chartIds = new Set(candidate['charts'].map(value => (value as Record<string, unknown>)['chartId']))
+    const artifactIds = new Set(candidate['artifacts'].map(value => (value as Record<string, unknown>)['artifactId']))
     const outcome = candidate['outcome'] as Record<string, unknown> | null
     const expectedMetrics = {
       runCount: candidate['runs'].length,
       successfulRunCount: candidate['runs'].filter(value => (value as Record<string, unknown>)['status'] === 'success').length,
-      chartCount: chartIds.size,
-      chartVersionCount: candidate['charts'].length,
+      artifactCount: artifactIds.size,
+      artifactVersionCount: candidate['artifacts'].length,
       outcomeRevision: outcome === null ? 0 : outcome['revision'],
     }
     return Object.entries(expectedMetrics).every(([key, expected]) => storedMetrics[key] === expected)

@@ -739,7 +739,7 @@ describe('session.export download endpoint', () => {
       // A real known extractor-required type (dsh-science-session's producer
       // registers it in a full composition); this suite mounts only the
       // generic registry, so the type has no live extractor.
-      '{"type":"science/chart-saved","seq":1,"time":1000,"data":{}}',
+      '{"type":"science/artifact-saved","seq":1,"time":1000,"data":{}}',
     ].join('\n') + '\n')
     const api = await buildApi({ 'session-root': root })
     const response = await toFetchHandler(api).fetch(

@@ -2,7 +2,7 @@
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  decodeScienceChart,
+  decodeScienceArtifact,
   decodeScienceDomainEvent,
   decodeScienceEnvironment,
   decodeScienceMode,
@@ -17,7 +17,7 @@ import { applyScienceEvent } from './transition.ts'
 import type { ScienceProjection } from './types.ts'
 
 export {
-  decodeScienceChart,
+  decodeScienceArtifact,
   decodeScienceDomainEvent,
   decodeScienceEnvironment,
   decodeScienceMode,

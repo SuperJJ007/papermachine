@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-science-runtime` 提供折叠的、host-local 的 Conda Science Runtime，用于持久化 environment、run 与 chart 事实。它拥有 `ctx.scienceRuntime`、按 Session 隔离的私有 scratch、Python/R direct argv 构造、稳定 prefix 观测、精确 Session lease、终态结果分类，以及把 PNG 导入附件存储的能力。它不注册面向模型的工具、提示词、preset 或 UI。
+`@deepseek-ai/dsh-science-runtime` 提供折叠的、host-local 的 Conda Science Runtime，用于持久化 environment、run 与 artifact 事实。它拥有 `ctx.scienceRuntime`、按 Session 隔离的私有 scratch、Python/R direct argv 构造、稳定 prefix 观测、精确 Session lease、终态结果分类，以及把 PNG 导入附件存储的能力。它不注册面向模型的工具、提示词、preset 或 UI。
 
 ## 组装
 
@@ -37,7 +37,7 @@
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` 会重新观测 applied binding，把未改变的 UTF-8 source 写入私有 run directory，追加 `science/run-started`，并返回 `ScienceRunHandle`。该 handle 只暴露 `runId`、`done` 和幂等的 `cancel()`；它不暴露 PID 或 Host scratch path。它解析出的 result 包含已提交的 terminal record、受限的运行期 stdout/stderr tail、精确 byte count 与截断事实。output text 永不进入 Science Session event。
 
-`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` 只接受由精确 Session 本地启动且已成功的 run，并只解析该 run 私有 `SCIENCE_ARTIFACT_DIR` 下的普通非 symlink PNG；读取上限是附件存储字节上限加一。`ctx.attachments.saveImage` 仍是媒体接纳权威。Runtime 先持久化附件，再追加完整的 `science/chart-saved` 版本；同一逻辑名的连续版本共用稳定 chart id，且不会公开 Host path。
+`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` 只接受由精确 Session 本地启动且已成功的 run，并只解析该 run 私有 `SCIENCE_ARTIFACT_DIR` 下的普通非 symlink PNG；读取上限是附件存储字节上限加一。`ctx.attachments.saveImage` 仍是媒体接纳权威。Runtime 先持久化附件，再追加带有 `origin: 'model'` 的完整 `science/artifact-saved` 版本；同一逻辑名的连续版本共用稳定 artifact id，且不会公开 Host path。
 
 Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。start event 提交后，普通 process、runner、denial、取消与超时 outcome 都会追加一个匹配的 terminal event。如果有界结算无法证明整棵 process tree 静止，`done` 会拒绝，但 Runtime 会保留 lease；后续 positive proof 会先向 still-live Session 追加 terminal fact，再释放 lease，而 false 或 rejected proof 会继续保持 quarantine。still-live Session 不能提交 terminal fact，或意外 detached Session 使提交被禁止时，`done` 也会拒绝。
 

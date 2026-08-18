@@ -2,21 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
 } from '../src/index.ts'
 import { foldScience } from '../src/fold.ts'
 import { emptyScienceFoldState } from '../src/fold-state.ts'
 import { applyScienceEvent } from '../src/transition.ts'
-import type { ScienceChartVersion } from '../src/index.ts'
+import type { ScienceArtifactVersion } from '../src/index.ts'
 import {
-  CHART_CALL_ID,
-  CHART_ID,
+  ARTIFACT_CALL_ID,
+  ARTIFACT_ID,
   OUTCOME_CALL_ID,
   RUN_CALL_ID,
   RUN_ID,
-  chart,
+  artifact,
   environment,
   event,
   failedInterpreter,
@@ -51,12 +51,12 @@ describe('strict Science fold transitions', () => {
         run: runStarted({ requestHeaderSeq: 3, startedAt: 149 }),
       }),
     ]
-    const secondChart = (overrides: Partial<ScienceChartVersion>): SessionEvent[] => [
+    const secondChart = (overrides: Partial<ScienceArtifactVersion>): SessionEvent[] => [
       ...legalEvents().slice(0, 8),
       toolCall(8, 180, secondCall, 'save_chart'),
-      event('science/chart-saved', 9, 190, {
+      event('science/artifact-saved', 9, 190, {
         version: 1,
-        chart: chart({
+        artifact: artifact({
           toolCallId: secondCall,
           createdAt: 189,
           ...overrides,
@@ -157,49 +157,49 @@ describe('strict Science fold transitions', () => {
         event('science/run-finished', 5, 148, { version: 1, run: runTerminal() }),
       ], /finish time/],
       ['chart before mode', [
-        event('science/chart-saved', 0, 170, { version: 1, chart: chart() }),
+        event('science/artifact-saved', 0, 170, { version: 1, artifact: artifact() }),
       ], /prior mode binding/],
       ['chart from running run', [
         ...legalEvents().slice(0, 5),
-        toolCall(5, 150, CHART_CALL_ID, 'save_chart'),
-        event('science/chart-saved', 6, 160, {
+        toolCall(5, 150, ARTIFACT_CALL_ID, 'save_chart'),
+        event('science/artifact-saved', 6, 160, {
           version: 1,
-          chart: chart({ createdAt: 159 }),
+          artifact: artifact({ createdAt: 159 }),
         }),
       ], /successful prior run/],
       ['chart without tool call', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, {
+        ? event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ toolCallId: CallId('missing-call') }),
+          artifact: artifact({ toolCallId: CallId('missing-call') }),
         })
         : candidate), /does not identify one call after its cited request\/header/],
       ['chart environment revision mismatch', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, {
+        ? event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ environmentRevision: 2 }),
+          artifact: artifact({ environmentRevision: 2 }),
         })
         : candidate), /environment provenance/],
       ['chart fingerprint mismatch', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, {
+        ? event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ environmentFingerprint: 'e'.repeat(64) }),
+          artifact: artifact({ environmentFingerprint: 'e'.repeat(64) }),
         })
         : candidate), /environment provenance/],
       ['chart before run finish', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, { version: 1, chart: chart({ createdAt: 148 }) })
+        ? event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact({ createdAt: 148 }) })
         : candidate), /creation time/],
       ['chart after event', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, { version: 1, chart: chart({ createdAt: 171 }) })
+        ? event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact({ createdAt: 171 }) })
         : candidate), /creation time/],
-      ['chartId reused for another logical chart', secondChart({ logicalName: 'other' }), /two logical charts/],
-      ['chart version changes identity', secondChart({ chartId: ScienceChartId('chart-2'), version: 2 }), /advance contiguously/],
+      ['artifactId reused for another logical artifact', secondChart({ logicalName: 'other' }), /two logical artifacts/],
+      ['chart version changes identity', secondChart({ artifactId: ScienceArtifactId('chart-2'), version: 2 }), /advance contiguously/],
       ['chart version skips', secondChart({ version: 3 }), /advance contiguously/],
       ['chart version moves creation time backwards', [
         ...legalEvents().slice(0, 8),
         toolCall(8, 168, secondCall, 'save_chart'),
-        event('science/chart-saved', 9, 190, {
+        event('science/artifact-saved', 9, 190, {
           version: 1,
-          chart: chart({
+          artifact: artifact({
             version: 2,
             toolCallId: secondCall,
             createdAt: 168,
@@ -274,7 +274,7 @@ describe('strict Science fold transitions', () => {
       ['outcome chart evidence missing', legalEvents().map((candidate, index) => index === 9
         ? event('science/outcome-published', 9, 180, {
           version: 1,
-          outcome: outcome({ evidence: [{ kind: 'chart', chartId: CHART_ID, version: 2 }] }),
+          outcome: outcome({ evidence: [{ kind: 'chart', chartId: ARTIFACT_ID, version: 2 }] }),
         })
         : candidate), /chart evidence/],
       ['outcome message evidence missing', legalEvents().map((candidate, index) => index === 9
@@ -337,7 +337,7 @@ describe('strict Science fold transitions', () => {
         version: 1,
         outcome: outcome({ evidence: [
           { kind: 'run', runId: RUN_ID },
-          { kind: 'chart', chartId: CHART_ID, version: 1 },
+          { kind: 'chart', chartId: ARTIFACT_ID, version: 1 },
           { kind: 'message', seq: 8 },
         ] }),
       }),
@@ -390,16 +390,57 @@ describe('strict Science fold transitions', () => {
     const chartVersionTwo = [
       ...legalEvents().slice(0, 8),
       toolCall(8, 180, CallId('call-chart-2'), 'save_chart'),
-      event('science/chart-saved', 9, 190, {
+      event('science/artifact-saved', 9, 190, {
         version: 1,
-        chart: chart({
+        artifact: artifact({
           version: 2,
           toolCallId: CallId('call-chart-2'),
           createdAt: 189,
         }),
       }),
     ]
-    expect(foldScience(chartVersionTwo).charts.map(candidate => candidate.version)).toEqual([1, 2])
+    expect(foldScience(chartVersionTwo).artifacts.map(candidate => candidate.version)).toEqual([1, 2])
+  })
+
+  it('creates a new version for a curation-only re-save with an identical attachment', () => {
+    // The fold has no content-hash dedup of its own — deciding whether an
+    // unchanged attachment warrants a new version is the capture/curation
+    // caller's decision (see the Runtime), not this package's. A re-save
+    // that only changes title, caption, and origin must still be accepted
+    // as the next contiguous version.
+    const events = [
+      ...legalEvents().slice(0, 8),
+      toolCall(8, 180, CallId('call-chart-2'), 'save_chart'),
+      event('science/artifact-saved', 9, 190, {
+        version: 1,
+        artifact: artifact({
+          version: 2,
+          toolCallId: CallId('call-chart-2'),
+          createdAt: 189,
+          title: 'Curated trend',
+          caption: 'Selected by the model.',
+          origin: 'model',
+          // Identical attachment reference to the version-1 fixture.
+        }),
+      }),
+    ]
+    const state = foldScience(events)
+    expect(state.artifacts.map(candidate => ({
+      version: candidate.version,
+      title: candidate.title,
+      caption: candidate.caption,
+      origin: candidate.origin,
+      attachment: candidate.attachment,
+    }))).toEqual([
+      { version: 1, title: 'Trend', caption: undefined, origin: 'model', attachment: artifact().attachment },
+      {
+        version: 2,
+        title: 'Curated trend',
+        caption: 'Selected by the model.',
+        origin: 'model',
+        attachment: artifact().attachment,
+      },
+    ])
   })
 
   it('rejects invalid event positions and timestamps', () => {

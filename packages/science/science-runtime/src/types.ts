@@ -5,7 +5,7 @@
  */
 
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceEnvironmentProfileId,
   ScienceLanguage,
@@ -115,7 +115,7 @@ export interface CommitScienceChartRequest {
   /** Optional human-readable chart caption. */
   readonly caption?: string
   /** Model-issued call already recorded in the Session log. */
-  readonly toolCallId: ScienceChartVersion['toolCallId']
+  readonly toolCallId: ScienceArtifactVersion['toolCallId']
   /** Latest Science-era `request/header` event already recorded in the log. */
   readonly requestHeaderSeq: number
   /** Caller-owned cancellation signal. */
@@ -153,5 +153,5 @@ export interface ScienceRuntimeService {
    * @param request - Exact Session, source run, artifact path, and cancellation.
    * @returns The durable chart version this operation appended.
    */
-  commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion>
+  commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>
 }

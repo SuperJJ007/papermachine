@@ -277,9 +277,9 @@ function scienceIds(rawStdout: string): ScienceIds {
     const event = record.event as JsonObject
     const data = event.data as JsonObject | undefined
     const run = data?.run as JsonObject | undefined
-    const chart = data?.chart as JsonObject | undefined
+    const artifact = data?.artifact as JsonObject | undefined
     if (event.type === 'science/run-started' && typeof run?.runId === 'string') runIds.push(run.runId)
-    if (event.type === 'science/chart-saved' && typeof chart?.chartId === 'string') chartIds.push(chart.chartId)
+    if (event.type === 'science/artifact-saved' && typeof artifact?.artifactId === 'string') chartIds.push(artifact.artifactId)
   }
   return { runIds, chartIds }
 }

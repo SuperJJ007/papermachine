@@ -300,7 +300,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubprocessSpawnSpec: 'subprocess.md',
   BindScienceEnvironmentRequest: 'science.md',
   CommitScienceChartRequest: 'science.md',
-  ScienceChartVersion: 'science.md',
+  ScienceArtifactVersion: 'science.md',
   ScienceEnvironmentBinding: 'science.md',
   ScienceRunHandle: 'science.md',
   StartScienceRunRequest: 'science.md',

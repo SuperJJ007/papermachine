@@ -7,13 +7,13 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
   SCIENCE_EVENT_VERSION,
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceScratchKey,
 } from './ids.ts'
 import type {
-  ScienceChartSavedEvent,
+  ScienceArtifactSavedEvent,
   ScienceDomainEventType,
   ScienceEnvironmentBoundEvent,
   ScienceModeBoundEvent,
@@ -22,7 +22,7 @@ import type {
   ScienceRunStartedEvent,
 } from './domain.ts'
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceModeRef,
   ScienceOutcomePublication,
@@ -223,12 +223,13 @@ const attachmentSchema = z.object({
   }).optional(),
 }).strict()
 
-const chartSchema = z.object({
-  chartId: SAFE_ID.transform(value => ScienceChartId(value)),
+const artifactSchema = z.object({
+  artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
   logicalName: SAFE_ID,
   version: POSITIVE_INTEGER,
   title: text(MAX_LABEL_LENGTH),
   caption: text(MAX_REASON_LENGTH).optional(),
+  origin: z.enum(['auto', 'model']),
   attachment: attachmentSchema,
   runId: SAFE_ID.transform(value => ScienceRunId(value)),
   toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
@@ -242,7 +243,7 @@ const evidenceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('run'), runId: SAFE_ID.transform(value => ScienceRunId(value)) }).strict(),
   z.object({
     kind: z.literal('chart'),
-    chartId: SAFE_ID.transform(value => ScienceChartId(value)),
+    chartId: SAFE_ID.transform(value => ScienceArtifactId(value)),
     version: POSITIVE_INTEGER,
   }).strict(),
   z.object({ kind: z.literal('message'), seq: SAFE_INTEGER }).strict(),
@@ -285,7 +286,7 @@ const environmentEventSchema = z.object({
 }).strict()
 const runStartedEventSchema = z.object({ version: z.literal(SCIENCE_EVENT_VERSION), run: runStartedSchema }).strict()
 const runFinishedEventSchema = z.object({ version: z.literal(SCIENCE_EVENT_VERSION), run: runTerminalSchema }).strict()
-const chartSavedEventSchema = z.object({ version: z.literal(SCIENCE_EVENT_VERSION), chart: chartSchema }).strict()
+const artifactSavedEventSchema = z.object({ version: z.literal(SCIENCE_EVENT_VERSION), artifact: artifactSchema }).strict()
 const outcomePublishedEventSchema = z.object({
   version: z.literal(SCIENCE_EVENT_VERSION),
   outcome: outcomeSchema,
@@ -297,7 +298,7 @@ export type DecodedScienceDomainEvent =
   | { readonly type: 'science/environment-bound'; readonly seq: number; readonly time: number; readonly data: ScienceEnvironmentBoundEvent }
   | { readonly type: 'science/run-started'; readonly seq: number; readonly time: number; readonly data: ScienceRunStartedEvent }
   | { readonly type: 'science/run-finished'; readonly seq: number; readonly time: number; readonly data: ScienceRunFinishedEvent }
-  | { readonly type: 'science/chart-saved'; readonly seq: number; readonly time: number; readonly data: ScienceChartSavedEvent }
+  | { readonly type: 'science/artifact-saved'; readonly seq: number; readonly time: number; readonly data: ScienceArtifactSavedEvent }
   | { readonly type: 'science/outcome-published'; readonly seq: number; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
 
 /**
@@ -337,12 +338,12 @@ export function decodeScienceRunTerminal(value: unknown): ScienceRunTerminal {
 }
 
 /**
- * Decode one chart version value.
+ * Decode one artifact version value.
  * @param value - untrusted durable value.
- * @returns the strict chart-version value.
+ * @returns the strict artifact-version value.
  */
-export function decodeScienceChart(value: unknown): ScienceChartVersion {
-  return chartSchema.parse(value) as ScienceChartVersion
+export function decodeScienceArtifact(value: unknown): ScienceArtifactVersion {
+  return artifactSchema.parse(value) as ScienceArtifactVersion
 }
 
 /**
@@ -364,7 +365,7 @@ export function isScienceDomainEventType(type: string): type is ScienceDomainEve
     || type === 'science/environment-bound'
     || type === 'science/run-started'
     || type === 'science/run-finished'
-    || type === 'science/chart-saved'
+    || type === 'science/artifact-saved'
     || type === 'science/outcome-published'
 }
 
@@ -390,8 +391,10 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
       const data = runFinishedEventSchema.parse(event.data) as ScienceRunFinishedEvent
       return { type: event.type, seq: event.seq, time: event.time, data }
     }
-    case 'science/chart-saved':
-      return { type: event.type, seq: event.seq, time: event.time, data: chartSavedEventSchema.parse(event.data) as ScienceChartSavedEvent }
+    case 'science/artifact-saved': {
+      const data = artifactSavedEventSchema.parse(event.data) as ScienceArtifactSavedEvent
+      return { type: event.type, seq: event.seq, time: event.time, data }
+    }
     case 'science/outcome-published':
       return { type: event.type, seq: event.seq, time: event.time, data: outcomePublishedEventSchema.parse(event.data) }
     default:

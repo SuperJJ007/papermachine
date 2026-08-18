@@ -18,7 +18,7 @@ export interface ScienceProjectionFoldJson {
   readonly preModeStepStarted: boolean
   readonly environments: ScienceFoldState['environments']
   readonly runs: ScienceFoldState['runs']
-  readonly charts: ScienceFoldState['charts']
+  readonly artifacts: ScienceFoldState['artifacts']
   readonly outcomes: ScienceFoldState['outcomes']
   readonly requestHeaders: ScienceFoldState['requestHeaders']
   readonly toolCalls: ScienceFoldState['toolCalls']
@@ -32,7 +32,7 @@ export interface ScienceProjectionFoldJson {
     readonly terminalSeq: number | null
     readonly terminalEventTime: number | null
   }[]
-  readonly chartFacts: ScienceFoldState['chartFacts']
+  readonly artifactFacts: ScienceFoldState['artifactFacts']
   readonly lastScienceTime: number | null
   readonly lastScienceEventSeq: number | null
 }

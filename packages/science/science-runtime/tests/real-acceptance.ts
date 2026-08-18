@@ -285,7 +285,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     checks.push('real PNG artifact creation', 'chart commit and attachment readback')
 
     const chartProjection = replayScience(session.events)
-    const replayedChart = chartProjection?.charts.find(candidate => candidate.chartId === chart.chartId && candidate.version === 1)
+    const replayedChart = chartProjection?.artifacts.find(candidate => candidate.artifactId === chart.artifactId && candidate.version === 1)
     if (replayedChart === undefined || String(replayedChart.attachment.attachmentId) !== String(chart.attachment.attachmentId)) {
       throw new Error('chart event did not replay to the exact committed attachment')
     }
@@ -298,7 +298,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       summaryMarkdown: 'The real interpreter produced and saved the cited chart.',
       evidence: [
         { kind: 'run', runId: success.runId },
-        { kind: 'chart', chartId: chart.chartId, version: chart.version },
+        { kind: 'chart', chartId: chart.artifactId, version: chart.version },
       ],
       publishedAt: Date.now(),
       ...outcomeAuthorization,

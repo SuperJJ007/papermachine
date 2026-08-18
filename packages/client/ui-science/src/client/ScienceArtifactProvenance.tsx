@@ -15,7 +15,7 @@ import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deeps
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientRun,
+  ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from './selection-store.ts'
 import css from './ScienceArtifactProvenance.module.css'
@@ -30,7 +30,7 @@ const SUB_TABS: readonly { id: ScienceProvenanceSubTab; labelKey: 'provenance.co
 
 /** Full props for the provenance drill-in. */
 export interface ScienceArtifactProvenanceProps {
-  chart: ScienceClientChartVersion
+  chart: ScienceClientArtifactVersion
   run: ScienceClientRun
   environment: ScienceClientEnvironmentBinding | null | undefined
   snapshot: ConversationSnapshot

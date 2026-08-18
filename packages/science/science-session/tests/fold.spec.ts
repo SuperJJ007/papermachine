@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  decodeScienceChart,
+  decodeScienceArtifact,
   decodeScienceEnvironment,
   decodeScienceDomainEvent,
   decodeScienceOutcome,
@@ -13,12 +13,12 @@ import {
 import { isScienceDomainEventType } from '../src/codec.ts'
 import { foldScience } from '../src/fold.ts'
 import {
-  CHART_CALL_ID,
-  CHART_ID,
+  ARTIFACT_CALL_ID,
+  ARTIFACT_ID,
   OUTCOME_CALL_ID,
   RUN_CALL_ID,
   RUN_ID,
-  chart,
+  artifact,
   environment,
   environmentWithoutPython,
   event,
@@ -39,7 +39,7 @@ describe('strict Science fold', () => {
     expect(state.modeBoundSeq).toBe(0)
     expect(state.environments).toEqual([environment()])
     expect(state.runs).toEqual([runTerminal()])
-    expect(state.charts).toEqual([chart()])
+    expect(state.artifacts).toEqual([artifact()])
     expect(state.outcomes).toEqual([outcome()])
     expect(state.nextSeq).toBe(10)
     expect(state.lastScienceEventSeq).toBe(9)
@@ -47,7 +47,7 @@ describe('strict Science fold', () => {
     expect(state.requestHeaders).toEqual([{ seq: 2, time: 120 }])
     expect(state.toolCalls).toEqual([
       { seq: 3, time: 130, callId: RUN_CALL_ID, turn: 1, step: 1, name: 'run_python' },
-      { seq: 6, time: 160, callId: CHART_CALL_ID, turn: 1, step: 1, name: 'save_chart' },
+      { seq: 6, time: 160, callId: ARTIFACT_CALL_ID, turn: 1, step: 1, name: 'save_chart' },
       { seq: 8, time: 175, callId: OUTCOME_CALL_ID, turn: 1, step: 1, name: 'publish_outcome' },
     ])
     expect(state.settledToolCallSeqs).toEqual([])
@@ -171,11 +171,11 @@ describe('strict Science fold', () => {
   })
 
   it('enforces outcome normalization and exposes stable vocabulary helpers', () => {
-    expect(decodeScienceChart(chart())).toEqual(chart())
+    expect(decodeScienceArtifact(artifact())).toEqual(artifact())
     expect(() => decodeScienceOutcome(outcome({
       evidence: [
         { kind: 'run', runId: RUN_ID },
-        { kind: 'chart', chartId: CHART_ID, version: 1 },
+        { kind: 'chart', chartId: ARTIFACT_ID, version: 1 },
         { kind: 'message', seq: 2 },
       ],
     }))).not.toThrow()
@@ -202,7 +202,7 @@ describe('strict Science fold', () => {
       'science/environment-bound',
       'science/run-started',
       'science/run-finished',
-      'science/chart-saved',
+      'science/artifact-saved',
       'science/outcome-published',
     ].every(isScienceDomainEventType)).toBe(true)
     expect(isScienceDomainEventType('science/future-event')).toBe(false)
@@ -217,11 +217,11 @@ describe('strict Science fold', () => {
     expect(() => foldScience(badEnvironment)).toThrow(/environment revision must be 1/)
 
     const badChart = legalEvents()
-    badChart[7] = event('science/chart-saved', 7, 170, {
+    badChart[7] = event('science/artifact-saved', 7, 170, {
       version: 1,
-      chart: chart({ version: 2 }),
+      artifact: artifact({ version: 2 }),
     })
-    expect(() => foldScience(badChart)).toThrow(/first logical chart version must be 1/)
+    expect(() => foldScience(badChart)).toThrow(/first logical artifact version must be 1/)
 
     const badOutcome = legalEvents()
     badOutcome[9] = event('science/outcome-published', 9, 180, {
@@ -261,9 +261,9 @@ describe('strict Science fold', () => {
     expect(() => foldScience(missingHeader)).toThrow(/not the latest post-mode request\/header/)
 
     const missingRun = legalEvents()
-    missingRun[7] = event('science/chart-saved', 7, 170, {
+    missingRun[7] = event('science/artifact-saved', 7, 170, {
       version: 1,
-      chart: chart({ runId: ScienceRunId('missing-run') }),
+      artifact: artifact({ runId: ScienceRunId('missing-run') }),
     })
     expect(() => foldScience(missingRun)).toThrow(/successful prior run/)
 

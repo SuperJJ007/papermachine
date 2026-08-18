@@ -186,7 +186,7 @@ describe('Science cold replay', () => {
     expect(ctx.sessionProjections.restoreFloor(mismatched)).toBe(0)
     const restored = ctx.sessionProjections.restore(mismatched, session.events, 0)
     expect(restored.snapshot.values.science).toEqual(live)
-    expect(restored.checkpoint.science?.ver).toBe(2)
+    expect(restored.checkpoint.science?.ver).toBe(SCIENCE_PROJECTION_STATE_VERSION)
 
     const empty = ctx.sessionProjections.restore(mismatched, [], 0)
     expect(empty.snapshot.values.science).toBeNull()

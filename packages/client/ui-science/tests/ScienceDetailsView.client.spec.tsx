@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ConversationSnapshot, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceClientChartVersion, ScienceClientProjection, ScienceClientRun,
+  ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceDetailsView, type ScienceDetailsViewProps } from '../src/client/ScienceDetailsView.tsx'
 import { en } from '../src/client/locales.ts'
@@ -31,20 +31,21 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
     runs: [],
-    charts: [],
+    artifacts: [],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, chartCount: 0, chartVersionCount: 0, outcomeRevision: 0 },
+    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
     lastScienceEventSeq: 1,
     ...over,
   }
 }
 
-function chart(over: Partial<ScienceClientChartVersion> = {}): ScienceClientChartVersion {
+function chart(over: Partial<ScienceClientArtifactVersion> = {}): ScienceClientArtifactVersion {
   return {
-    chartId: 'chart-1' as never,
+    artifactId: 'chart-1' as never,
     logicalName: 'loss-curve',
     version: 1,
     title: 'Loss curve',
+    origin: 'model',
     attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
     runId: 'run-1' as never,
     toolCallId: 'call-chart-1' as never,
@@ -156,9 +157,9 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 
   it('renders one gallery entry per logical chart at its latest accepted version', () => {
     const science = baseProjection({
-      charts: [
+      artifacts: [
         chart({ version: 1 }), chart({ version: 2 }), chart({ version: 1 }),
-        chart({ chartId: 'chart-2' as never, title: 'Other', version: 1 }),
+        chart({ artifactId: 'chart-2' as never, title: 'Other', version: 1 }),
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
@@ -171,7 +172,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const view = render(<ScienceDetailsView {...props(science, { loadImage })} />)
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
     expect(loadImage.mock.calls[0]?.[0]).toMatchObject({ attachmentId: 'sha256:abc' })
@@ -180,13 +181,13 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 
   it('reports unavailable attachments distinctly when the loader rejects', async () => {
     const loadImage = vi.fn().mockRejectedValue(new Error('network'))
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     render(<ScienceDetailsView {...props(science, { loadImage })} />)
     expect(await screen.findByRole('button', { name: 'Failed to load, click to retry' })).toBeTruthy()
   })
 
   it('activates a gallery entry on Enter/Space and ignores every other key', () => {
-    const science = baseProjection({ charts: [chart({ version: 1 })] })
+    const science = baseProjection({ artifacts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
     const gallery = document.querySelector('[role="button"]') as HTMLElement
     fireEvent.keyDown(gallery, { key: 'a' })
@@ -220,7 +221,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 
 describe('ScienceDetailsView: opening a tab', () => {
   it('clicking a gallery entry opens its tab, shows the tab strip and toolbar, and switches away from the landing view', () => {
-    const science = baseProjection({ charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })] })
+    const science = baseProjection({ artifacts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })] })
     render(<ScienceDetailsView {...props(science)} />)
     fireEvent.click(screen.getByText('v2 title'))
 
@@ -233,7 +234,7 @@ describe('ScienceDetailsView: opening a tab', () => {
 describe('ScienceDetailsView: tab strip', () => {
   function twoTabs() {
     const science = baseProjection({
-      charts: [chart({ chartId: 'chart-1' as never, title: 'Alpha' }), chart({ chartId: 'chart-2' as never, title: 'Beta' })],
+      artifacts: [chart({ artifactId: 'chart-1' as never, title: 'Alpha' }), chart({ artifactId: 'chart-2' as never, title: 'Beta' })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
@@ -272,7 +273,7 @@ describe('ScienceDetailsView: tab strip', () => {
   })
 
   it('a stale tab (chart no longer present in the projection) shows its raw id and the unavailable notice', () => {
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'missing-chart' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
@@ -284,7 +285,7 @@ describe('ScienceDetailsView: tab strip', () => {
 describe('ScienceDetailsView: toolbar version stepper', () => {
   function threeVersions() {
     const science = baseProjection({
-      charts: [
+      artifacts: [
         chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
         chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
         chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
@@ -327,7 +328,7 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
 describe('ScienceDetailsView: content dispatch', () => {
   it.each(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const)('renders an image for %s attachments', async (mediaType) => {
     const science = baseProjection({
-      charts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
@@ -337,7 +338,7 @@ describe('ScienceDetailsView: content dispatch', () => {
   })
 
   it('renders the source run and dimensions in the content facts', () => {
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
@@ -349,7 +350,7 @@ describe('ScienceDetailsView: content dispatch', () => {
 describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
   it('opens when maximize is clicked, and closes back through the same store', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
@@ -365,7 +366,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 
   it('reports the lightbox image as unavailable when the loader rejects (no dialog, no crash)', async () => {
     const loadImage = vi.fn().mockRejectedValue(new Error('network'))
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
@@ -381,7 +382,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
       void attachment
       return new Promise<string>((resolve) => { resolveLoad = resolve })
     })
-    const science = baseProjection({ charts: [chart()] })
+    const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
@@ -396,9 +397,9 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 })
 
 describe('ScienceDetailsView: download', () => {
-  function withOneTab(attachmentOver: Partial<ScienceClientChartVersion['attachment']> = {}) {
+  function withOneTab(attachmentOver: Partial<ScienceClientArtifactVersion['attachment']> = {}) {
     const science = baseProjection({
-      charts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
@@ -450,7 +451,7 @@ describe('ScienceDetailsView: download', () => {
 
 describe('ScienceDetailsView: provenance drill-in', () => {
   function withRunAndChart() {
-    const science = baseProjection({ runs: [run()], charts: [chart()] })
+    const science = baseProjection({ runs: [run()], artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     return { science, store }
@@ -485,7 +486,7 @@ describe('ScienceDetailsView: provenance drill-in', () => {
   })
 
   it('reports the artifact as unavailable in the drill-in when the source run no longer resolves', () => {
-    const science = baseProjection({ runs: [], charts: [chart()] })
+    const science = baseProjection({ runs: [], artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
     store.actions.setView('provenance')

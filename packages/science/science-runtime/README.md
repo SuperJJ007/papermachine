@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`@deepseek-ai/dsh-science-runtime` provides the folded, host-local Conda Runtime for durable Science environment, run, and chart facts. It owns `ctx.scienceRuntime`, private per-Session scratch, direct Python/R argv construction, stable prefix observation, exact-Session leases, terminal result classification, and PNG import into the attachment store. It registers no model-facing tool, prompt, preset, or UI.
+`@deepseek-ai/dsh-science-runtime` provides the folded, host-local Conda Runtime for durable Science environment, run, and artifact facts. It owns `ctx.scienceRuntime`, private per-Session scratch, direct Python/R argv construction, stable prefix observation, exact-Session leases, terminal result classification, and PNG import into the attachment store. It registers no model-facing tool, prompt, preset, or UI.
 
 ## Composition
 
@@ -37,7 +37,7 @@ Both entries provide the same `ctx.scienceRuntime` Cordis service, and that serv
 
 `startRun({ session, language, code, toolCallId, requestHeaderSeq, signal })` re-observes the applied binding, writes unchanged UTF-8 source into a private run directory, appends `science/run-started`, and returns a `ScienceRunHandle`. The handle exposes only `runId`, `done`, and idempotent `cancel()`; it exposes neither a PID nor Host scratch paths. Its resolved result carries the committed terminal record plus bounded operational stdout/stderr tails, exact byte counts, and truncation facts. Output text never enters a Science Session event.
 
-`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` accepts only a successful run started locally in the exact Session, resolves one regular non-symlink PNG below that run's private `SCIENCE_ARTIFACT_DIR`, and reads at most the attachment store's byte cap plus one. `ctx.attachments.saveImage` remains the media admission authority. The Runtime persists the attachment before appending a complete `science/chart-saved` version, retains a stable chart id across one logical name's contiguous versions, and publishes no Host path.
+`commitChart({ session, runId, artifactPath, logicalName, title, caption, toolCallId, requestHeaderSeq, signal })` accepts only a successful run started locally in the exact Session, resolves one regular non-symlink PNG below that run's private `SCIENCE_ARTIFACT_DIR`, and reads at most the attachment store's byte cap plus one. `ctx.attachments.saveImage` remains the media admission authority. The Runtime persists the attachment before appending a complete `science/artifact-saved` version with `origin: 'model'`, retains a stable artifact id across one logical name's contiguous versions, and publishes no Host path.
 
 The Runtime rejects pre-publication misuse or capability failures with `ScienceRuntimeError`. After a start event commits, ordinary process, runner, denial, cancellation, and timeout outcomes append one matching terminal event. If bounded settlement cannot prove whole-tree quiescence, `done` rejects while the Runtime retains the lease; a later positive proof appends the terminal fact before releasing a still-live Session, while a false or rejected proof keeps it quarantined. `done` also rejects when a still-live Session cannot commit the terminal fact or an unexpected detached Session makes a commit forbidden.
 

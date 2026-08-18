@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from '../src/client/selection-store.ts'
 import { ScienceArtifactProvenance, type ScienceArtifactProvenanceProps } from '../src/client/ScienceArtifactProvenance.tsx'
 import { en } from '../src/client/locales.ts'
@@ -26,9 +26,9 @@ const t: Props['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-function chart(over: Partial<ScienceClientChartVersion> = {}): ScienceClientChartVersion {
+function chart(over: Partial<ScienceClientArtifactVersion> = {}): ScienceClientArtifactVersion {
   return {
-    chartId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve',
+    artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve', origin: 'model',
     attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 10, width: 1, height: 1 },
     runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8,
     environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 3_000,
@@ -100,7 +100,7 @@ function snapshotWith(block: ToolCallBlock | undefined): ConversationSnapshot {
 }
 
 function props(over: {
-  chart?: ScienceClientChartVersion
+  chart?: ScienceClientArtifactVersion
   run?: ScienceClientRun
   environment?: ScienceClientEnvironmentBinding | null | undefined
   block?: ToolCallBlock | undefined

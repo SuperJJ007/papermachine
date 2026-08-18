@@ -2,13 +2,13 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceScratchKey,
 } from '../src/index.ts'
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterAvailableBinding,
   ScienceInterpreterUnavailableBinding,
@@ -24,9 +24,9 @@ export const PACKAGES_SHA = 'f'.repeat(64)
 const CODE_SHA = 'c'.repeat(64)
 const SCRATCH_KEY = ScienceScratchKey('d'.repeat(64))
 export const RUN_ID = ScienceRunId('run-1')
-export const CHART_ID = ScienceChartId('chart-1')
+export const ARTIFACT_ID = ScienceArtifactId('artifact-1')
 export const RUN_CALL_ID = CallId('call-run')
-export const CHART_CALL_ID = CallId('call-chart')
+export const ARTIFACT_CALL_ID = CallId('call-chart')
 export const OUTCOME_CALL_ID = CallId('call-outcome')
 
 export const interpreter = (
@@ -114,13 +114,14 @@ export const runTerminal = (
   ...overrides,
 })
 
-export const chart = (
-  overrides: Partial<ScienceChartVersion> = {},
-): ScienceChartVersion => ({
-  chartId: CHART_ID,
+export const artifact = (
+  overrides: Partial<ScienceArtifactVersion> = {},
+): ScienceArtifactVersion => ({
+  artifactId: ARTIFACT_ID,
   logicalName: 'trend',
   version: 1,
   title: 'Trend',
+  origin: 'model',
   attachment: {
     attachmentId: AttachmentId('attachment-1'),
     mediaType: 'image/png',
@@ -130,7 +131,7 @@ export const chart = (
     name: 'trend.png',
   },
   runId: RUN_ID,
-  toolCallId: CHART_CALL_ID,
+  toolCallId: ARTIFACT_CALL_ID,
   requestHeaderSeq: 2,
   environmentRevision: 1,
   environmentFingerprint: FINGERPRINT,
@@ -144,7 +145,7 @@ export const outcome = (
   revision: 1,
   title: 'Result',
   summaryMarkdown: 'The trend is stable.',
-  evidence: [{ kind: 'chart', chartId: CHART_ID, version: 1 }],
+  evidence: [{ kind: 'chart', chartId: ARTIFACT_ID, version: 1 }],
   publishedAt: 179,
   toolCallId: OUTCOME_CALL_ID,
   requestHeaderSeq: 2,
@@ -198,8 +199,8 @@ export function legalEvents(): SessionEvent[] {
     toolCall(3, 130, RUN_CALL_ID, 'run_python'),
     event('science/run-started', 4, 140, { version: 1, run: runStarted() }),
     event('science/run-finished', 5, 150, { version: 1, run: runTerminal() }),
-    toolCall(6, 160, CHART_CALL_ID, 'save_chart'),
-    event('science/chart-saved', 7, 170, { version: 1, chart: chart() }),
+    toolCall(6, 160, ARTIFACT_CALL_ID, 'save_chart'),
+    event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact() }),
     toolCall(8, 175, OUTCOME_CALL_ID, 'publish_outcome'),
     event('science/outcome-published', 9, 180, { version: 1, outcome: outcome() }),
   ]
@@ -254,19 +255,19 @@ export function appendFixtureEvents(
     }),
   })
   if (events.length === 6) return
-  const chartCall = session.append('tool/call', {
+  const artifactCall = session.append('tool/call', {
     turn: 1,
     step: 1,
-    callId: CHART_CALL_ID,
+    callId: ARTIFACT_CALL_ID,
     name: 'save_chart',
     arguments: '{}',
   })
   if (events.length === 7) return
-  const chartSaved = session.append('science/chart-saved', {
+  const artifactSaved = session.append('science/artifact-saved', {
     version: 1,
-    chart: chart({
+    artifact: artifact({
       requestHeaderSeq: request.seq,
-      createdAt: Math.max(runFinish.time, chartCall.time),
+      createdAt: Math.max(runFinish.time, artifactCall.time),
     }),
   })
   if (events.length === 8) return
@@ -282,7 +283,7 @@ export function appendFixtureEvents(
     version: 1,
     outcome: outcome({
       requestHeaderSeq: request.seq,
-      publishedAt: Math.max(chartSaved.time, outcomeCall.time),
+      publishedAt: Math.max(artifactSaved.time, outcomeCall.time),
     }),
   })
 }

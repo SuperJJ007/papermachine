@@ -9,9 +9,9 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { ScienceChartId, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { ScienceArtifactId, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
-  ScienceChartVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceProjection,
@@ -324,7 +324,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @param request - Exact live Session, source run, artifact path, and cancellation.
    * @returns The durable chart version this operation appended.
    */
-  async commitChart(request: CommitScienceChartRequest): Promise<ScienceChartVersion> {
+  async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion> {
     const projection = this.assertSession(request.session)
     this.assertHostLocal()
     const source = projection.runs.find(run => run.runId === request.runId)
@@ -378,14 +378,15 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           `Science run ${JSON.stringify(request.runId)} is no longer a durably successful run`,
         )
       }
-      const logical = current.charts.filter(chart => chart.logicalName === request.logicalName)
+      const logical = current.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
       const latest = logical.at(-1)
-      const chart: ScienceChartVersion = {
-        chartId: latest?.chartId ?? ScienceChartId(randomUUID()),
+      const artifact: ScienceArtifactVersion = {
+        artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
         logicalName: request.logicalName,
         version: latest === undefined ? 1 : latest.version + 1,
         title: request.title,
         ...(request.caption === undefined ? {} : { caption: request.caption }),
+        origin: 'model',
         attachment,
         runId: request.runId,
         toolCallId: request.toolCallId,
@@ -394,8 +395,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         environmentFingerprint: currentSource.environmentFingerprint,
         createdAt: Date.now(),
       }
-      request.session.append('science/chart-saved', { version: 1, chart })
-      return chart
+      request.session.append('science/artifact-saved', { version: 1, artifact })
+      return artifact
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {

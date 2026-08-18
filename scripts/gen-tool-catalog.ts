@@ -563,7 +563,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       save_chart: 'packages/science/tool-science/src/save-chart.ts',
     },
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, each run_python/run_r call, and save_chart)'],
-    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/chart-saved', 'science/outcome-published', 'tool/result'],
+    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/artifact-saved', 'science/outcome-published', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ToolScience, {
         profileId: 'catalog',

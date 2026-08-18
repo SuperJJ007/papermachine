@@ -21,7 +21,7 @@ import {
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  ScienceChartId,
+  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceScratchKey,
@@ -56,7 +56,7 @@ const PNG = Uint8Array.from(Buffer.from(
 ))
 const FINGERPRINT = 'b'.repeat(64)
 const RUN_ID = ScienceRunId('run-browser-1')
-const CHART_ID = ScienceChartId('chart-browser-1')
+const CHART_ID = ScienceArtifactId('chart-browser-1')
 const RUN_CALL_ID = CallId('call-run-browser')
 const FIRST_CHART_CALL_ID = CallId('call-chart-browser-1')
 const SECOND_CHART_CALL_ID = CallId('call-chart-browser-2')
@@ -178,14 +178,15 @@ function scienceFixture(stored: ImageAttachmentRef): string {
       turn: 1, step: 1, callId, name: 'save_chart', arguments: '{}',
     })
     const createdAt = eventTime(call.seq + 1)
-    session.append('science/chart-saved', {
+    session.append('science/artifact-saved', {
       version: 1,
-      chart: {
-        chartId: CHART_ID,
+      artifact: {
+        artifactId: CHART_ID,
         logicalName: 'observed-series',
         version,
         title: version === 1 ? 'Observed series' : 'Missing revision',
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
+        origin: 'model',
         attachment,
         runId: RUN_ID,
         toolCallId: callId,

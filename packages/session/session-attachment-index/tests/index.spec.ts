@@ -15,7 +15,7 @@ import SessionAttachmentIndex, { SessionAttachmentIndexError } from '../src/inde
 
 declare module '@deepseek-ai/dsh-session-attachment-index/types' {
   interface SessionAttachmentExtractorMap {
-    'science/chart-saved': true
+    'science/artifact-saved': true
   }
 }
 
@@ -36,12 +36,12 @@ function userMessageEvent(id: string): SessionEvent {
   } as unknown as SessionEvent
 }
 
-function chartSavedEvent(id: string | undefined): SessionEvent {
+function artifactSavedEvent(id: string | undefined): SessionEvent {
   return {
-    type: 'science/chart-saved',
+    type: 'science/artifact-saved',
     seq: 2,
     time: 1,
-    data: id === undefined ? {} : { chart: { attachment: ref(id) } },
+    data: id === undefined ? {} : { artifact: { attachment: ref(id) } },
   } as unknown as SessionEvent
 }
 
@@ -72,9 +72,9 @@ describe('SessionAttachmentIndex', () => {
 
   it('fails loud for a known extractor-required type with no live registration', async () => {
     const ctx = await harness()
-    expect(() => ctx.sessionAttachments.extract(chartSavedEvent('sha256:a'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:a'))).toThrow(SessionAttachmentIndexError)
     try {
-      ctx.sessionAttachments.extract(chartSavedEvent('sha256:a'))
+      ctx.sessionAttachments.extract(artifactSavedEvent('sha256:a'))
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(SessionAttachmentIndexError)
@@ -84,49 +84,49 @@ describe('SessionAttachmentIndex', () => {
 
   it('delegates to a live registered extractor for its exact event type', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/chart-saved', (event) => {
-      const chart = (event.data as { chart?: { attachment?: ImageAttachmentRef } }).chart
-      if (chart?.attachment === undefined) throw new Error('malformed chart-saved event')
-      return [chart.attachment]
+    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
+      const artifact = (event.data as { artifact?: { attachment?: ImageAttachmentRef } }).artifact
+      if (artifact?.attachment === undefined) throw new Error('malformed artifact-saved event')
+      return [artifact.attachment]
     })
-    expect(ctx.sessionAttachments.extract(chartSavedEvent('sha256:b')).map(r => String(r.attachmentId)))
+    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:b')).map(r => String(r.attachmentId)))
       .toEqual(['sha256:b'])
   })
 
   it('propagates a registered extractor throwing on malformed data rather than degrading to empty', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/chart-saved', (event) => {
-      const chart = (event.data as { chart?: { attachment?: ImageAttachmentRef } }).chart
-      if (chart?.attachment === undefined) throw new Error('malformed chart-saved event')
-      return [chart.attachment]
+    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
+      const artifact = (event.data as { artifact?: { attachment?: ImageAttachmentRef } }).artifact
+      if (artifact?.attachment === undefined) throw new Error('malformed artifact-saved event')
+      return [artifact.attachment]
     })
-    expect(() => ctx.sessionAttachments.extract(chartSavedEvent(undefined))).toThrow('malformed chart-saved event')
+    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent(undefined))).toThrow('malformed artifact-saved event')
   })
 
   it('removes a registration through its own returned disposer', async () => {
     const ctx = await harness()
-    const unregister = ctx.sessionAttachments.register('science/chart-saved', event =>
-      [(event.data as { chart: { attachment: ImageAttachmentRef } }).chart.attachment])
-    expect(ctx.sessionAttachments.extract(chartSavedEvent('sha256:c')).length).toBe(1)
+    const unregister = ctx.sessionAttachments.register('science/artifact-saved', event =>
+      [(event.data as { artifact: { attachment: ImageAttachmentRef } }).artifact.attachment])
+    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c')).length).toBe(1)
     unregister()
-    expect(() => ctx.sessionAttachments.extract(chartSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 
   it('removes a registration when its owning fiber is disposed (HMR safety)', async () => {
     const ctx = await harness()
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      inner.sessionAttachments.register('science/chart-saved', event =>
-        [(event.data as { chart: { attachment: ImageAttachmentRef } }).chart.attachment])
+      inner.sessionAttachments.register('science/artifact-saved', event =>
+        [(event.data as { artifact: { attachment: ImageAttachmentRef } }).artifact.attachment])
     }, { inject: ['sessionAttachments'] }))
-    expect(ctx.sessionAttachments.extract(chartSavedEvent('sha256:c')).length).toBe(1)
+    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c')).length).toBe(1)
     await fiber.dispose()
-    expect(() => ctx.sessionAttachments.extract(chartSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 
   it('rejects a second live registration for the same key', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/chart-saved', () => [])
-    expect(() => ctx.sessionAttachments.register('science/chart-saved', () => []))
+    ctx.sessionAttachments.register('science/artifact-saved', () => [])
+    expect(() => ctx.sessionAttachments.register('science/artifact-saved', () => []))
       .toThrow(/already registered/)
   })
 

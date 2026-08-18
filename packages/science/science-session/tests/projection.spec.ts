@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
-import { CHART_CALL_ID, CHART_ID, FINGERPRINT, PACKAGES_SHA, RUN_CALL_ID, RUN_ID, legalEvents } from './fixtures.ts'
+import { ARTIFACT_CALL_ID, ARTIFACT_ID, FINGERPRINT, PACKAGES_SHA, RUN_CALL_ID, RUN_ID, legalEvents } from './fixtures.ts'
 
 describe('Science projection replay', () => {
   it('projects all six event types and derives stable metrics', () => {
@@ -14,13 +14,13 @@ describe('Science projection replay', () => {
         python: { packages: [{ name: 'pip', version: '24.0' }], packagesTruncated: false, packagesSha256Preview: PACKAGES_SHA.slice(0, 12) },
       },
       runs: [{ runId: RUN_ID, status: 'success', toolCallId: RUN_CALL_ID, requestHeaderSeq: 2 }],
-      charts: [{ chartId: CHART_ID, version: 1, toolCallId: CHART_CALL_ID, requestHeaderSeq: 2 }],
+      artifacts: [{ artifactId: ARTIFACT_ID, version: 1, toolCallId: ARTIFACT_CALL_ID, requestHeaderSeq: 2 }],
       outcome: { revision: 1 },
       metrics: {
         runCount: 1,
         successfulRunCount: 1,
-        chartCount: 1,
-        chartVersionCount: 1,
+        artifactCount: 1,
+        artifactVersionCount: 1,
         outcomeRevision: 1,
       },
       lastScienceEventSeq: 9,
@@ -50,14 +50,14 @@ describe('Science projection replay', () => {
     expect(toClientScienceProjection(replayScience([]))).toBeNull()
   })
 
-  it('sanitizes optional interpreter, run, and chart fields without inventing absent values', () => {
+  it('sanitizes optional interpreter, run, and artifact fields without inventing absent values', () => {
     const host = replayScience(legalEvents())!
     const environment = host.environment!
     const python = environment.python!
     const terminal = host.runs[0]!
     if (terminal.status !== 'success') throw new Error('fixture run is not successful')
     const { exitCode: _exitCode, ...withoutExitCode } = terminal
-    const chart = host.charts[0]!
+    const artifact = host.artifacts[0]!
     const unavailableR = {
       language: 'r' as const,
       configuredPrefix: 'C:\\private-science',
@@ -77,7 +77,7 @@ describe('Science projection replay', () => {
         { ...terminal, signal: 'TERM', failureCode: 'RUN_FAILED' },
         { ...terminal, signal: '/private/TERM' },
       ],
-      charts: [{ ...chart, caption: 'A safe caption.' }],
+      artifacts: [{ ...artifact, caption: 'A safe caption.' }],
     })!
 
     expect(client.environment).toMatchObject({
@@ -91,7 +91,7 @@ describe('Science projection replay', () => {
     expect(client.runs[0]).not.toHaveProperty('exitCode')
     expect(client.runs[1]).toMatchObject({ signal: 'TERM', failureCode: 'RUN_FAILED' })
     expect(client.runs[2]).not.toHaveProperty('signal')
-    expect(client.charts[0]).toMatchObject({ caption: 'A safe caption.' })
+    expect(client.artifacts[0]).toMatchObject({ caption: 'A safe caption.' })
 
     const { python: _python, ...environmentWithoutPython } = environment
     expect(toClientScienceProjection({

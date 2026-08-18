@@ -1,7 +1,7 @@
 /**
  * Freshness gate: every `KNOWN_SESSION_EVENT_TYPES` member is classified
  * exactly once by this package's closed policy lists, except the one
- * currently-known extractor-required type (`science/chart-saved`), which
+ * currently-known extractor-required type (`science/artifact-saved`), which
  * intentionally has no static entry — its classification comes from a live
  * `register()` call instead. Adding a known event type without updating one
  * of the lists below (or this allowlist, for a genuinely new
@@ -17,7 +17,7 @@ import {
 } from '../src/policy.ts'
 
 /** Known types with no static entry today; each authorizes only through a live registration. */
-const KNOWN_EXTRACTOR_REQUIRED_EVENT_TYPES = new Set(['science/chart-saved'])
+const KNOWN_EXTRACTOR_REQUIRED_EVENT_TYPES = new Set(['science/artifact-saved'])
 
 describe('session attachment policy', () => {
   it('classifies every known session event type exactly once', () => {
@@ -45,7 +45,7 @@ describe('session attachment policy', () => {
   })
 
   it('resolves no static policy for an extractor-required or unrecognized type', () => {
-    expect(staticAttachmentPolicy('science/chart-saved')).toBeUndefined()
+    expect(staticAttachmentPolicy('science/artifact-saved')).toBeUndefined()
     expect(staticAttachmentPolicy('not-a-real-event-type')).toBeUndefined()
   })
 })

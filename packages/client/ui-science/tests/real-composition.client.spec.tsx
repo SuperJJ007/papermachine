@@ -133,14 +133,14 @@ async function bench() {
       codeSha256: 'c'.repeat(64), status: 'success', finishedAt: 900,
       stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
     }],
-    charts: [{
-      chartId: CHART_META.chartId, logicalName: CHART_META.logicalName, version: CHART_META.chartVersion,
-      title: CHART_META.title, attachment: CHART_META.attachment, runId: 'run-1',
+    artifacts: [{
+      artifactId: CHART_META.chartId, logicalName: CHART_META.logicalName, version: CHART_META.chartVersion,
+      title: CHART_META.title, origin: 'model', attachment: CHART_META.attachment, runId: 'run-1',
       toolCallId: CALL_ID, requestHeaderSeq: 1, environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: CHART_META.createdAt,
     }],
     outcome: null,
-    metrics: { runCount: 1, successfulRunCount: 1, chartCount: 1, chartVersionCount: 1, outcomeRevision: 0 },
+    metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 0 },
     lastScienceEventSeq: 5,
   })
 

@@ -42,7 +42,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'request/header',
   'sandbox/mode',
   'schedule/change',
-  'science/chart-saved',
+  'science/artifact-saved',
   'science/environment-bound',
   'science/mode-bound',
   'science/outcome-published',

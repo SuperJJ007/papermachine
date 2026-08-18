@@ -5,7 +5,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import { ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceChartVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { latestRequestHeaderSeq, requireScienceSession } from './run.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceChartPresentation } from './presentation.ts'
@@ -38,9 +38,9 @@ export type ScienceChartReceiptValue = InferValue<typeof chartReceiptSchema>
  * @param chart - the durable chart version `ctx.scienceRuntime.commitChart(...)` appended.
  * @returns the canonical structured value the tool returns.
  */
-export function chartReceiptFromChart(chart: ScienceChartVersion): ScienceChartReceiptValue {
+export function chartReceiptFromChart(chart: ScienceArtifactVersion): ScienceChartReceiptValue {
   return {
-    chartId: String(chart.chartId),
+    chartId: String(chart.artifactId),
     logicalName: chart.logicalName,
     version: chart.version,
     title: chart.title,

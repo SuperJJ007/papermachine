@@ -3,11 +3,11 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { ScienceRunId } from '../src/index.ts'
 import { foldScience } from '../src/fold.ts'
 import {
-  CHART_CALL_ID,
+  ARTIFACT_CALL_ID,
   OUTCOME_CALL_ID,
   RUN_CALL_ID,
   RUN_ID,
-  chart,
+  artifact,
   environment,
   environmentWithoutPython,
   event,
@@ -57,18 +57,18 @@ describe('strict Science provenance', () => {
       ['chart request header', [
         event('request/header', 0, 90, {}),
         ...validRunPrefix,
-        toolCall(7, 160, CHART_CALL_ID, 'save_chart'),
-        event('science/chart-saved', 8, 170, {
+        toolCall(7, 160, ARTIFACT_CALL_ID, 'save_chart'),
+        event('science/artifact-saved', 8, 170, {
           version: 1,
-          chart: chart({ requestHeaderSeq: 0 }),
+          artifact: artifact({ requestHeaderSeq: 0 }),
         }),
       ], /cannot follow pre-mode/],
       ['chart tool call', [
-        toolCall(0, 90, CHART_CALL_ID, 'save_chart'),
+        toolCall(0, 90, ARTIFACT_CALL_ID, 'save_chart'),
         ...validRunPrefix,
-        event('science/chart-saved', 7, 170, {
+        event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ requestHeaderSeq: 3 }),
+          artifact: artifact({ requestHeaderSeq: 3 }),
         }),
       ], /cannot follow pre-mode/],
       ['outcome request header', [
@@ -129,9 +129,9 @@ describe('strict Science provenance', () => {
       ]],
       ['chart', [
         ...legalEvents().slice(0, 8),
-        event('science/chart-saved', 8, 180, {
+        event('science/artifact-saved', 8, 180, {
           version: 1,
-          chart: chart({ version: 2, createdAt: 179 }),
+          artifact: artifact({ version: 2, createdAt: 179 }),
         }),
       ]],
       ['outcome', [
@@ -154,8 +154,8 @@ describe('strict Science provenance', () => {
       ]],
       ['chart', [
         ...legalEvents().slice(0, 7),
-        toolResult(7, 165, CHART_CALL_ID),
-        event('science/chart-saved', 8, 170, { version: 1, chart: chart() }),
+        toolResult(7, 165, ARTIFACT_CALL_ID),
+        event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
       ]],
       ['outcome', [
         ...legalEvents().slice(0, 9),
@@ -183,7 +183,7 @@ describe('strict Science provenance', () => {
       ['chart', [
         ...legalEvents().slice(0, 7),
         event('step/end', 7, 165, { turn: 1, step: 1 }),
-        event('science/chart-saved', 8, 170, { version: 1, chart: chart() }),
+        event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
       ]],
       ['outcome', [
         ...legalEvents().slice(0, 9),
@@ -209,7 +209,7 @@ describe('strict Science provenance', () => {
         ? toolCall(3, 130, RUN_CALL_ID, 'bash')
         : candidate), /expected run_python/],
       ['chart', legalEvents().slice(0, 8).map((candidate, index) => index === 6
-        ? toolCall(6, 160, CHART_CALL_ID, 'bash')
+        ? toolCall(6, 160, ARTIFACT_CALL_ID, 'bash')
         : candidate), /expected save_chart/],
       ['outcome', legalEvents().map((candidate, index) => index === 8
         ? toolCall(8, 175, OUTCOME_CALL_ID, 'bash')
@@ -266,25 +266,25 @@ describe('strict Science provenance', () => {
       ['request header', [
         ...legalEvents().slice(0, 6),
         event('request/header', 6, 165, {}),
-        toolCall(7, 160, CHART_CALL_ID, 'save_chart'),
-        event('science/chart-saved', 8, 170, {
+        toolCall(7, 160, ARTIFACT_CALL_ID, 'save_chart'),
+        event('science/artifact-saved', 8, 170, {
           version: 1,
-          chart: chart({ requestHeaderSeq: 6, createdAt: 164 }),
+          artifact: artifact({ requestHeaderSeq: 6, createdAt: 164 }),
         }),
       ]],
       ['tool call', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/chart-saved', 7, 170, {
+        ? event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ createdAt: 159 }),
+          artifact: artifact({ createdAt: 159 }),
         })
         : candidate)],
       ['source terminal event', [
         ...legalEvents().slice(0, 5),
         event('science/run-finished', 5, 165, { version: 1, run: runTerminal() }),
-        toolCall(6, 150, CHART_CALL_ID, 'save_chart'),
-        event('science/chart-saved', 7, 170, {
+        toolCall(6, 150, ARTIFACT_CALL_ID, 'save_chart'),
+        event('science/artifact-saved', 7, 170, {
           version: 1,
-          chart: chart({ createdAt: 164 }),
+          artifact: artifact({ createdAt: 164 }),
         }),
       ]],
     ]

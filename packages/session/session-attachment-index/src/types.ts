@@ -21,7 +21,7 @@ export type SessionAttachmentPolicy = 'built-in' | 'attachment-free' | 'extracto
  * extractor-required known event type augments this interface — typically
  * beside its own `SessionEventMap` merge — to widen the registration's typed
  * key set. For example, the augmented interface can declare a
- * `'science/chart-saved': true` member beside its domain's session event map.
+ * `'science/artifact-saved': true` member beside its domain's session event map.
  * The literal value carries no information; only the key matters. A type
  * this package already classifies `built-in` or `attachment-free` in its own
  * static policy table cannot also appear here — `register()` rejects that at

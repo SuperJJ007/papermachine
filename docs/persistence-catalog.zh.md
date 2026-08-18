@@ -604,13 +604,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `science/*`
 
-<a id="sciencechart-saved--log-only"></a>
+<a id="scienceartifact-saved--log-only"></a>
 
-#### `science/chart-saved` — log-only
+#### `science/artifact-saved` — log-only
 
 ```ts persistence-catalog
-/** Records one immutable Science chart attachment version. */
-'science/chart-saved': ScienceChartSavedEvent
+/** Records one immutable Science artifact attachment version. */
+'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 
 来源：[`packages/science/science-session/src/domain.ts:59`](../packages/science/science-session/src/domain.ts)

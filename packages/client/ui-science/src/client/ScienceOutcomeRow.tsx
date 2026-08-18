@@ -71,7 +71,7 @@ function EvidenceItem({ item, science, loadImage, t }: {
     return <li className={css.evidenceItem}>{t('outcome.evidenceMessage', { seq: item.seq })}</li>
   }
   const label = t('outcome.evidenceChart', { chartId: item.chart_id, version: item.version })
-  const chart = science?.charts.find(candidate => String(candidate.chartId) === item.chart_id && candidate.version === item.version)
+  const chart = science?.artifacts.find(candidate => String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
   if (chart === undefined) {
     return (
       <li className={css.evidenceItem}>

@@ -56,15 +56,15 @@ function projectionWithChart(): ScienceClientProjection {
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
     runs: [],
-    charts: [{
-      chartId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve',
+    artifacts: [{
+      artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve', origin: 'model',
       attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
       runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4,
       environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
     }],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, chartCount: 1, chartVersionCount: 1, outcomeRevision: 1 },
+    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1 },
     lastScienceEventSeq: 1,
   }
 }
@@ -193,7 +193,7 @@ describe('ScienceOutcomeRow', () => {
   it('renders a chart thumbnail with its display name when the projected attachment carries one', async () => {
     const named: ScienceClientProjection = {
       ...projectionWithChart(),
-      charts: [{ ...projectionWithChart().charts[0]!, attachment: { ...projectionWithChart().charts[0]!.attachment, name: 'loss.png' } }],
+      artifacts: [{ ...projectionWithChart().artifacts[0]!, attachment: { ...projectionWithChart().artifacts[0]!.attachment, name: 'loss.png' } }],
     }
     const load = vi.fn().mockResolvedValue('blob:fake-url')
     render(<ScienceOutcomeRow {...props(settled({ meta: validMeta }), named, load)} />)

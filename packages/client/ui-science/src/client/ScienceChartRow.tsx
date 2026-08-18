@@ -17,7 +17,7 @@ import { IconDataOutline16, IconFullscreenOutline16, StateDot } from '@deepseek-
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ScienceChartPresentation } from '@deepseek-ai/dsh-tool-science/types'
-import type { ScienceChartId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceSelectionStore } from './selection-store.ts'
 import css from './ScienceChartRow.module.css'
 import {
@@ -120,7 +120,7 @@ export function ScienceChartRow({ block, loadImage, openDetailsView, actions, t 
   }
 
   const activate = (): void => {
-    actions.openTab({ chartId: presentation.chartId as ScienceChartId, version: presentation.chartVersion })
+    actions.openTab({ chartId: presentation.chartId as ScienceArtifactId, version: presentation.chartVersion })
     openDetailsView(SCIENCE_DETAILS_ID)
   }
 

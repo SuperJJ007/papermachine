@@ -717,9 +717,14 @@ describe('ScienceRuntime.startRun', () => {
       expect(session.events.filter(event => event.type === 'science/run-finished')).toHaveLength(1)
     })
     const retry = harness.subprocess.queueRun('immediate')
-    const retryHandle = await harness.runtime.startRun({
-      session, language: 'python', code: 'print(2)', ...authorizePythonRun(session, 'science-unproven-retry'), signal: new AbortController().signal,
-    })
+    // The eventual-terminal branch runs its own auto-capture walk (async,
+    // science-runtime/capture.ts) before releasing the lease, after the
+    // durable run-finished fact above already committed — so the lease can
+    // still be briefly held past that fact; retry until it frees.
+    const retryAuthorization = authorizePythonRun(session, 'science-unproven-retry')
+    const retryHandle = await vi.waitFor(() => harness.runtime.startRun({
+      session, language: 'python', code: 'print(2)', ...retryAuthorization, signal: new AbortController().signal,
+    }))
     retryHandle.cancel()
     await expect(retryHandle.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
     expect(retry.terminations).toBe(1)

@@ -46,8 +46,15 @@ export function replayScience(events: readonly SessionEvent[]): ScienceProjectio
   return projectScienceFold(foldScience(events))
 }
 
-// Internal test and invariant imports use these symbols directly; the package
-// root intentionally does not re-export the mutable accumulator API.
+// The package root re-exports these three for a caller that must advance
+// the fold incrementally as new events append (a capture walk saving many
+// versions in one pass, for example): `foldScience` once up front, then
+// `applyScienceEvent` per newly appended event, then `projectScienceFold`
+// on demand — the same three-step composition `replayScience` runs in one
+// shot for a caller that already holds the complete log. `emptyScienceFoldState`
+// stays internal: `foldScience` is the only sanctioned way to produce a
+// starting accumulator, since it is also the only one that leaves
+// `nextSeq` at zero.
 export { applyScienceEvent } from './transition.ts'
-export { emptyScienceFoldState } from './fold-state.ts'
+export { projectScienceFold } from './projection-value.ts'
 export type { ScienceFoldState } from './fold-state.ts'

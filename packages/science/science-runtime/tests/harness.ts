@@ -313,6 +313,8 @@ export async function createControlledRuntimeHarness(
   timeoutMs = 10_000,
   /** Override the mounted `attachments` service, e.g. a `mediaTypes` allowlist that excludes PNG. */
   attachmentsOverride?: (ctx: Context) => void,
+  /** Additional `ScienceRuntime` Config fields (e.g. the `capture*` bounds), merged over the harness's own defaults. */
+  configOverrides?: Partial<Config>,
 ): Promise<{
   readonly ctx: Context
   readonly runtime: ScienceRuntime
@@ -335,6 +337,7 @@ export async function createControlledRuntimeHarness(
     dshHome: join(root, 'dsh-home'),
     profiles,
     timeoutMs,
+    ...configOverrides,
   })
   return {
     ctx,

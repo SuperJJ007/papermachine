@@ -1265,4 +1265,32 @@ describe('Science Runtime configuration', () => {
     expect(resolved.packagesMaxEntries).toBe(2_000)
     expect(resolved.packagesMaxBytes).toBe(65_536)
   })
+
+  it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 1_048_575,
+    })).toThrow(/captureMaxFileBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 52_428_801,
+    })).toThrow(/captureMaxFileBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFilesPerRun: 0,
+    })).toThrow(/captureMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFilesPerRun: 1_001,
+    })).toThrow(/captureMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxArtifactVersionsPerSession: 0,
+    })).toThrow(/captureMaxArtifactVersionsPerSession/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxArtifactVersionsPerSession: 10_001,
+    })).toThrow(/captureMaxArtifactVersionsPerSession/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, unknownField: 1,
+    } as never)).toThrow(/unknown field/)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.captureMaxFileBytes).toBe(5 * 1024 * 1024)
+    expect(resolved.captureMaxFilesPerRun).toBe(50)
+    expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
+  })
 })

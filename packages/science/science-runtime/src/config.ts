@@ -40,6 +40,27 @@ export const MIN_PACKAGES_MAX_BYTES = 1_024
 /** Highest accepted configured package-inventory byte bound. */
 export const MAX_PACKAGES_MAX_BYTES = 1_048_576
 
+/** Default maximum encoded bytes for one auto-captured run-written file, matching the attachment store's default image byte cap. */
+export const DEFAULT_CAPTURE_MAX_FILE_BYTES = 5 * 1024 * 1024
+/** Lowest accepted configured auto-capture per-file byte bound. */
+export const MIN_CAPTURE_MAX_FILE_BYTES = 1 * 1024 * 1024
+/** Highest accepted configured auto-capture per-file byte bound. */
+export const MAX_CAPTURE_MAX_FILE_BYTES = 50 * 1024 * 1024
+
+/** Default maximum eligible files auto-captured from one run. */
+export const DEFAULT_CAPTURE_MAX_FILES_PER_RUN = 50
+/** Lowest accepted configured auto-capture per-run file-count bound. */
+export const MIN_CAPTURE_MAX_FILES_PER_RUN = 1
+/** Highest accepted configured auto-capture per-run file-count bound. */
+export const MAX_CAPTURE_MAX_FILES_PER_RUN = 1_000
+
+/** Default maximum artifact versions retained per session before auto-capture stops appending further versions. */
+export const DEFAULT_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 500
+/** Lowest accepted configured auto-capture per-session artifact-version bound. */
+export const MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 1
+/** Highest accepted configured auto-capture per-session artifact-version bound. */
+export const MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 10_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -78,6 +99,15 @@ export interface Config {
    * inventory.
    */
   readonly packagesMaxBytes?: number
+  /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
+  readonly captureMaxFileBytes?: number
+  /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
+  readonly captureMaxFilesPerRun?: number
+  /**
+   * Maximum artifact versions a session accumulates through auto-capture
+   * before it stops appending further versions, truncated and flagged.
+   */
+  readonly captureMaxArtifactVersionsPerSession?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -112,6 +142,15 @@ export const configSchema: z<Config> = z.object({
   packagesMaxBytes: z.number().step(1)
     .min(MIN_PACKAGES_MAX_BYTES).max(MAX_PACKAGES_MAX_BYTES)
     .default(DEFAULT_PACKAGES_MAX_BYTES),
+  captureMaxFileBytes: z.number().step(1)
+    .min(MIN_CAPTURE_MAX_FILE_BYTES).max(MAX_CAPTURE_MAX_FILE_BYTES)
+    .default(DEFAULT_CAPTURE_MAX_FILE_BYTES),
+  captureMaxFilesPerRun: z.number().step(1)
+    .min(MIN_CAPTURE_MAX_FILES_PER_RUN).max(MAX_CAPTURE_MAX_FILES_PER_RUN)
+    .default(DEFAULT_CAPTURE_MAX_FILES_PER_RUN),
+  captureMaxArtifactVersionsPerSession: z.number().step(1)
+    .min(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION).max(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)
+    .default(DEFAULT_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -130,6 +169,12 @@ export interface ResolvedConfig {
   readonly packagesMaxEntries: number
   /** Explicitly resolved package-inventory byte bound. */
   readonly packagesMaxBytes: number
+  /** Explicitly resolved auto-capture per-file byte bound. */
+  readonly captureMaxFileBytes: number
+  /** Explicitly resolved auto-capture per-run file-count bound. */
+  readonly captureMaxFilesPerRun: number
+  /** Explicitly resolved auto-capture per-session artifact-version bound. */
+  readonly captureMaxArtifactVersionsPerSession: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -191,6 +236,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     [
       'dshHome', 'profiles', 'timeoutMs', 'artifactDiagnosticMaxEntries', 'artifactDiagnosticMaxBytes',
       'packagesMaxEntries', 'packagesMaxBytes',
+      'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
     ],
     'config',
   )
@@ -225,6 +271,25 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || packagesMaxBytes > MAX_PACKAGES_MAX_BYTES) {
     throw new Error(`science-runtime: packagesMaxBytes must be a safe integer from ${String(MIN_PACKAGES_MAX_BYTES)} through ${String(MAX_PACKAGES_MAX_BYTES)}`)
   }
+  const captureMaxFileBytes = config.captureMaxFileBytes ?? DEFAULT_CAPTURE_MAX_FILE_BYTES
+  if (!Number.isSafeInteger(captureMaxFileBytes)
+    || captureMaxFileBytes < MIN_CAPTURE_MAX_FILE_BYTES
+    || captureMaxFileBytes > MAX_CAPTURE_MAX_FILE_BYTES) {
+    throw new Error(`science-runtime: captureMaxFileBytes must be a safe integer from ${String(MIN_CAPTURE_MAX_FILE_BYTES)} through ${String(MAX_CAPTURE_MAX_FILE_BYTES)}`)
+  }
+  const captureMaxFilesPerRun = config.captureMaxFilesPerRun ?? DEFAULT_CAPTURE_MAX_FILES_PER_RUN
+  if (!Number.isSafeInteger(captureMaxFilesPerRun)
+    || captureMaxFilesPerRun < MIN_CAPTURE_MAX_FILES_PER_RUN
+    || captureMaxFilesPerRun > MAX_CAPTURE_MAX_FILES_PER_RUN) {
+    throw new Error(`science-runtime: captureMaxFilesPerRun must be a safe integer from ${String(MIN_CAPTURE_MAX_FILES_PER_RUN)} through ${String(MAX_CAPTURE_MAX_FILES_PER_RUN)}`)
+  }
+  const captureMaxArtifactVersionsPerSession = config.captureMaxArtifactVersionsPerSession
+    ?? DEFAULT_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION
+  if (!Number.isSafeInteger(captureMaxArtifactVersionsPerSession)
+    || captureMaxArtifactVersionsPerSession < MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION
+    || captureMaxArtifactVersionsPerSession > MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION) {
+    throw new Error(`science-runtime: captureMaxArtifactVersionsPerSession must be a safe integer from ${String(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)} through ${String(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)}`)
+  }
   return {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
@@ -233,5 +298,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     artifactDiagnosticMaxBytes,
     packagesMaxEntries,
     packagesMaxBytes,
+    captureMaxFileBytes,
+    captureMaxFilesPerRun,
+    captureMaxArtifactVersionsPerSession,
   }
 }

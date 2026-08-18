@@ -2846,6 +2846,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
   {
+    name: 'CaptureRunArtifactsResult',
+    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n}',
+  },
+  {
     name: 'ClientResponse',
     declaration: 'export interface ClientResponse {\n    type: \'client-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -3823,7 +3827,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceArtifactVersion',
-    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef | TextAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
   },
   {
     name: 'ScienceEnvironmentBinding',
@@ -3887,7 +3891,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunResult',
-    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
+    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n    readonly capture?: CaptureRunArtifactsResult;\n}',
   },
   {
     name: 'ScienceRunStarted',

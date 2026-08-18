@@ -13,6 +13,9 @@ import type {
   ScienceRunStarted,
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
+import type { CaptureRunArtifactsResult } from './capture.ts'
+
+export type { CaptureRunArtifactsResult } from './capture.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
 
 /** Stable rejection codes for Science Runtime operations. */
@@ -98,6 +101,15 @@ export interface ScienceRunResult {
   readonly stdout: ScienceRunOutput
   /** Bounded standard-error tail. */
   readonly stderr: ScienceRunOutput
+  /**
+   * Auto-capture accounting for this run's artifact directory, run
+   * synchronously before this result returns. `undefined` only for a
+   * non-quiescent settlement, whose capture walk (run asynchronously after
+   * the eventual terminal fact commits) has no synchronous result to attach
+   * to — its captured versions are still durable `science/artifact-saved`
+   * events, discoverable through `get_science_state`.
+   */
+  readonly capture?: CaptureRunArtifactsResult
 }
 
 /** Inputs for importing one PNG chart from a successful run's private artifact directory. */

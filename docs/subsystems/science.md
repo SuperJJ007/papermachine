@@ -59,5 +59,5 @@ async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
 async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:82`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:103`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

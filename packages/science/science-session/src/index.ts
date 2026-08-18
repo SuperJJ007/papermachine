@@ -42,6 +42,7 @@ export {
   ScienceScratchKey,
 } from './ids.ts'
 export {
+  applyScienceEvent,
   decodeScienceArtifact,
   decodeScienceDomainEvent,
   decodeScienceEnvironment,
@@ -49,8 +50,11 @@ export {
   decodeScienceOutcome,
   decodeScienceRunStarted,
   decodeScienceRunTerminal,
+  foldScience,
+  projectScienceFold,
   replayScience,
 } from './fold.ts'
+export type { ScienceFoldState } from './fold.ts'
 export { toClientScienceProjection }
 
 /** Cordis plugin name used by Loader diagnostics. */

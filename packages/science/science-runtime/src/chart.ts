@@ -52,7 +52,7 @@ interface WalkResult {
  * @param root - the run's artifact directory.
  * @returns every safe relative path found, in encounter order (unsorted).
  */
-async function walkArtifactFiles(root: string): Promise<string[]> {
+export async function walkArtifactFiles(root: string): Promise<string[]> {
   const found: string[] = []
   const visit = async (dir: string): Promise<void> => {
     let children

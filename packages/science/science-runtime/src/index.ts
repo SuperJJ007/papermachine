@@ -15,6 +15,7 @@ import type {
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceProjection,
+  ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-sandbox'
@@ -22,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-science-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
+import { captureRunArtifacts } from './capture.ts'
+import type { CaptureRunArtifactsResult } from './capture.ts'
 import { readBoundedFile, resolveArtifactFile } from './chart.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
@@ -72,6 +75,24 @@ function runStartedSeq(session: Session, runId: CommitScienceChartRequest['runId
     event.type === 'science/run-started' && event.data.run.runId === runId)?.seq
 }
 
+/**
+ * Classify a failed `captureRunArtifacts` call for `captureAfterFinish`'s
+ * diagnostic log: filesystem-level faults (the run's artifact directory
+ * removed, permission denied, disk failure) are an accepted, expected
+ * occasional occurrence; anything else is a defect in this Runtime's own
+ * capture logic. Both stay non-fatal to the run either way — the
+ * classification only picks the log severity. Mirrors `environment.ts`'s
+ * `missingPathError` shape, widened to any errno code rather than an
+ * allowlist, since the walk's own I/O calls are the only throw sites the
+ * filesystem class needs to cover.
+ * @param error - the unknown value `captureRunArtifacts` rejected with.
+ * @returns whether the error carries a filesystem `code`.
+ */
+function isCaptureFilesystemFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  return typeof (error as { readonly code?: unknown }).code === 'string'
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     scienceRuntime: ScienceRuntime
@@ -104,6 +125,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly packagesMaxEntries: number
   /** Configured package-inventory byte bound. */
   private readonly packagesMaxBytes: number
+  /** Configured auto-capture per-file byte bound. */
+  private readonly captureMaxFileBytes: number
+  /** Configured auto-capture per-run file-count bound. */
+  private readonly captureMaxFilesPerRun: number
+  /** Configured auto-capture per-session artifact-version bound. */
+  private readonly captureMaxArtifactVersionsPerSession: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   private disposing = false
@@ -123,6 +150,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.artifactDiagnosticMaxBytes = resolved.artifactDiagnosticMaxBytes
     this.packagesMaxEntries = resolved.packagesMaxEntries
     this.packagesMaxBytes = resolved.packagesMaxBytes
+    this.captureMaxFileBytes = resolved.captureMaxFileBytes
+    this.captureMaxFilesPerRun = resolved.captureMaxFilesPerRun
+    this.captureMaxArtifactVersionsPerSession = resolved.captureMaxArtifactVersionsPerSession
     ctx.effect(() => {
       const stopSessionObserver = ctx.on('session/disposed', (session) => { this.leases.detach(session) }, { global: true })
       return async () => {
@@ -528,7 +558,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (!settled.quiescent) {
         releaseAfterEventualQuiescence = true
         void settled.eventualResult.then(
-          (result) => {
+          async (result) => {
             if (result === undefined) return
             if (this.ctx.sessions.get(session.id) !== session) {
               this.leases.release(lease)
@@ -540,6 +570,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
               // A live Session without its terminal fact remains quarantined.
               return
             }
+            await this.captureAfterFinish(session, runScratch, result.terminal)
             this.leases.release(lease)
           },
           () => {},
@@ -557,10 +588,66 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         }
         throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
       }
-      return settled.result
+      const capture = await this.captureAfterFinish(session, runScratch, settled.result.terminal)
+      return { ...settled.result, ...capture === undefined ? {} : { capture } }
     } finally {
       if (!releaseAfterEventualQuiescence) this.leases.release(lease)
     }
+  }
+
+  /**
+   * Auto-capture every eligible file in one just-finished run's artifact
+   * directory as the next version of its logical Science artifact. Runs
+   * once per run, immediately after its `science/run-finished` fact commits
+   * and while the run's lease is still held; a capture failure here is
+   * never a run failure — the terminal fact this run already committed
+   * stands regardless, symmetric to the accepted crash-between-commit-and-
+   * capture gap (capture.ts). Every failure is logged, not silently
+   * absorbed: an environmental fault (the artifact directory disappeared, a
+   * permission or disk error) logs at `warn`, since it is an accepted,
+   * expected occasional occurrence; anything else logs at `error`, since it
+   * is a defect in this Runtime's own capture logic and must stay visible
+   * rather than disappearing without trace. The README's Known Limitations
+   * names the residual case this still cannot recover from: capture itself
+   * has no automatic retry, so a logged failure means that run's eligible
+   * files stay uncaptured until the next run.
+   * @param session - exact live Session that owns the just-finished run.
+   * @param runScratch - the run's private Host scratch, including its artifact directory.
+   * @param terminal - the exact terminal record just committed, supplying every captured version's provenance.
+   * @returns capture accounting, or `undefined` when the Session detached or capture itself failed.
+   */
+  private async captureAfterFinish(
+    session: StartScienceRunRequest['session'],
+    runScratch: Awaited<ReturnType<typeof createRunScratch>>,
+    terminal: ScienceRunTerminal,
+  ): Promise<CaptureRunArtifactsResult | undefined> {
+    // The caller already re-verified liveness immediately before the
+    // run-finished append this method follows; only a detach racing that
+    // exact synchronous continuation reaches this, not deterministically
+    // reproducible in a test.
+    /* v8 ignore next */
+    if (this.ctx.sessions.get(session.id) !== session) return undefined
+    let result: CaptureRunArtifactsResult
+    try {
+      result = await captureRunArtifacts({
+        attachments: this.ctx.attachments,
+        session,
+        runArtifacts: runScratch.artifacts,
+        sourceRun: terminal,
+        captureMaxFileBytes: this.captureMaxFileBytes,
+        captureMaxFilesPerRun: this.captureMaxFilesPerRun,
+        captureMaxArtifactVersionsPerSession: this.captureMaxArtifactVersionsPerSession,
+      })
+    } catch (error) {
+      const message = `science-runtime: auto-capture failed for session "${session.id}" run "${terminal.runId}": ${String(error)}`
+      if (isCaptureFilesystemFailure(error)) this.ctx.logger.warn(message)
+      else this.ctx.logger.error(message)
+      return undefined
+    }
+    if (result.appendFailed) {
+      this.ctx.logger.warn(`science-runtime: auto-capture stopped early for session "${session.id}" run "${terminal.runId}": a session.append rejection interrupted the walk`)
+    }
+    return result
   }
 }
 

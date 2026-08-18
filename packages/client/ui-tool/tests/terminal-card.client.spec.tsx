@@ -473,6 +473,7 @@ describe('ToolDetailsView Output section', () => {
         inputActions={{ setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {}, submit: () => {} }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
+        inspectCall={() => {}}
         actions={chat.actions}
         t={t}
       />,

@@ -69,6 +69,18 @@ function renderDetailsViewProbe(calls?: { owner: unknown; only: string | undefin
   }) as DetailsSlotProps['renderSlot']
 }
 
+/**
+ * Assert the routed dispatch happened exactly once, with the given `only`
+ * id and the Details seam's `inspectCall` owner callback (a plain
+ * `typeof === 'function'` check rather than `expect.any(Function)` nested in
+ * a `toEqual` literal, which the lint's unsafe-assignment rule rejects).
+ */
+function expectDetailsViewCall(calls: { owner: unknown; only: string | undefined }[], only: string): void {
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.only).toBe(only)
+  expect(typeof (calls[0]?.owner as { inspectCall?: unknown } | undefined)?.inspectCall).toBe('function')
+}
+
 /** Observe the keyed header-actions dispatch without rendering a real entry. */
 function renderHeaderActionsProbe(calls?: { owner: unknown; entryKey: string | undefined }[]): DetailsSlotProps['renderSlot'] {
   return ((key: string, owner: object, opts?: { entryKey?: string }) => {
@@ -124,6 +136,10 @@ function standardKit(snap: ConversationSnapshot) {
       submit: () => {},
     },
     SessionProvider: SessionProviderStub,
+    // DetailsViewOwnerProps.inspectCall — a routed conversation.details.view
+    // entry's owner share; ToolDetailsView carries it unused, same as every
+    // other standard-kit field this double supplies but doesn't exercise.
+    inspectCall: (() => {}) as (callId: string) => void,
   } as const
 }
 
@@ -197,7 +213,7 @@ describe('DetailsPanel routing shell', () => {
     expect(view.getByText('详情')).toBeTruthy()
     // Dispatch reaches the built-in tool entry: no stored detailsView falls
     // back to it, same as an id naming an unregistered entry would.
-    expect(calls).toEqual([{ owner: {}, only: 'tool' }])
+    expectDetailsViewCall(calls, 'tool')
   })
 
   it('title falls to the selection\'s carried toolName when the tool entry is active but the call resolves no material', () => {
@@ -280,7 +296,7 @@ describe('DetailsPanel routing shell', () => {
     )
     expect(view.getByText('Science')).toBeTruthy()
     expect(view.queryByText('bash')).toBeNull()
-    expect(calls).toEqual([{ owner: {}, only: 'science' }])
+    expectDetailsViewCall(calls, 'science')
   })
 
   it('falls back to the built-in tool entry when the stored id names a removed/unregistered entry', () => {
@@ -301,7 +317,7 @@ describe('DetailsPanel routing shell', () => {
       />,
     )
     expect(view.getByText('详情')).toBeTruthy()
-    expect(calls).toEqual([{ owner: {}, only: 'tool' }])
+    expectDetailsViewCall(calls, 'tool')
   })
 
   it('shows the generic empty state without dispatching the view body or header actions when no entry is registered at all', () => {

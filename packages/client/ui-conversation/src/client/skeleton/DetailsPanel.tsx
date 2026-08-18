@@ -7,9 +7,13 @@
 // button, the shell also dispatches the active entry's own keyed
 // `conversation.details.header.actions` entry (entryKey: <active id>), so an
 // entry contributes its own header controls while the shell keeps owning
-// close. Reads selection/entries off the shared chat store and slot registry
-// (conversation writes, this panel reads — the cross-registration share the
-// store seat exists for) and derives no data of its own.
+// close. The routed entry itself gets one write capability
+// (`DetailsViewOwnerProps.inspectCall`, the same one-shot inspect-and-reveal
+// handoff `conversation.view` entries get) so an entry's own in-panel
+// drill-in can jump to the transcript. Reads selection/entries off the
+// shared chat store and slot registry (conversation writes, this panel reads
+// — the cross-registration share the store seat exists for) and derives no
+// data of its own.
 
 import { useSyncExternalStore } from 'react'
 import type { DetailsViewEntry } from '../contract/views.ts'
@@ -68,7 +72,15 @@ export function DetailsPanel({ useSession, useStore, actions, renderSlot, closeD
       <div className={css.body}>
         {active === undefined
           ? <div className={css.empty}>{t('details.empty')}</div>
-          : renderSlot('conversation.details.view', {}, {
+          : renderSlot('conversation.details.view', {
+            // Same write pattern ConversationSession.tsx gives every
+            // conversation.view entry, supplied here so a Details entry's
+            // own in-panel drill-in can jump to the transcript too.
+            inspectCall: (callId) => {
+              actions.setInspect({ callId })
+              actions.setView('trajectory')
+            },
+          }, {
             only: active.id,
             fallback: <div className={css.empty}>{t('details.empty')}</div>,
           })}

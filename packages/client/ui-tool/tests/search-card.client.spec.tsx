@@ -407,6 +407,7 @@ describe('ToolDetailsView Output section (search)', () => {
         }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
+        inspectCall={() => {}}
         actions={chat.actions}
         t={t}
       />,

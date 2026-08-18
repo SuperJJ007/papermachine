@@ -342,6 +342,7 @@ describe('ToolDetailsView diff Output section', () => {
         }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
+        inspectCall={() => {}}
         actions={chat.actions}
         t={t}
       />,

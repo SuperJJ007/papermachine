@@ -130,7 +130,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * entry (declaring is claiming) — a registrant never occupies the
      * top-level `details` slot directly. Session scope: entries read the
      * conversation snapshot and shared chat store through the standard kit,
-     * same as `conversation.view` entries; the owner passes nothing.
+     * same as `conversation.view` entries; the owner passes one write
+     * capability (see {@link DetailsViewOwnerProps}).
      */
     'conversation.details.view': { kind: 'list'; scope: 'session'; owner: DetailsViewOwnerProps }
     /**
@@ -413,11 +414,19 @@ export interface DetailsToolOwnerProps {
 }
 
 /**
- * Owner share of one routed Details entry: the shell supplies nothing —
- * entries are self-sufficient standard-kit readers, same as
- * `conversation.view` entries.
+ * Owner share of one routed Details entry: mostly self-sufficient
+ * standard-kit readers, same as `conversation.view` entries, plus the same
+ * one-shot inspect-and-reveal handoff {@link ConvViewOwnerProps.inspectCall}
+ * gives `conversation.view` entries — write the target call, switch to the
+ * trajectory view — so a Details entry's own in-panel drill-in can jump to
+ * the transcript too, without a second channel. `DetailsPanel` supplies it
+ * from the same `store: chatStore` share it already holds for its header
+ * controls and routed-entry dispatch.
  */
-export interface DetailsViewOwnerProps {}
+export interface DetailsViewOwnerProps {
+  /** Write the one-shot inspect target and switch to the trajectory view. */
+  inspectCall: (callId: CallId) => void
+}
 
 /**
  * Owner share of one entry's Details header controls: mostly self-sufficient

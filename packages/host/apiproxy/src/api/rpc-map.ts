@@ -32,6 +32,7 @@ export interface RpcMethodMap {
   'session.fork': SessionsApi['fork']
   'session.prompt': SessionsApi['prompt']
   'session.attachment': SessionsApi['attachment']
+  'session.textAttachment': SessionsApi['textAttachment']
   'session.updateQueue': SessionsApi['updateQueue']
   'session.cancel': SessionsApi['cancel']
   'subagent.list': SubagentsApi['list']

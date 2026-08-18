@@ -11,7 +11,7 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -91,7 +91,7 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
-import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
+import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema, textLimitsProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
@@ -1248,6 +1248,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   })
 
+  // The textLimits projection unit, mirroring imageLimits above for the text
+  // attachment family: same boot-constant reasoning, same registration shape.
+  ctx.inject(['sessionProjections', 'attachments'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register<'textLimits', null>({
+      key: 'textLimits',
+      schema: textLimitsProjectionSchema,
+      init: () => null,
+      apply: state => state,
+      view: () => projectionCtx.attachments.textLimits,
+      stateVersion: 1,
+    })
+  })
+
   /** Project both durable inbox lists, optionally including the splice currently being emitted. */
   const queueItems = (
     agent: Agent,
@@ -1431,6 +1444,91 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
     const inspected = await inspectServable(sessionId)
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
+  }
+
+  /** One attachment family's finder/reader/wire-encoding trio for {@link readReferencedAttachment}. */
+  interface ReferencedAttachmentKind<Ref> {
+    /** Authorizes `attachmentId` against the session's own event log, mirroring `ctx.sessionAttachments`'s image/text finder pair. */
+    readonly find: (events: readonly SessionEvent[], attachmentId: string) => Ref | undefined
+    /** Reads the authorized reference's stored bytes, mirroring `ctx.attachments`'s image/text reader pair. */
+    readonly read: (ref: Ref) => Promise<{ ref: Ref; data: Uint8Array }>
+    /** Serializes stored bytes onto the wire (base64 for image, plain UTF-8 for text). */
+    readonly encode: (data: Uint8Array) => string
+    /** `attachment-error`/`ATTACHMENT_NOT_REFERENCED` message when the session's log never authorized this id. */
+    readonly notReferencedMessage: string
+    /** `internal` message when the authorized reference fails to read back. */
+    readonly readFailureMessage: string
+  }
+
+  /**
+   * Shared resolve→authorize→read→encode body for `session.attachment` and
+   * `session.textAttachment`: the two RPCs differ only in which finder/reader
+   * pair authorizes and reads the reference and how its bytes serialize on
+   * the wire, all supplied through `kind`.
+   */
+  async function readReferencedAttachment<Ref>(
+    request: RpcRequest<unknown>,
+    sessionId: SessionId,
+    attachmentId: string,
+    kind: ReferencedAttachmentKind<Ref>,
+  ): Promise<RpcResponse<{ attachment: Ref; data: string }>> {
+    let state: SessionReadState
+    try {
+      state = await readSessionState(sessionId)
+    } catch (error: unknown) {
+      if (error instanceof SessionNotFound) {
+        return err(request, {
+          code: 'session-not-found',
+          message: error.message,
+          details: { sessionId },
+        })
+      }
+      return err(request, {
+        code: 'internal',
+        message: `attachment authorization unavailable for session "${sessionId}": ${String(error)}`,
+        details: {},
+      })
+    }
+    let ref: Ref | undefined
+    try {
+      ref = kind.find(state.events, attachmentId)
+    } catch (error: unknown) {
+      if (error instanceof SessionAttachmentIndexError) {
+        return err(request, {
+          code: 'internal',
+          message: error.message,
+          details: {},
+        })
+      }
+      throw error
+    }
+    if (ref === undefined) {
+      return err(request, {
+        code: 'attachment-error',
+        message: kind.notReferencedMessage,
+        details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
+      })
+    }
+    try {
+      const stored = await kind.read(ref)
+      return ok(request, {
+        attachment: stored.ref,
+        data: kind.encode(stored.data),
+      })
+    } catch (error: unknown) {
+      if (error instanceof AttachmentError) {
+        return err(request, {
+          code: 'attachment-error',
+          message: error.message,
+          details: { reason: error.code },
+        })
+      }
+      return err(request, {
+        code: 'internal',
+        message: kind.readFailureMessage,
+        details: {},
+      })
+    }
   }
 
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
@@ -2414,63 +2512,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async attachment(request) {
         const { sessionId, attachmentId } = request.payload
-        let state: SessionReadState
-        try {
-          state = await readSessionState(sessionId)
-        } catch (error: unknown) {
-          if (error instanceof SessionNotFound) {
-            return err(request, {
-              code: 'session-not-found',
-              message: error.message,
-              details: { sessionId },
-            })
-          }
-          return err(request, {
-            code: 'internal',
-            message: `attachment authorization unavailable for session "${sessionId}": ${String(error)}`,
-            details: {},
-          })
-        }
-        let ref: ImageAttachmentRef | undefined
-        try {
-          ref = ctx.sessionAttachments.findReferencedImage(state.events, String(attachmentId))
-        } catch (error: unknown) {
-          if (error instanceof SessionAttachmentIndexError) {
-            return err(request, {
-              code: 'internal',
-              message: error.message,
-              details: {},
-            })
-          }
-          throw error
-        }
-        if (ref === undefined) {
-          return err(request, {
-            code: 'attachment-error',
-            message: 'Image is not referenced by this session.',
-            details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
-          })
-        }
-        try {
-          const stored = await ctx.attachments.readImage(ref)
-          return ok(request, {
-            attachment: stored.ref,
-            data: Buffer.from(stored.data).toString('base64'),
-          })
-        } catch (error: unknown) {
-          if (error instanceof AttachmentError) {
-            return err(request, {
-              code: 'attachment-error',
-              message: error.message,
-              details: { reason: error.code },
-            })
-          }
-          return err(request, {
-            code: 'internal',
-            message: 'Unable to read image attachment.',
-            details: {},
-          })
-        }
+        return readReferencedAttachment<ImageAttachmentRef>(request, sessionId, String(attachmentId), {
+          find: (events, id) => ctx.sessionAttachments.findReferencedImage(events, id),
+          read: ref => ctx.attachments.readImage(ref),
+          encode: data => Buffer.from(data).toString('base64'),
+          notReferencedMessage: 'Image is not referenced by this session.',
+          readFailureMessage: 'Unable to read image attachment.',
+        })
+      },
+
+      async textAttachment(request) {
+        const { sessionId, attachmentId } = request.payload
+        return readReferencedAttachment<TextAttachmentRef>(request, sessionId, String(attachmentId), {
+          find: (events, id) => ctx.sessionAttachments.findReferencedText(events, id),
+          read: ref => ctx.attachments.readText(ref),
+          encode: data => Buffer.from(data).toString('utf8'),
+          notReferencedMessage: 'Text file is not referenced by this session.',
+          readFailureMessage: 'Unable to read text attachment.',
+        })
       },
 
       updateQueue(request) {

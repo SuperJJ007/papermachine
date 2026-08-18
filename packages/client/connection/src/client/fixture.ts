@@ -20,7 +20,7 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   SessionEvent,
   SessionId,
@@ -1526,6 +1526,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     String(FIXTURE_IMAGE_REF.attachmentId),
     { attachment: FIXTURE_IMAGE_REF, data: FIXTURE_IMAGE_DATA },
   ]])
+  // No fixture scenario produces a text attachment yet (the browser prompt
+  // path uploads images only), so this starts empty; textAttachment mirrors
+  // attachment's authorization/lookup mechanics against it regardless.
+  const texts = new Map<string, { attachment: TextAttachmentRef; data: string }>()
   /** Credential store double: set/unset flip the describe badge, values never read back. */
   const fixtureCredentials = new Map<string, true>([
     // The assembled fixture represents an already-configured shipped
@@ -2491,6 +2495,27 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         return ok(request, stored)
       },
+      textAttachment: (request) => {
+        const stored = texts.get(String(request.payload.attachmentId))
+        if (stored === undefined) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture text attachment missing',
+            details: { reason: 'ATTACHMENT_NOT_FOUND' },
+          })
+        }
+        if (!logReferencesAttachment(
+          logs.get(request.payload.sessionId) ?? [],
+          String(request.payload.attachmentId),
+        )) {
+          return err(request, {
+            code: 'attachment-error',
+            message: 'fixture text attachment is not referenced by this session',
+            details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
+          })
+        }
+        return ok(request, stored)
+      },
       updateQueue: request => err(request, {
         code: 'queue-item-not-found',
         message: 'fixture has no pending queue item',
@@ -3095,6 +3120,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.fork': return this.api.sessions.fork(request)
       case 'session.prompt': return this.api.sessions.prompt(request)
       case 'session.attachment': return this.api.sessions.attachment(request)
+      case 'session.textAttachment': return this.api.sessions.textAttachment(request)
       case 'session.updateQueue': return this.api.sessions.updateQueue(request)
       case 'session.cancel': return this.api.sessions.cancel(request)
       case 'subagent.list': return this.api.subagents.list(request)

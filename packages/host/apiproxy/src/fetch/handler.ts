@@ -27,6 +27,7 @@ import {
   sessionRenameRequestSchema,
   sessionSearchRequestSchema,
   sessionSelectModelRequestSchema,
+  sessionTextAttachmentRequestSchema,
   sessionUpdateQueueRequestSchema,
 } from '../api/sessions.schema.ts'
 import {
@@ -98,6 +99,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.fork': { schema: sessionForkRequestSchema, invoke: (api, r) => api.sessions.fork(r) },
   'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r) => api.sessions.prompt(r) },
   'session.attachment': { schema: sessionAttachmentRequestSchema, invoke: (api, r) => api.sessions.attachment(r) },
+  'session.textAttachment': { schema: sessionTextAttachmentRequestSchema, invoke: (api, r) => api.sessions.textAttachment(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
   'subagent.list': { schema: subagentListRequestSchema, invoke: (api, r, signal) => api.subagents.list(r, signal) },

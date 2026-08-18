@@ -15,7 +15,13 @@ import type {
   ModelReasoningEffort, ModelSelection, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
 } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
-import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentIdType,
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  TextAttachmentLimits,
+  TextAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import type { WorkspaceId } from './workspace.ts'
 import {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -234,6 +240,15 @@ export const imageLimitsProjectionSchema = z.object({
   mediaTypes: z.array(z.string()),
 }) as unknown as z.ZodType<ImageAttachmentLimits>
 
+/**
+ * textLimits projection unit schema (host-side view validation), mirroring
+ * {@link imageLimitsProjectionSchema} for the text attachment family.
+ */
+export const textLimitsProjectionSchema = z.object({
+  maxTextBytes: z.number().int().positive(),
+  mediaTypes: z.array(z.string()),
+}) as unknown as z.ZodType<TextAttachmentLimits>
+
 /** session.history response value (projections rides the tail page only). */
 export const sessionHistoryValueSchema: z.ZodType<Wire<ResponseValue<'session.history'>>> = z.object({
   events: z.array(historyEntrySchema),
@@ -276,6 +291,14 @@ export const imageMediaTypeSchema = z.union([
   z.literal('image/jpeg'),
   z.literal('image/webp'),
   z.literal('image/gif'),
+])
+
+/** Text formats accepted by the version-one text attachment wire, mirroring {@link imageMediaTypeSchema}. */
+export const textMediaTypeSchema = z.union([
+  z.literal('text/csv'),
+  z.literal('application/json'),
+  z.literal('text/markdown'),
+  z.literal('text/plain'),
 ])
 
 /** Prompt wire content is intentionally narrower than merge-extensible durable core content. */
@@ -325,6 +348,26 @@ export const sessionAttachmentValueSchema = z.object({
   attachment: imageAttachmentRefSchema,
   data: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.attachment'>>>
+
+/** Durable text reference returned from the authenticated session lookup, mirroring {@link imageAttachmentRefSchema}. */
+export const textAttachmentRefSchema = z.object({
+  attachmentId: attachmentIdSchema,
+  mediaType: textMediaTypeSchema,
+  bytes: z.number().int().positive(),
+  name: z.string().optional(),
+}) as unknown as z.ZodType<TextAttachmentRef>
+
+/** session.textAttachment request payload. */
+export const sessionTextAttachmentRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  attachmentId: attachmentIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'session.textAttachment'>>>
+
+/** session.textAttachment response value; `data` is the plain UTF-8 string, never base64 (admission already proved valid UTF-8). */
+export const sessionTextAttachmentValueSchema = z.object({
+  attachment: textAttachmentRefSchema,
+  data: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.textAttachment'>>>
 
 /** session.updateQueue request payload. */
 export const sessionUpdateQueueRequestSchema = z.object({

@@ -277,6 +277,35 @@ describe('Web session model selection', () => {
     expect(readImage).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
+
+  it('authorizes text attachment bytes only when the session event stream references the id, mirroring the image path', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    const ref = { attachmentId: 'txt-authorized' as never, mediaType: 'text/plain' as const, bytes: 2 }
+    const readText = vi.fn(() => Promise.resolve({ ref, data: new TextEncoder().encode('ok') }))
+    ctx.provide('attachments', { readText } as never)
+    await ctx.plugin(SessionAttachmentIndex)
+    ctx.sessionAttachments.register('science/artifact-saved', () => [ref])
+    agent.session.append('science/artifact-saved', { version: 1, artifact: {} } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const allowed = await api.sessions.textAttachment(request({
+      sessionId, attachmentId: 'txt-authorized' as never,
+    }))
+    expect(allowed.result).toMatchObject({ ok: true, value: { attachment: ref, data: 'ok' } })
+    const denied = await api.sessions.textAttachment(request({
+      sessionId, attachmentId: 'txt-other' as never,
+    }))
+    expect(denied.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } },
+    })
+    expect(readText).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
   it('groups successful providers and leaves an unlisted current selection out of the catalog', async () => {
     const { ctx, sessionId } = await harness({
       provider: 'deepseek-official',

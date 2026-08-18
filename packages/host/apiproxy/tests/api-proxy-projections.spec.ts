@@ -87,7 +87,7 @@ describe('session.history projections block', () => {
     expect(events.at(-1)?.event.seq).toBe(projections?.asOfSeq)
   })
 
-  it('publishes the attachments imageLimits as a constant unit while both seams are composed', async () => {
+  it('publishes the attachments imageLimits and textLimits as constant units while both seams are composed', async () => {
     const { ctx, session } = await harness(true)
     const limits = {
       maxImageBytes: 5 * 1024 * 1024,
@@ -96,9 +96,10 @@ describe('session.history projections block', () => {
       maxImagePixels: 40_000_000,
       mediaTypes: ['image/png'] as const,
     }
+    const textLimits = { maxTextBytes: 5 * 1024 * 1024, mediaTypes: ['text/plain'] as const }
     await ctx.plugin(class extends AttachmentStore {
       readonly imageLimits = limits
-      readonly textLimits = { maxTextBytes: 0, mediaTypes: [] }
+      readonly textLimits = textLimits
       validateImage(): Promise<void> { return Promise.resolve() }
       validateText(): Promise<never> { return Promise.reject(new Error('unused')) }
       saveImage(): Promise<never> { return Promise.reject(new Error('unused')) }
@@ -111,7 +112,8 @@ describe('session.history projections block', () => {
     const response = await gateway.sessions.history(request({ sessionId: session.id }))
     if (!response.result.ok) throw new Error('history failed')
     expect(response.result.value.projections?.values['imageLimits']).toEqual(limits)
-    // Constant unit: appending events must never broadcast an imageLimits frame.
+    expect(response.result.value.projections?.values['textLimits']).toEqual(textLimits)
+    // Constant units: appending events must never broadcast an imageLimits/textLimits frame.
     await new Promise(resolve => setTimeout(resolve, 0))
     const abort = new AbortController()
     const stream = gateway.events.mux({ rpcId: RpcId('t-limits-mux'), payload: {} }, abort.signal)
@@ -124,16 +126,17 @@ describe('session.history projections block', () => {
     })().catch(() => {})
     seedMessages(session, 1)
     await drained
-    expect(frames.some(f => f.type === 'session/projection' && f.key === 'imageLimits')).toBe(false)
+    expect(frames.some(f => f.type === 'session/projection' && (f.key === 'imageLimits' || f.key === 'textLimits'))).toBe(false)
   })
 
-  it('leaves the imageLimits key absent while no attachment service is composed', async () => {
+  it('leaves the imageLimits and textLimits keys absent while no attachment service is composed', async () => {
     const { ctx, session } = await harness(true)
     seedMessages(session, 1)
     const response = await api(ctx).sessions.history(request({ sessionId: session.id }))
     if (!response.result.ok) throw new Error('history failed')
     expect(response.result.value.projections).toBeDefined()
     expect('imageLimits' in (response.result.value.projections?.values ?? {})).toBe(false)
+    expect('textLimits' in (response.result.value.projections?.values ?? {})).toBe(false)
   })
 
   it('never carries the block on loadOlder pages (beforeSeq present)', async () => {

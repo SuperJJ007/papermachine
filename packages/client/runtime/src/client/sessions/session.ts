@@ -1,7 +1,7 @@
 // Sessions remain resident after creation so they continue consuming mux frames off-screen.
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
   HistoryEntry, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
@@ -276,6 +276,28 @@ export class Session implements SessionFace {
       const binary = atob(result.value.data)
       const data = Uint8Array.from(binary, char => char.charCodeAt(0))
       return { ok: true, value: { attachment: result.value.attachment, data } }
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
+  /**
+   * Resolve one text file referenced by this session, mirroring
+   * {@link readAttachment} for the text family. The wire already carries a
+   * plain UTF-8 string (never base64), so no decode step is needed here.
+   * @param attachmentId - opaque id found in the folded session log.
+   * @returns the authenticated reference and decoded text.
+   */
+  async readTextAttachment(
+    attachmentId: AttachmentIdType,
+  ): Promise<RpcResult<{ attachment: TextAttachmentRef; data: string }>> {
+    try {
+      const result = (await this.api.sessions.textAttachment({
+        sessionId: this.sessionId,
+        attachmentId,
+      })).result
+      if (!result.ok) return result
+      return { ok: true, value: { attachment: result.value.attachment, data: result.value.data } }
     } catch (error) {
       return transportError(error)
     }

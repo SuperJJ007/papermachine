@@ -1,37 +1,47 @@
-// Science Details entry: the artifact panel over the accepted client-safe
+// Science Details entry: the artifact viewer over the accepted client-safe
 // `science` Session projection (packages/science/science-session/src/types.ts).
-// Renders a client-safe environment strip, ordered run history, an artifact
-// gallery (one entry per logical chart at its latest version), an artifact
-// detail with a version rail walking every durable version of the selected
-// chart, and the latest Outcome with its evidence references. It builds no
-// second projection reader, chart store, or Outcome editor; the one piece of
-// local state it owns is the shared ui-science selection store
-// (selection-store.ts), keyed on `{ chartId, version }`. Thumbnails load
-// through this package's own session-scoped loader
-// (science-attachment-loader.ts). The environment section never reports
-// capability from configuration alone: a revision whose `status` is not
-// `'applied'` (absent binding, `'invalid'`, or `'drifted'`) renders the same
-// "failed" text regardless of which of those three applies, so no state can
-// read as "Runtime ready" on a merely configured prefix.
+// Viewer-first, not a dashboard: a top tab strip holds one tab per opened
+// artifact (logical chart); the active tab shows an in-panel toolbar
+// (filename, version stepper, provenance, download, maximize, close tab)
+// above the dispatched content, or — one toolbar click away — the
+// provenance drill-in (ScienceArtifactProvenance.tsx). With no open tabs the
+// panel shows the landing view: a gallery of latest chart versions (opening
+// one opens its tab) plus the latest Outcome, kept reachable but secondary
+// below the gallery rather than as its own tab, since it carries no version
+// history or provenance of its own to navigate. It builds no second
+// projection reader, chart store, or Outcome editor; the one piece of local
+// state it owns is the shared ui-science selection store
+// (selection-store.ts). Thumbnails and content load through this package's
+// own session-scoped loader (science-attachment-loader.ts).
+//
+// The former resident Environment strip and Runs list are gone: Environment
+// facts now live only in the provenance drill-in's Environment sub-tab, per
+// artifact version (README "Design notes" explains why no session-wide
+// "not applied" notice replaces them). The top-level missing-support/unbound
+// states below are unrelated to that strip and are unchanged.
 
 import { useEffect, useState } from 'react'
 import { ImageLightbox, MessageImage, type ImageLoader, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
-import { IconChevronLeftOutline14, MarkdownText, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
+  IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view).
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
+// and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: merges the `science` key into SessionProjectionMap for useProjection.
 import type {
-  ScienceChartId, ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientInterpreterBinding,
-  ScienceClientOutcomePublication, ScienceClientRun,
-  ScienceEvidenceRef, ScienceInterpreterCapability, ScienceLanguage,
+  ScienceChartId, ScienceClientChartVersion, ScienceClientOutcomePublication, ScienceClientProjection,
+  ScienceEvidenceRef,
 } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceArtifactSelection, ScienceSelectionStore } from './selection-store.ts'
+import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
+import type { ScienceArtifactView, ScienceOpenArtifact, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
 export interface ScienceDetailsInjected {
-  /** Session-scoped chart-thumbnail loader (science-attachment-loader.ts). */
+  /** Session-scoped chart-thumbnail/content loader (science-attachment-loader.ts). */
   loadImage: ImageLoader
 }
 
@@ -46,49 +56,6 @@ function assertNever(value: never): never {
   throw new Error(`unhandled value: ${JSON.stringify(value)}`)
 }
 
-const LANGUAGE_KEY: Record<ScienceLanguage, 'details.language.python' | 'details.language.r'> = {
-  python: 'details.language.python',
-  r: 'details.language.r',
-}
-
-function capabilityText(capability: ScienceInterpreterCapability, t: TranslateNS<'science'>): string {
-  switch (capability) {
-    case 'available': return t('details.capability.available')
-    case 'unavailable': return t('details.capability.unavailable')
-    case 'invalid': return t('details.capability.invalid')
-    case 'drifted': return t('details.capability.drifted')
-    /* v8 ignore next -- closed capability union */
-    default: return assertNever(capability)
-  }
-}
-
-function runStatusText(status: ScienceClientRun['status'], t: TranslateNS<'science'>): string {
-  switch (status) {
-    case 'running': return t('details.run.status.running')
-    case 'success': return t('details.run.status.success')
-    case 'failed': return t('details.run.status.failed')
-    case 'timed-out': return t('details.run.status.timedOut')
-    case 'cancelled': return t('details.run.status.cancelled')
-    case 'interrupted': return t('details.run.status.interrupted')
-    /* v8 ignore next -- closed run-status union */
-    default: return assertNever(status)
-  }
-}
-
-function runDotState(status: ScienceClientRun['status']): StateDotState {
-  switch (status) {
-    case 'running': return 'ongoing'
-    case 'success': return 'done'
-    case 'failed': return 'error'
-    case 'timed-out':
-    case 'cancelled':
-    case 'interrupted':
-      return 'warning'
-    /* v8 ignore next -- closed run-status union */
-    default: return assertNever(status)
-  }
-}
-
 function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): string {
   switch (item.kind) {
     case 'run': return t('outcome.evidenceRun', { runId: item.runId })
@@ -97,11 +64,6 @@ function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): stri
     /* v8 ignore next -- closed evidence-kind union */
     default: return assertNever(item)
   }
-}
-
-/** Browser-locale timestamp; no fixed format is imposed on the reader's Intl settings. */
-function formatTime(ms: number): string {
-  return new Date(ms).toLocaleString()
 }
 
 /** Latest accepted version per logical chart, in first-appearance (commit) order. */
@@ -114,73 +76,16 @@ function latestCharts(charts: readonly ScienceClientChartVersion[]): ScienceClie
   return [...byId.values()]
 }
 
-/** Every durable version of one logical chart, ascending — the version rail's walk order. */
+/** Every durable version of one logical chart, ascending — the version stepper's walk order. */
 function versionsOf(charts: readonly ScienceClientChartVersion[], chartId: ScienceChartId): ScienceClientChartVersion[] {
   return charts.filter(chart => chart.chartId === chartId).sort((left, right) => left.version - right.version)
 }
 
-function InterpreterRow({ language, binding, t }: {
-  language: ScienceLanguage
-  binding: ScienceClientInterpreterBinding
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <div className={css.environmentRow}>
-      <span className={css.environmentLanguage}>{t(LANGUAGE_KEY[language])}</span>
-      <span>{capabilityText(binding.capability, t)}</span>
-      {binding.languageVersion !== undefined
-        && <span>{t('details.environment.languageVersion', { version: binding.languageVersion })}</span>}
-      {binding.fingerprintPreview !== undefined
-        && <span className={css.fingerprint}>{t('details.environment.fingerprint', { preview: binding.fingerprintPreview })}</span>}
-      {binding.packages !== undefined
-        && <span>{t('details.environment.packageCount', { count: binding.packages.length })}</span>}
-    </div>
-  )
-}
-
-function EnvironmentSection({ environment, t }: {
-  environment: ScienceClientEnvironmentBinding | null
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <section className={css.section}>
-      <div className={css.sectionLabel}>{t('details.environment.title')}</div>
-      {environment === null || environment.status !== 'applied'
-        ? <p className={css.notice} role="status">{t('details.environment.failed')}</p>
-        : (
-          <div className={css.environmentBody}>
-            <div className={css.environmentRow}>
-              <span>{t('details.environment.profile', { profile: environment.profileId })}</span>
-              <span>{t('details.environment.revision', { revision: environment.revision })}</span>
-            </div>
-            {environment.python !== undefined && <InterpreterRow language="python" binding={environment.python} t={t} />}
-            {environment.r !== undefined && <InterpreterRow language="r" binding={environment.r} t={t} />}
-          </div>
-        )}
-    </section>
-  )
-}
-
-function RunsSection({ runs, t }: { runs: readonly ScienceClientRun[]; t: TranslateNS<'science'> }) {
-  return (
-    <section className={css.section}>
-      <div className={css.sectionLabel}>{t('details.runs.title')}</div>
-      {runs.length === 0
-        ? <p className={css.notice} role="status">{t('details.runs.empty')}</p>
-        : (
-          <ul className={css.runList}>
-            {runs.map(run => (
-              <li key={run.runId} className={css.runRow}>
-                <StateDot state={runDotState(run.status)} />
-                <span className={css.runLanguage}>{t(LANGUAGE_KEY[run.language])}</span>
-                <span className={css.runStatus}>{runStatusText(run.status, t)}</span>
-                <span className={css.runTime}>{formatTime(run.startedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-    </section>
-  )
+/** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
@@ -194,16 +99,27 @@ function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
   }
 }
 
+/** Trigger a browser save of the durable bytes behind one artifact version through a throwaway `data:`-URI anchor. */
+async function downloadChart(chart: ScienceClientChartVersion, loadImage: ImageLoader): Promise<void> {
+  const url = await loadImage(chart.attachment)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = chart.attachment.name ?? `${chart.logicalName}-v${String(chart.version)}.png`
+  anchor.click()
+}
+
 /**
- * The header-triggered lightbox: a second, store-driven `ImageLightbox`
- * instance alongside the detail image's own click-to-open `MessageImage`
- * lightbox. `conversation.details.header.actions`' "expand" button
- * (ScienceArtifactHeaderActions.tsx) lives in a sibling render tree with no
- * access to `MessageImage`'s private open state, so it opens this shared
- * store's `lightboxOpen` flag instead; this component resolves the same
- * durable attachment through the same loader when that flag flips.
+ * The toolbar-triggered lightbox: a second, store-driven `ImageLightbox`
+ * instance alongside the content image's own click-to-open `MessageImage`
+ * lightbox. The toolbar's "maximize" button is a sibling of that image with
+ * no access to its private open state, so it opens this shared store's
+ * `lightboxOpen` flag instead; this component resolves the same durable
+ * attachment through the same loader when that flag flips. A load that
+ * rejects (or resolves after the flag already closed) renders nothing — the
+ * same silent-degrade the thumbnail's own retry control covers for the
+ * ordinary click-to-open path.
  */
-function HeaderTriggeredLightbox({ chart, loadImage, open, onClose, t }: {
+function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   chart: ScienceClientChartVersion
   loadImage: ImageLoader
   open: boolean
@@ -230,83 +146,139 @@ function HeaderTriggeredLightbox({ chart, loadImage, open, onClose, t }: {
   )
 }
 
-function VersionRail({ versions, selected, onSelect, t }: {
-  versions: readonly ScienceClientChartVersion[]
-  selected: number
-  onSelect: (version: number) => void
+/**
+ * Content renderer dispatch, keyed by durable attachment media type — the
+ * seam a later non-image artifact phase extends without touching the tab
+ * strip or toolbar.
+ */
+function ArtifactContent({ chart, loadImage, t }: {
+  chart: ScienceClientChartVersion
+  loadImage: ImageLoader
   t: TranslateNS<'science'>
 }) {
-  return (
-    <ul className={css.versionRail} aria-label={t('details.artifact.versionRail')}>
-      {versions.map(version => (
-        <li key={version.version}>
-          <button
-            type="button"
-            className={css.versionItem}
-            aria-current={version.version === selected || undefined}
-            onClick={() => { onSelect(version.version) }}
-          >
-            {t('chart.version', { version: version.version })}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
+  switch (chart.attachment.mediaType) {
+    case 'image/png':
+    case 'image/jpeg':
+    case 'image/webp':
+    case 'image/gif':
+      return (
+        <div className={css.content}>
+          <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={chartImageLabels(t)} />
+          {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
+          <div className={css.contentFacts}>
+            <span>{t('chart.sourceRun', { runId: chart.runId })}</span>
+            <span>
+              {t('chart.dimensions', {
+                width: chart.attachment.width, height: chart.attachment.height, size: formatBytes(chart.attachment.bytes),
+              })}
+            </span>
+          </div>
+        </div>
+      )
+    /* v8 ignore next -- closed ImageMediaType union; every current member renders as an image */
+    default: return assertNever(chart.attachment.mediaType)
+  }
 }
 
-function ArtifactDetail({ chart, versions, loadImage, useStore, actions, t }: {
+function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, t }: {
   chart: ScienceClientChartVersion
   versions: readonly ScienceClientChartVersion[]
+  onStepVersion: (version: number) => void
+  onOpenProvenance: () => void
+  onMaximize: () => void
+  onCloseTab: () => void
   loadImage: ImageLoader
-  useStore: ScienceDetailsViewProps['useStore']
-  actions: ScienceDetailsViewProps['actions']
   t: TranslateNS<'science'>
 }) {
-  const lightboxOpen = useStore(s => s.lightboxOpen)
+  // `chart` is always one of `versions` (the caller resolves it from the same
+  // chartId's version list), so `index` is never -1 — no defensive branch for it.
+  const index = versions.findIndex(candidate => candidate.version === chart.version)
+  const prev = index > 0 ? versions[index - 1] : undefined
+  const next = index < versions.length - 1 ? versions[index + 1] : undefined
+
   return (
-    <div className={css.detail}>
-      <button type="button" className={css.detailBack} onClick={() => { actions.select(null) }}>
-        <IconChevronLeftOutline14 size={12} />
-        {t('details.artifact.backToGallery')}
-      </button>
-      <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={chartImageLabels(t)} />
-      <HeaderTriggeredLightbox
-        chart={chart}
-        loadImage={loadImage}
-        open={lightboxOpen}
-        onClose={() => { actions.setLightboxOpen(false) }}
-        t={t}
-      />
-      <div className={css.detailMeta}>
+    <div className={css.toolbar}>
+      <div className={css.toolbarTitle}>
         <span className={css.chartTitle}>{chart.title}</span>
-        <span className={css.badge}>{t('chart.version', { version: chart.version })}</span>
+        <span className={css.chartLogicalName}>{chart.logicalName}</span>
       </div>
-      {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
-      <div className={css.detailFacts}>
-        <span>{t('chart.sourceRun', { runId: chart.runId })}</span>
-        <span>{t('chart.dimensions', { width: chart.attachment.width, height: chart.attachment.height, size: formatBytes(chart.attachment.bytes) })}</span>
+      <div className={css.toolbarControls}>
+        <div className={css.stepper}>
+          <button
+            type="button" className={css.stepperButton} disabled={prev === undefined}
+            aria-label={t('toolbar.versionPrev')}
+            // `disabled` already blocks activation at the boundary; omitting
+            // the handler entirely (rather than a no-op runtime guard) keeps
+            // every branch here reachable by a real click.
+            onClick={prev === undefined ? undefined : () => { onStepVersion(prev.version) }}
+          >
+            <IconChevronLeftOutline14 size={12} />
+          </button>
+          <span className={css.stepperLabel}>{t('chart.version', { version: chart.version })}</span>
+          <button
+            type="button" className={css.stepperButton} disabled={next === undefined}
+            aria-label={t('toolbar.versionNext')}
+            onClick={next === undefined ? undefined : () => { onStepVersion(next.version) }}
+          >
+            <IconChevronRightOutline14 size={12} />
+          </button>
+        </div>
+        <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
+          <IconInspectOutline12 size={12} />
+        </button>
+        <button
+          type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
+          onClick={() => { void downloadChart(chart, loadImage).catch(() => {}) }}
+        >
+          <IconDownloadOutline16 size={14} />
+        </button>
+        <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
+          <IconFullscreenOutline16 size={14} />
+        </button>
+        <button type="button" className={css.toolbarAction} aria-label={t('toolbar.closeTab')} onClick={onCloseTab}>
+          <IconCloseOutline16 size={14} />
+        </button>
       </div>
-      <VersionRail
-        versions={versions}
-        selected={chart.version}
-        onSelect={(version) => { actions.select({ chartId: chart.chartId, version }) }}
-        t={t}
-      />
     </div>
   )
 }
 
-/** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
+  tabs: readonly ScienceOpenArtifact[]
+  charts: readonly ScienceClientChartVersion[]
+  activeChartId: ScienceChartId | null
+  onActivate: (chartId: ScienceChartId) => void
+  onClose: (chartId: ScienceChartId) => void
+  t: TranslateNS<'science'>
+}) {
+  return (
+    <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
+      {tabs.map((tab) => {
+        const chart = charts.find(candidate => candidate.chartId === tab.chartId && candidate.version === tab.version)
+        const label = chart?.title ?? tab.chartId
+        const active = tab.chartId === activeChartId
+        return (
+          <div key={tab.chartId} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
+            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(tab.chartId) }}>
+              {label}
+            </button>
+            <button
+              type="button" className={css.tabClose} aria-label={t('toolbar.closeNamedTab', { title: label })}
+              onClick={() => { onClose(tab.chartId) }}
+            >
+              <IconCloseFill14 size={10} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
-function ArtifactGallery({ charts, loadImage, onSelect, t }: {
+function ArtifactGallery({ charts, loadImage, onOpen, t }: {
   charts: readonly ScienceClientChartVersion[]
   loadImage: ImageLoader
-  onSelect: (selection: ScienceArtifactSelection) => void
+  onOpen: (selection: { chartId: ScienceChartId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
   const latest = latestCharts(charts)
@@ -330,11 +302,11 @@ function ArtifactGallery({ charts, loadImage, onSelect, t }: {
             role="button"
             aria-label={t('details.artifact.select', { title: chart.title, version: chart.version })}
             tabIndex={0}
-            onClick={() => { onSelect({ chartId: chart.chartId, version: chart.version }) }}
+            onClick={() => { onOpen({ chartId: chart.chartId, version: chart.version }) }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
               event.preventDefault()
-              onSelect({ chartId: chart.chartId, version: chart.version })
+              onOpen({ chartId: chart.chartId, version: chart.version })
             }}
           >
             <MessageImage attachment={chart.attachment} load={loadImage} variant="tile" labels={chartImageLabels(t)} />
@@ -347,37 +319,6 @@ function ArtifactGallery({ charts, loadImage, onSelect, t }: {
         </li>
       ))}
     </ul>
-  )
-}
-
-function ArtifactsSection(props: {
-  charts: readonly ScienceClientChartVersion[]
-  loadImage: ImageLoader
-  useStore: ScienceDetailsViewProps['useStore']
-  actions: ScienceDetailsViewProps['actions']
-  t: TranslateNS<'science'>
-}) {
-  const { charts, loadImage, useStore, actions, t } = props
-  const selected = useStore(s => s.selected)
-  const selectedChart = selected === null ? undefined
-    : charts.find(chart => chart.chartId === selected.chartId && chart.version === selected.version)
-
-  return (
-    <section className={css.section}>
-      <div className={css.sectionLabel}>{t('details.charts.title')}</div>
-      {selected !== null && selectedChart !== undefined
-        ? (
-          <ArtifactDetail
-            chart={selectedChart}
-            versions={versionsOf(charts, selectedChart.chartId)}
-            loadImage={loadImage}
-            useStore={useStore}
-            actions={actions}
-            t={t}
-          />
-        )
-        : <ArtifactGallery charts={charts} loadImage={loadImage} onSelect={(selection) => { actions.select(selection) }} t={t} />}
-    </section>
   )
 }
 
@@ -408,15 +349,160 @@ function OutcomeSection({ outcome, t }: {
   )
 }
 
+/** No open tabs: a gallery of latest chart versions (opening one opens its tab), plus the Outcome kept reachable below it. */
+function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
+  charts: readonly ScienceClientChartVersion[]
+  outcome: ScienceClientOutcomePublication | null
+  loadImage: ImageLoader
+  onOpenTab: (selection: { chartId: ScienceChartId; version: number }) => void
+  t: TranslateNS<'science'>
+}) {
+  return (
+    <div className={css.landing}>
+      <section className={css.section}>
+        <div className={css.sectionLabel}>{t('details.charts.title')}</div>
+        <ArtifactGallery charts={charts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
+      </section>
+      <OutcomeSection outcome={outcome} t={t} />
+    </div>
+  )
+}
+
+/** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
+function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadImage, useStore, actions, inspectCall, t }: {
+  science: ScienceClientProjection
+  chart: ScienceClientChartVersion
+  view: ScienceArtifactView
+  provenanceSubTab: ScienceProvenanceSubTab
+  snapshot: ConversationSnapshot
+  loadImage: ImageLoader
+  useStore: ScienceDetailsViewProps['useStore']
+  actions: ScienceDetailsViewProps['actions']
+  inspectCall: (callId: string) => void
+  t: TranslateNS<'science'>
+}) {
+  const lightboxOpen = useStore(s => s.lightboxOpen)
+  const versions = versionsOf(science.charts, chart.chartId)
+
+  if (view === 'provenance') {
+    const run = science.runs.find(candidate => candidate.runId === chart.runId)
+    if (run === undefined) return <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
+    return (
+      <ScienceArtifactProvenance
+        chart={chart}
+        run={run}
+        environment={science.environment}
+        snapshot={snapshot}
+        subTab={provenanceSubTab}
+        onSubTabChange={(subTab) => { actions.setProvenanceSubTab(subTab) }}
+        onBack={() => { actions.setView('content') }}
+        inspectCall={inspectCall}
+        t={t}
+      />
+    )
+  }
+
+  return (
+    <>
+      <ArtifactToolbar
+        chart={chart}
+        versions={versions}
+        onStepVersion={(version) => { actions.setTabVersion({ chartId: chart.chartId, version }) }}
+        onOpenProvenance={() => { actions.setView('provenance') }}
+        onMaximize={() => { actions.setLightboxOpen(true) }}
+        onCloseTab={() => { actions.closeTab(chart.chartId) }}
+        loadImage={loadImage}
+        t={t}
+      />
+      <ArtifactContent chart={chart} loadImage={loadImage} t={t} />
+      <ArtifactLightbox chart={chart} loadImage={loadImage} open={lightboxOpen} onClose={() => { actions.setLightboxOpen(false) }} t={t} />
+    </>
+  )
+}
+
+function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspectCall, t }: {
+  science: ScienceClientProjection
+  snapshot: ConversationSnapshot
+  loadImage: ImageLoader
+  useStore: ScienceDetailsViewProps['useStore']
+  actions: ScienceDetailsViewProps['actions']
+  inspectCall: (callId: string) => void
+  t: TranslateNS<'science'>
+}) {
+  const openArtifacts = useStore(s => s.openArtifacts)
+  const activeChartId = useStore(s => s.activeChartId)
+  const view = useStore(s => s.view)
+  const provenanceSubTab = useStore(s => s.provenanceSubTab)
+
+  // Every selection-store action maintains one invariant
+  // (selection-store.client.spec.ts): activeChartId is null iff
+  // openArtifacts is empty, otherwise it names an entry in openArtifacts —
+  // so `activeTab === undefined` here means exactly "no open tabs", the
+  // landing view's gate, without a second, separately-tracked emptiness
+  // check on `openArtifacts.length`.
+  const activeTab = openArtifacts.find(tab => tab.chartId === activeChartId)
+  if (activeTab === undefined) {
+    return (
+      <div className={css.body}>
+        <LandingView
+          charts={science.charts}
+          outcome={science.outcome}
+          loadImage={loadImage}
+          onOpenTab={(selection) => { actions.openTab(selection) }}
+          t={t}
+        />
+      </div>
+    )
+  }
+
+  // The one remaining way `activeChart` resolves to undefined is the
+  // durable projection not having this exact (chartId, version) pair — a
+  // stale tab, handled below as "artifact unavailable".
+  const activeChart = science.charts.find(candidate => candidate.chartId === activeTab.chartId && candidate.version === activeTab.version)
+
+  return (
+    <div className={css.body}>
+      <TabStrip
+        tabs={openArtifacts}
+        charts={science.charts}
+        activeChartId={activeChartId}
+        onActivate={(chartId) => { actions.activateTab(chartId) }}
+        onClose={(chartId) => { actions.closeTab(chartId) }}
+        t={t}
+      />
+      {activeChart === undefined
+        ? <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
+        : (
+          <ArtifactTab
+            science={science}
+            chart={activeChart}
+            view={view}
+            provenanceSubTab={provenanceSubTab}
+            snapshot={snapshot}
+            loadImage={loadImage}
+            useStore={useStore}
+            actions={actions}
+            inspectCall={inspectCall}
+            t={t}
+          />
+        )}
+    </div>
+  )
+}
+
 /**
- * Render the Science Details entry (the artifact panel) from the current
+ * Render the Science Details entry (the artifact viewer) from the current
  * `science` projection and the shared selection store.
- * @param props - runtime slot currency, the injected loader, the shared selection store, and the science locale seat.
+ * @param props - runtime slot currency, the injected loader, the shared
+ * selection store, the Details-seam jump handoff, and the science locale seat.
  * @returns the current-state Science surface for this session.
  */
-export function ScienceDetailsView({ sessionId, useSessions, useProjection, useStore, actions, loadImage, t }: ScienceDetailsViewProps) {
+export function ScienceDetailsView({
+  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, t,
+}: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
+  const snapshot = useSession(s => s)
 
   if (science === undefined) {
     return (
@@ -436,11 +522,9 @@ export function ScienceDetailsView({ sessionId, useSessions, useProjection, useS
   }
 
   return (
-    <div className={css.body}>
-      <EnvironmentSection environment={science.environment} t={t} />
-      <RunsSection runs={science.runs} t={t} />
-      <ArtifactsSection charts={science.charts} loadImage={loadImage} useStore={useStore} actions={actions} t={t} />
-      <OutcomeSection outcome={science.outcome} t={t} />
-    </div>
+    <ArtifactViewer
+      science={science} snapshot={snapshot} loadImage={loadImage}
+      useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
+    />
   )
 }

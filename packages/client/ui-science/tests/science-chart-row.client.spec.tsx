@@ -92,12 +92,13 @@ describe('ScienceChartRow', () => {
     await waitFor(() => { expect(view.container.querySelector('img')).not.toBeNull() })
   })
 
-  it('activating the row selects the exact artifact version and opens the Science Details entry', () => {
+  it('activating the row opens the exact artifact version\'s tab and opens the Science Details entry', () => {
     const openDetailsView = vi.fn()
     const store = testScienceSelectionStore()
     const view = render(<ScienceChartRow {...props(settled({ meta: validMeta }), { openDetailsView, store })} />)
     view.getByText('Loss curve').click()
-    expect(store.instance.getSnapshot().selected).toEqual({ chartId: 'chart-1', version: 2 })
+    expect(store.instance.getSnapshot().openArtifacts).toEqual([{ chartId: 'chart-1', version: 2 }])
+    expect(store.instance.getSnapshot().activeChartId).toBe('chart-1')
     expect(openDetailsView).toHaveBeenCalledWith('science')
   })
 
@@ -141,7 +142,7 @@ describe('ScienceChartRow', () => {
     expect(seen).toEqual(['Escape'])
   })
 
-  it('the thumbnail\'s hover control never selects the version or opens the Details column', () => {
+  it('the thumbnail\'s hover control never opens a tab or opens the Details column', () => {
     const openDetailsView = vi.fn()
     const store = testScienceSelectionStore()
     const view = render(<ScienceChartRow {...props(settled({ meta: validMeta }), { openDetailsView, store })} />)
@@ -149,7 +150,7 @@ describe('ScienceChartRow', () => {
     expect(hint).not.toBeNull()
     ;(hint as HTMLElement).click()
     expect(openDetailsView).not.toHaveBeenCalled()
-    expect(store.instance.getSnapshot().selected).toBeNull()
+    expect(store.instance.getSnapshot().openArtifacts).toEqual([])
   })
 
   it('omits the caption paragraph when the presentation carries none (compact row never renders one)', () => {

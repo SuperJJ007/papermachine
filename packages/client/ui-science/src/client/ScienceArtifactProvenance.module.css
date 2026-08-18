@@ -1,0 +1,106 @@
+/* Provenance drill-in: breadcrumb, sub-tab strip, and one active section —
+   the in-panel replacement for the former separate provenance view tab. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.breadcrumbRoot {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.breadcrumbRoot:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+.breadcrumbSep {
+  color: var(--dsw-alias-label-caption);
+}
+
+.breadcrumbCurrent {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.subTabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.subTab {
+  padding: 4px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.subTab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.subTabActive {
+  border-bottom-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.anchor {
+  margin: 0;
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+  word-break: break-all;
+}
+
+.jumpButton {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.jumpButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

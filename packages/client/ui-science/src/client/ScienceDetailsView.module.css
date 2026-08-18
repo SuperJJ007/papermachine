@@ -1,10 +1,12 @@
-/* Science Details entry: environment/runs/charts/Outcome sections stacked in
-   the routed Details column body (the shell owns header chrome and scroll). */
+/* Science Details entry: the artifact viewer — tab strip, toolbar, dispatched
+   content or the provenance drill-in, and the no-tab landing view (gallery +
+   Outcome) — stacked in the routed Details column body (the shell owns
+   header chrome and scroll). */
 
 .body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .preset {
@@ -33,61 +35,163 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.environmentBody {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+/* Tab strip: one tab per opened artifact, plus its own close control. */
 
-.environmentRow {
+.tabStrip {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
+  gap: 2px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.environmentLanguage {
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  border-bottom: 2px solid transparent;
+}
+
+.tabActive {
+  border-bottom-color: var(--dsw-alias-label-primary);
+}
+
+.tabButton {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.tabActive .tabButton {
+  color: var(--dsw-alias-label-primary);
   font-weight: 500;
+}
+
+.tabClose {
+  display: inline-flex;
+  padding: 3px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.tabClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.fingerprint {
-  font-family: var(--ds-font-family-code);
-  color: var(--dsw-alias-label-caption);
+/* Toolbar: filename, version stepper, provenance/download/maximize/close. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.runList {
+.toolbarTitle {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 2px;
+  min-width: 0;
 }
 
-.runRow {
+.toolbarControls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.runLanguage {
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
-}
-
-.runStatus {
+  gap: 2px;
   flex: none;
 }
 
-.runTime {
+.toolbarAction {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolbarAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.stepperButton {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.stepperButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepperButton:disabled {
   color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.stepperLabel {
+  min-width: 24px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Content: the dispatched artifact body (image today). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.caption {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.contentFacts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Landing view: gallery of latest chart versions, plus Outcome below it. */
+
+.landing {
+  display: flex;
+  flex-direction: column;
 }
 
 .chartList {
@@ -143,85 +247,6 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.detailBack {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: flex-start;
-  padding: 2px 6px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.detailBack:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.detailMeta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.caption {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.detailFacts {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.versionRail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.versionItem {
-  padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.versionItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.versionItem[aria-current='true'] {
-  border-color: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
 
 .badge {

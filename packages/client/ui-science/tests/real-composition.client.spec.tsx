@@ -4,13 +4,14 @@
 // ui-conversation, ui-tool, and ui-science mounted through their real
 // apply() — no hand-built ctx.plugin(...) presentation stub. Proves the
 // transcript row → Details column linkage end to end (activating the
-// compact `save_chart` row selects the exact version and opens the routed
-// Science entry through the real openDetailsView write path), the artifact
-// panel's version rail switching, the header actions' provenance/expand
-// controls, the one selection-store instance genuinely shared across the
-// transcript row, the artifact panel, and the header actions registrations,
-// the provenance tab's session-preset gating through the real `ctx.sessions`
-// double, and full disposal removing every registration this package adds.
+// compact `save_chart` row opens that exact version's tab through the real
+// openDetailsView write path), the one selection-store instance genuinely
+// shared across the transcript row and the artifact viewer, the toolbar's
+// provenance control switching to the drill-in, the drill-in's Messages
+// sub-tab reaching DetailsPanel's real `inspectCall` owner callback (the one
+// ui-conversation touch this redesign made — proven here on the real render
+// tree, not a mock), and full disposal removing every registration this
+// package adds.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent } from '@testing-library/react'
@@ -26,7 +27,6 @@ import { apply as applyTool, inject as injectTool } from '@deepseek-ai/dsh-clien
 import { apply as applyScience, inject as injectScience } from '../src/client/index.ts'
 
 const SID = 'sci-1' as SessionId
-const STANDARD_SID = 'std-1' as SessionId
 const CALL_ID = 'call-chart-1'
 
 class ResizeObserverStub {
@@ -120,10 +120,10 @@ async function bench() {
       })),
     },
   })
-  // The projection value the artifact panel and header controls read
-  // (useProjection('science')) — a separate host-computed push channel from
-  // the chat transcript's own tool-result node, so the chart the row
-  // presents must also exist here for the panel to resolve it.
+  // The projection value the artifact viewer reads (useProjection('science'))
+  // — a separate host-computed push channel from the chat transcript's own
+  // tool-result node, so the chart the row presents must also exist here for
+  // the viewer to resolve it.
   runtime.sessions.behavior(SID).projections.set('science', {
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
@@ -152,7 +152,7 @@ async function bench() {
 }
 
 describe('ui-science on the real machinery stack', () => {
-  it('activating the compact transcript row selects the exact version and opens the routed Science Details entry', async () => {
+  it('activating the compact transcript row opens that exact version\'s tab in the routed Science Details entry', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
 
@@ -164,51 +164,51 @@ describe('ui-science on the real machinery stack', () => {
     const chatStore = b.runtime.storeOf('conversation.view', SID) as { getSnapshot(): { detailsView: string | null } }
     expect(chatStore.getSnapshot().detailsView).toBe('science')
 
-    // The Details column renders the artifact directly in detail mode (the
-    // selection the row just wrote): the title appears once in the
-    // transcript row and once in the panel's artifact detail, plus a
-    // version rail.
-    expect(view.getAllByText('Loss curve')).toHaveLength(2)
-    expect(await view.findByLabelText('Versions')).toBeTruthy()
+    // The Details column renders the artifact directly in its content view
+    // (the tab the row just opened): the title appears once in the
+    // transcript row and once in the viewer's own toolbar, plus a tab.
+    expect(view.getAllByText('Loss curve')).toHaveLength(3)
+    expect(await view.findByRole('tab', { name: 'Loss curve' })).toBeTruthy()
     await b.runtime.dispose()
   })
 
-  it('the transcript row, the artifact panel, and the Details header controls all observe the one write the row makes', async () => {
+  it('the transcript row and the artifact viewer observe the one write the row makes (shared selection store)', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
     fireEvent.click(view.container.querySelector('[data-tool="science-chart"]')!)
 
-    // If the row's `select` write landed on a store instance different from
-    // the one the artifact panel and header controls read, neither would
-    // ever see it — the version rail and the two header controls appearing
-    // here is exactly the observable proof that all three share one live
-    // instance (the framework's own handle × session cache,
-    // ui-slots/store.ts), not three independent stores that merely started
+    // If the row's `openTab` write landed on a store instance different from
+    // the one the viewer reads, the tab would never appear here — the tab
+    // strip and toolbar appearing is exactly the observable proof that both
+    // share one live instance (the framework's own handle × session cache,
+    // ui-slots/store.ts), not two independent stores that merely started
     // from the same declaration.
-    expect(await view.findByLabelText('Versions')).toBeTruthy()
+    expect(await view.findByRole('tab', { name: 'Loss curve' })).toBeTruthy()
     const provenanceButton = await view.findByRole('button', { name: 'Provenance' })
     const expandButton = view.getByRole('button', { name: 'Expand' })
     expect(provenanceButton).toBeTruthy()
     expect(expandButton).toBeTruthy()
-
-    fireEvent.click(provenanceButton)
-    const chatStore = b.runtime.storeOf('conversation.view', SID) as { getSnapshot(): { view: string | null } }
-    await vi.waitFor(() => { expect(chatStore.getSnapshot().view).toBe('science.provenance') })
     await b.runtime.dispose()
   })
 
-  it('the provenance tab is present for the current Science session and absent once a Standard session becomes current', async () => {
+  it('the toolbar\'s provenance control opens the drill-in, and its Messages sub-tab reaches the real DetailsPanel inspectCall handoff', async () => {
     const b = await bench()
-    b.runtime.renderRoot()
-    // The gate reconciles synchronously against ctx.sessions.list at mount
-    // time; the Science session added in bench() is already current.
-    expect(b.slots.entries('conversation.view').map(e => e.options.id)).toContain('science.provenance')
+    const view = b.runtime.renderRoot()
+    fireEvent.click(view.container.querySelector('[data-tool="science-chart"]')!)
+    fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
-    await b.runtime.sessions.add({ id: STANDARD_SID, summary: { title: 'Standard', displayTitle: 'Standard' } })
-    expect(b.slots.entries('conversation.view').map(e => e.options.id)).not.toContain('science.provenance')
+    fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
+    fireEvent.click(view.getByRole('button', { name: 'Jump to transcript' }))
 
-    await b.runtime.sessions.setCurrent(SID)
-    expect(b.slots.entries('conversation.view').map(e => e.options.id)).toContain('science.provenance')
+    // DetailsPanel.tsx supplies this Details-seam owner callback from the
+    // same real `store: chatStore` share it already holds for its header
+    // controls and routed-entry dispatch — the one ui-conversation touch
+    // this redesign made (DetailsViewOwnerProps.inspectCall).
+    const chatStore = b.runtime.storeOf('conversation.view', SID) as {
+      getSnapshot(): { inspect: { callId: string } | null; view: string | null }
+    }
+    expect(chatStore.getSnapshot().inspect).toEqual({ callId: CALL_ID })
+    expect(chatStore.getSnapshot().view).toBe('trajectory')
     await b.runtime.dispose()
   })
 
@@ -218,9 +218,6 @@ describe('ui-science on the real machinery stack', () => {
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
       .toEqual(expect.arrayContaining(['save_chart', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
-    expect(b.slots.entries('conversation.details.header.actions').map(e => (e.options as { key?: string }).key))
-      .toContain('science')
-    expect(b.slots.entries('conversation.view').map(e => e.options.id)).toContain('science.provenance')
     expect(b.slots.entries('conversation.session.header.actions').map(e => e.options.id)).toContain('science')
 
     await b.scienceHandle.dispose()
@@ -228,8 +225,6 @@ describe('ui-science on the real machinery stack', () => {
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
       .not.toEqual(expect.arrayContaining(['save_chart', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).not.toContain('science')
-    expect(b.slots.entries('conversation.details.header.actions')).toHaveLength(0)
-    expect(b.slots.entries('conversation.view').map(e => e.options.id)).not.toContain('science.provenance')
     expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     // ui-tool's own bash sample (mounted by applyTool, not applyScience)
     // survives the ui-science fiber's disposal.

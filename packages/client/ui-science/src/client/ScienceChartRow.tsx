@@ -1,14 +1,14 @@
 // Chart toolview registrant: the keyed toolview hole for `save_chart`. A
 // settled, valid presentation renders as a compact navigation row — small
 // thumbnail, logical name, version badge, title — never the full card the
-// artifact panel now owns. Activating the row (anywhere but the thumbnail)
-// selects that exact artifact version in the shared ui-science selection
-// store and opens the Details column on the Science entry; a
-// hover-revealed control on the thumbnail opens the shared lightbox
-// directly, so full-screen viewing never requires opening the column. A
-// running, failed, stopped, or unrecognized/stale presentation falls back to
-// a plain row: title, state, and the tool's own rendered text, never a
-// broken or empty card.
+// artifact viewer now owns. Activating the row (anywhere but the thumbnail)
+// opens (or activates, at that exact version) that artifact's tab in the
+// shared ui-science selection store and opens the Details column on the
+// Science entry; a hover-revealed control on the thumbnail opens the shared
+// lightbox directly, so full-screen viewing never requires opening the
+// column. A running, failed, stopped, or unrecognized/stale presentation
+// falls back to a plain row: title, state, and the tool's own rendered text,
+// never a broken or empty card.
 
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment'
@@ -120,7 +120,7 @@ export function ScienceChartRow({ block, loadImage, openDetailsView, actions, t 
   }
 
   const activate = (): void => {
-    actions.select({ chartId: presentation.chartId as ScienceChartId, version: presentation.chartVersion })
+    actions.openTab({ chartId: presentation.chartId as ScienceChartId, version: presentation.chartVersion })
     openDetailsView(SCIENCE_DETAILS_ID)
   }
 

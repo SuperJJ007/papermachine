@@ -1,49 +1,44 @@
-// Provenance view: a `conversation.view` tab (id `science.provenance`) that
-// resolves the four-part provenance bundle for the ui-science selection
-// store's selected artifact version — code, execution log, conversation
-// turn, and environment — from the same `science` projection and the
-// conversation snapshot the transcript already loads. `apply.ts` registers
-// this entry only while the current session names the `science` preset (the
-// gate a `conversation.view` tab needs to be absent, not merely empty, for a
-// Standard or custom session — `views.list()` is a static registration
-// ledger, not session-filtered); this component re-checks the same fact so a
-// stale registration can never render for the wrong session.
+// The provenance drill-in: an in-panel breadcrumb (`<name> › Provenance`)
+// over four sub-tabs — Code, Execution log, Messages, Environment — for one
+// resolved artifact version. Reached from the artifact viewer's toolbar
+// ("Provenance"); the breadcrumb's root segment returns to the content view.
+// Resolution (which chart/run this bundle is for) is the caller's job
+// (ScienceDetailsView.tsx) — this component always renders for a chart/run
+// pair that already resolved, so it carries no "no selection"/"unavailable"
+// branch of its own.
 
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  conversationContextKey,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: ChatNode narrows the generic view-node store's value for the
 // 'tool-call' target the same way ui-conversation's own tool-node reader does.
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientProjection, ScienceClientRun,
+  ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceSelectionStore } from './selection-store.ts'
-import css from './ScienceProvenanceView.module.css'
+import type { ScienceProvenanceSubTab } from './selection-store.ts'
+import css from './ScienceArtifactProvenance.module.css'
 
-/** Full props for the provenance view: runtime + selection store + locale seat. */
-export type ScienceProvenanceViewProps =
-  PropsRuntime<'conversation.view'> & PropsStore<ScienceSelectionStore> & PropsLocale<'science'>
+/** One resolved provenance sub-tab and its display label key, in display order. */
+const SUB_TABS: readonly { id: ScienceProvenanceSubTab; labelKey: 'provenance.code.title' | 'provenance.log.title' | 'provenance.messages.title' | 'provenance.environment.title' }[] = [
+  { id: 'code', labelKey: 'provenance.code.title' },
+  { id: 'log', labelKey: 'provenance.log.title' },
+  { id: 'messages', labelKey: 'provenance.messages.title' },
+  { id: 'environment', labelKey: 'provenance.environment.title' },
+]
 
-/** The material one artifact version resolves before code/log/environment can render. */
-interface ArtifactMaterial {
-  readonly chart: ScienceClientChartVersion
-  readonly run: ScienceClientRun
-}
-
-/** Resolve the selected artifact's chart and source-run projection records. */
-function resolveArtifact(
-  science: ScienceClientProjection | null | undefined,
-  selected: { chartId: string; version: number },
-): ArtifactMaterial | null {
-  const chart = science?.charts.find(candidate => candidate.chartId === selected.chartId && candidate.version === selected.version)
-  if (chart === undefined) return null
-  const run = science?.runs.find(candidate => candidate.runId === chart.runId)
-  if (run === undefined) return null
-  return { chart, run }
+/** Full props for the provenance drill-in. */
+export interface ScienceArtifactProvenanceProps {
+  chart: ScienceClientChartVersion
+  run: ScienceClientRun
+  environment: ScienceClientEnvironmentBinding | null | undefined
+  snapshot: ConversationSnapshot
+  subTab: ScienceProvenanceSubTab
+  onSubTabChange: (subTab: ScienceProvenanceSubTab) => void
+  onBack: () => void
+  inspectCall: (callId: string) => void
+  t: TranslateNS<'science'>
 }
 
 /** Resolve one root run_python/run_r call through the internal Chat Node index (direct-dispatch calls are always root). */
@@ -112,7 +107,6 @@ function CodeSection({ run, block, t }: { run: ScienceClientRun; block: ToolCall
   const code = parseCode(resolveArgsRaw(block))
   return (
     <section className={css.section}>
-      <div className={css.sectionLabel}>{t('provenance.code.title')}</div>
       <p className={css.anchor}>{t('provenance.code.anchor', { sha256: run.codeSha256 })}</p>
       {code === null
         ? <p className={css.notice} role="status">{t('provenance.code.pending')}</p>
@@ -126,7 +120,6 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
   const counts = terminalCounts(run)
   return (
     <section className={css.section}>
-      <div className={css.sectionLabel}>{t('provenance.log.title')}</div>
       {counts !== null && (
         <p className={css.anchor}>
           {t('provenance.log.counts', {
@@ -145,19 +138,18 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
   )
 }
 
-function ConversationSection({ run, inspectCall, t }: {
+function MessagesSection({ run, inspectCall, t }: {
   run: ScienceClientRun
   inspectCall: (callId: string) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <section className={css.section}>
-      <div className={css.sectionLabel}>{t('provenance.conversation.title')}</div>
       <p className={css.anchor}>
-        {t('provenance.conversation.turn', { requestHeaderSeq: run.requestHeaderSeq, startedAt: formatTime(run.startedAt) })}
+        {t('provenance.messages.turn', { requestHeaderSeq: run.requestHeaderSeq, startedAt: formatTime(run.startedAt) })}
       </p>
       <button type="button" className={css.jumpButton} onClick={() => { inspectCall(run.toolCallId) }}>
-        {t('provenance.conversation.jump')}
+        {t('provenance.messages.jump')}
       </button>
     </section>
   )
@@ -171,7 +163,6 @@ function EnvironmentSection({ run, environment, t }: {
   const current = environment?.revision === run.environmentRevision ? environment : undefined
   return (
     <section className={css.section}>
-      <div className={css.sectionLabel}>{t('provenance.environment.title')}</div>
       {current === undefined
         ? (
           <p className={css.notice} role="status">
@@ -186,47 +177,43 @@ function EnvironmentSection({ run, environment, t }: {
 }
 
 /**
- * Render the four-part provenance bundle for the selection store's current
- * artifact version.
- * @param props - runtime slot currency, the shared selection store, and the science locale seat.
- * @returns the provenance tab body.
+ * Render the provenance drill-in for one resolved artifact version: the
+ * breadcrumb, the sub-tab strip, and the active sub-tab's section.
+ * @param props - the resolved chart/run pair, the current environment
+ * binding, the conversation snapshot, the active sub-tab and its setter, the
+ * back-to-content callback, the transcript jump handoff, and the locale seat.
+ * @returns the drill-in body.
  */
-export function ScienceProvenanceView({
-  sessionId, useSessions, useSession, useProjection, useStore, inspectCall, t,
-}: ScienceProvenanceViewProps) {
-  const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
-  const selected = useStore(s => s.selected)
-  const science = useProjection('science')
-  const snapshot = useSession(s => s)
-
-  if (preset !== 'science') return null
-
-  if (selected === null) {
-    return (
-      <div className={css.body}>
-        <p className={css.notice} role="status">{t('provenance.noSelection')}</p>
-      </div>
-    )
-  }
-
-  const material = resolveArtifact(science, selected)
-  if (material === null) {
-    return (
-      <div className={css.body}>
-        <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
-      </div>
-    )
-  }
-
-  const { run } = material
+export function ScienceArtifactProvenance({
+  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, t,
+}: ScienceArtifactProvenanceProps) {
   const block = resolveRunCall(snapshot, run.toolCallId)
 
   return (
     <div className={css.body}>
-      <CodeSection run={run} block={block} t={t} />
-      <ExecutionLogSection run={run} block={block} t={t} />
-      <ConversationSection run={run} inspectCall={inspectCall} t={t} />
-      <EnvironmentSection run={run} environment={science?.environment} t={t} />
+      <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
+        <button type="button" className={css.breadcrumbRoot} onClick={onBack}>{chart.title}</button>
+        <span className={css.breadcrumbSep} aria-hidden="true">›</span>
+        <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
+      </nav>
+      <div className={css.subTabs} role="tablist" aria-label={t('provenance.label')}>
+        {SUB_TABS.map(({ id, labelKey }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={id === subTab}
+            className={id === subTab ? `${css.subTab} ${css.subTabActive}` : css.subTab}
+            onClick={() => { onSubTabChange(id) }}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+      </div>
+      {subTab === 'code' && <CodeSection run={run} block={block} t={t} />}
+      {subTab === 'log' && <ExecutionLogSection run={run} block={block} t={t} />}
+      {subTab === 'messages' && <MessagesSection run={run} inspectCall={inspectCall} t={t} />}
+      {subTab === 'environment' && <EnvironmentSection run={run} environment={environment} t={t} />}
     </div>
   )
 }

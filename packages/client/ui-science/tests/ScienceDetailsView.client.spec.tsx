@@ -1,20 +1,19 @@
 // @vitest-environment jsdom
 /**
- * The Science Details entry (the artifact panel): every reachable state from
- * the accepted client-safe `science` projection (missing projection support,
- * unbound, environment failed/applied/package-count, no/some runs,
- * gallery/detail/version-rail for charts, attachment failure, no/some
- * Outcome), the version rail walking every durable version, the
- * header-triggered lightbox, distinct accessible text per state, and a
- * privacy regression proving a full fingerprint, executable, or configured
- * path never reaches rendered text even when a projection value carries one.
+ * The Science Details entry (the artifact viewer): every reachable state
+ * from the accepted client-safe `science` projection (missing projection
+ * support, unbound, no-tab landing view with gallery/Outcome, opening a tab,
+ * the tab strip across multiple open artifacts, the toolbar's version
+ * stepper/provenance/download/maximize/close-tab controls, content dispatch
+ * across every accepted media type, the provenance drill-in reached from the
+ * toolbar, a stale tab, and distinct accessible text per top-level state).
  */
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceClientChartVersion, ScienceClientInterpreterBinding, ScienceClientProjection, ScienceClientRun,
+  ScienceClientChartVersion, ScienceClientProjection, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceDetailsView, type ScienceDetailsViewProps } from '../src/client/ScienceDetailsView.tsx'
 import { en } from '../src/client/locales.ts'
@@ -77,12 +76,17 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
   } as ScienceClientRun
 }
 
+function emptySnapshot(): ConversationSnapshot {
+  return { chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
+}
+
 function props(
   science: ScienceClientProjection | null | undefined,
   over: {
     agentPreset?: string
     loadImage?: Props['loadImage']
     store?: ReturnType<typeof testScienceSelectionStore>
+    inspectCall?: (callId: string) => void
   } = {},
 ): Props {
   const state = {
@@ -102,28 +106,24 @@ function props(
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
+  const snapshot = emptySnapshot()
   const store = over.store ?? testScienceSelectionStore()
   return {
     sessionId: SESSION,
     useSessions,
+    useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
     useProjection: vi.fn(() => science),
     useStore: store.useStore,
     actions: store.actions,
-    loadImage: over.loadImage ?? vi.fn().mockResolvedValue('blob:fake-url'),
+    inspectCall: over.inspectCall ?? vi.fn(),
+    loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     t,
   } as unknown as Props
 }
 
-/** The whole-panel status text, valid only for the two single-paragraph early-return states. */
+/** The whole-panel status text, valid only for a single-paragraph state. */
 function statusText(): string {
   return screen.getByRole('status').textContent ?? ''
-}
-
-/** One rendered section's root element, found by its heading text (the four sections always coexist once bound). */
-function sectionOf(heading: string): HTMLElement {
-  const el = screen.getByText(heading).closest('section')
-  if (el === null) throw new Error(`no <section> ancestor for heading "${heading}"`)
-  return el
 }
 
 describe('ScienceDetailsView: missing projection support', () => {
@@ -147,148 +147,26 @@ describe('ScienceDetailsView: unbound', () => {
   })
 })
 
-describe('ScienceDetailsView: environment', () => {
-  it('reports failed Runtime binding before any environment revision exists', () => {
+describe('ScienceDetailsView: landing view (no open tabs)', () => {
+  it('reports no charts yet and no outcome yet for an empty history', () => {
     render(<ScienceDetailsView {...props(baseProjection())} />)
-    expect(within(sectionOf('Environment')).getByRole('status').textContent).toBe('No interpreter binding is available yet.')
-  })
-
-  it('reports failed Runtime binding for an invalid or drifted revision, never as ready', () => {
-    for (const status of ['invalid', 'drifted'] as const) {
-      const science = baseProjection({
-        environment: { revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status },
-      })
-      render(<ScienceDetailsView {...props(science)} />)
-      const section = sectionOf('Environment')
-      expect(within(section).getByRole('status').textContent).toBe('No interpreter binding is available yet.')
-      expect(section.textContent).not.toContain('ready')
-      cleanup()
-    }
-  })
-
-  it('renders the profile, revision, and per-language capability once applied', () => {
-    const python: ScienceClientInterpreterBinding = {
-      language: 'python', capability: 'available', languageVersion: '3.11.4', fingerprintPreview: 'abcdef012345',
-    }
-    const r: ScienceClientInterpreterBinding = { language: 'r', capability: 'unavailable' }
-    const science = baseProjection({
-      environment: { revision: 2, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied', python, r },
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Environment')
-    expect(within(section).queryByRole('status')).toBeNull()
-    expect(section.textContent).toContain('Profile: science')
-    expect(section.textContent).toContain('Revision 2')
-    expect(section.textContent).toContain('Python')
-    expect(within(section).getByText('Available')).toBeTruthy()
-    expect(section.textContent).toContain('version 3.11.4')
-    expect(section.textContent).toContain('fingerprint abcdef012345')
-    expect(section.textContent).toContain('R')
-    expect(within(section).getByText('Unavailable')).toBeTruthy()
-  })
-
-  it('renders every interpreter capability, including invalid and drifted', () => {
-    const python: ScienceClientInterpreterBinding = { language: 'python', capability: 'invalid' }
-    const r: ScienceClientInterpreterBinding = { language: 'r', capability: 'drifted' }
-    const science = baseProjection({
-      environment: { revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied', python, r },
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Environment')
-    expect(within(section).getByText('Invalid')).toBeTruthy()
-    expect(within(section).getByText('Drifted')).toBeTruthy()
-  })
-
-  it('renders only the profile and revision for an applied environment with no interpreter binding', () => {
-    const science = baseProjection({
-      environment: { revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied' },
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Environment')
-    expect(section.textContent).toContain('Profile: science')
-    expect(within(section).queryByText('Python')).toBeNull()
-    expect(within(section).queryByText('R')).toBeNull()
-  })
-
-  it('renders the package count when the binding carries an inventory, and omits it otherwise', () => {
-    const withPackages: ScienceClientInterpreterBinding = {
-      language: 'python', capability: 'available',
-      packages: [{ name: 'pip', version: '24.0' }, { name: 'numpy', version: '2.0.0' }],
-    }
-    const withoutPackages: ScienceClientInterpreterBinding = { language: 'r', capability: 'available' }
-    const science = baseProjection({
-      environment: {
-        revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied',
-        python: withPackages, r: withoutPackages,
-      },
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Environment')
-    expect(section.textContent).toContain('2 packages')
-  })
-})
-
-describe('ScienceDetailsView: runs', () => {
-  it('reports no runs yet for an empty history', () => {
-    render(<ScienceDetailsView {...props(baseProjection())} />)
-    expect(within(sectionOf('Runs')).getByRole('status').textContent).toBe('No runs yet.')
-  })
-
-  it('renders ordered run status/history', () => {
-    const science = baseProjection({
-      runs: [
-        run({ runId: 'run-1' as never, status: 'success' }),
-        run({ runId: 'run-2' as never, language: 'r', status: 'failed' }),
-        run({ runId: 'run-3' as never, status: 'running' }),
-      ],
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Runs')
-    expect(within(section).queryByRole('status')).toBeNull()
-    expect(section.textContent).toContain('Success')
-    expect(section.textContent).toContain('Failed')
-    expect(section.textContent).toContain('Running')
-  })
-
-  it('renders the timed-out, cancelled, and interrupted terminal statuses', () => {
-    const science = baseProjection({
-      runs: [
-        run({ runId: 'run-1' as never, status: 'timed-out' }),
-        run({ runId: 'run-2' as never, status: 'cancelled' }),
-        run({ runId: 'run-3' as never, status: 'interrupted', interruptedAtSeq: 4 } as never),
-      ],
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Runs')
-    expect(section.textContent).toContain('Timed out')
-    expect(section.textContent).toContain('Cancelled')
-    expect(section.textContent).toContain('Interrupted')
-  })
-})
-
-describe('ScienceDetailsView: artifact gallery', () => {
-  it('reports no charts yet for an empty history', () => {
-    render(<ScienceDetailsView {...props(baseProjection())} />)
-    expect(within(sectionOf('Charts')).getByRole('status').textContent).toBe('No charts yet.')
+    const statuses = screen.getAllByRole('status')
+    expect(statuses.map(el => el.textContent)).toEqual(['No charts yet.', 'No outcome published yet.'])
   })
 
   it('renders one gallery entry per logical chart at its latest accepted version', () => {
     const science = baseProjection({
-      // A duplicate/out-of-order lower version after the accepted latest
-      // must not displace it (latestCharts keeps the higher version).
       charts: [
         chart({ version: 1 }), chart({ version: 2 }), chart({ version: 1 }),
         chart({ chartId: 'chart-2' as never, title: 'Other', version: 1 }),
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Charts')
-    expect(within(section).queryByRole('status')).toBeNull()
-    expect(within(section).getAllByText(/^v\d$/)).toHaveLength(2)
-    expect(within(section).getByText('v2')).toBeTruthy()
-    expect(within(section).getByText('Loss curve')).toBeTruthy()
-    expect(within(section).getAllByText('loss-curve')).toHaveLength(2)
-    expect(within(section).getByText('Other')).toBeTruthy()
+    expect(screen.getAllByText(/^v\d$/)).toHaveLength(2)
+    expect(screen.getByText('v2')).toBeTruthy()
+    expect(screen.getByText('Loss curve')).toBeTruthy()
+    expect(screen.getAllByText('loss-curve')).toHaveLength(2)
+    expect(screen.getByText('Other')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -306,152 +184,18 @@ describe('ScienceDetailsView: artifact gallery', () => {
     render(<ScienceDetailsView {...props(science, { loadImage })} />)
     expect(await screen.findByRole('button', { name: 'Failed to load, click to retry' })).toBeTruthy()
   })
-})
-
-describe('ScienceDetailsView: artifact detail and version rail', () => {
-  it('selecting a gallery entry switches to the detail view with a version rail over every durable version', () => {
-    const science = baseProjection({
-      charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })],
-    })
-    const view = render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Charts')
-    fireEvent.click(within(section).getByText('v2 title'))
-
-    // Detail mode: the gallery's other entries are gone, replaced by one
-    // big image, the selected version's title, and a rail over v1..v2.
-    expect(screen.getByText('v2 title')).toBeTruthy()
-    expect(screen.queryByText('v1 title')).toBeNull()
-    const rail = screen.getByLabelText('Versions')
-    expect(within(rail).getAllByRole('button')).toHaveLength(2)
-    expect(within(rail).getByText('v1')).toBeTruthy()
-    expect(within(rail).getByText('v2')).toBeTruthy()
-    expect(view.container.querySelector('[aria-current="true"]')?.textContent).toBe('v2')
-  })
-
-  it('the version rail switches the rendered version without leaving detail mode', () => {
-    const science = baseProjection({
-      charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })],
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('v2 title'))
-
-    const rail = screen.getByLabelText('Versions')
-    fireEvent.click(within(rail).getByText('v1'))
-
-    expect(screen.getByText('v1 title')).toBeTruthy()
-    expect(screen.queryByText('v2 title')).toBeNull()
-    expect(document.querySelector('[aria-current="true"]')?.textContent).toBe('v1')
-  })
-
-  it('renders the caption when the selected version carries one, and the sub-kilobyte/kilobyte/megabyte byte formats across versions', () => {
-    const science = baseProjection({
-      charts: [
-        chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
-        chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
-        chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
-      ],
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('v3 title'))
-    expect(screen.getByText(/5\.0 MB/)).toBeTruthy()
-
-    const rail = screen.getByLabelText('Versions')
-    fireEvent.click(within(rail).getByText('v2'))
-    expect(screen.getByText(/2\.0 KB/)).toBeTruthy()
-
-    fireEvent.click(screen.getByLabelText('Versions').querySelector('button')!)
-    expect(screen.getByText('First pass')).toBeTruthy()
-    expect(screen.getByText(/512 B/)).toBeTruthy()
-  })
 
   it('activates a gallery entry on Enter/Space and ignores every other key', () => {
     const science = baseProjection({ charts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
-    const gallery = sectionOf('Charts').querySelector('[role="button"]') as HTMLElement
+    const gallery = document.querySelector('[role="button"]') as HTMLElement
     fireEvent.keyDown(gallery, { key: 'a' })
-    expect(screen.queryByLabelText('Versions')).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
-    expect(screen.getByLabelText('Versions')).toBeTruthy()
+    expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
   })
 
-  it('reports the header-triggered lightbox image as unavailable when the loader rejects (no dialog, no crash)', async () => {
-    const loadImage = vi.fn().mockRejectedValue(new Error('network'))
-    const science = baseProjection({ charts: [chart()] })
-    const store = testScienceSelectionStore()
-    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
-    store.actions.setLightboxOpen(true)
-    await waitFor(() => { expect(loadImage.mock.calls.length).toBeGreaterThan(0) })
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('back-to-gallery returns to the gallery with the selection cleared', () => {
-    const science = baseProjection({ charts: [chart({ version: 1 }), chart({ version: 2 })] })
-    render(<ScienceDetailsView {...props(science)} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
-    fireEvent.click(screen.getByText('Back to gallery'))
-
-    const section = sectionOf('Charts')
-    expect(within(section).queryByLabelText('Versions')).toBeNull()
-    // Back to one gallery entry at its latest (v2) version.
-    expect(within(section).getByText('v2')).toBeTruthy()
-  })
-
-  it('the header-triggered lightbox opens when the shared store flips lightboxOpen, and closes back through the same store', async () => {
-    const loadImage = vi.fn().mockResolvedValue('blob:fake-url')
-    const science = baseProjection({ charts: [chart()] })
-    const store = testScienceSelectionStore()
-    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
-    expect(screen.getByLabelText('Versions')).toBeTruthy()
-
-    expect(screen.queryByRole('dialog')).toBeNull()
-    store.actions.setLightboxOpen(true)
-    const dialog = await screen.findByRole('dialog')
-    expect(dialog).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    await waitFor(() => { expect(store.instance.getSnapshot().lightboxOpen).toBe(false) })
-  })
-
-  it('discards a header-triggered lightbox load that resolves after the lightbox already closed', async () => {
-    let resolveLoad: ((url: string) => void) | undefined
-    const loadImage = vi.fn(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
-    const science = baseProjection({ charts: [chart()] })
-    const store = testScienceSelectionStore()
-    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
-    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
-    // The gallery thumbnail and the detail's own big-image MessageImage
-    // already called loadImage; only the lightbox's own call matters here.
-    const callsBeforeLightbox = loadImage.mock.calls.length
-
-    act(() => { store.actions.setLightboxOpen(true) })
-    await waitFor(() => { expect(loadImage.mock.calls.length).toBe(callsBeforeLightbox + 1) })
-    // Close before the load settles: the effect's cleanup marks it stale.
-    act(() => { store.actions.setLightboxOpen(false) })
-    act(() => { resolveLoad?.('blob:late-url') })
-    await Promise.resolve()
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('a stale selection (chart no longer present) falls back to the gallery', () => {
-    const science = baseProjection({ charts: [chart({ version: 1 })] })
-    const store = testScienceSelectionStore()
-    store.actions.select({ chartId: 'missing-chart' as never, version: 1 })
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    const section = sectionOf('Charts')
-    expect(within(section).queryByLabelText('Versions')).toBeNull()
-    expect(within(section).getByText('Loss curve')).toBeTruthy()
-  })
-})
-
-describe('ScienceDetailsView: outcome', () => {
-  it('reports no outcome published yet before publication', () => {
-    render(<ScienceDetailsView {...props(baseProjection())} />)
-    expect(within(sectionOf('Outcome')).getByRole('status').textContent).toBe('No outcome published yet.')
-  })
-
-  it('renders the latest Outcome with its evidence references', () => {
+  it('reports no outcome published yet before publication, and renders the latest Outcome with evidence once published', () => {
     const science = baseProjection({
       outcome: {
         revision: 3, title: 'Model converges', summaryMarkdown: 'The **loss** dropped.',
@@ -465,19 +209,293 @@ describe('ScienceDetailsView: outcome', () => {
       },
     })
     render(<ScienceDetailsView {...props(science)} />)
-    const section = sectionOf('Outcome')
-    expect(within(section).queryByRole('status')).toBeNull()
-    expect(section.textContent).toContain('Model converges')
-    expect(section.textContent).toContain('revision 3')
-    expect(section.querySelector('strong')?.textContent).toBe('loss')
-    expect(section.textContent).toContain('run run-1')
-    expect(section.textContent).toContain('chart chart-1 v2')
-    expect(section.textContent).toContain('message #7')
+    expect(screen.getByText('Model converges')).toBeTruthy()
+    expect(screen.getByText(/revision 3/)).toBeTruthy()
+    expect(document.querySelector('strong')?.textContent).toBe('loss')
+    expect(screen.getByText('run run-1')).toBeTruthy()
+    expect(screen.getByText('chart chart-1 v2')).toBeTruthy()
+    expect(screen.getByText('message #7')).toBeTruthy()
   })
 })
 
-describe('ScienceDetailsView: distinct accessible text per state', () => {
-  it('never repeats the same status text across the missing-support/unbound/environment/runs/charts/outcome states', () => {
+describe('ScienceDetailsView: opening a tab', () => {
+  it('clicking a gallery entry opens its tab, shows the tab strip and toolbar, and switches away from the landing view', () => {
+    const science = baseProjection({ charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })] })
+    render(<ScienceDetailsView {...props(science)} />)
+    fireEvent.click(screen.getByText('v2 title'))
+
+    expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
+    expect(screen.getByText('loss-curve')).toBeTruthy()
+    expect(screen.queryByText('No charts yet.')).toBeNull()
+  })
+})
+
+describe('ScienceDetailsView: tab strip', () => {
+  function twoTabs() {
+    const science = baseProjection({
+      charts: [chart({ chartId: 'chart-1' as never, title: 'Alpha' }), chart({ chartId: 'chart-2' as never, title: 'Beta' })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ chartId: 'chart-2' as never, version: 1 })
+    return { science, store }
+  }
+
+  it('renders one tab per opened artifact, the most recently opened active', () => {
+    const { science, store } = twoTabs()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(screen.getByRole('tab', { name: 'Beta' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('clicking an inactive tab activates it', () => {
+    const { science, store } = twoTabs()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Alpha' }))
+    expect(store.instance.getSnapshot().activeChartId).toBe('chart-1')
+  })
+
+  it('closing a tab through its own close control removes it; closing the last tab returns to the landing view', () => {
+    const { science, store } = twoTabs()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close Alpha' }))
+    expect(screen.queryByRole('tab', { name: 'Alpha' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Beta' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
+    // Back to the landing view: the gallery lists both charts again (closing
+    // a tab never removes the chart itself from the projection).
+    expect(screen.getByRole('button', { name: 'Open chart Alpha, version 1' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open chart Beta, version 1' })).toBeTruthy()
+  })
+
+  it('a stale tab (chart no longer present in the projection) shows its raw id and the unavailable notice', () => {
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'missing-chart' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(screen.getByRole('tab', { name: 'missing-chart' })).toBeTruthy()
+    expect(statusText()).toBe('This artifact version is no longer available.')
+  })
+})
+
+describe('ScienceDetailsView: toolbar version stepper', () => {
+  function threeVersions() {
+    const science = baseProjection({
+      charts: [
+        chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
+        chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
+        chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
+      ],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 2 })
+    return { science, store }
+  }
+
+  it('disables ‹ at the earliest version and › at the latest, and steps between them otherwise', () => {
+    const { science, store } = threeVersions()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    // The stepped-to title shows twice: once as the tab label, once in the toolbar.
+    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getByText(/5\.0 MB/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
+    expect(screen.getAllByText('v1 title')).toHaveLength(2)
+    expect(screen.getByText('First pass')).toBeTruthy()
+    expect(screen.getByText(/512 B/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('a disabled stepper button never invokes the step callback', () => {
+    const { science, store } = threeVersions()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+  })
+})
+
+describe('ScienceDetailsView: content dispatch', () => {
+  it.each(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const)('renders an image for %s attachments', async (mediaType) => {
+    const science = baseProjection({
+      charts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    const loadImage = vi.fn().mockResolvedValue(`data:${mediaType};base64,abc`)
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+  })
+
+  it('renders the source run and dimensions in the content facts', () => {
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(screen.getByText('from run run-1')).toBeTruthy()
+    expect(screen.getByText(/10×10/)).toBeTruthy()
+  })
+})
+
+describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
+  it('opens when maximize is clicked, and closes back through the same store', async () => {
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => { expect(store.instance.getSnapshot().lightboxOpen).toBe(false) })
+  })
+
+  it('reports the lightbox image as unavailable when the loader rejects (no dialog, no crash)', async () => {
+    const loadImage = vi.fn().mockRejectedValue(new Error('network'))
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    await waitFor(() => { expect(loadImage.mock.calls.length).toBeGreaterThan(1) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('discards a lightbox load that resolves after the lightbox already closed', async () => {
+    let resolveLoad: ((url: string) => void) | undefined
+    const loadImage = vi.fn((attachment: { attachmentId: string }) => {
+      if (loadImage.mock.calls.length === 1) return Promise.resolve('data:image/png;base64,thumb')
+      void attachment
+      return new Promise<string>((resolve) => { resolveLoad = resolve })
+    })
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand' })) })
+    await waitFor(() => { expect(loadImage.mock.calls.length).toBeGreaterThanOrEqual(2) })
+    act(() => { store.actions.setLightboxOpen(false) })
+    act(() => { resolveLoad?.('data:image/png;base64,late') })
+    await Promise.resolve()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('ScienceDetailsView: download', () => {
+  function withOneTab(attachmentOver: Partial<ScienceClientChartVersion['attachment']> = {}) {
+    const science = baseProjection({
+      charts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    return { science, store }
+  }
+
+  it('resolves the durable bytes and triggers a browser save through a throwaway anchor named for the attachment', async () => {
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
+    const { science, store } = withOneTab({ name: 'observed.png' })
+    const created: HTMLAnchorElement[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      created.push(this)
+    })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
+    expect(created[0]?.href).toBe('data:image/png;base64,xyz')
+    expect(created[0]?.download).toBe('observed.png')
+    clickSpy.mockRestore()
+  })
+
+  it('falls back to a logicalName-version filename when the attachment carries no name', async () => {
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
+    const { science, store } = withOneTab()
+    const created: HTMLAnchorElement[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      created.push(this)
+    })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
+    expect(created[0]?.download).toBe('loss-curve-v1.png')
+    clickSpy.mockRestore()
+  })
+
+  it('a rejected download is swallowed (no dialog, no crash, no anchor click)', async () => {
+    const loadImage = vi.fn()
+      .mockResolvedValueOnce('data:image/png;base64,thumb')
+      .mockRejectedValueOnce(new Error('network'))
+    const { science, store } = withOneTab()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(2) })
+    expect(clickSpy).not.toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+})
+
+describe('ScienceDetailsView: provenance drill-in', () => {
+  function withRunAndChart() {
+    const science = baseProjection({ runs: [run()], charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    return { science, store }
+  }
+
+  it('opens from the toolbar\'s provenance control, showing the breadcrumb and the code sub-tab by default', () => {
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect(screen.getByRole('navigation', { name: 'Provenance' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Code' }).getAttribute('aria-selected')).toBe('true')
+    expect(store.instance.getSnapshot().view).toBe('provenance')
+  })
+
+  it('the breadcrumb root returns to the content view', () => {
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Loss curve' }))
+    expect(store.instance.getSnapshot().view).toBe('content')
+    expect(screen.getByRole('button', { name: 'Provenance' })).toBeTruthy()
+  })
+
+  it('the Messages sub-tab\'s jump reaches the Details seam\'s inspectCall callback', () => {
+    const inspectCall = vi.fn()
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store, inspectCall })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to transcript' }))
+    expect(inspectCall).toHaveBeenCalledWith('call-run-1')
+  })
+
+  it('reports the artifact as unavailable in the drill-in when the source run no longer resolves', () => {
+    const science = baseProjection({ runs: [], charts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.setView('provenance')
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(statusText()).toBe('This artifact version is no longer available.')
+  })
+})
+
+describe('ScienceDetailsView: distinct accessible text per top-level state', () => {
+  it('never repeats the same status text across missing-support/unbound/landing states', () => {
     const texts: string[] = []
 
     render(<ScienceDetailsView {...props(undefined)} />)
@@ -488,41 +506,11 @@ describe('ScienceDetailsView: distinct accessible text per state', () => {
     texts.push(statusText())
     cleanup()
 
-    const empty = baseProjection()
-    render(<ScienceDetailsView {...props(empty)} />)
+    render(<ScienceDetailsView {...props(baseProjection())} />)
     for (const status of screen.getAllByRole('status')) texts.push(status.textContent ?? '')
     cleanup()
 
     expect(new Set(texts).size).toBe(texts.length)
-    expect(texts).toHaveLength(6)
-  })
-})
-
-describe('ScienceDetailsView: privacy', () => {
-  const SENTINEL_PREFIX = '/sentinel-7c21af/opt/conda/envs/science'
-  const SENTINEL_EXECUTABLE = '/sentinel-7c21af/opt/conda/envs/science/bin/python3.11'
-  const SENTINEL_FULL_FINGERPRINT = `${'a'.repeat(52)}sentinel7c21af`
-
-  it('never renders a full fingerprint, executable, or configured/canonical path even when the projection value carries one', () => {
-    // A structurally-honest client projection never carries these fields —
-    // this simulates a Host that over-sends anyway, proving the component
-    // itself never reads or displays them.
-    const python = {
-      language: 'python', capability: 'available', languageVersion: '3.11.4',
-      fingerprintPreview: 'abcdef012345',
-      configuredPrefix: SENTINEL_PREFIX,
-      canonicalPrefix: SENTINEL_PREFIX,
-      executable: SENTINEL_EXECUTABLE,
-      executableIdentity: SENTINEL_EXECUTABLE,
-      bindingFingerprint: SENTINEL_FULL_FINGERPRINT,
-    } as unknown as ScienceClientInterpreterBinding
-    const science = baseProjection({
-      environment: { revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied', python },
-    })
-    const view = render(<ScienceDetailsView {...props(science)} />)
-    expect(view.container.textContent).not.toContain(SENTINEL_PREFIX)
-    expect(view.container.textContent).not.toContain(SENTINEL_EXECUTABLE)
-    expect(view.container.textContent).not.toContain(SENTINEL_FULL_FINGERPRINT)
-    expect(view.container.textContent).toContain('abcdef012345')
+    expect(texts).toHaveLength(4)
   })
 })

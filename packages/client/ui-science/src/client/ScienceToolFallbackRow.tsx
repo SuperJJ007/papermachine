@@ -25,6 +25,8 @@ export interface ScienceToolFallbackRowProps {
   readonly status: string | null
   readonly text: string | null
   readonly classes: ScienceToolFallbackClasses
+  /** Content appended after the rendered text, e.g. `ScienceRunRow`'s clickable captured-artifact list. */
+  readonly after?: ReactNode
 }
 
 /**
@@ -56,7 +58,7 @@ export function scienceToolResultText(block: ToolCallViewProps['block']): string
  * @returns the fallback card.
  */
 export function ScienceToolFallbackRow(props: ScienceToolFallbackRowProps) {
-  const { dataTool, state, leading, title, status, text, classes } = props
+  const { dataTool, state, leading, title, status, text, classes, after } = props
   return (
     <div className={classes.card} data-tool={dataTool} data-state={state}>
       <div className={classes.header}>
@@ -65,6 +67,7 @@ export function ScienceToolFallbackRow(props: ScienceToolFallbackRowProps) {
         {status !== null && <span className={classes.status}>{status}</span>}
       </div>
       {text !== null && <pre className={classes.fallbackText}>{text}</pre>}
+      {after}
     </div>
   )
 }

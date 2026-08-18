@@ -60,7 +60,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 - **统计行的回退折算只覆盖窗口内消息流**：未组合 `sessionStats` 投影单元的装配中，所有数字由快照的 assistant `timing` 与工具 call/result 配对折算，落在已加载事件窗口之外的节点（更早的历史）不计入，数字随加载页数增长。
 - **详情面板没有入口**：`ChatViewInjected.openDetails` 虽已实现却无人调用，因此以原始形式显示已选择调用的那部分在组装后的应用中不可达。没有 Input/Output/Metadata 切换、Prev/Next 步进，也没有 trajectory 深链接。
-- **详情页头操作 slot、`openView`、`inspectCall` 与 `ChatNodeOwnerProps.openDetailsView` 在本包内没有注册者或调用者**：它们均已端到端接通，`@deepseek-ai/dsh-client-ui-science` 是当前让它们在产品中可见的领域包（其图表面板的页头控件、溯源标签页的跳转动作，以及 `save_chart` 行）；另一个采用同样座位的领域包无需在本包做任何改动。
+- **详情页头操作 slot、`openView`、`inspectCall` 与 `ChatNodeOwnerProps.openDetailsView` 在本包内没有注册者或调用者**：它们均已端到端接通，`@deepseek-ai/dsh-client-ui-science` 是当前让它们在产品中可见的领域包（其图表面板的页头控件、溯源标签页的跳转动作，以及专用的 `annotate_artifact`/`run_python`/`run_r` 行）；另一个采用同样座位的领域包无需在本包做任何改动。
 - **assistant 逐消息分页是预留 slot**：设计中已有图稿，尚未实现。已定稿的内容 IconActions 行（复制／时钟／分支）只挂在每个已结束轮次中最后一条带 text 内容的 assistant 下；轮次中间的叙述、纯 Think 节点，以及仍在产出步骤的轮次里的所有节点都不带 chrome。除非该消息同时也是已完成轮次的最后一个 transcript 节点，否则分支保持禁用；启用后，它会 fork 到该轮次末尾，在 client 端递增继承标题并打开子会话。fork 或改名失败时源会话保持选中（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-02-message-fork-actions-require-completed-turn-tail.md)）。
 - **已发送的 user 消息无法编辑**：user 气泡保留时钟和复制；分支只存在于 assistant 回答之下（[决策](../../../.agents/notes/implemented/simplification/2026-08-06-user-bubbles-drop-the-branch-action.md)）。编辑功能要与其背后的能力一起回归：既需要针对已定稿 user 消息的 client 变更，也需要 host 侧对已经消费过它的轮次给出行为（[决策](../../../.agents/notes/implemented/simplification/2026-07-31-drop-user-message-edit-stub.md)）。
 - **others 工具行的闪光图标是手绘近似版本**：无法在本地导出设计字形的矢量几何；等到存在精确导出后再将其提升到 ui-primitives。

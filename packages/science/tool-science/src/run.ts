@@ -1,6 +1,7 @@
 /** `run_python` and `run_r`: one fresh interpreter execution through `ctx.scienceRuntime`. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { formatBytes } from '@deepseek-ai/dsh-byte-size'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
@@ -161,13 +162,6 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
       ...capture.truncatedPerSession ? { captureTruncatedPerSession: true } : {},
     },
   }
-}
-
-/** Human-readable byte count, matching the compact style used across the Science surface. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**

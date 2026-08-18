@@ -2448,6 +2448,9 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-byte-size':
+        specifier: workspace:^
+        version: link:../../util/byte-size
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
@@ -5965,6 +5968,9 @@ importers:
 
   packages/science/tool-science:
     dependencies:
+      '@deepseek-ai/dsh-byte-size':
+        specifier: workspace:^
+        version: link:../../util/byte-size
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -8173,6 +8179,15 @@ importers:
         version: link:../../runtime-diagnostics/invariants
 
   packages/util/brand:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/util/byte-size:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

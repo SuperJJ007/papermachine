@@ -1,11 +1,11 @@
 /**
- * ui-science browser half: locale dictionary registration, the two keyed
- * toolview registrations (`save_chart`, `publish_outcome`), the keyed Science
- * settings card registration under the `science-runtime` namespace, the
- * session-header action and artifact-viewer (Details) entry registrations
- * (both id `science`), the one selection-store handle shared across the
- * toolview/details-view registrations, plus fiber-teardown removal (HMR
- * safety).
+ * ui-science browser half: locale dictionary registration, the four keyed
+ * toolview registrations (`run_python`, `run_r`, `annotate_artifact`,
+ * `publish_outcome`), the keyed Science settings card registration under the
+ * `science-runtime` namespace, the session-header action and artifact-viewer
+ * (Details) entry registrations (both id `science`), the one selection-store
+ * handle shared across the toolview/details-view registrations, plus
+ * fiber-teardown removal (HMR safety).
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +14,8 @@ import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/clien
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyHost } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
-import { ScienceChartRow } from '../src/client/ScienceChartRow.tsx'
+import { ScienceArtifactRow } from '../src/client/ScienceArtifactRow.tsx'
+import { ScienceRunRow } from '../src/client/ScienceRunRow.tsx'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from '../src/client/ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from '../src/client/ScienceHeaderAction.tsx'
@@ -71,7 +72,7 @@ describe('apply', () => {
     expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'settingsScope', 'sessions'])
   })
 
-  it('registers the science locale dictionaries and the save_chart / publish_outcome toolview rows', async () => {
+  it('registers the science locale dictionaries and the run_python / run_r / annotate_artifact / publish_outcome toolview rows', async () => {
     const ctx = new Context()
     const { capture: presentation } = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
@@ -80,10 +81,16 @@ describe('apply', () => {
     expect(presentation.dictionaries[0]?.namespace).toBe('science')
 
     const entries = presentation.slots.entries('tool.call.toolview')
-    const chart = entries.find(entry => (entry.options as { key?: string }).key === 'save_chart')
+    const artifact = entries.find(entry => (entry.options as { key?: string }).key === 'annotate_artifact')
+    const runPython = entries.find(entry => (entry.options as { key?: string }).key === 'run_python')
+    const runR = entries.find(entry => (entry.options as { key?: string }).key === 'run_r')
     const outcome = entries.find(entry => (entry.options as { key?: string }).key === 'publish_outcome')
-    expect(chart?.component).toBe(ScienceChartRow)
-    expect(chart?.locale).toBe('science')
+    expect(artifact?.component).toBe(ScienceArtifactRow)
+    expect(artifact?.locale).toBe('science')
+    expect(runPython?.component).toBe(ScienceRunRow)
+    expect(runPython?.locale).toBe('science')
+    expect(runR?.component).toBe(ScienceRunRow)
+    expect(runR?.locale).toBe('science')
     expect(outcome?.component).toBe(ScienceOutcomeRow)
     expect(outcome?.locale).toBe('science')
   })
@@ -137,6 +144,7 @@ describe('apply', () => {
     const injectFn = entries[0]?.inject as unknown as ((sessionId: SessionId) => ScienceDetailsInjected) | undefined
     const face = injectFn?.('any-session' as SessionId)
     expect(typeof face?.loadImage).toBe('function')
+    expect(typeof face?.loadText).toBe('function')
   })
 
   it('shares one selection-store handle across the toolview and details-view registrations', async () => {
@@ -144,12 +152,15 @@ describe('apply', () => {
     const { capture: presentation } = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const chartEntry = presentation.slots.entries('tool.call.toolview')
-      .find(entry => (entry.options as { key?: string }).key === 'save_chart')
+    const artifactEntry = presentation.slots.entries('tool.call.toolview')
+      .find(entry => (entry.options as { key?: string }).key === 'annotate_artifact')
+    const runEntry = presentation.slots.entries('tool.call.toolview')
+      .find(entry => (entry.options as { key?: string }).key === 'run_python')
     const detailsEntry = presentation.slots.entries('conversation.details.view')
       .find(entry => entry.options.id === 'science')
-    expect(chartEntry?.store).toBeDefined()
-    expect(chartEntry?.store).toBe(detailsEntry?.store)
+    expect(artifactEntry?.store).toBeDefined()
+    expect(artifactEntry?.store).toBe(detailsEntry?.store)
+    expect(runEntry?.store).toBe(detailsEntry?.store)
     // publish_outcome carries no selection concern and declares no store.
     const outcomeEntry = presentation.slots.entries('tool.call.toolview')
       .find(entry => (entry.options as { key?: string }).key === 'publish_outcome')
@@ -161,7 +172,7 @@ describe('apply', () => {
     const { capture: presentation } = providePresentation(ctx)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(2)
+    expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(4)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.details.view')).toHaveLength(1)

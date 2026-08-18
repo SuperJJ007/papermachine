@@ -16,6 +16,7 @@ import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 // Merges the `science` key into SessionProjectionMap for useProjection.
 import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceOutcomeEvidencePresentation, ScienceOutcomePresentation } from '@deepseek-ai/dsh-tool-science/types'
+import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import css from './ScienceOutcomeRow.module.css'
 import {
   ScienceToolFallbackRow,
@@ -72,10 +73,7 @@ function EvidenceItem({ item, science, loadImage, t }: {
   }
   const label = t('outcome.evidenceChart', { chartId: item.chart_id, version: item.version })
   const chart = science?.artifacts.find(candidate => String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
-  // Evidence citing a non-image artifact (auto-captured csv/json/md/txt) is
-  // reported the same as an unresolved citation until the non-image artifact
-  // phase extends this row's rendering (README "PNG presentation only").
-  if (chart === undefined || !('width' in chart.attachment)) {
+  if (chart === undefined) {
     return (
       <li className={css.evidenceItem}>
         <span>{label}</span>
@@ -83,13 +81,21 @@ function EvidenceItem({ item, science, loadImage, t }: {
       </li>
     )
   }
+  if (!('width' in chart.attachment)) {
+    return (
+      <li className={css.evidenceItem}>
+        <span>{label}</span>
+        <ArtifactFileTile mediaType={chart.attachment.mediaType} />
+      </li>
+    )
+  }
   const labels: MessageImageLabels = {
     image: label,
     open: label,
     openNamed: () => label,
-    loading: t('chart.loading'),
-    loadFailed: t('chart.loadFailed'),
-    lightbox: { dialog: t('chart.lightboxOriginal'), close: t('chart.lightboxClose') },
+    loading: t('artifact.loading'),
+    loadFailed: t('artifact.loadFailed'),
+    lightbox: { dialog: t('artifact.lightboxOriginal'), close: t('artifact.lightboxClose') },
   }
   return (
     <li className={css.evidenceItem}>

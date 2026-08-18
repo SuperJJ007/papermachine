@@ -1,13 +1,14 @@
 /**
- * The Science Details entry's own session-scoped attachment loader: resolves
- * through `ISessions.binding(id)?.session.readAttachment`, converts to a
- * `data:` URI with no persistent cache, and fails loud for an unknown
- * session binding or a Host-rejected read.
+ * The Science Details entry's own session-scoped attachment loaders:
+ * `loadImage` resolves through `ISessions.binding(id)?.session.readAttachment`
+ * and converts to a `data:` URI with no persistent cache; `loadText` resolves
+ * through `readTextAttachment` and returns its already-decoded text as-is.
+ * Both fail loud for an unknown session binding or a Host-rejected read.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { createScienceImageLoader } from '../src/client/science-attachment-loader.ts'
+import { createScienceImageLoader, createScienceTextLoader } from '../src/client/science-attachment-loader.ts'
 
 const SESSION = 'session-1' as SessionId
 
@@ -22,9 +23,20 @@ function attachment(over: Partial<ImageAttachmentRef> = {}): ImageAttachmentRef 
   }
 }
 
-function sessionsOf(readAttachment: unknown): ISessions {
+function textAttachment(over: Partial<TextAttachmentRef> = {}): TextAttachmentRef {
   return {
-    binding: (id: string) => id === SESSION ? { sessionId: SESSION, session: { readAttachment }, ctx: {} } : undefined,
+    attachmentId: 'sha256:def' as TextAttachmentRef['attachmentId'],
+    mediaType: 'text/csv',
+    bytes: 8,
+    ...over,
+  }
+}
+
+function sessionsOf(readAttachment: unknown, readTextAttachment?: unknown): ISessions {
+  return {
+    binding: (id: string) => id === SESSION
+      ? { sessionId: SESSION, session: { readAttachment, readTextAttachment }, ctx: {} }
+      : undefined,
   } as unknown as ISessions
 }
 
@@ -61,5 +73,29 @@ describe('createScienceImageLoader', () => {
     const readAttachment = vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } })
     const load = createScienceImageLoader(sessionsOf(readAttachment), SESSION)
     await expect(load(attachment())).rejects.toThrow('not-found: gone')
+  })
+})
+
+describe('createScienceTextLoader', () => {
+  it('resolves the already-decoded text from the session-authorized read', async () => {
+    const readTextAttachment = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { attachment: textAttachment(), data: 'a,b\n1,2\n' },
+    })
+    const load = createScienceTextLoader(sessionsOf(undefined, readTextAttachment), SESSION)
+    const text = await load(textAttachment())
+    expect(text).toBe('a,b\n1,2\n')
+    expect(readTextAttachment).toHaveBeenCalledWith('sha256:def')
+  })
+
+  it('rejects when the session resolves no binding', async () => {
+    const load = createScienceTextLoader(sessionsOf(undefined, vi.fn()), 'unknown-session' as SessionId)
+    await expect(load(textAttachment())).rejects.toThrow(/resolved no binding/)
+  })
+
+  it('rejects when the Host declines the read', async () => {
+    const readTextAttachment = vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } })
+    const load = createScienceTextLoader(sessionsOf(undefined, readTextAttachment), SESSION)
+    await expect(load(textAttachment())).rejects.toThrow('not-found: gone')
   })
 })

@@ -187,6 +187,21 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Plain-text and unparseable-JSON content fallback. */
+
+.textContent {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  max-height: 480px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* Landing view: gallery of latest chart versions, plus Outcome below it. */
 
 .landing {

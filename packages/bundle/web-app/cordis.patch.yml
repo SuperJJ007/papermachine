@@ -232,8 +232,9 @@
     - id: ui-tool
       name: '@deepseek-ai/dsh-client-ui-tool'
 
-    # Science chart/Outcome toolview rows: save_chart/publish_outcome keyed
-    # views over ui-tool's tool.call.toolview slot.
+    # Science artifact/run/Outcome toolview rows: run_python/run_r/
+    # annotate_artifact/publish_outcome keyed views over ui-tool's
+    # tool.call.toolview slot.
     - id: ui-science
       name: '@deepseek-ai/dsh-client-ui-science'
 

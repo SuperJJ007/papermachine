@@ -14,7 +14,7 @@ import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 
 /** One artifact tab open in the viewer: a logical chart and the durable version it currently shows. */
 export interface ScienceOpenArtifact {
-  readonly chartId: ScienceArtifactId
+  readonly artifactId: ScienceArtifactId
   version: number
 }
 
@@ -31,18 +31,19 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
  * `readonly` field here would reject the mutation it exists to perform.
  *
  * The active version is deliberately not its own field: it is
- * `openArtifacts.find(tab => tab.chartId === activeChartId)?.version`, so
- * there is exactly one place a tab's shown version is recorded. `view` and
- * `provenanceSubTab` are single fields, not per-tab — switching the active
- * tab always returns to `'content'` (see `activateTab`/`closeTab`/`openTab`
- * below), and the last-chosen provenance sub-tab is a sticky preference
- * carried across tabs rather than reset per artifact.
+ * `openArtifacts.find(tab => tab.artifactId === activeArtifactId)?.version`,
+ * so there is exactly one place a tab's shown version is recorded. `view`
+ * and `provenanceSubTab` are single fields, not per-tab — switching the
+ * active tab always returns to `'content'` (see
+ * `activateTab`/`closeTab`/`openTab` below), and the last-chosen provenance
+ * sub-tab is a sticky preference carried across tabs rather than reset per
+ * artifact.
  */
 export interface ScienceSelectionState {
   /** Ordered open tabs — one entry per logical chart, never per version. */
   openArtifacts: ScienceOpenArtifact[]
-  /** The active tab's chart id, or `null` for the no-tab landing view (gallery + Outcome). */
-  activeChartId: ScienceArtifactId | null
+  /** The active tab's artifact id, or `null` for the no-tab landing view (gallery + Outcome). */
+  activeArtifactId: ScienceArtifactId | null
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
   /** The last-selected provenance sub-tab. */
@@ -52,14 +53,14 @@ export interface ScienceSelectionState {
 }
 
 type ScienceSelectionActions = {
-  /** Open (or activate, if already open) the named chart's tab at exactly the given version. */
-  openTab: (draft: ScienceSelectionState, selection: { chartId: ScienceArtifactId; version: number }) => void
-  /** Activate an already-open tab by chart id; a chart id not in `openArtifacts` is a no-op. */
-  activateTab: (draft: ScienceSelectionState, chartId: ScienceArtifactId) => void
+  /** Open (or activate, if already open) the named artifact's tab at exactly the given version. */
+  openTab: (draft: ScienceSelectionState, selection: { artifactId: ScienceArtifactId; version: number }) => void
+  /** Activate an already-open tab by artifact id; an artifact id not in `openArtifacts` is a no-op. */
+  activateTab: (draft: ScienceSelectionState, artifactId: ScienceArtifactId) => void
   /** Close a tab; if it was active, activate its neighbor, or fall back to the landing view when none remain. */
-  closeTab: (draft: ScienceSelectionState, chartId: ScienceArtifactId) => void
-  /** Step an already-open tab to a different durable version of the same chart. */
-  setTabVersion: (draft: ScienceSelectionState, next: { chartId: ScienceArtifactId; version: number }) => void
+  closeTab: (draft: ScienceSelectionState, artifactId: ScienceArtifactId) => void
+  /** Step an already-open tab to a different durable version of the same artifact. */
+  setTabVersion: (draft: ScienceSelectionState, next: { artifactId: ScienceArtifactId; version: number }) => void
   /** Switch the active tab's body between content and the provenance drill-in. */
   setView: (draft: ScienceSelectionState, view: ScienceArtifactView) => void
   /** Switch the provenance drill-in's active sub-tab. */
@@ -82,38 +83,38 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      openArtifacts: [], activeChartId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      openArtifacts: [], activeArtifactId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     actions: {
       openTab: (draft, selection) => {
-        const existing = draft.openArtifacts.find(tab => tab.chartId === selection.chartId)
-        if (existing === undefined) draft.openArtifacts.push({ chartId: selection.chartId, version: selection.version })
+        const existing = draft.openArtifacts.find(tab => tab.artifactId === selection.artifactId)
+        if (existing === undefined) draft.openArtifacts.push({ artifactId: selection.artifactId, version: selection.version })
         else existing.version = selection.version
-        draft.activeChartId = selection.chartId
+        draft.activeArtifactId = selection.artifactId
         draft.view = 'content'
         draft.lightboxOpen = false
       },
-      activateTab: (draft, chartId) => {
-        if (!draft.openArtifacts.some(tab => tab.chartId === chartId)) return
-        draft.activeChartId = chartId
+      activateTab: (draft, artifactId) => {
+        if (!draft.openArtifacts.some(tab => tab.artifactId === artifactId)) return
+        draft.activeArtifactId = artifactId
         draft.view = 'content'
         draft.lightboxOpen = false
       },
-      closeTab: (draft, chartId) => {
-        const index = draft.openArtifacts.findIndex(tab => tab.chartId === chartId)
+      closeTab: (draft, artifactId) => {
+        const index = draft.openArtifacts.findIndex(tab => tab.artifactId === artifactId)
         if (index === -1) return
         draft.openArtifacts.splice(index, 1)
-        if (draft.activeChartId !== chartId) return
+        if (draft.activeArtifactId !== artifactId) return
         // Browser-tab convention: activate whichever tab now sits at the
         // closed tab's position, or the one before it when the closed tab
         // was last; an empty ledger falls back to the landing view.
         const fallback = draft.openArtifacts[index] ?? draft.openArtifacts[index - 1]
-        draft.activeChartId = fallback?.chartId ?? null
+        draft.activeArtifactId = fallback?.artifactId ?? null
         draft.view = 'content'
         draft.lightboxOpen = false
       },
       setTabVersion: (draft, next) => {
-        const tab = draft.openArtifacts.find(candidate => candidate.chartId === next.chartId)
+        const tab = draft.openArtifacts.find(candidate => candidate.artifactId === next.artifactId)
         if (tab === undefined) return
         tab.version = next.version
         draft.lightboxOpen = false

@@ -4,14 +4,14 @@
 // ui-conversation, ui-tool, and ui-science mounted through their real
 // apply() — no hand-built ctx.plugin(...) presentation stub. Proves the
 // transcript row → Details column linkage end to end (activating the
-// compact `save_chart` row opens that exact version's tab through the real
-// openDetailsView write path), the one selection-store instance genuinely
-// shared across the transcript row and the artifact viewer, the toolbar's
-// provenance control switching to the drill-in, the drill-in's Messages
-// sub-tab reaching DetailsPanel's real `inspectCall` owner callback (the one
-// ui-conversation touch this redesign made — proven here on the real render
-// tree, not a mock), and full disposal removing every registration this
-// package adds.
+// compact `annotate_artifact` row opens that exact version's tab through the
+// real openDetailsView write path), the one selection-store instance
+// genuinely shared across the transcript row and the artifact viewer, the
+// toolbar's provenance control switching to the drill-in, the drill-in's
+// Messages sub-tab reaching DetailsPanel's real `inspectCall` owner callback
+// (the one ui-conversation touch this redesign made — proven here on the
+// real render tree, not a mock), and full disposal removing every
+// registration this package adds.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent } from '@testing-library/react'
@@ -27,7 +27,7 @@ import { apply as applyTool, inject as injectTool } from '@deepseek-ai/dsh-clien
 import { apply as applyScience, inject as injectScience } from '../src/client/index.ts'
 
 const SID = 'sci-1' as SessionId
-const CALL_ID = 'call-chart-1'
+const CALL_ID = 'call-artifact-1'
 
 class ResizeObserverStub {
   observe(): void {}
@@ -44,13 +44,12 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
-const CHART_META = {
-  kind: 'science/chart', version: 1,
-  chartId: 'chart-1', logicalName: 'loss-curve', chartVersion: 2,
-  title: 'Loss curve', runId: 'run-1',
+const ARTIFACT_ITEM = {
+  artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2,
+  title: 'Loss curve',
   attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
-  createdAt: 1_000,
 }
+const ARTIFACT_META = { kind: 'science/artifact', version: 1, artifacts: [ARTIFACT_ITEM] }
 
 function toolResult(seq: number, callId: string, name: string, meta?: unknown): ToolResultNode {
   return {
@@ -110,20 +109,24 @@ async function bench() {
   await runtime.sessions.add({
     id: SID,
     summary: { title: 'Science', displayTitle: 'Science', agentPreset: 'science' },
-    snapshot: { nodes: [], chat: toolChatSnapshot([toolResult(3, CALL_ID, 'save_chart', CHART_META)]) },
+    snapshot: { nodes: [], chat: toolChatSnapshot([toolResult(3, CALL_ID, 'annotate_artifact', ARTIFACT_META)]) },
     session: {
       loadOlder: vi.fn<ISession['loadOlder']>(),
       prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
       readAttachment: vi.fn<ISession['readAttachment']>(async () => ({
         ok: true,
-        value: { attachment: CHART_META.attachment as never, data: new Uint8Array() },
+        value: { attachment: ARTIFACT_ITEM.attachment as never, data: new Uint8Array() },
+      })),
+      readTextAttachment: vi.fn<ISession['readTextAttachment']>(async () => ({
+        ok: true,
+        value: { attachment: { attachmentId: 'sha256:txt', mediaType: 'text/plain', bytes: 0 } as never, data: '' },
       })),
     },
   })
   // The projection value the artifact viewer reads (useProjection('science'))
   // — a separate host-computed push channel from the chat transcript's own
-  // tool-result node, so the chart the row presents must also exist here for
-  // the viewer to resolve it.
+  // tool-result node, so the artifact the row presents must also exist here
+  // for the viewer to resolve it.
   runtime.sessions.behavior(SID).projections.set('science', {
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
@@ -134,10 +137,10 @@ async function bench() {
       stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
     }],
     artifacts: [{
-      artifactId: CHART_META.chartId, logicalName: CHART_META.logicalName, version: CHART_META.chartVersion,
-      title: CHART_META.title, origin: 'model', attachment: CHART_META.attachment, runId: 'run-1',
+      artifactId: ARTIFACT_ITEM.artifactId, logicalName: ARTIFACT_ITEM.logicalName, version: ARTIFACT_ITEM.version,
+      title: ARTIFACT_ITEM.title, origin: 'model', attachment: ARTIFACT_ITEM.attachment, runId: 'run-1',
       toolCallId: CALL_ID, requestHeaderSeq: 1, environmentRevision: 1,
-      environmentFingerprintPreview: 'f'.repeat(12), createdAt: CHART_META.createdAt,
+      environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1_000,
     }],
     outcome: null,
     metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 0 },
@@ -156,7 +159,7 @@ describe('ui-science on the real machinery stack', () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
 
-    const row = view.container.querySelector('[data-tool="science-chart"]')
+    const row = view.container.querySelector('[data-tool="science-artifact"]')
     expect(row).not.toBeNull()
     fireEvent.click(row!)
 
@@ -175,7 +178,7 @@ describe('ui-science on the real machinery stack', () => {
   it('the transcript row and the artifact viewer observe the one write the row makes (shared selection store)', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(view.container.querySelector('[data-tool="science-chart"]')!)
+    fireEvent.click(view.container.querySelector('[data-tool="science-artifact"]')!)
 
     // If the row's `openTab` write landed on a store instance different from
     // the one the viewer reads, the tab would never appear here — the tab
@@ -194,7 +197,7 @@ describe('ui-science on the real machinery stack', () => {
   it('the toolbar\'s provenance control opens the drill-in, and its Messages sub-tab reaches the real DetailsPanel inspectCall handoff', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(view.container.querySelector('[data-tool="science-chart"]')!)
+    fireEvent.click(view.container.querySelector('[data-tool="science-artifact"]')!)
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
     fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
@@ -216,14 +219,14 @@ describe('ui-science on the real machinery stack', () => {
     const b = await bench()
     b.runtime.renderRoot()
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
-      .toEqual(expect.arrayContaining(['save_chart', 'publish_outcome']))
+      .toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
     expect(b.slots.entries('conversation.session.header.actions').map(e => e.options.id)).toContain('science')
 
     await b.scienceHandle.dispose()
 
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
-      .not.toEqual(expect.arrayContaining(['save_chart', 'publish_outcome']))
+      .not.toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).not.toContain('science')
     expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     // ui-tool's own bash sample (mounted by applyTool, not applyScience)

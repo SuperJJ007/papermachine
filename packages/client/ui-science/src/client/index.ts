@@ -1,20 +1,22 @@
 /**
  * Science transcript rows, settings card, session-header action, and
  * artifact viewer, browser half: registers the `science` locale
- * dictionaries, the two dedicated keyed toolview rows — `save_chart` and
- * `publish_outcome` — the Science settings card keyed on the
+ * dictionaries, the four dedicated keyed toolview rows — `run_python` and
+ * `run_r` (`ScienceRunRow`, run text plus a clickable reference per captured
+ * file), `annotate_artifact` (`ScienceArtifactRow`, the one curated
+ * reference), and `publish_outcome` — the Science settings card keyed on the
  * `science-runtime` namespace, the `conversation.session.header.actions`
  * entry that opens the routed Details column, and the
  * `conversation.details.view` entry (id `science`, the artifact viewer) that
  * renders current Science state from the same projection: a top tab strip
- * over opened artifacts, an in-panel toolbar, dispatched content, and — one
- * toolbar click away — the provenance drill-in, entirely inside this one
- * Details entry (no separate `conversation.view` tab or
+ * over opened artifacts, an in-panel toolbar, per-media-type dispatched
+ * content, and — one toolbar click away — the provenance drill-in, entirely
+ * inside this one Details entry (no separate `conversation.view` tab or
  * `conversation.details.header.actions` registration). The toolview rows
  * are pure functions of the frozen call/result slice, the loaded durable
- * image bytes, and (for the Outcome row) the live `science` session
+ * image/text bytes, and (for the Outcome row) the live `science` session
  * projection; the settings card owns its own staging over the bound
- * settings scope; the artifact viewer and the transcript row share one
+ * settings scope; the artifact viewer and the transcript rows share one
  * package-local per-session selection store (selection-store.ts) — Science
  * viewing state ui-conversation's `ChatStoreState` has no reason to carry.
  */
@@ -34,8 +36,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
-import { createScienceImageLoader } from './science-attachment-loader.ts'
-import { ScienceChartRow } from './ScienceChartRow.tsx'
+import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
+import { ScienceArtifactRow } from './ScienceArtifactRow.tsx'
+import { ScienceRunRow } from './ScienceRunRow.tsx'
 import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
@@ -88,8 +91,16 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('tool.call.toolview', function* () {
     yield ctx.slots.register(
-      { name: 'tool.call.toolview', key: 'save_chart', locale: NS, store: scienceSelectionStore },
-      ScienceChartRow,
+      { name: 'tool.call.toolview', key: 'annotate_artifact', locale: NS, store: scienceSelectionStore },
+      ScienceArtifactRow,
+    )
+    yield ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'run_python', locale: NS, store: scienceSelectionStore },
+      ScienceRunRow,
+    )
+    yield ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'run_r', locale: NS, store: scienceSelectionStore },
+      ScienceRunRow,
     )
     yield ctx.slots.register({ name: 'tool.call.toolview', key: 'publish_outcome', locale: NS }, ScienceOutcomeRow)
   })
@@ -124,6 +135,7 @@ export function apply(ctx: ClientContext): void {
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceDetailsInjected => ({
       loadImage: createScienceImageLoader(ctx.sessions, sessionId),
+      loadText: createScienceTextLoader(ctx.sessions, sessionId),
     }),
   }, ScienceDetailsView))
 }

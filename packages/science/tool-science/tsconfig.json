@@ -28,6 +28,9 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
+      "path": "../../util/byte-size"
+    },
+    {
       "path": "../science-session"
     },
     {

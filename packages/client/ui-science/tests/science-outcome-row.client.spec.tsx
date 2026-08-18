@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceClientArtifactVersion, ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -115,7 +115,20 @@ describe('ScienceOutcomeRow', () => {
   it('reports a missing chart visual when the projection lacks the cited version, without inventing one', () => {
     const view = render(<ScienceOutcomeRow {...props(settled({ meta: validMeta }), null)} />)
     expect(view.container.textContent).toContain('图表 chart-1 v1')
-    expect(view.container.textContent).toContain('引用的图表不可用')
+    expect(view.container.textContent).toContain('引用的文件不可用')
+    expect(view.container.querySelector('img')).toBeNull()
+  })
+
+  it('renders a file-type tile (not the missing-visual report) when the cited artifact exists but is not an image', () => {
+    const projection = projectionWithChart()
+    const textArtifact: ScienceClientArtifactVersion = {
+      ...projection.artifacts[0]!,
+      attachment: { attachmentId: 'sha256:def' as never, mediaType: 'text/csv', bytes: 40 },
+    }
+    const view = render(<ScienceOutcomeRow {...props(settled({ meta: validMeta }), { ...projection, artifacts: [textArtifact] })} />)
+    expect(view.container.textContent).toContain('图表 chart-1 v1')
+    expect(view.container.textContent).toContain('CSV')
+    expect(view.container.textContent).not.toContain('引用的文件不可用')
     expect(view.container.querySelector('img')).toBeNull()
   })
 

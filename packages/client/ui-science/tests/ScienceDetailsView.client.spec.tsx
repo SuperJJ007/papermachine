@@ -11,6 +11,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ConversationSnapshot, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun,
@@ -42,7 +43,7 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
 function chart(over: Partial<ScienceClientArtifactVersion> = {}): ScienceClientArtifactVersion {
   return {
     artifactId: 'chart-1' as never,
-    logicalName: 'loss-curve',
+    logicalName: 'loss-curve.png',
     version: 1,
     title: 'Loss curve',
     origin: 'model',
@@ -86,6 +87,7 @@ function props(
   over: {
     agentPreset?: string
     loadImage?: Props['loadImage']
+    loadText?: Props['loadText']
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
   } = {},
@@ -118,6 +120,7 @@ function props(
     actions: store.actions,
     inspectCall: over.inspectCall ?? vi.fn(),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
+    loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
     t,
   } as unknown as Props
 }
@@ -152,7 +155,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
   it('reports no charts yet and no outcome yet for an empty history', () => {
     render(<ScienceDetailsView {...props(baseProjection())} />)
     const statuses = screen.getAllByRole('status')
-    expect(statuses.map(el => el.textContent)).toEqual(['No charts yet.', 'No outcome published yet.'])
+    expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.', 'No outcome published yet.'])
   })
 
   it('renders one gallery entry per logical chart at its latest accepted version', () => {
@@ -166,7 +169,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getAllByText(/^v\d$/)).toHaveLength(2)
     expect(screen.getByText('v2')).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
-    expect(screen.getAllByText('loss-curve')).toHaveLength(2)
+    expect(screen.getAllByText('loss-curve.png')).toHaveLength(2)
     expect(screen.getByText('Other')).toBeTruthy()
   })
 
@@ -184,6 +187,15 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const science = baseProjection({ artifacts: [chart()] })
     render(<ScienceDetailsView {...props(science, { loadImage })} />)
     expect(await screen.findByRole('button', { name: 'Failed to load, click to retry' })).toBeTruthy()
+  })
+
+  it('renders a file-type tile (never an <img>) for a non-image artifact\'s gallery entry', () => {
+    const science = baseProjection({
+      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv' as never, mediaType: 'text/csv', bytes: 40 } })],
+    })
+    render(<ScienceDetailsView {...props(science)} />)
+    expect(screen.getByText('CSV')).toBeTruthy()
+    expect(screen.queryByRole('img')).toBeNull()
   })
 
   it('activates a gallery entry on Enter/Space and ignores every other key', () => {
@@ -226,8 +238,8 @@ describe('ScienceDetailsView: opening a tab', () => {
     fireEvent.click(screen.getByText('v2 title'))
 
     expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
-    expect(screen.getByText('loss-curve')).toBeTruthy()
-    expect(screen.queryByText('No charts yet.')).toBeNull()
+    expect(screen.getByText('loss-curve.png')).toBeTruthy()
+    expect(screen.queryByText('No artifacts yet.')).toBeNull()
   })
 })
 
@@ -237,8 +249,8 @@ describe('ScienceDetailsView: tab strip', () => {
       artifacts: [chart({ artifactId: 'chart-1' as never, title: 'Alpha' }), chart({ artifactId: 'chart-2' as never, title: 'Beta' })],
     })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
-    store.actions.openTab({ chartId: 'chart-2' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 })
     return { science, store }
   }
 
@@ -254,7 +266,7 @@ describe('ScienceDetailsView: tab strip', () => {
     const { science, store } = twoTabs()
     render(<ScienceDetailsView {...props(science, { store })} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Alpha' }))
-    expect(store.instance.getSnapshot().activeChartId).toBe('chart-1')
+    expect(store.instance.getSnapshot().activeArtifactId).toBe('chart-1')
   })
 
   it('closing a tab through its own close control removes it; closing the last tab returns to the landing view', () => {
@@ -268,14 +280,14 @@ describe('ScienceDetailsView: tab strip', () => {
     expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     // Back to the landing view: the gallery lists both charts again (closing
     // a tab never removes the chart itself from the projection).
-    expect(screen.getByRole('button', { name: 'Open chart Alpha, version 1' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open chart Beta, version 1' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Beta, version 1' })).toBeTruthy()
   })
 
   it('a stale tab (chart no longer present in the projection) shows its raw id and the unavailable notice', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'missing-chart' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'missing-chart' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
     expect(screen.getByRole('tab', { name: 'missing-chart' })).toBeTruthy()
     expect(statusText()).toBe('This artifact version is no longer available.')
@@ -292,7 +304,7 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
       ],
     })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 2 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     return { science, store }
   }
 
@@ -325,13 +337,40 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
   })
 })
 
+describe('ScienceDetailsView: toolbar title/logicalName', () => {
+  it('shows both lines when an artifact\'s title differs from its logical name', () => {
+    const science = baseProjection({
+      artifacts: [chart({ title: 'Loss curve', logicalName: 'loss-curve.png' })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    // The title shows twice (tab label + toolbar title); the logical name
+    // shows once more, only in the toolbar's second line.
+    expect(screen.getAllByText('Loss curve')).toHaveLength(2)
+    expect(screen.getByText('loss-curve.png')).toBeTruthy()
+  })
+
+  it('shows the name once when an auto-captured artifact\'s title equals its logical name', () => {
+    const science = baseProjection({
+      artifacts: [chart({ title: 'plot.png', logicalName: 'plot.png', origin: 'auto' })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    // Once as the tab label, once as the toolbar title — never a second,
+    // redundant logicalName line beside it.
+    expect(screen.getAllByText('plot.png')).toHaveLength(2)
+  })
+})
+
 describe('ScienceDetailsView: content dispatch', () => {
   it.each(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const)('renders an image for %s attachments', async (mediaType) => {
     const science = baseProjection({
       artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
     })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     const loadImage = vi.fn().mockResolvedValue(`data:${mediaType};base64,abc`)
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
@@ -340,10 +379,142 @@ describe('ScienceDetailsView: content dispatch', () => {
   it('renders the source run and dimensions in the content facts', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
     expect(screen.getByText('from run run-1')).toBeTruthy()
     expect(screen.getByText(/10×10/)).toBeTruthy()
+  })
+
+  function textArtifact(
+    mediaType: TextMediaType, over: Partial<ScienceClientArtifactVersion> = {},
+  ): { science: ScienceClientProjection; store: ReturnType<typeof testScienceSelectionStore> } {
+    const science = baseProjection({
+      artifacts: [chart({ logicalName: 'data.txt', attachment: { attachmentId: 'sha256:txt' as never, mediaType, bytes: 20 }, ...over })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    return { science, store }
+  }
+
+  it('renders a CSV attachment as a sortable table', async () => {
+    const loadText = vi.fn().mockResolvedValue('name,score\nada,10\nbob,2\n')
+    const { science, store } = textArtifact('text/csv')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByRole('table')).toBeTruthy() })
+    expect(screen.getAllByRole('columnheader').map(th => th.textContent)).toEqual(['name', 'score'])
+    expect(loadText.mock.calls[0]?.[0]).toMatchObject({ attachmentId: 'sha256:txt' })
+    // No dimensions fact for a non-image artifact — only the byte size.
+    expect(screen.queryByText(/×/)).toBeNull()
+  })
+
+  it('renders a JSON attachment as a JSON tree', async () => {
+    const loadText = vi.fn().mockResolvedValue('{"ok":true}')
+    const { science, store } = textArtifact('application/json')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByRole('tree')).toBeTruthy() })
+    expect(view.container.textContent).toContain('ok')
+    expect(view.container.textContent).toContain('true')
+  })
+
+  it('falls back to raw text for malformed JSON instead of throwing', async () => {
+    const loadText = vi.fn().mockResolvedValue('{not valid json')
+    const { science, store } = textArtifact('application/json')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText('{not valid json')).toBeTruthy() })
+  })
+
+  it('falls back to raw text for valid JSON that parses to a non-object/array (a bare number)', async () => {
+    const loadText = vi.fn().mockResolvedValue('5')
+    const { science, store } = textArtifact('application/json')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText('5').tagName).toBe('PRE') })
+  })
+
+  it('discards a text load that resolves after the component already unmounted', async () => {
+    let resolveLoad: ((text: string) => void) | undefined
+    const loadText = vi.fn(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
+    const { science, store } = textArtifact('text/plain')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(loadText).toHaveBeenCalledTimes(1) })
+    view.unmount()
+    // No "state update on an unmounted component" throw or warning: the
+    // effect's liveness guard discards this late resolution.
+    expect(() => { resolveLoad?.('too late') }).not.toThrow()
+  })
+
+  it('discards a text load that rejects after the component already unmounted', async () => {
+    let rejectLoad: ((error: Error) => void) | undefined
+    const loadText = vi.fn(() => new Promise<string>((_resolve, reject) => { rejectLoad = reject }))
+    const { science, store } = textArtifact('text/plain')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(loadText).toHaveBeenCalledTimes(1) })
+    view.unmount()
+    expect(() => { rejectLoad?.(new Error('too late')) }).not.toThrow()
+  })
+
+  it('renders a Markdown attachment through MarkdownText', async () => {
+    const loadText = vi.fn().mockResolvedValue('**bold**')
+    const { science, store } = textArtifact('text/markdown')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText('bold').tagName).toBe('STRONG') })
+  })
+
+  it('renders a plain text attachment preformatted', async () => {
+    const loadText = vi.fn().mockResolvedValue('raw log line')
+    const { science, store } = textArtifact('text/plain')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText('raw log line').tagName).toBe('PRE') })
+  })
+
+  it('caps a CSV table at 500 rendered rows and shows a truncation notice', async () => {
+    const rows = Array.from({ length: 800 }, (_, i) => `r${String(i)},${String(i)}`).join('\n')
+    const loadText = vi.fn().mockResolvedValue(`name,score\n${rows}\n`)
+    const { science, store } = textArtifact('text/csv')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByRole('table')).toBeTruthy() })
+    expect(screen.getAllByRole('row')).toHaveLength(501) // header row + 500 data rows
+    expect(screen.getByText('Showing first 500 of 800 rows.')).toBeTruthy()
+  })
+
+  it('does not show a truncation notice for a CSV table at or under the row cap', async () => {
+    const loadText = vi.fn().mockResolvedValue('name,score\nada,10\nbob,2\n')
+    const { science, store } = textArtifact('text/csv')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByRole('table')).toBeTruthy() })
+    expect(screen.queryByText(/Showing first/)).toBeNull()
+  })
+
+  it('caps an oversized JSON attachment at 100,000 characters before parsing, falling back to truncated raw text', async () => {
+    const big = `{"pad":"${'x'.repeat(100_000)}"}`
+    const loadText = vi.fn().mockResolvedValue(big)
+    const { science, store } = textArtifact('application/json')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText(`Showing first 100000 of ${String(big.length)} characters.`)).toBeTruthy() })
+    expect(screen.queryByRole('tree')).toBeNull()
+    const pre = document.querySelector('pre')
+    expect(pre?.textContent).toHaveLength(100_000)
+  })
+
+  it('caps an oversized plain text attachment at 100,000 characters with a truncation notice', async () => {
+    const big = 'y'.repeat(150_000)
+    const loadText = vi.fn().mockResolvedValue(big)
+    const { science, store } = textArtifact('text/plain')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByText('Showing first 100000 of 150000 characters.')).toBeTruthy() })
+    const pre = document.querySelector('pre')
+    expect(pre?.textContent).toHaveLength(100_000)
+  })
+
+  it('shows a loading notice, then a retry control that re-fetches on failure', async () => {
+    const loadText = vi.fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce('ok text')
+    const { science, store } = textArtifact('text/plain')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    const retry = await screen.findByRole('button', { name: 'Failed to load, click to retry' })
+    fireEvent.click(retry)
+    await waitFor(() => { expect(screen.getByText('ok text')).toBeTruthy() })
+    expect(loadText).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -352,7 +523,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
 
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -368,11 +539,21 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
     const loadImage = vi.fn().mockRejectedValue(new Error('network'))
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     await waitFor(() => { expect(loadImage.mock.calls.length).toBeGreaterThan(1) })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('has no maximize control for a non-image artifact — nothing to raster-maximize', () => {
+    const science = baseProjection({
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:txt' as never, mediaType: 'text/plain', bytes: 5 } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(screen.queryByRole('button', { name: 'Expand' })).toBeNull()
   })
 
   it('discards a lightbox load that resolves after the lightbox already closed', async () => {
@@ -384,7 +565,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
     })
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
 
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand' })) })
@@ -402,7 +583,7 @@ describe('ScienceDetailsView: download', () => {
       artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
     })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     return { science, store }
   }
 
@@ -435,6 +616,45 @@ describe('ScienceDetailsView: download', () => {
     clickSpy.mockRestore()
   })
 
+  it('builds a text/csv data URI (not loadImage) for a non-image artifact\'s download', async () => {
+    const loadImage = vi.fn()
+    const loadText = vi.fn().mockResolvedValue('a,b\n1,2\n')
+    const science = baseProjection({
+      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv' as never, mediaType: 'text/csv', bytes: 40 } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const created: HTMLAnchorElement[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      created.push(this)
+    })
+    render(<ScienceDetailsView {...props(science, { store, loadImage, loadText })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
+    expect(created[0]?.href).toBe(`data:text/csv;charset=utf-8,${encodeURIComponent('a,b\n1,2\n')}`)
+    expect(created[0]?.download).toBe('summary-v1.csv')
+    expect(loadImage).not.toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  it('inserts the version with no extension when the logical name (and the attachment) carry none', async () => {
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
+    const science = baseProjection({
+      artifacts: [chart({ logicalName: 'no-extension', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const created: HTMLAnchorElement[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      created.push(this)
+    })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
+    expect(created[0]?.download).toBe('no-extension-v1')
+    clickSpy.mockRestore()
+  })
+
   it('a rejected download is swallowed (no dialog, no crash, no anchor click)', async () => {
     const loadImage = vi.fn()
       .mockResolvedValueOnce('data:image/png;base64,thumb')
@@ -453,7 +673,7 @@ describe('ScienceDetailsView: provenance drill-in', () => {
   function withRunAndChart() {
     const science = baseProjection({ runs: [run()], artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     return { science, store }
   }
 
@@ -488,7 +708,7 @@ describe('ScienceDetailsView: provenance drill-in', () => {
   it('reports the artifact as unavailable in the drill-in when the source run no longer resolves', () => {
     const science = baseProjection({ runs: [], artifacts: [chart()] })
     const store = testScienceSelectionStore()
-    store.actions.openTab({ chartId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     store.actions.setView('provenance')
     render(<ScienceDetailsView {...props(science, { store })} />)
     expect(statusText()).toBe('This artifact version is no longer available.')

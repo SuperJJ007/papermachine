@@ -2,17 +2,19 @@
 // `science` Session projection (packages/science/science-session/src/types.ts).
 // Viewer-first, not a dashboard: a top tab strip holds one tab per opened
 // artifact (logical chart); the active tab shows an in-panel toolbar
-// (filename, version stepper, provenance, download, maximize, close tab)
-// above the dispatched content, or — one toolbar click away — the
-// provenance drill-in (ScienceArtifactProvenance.tsx). With no open tabs the
-// panel shows the landing view: a gallery of latest chart versions (opening
-// one opens its tab) plus the latest Outcome, kept reachable but secondary
-// below the gallery rather than as its own tab, since it carries no version
-// history or provenance of its own to navigate. It builds no second
-// projection reader, chart store, or Outcome editor; the one piece of local
-// state it owns is the shared ui-science selection store
-// (selection-store.ts). Thumbnails and content load through this package's
-// own session-scoped loader (science-attachment-loader.ts).
+// (filename, version stepper, provenance, download, maximize [image only],
+// close tab) above the dispatched content (ArtifactContent.tsx), or — one
+// toolbar click away — the provenance drill-in (ScienceArtifactProvenance.tsx).
+// With no open tabs the panel shows the landing view: a gallery of latest
+// artifact versions (opening one opens its tab) plus the latest Outcome,
+// kept reachable but secondary below the gallery rather than as its own tab,
+// since it carries no version history or provenance of its own to navigate.
+// It builds no second projection reader, artifact store, or Outcome editor;
+// the one piece of local state it owns is the shared ui-science selection
+// store (selection-store.ts). Thumbnails and content load through this
+// package's own session-scoped loaders (science-attachment-loader.ts) —
+// `loadImage` for an image attachment, `loadText` for CSV/JSON/Markdown/
+// plain text.
 //
 // The former resident Environment strip and Runs list are gone: Environment
 // facts now live only in the provenance drill-in's Environment sub-tab, per
@@ -21,7 +23,7 @@
 // states below are unrelated to that strip and are unchanged.
 
 import { useEffect, useState } from 'react'
-import { ImageLightbox, MessageImage, type ImageLoader, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText,
@@ -35,14 +37,19 @@ import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientOutcomePublication, ScienceClientProjection,
   ScienceEvidenceRef,
 } from '@deepseek-ai/dsh-science-session/types'
+import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
+import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import type { ScienceArtifactView, ScienceOpenArtifact, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
+import type { TextLoader } from './science-attachment-loader.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
 export interface ScienceDetailsInjected {
-  /** Session-scoped chart-thumbnail/content loader (science-attachment-loader.ts). */
+  /** Session-scoped image artifact loader (science-attachment-loader.ts). */
   loadImage: ImageLoader
+  /** Session-scoped text artifact loader (science-attachment-loader.ts). */
+  loadText: TextLoader
 }
 
 /** Full props for the Science Details entry. */
@@ -66,77 +73,64 @@ function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): stri
   }
 }
 
-/** A durable artifact version narrowed to one carrying an image attachment. */
-type ScienceImageArtifactVersion = ScienceClientArtifactVersion & {
-  attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }>
-}
-
-/**
- * Whether a durable artifact version carries an image attachment. Auto-
- * capture (science-runtime) can now append csv/json/md/txt versions; the
- * viewer's content dispatch stays image-only until the non-image artifact
- * phase extends it (README "PNG presentation only" Known Limitation), so
- * every entry point below filters the raw projection through this first.
- */
-function hasImageAttachment(chart: ScienceClientArtifactVersion): chart is ScienceImageArtifactVersion {
-  return 'width' in chart.attachment
-}
-
-/** Latest accepted version per logical chart, in first-appearance (commit) order. */
-function latestCharts<T extends ScienceClientArtifactVersion>(charts: readonly T[]): T[] {
+/** Latest accepted version per logical artifact, in first-appearance (commit) order. */
+function latestArtifacts<T extends ScienceClientArtifactVersion>(artifacts: readonly T[]): T[] {
   const byId = new Map<string, T>()
-  for (const chart of charts) {
-    const current = byId.get(chart.artifactId)
-    if (current === undefined || chart.version > current.version) byId.set(chart.artifactId, chart)
+  for (const artifact of artifacts) {
+    const current = byId.get(artifact.artifactId)
+    if (current === undefined || artifact.version > current.version) byId.set(artifact.artifactId, artifact)
   }
   return [...byId.values()]
 }
 
-/** Every durable version of one logical chart, ascending — the version stepper's walk order. */
-function versionsOf<T extends ScienceClientArtifactVersion>(charts: readonly T[], chartId: ScienceArtifactId): T[] {
-  return charts.filter(chart => chart.artifactId === chartId).sort((left, right) => left.version - right.version)
+/** Every durable version of one logical artifact, ascending — the version stepper's walk order. */
+function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly T[], artifactId: ScienceArtifactId): T[] {
+  return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
 }
 
-/** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+/** Filename base without its extension, plus the extension (including the dot), splitting on the last dot only. */
+function splitExtension(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.')
+  return dot === -1 ? { stem: name, ext: '' } : { stem: name.slice(0, dot), ext: name.slice(dot) }
 }
 
-function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
-  return {
-    image: t('chart.title'),
-    open: t('chart.open'),
-    openNamed: label => t('chart.openNamed', { label }),
-    loading: t('chart.loading'),
-    loadFailed: t('chart.loadFailed'),
-    lightbox: { dialog: t('chart.lightboxOriginal'), close: t('chart.lightboxClose') },
-  }
+/**
+ * The durable browser save name for one artifact version: the attachment's
+ * own display name when it has one, else the logical name (already the
+ * captured file's real path, extension included) with the version inserted
+ * before that extension.
+ */
+function downloadFilename(chart: ScienceClientArtifactVersion): string {
+  if (chart.attachment.name !== undefined) return chart.attachment.name
+  const { stem, ext } = splitExtension(chart.logicalName)
+  return `${stem}-v${String(chart.version)}${ext}`
 }
 
-/** Trigger a browser save of the durable bytes behind one artifact version through a throwaway `data:`-URI anchor. */
-async function downloadChart(chart: ScienceImageArtifactVersion, loadImage: ImageLoader): Promise<void> {
-  const url = await loadImage(chart.attachment)
+/** Trigger a browser save of the durable bytes behind one artifact version through a throwaway URI anchor. */
+async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: ImageLoader, loadText: TextLoader): Promise<void> {
+  const { attachment } = chart
+  const url = 'width' in attachment
+    ? await loadImage(attachment)
+    : `data:${attachment.mediaType};charset=utf-8,${encodeURIComponent(await loadText(attachment))}`
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = chart.attachment.name ?? `${chart.logicalName}-v${String(chart.version)}.png`
+  anchor.download = downloadFilename(chart)
   anchor.click()
 }
 
 /**
  * The toolbar-triggered lightbox: a second, store-driven `ImageLightbox`
  * instance alongside the content image's own click-to-open `MessageImage`
- * lightbox. The toolbar's "maximize" button is a sibling of that image with
- * no access to its private open state, so it opens this shared store's
- * `lightboxOpen` flag instead; this component resolves the same durable
- * attachment through the same loader when that flag flips. A load that
- * rejects (or resolves after the flag already closed) renders nothing — the
- * same silent-degrade the thumbnail's own retry control covers for the
- * ordinary click-to-open path.
+ * lightbox. The toolbar's "maximize" button (image artifacts only — see
+ * `ArtifactToolbar`) is a sibling of that image with no access to its
+ * private open state, so it opens this shared store's `lightboxOpen` flag
+ * instead; this component resolves the same durable attachment through the
+ * same loader when that flag flips. A load that rejects (or resolves after
+ * the flag already closed) renders nothing — the same silent-degrade the
+ * thumbnail's own retry control covers for the ordinary click-to-open path.
  */
 function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
-  chart: ScienceImageArtifactVersion
+  chart: ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }
   loadImage: ImageLoader
   open: boolean
   onClose: () => void
@@ -155,68 +149,40 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   return (
     <ImageLightbox
       src={src}
-      alt={chart.attachment.name ?? t('chart.title')}
-      labels={{ dialog: t('chart.lightboxOriginal'), close: t('chart.lightboxClose') }}
+      alt={chart.attachment.name ?? t('artifact.title')}
+      labels={{ dialog: t('artifact.lightboxOriginal'), close: t('artifact.lightboxClose') }}
       onClose={onClose}
     />
   )
 }
 
-/**
- * Content renderer dispatch, keyed by durable attachment media type — the
- * seam a later non-image artifact phase extends without touching the tab
- * strip or toolbar.
- */
-function ArtifactContent({ chart, loadImage, t }: {
-  chart: ScienceImageArtifactVersion
-  loadImage: ImageLoader
-  t: TranslateNS<'science'>
-}) {
-  switch (chart.attachment.mediaType) {
-    case 'image/png':
-    case 'image/jpeg':
-    case 'image/webp':
-    case 'image/gif':
-      return (
-        <div className={css.content}>
-          <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={chartImageLabels(t)} />
-          {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
-          <div className={css.contentFacts}>
-            <span>{t('chart.sourceRun', { runId: chart.runId })}</span>
-            <span>
-              {t('chart.dimensions', {
-                width: chart.attachment.width, height: chart.attachment.height, size: formatBytes(chart.attachment.bytes),
-              })}
-            </span>
-          </div>
-        </div>
-      )
-    /* v8 ignore next -- closed ImageMediaType union; every current member renders as an image */
-    default: return assertNever(chart.attachment.mediaType)
-  }
-}
-
-function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, t }: {
-  chart: ScienceImageArtifactVersion
-  versions: readonly ScienceImageArtifactVersion[]
+function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t }: {
+  chart: ScienceClientArtifactVersion
+  versions: readonly ScienceClientArtifactVersion[]
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
   onMaximize: () => void
   onCloseTab: () => void
   loadImage: ImageLoader
+  loadText: TextLoader
   t: TranslateNS<'science'>
 }) {
   // `chart` is always one of `versions` (the caller resolves it from the same
-  // chartId's version list), so `index` is never -1 — no defensive branch for it.
+  // artifactId's version list), so `index` is never -1 — no defensive branch for it.
   const index = versions.findIndex(candidate => candidate.version === chart.version)
   const prev = index > 0 ? versions[index - 1] : undefined
   const next = index < versions.length - 1 ? versions[index + 1] : undefined
+  const isImage = 'width' in chart.attachment
 
   return (
     <div className={css.toolbar}>
       <div className={css.toolbarTitle}>
         <span className={css.chartTitle}>{chart.title}</span>
-        <span className={css.chartLogicalName}>{chart.logicalName}</span>
+        {/* An auto-captured file's title is exactly its logical name's
+            basename (capture.ts); when the logical name has no directory
+            component the two are identical, so the second line is dropped
+            rather than repeating the same text. */}
+        {chart.title !== chart.logicalName && <span className={css.chartLogicalName}>{chart.logicalName}</span>}
       </div>
       <div className={css.toolbarControls}>
         <div className={css.stepper}>
@@ -230,7 +196,7 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
           >
             <IconChevronLeftOutline14 size={12} />
           </button>
-          <span className={css.stepperLabel}>{t('chart.version', { version: chart.version })}</span>
+          <span className={css.stepperLabel}>{t('artifact.version', { version: chart.version })}</span>
           <button
             type="button" className={css.stepperButton} disabled={next === undefined}
             aria-label={t('toolbar.versionNext')}
@@ -244,13 +210,17 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
         </button>
         <button
           type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
-          onClick={() => { void downloadChart(chart, loadImage).catch(() => {}) }}
+          onClick={() => { void downloadArtifact(chart, loadImage, loadText).catch(() => {}) }}
         >
           <IconDownloadOutline16 size={14} />
         </button>
-        <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
-          <IconFullscreenOutline16 size={14} />
-        </button>
+        {/* Maximize opens the shared image lightbox; a text attachment has no
+            raster to maximize, so this control is image-only. */}
+        {isImage && (
+          <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
+            <IconFullscreenOutline16 size={14} />
+          </button>
+        )}
         <button type="button" className={css.toolbarAction} aria-label={t('toolbar.closeTab')} onClick={onCloseTab}>
           <IconCloseOutline16 size={14} />
         </button>
@@ -259,28 +229,28 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
   )
 }
 
-function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
+function TabStrip({ tabs, artifacts, activeArtifactId, onActivate, onClose, t }: {
   tabs: readonly ScienceOpenArtifact[]
-  charts: readonly ScienceClientArtifactVersion[]
-  activeChartId: ScienceArtifactId | null
-  onActivate: (chartId: ScienceArtifactId) => void
-  onClose: (chartId: ScienceArtifactId) => void
+  artifacts: readonly ScienceClientArtifactVersion[]
+  activeArtifactId: ScienceArtifactId | null
+  onActivate: (artifactId: ScienceArtifactId) => void
+  onClose: (artifactId: ScienceArtifactId) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
       {tabs.map((tab) => {
-        const chart = charts.find(candidate => candidate.artifactId === tab.chartId && candidate.version === tab.version)
-        const label = chart?.title ?? tab.chartId
-        const active = tab.chartId === activeChartId
+        const artifact = artifacts.find(candidate => candidate.artifactId === tab.artifactId && candidate.version === tab.version)
+        const label = artifact?.title ?? tab.artifactId
+        const active = tab.artifactId === activeArtifactId
         return (
-          <div key={tab.chartId} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
-            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(tab.chartId) }}>
+          <div key={tab.artifactId} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
+            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(tab.artifactId) }}>
               {label}
             </button>
             <button
               type="button" className={css.tabClose} aria-label={t('toolbar.closeNamedTab', { title: label })}
-              onClick={() => { onClose(tab.chartId) }}
+              onClick={() => { onClose(tab.artifactId) }}
             >
               <IconCloseFill14 size={10} />
             </button>
@@ -291,50 +261,71 @@ function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
   )
 }
 
-function ArtifactGallery({ charts, loadImage, onOpen, t }: {
-  charts: readonly ScienceImageArtifactVersion[]
+function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
+  artifacts: readonly ScienceClientArtifactVersion[]
   loadImage: ImageLoader
-  onOpen: (selection: { chartId: ScienceArtifactId; version: number }) => void
+  onOpen: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
-  const latest = latestCharts(charts)
-  if (latest.length === 0) return <p className={css.notice} role="status">{t('details.charts.empty')}</p>
+  const latest = latestArtifacts(artifacts)
+  if (latest.length === 0) return <p className={css.notice} role="status">{t('details.artifacts.empty')}</p>
   return (
     <ul className={css.chartList}>
-      {latest.map(chart => (
-        <li key={chart.artifactId} className={css.chartItem}>
-          {/* A real <button> wrapping MessageImage's own thumbnail <button>
-              is invalid HTML that also breaks click delivery (a nested
-              button swallows clicks meant for its ancestor, even from a
-              sibling outside the inner button — proven by this exact
-              structure in this package's own tests); a div with a button
-              role is the same pattern ScienceChartRow's row uses. */}
-          {/* An explicit label: without it this role="button" wrapper's
-              accessible name is computed from its contents, which include
-              MessageImage's own button — so the wrapper would announce (and
-              match by role+name as) whatever state that thumbnail is in. */}
-          <div
-            className={css.galleryButton}
-            role="button"
-            aria-label={t('details.artifact.select', { title: chart.title, version: chart.version })}
-            tabIndex={0}
-            onClick={() => { onOpen({ chartId: chart.artifactId, version: chart.version }) }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return
-              event.preventDefault()
-              onOpen({ chartId: chart.artifactId, version: chart.version })
-            }}
-          >
-            <MessageImage attachment={chart.attachment} load={loadImage} variant="tile" labels={chartImageLabels(t)} />
-            <div className={css.chartMeta}>
-              <span className={css.chartTitle}>{chart.title}</span>
-              <span className={css.chartLogicalName}>{chart.logicalName}</span>
-              <span className={css.badge}>{t('chart.version', { version: chart.version })}</span>
+      {latest.map((artifact) => {
+        const { attachment } = artifact
+        return (
+          <li key={artifact.artifactId} className={css.chartItem}>
+            {/* A real <button> wrapping MessageImage's own thumbnail <button>
+                is invalid HTML that also breaks click delivery (a nested
+                button swallows clicks meant for its ancestor, even from a
+                sibling outside the inner button — proven by this exact
+                structure in this package's own tests); a div with a button
+                role is the same pattern ScienceArtifactRow's row uses. */}
+            {/* An explicit label: without it this role="button" wrapper's
+                accessible name is computed from its contents, which include
+                MessageImage's own button — so the wrapper would announce (and
+                match by role+name as) whatever state that thumbnail is in. */}
+            <div
+              className={css.galleryButton}
+              role="button"
+              aria-label={t('details.artifact.select', { title: artifact.title, version: artifact.version })}
+              tabIndex={0}
+              onClick={() => { onOpen({ artifactId: artifact.artifactId, version: artifact.version }) }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onOpen({ artifactId: artifact.artifactId, version: artifact.version })
+              }}
+            >
+              {'width' in attachment
+                ? <MessageImageTile attachment={attachment} loadImage={loadImage} t={t} />
+                : <ArtifactFileTile mediaType={attachment.mediaType} />}
+              <div className={css.chartMeta}>
+                <span className={css.chartTitle}>{artifact.title}</span>
+                <span className={css.chartLogicalName}>{artifact.logicalName}</span>
+                <span className={css.badge}>{t('artifact.version', { version: artifact.version })}</span>
+              </div>
             </div>
-          </div>
-        </li>
-      ))}
+          </li>
+        )
+      })}
     </ul>
+  )
+}
+
+/** Thin `MessageImage` wrapper isolating the `variant`/`labels` construction the gallery's `tile` thumbnails share. */
+function MessageImageTile({ attachment, loadImage, t }: {
+  attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }>
+  loadImage: ImageLoader
+  t: TranslateNS<'science'>
+}) {
+  return (
+    <MessageImage
+      attachment={attachment}
+      load={loadImage}
+      variant="tile"
+      labels={artifactImageLabels(t)}
+    />
   )
 }
 
@@ -365,19 +356,19 @@ function OutcomeSection({ outcome, t }: {
   )
 }
 
-/** No open tabs: a gallery of latest chart versions (opening one opens its tab), plus the Outcome kept reachable below it. */
-function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
-  charts: readonly ScienceImageArtifactVersion[]
+/** No open tabs: a gallery of latest artifact versions (opening one opens its tab), plus the Outcome kept reachable below it. */
+function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
+  artifacts: readonly ScienceClientArtifactVersion[]
   outcome: ScienceClientOutcomePublication | null
   loadImage: ImageLoader
-  onOpenTab: (selection: { chartId: ScienceArtifactId; version: number }) => void
+  onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <div className={css.landing}>
       <section className={css.section}>
-        <div className={css.sectionLabel}>{t('details.charts.title')}</div>
-        <ArtifactGallery charts={charts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
+        <div className={css.sectionLabel}>{t('details.artifacts.title')}</div>
+        <ArtifactGallery artifacts={artifacts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
       </section>
       <OutcomeSection outcome={outcome} t={t} />
     </div>
@@ -385,21 +376,24 @@ function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
 }
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
-function ArtifactTab({ science, charts, chart, view, provenanceSubTab, snapshot, loadImage, useStore, actions, inspectCall, t }: {
+function ArtifactTab({
+  science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText, useStore, actions, inspectCall, t,
+}: {
   science: ScienceClientProjection
-  charts: readonly ScienceImageArtifactVersion[]
-  chart: ScienceImageArtifactVersion
+  artifacts: readonly ScienceClientArtifactVersion[]
+  chart: ScienceClientArtifactVersion
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
+  loadText: TextLoader
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
   t: TranslateNS<'science'>
 }) {
   const lightboxOpen = useStore(s => s.lightboxOpen)
-  const versions = versionsOf(charts, chart.artifactId)
+  const versions = versionsOf(artifacts, chart.artifactId)
 
   if (view === 'provenance') {
     const run = science.runs.find(candidate => candidate.runId === chart.runId)
@@ -424,49 +418,56 @@ function ArtifactTab({ science, charts, chart, view, provenanceSubTab, snapshot,
       <ArtifactToolbar
         chart={chart}
         versions={versions}
-        onStepVersion={(version) => { actions.setTabVersion({ chartId: chart.artifactId, version }) }}
+        onStepVersion={(version) => { actions.setTabVersion({ artifactId: chart.artifactId, version }) }}
         onOpenProvenance={() => { actions.setView('provenance') }}
         onMaximize={() => { actions.setLightboxOpen(true) }}
         onCloseTab={() => { actions.closeTab(chart.artifactId) }}
         loadImage={loadImage}
+        loadText={loadText}
         t={t}
       />
-      <ArtifactContent chart={chart} loadImage={loadImage} t={t} />
-      <ArtifactLightbox chart={chart} loadImage={loadImage} open={lightboxOpen} onClose={() => { actions.setLightboxOpen(false) }} t={t} />
+      <ArtifactContent chart={chart} loadImage={loadImage} loadText={loadText} t={t} />
+      {'width' in chart.attachment && (
+        <ArtifactLightbox
+          chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
+          loadImage={loadImage}
+          open={lightboxOpen}
+          onClose={() => { actions.setLightboxOpen(false) }}
+          t={t}
+        />
+      )}
     </>
   )
 }
 
-function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspectCall, t }: {
+function ArtifactViewer({ science, snapshot, loadImage, loadText, useStore, actions, inspectCall, t }: {
   science: ScienceClientProjection
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
+  loadText: TextLoader
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
   t: TranslateNS<'science'>
 }) {
   const openArtifacts = useStore(s => s.openArtifacts)
-  const activeChartId = useStore(s => s.activeChartId)
+  const activeArtifactId = useStore(s => s.activeArtifactId)
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
-  // Auto-capture (science-runtime) can append non-image versions; the viewer
-  // stays image-only until the non-image artifact phase extends content
-  // dispatch (README "PNG presentation only" Known Limitation).
-  const charts = science.artifacts.filter(hasImageAttachment)
+  const artifacts = science.artifacts
 
   // Every selection-store action maintains one invariant
-  // (selection-store.client.spec.ts): activeChartId is null iff
+  // (selection-store.client.spec.ts): activeArtifactId is null iff
   // openArtifacts is empty, otherwise it names an entry in openArtifacts —
   // so `activeTab === undefined` here means exactly "no open tabs", the
   // landing view's gate, without a second, separately-tracked emptiness
   // check on `openArtifacts.length`.
-  const activeTab = openArtifacts.find(tab => tab.chartId === activeChartId)
+  const activeTab = openArtifacts.find(tab => tab.artifactId === activeArtifactId)
   if (activeTab === undefined) {
     return (
       <div className={css.body}>
         <LandingView
-          charts={charts}
+          artifacts={artifacts}
           outcome={science.outcome}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
@@ -477,19 +478,19 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
   }
 
   // The one remaining way `activeChart` resolves to undefined is the
-  // durable projection not having this exact (chartId, version) pair — a
+  // durable projection not having this exact (artifactId, version) pair — a
   // stale tab, handled below as "artifact unavailable".
-  const activeChart = charts.find(candidate =>
-    candidate.artifactId === activeTab.chartId && candidate.version === activeTab.version)
+  const activeChart = artifacts.find(candidate =>
+    candidate.artifactId === activeTab.artifactId && candidate.version === activeTab.version)
 
   return (
     <div className={css.body}>
       <TabStrip
         tabs={openArtifacts}
-        charts={charts}
-        activeChartId={activeChartId}
-        onActivate={(chartId) => { actions.activateTab(chartId) }}
-        onClose={(chartId) => { actions.closeTab(chartId) }}
+        artifacts={artifacts}
+        activeArtifactId={activeArtifactId}
+        onActivate={(artifactId) => { actions.activateTab(artifactId) }}
+        onClose={(artifactId) => { actions.closeTab(artifactId) }}
         t={t}
       />
       {activeChart === undefined
@@ -497,12 +498,13 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
         : (
           <ArtifactTab
             science={science}
-            charts={charts}
+            artifacts={artifacts}
             chart={activeChart}
             view={view}
             provenanceSubTab={provenanceSubTab}
             snapshot={snapshot}
             loadImage={loadImage}
+            loadText={loadText}
             useStore={useStore}
             actions={actions}
             inspectCall={inspectCall}
@@ -516,12 +518,12 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
 /**
  * Render the Science Details entry (the artifact viewer) from the current
  * `science` projection and the shared selection store.
- * @param props - runtime slot currency, the injected loader, the shared
+ * @param props - runtime slot currency, the injected loaders, the shared
  * selection store, the Details-seam jump handoff, and the science locale seat.
  * @returns the current-state Science surface for this session.
  */
 export function ScienceDetailsView({
-  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, t,
+  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, loadText, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
@@ -546,7 +548,7 @@ export function ScienceDetailsView({
 
   return (
     <ArtifactViewer
-      science={science} snapshot={snapshot} loadImage={loadImage}
+      science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

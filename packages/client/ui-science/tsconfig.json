@@ -15,6 +15,9 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../util/byte-size"
+    },
+    {
       "path": "../locale"
     },
     {

@@ -162,14 +162,17 @@ function enablePresetTool(composition: string, id: string): string {
 
 // ── fake-backed Science Runtime ──────────────────────────────────────────
 //
-// The science preset's `ctx.scienceRuntime` is deployment configuration the
-// shipped Web Host does not mount (R4 scope); this section proves the
-// preset's WIRING to that Host-owned service — not Runtime execution
-// semantics, which `dsh-tool-science`'s own real-composition test already
-// covers in full. The real `@deepseek-ai/dsh-science-runtime` package is
-// mounted directly (bypassing the Loader/YAML patch layer, since a fake
-// subprocess/sandbox provider is test scaffolding, not a shipped row) over
-// fake subprocess/sandbox providers, mirroring
+// The shipped Web Host mounts `scienceRuntime` unconfigured (`profiles: {}`,
+// see packages/bundle/web-app/cordis.patch.yml) so the Plugins tab can
+// dispatch a settings card into the namespace; deployment configuration is a
+// person naming a profile through that card. This section disables the
+// shipped row and mounts a fake-backed instance in its place to prove the
+// preset's WIRING to a configured `ctx.scienceRuntime` — not Runtime
+// execution semantics, which `dsh-tool-science`'s own real-composition test
+// already covers in full. The real `@deepseek-ai/dsh-science-runtime`
+// package is mounted directly (bypassing the Loader/YAML patch layer, since a
+// fake subprocess/sandbox provider is test scaffolding, not a shipped row)
+// over fake subprocess/sandbox providers, mirroring
 // `packages/science/tool-science/tests/harness.ts`'s technique so no real
 // Conda prefix or process confinement is required.
 
@@ -207,6 +210,11 @@ class FakeSubprocess extends SubprocessRuntime {
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (spec.argv.includes('--version')) return settledHandle('Fake Python 3.13.5\n', '')
+    // The package-inventory probe (`pip list --format=json` for Python):
+    // parseable JSON, or observation classifies the environment `invalid`.
+    if (spec.argv.includes('pip') && spec.argv.includes('list')) {
+      return settledHandle(JSON.stringify([{ name: 'fake-pkg', version: '1.0.0' }]), '')
+    }
     if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
     return settledHandle('fake run output\n', '')
   }
@@ -591,10 +599,12 @@ describe('the science preset', () => {
     }
   })
 
-  it('fails loudly before any provider request when no Science Runtime is mounted', async () => {
-    // The shipped Web Host mounts no `scienceRuntime` row (R4 scope); a
-    // deployment that wants Science usable must mount one separately.
-    expect(ctx.get('scienceRuntime')).toBeUndefined()
+  it('fails loudly before any provider request when the mounted Science Runtime has no profile configured', async () => {
+    // The shipped Web Host mounts `scienceRuntime` unconfigured (`profiles:
+    // {}`); a deployment that wants Science usable configures a profile
+    // through the settings card and restarts. Unconfigured, first-use
+    // binding still reaches the Runtime and fails there rather than at a
+    // missing-service check.
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-science-no-runtime'),
       // The header's `agentPreset` — set here, not by `mount()` — is what
@@ -608,8 +618,13 @@ describe('the science preset', () => {
       // deliberately skips binding for; only an agent+signal assembly — what
       // the real agent loop's `preStep()` builds through `assembleContextFor` —
       // triggers first-use binding and therefore this failure.
+      //
+      // The failure SIGNAL this test contracts on is "first-use binding fails
+      // before any provider request"; the exact message is not — a later
+      // integration replaces this unknown-profile path with a dedicated
+      // `PROFILE_NOT_CONFIGURED` outcome.
       await expect(ctx.systemPrompt.assemble(assembleContextFor(handle.agent, new AbortController().signal)))
-        .rejects.toThrow(/no Science Runtime is mounted \(ctx\.scienceRuntime\)/)
+        .rejects.toThrow(/unknown Science environment profile "science"/)
     } finally {
       await handle.dispose()
     }
@@ -632,7 +647,11 @@ describe('a fake-backed Science Runtime mounted for the science preset', () => {
   beforeAll(async () => {
     const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-science-runtime-')), 'settings.yaml')
     await writeFile(settingsFile, '{}\n')
-    runtimeCtx = await bootWeb(settingsFile)
+    // Disables the shipped unconfigured `science-runtime` row rather than
+    // mounting a second `scienceRuntime` registration beside it: Cordis
+    // rejects a duplicate service registration, and this section's fake-
+    // backed instance below is a replacement, not an addition.
+    runtimeCtx = await bootWeb(settingsFile, [{ id: 'science-runtime', disabled: true }])
     // Repo-relative, not os.tmpdir(): Science Runtime scratch roots must not
     // overlap a generic sandbox temp grant (same reason `dsh-tool-science`'s
     // own real-composition test picks its scratch root the same way).

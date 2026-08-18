@@ -346,9 +346,17 @@ describe('DetailsPanel routing shell', () => {
         t={t}
       />,
     )
-    // Keyed by the active entry's id, own empty owner share (same as the
-    // details-view dispatch), and rendered exactly once.
-    expect(headerCalls).toEqual([{ owner: {}, entryKey: 'science' }])
+    // Keyed by the active entry's id, the one write capability the shell
+    // holds (openView, from its own store: chatStore registration) and
+    // nothing else, and rendered exactly once.
+    expect(headerCalls).toHaveLength(1)
+    expect(headerCalls[0]?.entryKey).toBe('science')
+    expect(Object.keys(headerCalls[0]?.owner as object)).toEqual(['openView'])
+    // openView writes through to the shell's own store: chatStore.setView —
+    // the same write chatStore.actions.setView performs directly.
+    const openView = (headerCalls[0]?.owner as { openView: (id: string) => void }).openView
+    openView('trajectory')
+    expect(chat.getSnapshot().view).toBe('trajectory')
     const seat = view.getByTestId('details-header-actions-seat')
     const header = seat.parentElement?.parentElement
     // Positioned between the title and the shell's own close button.
@@ -379,7 +387,9 @@ describe('DetailsPanel routing shell', () => {
     // engine renders nothing for a key with no registrant (proven generically
     // by the `tool.call.toolview` fallback coverage), so a `science`-only
     // registration contributes no controls while `tool` is active.
-    expect(headerCalls).toEqual([{ owner: {}, entryKey: 'tool' }])
+    expect(headerCalls).toHaveLength(1)
+    expect(headerCalls[0]?.entryKey).toBe('tool')
+    expect(Object.keys(headerCalls[0]?.owner as object)).toEqual(['openView'])
   })
 
   it('closeDetails fires on close-button activation', () => {

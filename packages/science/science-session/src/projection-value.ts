@@ -61,10 +61,15 @@ function clientEnvironment(environment: ScienceEnvironmentBinding): ScienceClien
 }
 
 /**
- * Remove source, scratch, full fingerprint, and free-text failure fields from
- * one run. `toolCallId` and `requestHeaderSeq` pass through: the browser
- * already holds both as session-log identities, and they let the client join
- * a run to its authorizing transcript call.
+ * Remove scratch key, run directory reference, full environment fingerprint,
+ * and free-text failure fields from one run. `toolCallId` and
+ * `requestHeaderSeq` pass through: the browser already holds both as
+ * session-log identities, and they let the client join a run to its
+ * authorizing transcript call. `codeSha256` passes through whole (not
+ * truncated like the environment fingerprint): it is a digest over source
+ * text the same transcript call already restates verbatim once resolved, so
+ * it carries no Host-infrastructure fact, and provenance needs the durable
+ * anchor to be exact.
  */
 function clientRun(run: ScienceRun): ScienceClientRun {
   const common = {
@@ -75,6 +80,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
     environmentRevision: run.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
     startedAt: run.startedAt,
+    codeSha256: run.codeSha256,
   }
   if (run.status === 'running') return { ...common, status: run.status }
   if (run.status === 'interrupted') {

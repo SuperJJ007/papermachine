@@ -1,29 +1,32 @@
-// Science Details entry: read-only current-state view over the accepted
-// client-safe `science` Session projection (packages/science/science-session/src/types.ts).
-// Renders a client-safe environment summary, ordered run history, logical
-// charts at their latest accepted version (thumbnails via this package's own
-// session-scoped loader, science-attachment-loader.ts), and the latest
-// Outcome with its evidence references. It builds no second projection
-// reader, chart store, Outcome editor, or attachment cache — every fact
-// rendered here already lives on `ScienceClientProjection`, and evidence
-// copy reuses the same `outcome.*` locale keys the publish_outcome toolview
-// row uses. The environment section never reports capability from
-// configuration alone: a revision whose `status` is not `'applied'` (absent
-// binding, `'invalid'`, or `'drifted'`) renders the same "failed" text
-// regardless of which of those three applies, so no state can read as
-// "Runtime ready" on a merely configured prefix.
+// Science Details entry: the artifact panel over the accepted client-safe
+// `science` Session projection (packages/science/science-session/src/types.ts).
+// Renders a client-safe environment strip, ordered run history, an artifact
+// gallery (one entry per logical chart at its latest version), an artifact
+// detail with a version rail walking every durable version of the selected
+// chart, and the latest Outcome with its evidence references. It builds no
+// second projection reader, chart store, or Outcome editor; the one piece of
+// local state it owns is the shared ui-science selection store
+// (selection-store.ts), keyed on `{ chartId, version }`. Thumbnails load
+// through this package's own session-scoped loader
+// (science-attachment-loader.ts). The environment section never reports
+// capability from configuration alone: a revision whose `status` is not
+// `'applied'` (absent binding, `'invalid'`, or `'drifted'`) renders the same
+// "failed" text regardless of which of those three applies, so no state can
+// read as "Runtime ready" on a merely configured prefix.
 
-import { MessageImage, type ImageLoader, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
-import { MarkdownText, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { useEffect, useState } from 'react'
+import { ImageLightbox, MessageImage, type ImageLoader, type MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import { IconChevronLeftOutline14, MarkdownText, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: merges the `science` key into SessionProjectionMap for useProjection.
 import type {
-  ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientInterpreterBinding,
+  ScienceChartId, ScienceClientChartVersion, ScienceClientEnvironmentBinding, ScienceClientInterpreterBinding,
   ScienceClientOutcomePublication, ScienceClientRun,
   ScienceEvidenceRef, ScienceInterpreterCapability, ScienceLanguage,
 } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactSelection, ScienceSelectionStore } from './selection-store.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
@@ -34,7 +37,8 @@ export interface ScienceDetailsInjected {
 
 /** Full props for the Science Details entry. */
 export type ScienceDetailsViewProps =
-  PropsRuntime<'conversation.details.view'> & InjectFace<ScienceDetailsInjected> & PropsLocale<'science'>
+  PropsRuntime<'conversation.details.view'> & InjectFace<ScienceDetailsInjected>
+  & PropsStore<ScienceSelectionStore> & PropsLocale<'science'>
 
 /** Closed-union exhaustiveness fence. */
 /* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
@@ -110,6 +114,11 @@ function latestCharts(charts: readonly ScienceClientChartVersion[]): ScienceClie
   return [...byId.values()]
 }
 
+/** Every durable version of one logical chart, ascending — the version rail's walk order. */
+function versionsOf(charts: readonly ScienceClientChartVersion[], chartId: ScienceChartId): ScienceClientChartVersion[] {
+  return charts.filter(chart => chart.chartId === chartId).sort((left, right) => left.version - right.version)
+}
+
 function InterpreterRow({ language, binding, t }: {
   language: ScienceLanguage
   binding: ScienceClientInterpreterBinding
@@ -123,6 +132,8 @@ function InterpreterRow({ language, binding, t }: {
         && <span>{t('details.environment.languageVersion', { version: binding.languageVersion })}</span>}
       {binding.fingerprintPreview !== undefined
         && <span className={css.fingerprint}>{t('details.environment.fingerprint', { preview: binding.fingerprintPreview })}</span>}
+      {binding.packages !== undefined
+        && <span>{t('details.environment.packageCount', { count: binding.packages.length })}</span>}
     </div>
   )
 }
@@ -183,30 +194,189 @@ function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
   }
 }
 
-function ChartsSection({ charts, loadImage, t }: {
+/**
+ * The header-triggered lightbox: a second, store-driven `ImageLightbox`
+ * instance alongside the detail image's own click-to-open `MessageImage`
+ * lightbox. `conversation.details.header.actions`' "expand" button
+ * (ScienceArtifactHeaderActions.tsx) lives in a sibling render tree with no
+ * access to `MessageImage`'s private open state, so it opens this shared
+ * store's `lightboxOpen` flag instead; this component resolves the same
+ * durable attachment through the same loader when that flag flips.
+ */
+function HeaderTriggeredLightbox({ chart, loadImage, open, onClose, t }: {
+  chart: ScienceClientChartVersion
+  loadImage: ImageLoader
+  open: boolean
+  onClose: () => void
+  t: TranslateNS<'science'>
+}) {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) { setSrc(null); return }
+    let live = true
+    void loadImage(chart.attachment).then((url) => { if (live) setSrc(url) }).catch(() => {})
+    return () => { live = false }
+  }, [open, chart.attachment, loadImage])
+
+  if (!open || src === null) return null
+  return (
+    <ImageLightbox
+      src={src}
+      alt={chart.attachment.name ?? t('chart.title')}
+      labels={{ dialog: t('chart.lightboxOriginal'), close: t('chart.lightboxClose') }}
+      onClose={onClose}
+    />
+  )
+}
+
+function VersionRail({ versions, selected, onSelect, t }: {
+  versions: readonly ScienceClientChartVersion[]
+  selected: number
+  onSelect: (version: number) => void
+  t: TranslateNS<'science'>
+}) {
+  return (
+    <ul className={css.versionRail} aria-label={t('details.artifact.versionRail')}>
+      {versions.map(version => (
+        <li key={version.version}>
+          <button
+            type="button"
+            className={css.versionItem}
+            aria-current={version.version === selected || undefined}
+            onClick={() => { onSelect(version.version) }}
+          >
+            {t('chart.version', { version: version.version })}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function ArtifactDetail({ chart, versions, loadImage, useStore, actions, t }: {
+  chart: ScienceClientChartVersion
+  versions: readonly ScienceClientChartVersion[]
+  loadImage: ImageLoader
+  useStore: ScienceDetailsViewProps['useStore']
+  actions: ScienceDetailsViewProps['actions']
+  t: TranslateNS<'science'>
+}) {
+  const lightboxOpen = useStore(s => s.lightboxOpen)
+  return (
+    <div className={css.detail}>
+      <button type="button" className={css.detailBack} onClick={() => { actions.select(null) }}>
+        <IconChevronLeftOutline14 size={12} />
+        {t('details.artifact.backToGallery')}
+      </button>
+      <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={chartImageLabels(t)} />
+      <HeaderTriggeredLightbox
+        chart={chart}
+        loadImage={loadImage}
+        open={lightboxOpen}
+        onClose={() => { actions.setLightboxOpen(false) }}
+        t={t}
+      />
+      <div className={css.detailMeta}>
+        <span className={css.chartTitle}>{chart.title}</span>
+        <span className={css.badge}>{t('chart.version', { version: chart.version })}</span>
+      </div>
+      {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
+      <div className={css.detailFacts}>
+        <span>{t('chart.sourceRun', { runId: chart.runId })}</span>
+        <span>{t('chart.dimensions', { width: chart.attachment.width, height: chart.attachment.height, size: formatBytes(chart.attachment.bytes) })}</span>
+      </div>
+      <VersionRail
+        versions={versions}
+        selected={chart.version}
+        onSelect={(version) => { actions.select({ chartId: chart.chartId, version }) }}
+        t={t}
+      />
+    </div>
+  )
+}
+
+/** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function ArtifactGallery({ charts, loadImage, onSelect, t }: {
   charts: readonly ScienceClientChartVersion[]
   loadImage: ImageLoader
+  onSelect: (selection: ScienceArtifactSelection) => void
   t: TranslateNS<'science'>
 }) {
   const latest = latestCharts(charts)
+  if (latest.length === 0) return <p className={css.notice} role="status">{t('details.charts.empty')}</p>
+  return (
+    <ul className={css.chartList}>
+      {latest.map(chart => (
+        <li key={chart.chartId} className={css.chartItem}>
+          {/* A real <button> wrapping MessageImage's own thumbnail <button>
+              is invalid HTML that also breaks click delivery (a nested
+              button swallows clicks meant for its ancestor, even from a
+              sibling outside the inner button — proven by this exact
+              structure in this package's own tests); a div with a button
+              role is the same pattern ScienceChartRow's row uses. */}
+          {/* An explicit label: without it this role="button" wrapper's
+              accessible name is computed from its contents, which include
+              MessageImage's own button — so the wrapper would announce (and
+              match by role+name as) whatever state that thumbnail is in. */}
+          <div
+            className={css.galleryButton}
+            role="button"
+            aria-label={t('details.artifact.select', { title: chart.title, version: chart.version })}
+            tabIndex={0}
+            onClick={() => { onSelect({ chartId: chart.chartId, version: chart.version }) }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              onSelect({ chartId: chart.chartId, version: chart.version })
+            }}
+          >
+            <MessageImage attachment={chart.attachment} load={loadImage} variant="tile" labels={chartImageLabels(t)} />
+            <div className={css.chartMeta}>
+              <span className={css.chartTitle}>{chart.title}</span>
+              <span className={css.chartLogicalName}>{chart.logicalName}</span>
+              <span className={css.badge}>{t('chart.version', { version: chart.version })}</span>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function ArtifactsSection(props: {
+  charts: readonly ScienceClientChartVersion[]
+  loadImage: ImageLoader
+  useStore: ScienceDetailsViewProps['useStore']
+  actions: ScienceDetailsViewProps['actions']
+  t: TranslateNS<'science'>
+}) {
+  const { charts, loadImage, useStore, actions, t } = props
+  const selected = useStore(s => s.selected)
+  const selectedChart = selected === null ? undefined
+    : charts.find(chart => chart.chartId === selected.chartId && chart.version === selected.version)
+
   return (
     <section className={css.section}>
       <div className={css.sectionLabel}>{t('details.charts.title')}</div>
-      {latest.length === 0
-        ? <p className={css.notice} role="status">{t('details.charts.empty')}</p>
-        : (
-          <ul className={css.chartList}>
-            {latest.map(chart => (
-              <li key={chart.chartId} className={css.chartItem}>
-                <MessageImage attachment={chart.attachment} load={loadImage} variant="tile" labels={chartImageLabels(t)} />
-                <div className={css.chartMeta}>
-                  <span className={css.chartTitle}>{chart.title}</span>
-                  <span className={css.badge}>{t('chart.version', { version: chart.version })}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {selected !== null && selectedChart !== undefined
+        ? (
+          <ArtifactDetail
+            chart={selectedChart}
+            versions={versionsOf(charts, selectedChart.chartId)}
+            loadImage={loadImage}
+            useStore={useStore}
+            actions={actions}
+            t={t}
+          />
+        )
+        : <ArtifactGallery charts={charts} loadImage={loadImage} onSelect={(selection) => { actions.select(selection) }} t={t} />}
     </section>
   )
 }
@@ -239,11 +409,12 @@ function OutcomeSection({ outcome, t }: {
 }
 
 /**
- * Render the Science Details entry from the current `science` projection.
- * @param props - runtime slot currency, the injected loader, and the science locale seat.
+ * Render the Science Details entry (the artifact panel) from the current
+ * `science` projection and the shared selection store.
+ * @param props - runtime slot currency, the injected loader, the shared selection store, and the science locale seat.
  * @returns the current-state Science surface for this session.
  */
-export function ScienceDetailsView({ sessionId, useSessions, useProjection, loadImage, t }: ScienceDetailsViewProps) {
+export function ScienceDetailsView({ sessionId, useSessions, useProjection, useStore, actions, loadImage, t }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
 
@@ -268,7 +439,7 @@ export function ScienceDetailsView({ sessionId, useSessions, useProjection, load
     <div className={css.body}>
       <EnvironmentSection environment={science.environment} t={t} />
       <RunsSection runs={science.runs} t={t} />
-      <ChartsSection charts={science.charts} loadImage={loadImage} t={t} />
+      <ArtifactsSection charts={science.charts} loadImage={loadImage} useStore={useStore} actions={actions} t={t} />
       <OutcomeSection outcome={science.outcome} t={t} />
     </div>
   )

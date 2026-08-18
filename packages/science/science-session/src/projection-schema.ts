@@ -35,6 +35,7 @@ const RUN_IDENTITY_KEYS = [
   'environmentRevision',
   'environmentFingerprintPreview',
   'startedAt',
+  'codeSha256',
 ] as const
 
 function safeInteger(value: unknown, minimum = 0): value is number {
@@ -107,6 +108,8 @@ function validRunIdentity(candidate: Record<string, unknown>): boolean {
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
     && safeInteger(candidate['startedAt'])
+    && typeof candidate['codeSha256'] === 'string'
+    && /^[a-f0-9]{64}$/.test(candidate['codeSha256'])
 }
 
 function validRun(value: unknown): boolean {

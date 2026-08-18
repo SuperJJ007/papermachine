@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /**
- * The Science Details entry: every reachable state from the accepted
- * client-safe `science` projection (missing projection support, unbound,
- * environment failed/applied, no/some runs, no/some charts, attachment
- * failure, no/some Outcome), distinct accessible text per state, and a
+ * The Science Details entry (the artifact panel): every reachable state from
+ * the accepted client-safe `science` projection (missing projection support,
+ * unbound, environment failed/applied/package-count, no/some runs,
+ * gallery/detail/version-rail for charts, attachment failure, no/some
+ * Outcome), the version rail walking every durable version, the
+ * header-triggered lightbox, distinct accessible text per state, and a
  * privacy regression proving a full fingerprint, executable, or configured
  * path never reaches rendered text even when a projection value carries one.
  */
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
@@ -16,6 +18,7 @@ import type {
 } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceDetailsView, type ScienceDetailsViewProps } from '../src/client/ScienceDetailsView.tsx'
 import { en } from '../src/client/locales.ts'
+import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
 type Props = ScienceDetailsViewProps
 
@@ -63,6 +66,7 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     startedAt: 1_000,
+    codeSha256: 'c'.repeat(64),
     status: 'success',
     finishedAt: 2_000,
     stdoutBytes: 0,
@@ -75,7 +79,11 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
 
 function props(
   science: ScienceClientProjection | null | undefined,
-  over: { agentPreset?: string; loadImage?: Props['loadImage'] } = {},
+  over: {
+    agentPreset?: string
+    loadImage?: Props['loadImage']
+    store?: ReturnType<typeof testScienceSelectionStore>
+  } = {},
 ): Props {
   const state = {
     ids: [SESSION],
@@ -94,10 +102,13 @@ function props(
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
+  const store = over.store ?? testScienceSelectionStore()
   return {
     sessionId: SESSION,
     useSessions,
     useProjection: vi.fn(() => science),
+    useStore: store.useStore,
+    actions: store.actions,
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('blob:fake-url'),
     t,
   } as unknown as Props
@@ -198,6 +209,23 @@ describe('ScienceDetailsView: environment', () => {
     expect(within(section).queryByText('Python')).toBeNull()
     expect(within(section).queryByText('R')).toBeNull()
   })
+
+  it('renders the package count when the binding carries an inventory, and omits it otherwise', () => {
+    const withPackages: ScienceClientInterpreterBinding = {
+      language: 'python', capability: 'available',
+      packages: [{ name: 'pip', version: '24.0' }, { name: 'numpy', version: '2.0.0' }],
+    }
+    const withoutPackages: ScienceClientInterpreterBinding = { language: 'r', capability: 'available' }
+    const science = baseProjection({
+      environment: {
+        revision: 1, profileId: 'science' as never, configuredAt: 0, validatedAt: 0, status: 'applied',
+        python: withPackages, r: withoutPackages,
+      },
+    })
+    render(<ScienceDetailsView {...props(science)} />)
+    const section = sectionOf('Environment')
+    expect(section.textContent).toContain('2 packages')
+  })
 })
 
 describe('ScienceDetailsView: runs', () => {
@@ -238,13 +266,13 @@ describe('ScienceDetailsView: runs', () => {
   })
 })
 
-describe('ScienceDetailsView: charts', () => {
+describe('ScienceDetailsView: artifact gallery', () => {
   it('reports no charts yet for an empty history', () => {
     render(<ScienceDetailsView {...props(baseProjection())} />)
     expect(within(sectionOf('Charts')).getByRole('status').textContent).toBe('No charts yet.')
   })
 
-  it('renders one row per logical chart at its latest accepted version', () => {
+  it('renders one gallery entry per logical chart at its latest accepted version', () => {
     const science = baseProjection({
       // A duplicate/out-of-order lower version after the accepted latest
       // must not displace it (latestCharts keeps the higher version).
@@ -259,10 +287,11 @@ describe('ScienceDetailsView: charts', () => {
     expect(within(section).getAllByText(/^v\d$/)).toHaveLength(2)
     expect(within(section).getByText('v2')).toBeTruthy()
     expect(within(section).getByText('Loss curve')).toBeTruthy()
+    expect(within(section).getAllByText('loss-curve')).toHaveLength(2)
     expect(within(section).getByText('Other')).toBeTruthy()
   })
 
-  it('loads a chart thumbnail through the injected session-scoped loader', async () => {
+  it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
     const science = baseProjection({ charts: [chart()] })
     const view = render(<ScienceDetailsView {...props(science, { loadImage })} />)
@@ -276,6 +305,143 @@ describe('ScienceDetailsView: charts', () => {
     const science = baseProjection({ charts: [chart()] })
     render(<ScienceDetailsView {...props(science, { loadImage })} />)
     expect(await screen.findByRole('button', { name: 'Failed to load, click to retry' })).toBeTruthy()
+  })
+})
+
+describe('ScienceDetailsView: artifact detail and version rail', () => {
+  it('selecting a gallery entry switches to the detail view with a version rail over every durable version', () => {
+    const science = baseProjection({
+      charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })],
+    })
+    const view = render(<ScienceDetailsView {...props(science)} />)
+    const section = sectionOf('Charts')
+    fireEvent.click(within(section).getByText('v2 title'))
+
+    // Detail mode: the gallery's other entries are gone, replaced by one
+    // big image, the selected version's title, and a rail over v1..v2.
+    expect(screen.getByText('v2 title')).toBeTruthy()
+    expect(screen.queryByText('v1 title')).toBeNull()
+    const rail = screen.getByLabelText('Versions')
+    expect(within(rail).getAllByRole('button')).toHaveLength(2)
+    expect(within(rail).getByText('v1')).toBeTruthy()
+    expect(within(rail).getByText('v2')).toBeTruthy()
+    expect(view.container.querySelector('[aria-current="true"]')?.textContent).toBe('v2')
+  })
+
+  it('the version rail switches the rendered version without leaving detail mode', () => {
+    const science = baseProjection({
+      charts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })],
+    })
+    render(<ScienceDetailsView {...props(science)} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('v2 title'))
+
+    const rail = screen.getByLabelText('Versions')
+    fireEvent.click(within(rail).getByText('v1'))
+
+    expect(screen.getByText('v1 title')).toBeTruthy()
+    expect(screen.queryByText('v2 title')).toBeNull()
+    expect(document.querySelector('[aria-current="true"]')?.textContent).toBe('v1')
+  })
+
+  it('renders the caption when the selected version carries one, and the sub-kilobyte/kilobyte/megabyte byte formats across versions', () => {
+    const science = baseProjection({
+      charts: [
+        chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
+        chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
+        chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
+      ],
+    })
+    render(<ScienceDetailsView {...props(science)} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('v3 title'))
+    expect(screen.getByText(/5\.0 MB/)).toBeTruthy()
+
+    const rail = screen.getByLabelText('Versions')
+    fireEvent.click(within(rail).getByText('v2'))
+    expect(screen.getByText(/2\.0 KB/)).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('Versions').querySelector('button')!)
+    expect(screen.getByText('First pass')).toBeTruthy()
+    expect(screen.getByText(/512 B/)).toBeTruthy()
+  })
+
+  it('activates a gallery entry on Enter/Space and ignores every other key', () => {
+    const science = baseProjection({ charts: [chart({ version: 1 })] })
+    render(<ScienceDetailsView {...props(science)} />)
+    const gallery = sectionOf('Charts').querySelector('[role="button"]') as HTMLElement
+    fireEvent.keyDown(gallery, { key: 'a' })
+    expect(screen.queryByLabelText('Versions')).toBeNull()
+    fireEvent.keyDown(gallery, { key: 'Enter' })
+    expect(screen.getByLabelText('Versions')).toBeTruthy()
+  })
+
+  it('reports the header-triggered lightbox image as unavailable when the loader rejects (no dialog, no crash)', async () => {
+    const loadImage = vi.fn().mockRejectedValue(new Error('network'))
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
+    store.actions.setLightboxOpen(true)
+    await waitFor(() => { expect(loadImage.mock.calls.length).toBeGreaterThan(0) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('back-to-gallery returns to the gallery with the selection cleared', () => {
+    const science = baseProjection({ charts: [chart({ version: 1 }), chart({ version: 2 })] })
+    render(<ScienceDetailsView {...props(science)} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
+    fireEvent.click(screen.getByText('Back to gallery'))
+
+    const section = sectionOf('Charts')
+    expect(within(section).queryByLabelText('Versions')).toBeNull()
+    // Back to one gallery entry at its latest (v2) version.
+    expect(within(section).getByText('v2')).toBeTruthy()
+  })
+
+  it('the header-triggered lightbox opens when the shared store flips lightboxOpen, and closes back through the same store', async () => {
+    const loadImage = vi.fn().mockResolvedValue('blob:fake-url')
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
+    expect(screen.getByLabelText('Versions')).toBeTruthy()
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    store.actions.setLightboxOpen(true)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => { expect(store.instance.getSnapshot().lightboxOpen).toBe(false) })
+  })
+
+  it('discards a header-triggered lightbox load that resolves after the lightbox already closed', async () => {
+    let resolveLoad: ((url: string) => void) | undefined
+    const loadImage = vi.fn(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
+    const science = baseProjection({ charts: [chart()] })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(science, { loadImage, store })} />)
+    fireEvent.click(within(sectionOf('Charts')).getByText('Loss curve'))
+    // The gallery thumbnail and the detail's own big-image MessageImage
+    // already called loadImage; only the lightbox's own call matters here.
+    const callsBeforeLightbox = loadImage.mock.calls.length
+
+    act(() => { store.actions.setLightboxOpen(true) })
+    await waitFor(() => { expect(loadImage.mock.calls.length).toBe(callsBeforeLightbox + 1) })
+    // Close before the load settles: the effect's cleanup marks it stale.
+    act(() => { store.actions.setLightboxOpen(false) })
+    act(() => { resolveLoad?.('blob:late-url') })
+    await Promise.resolve()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('a stale selection (chart no longer present) falls back to the gallery', () => {
+    const science = baseProjection({ charts: [chart({ version: 1 })] })
+    const store = testScienceSelectionStore()
+    store.actions.select({ chartId: 'missing-chart' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    const section = sectionOf('Charts')
+    expect(within(section).queryByLabelText('Versions')).toBeNull()
+    expect(within(section).getByText('Loss curve')).toBeTruthy()
   })
 })
 

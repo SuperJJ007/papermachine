@@ -441,7 +441,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Owner share of one entry\'s Details header controls: the shell supplies\n * nothing — entries are self-sufficient standard-kit readers, same as\n * `conversation.details.view` entries.\n */\nexport interface DetailsHeaderActionOwnerProps {}',
+      '/**\n * Owner share of one entry\'s Details header controls: mostly self-sufficient\n * standard-kit readers, same as `conversation.details.view` entries, plus one\n * write capability the panel itself already holds (its own `store: chatStore`\n * registration) and a header control cannot reach any other way — switching\n * the center-column `conversation.view` tab (a control that opens a view for\n * "the selected X" needs to select that view without also needing its own\n * store seat).\n */\nexport interface DetailsHeaderActionOwnerProps {\n  /** Switch the active `conversation.view` tab to the named entry id. */\n  openView: (id: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -457,7 +457,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'details\' (client-ui-conversation), so it exists while that entry is mounted',
-    occupants: [],
+    occupants: [
+      'client-ui-science ScienceArtifactHeaderActions',
+    ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.details.header.actions\', () => ctx.slots.register(\n      { name: \'conversation.details.header.actions\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-conversation/src/client/contract/slots.ts:146',
@@ -1081,9 +1083,12 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * View-slot owner share: the cross-view inspect handoff (otherwise views need\n * nothing from the render site — sessionId and the snapshot hook arrive as\n * framework-standard props; tool rows go through each view\'s own declared\n * toolview hole).\n */\nexport interface ConvViewOwnerProps {\n  /** One-shot inspect request from another view (chat\'s Inspect button); null when idle. */\n  inspect?: { callId: CallId } | null\n  /** Acknowledge the inspect request once applied (clears the store field). */\n  onInspectDone?: () => void\n}',
+      '/**\n * View-slot owner share: the cross-view inspect handoff (otherwise views need\n * nothing from the render site — sessionId and the snapshot hook arrive as\n * framework-standard props; tool rows go through each view\'s own declared\n * toolview hole).\n */\nexport interface ConvViewOwnerProps {\n  /** One-shot inspect request from another view (chat\'s Inspect button); null when idle. */\n  inspect?: { callId: CallId } | null\n  /** Acknowledge the inspect request once applied (clears the store field). */\n  onInspectDone?: () => void\n  /**\n   * Write the one-shot inspect target and switch to the trajectory view — the\n   * same handoff chat\'s own tool rows trigger (`ChatNodeOwnerProps.inspectCall`\n   * → `ToolCallOwnerProps.inspect`), available to every `conversation.view`\n   * entry so a non-chat view can also reveal a call there.\n   */\n  inspectCall: (callId: CallId) => void\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'ChatNodeOwnerProps',
+      'ToolCallOwnerProps',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
@@ -1099,6 +1104,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation ChatView id \'chat\'',
+      'client-ui-science ScienceProvenanceView',
       'client-ui-trajectory TrajectoryView id \'trajectory\'',
     ],
     replaceRisk: 'none',

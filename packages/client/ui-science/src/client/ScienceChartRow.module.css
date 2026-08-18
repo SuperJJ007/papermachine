@@ -1,10 +1,60 @@
-/* Chart toolview: title/version header, optional caption, image preview, and a source/size meta line. */
+/* Chart toolview: the settled row (thumbnail, logical name, version, title,
+   all inline) and the shared fallback card (running/failed/stopped/stale —
+   header line plus rendered text, stacked). Two outer layouts, since one
+   flex-direction cannot serve both. */
 
 .card {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.thumbWrap {
+  position: relative;
+  flex: none;
+}
+
+.expandHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-on-emphasis);
+  background: rgb(0 0 0 / 35%);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.thumbWrap:hover .expandHint {
+  opacity: 1;
+}
+
+.logicalName {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .header {
@@ -35,6 +85,11 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.row .title {
+  flex: 1;
+  min-width: 0;
+}
+
 .badge {
   flex: none;
   padding: 1px 6px;
@@ -54,21 +109,6 @@
 
 .card[data-state='error'] .status {
   color: var(--dsw-alias-state-error-primary);
-}
-
-.caption {
-  margin: 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.meta {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 .fallbackText {

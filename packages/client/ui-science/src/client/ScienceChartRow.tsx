@@ -1,19 +1,24 @@
-// Chart toolview registrant: the keyed toolview hole for `save_chart`. Reads
-// only the tagged, versioned presentation value from the frozen result slice
-// (`block.meta`) — never re-derives byte or dimension facts locally — and
-// loads the durable PNG through the owner-supplied session-authorized
-// `loadImage` (the same cached, generation-tracked loader chat history
-// images use). A running, failed, stopped, or unrecognized/stale
-// presentation falls back to a plain row: title, state, and the tool's own
-// rendered text, never a broken or empty card.
+// Chart toolview registrant: the keyed toolview hole for `save_chart`. A
+// settled, valid presentation renders as a compact navigation row — small
+// thumbnail, logical name, version badge, title — never the full card the
+// artifact panel now owns. Activating the row (anywhere but the thumbnail)
+// selects that exact artifact version in the shared ui-science selection
+// store and opens the Details column on the Science entry; a
+// hover-revealed control on the thumbnail opens the shared lightbox
+// directly, so full-screen viewing never requires opening the column. A
+// running, failed, stopped, or unrecognized/stale presentation falls back to
+// a plain row: title, state, and the tool's own rendered text, never a
+// broken or empty card.
 
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
-import { IconDataOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconDataOutline16, IconFullscreenOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ScienceChartPresentation } from '@deepseek-ai/dsh-tool-science/types'
+import type { ScienceChartId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceSelectionStore } from './selection-store.ts'
 import css from './ScienceChartRow.module.css'
 import {
   ScienceToolFallbackRow,
@@ -22,8 +27,11 @@ import {
   type ScienceToolRowState,
 } from './ScienceToolFallbackRow.tsx'
 
-/** Full row props: the toolview runtime share plus this package's locale seat. */
-type ScienceChartRowProps = ToolCallViewProps & PropsLocale<'science'>
+/** Full row props: the toolview runtime share, the shared selection store, and this package's locale seat. */
+type ScienceChartRowProps = ToolCallViewProps & PropsStore<ScienceSelectionStore> & PropsLocale<'science'>
+
+/** Details entry id this row opens (matches the entry ui-science registers). */
+const SCIENCE_DETAILS_ID = 'science'
 
 const KNOWN_MEDIA_TYPES: readonly ImageMediaType[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
@@ -59,13 +67,6 @@ function toAttachmentRef(presentation: ScienceChartPresentation): ImageAttachmen
   }
 }
 
-/** Human-readable byte count, matching the compact style used elsewhere in the transcript. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 /** State-derived leading icon, matching the accent-row family's icon-or-dot convention. */
 function leadingFor(state: ScienceToolRowState) {
   switch (state) {
@@ -76,12 +77,12 @@ function leadingFor(state: ScienceToolRowState) {
 }
 
 /**
- * Render one `save_chart` call as a durable chart card once its tagged
- * presentation settles, or a compact plain row otherwise.
- * @param props - keyed toolview payload plus the science locale seat.
+ * Render one `save_chart` call as a compact navigation row once its tagged
+ * presentation settles, or a plain fallback row otherwise.
+ * @param props - keyed toolview payload, the shared selection store, and the science locale seat.
  * @returns the dedicated chart row.
  */
-export function ScienceChartRow({ block, loadImage, t }: ScienceChartRowProps) {
+export function ScienceChartRow({ block, loadImage, openDetailsView, actions, t }: ScienceChartRowProps) {
   const state = scienceToolRowState(block)
   const meta = 'kind' in block ? block.meta : undefined
   const presentation = state === 'ok' ? parsePresentation(meta) : null
@@ -117,24 +118,54 @@ export function ScienceChartRow({ block, loadImage, t }: ScienceChartRowProps) {
     loadFailed: t('chart.loadFailed'),
     lightbox: { dialog: t('chart.lightboxOriginal'), close: t('chart.lightboxClose') },
   }
+
+  const activate = (): void => {
+    actions.select({ chartId: presentation.chartId as ScienceChartId, version: presentation.chartVersion })
+    openDetailsView(SCIENCE_DETAILS_ID)
+  }
+
   return (
-    <div className={css.card} data-tool="science-chart" data-state={state}>
-      <div className={css.header}>
-        <span className={css.leading}><IconDataOutline16 size={14} /></span>
-        <span className={css.title}>{presentation.title}</span>
-        <span className={css.badge}>{t('chart.version', { version: presentation.chartVersion })}</span>
+    <div
+      className={css.row}
+      data-tool="science-chart"
+      data-state={state}
+      role="button"
+      // Explicit: the row's contents include MessageImage's own button, so a
+      // content-derived accessible name would announce the thumbnail's load
+      // state as this row's name.
+      aria-label={t('details.artifact.select', { title: presentation.title, version: presentation.chartVersion })}
+      tabIndex={0}
+      onClick={activate}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        activate()
+      }}
+    >
+      {/* The thumbnail's own MessageImage renders a real <button> for its
+          click-to-lightbox behavior; nesting a second interactive element
+          inside the row's own button role means this wrapper must stop the
+          click (and repeat keydown) from also reaching the row's activate
+          handler above, so opening the lightbox never opens the column. */}
+      <div
+        className={css.thumbWrap}
+        onClick={(event) => { event.stopPropagation() }}
+        onKeyDown={(event) => {
+          // Only the two keys the row itself acts on. A blanket stop would
+          // also stop Escape, and ImageLightbox closes from a `window`
+          // keydown listener — React's synthetic stopPropagation stops the
+          // native event at its root container, below `window`, so the
+          // thumbnail's own lightbox could never be dismissed.
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.stopPropagation()
+        }}
+      >
+        <MessageImage attachment={toAttachmentRef(presentation)} load={loadImage} variant="tile" labels={labels} />
+        <span className={css.expandHint} aria-hidden="true"><IconFullscreenOutline16 size={12} /></span>
       </div>
-      {presentation.caption !== undefined && <p className={css.caption}>{presentation.caption}</p>}
-      <MessageImage attachment={toAttachmentRef(presentation)} load={loadImage} variant="single" labels={labels} />
-      <div className={css.meta}>
-        <span>{presentation.logicalName}</span>
-        <span>{t('chart.sourceRun', { runId: presentation.runId })}</span>
-        <span>
-          {t('chart.dimensions', {
-            width: presentation.attachment.width, height: presentation.attachment.height, size: formatBytes(presentation.attachment.bytes),
-          })}
-        </span>
-      </div>
+      <span className={css.logicalName}>{presentation.logicalName}</span>
+      <span className={css.badge}>{t('chart.version', { version: presentation.chartVersion })}</span>
+      <span className={css.title}>{presentation.title}</span>
     </div>
   )
 }

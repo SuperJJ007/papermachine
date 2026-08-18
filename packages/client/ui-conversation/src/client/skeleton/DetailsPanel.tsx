@@ -30,7 +30,7 @@ function resolveActiveDetailsView(entries: readonly DetailsViewEntry[], selected
     ?? entries.find(entry => entry.id === TOOL_VIEW_ID)
 }
 
-export function DetailsPanel({ useSession, useStore, renderSlot, closeDetails, views, t }: DetailsPanelProps) {
+export function DetailsPanel({ useSession, useStore, actions, renderSlot, closeDetails, views, t }: DetailsPanelProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const entries = views.list()
   const selectedId = useStore(s => s.detailsView)
@@ -51,7 +51,9 @@ export function DetailsPanel({ useSession, useStore, renderSlot, closeDetails, v
         <div className={css.title}>{title}</div>
         {active !== undefined && (
           <div className={css.actions}>
-            {renderSlot('conversation.details.header.actions', {}, { entryKey: active.id })}
+            {renderSlot('conversation.details.header.actions', {
+              openView: (id) => { actions.setView(id) },
+            }, { entryKey: active.id })}
           </div>
         )}
         <button

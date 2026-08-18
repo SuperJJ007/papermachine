@@ -25,13 +25,15 @@ Every artifact version resolves a **provenance bundle** of four parts:
 | Code | `run_code` call arguments | chart `runId` → run `toolCallId` → transcript tool node |
 | Execution log | `run_code` call result (stdout/stderr text, exit code) | same tool node; durable byte counts and truncation flags come from the projection |
 | Conversation | the turn that issued the call | chart/run `toolCallId` and `requestHeaderSeq` |
-| Environment | `science/environment-bound` at the chart's `environmentRevision` | projection, extended with the package inventory below |
+| Environment | `science/environment-bound` at the chart's `environmentRevision` | projection, extended with the package inventory below (see "Environment history is single-revision" under Risks) |
 
 The split is deliberate and already correct: **durable Science events store identity and digests; the transcript stores text.** `codeSha256` is the durable anchor and the tool call is the copy that is rendered. Provenance therefore needs no new Host read route for code or logs — only the projection linkage that makes the join possible.
 
 ### Enabling changes (Host)
 
 **Restore the linkage on the projection.** `ScienceClientChartVersion` and `ScienceClientRun` gain `toolCallId` and `requestHeaderSeq`. Both are session-log identities the browser already holds — transcript tool nodes are keyed by the same `CallId`, and `requestHeaderSeq` addresses a `request/header` event the client already receives. They are not the class of fact the projection filter exists to remove (Host paths, executables, full fingerprints, free-text failure), and the filter's current breadth makes provenance impossible. The `clientChart`/`clientRun` doc comments change with the fields.
+
+`ScienceClientRunIdentity` also gains `codeSha256`, passed through whole rather than truncated to a preview. The provenance view's Code part (below) needs the durable digest as its anchor, and unlike `environmentFingerprint` a code digest carries no Host-infrastructure fact — it is a digest over source text the same transcript call already restates verbatim once resolved. `projection-schema.ts`'s run-identity validator gains the matching full-length hex check.
 
 **Capture the package inventory.** `science-runtime/environment.ts` already runs confined, sandboxed probes against the configured prefix (`runProbe`, `probeArgv`, `confineProbe`) and discriminates them with `kind: 'version' | 'utf8'`. Add `'packages'`:
 
@@ -48,10 +50,15 @@ A third bound governs the probe itself, before either retention cap applies: `PA
 
 The client projection passes `packages`, `packagesTruncated`, and a `packagesSha256` preview through unchanged — package names and versions carry no Host path, so `clientInterpreter` needs no new redaction.
 
-**Open the two client seams.** `packages/client/ui-conversation`:
+**Open the two client seams.** `packages/client/ui-conversation` (PR2):
 
 - Declare `conversation.details.header.actions`, a keyed list slot rendered by `DetailsPanel` between the title and its own close button, keyed by details-entry id so only the active entry's controls render. The panel keeps owning the close control; entries contribute their own buttons.
 - Add `openDetailsView` to `ToolCallOwnerProps` — `ui-tool`'s `tool.call.toolview` owner share, not a `ui-conversation` type — so a transcript row can select a Details entry and open the column. The capability, the owner, and the store write are the ones `ConversationHeaderActionOwnerProps` already uses; they reach `ToolCallOwnerProps` by riding the existing render path, `ChatNodeOwnerProps` (`ui-conversation`) → `ChatView`/`ChatNodeSeat` → `ToolCallTree`'s per-call dispatch, the same route `openFile` and the trajectory `inspect` callback already take to reach a target neither `ui-tool` nor `ToolCallOwnerProps` owns. This is one more seat on an existing contract and route, not a new one — a `ui-conversation` client-service method was considered and rejected (below) because the per-session Details selection is slot-declared store state the render tree resolves per session; nothing outside that render path can reach the same live instance.
+
+**Two more additive owner-share fields (PR3).** Neither existed when the two seams above were opened; both surfaced only once the artifact panel's header controls and the provenance tab needed a write path the note's original two seams did not cover:
+
+- `DetailsHeaderActionOwnerProps` gains `openView: (id: string) => void`. `DetailsPanel` already declares `store: chatStore` for its own close control and its routed-entry dispatch, so exposing `actions.setView` to the header-actions owner share costs the shell nothing new — it is the one write a header control cannot reach any other way (switching the center-column `conversation.view` tab for "the selected X" without that control needing its own store seat). The artifact panel's "provenance" button is the first caller.
+- `ConvViewOwnerProps` gains `inspectCall: (callId: CallId) => void` — the same one-shot inspect-and-reveal handoff chat's own tool rows already trigger (write the target call, switch to the trajectory view), generalized off `ConversationSession`'s own render site (which already computes it once per render, closing over its own `store: chatStore` share) so every `conversation.view` entry gets it, not only chat's descendant tool rows. `ChatViewInjected` drops its own private copy of the same closure; `ChatView.tsx` needs no change; the value now arrives through the owner share `PropsRuntime<'conversation.view'>` already merges in. The provenance tab's jump-to-transcript action is the first non-chat caller.
 
 ### The artifact panel — Details column
 
@@ -62,16 +69,16 @@ The client projection passes `packages`, `packagesTruncated`, and a `packagesSha
 - **Artifact detail** — selecting an entry shows the version large, with title, caption, source run, and dimensions, plus a **version rail** listing `v1…vN`. Selecting a version switches the displayed image. This is the surface the whole proposal exists for: the versions are already durable and contiguous, and nothing today lets a person walk them.
 - **Header actions** — the entry contributes two buttons through the new slot: **provenance** (opens the view tab below for the selected version) and **expand** (opens the shared `MessageImage` lightbox). The panel's existing close button stays where it is.
 
-Selection is Science viewing state, so **ui-science owns it**: a package-local per-session store holding `{ chartId, version } | null`. It does not go in `ChatStoreState`, which ui-conversation owns and which no other plugin would read.
+Selection is Science viewing state, so **ui-science owns it**: a package-local per-session store holding `{ chartId, version } | null` plus a `lightboxOpen` boolean. The flag exists because "expand" (below) is a header-actions control in a render tree sibling to the panel's own big image — it cannot reach that image's private `MessageImage` open state directly, so it opens the shared lightbox by writing this flag instead, and the panel's own detail view watches it. The whole store does not go in `ChatStoreState`, which ui-conversation owns and which no other plugin would read.
 
 ### The provenance view — conversation view tab
 
-ui-science registers a `conversation.view` entry, id `science.provenance`, labelled from the `science` namespace, gated on the `science` preset by the same check `ScienceHeaderAction` already applies. It renders the four provenance parts for the selected artifact version:
+ui-science registers a `conversation.view` entry, id `science.provenance`, labelled from the `science` namespace, gated on the `science` preset by the same check `ScienceHeaderAction` already applies — but the check runs at a different point than in that header action. `conversation.view` tab membership (`views.list()`, `apps/web`'s tab row) is a static registration ledger the framework does not filter per session; a component that renders null for a non-Science session still leaves a clickable, empty tab visible on every other session, which fails "absent, not merely empty." So the gate governs the registration itself: `apply()` subscribes to the plain `ctx.sessions.list` observable (no React, alongside this package's other `ctx.effect`-scoped registrations) and registers or disposes the `conversation.view` entry as the current session's `agentPreset` changes, symmetric with every other registration's disposal in this file. The component itself re-checks the same fact regardless, so a stale registration can never render for the wrong session. It renders the four provenance parts for the selected artifact version:
 
 1. **Code** — the run's `code` argument, read from the conversation snapshot by `toolCallId`, with the durable `codeSha256` shown as the anchor.
 2. **Execution log** — stdout, stderr, and exit code from the same call's result, with the projection's durable `stdoutBytes`/`stderrBytes` and truncation flags shown alongside as the authoritative measure.
-3. **Conversation** — the turn that issued the call, with a jump-to-transcript action. The existing one-shot `ChatStoreState.inspect` handoff already switches the view and reveals a call; this reuses it rather than adding a second channel.
-4. **Environment** — the environment revision as a JSON block: profile, revision, status, timestamps, and per language capability, version, fingerprint preview, and the package inventory.
+3. **Conversation** — the request sequence and start time, with a jump-to-transcript action calling the owner-supplied `inspectCall` (`ConvViewOwnerProps`, above) — the existing one-shot `ChatStoreState.inspect` handoff that already switches to the trajectory view and reveals a call; this reuses it rather than adding a second channel.
+4. **Environment** — the environment revision as a JSON block: profile, revision, status, timestamps, and per language capability, version, fingerprint preview, and the package inventory, when the projection's one retained revision (`ScienceProjection.environment` keeps only the latest binding) is the same revision the run used. A superseded revision — the environment moved on since this artifact's run — renders a distinct state instead of the JSON block, naming the revision number and the run's own retained fingerprint preview; see "Environment history is single-revision" under Risks.
 
 With no artifact selected, and for each individually unavailable part, the view renders a distinct documented state. A run outside the client's loaded conversation window renders code and log as unavailable-pending-history rather than as absent — the durable digest and byte counts still render, so the record never reads as empty when it is merely unloaded.
 
@@ -81,11 +88,11 @@ With no artifact selected, and for each individually unavailable part, the view 
 
 ### Files this touches
 
-- `packages/science/science-session/src/` — `types.ts` (client chart/run linkage fields, `SciencePackage`, inventory fields), `projection-value.ts` (`clientChart`, `clientRun`, `clientInterpreter`), `projection-schema.ts`, `fold.ts` decoders, `domain.ts` event payload.
+- `packages/science/science-session/src/` — `types.ts` (client chart/run linkage fields, `codeSha256` on `ScienceClientRunIdentity`, `SciencePackage`, inventory fields), `projection-value.ts` (`clientChart`, `clientRun`, `clientInterpreter`), `projection-schema.ts` (linkage and `codeSha256` validation), `fold.ts` decoders, `domain.ts` event payload.
 - `packages/science/science-runtime/src/` — `environment.ts` (the `packages` probe and its bounds), `config.ts` (the two cap fields).
-- `packages/client/ui-conversation/src/client/` — `contract/slots.ts` (new `conversation.details.header.actions` keyed slot, `ChatNodeOwnerProps`/`ChatViewInjected.openDetailsView`), `skeleton/DetailsPanel.tsx`, `skeleton/DetailsPanel.module.css`, `apply.ts`, `chat/ChatView.tsx`, `chat/ChatNodeSeat.tsx`.
+- `packages/client/ui-conversation/src/client/` — `contract/slots.ts` (PR2's `conversation.details.header.actions` keyed slot and `ChatNodeOwnerProps`/`ChatViewInjected.openDetailsView`; PR3 additive fields `DetailsHeaderActionOwnerProps.openView` and `ConvViewOwnerProps.inspectCall`), `skeleton/DetailsPanel.tsx`, `skeleton/DetailsPanel.module.css`, `skeleton/ConversationSession.tsx` (PR3: the `inspectCall` closure moves here from `ChatViewInjected`), `apply.ts`, `chat/ChatView.tsx`, `chat/ChatNodeSeat.tsx`.
 - `packages/client/ui-tool/src/client/` — `contract/slots.ts` (`ToolCallOwnerProps.openDetailsView`), `tool/ToolCallTree.tsx`.
-- `packages/client/ui-science/src/client/` — `ScienceDetailsView.tsx` (artifact panel), `ScienceChartRow.tsx` (compact row), new `ScienceProvenanceView.tsx`, new selection store, `index.ts` registrations, `locales.ts`.
+- `packages/client/ui-science/src/client/` — `ScienceDetailsView.tsx` (artifact panel), `ScienceChartRow.tsx` (compact row), new `ScienceArtifactHeaderActions.tsx` (the panel's two header controls), new `ScienceProvenanceView.tsx`, new `selection-store.ts`, `index.ts` registrations (including the session-list-driven provenance-tab gate), `locales.ts`.
 - READMEs for every package above, in the same change.
 
 ## Alternatives considered
@@ -110,6 +117,8 @@ With no artifact selected, and for each individually unavailable part, the view 
 
 **Keep the transcript row as a full chart card.** Rejected: once the panel renders the artifact with its versions, the card is a duplicate that pushes the conversation apart. The row's remaining job is navigation.
 
+**Gate the provenance tab by rendering null for a non-Science session, matching `ScienceHeaderAction`'s own pattern exactly.** Rejected once the render tree was in hand: `conversation.session.header.actions` is a list of independent controls, each free to render nothing on its own account, so a null-rendering header action genuinely leaves no trace. `conversation.view` is different — its tab row is projected from `views.list()`, a static registration ledger read at the render site (`ConversationSessionHeader`), before any entry's own component runs; a null-rendering entry still owns a ledger row, which still produces a clickable, labeled, empty tab for every non-Science session. "Absent" in the acceptance criteria means the ledger row itself is gone. Extending `views.list()`/the registration options with a generic per-session visibility predicate was also considered and rejected: it is a `ui-slots`/`ui-conversation` framework change serving exactly one current caller, where package-local dynamic registration (`ctx.sessions.list.subscribe`, symmetric with this file's other `ctx.effect`-scoped registrations) reaches the same outcome without widening either package's public surface.
+
 **Make the new inventory fields optional so existing logs replay.** Rejected under the pre-release stance: an optional durable field would carry a compatibility promise this repository explicitly does not make, and a required field fails loud at decode instead of silently producing an environment record that cannot state its packages.
 
 ## Acceptance criteria
@@ -121,7 +130,7 @@ With no artifact selected, and for each individually unavailable part, the view 
 - The Details column shows every logical chart, and selecting one exposes a version rail that switches the rendered version among all durable versions of that chart.
 - The Details entry contributes two header controls through the new keyed slot; the panel's own close control is unchanged, and a different Details entry contributes none.
 - Activating a transcript chart row opens the Details column on the Science entry with that exact version selected; the thumbnail's hover control opens the lightbox without opening the column.
-- The provenance view renders code, execution log, conversation turn, and environment JSON for the selected version, and renders a distinct documented state for each part that is individually unavailable, for a run outside the loaded conversation window, and for no selection at all.
+- The provenance view renders code, execution log, conversation turn, and environment JSON for the selected version, and renders a distinct documented state for each part that is individually unavailable (including a superseded environment revision the projection no longer retains), for a run outside the loaded conversation window, and for no selection at all.
 - The provenance tab is absent from a Standard or custom non-Science session.
 - Disposing the ui-science and ui-conversation fibers removes every new registration.
 
@@ -131,6 +140,7 @@ With no artifact selected, and for each individually unavailable part, the view 
 - **Probe cost lands on environment binding.** `installed.packages()` over a large R library is not instant, and binding is on the path to a session's first run. The probe runs under the existing confinement and timeout, so the failure mode is a bounded delay or an unavailable binding, not a hang.
 - **A truncated inventory is a weaker provenance record.** The digest still covers the complete inventory, so truncation is detectable, but a capped list cannot be replayed into an environment.
 - **Code and execution log depend on loaded conversation history.** They come from the transcript, which the client loads as a window (`loadOlder`). An artifact whose run predates the loaded window renders unavailable until more history loads; the durable digest and byte counts remain visible so the state is legible rather than empty.
+- **Environment history is single-revision.** `ScienceProjection.environment` (and its client projection) retains only the latest binding, not one per revision, so the provenance view's Environment part cannot show the exact environment an older artifact ran under once the binding has moved on — it reports the retained revision number and the run's own fingerprint preview instead of the JSON block. Per-revision environment history is a larger, separately-scoped change (the durable events already carry each revision; the projection would need to retain more than the latest) and is not part of this feature.
 - **`SessionEventMap` payload change reaches both SDKs.** The TypeScript and Python SDK expected outputs and the keyless snapshots (`apps/web/tests/snapshots/science-preset`, `examples/headless-agent/tests/snapshots/science-tools`) must be updated in the same PR; `pnpm run test` covers none of them.
 </content>
 </invoke>

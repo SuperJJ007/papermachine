@@ -312,6 +312,13 @@ export interface ConvViewOwnerProps {
   inspect?: { callId: CallId } | null
   /** Acknowledge the inspect request once applied (clears the store field). */
   onInspectDone?: () => void
+  /**
+   * Write the one-shot inspect target and switch to the trajectory view — the
+   * same handoff chat's own tool rows trigger (`ChatNodeOwnerProps.inspectCall`
+   * → `ToolCallOwnerProps.inspect`), available to every `conversation.view`
+   * entry so a non-chat view can also reveal a call there.
+   */
+  inspectCall: (callId: CallId) => void
 }
 
 /**
@@ -413,11 +420,18 @@ export interface DetailsToolOwnerProps {
 export interface DetailsViewOwnerProps {}
 
 /**
- * Owner share of one entry's Details header controls: the shell supplies
- * nothing — entries are self-sufficient standard-kit readers, same as
- * `conversation.details.view` entries.
+ * Owner share of one entry's Details header controls: mostly self-sufficient
+ * standard-kit readers, same as `conversation.details.view` entries, plus one
+ * write capability the panel itself already holds (its own `store: chatStore`
+ * registration) and a header control cannot reach any other way — switching
+ * the center-column `conversation.view` tab (a control that opens a view for
+ * "the selected X" needs to select that view without also needing its own
+ * store seat).
  */
-export interface DetailsHeaderActionOwnerProps {}
+export interface DetailsHeaderActionOwnerProps {
+  /** Switch the active `conversation.view` tab to the named entry id. */
+  openView: (id: string) => void
+}
 
 /**
  * Owner share of the per-command row slot: the frozen {@link CommandNode}
@@ -734,8 +748,6 @@ export interface ChatViewInjected {
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
-  /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */
-  inspectCall: (callId: CallId) => void
   /**
    * Per-session scroll memory surviving view switches (in-memory, never
    * persisted): the view saves on every scroll and restores on remount; a

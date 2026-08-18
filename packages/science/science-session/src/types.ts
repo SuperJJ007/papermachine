@@ -341,6 +341,10 @@ export interface ScienceClientEnvironmentBinding {
  * (transcript tool nodes are keyed by the same `CallId`, and
  * `requestHeaderSeq` addresses a `request/header` event the client already
  * receives); they let a run join its authorizing transcript call.
+ * `codeSha256` is a digest over source text the same transcript call already
+ * restates verbatim once resolved — unlike a fingerprint or path, showing it
+ * whole carries no Host-infrastructure fact, and it is provenance's durable
+ * anchor for the code a person is viewing.
  */
 export interface ScienceClientRunIdentity {
   readonly runId: ScienceRunId
@@ -350,6 +354,7 @@ export interface ScienceClientRunIdentity {
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly startedAt: number
+  readonly codeSha256: string
 }
 
 /** Browser-safe running state. */

@@ -28,13 +28,19 @@ import {
 } from '@deepseek-ai/dsh-science-session'
 import {
   captureStableAria,
+  compareOrRefreshGolden,
   launchWebScaffold,
   seedSession,
   watchConsole,
+  webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
+const ARTIFACTS_EXPECTED = fileURLToPath(
+  new URL('./snapshots/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
+)
+const MODE = webSnapshotMode()
 const SEED_ID = 'science-chart-outcome-web-e2e'
 const SEED_TITLE = 'Science chart replay'
 // A shared, already-committed non-Science fixture (also seeded by
@@ -351,7 +357,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(1)
     expect(await page.getByText('observed-series', { exact: true }).count()).toBe(2)
-    expect(await page.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(2)
+    await expect.poll(() => page.getByRole('button', { name: 'Failed to load, click to retry' }).count(), {
+      timeout: 15_000,
+    }).toBe(2)
 
     const aria = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     expect(aria).toContain('Initial finding')
@@ -428,6 +436,71 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await openSessionByTitle(STANDARD_SEED_TITLE)
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
     expect(await scienceAction.count()).toBe(0)
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
+  }, 60_000)
+
+  it('activating a transcript chart row opens the exact version, the version rail walks both, and provenance is session-gated', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-provenance'))
+    const detailsPanel = page.locator('[class*="detailsCol"]')
+
+    await openSessionByTitle(SEED_TITLE)
+    // Scoped to the transcript: an earlier case leaves the Details column
+    // open, and the artifact panel's Outcome section renders this same title.
+    await page.locator('[class*="centerCol"]').getByText('Updated finding', { exact: true })
+      .waitFor({ timeout: 15_000 })
+
+    // Activating the v2 transcript row (the one with the missing attachment)
+    // selects that exact version and opens the Details column directly in
+    // detail mode — no intermediate gallery click.
+    await page.getByText('Missing revision', { exact: true }).first().click()
+    const rail = detailsPanel.getByLabel('Versions')
+    await rail.waitFor({ timeout: 10_000 })
+    expect(await rail.getByRole('button').count()).toBe(2)
+    expect(await detailsPanel.getByText('Missing revision', { exact: true }).count()).toBe(1)
+
+    // The rail walks to the other durable version.
+    await rail.getByText('v1', { exact: true }).click()
+    await detailsPanel.getByText('Observed series', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await detailsPanel.getByText('Durable browser fixture', { exact: true }).count()).toBe(1)
+    await rail.getByText('v2', { exact: true }).click()
+    await detailsPanel.getByText('Missing revision', { exact: true }).waitFor({ timeout: 10_000 })
+
+    // Header controls appear once a version is selected; provenance opens
+    // the wide center-column tab with all four parts.
+    const provenanceButton = detailsPanel.getByRole('button', { name: 'Provenance' })
+    await provenanceButton.waitFor({ timeout: 10_000 })
+    expect(await detailsPanel.getByRole('button', { name: 'Expand' }).count()).toBe(1)
+    await provenanceButton.click()
+    // Scoped to the center column: the Details panel stays open beside it and
+    // labels its own Environment section with the same word.
+    const centerCol = page.locator('[class*="centerCol"]')
+    await centerCol.getByText('Execution log', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await centerCol.getByText('Code', { exact: true }).count()).toBe(1)
+    expect(await centerCol.getByText('Conversation', { exact: true }).count()).toBe(1)
+    expect(await centerCol.getByText('Environment', { exact: true }).count()).toBe(1)
+    // The durable digest anchor renders even though the fixture's run
+    // arguments carry no `code` field (the code part itself reports unavailable).
+    expect(await centerCol.getByText(`SHA-256 ${'c'.repeat(64)}`, { exact: true }).count()).toBe(1)
+
+    // The assembled golden for both new surfaces: the artifact panel sitting
+    // on a selected version (its version rail and header controls) beside the
+    // provenance view's four parts. Assertions above pin individual facts;
+    // this pins the whole rendered accessibility tree, so a regression that
+    // drops or reorders a region changes this file.
+    await compareOrRefreshGolden(ARTIFACTS_EXPECTED, [
+      '## Details column — artifact panel',
+      await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd),
+      '',
+      '## Center column — provenance view',
+      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+    ].join('\n'), MODE)
+
+    // The provenance tab is absent (not merely empty) for a Standard session.
+    await openSessionByTitle(STANDARD_SEED_TITLE)
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await page.getByRole('tab', { name: 'Provenance' }).count()).toBe(0)
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])

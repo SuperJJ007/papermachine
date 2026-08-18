@@ -1066,13 +1066,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Generic Session attachment-reference registry. Subscribes to no event bus itself — every method is a pure, synchronous read over event values the caller already holds (live `Session.events`, or rows parsed from a stored artifact).',
     methods: [
       {
-        signature: 'register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly ImageAttachmentRef[], ): () => void',
+        signature: 'register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly (ImageAttachmentRef | TextAttachmentRef)[], ): () => void',
         description: 'Register one domain\'s extractor for an extractor-required known event type. Effect-owned: disposing the calling fiber (or calling the returned disposer) removes the registration, and a subsequent read of that event type fails loud with SessionAttachmentIndexError instead of silently authorizing nothing.',
         parameters: [{ name: 'eventType', description: 'a known event type this package does not itself classify `built-in` or `attachment-free`; typed against the merge-extensible {@link SessionAttachmentExtractorMap}.' }, { name: 'extractor', description: 'validates the event\'s own durable fields and returns every complete reference it authorizes (never a bare id).' }],
         returns: 'the exact disposer that unregisters this extractor.',
       },
       {
-        signature: 'extract(event: ExtractableEvent): readonly ImageAttachmentRef[]',
+        signature: 'extract(event: ExtractableEvent): readonly (ImageAttachmentRef | TextAttachmentRef)[]',
         description: 'Extract every complete attachment reference one durable event authorizes. A `built-in` type is scanned directly; an `attachment-free` type (or an unrecognized type, which persistence admits only when `ignorable` is set) authorizes nothing; a known type outside both closed lists requires a live registration and fails loud when one is absent.',
         parameters: [{ name: 'event', description: 'one durable Session event (live or a parsed durable row).' }],
         returns: 'every reference the event durably names, in encounter order.',
@@ -1085,10 +1085,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the matching reference, or `undefined` when no event names it.',
       },
       {
+        signature: 'findReferencedText(events: Iterable<ExtractableEvent>, attachmentId: string): TextAttachmentRef | undefined',
+        description: 'Resolve the first text reference matching one opaque attachment id across an ordered event sequence — the live single-reference authorization read, mirroring findReferencedImage.',
+        parameters: [{ name: 'events', description: 'the exact Session\'s events (or a prefix/suffix of them).' }, { name: 'attachmentId', description: 'the opaque id a client requested.' }],
+        returns: 'the matching reference, or `undefined` when no event names it.',
+      },
+      {
         signature: 'collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef>',
-        description: 'Collect every distinct reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id) — the Session-export media-collection read.',
+        description: 'Collect every distinct image reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id) — the Session-export media-collection read.',
         parameters: [{ name: 'events', description: 'one artifact\'s parsed durable rows, in log order.' }],
-        returns: 'every distinct reference, keyed by its string attachment id.',
+        returns: 'every distinct image reference, keyed by its string attachment id.',
+      },
+      {
+        signature: 'collectReferencedTexts(events: Iterable<ExtractableEvent>): ReadonlyMap<string, TextAttachmentRef>',
+        description: 'Collect every distinct text reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id), mirroring collectReferencedImages.',
+        parameters: [{ name: 'events', description: 'one artifact\'s parsed durable rows, in log order.' }],
+        returns: 'every distinct text reference, keyed by its string attachment id.',
       },
     ],
   },

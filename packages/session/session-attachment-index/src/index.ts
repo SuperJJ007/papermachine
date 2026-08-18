@@ -5,8 +5,8 @@
  * completed `assistant/chunk` block) are scanned without a domain
  * dependency; a domain package registers a typed extractor for one
  * extractor-required known event type and owns validating that event's own
- * durable fields before returning complete {@link ImageAttachmentRef}
- * values — never a bare id. `dsh-host-apiproxy` consumes this registry
+ * durable fields before returning complete {@link ImageAttachmentRef} or
+ * {@link TextAttachmentRef} values — never a bare id. `dsh-host-apiproxy` consumes this registry
  * exclusively for both live attachment-read authorization and Session ZIP
  * export media collection; see `./policy.ts` for the exhaustive
  * classification every known event type carries.
@@ -20,7 +20,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionAttachmentIndexError } from './errors.ts'
@@ -52,7 +52,24 @@ declare module '@deepseek-ai/cordis' {
 export type ExtractableEvent = Pick<SessionEvent, 'type' | 'data'> & { readonly ignorable?: true }
 
 /** A live registrant's typed extractor, erased to the runtime call shape. */
-type ErasedExtractor = (event: ExtractableEvent) => readonly ImageAttachmentRef[]
+type ErasedExtractor = (event: ExtractableEvent) => readonly (ImageAttachmentRef | TextAttachmentRef)[]
+
+/**
+ * Narrow one erased reference to its image member. Image and text refs share
+ * `attachmentId`/`mediaType`/`bytes`/optional `name`; only `ImageAttachmentRef`
+ * carries `width`/`height`, so that field's presence is the structural
+ * discriminant — no media-type literal list needs duplicating here.
+ * @param ref - one reference an extractor returned.
+ * @returns whether the reference is an image reference.
+ */
+function isImageRef(ref: ImageAttachmentRef | TextAttachmentRef): ref is ImageAttachmentRef {
+  return 'width' in ref
+}
+
+/** The text complement of {@link isImageRef}. */
+function isTextRef(ref: ImageAttachmentRef | TextAttachmentRef): ref is TextAttachmentRef {
+  return !isImageRef(ref)
+}
 
 /**
  * Generic Session attachment-reference registry. Subscribes to no event bus
@@ -85,7 +102,7 @@ export class SessionAttachmentIndex extends Service {
    */
   register<K extends SessionAttachmentExtractorEventType>(
     eventType: K,
-    extractor: (event: SessionEvent<K>) => readonly ImageAttachmentRef[],
+    extractor: (event: SessionEvent<K>) => readonly (ImageAttachmentRef | TextAttachmentRef)[],
   ): () => void {
     const staticPolicy = staticAttachmentPolicy(eventType)
     if (staticPolicy !== undefined) {
@@ -118,7 +135,7 @@ export class SessionAttachmentIndex extends Service {
    * @throws {@link SessionAttachmentIndexError} when a known extractor-required
    *   type has no live registration.
    */
-  extract(event: ExtractableEvent): readonly ImageAttachmentRef[] {
+  extract(event: ExtractableEvent): readonly (ImageAttachmentRef | TextAttachmentRef)[] {
     const policy = staticAttachmentPolicy(event.type)
     if (policy === 'built-in') return extractBuiltInAttachments(event)
     if (policy === 'attachment-free') return []
@@ -145,23 +162,54 @@ export class SessionAttachmentIndex extends Service {
    */
   findReferencedImage(events: Iterable<ExtractableEvent>, attachmentId: string): ImageAttachmentRef | undefined {
     for (const event of events) {
-      const found = this.extract(event).find(ref => String(ref.attachmentId) === attachmentId)
+      const found = this.extract(event).filter(isImageRef).find(ref => String(ref.attachmentId) === attachmentId)
       if (found !== undefined) return found
     }
     return undefined
   }
 
   /**
-   * Collect every distinct reference across an ordered event sequence,
+   * Resolve the first text reference matching one opaque attachment id
+   * across an ordered event sequence — the live single-reference
+   * authorization read, mirroring {@link findReferencedImage}.
+   * @param events - the exact Session's events (or a prefix/suffix of them).
+   * @param attachmentId - the opaque id a client requested.
+   * @returns the matching reference, or `undefined` when no event names it.
+   */
+  findReferencedText(events: Iterable<ExtractableEvent>, attachmentId: string): TextAttachmentRef | undefined {
+    for (const event of events) {
+      const found = this.extract(event).filter(isTextRef).find(ref => String(ref.attachmentId) === attachmentId)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+
+  /**
+   * Collect every distinct image reference across an ordered event sequence,
    * deduped by attachment id (last write wins for a repeated id) — the
    * Session-export media-collection read.
    * @param events - one artifact's parsed durable rows, in log order.
-   * @returns every distinct reference, keyed by its string attachment id.
+   * @returns every distinct image reference, keyed by its string attachment id.
    */
   collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef> {
     const refs = new Map<string, ImageAttachmentRef>()
     for (const event of events) {
-      for (const ref of this.extract(event)) refs.set(String(ref.attachmentId), ref)
+      for (const ref of this.extract(event).filter(isImageRef)) refs.set(String(ref.attachmentId), ref)
+    }
+    return refs
+  }
+
+  /**
+   * Collect every distinct text reference across an ordered event sequence,
+   * deduped by attachment id (last write wins for a repeated id), mirroring
+   * {@link collectReferencedImages}.
+   * @param events - one artifact's parsed durable rows, in log order.
+   * @returns every distinct text reference, keyed by its string attachment id.
+   */
+  collectReferencedTexts(events: Iterable<ExtractableEvent>): ReadonlyMap<string, TextAttachmentRef> {
+    const refs = new Map<string, TextAttachmentRef>()
+    for (const event of events) {
+      for (const ref of this.extract(event).filter(isTextRef)) refs.set(String(ref.attachmentId), ref)
     }
     return refs
   }

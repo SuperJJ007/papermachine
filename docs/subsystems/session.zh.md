@@ -634,7 +634,7 @@ Generic Session attachment-reference registry. Subscribes to no event bus itself
  *   every complete reference it authorizes (never a bare id).
  * @returns the exact disposer that unregisters this extractor.
  */
-register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly ImageAttachmentRef[], ): () => void
+register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly (ImageAttachmentRef | TextAttachmentRef)[], ): () => void
 
 /**
  * Extract every complete attachment reference one durable event
@@ -647,7 +647,7 @@ register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor
  * @throws {@link SessionAttachmentIndexError} when a known extractor-required
  *   type has no live registration.
  */
-extract(event: ExtractableEvent): readonly ImageAttachmentRef[]
+extract(event: ExtractableEvent): readonly (ImageAttachmentRef | TextAttachmentRef)[]
 
 /**
  * Resolve the first reference matching one opaque attachment id across an
@@ -659,18 +659,37 @@ extract(event: ExtractableEvent): readonly ImageAttachmentRef[]
 findReferencedImage(events: Iterable<ExtractableEvent>, attachmentId: string): ImageAttachmentRef | undefined
 
 /**
- * Collect every distinct reference across an ordered event sequence,
+ * Resolve the first text reference matching one opaque attachment id
+ * across an ordered event sequence — the live single-reference
+ * authorization read, mirroring {@link findReferencedImage}.
+ * @param events - the exact Session's events (or a prefix/suffix of them).
+ * @param attachmentId - the opaque id a client requested.
+ * @returns the matching reference, or `undefined` when no event names it.
+ */
+findReferencedText(events: Iterable<ExtractableEvent>, attachmentId: string): TextAttachmentRef | undefined
+
+/**
+ * Collect every distinct image reference across an ordered event sequence,
  * deduped by attachment id (last write wins for a repeated id) — the
  * Session-export media-collection read.
  * @param events - one artifact's parsed durable rows, in log order.
- * @returns every distinct reference, keyed by its string attachment id.
+ * @returns every distinct image reference, keyed by its string attachment id.
  */
 collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef>
+
+/**
+ * Collect every distinct text reference across an ordered event sequence,
+ * deduped by attachment id (last write wins for a repeated id), mirroring
+ * {@link collectReferencedImages}.
+ * @param events - one artifact's parsed durable rows, in log order.
+ * @returns every distinct text reference, keyed by its string attachment id.
+ */
+collectReferencedTexts(events: Iterable<ExtractableEvent>): ReadonlyMap<string, TextAttachmentRef>
 ```
 
-Types: [ImageAttachmentRef](attachment.md)
+Types: [ImageAttachmentRef](attachment.md) · [TextAttachmentRef](attachment.md)
 
-Source: [`packages/session/session-attachment-index/src/index.ts:63`](../../packages/session/session-attachment-index/src/index.ts)
+Source: [`packages/session/session-attachment-index/src/index.ts:80`](../../packages/session/session-attachment-index/src/index.ts)
 
 <a id="ctxsessions--sessionstore"></a>
 

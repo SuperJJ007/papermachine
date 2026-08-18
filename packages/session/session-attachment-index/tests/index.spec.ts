@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionAttachmentIndex, { SessionAttachmentIndexError } from '../src/index.ts'
 
@@ -21,6 +21,10 @@ declare module '@deepseek-ai/dsh-session-attachment-index/types' {
 
 function ref(id: string): ImageAttachmentRef {
   return { attachmentId: AttachmentId(id), mediaType: 'image/png', bytes: 10, width: 1, height: 1 }
+}
+
+function textRef(id: string): TextAttachmentRef {
+  return { attachmentId: AttachmentId(id), mediaType: 'text/plain', bytes: 10 }
 }
 
 function image(id: string): { type: 'image'; attachment: ImageAttachmentRef } {
@@ -156,5 +160,39 @@ describe('SessionAttachmentIndex', () => {
     const events = [userMessageEvent('sha256:a'), userMessageEvent('sha256:b'), userMessageEvent('sha256:a')]
     const collected = ctx.sessionAttachments.collectReferencedImages(events)
     expect([...collected.keys()].sort()).toEqual(['sha256:a', 'sha256:b'])
+  })
+
+  it('finds and collects text references, filtering out image references extracted from the same event stream', async () => {
+    const ctx = await harness()
+    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
+      const id = (event.data as { id?: string }).id
+      if (id === undefined) throw new Error('malformed mixed-media event')
+      return [ref(`sha256:image-${id}`), textRef(`sha256:text-${id}`)]
+    })
+    const mixedEvent = (id: string): SessionEvent =>
+      ({ type: 'science/artifact-saved', seq: 2, time: 1, data: { id } } as unknown as SessionEvent)
+    const events = [mixedEvent('a'), mixedEvent('b'), mixedEvent('a')]
+
+    expect(ctx.sessionAttachments.findReferencedText(events, 'sha256:text-b')?.mediaType).toBe('text/plain')
+    expect(ctx.sessionAttachments.findReferencedText(events, 'sha256:image-a')).toBeUndefined()
+    expect(ctx.sessionAttachments.findReferencedImage(events, 'sha256:text-a')).toBeUndefined()
+
+    const collectedTexts = ctx.sessionAttachments.collectReferencedTexts(events)
+    expect([...collectedTexts.keys()].sort()).toEqual(['sha256:text-a', 'sha256:text-b'])
+    const collectedImages = ctx.sessionAttachments.collectReferencedImages(events)
+    expect([...collectedImages.keys()].sort()).toEqual(['sha256:image-a', 'sha256:image-b'])
+  })
+
+  it('removes a text-returning registration when its owning fiber is disposed (HMR safety)', async () => {
+    const ctx = await harness()
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.sessionAttachments.register('science/artifact-saved', () => [textRef('sha256:d')])
+    }, { inject: ['sessionAttachments'] }))
+    expect(ctx.sessionAttachments.findReferencedText(
+      [{ type: 'science/artifact-saved', seq: 2, time: 1, data: {} } as unknown as SessionEvent],
+      'sha256:d',
+    )?.mediaType).toBe('text/plain')
+    await fiber.dispose()
+    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 })

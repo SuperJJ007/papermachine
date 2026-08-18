@@ -2,16 +2,18 @@
 
 [English](README.md) | 中文
 
-通用的会话附件引用注册表。它拥有 `ctx.sessionAttachments`——唯一实现,把一条持久化会话事件转译为该事件所授权的完整 `ImageAttachmentRef` 值。内置扫描器覆盖当前每一种可能携带引用的模型可见内容载体(直接 content、被包裹的助手消息、每条 inserted 消息,以及一个已完成的 `assistant/chunk` 块);领域包则为自己拥有的某个事件类型注册一个带类型的提取器。`dsh-host-apiproxy` 对实时附件读取授权与会话 ZIP 导出的媒体收集都只消费这一个注册表,因此同一条被接受的领域事件能同等地授权两条路径。
+通用的会话附件引用注册表。它拥有 `ctx.sessionAttachments`——唯一实现,把一条持久化会话事件转译为该事件所授权的完整 `ImageAttachmentRef`/`TextAttachmentRef` 值。内置扫描器覆盖当前每一种可能携带图片引用的模型可见内容载体(直接 content、被包裹的助手消息、每条 inserted 消息,以及一个已完成的 `assistant/chunk` 块);领域包则为自己拥有的某个事件类型注册一个带类型的提取器，该提取器可以返回任意一种引用(或两者都返回)。`dsh-host-apiproxy` 对实时附件读取授权与会话 ZIP 导出的媒体收集都只消费这一个注册表,因此同一条被接受的领域事件能同等地授权两条路径。
 
 ## 服务:`SessionAttachmentIndex`(ctx 键:`sessionAttachments`)
 
 ### 公开 API
 
 - `ctx.sessionAttachments.register(eventType, extractor): () => void` 为一个 extractor-required 的事件类型(本包自身未分类为 `built-in` 或 `attachment-free` 的已知类型)注册领域提取器。注册是挂在调用方 fiber 上的 effect:该 fiber 被 dispose 即移除注册。当 `eventType` 已被分类为 `built-in`/`attachment-free`,或该 key 已有另一个存活注册时,抛出。
-- `ctx.sessionAttachments.extract(event): readonly ImageAttachmentRef[]` 一条持久化事件所授权的每个引用。对没有存活注册的已知 extractor-required 类型,抛出 `SessionAttachmentIndexError`(`SESSION_ATTACHMENT_EXTRACTOR_MISSING`)。
-- `ctx.sessionAttachments.findReferencedImage(events, attachmentId): ImageAttachmentRef | undefined` 在一段有序事件序列中查找匹配某个不透明 id 的首个引用——即实时单引用授权读取。
-- `ctx.sessionAttachments.collectReferencedImages(events): ReadonlyMap<string, ImageAttachmentRef>` 在一段有序事件序列中收集全部去重后的引用(按 attachment id 去重)——即会话导出的媒体收集读取。
+- `ctx.sessionAttachments.extract(event): readonly (ImageAttachmentRef | TextAttachmentRef)[]` 一条持久化事件所授权的每个引用。对没有存活注册的已知 extractor-required 类型,抛出 `SessionAttachmentIndexError`(`SESSION_ATTACHMENT_EXTRACTOR_MISSING`)。
+- `ctx.sessionAttachments.findReferencedImage(events, attachmentId): ImageAttachmentRef | undefined` 在一段有序事件序列中查找匹配某个不透明 id 的首个图片引用——即实时单引用授权读取。会过滤掉同一事件流中 `extract()` 返回的文本引用。
+- `ctx.sessionAttachments.findReferencedText(events, attachmentId): TextAttachmentRef | undefined` `findReferencedImage` 的文本对应物。
+- `ctx.sessionAttachments.collectReferencedImages(events): ReadonlyMap<string, ImageAttachmentRef>` 在一段有序事件序列中收集全部去重后的图片引用(按 attachment id 去重)——即会话导出的媒体收集读取。
+- `ctx.sessionAttachments.collectReferencedTexts(events): ReadonlyMap<string, TextAttachmentRef>` `collectReferencedImages` 的文本对应物。
 
 ### 关键类型
 
@@ -23,7 +25,7 @@
 
 - **穷尽且封闭的分类表。** `./policy.ts` 用两份封闭列表把当前每个已知会话事件类型分类为 `built-in` 或 `attachment-free`;不在任一列表中的已知类型即为 `extractor-required`。本包自身测试套件中的一项测试会把这两份列表与 `@deepseek-ai/dsh-session` 生成的 `KNOWN_SESSION_EVENT_TYPES` 比对:新增一个已知事件类型而未更新某份列表(或未把它计入新的 extractor-required 类型),该测试即失败。本包无需依赖任何领域包即可承载该分类——事件类型字符串本就通过仓库级生成的类型集合公开。
 - **宁可大声失败,也不给出假的空结果。** 一个已知的 extractor-required 类型若没有存活注册,会抛出 `SESSION_ATTACHMENT_EXTRACTOR_MISSING`,而不是悄悄地不授权任何内容;一个未识别的类型只有在持久化读取路径已将其作为 `ignorable` 放行之后才会到达本注册表,这类类型不授权任何内容。已注册的提取器若拒绝畸形数据(用它自己领域的严格解码器),该失败会原样传播,而不会退化为空结果。
-- **只返回完整引用,绝不返回裸 id。** 已注册的提取器校验该事件自身的持久化字段,并返回完整的 `ImageAttachmentRef` 值。一个引用只有出现在该会话自身日志中某个已分类/已注册的载体里才被授权——任意 JSON(工具参数、另一个会话的事件、attachment-free 或未识别的 ignorable 事件)均不授权任何内容。
+- **只返回完整引用,绝不返回裸 id。** 已注册的提取器校验该事件自身的持久化字段,并返回完整的 `ImageAttachmentRef`/`TextAttachmentRef` 值。一个引用只有出现在该会话自身日志中某个已分类/已注册的载体里才被授权——任意 JSON(工具参数、另一个会话的事件、attachment-free 或未识别的 ignorable 事件)均不授权任何内容。内置载体扫描器(`extractBuiltInAttachments`)仍然只处理图片:目前的模型可见内容块没有文本附件载体类型，因此只有已注册的领域提取器才能返回 `TextAttachmentRef`。
 - **每个 key 只允许一个安全敏感的注册。** 与读侧的投影注册表不同,同一事件类型的两个存活注册永远被拒绝,而不是按引用计数共享:这项决定授权的是字节访问,其归属的歧义是正确性问题,而非 UI 层面的不一致。
 - **不是第二个附件存储。** `ctx.attachments` 仍是唯一的字节所有者与完整性校验者;本注册表只回答一个会话日志持久地命名了哪些完整引用。
 

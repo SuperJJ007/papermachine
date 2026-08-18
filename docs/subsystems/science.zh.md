@@ -47,17 +47,16 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
 
 /**
- * Import one PNG from a successful, non-inherited run's private artifact
- * directory, persist it through `ctx.attachments`, then append the
- * complete immutable chart version. Attachment persistence precedes the
- * event: a failure before the event may leave only an unreferenced
- * content-addressed object, but a committed event is never rolled back
- * because a later step fails.
- * @param request - Exact live Session, source run, artifact path, and cancellation.
- * @returns The durable chart version this operation appended.
+ * Re-commit an existing artifact version's exact attachment reference as a
+ * new curated version: metadata-only, so it never reads or writes the
+ * filesystem and never calls the attachment store. A committed event is
+ * never rolled back because a later step fails; there is no later step
+ * here that can fail after the append.
+ * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
+ * @returns The durable curated version this operation appended.
  */
-async commitChart(request: CommitScienceChartRequest): Promise<ScienceArtifactVersion>
+annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:103`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:92`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

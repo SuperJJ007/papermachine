@@ -35,12 +35,7 @@ Runtime 自身遍历每个 run 的 artifact 目录，把每个合格文件自动
 
 这些持久化模型层面的改动，补齐了 [`science/artifact-saved` replaces `science/chart-saved`](2026-08-18-science-artifact-saved-event.md) 推迟的那次 union 拓宽，之所以在这里落地，是因为自动捕获是第一个需要它们的调用方。`save_chart` 既有的模型策展路径不受影响：其默认 fixture 与行为(`origin: 'model'`、一次全新的 `save_chart` tool call)命中的是未改动的 `else` 分支。
 
-**union 拓宽带来的编译连锁反应。** 有三处文件此前假定 `ScienceArtifactVersion.attachment` 总是图片形状，需要一处收窄修复才能继续编译，但都不是新功能：
-- `tool-science/src/save-chart.ts`(`chartReceiptFromChart`)与 `state.ts`(`stateChart`/`stateValueFromProjection`)——`commitChart` 本身未改动，仍只处理 PNG，因此这些只是防御性的 `'width' in attachment` 判断(对实际上永远不会走到的非图片分支抛出/过滤)，不是行为变化。`state.ts` 的 `charts` 字段现在会显式把 `projection.artifacts` 过滤为只保留带图片附件的版本——这是一处真实但临时的行为收窄，因为一旦某个文本文件被捕获，`get_science_state` 原本可能崩溃，或者产出违反自身输出 schema 的结果。已记录在本包的 Known Limitations 中。
-- `ui-science/src/client/ScienceDetailsView.tsx` 与 `ScienceOutcomeRow.tsx`——同样的防御性收窄，只是上移了一层：每个入口都会先把客户端 `science` 投影的 `artifacts` 过滤为只保留带图片附件的版本，再渲染(一个 `hasImageAttachment` 类型谓词，加上一个 `ScienceImageArtifactVersion` 本地类型，贯穿读取 `.width`/`.height` 的工具栏/内容/图库/灯箱函数)。这正是该包 README 早已记录为"PNG presentation only"的已知限制，为未来的非图片 artifact 阶段预留的占位说明；如今这处占位第一次真正发挥作用，是因为自动捕获是第一个产出非图片 artifact 的调用方，而不是因为这里做出了新决策。没有任何渲染器、分派分支或呈现类型发生变化。[per-media-type artifact viewer rendering (csv/json/md/png)](2026-08-19-science-viewer-file-types.md) 补上了这处占位。
-- `apps/web/tests/science-preset.snapshot.ts` 与 `science-runtime/tests/real-acceptance.ts` 在调用 `readImage` 读取 `commitChart` 产出(始终是图片)的附件前，需要同样的一行收窄判断。
-
-这三处文件都没有获得任何新能力；对当前实际可能发生的每一种情形，它们都保持了改动前完全相同的行为，只是为拓宽后的类型技术上新允许的那种情形加了一道编译期强制的判断。
+**union 拓宽带来的编译连锁反应，由 [retire `save_chart`, add metadata-only `annotate_artifact`](2026-08-19-science-annotate-artifact.md) 解决。** 这里，`tool-science/src/save-chart.ts` 与 `state.ts` 仍假定 `ScienceArtifactVersion.attachment` 总是图片形状，`state.ts` 的 `charts` 字段也把 `projection.artifacts` 过滤为只保留带图片附件的版本，等待那篇笔记记录的后续改动泛化；`ui-science` 的 Details 条目与 Outcome 行在上一层携带同样的收窄。那篇笔记用纯元数据的 `annotate_artifact` 取代了 `save_chart`/`commitChart`，并把 `get_science_state` 的字段泛化为 `artifacts`（覆盖每种媒体类型、`origin`、可选的 `width`/`height`）；`ui-science` 的分类型渲染是另一项单独排期的改动(参见 [per-media-type artifact viewer rendering (csv/json/md/png)](2026-08-19-science-viewer-file-types.md))。
 
 ## 异步捕获没有独立的模型可见通知
 

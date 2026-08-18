@@ -1545,10 +1545,6 @@ export interface Config {
   readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
-  /** Maximum entries listed in a failed `save_chart` artifact-selection diagnostic. */
-  readonly artifactDiagnosticMaxEntries?: number
-  /** Maximum UTF-8 bytes in a failed `save_chart` artifact-selection diagnostic listing. */
-  readonly artifactDiagnosticMaxBytes?: number
   /**
    * Maximum package-inventory entries retained per observed interpreter.
    * An inventory exceeding this cap is truncated and flagged; the digest
@@ -1582,7 +1578,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:73`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:59`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

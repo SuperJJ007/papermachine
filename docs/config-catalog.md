@@ -1562,6 +1562,15 @@ export interface Config {
    * inventory.
    */
   readonly packagesMaxBytes?: number
+  /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
+  readonly captureMaxFileBytes?: number
+  /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
+  readonly captureMaxFilesPerRun?: number
+  /**
+   * Maximum artifact versions a session accumulates through auto-capture
+   * before it stops appending further versions, truncated and flagged.
+   */
+  readonly captureMaxArtifactVersionsPerSession?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1573,7 +1582,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:52`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:73`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

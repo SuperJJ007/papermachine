@@ -134,6 +134,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.details.view': { kind: 'list'; scope: 'session'; owner: DetailsViewOwnerProps }
     /**
+     * Header controls for the active `conversation.details.view` entry,
+     * rendered by `DetailsPanel` between the title and its own close button.
+     * Keyed by details-entry id (`entryKey: <active id>` — declaring is
+     * claiming a key, same as `tool.call.toolview`): an entry contributes its
+     * own controls here, a different active entry renders none, and the
+     * panel keeps owning the close control. The owner passes nothing —
+     * entries are self-sufficient standard-kit readers, same as
+     * `conversation.details.view` entries.
+     */
+    'conversation.details.header.actions': { kind: 'keyed'; scope: 'session'; owner: DetailsHeaderActionOwnerProps }
+    /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
      * entry; the owner dispatches the {@link ComposerChainProps} currency and
@@ -378,6 +389,8 @@ export interface ChatNodeOwnerProps {
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
+  /** Select a registered `conversation.details.view` entry and open the Details column. */
+  openDetailsView: (id: string) => void
 }
 
 /** Full props of one registered keyed Chat business renderer. */
@@ -398,6 +411,13 @@ export interface DetailsToolOwnerProps {
  * `conversation.view` entries.
  */
 export interface DetailsViewOwnerProps {}
+
+/**
+ * Owner share of one entry's Details header controls: the shell supplies
+ * nothing — entries are self-sufficient standard-kit readers, same as
+ * `conversation.details.view` entries.
+ */
+export interface DetailsHeaderActionOwnerProps {}
 
 /**
  * Owner share of the per-command row slot: the frozen {@link CommandNode}
@@ -699,6 +719,14 @@ export interface ChatViewInjected {
   /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
   openDetails: (target: SelectionTarget) => void
   /**
+   * Select a registered `conversation.details.view` entry and open the
+   * Details column — the same capability, owner, and store write
+   * {@link ConversationHeaderActionOwnerProps.openDetailsView} uses, on the
+   * chat-node render path (`ChatNodeOwnerProps`, and through it ui-tool's
+   * `ToolCallOwnerProps`) instead of the session header.
+   */
+  openDetailsView: (id: string) => void
+  /**
    * Open a tool-arg filesystem path with the host OS default application
    * (relative paths resolve against the session cwd).
    */
@@ -752,7 +780,8 @@ export interface DetailsInjected {
 }
 
 /** Full details-slot props: selection store, routed entry ring, injected close callback + view ledger, and locale. */
-export type DetailsSlotProps = PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.view'>
+export type DetailsSlotProps =
+  PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.view' | 'conversation.details.header.actions'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
 
 /** Full built-in `tool` Details entry props: runtime & its Tool output render share & store & locale seat. */

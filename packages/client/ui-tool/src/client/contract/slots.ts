@@ -41,6 +41,13 @@ export interface ToolCallOwnerProps {
   inspect?: (() => void) | undefined
   /** Load a session-authorized durable image URL — the same cached, generation-tracked loader the chat history uses. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /**
+   * Select a registered `conversation.details.view` entry and open the
+   * Details column — the same capability ui-conversation's session-header
+   * action seat carries, reaching this atomic Tool view through the
+   * chat-node render path.
+   */
+  openDetailsView: (id: string) => void
 }
 
 /** Full props of a registered atomic Tool view. */

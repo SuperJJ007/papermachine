@@ -176,6 +176,24 @@ describe('keyed toolview hole through the real machinery', () => {
     await b.runtime.dispose()
   })
 
+  it('a toolview row opens the Details column on a chosen entry through the owner openDetailsView callback', async () => {
+    const b = await bench([toolResult(3, 'c9', 'science-like')])
+    b.slots.register(
+      { name: 'tool.call.toolview', key: 'science-like' },
+      ({ openDetailsView }: ToolCallViewProps) => (
+        <button data-testid="open-science" onClick={() => { openDetailsView('science') }} />
+      ))
+    const view = b.runtime.renderRoot()
+    view.getByTestId('open-science').click()
+    expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
+    // Same store instance the session header's own openDetailsView writes
+    // (apply-inject.client.spec.tsx pins that face); the write lands where
+    // DetailsPanel and the chat view both read.
+    const store = b.runtime.storeOf('conversation.view', SID) as { getSnapshot(): { detailsView: string | null } }
+    expect(store.getSnapshot().detailsView).toBe('science')
+    await b.runtime.dispose()
+  })
+
   it('the inject channel feeds (sessionId) => I into the row component', async () => {
     const b = await bench([toolResult(3, 'c3', 'probe', '{"x":1}')])
     const poked: string[] = []

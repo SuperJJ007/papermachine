@@ -162,6 +162,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const openDetailsView = vi.fn<(id: string) => void>()
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -173,6 +174,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     selectedCallId: string | undefined
     openFile: ChatNodeOwnerProps['openFile']
     inspectCall: ChatNodeOwnerProps['inspectCall']
+    openDetailsView: ChatNodeOwnerProps['openDetailsView']
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
     opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
@@ -243,6 +245,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
           selectedCallId: nodeOwner.selectedCallId,
           openFile: nodeOwner.openFile,
           inspectCall: nodeOwner.inspectCall,
+          openDetailsView: nodeOwner.openDetailsView,
         }
         toolOwners.push(tool)
         return (
@@ -287,6 +290,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     inspectCall,
     chatScroll,
     forkAt,
+    openDetailsView,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -295,7 +299,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, openDetailsView, setSelection, toolOwners,
   }
 }
 
@@ -969,6 +973,7 @@ describe('ChatView', () => {
     expect((owner.node.data as { readonly root: ToolCallBlock }).root).toBe(block)
     expect(owner.openFile).toBe(h.openFile)
     expect(owner.inspectCall).toBe(h.inspectCall)
+    expect(owner.openDetailsView).toBe(h.openDetailsView)
   })
 
   it('prepend preserves a semantic row; a trailing user node force-scrolls', () => {

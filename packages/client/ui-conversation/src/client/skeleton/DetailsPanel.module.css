@@ -24,12 +24,23 @@
 /* figma I54:42735;43:41479: 14/20 wt500. */
 .title {
   overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The active entry's own header controls (conversation.details.header.actions),
+   between the title and the shell's close button. */
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
 }
 
 .close {

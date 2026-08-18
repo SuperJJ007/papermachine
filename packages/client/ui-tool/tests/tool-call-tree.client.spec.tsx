@@ -44,6 +44,7 @@ function props(
     inspectCall: vi.fn(),
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
+    openDetailsView: vi.fn(),
     t,
   } as unknown as ToolTreeProps
 }
@@ -77,5 +78,18 @@ describe('ToolCallTree', () => {
     expect(view.container.querySelector('[data-chat-call-id="parent:code:1"]')?.hasAttribute('data-selected')).toBe(false)
     expect(view.container.querySelector('[data-chat-call-id="parent:code:1:code:1"]')?.getAttribute('data-selected')).toBe('true')
     expect(nests).toHaveLength(2)
+  })
+
+  it('forwards the owner openDetailsView callback into the atomic dispatch owner', () => {
+    const block = root('c1', { name: 'bash', argsRaw: '{}' })
+    const p = props(block)
+    const captured: { openDetailsView: unknown }[] = []
+    p.renderSlot = (_key: string, owner: object) => {
+      captured.push(owner as { openDetailsView: unknown })
+      return null
+    }
+    render(<ToolCallTree {...p} />)
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.openDetailsView).toBe(p.openDetailsView)
   })
 })

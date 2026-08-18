@@ -28,7 +28,7 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the frozen `block`, optional `cwd`, and plain `openFile`/`inspect` callbacks. The registration receives the normal session slot runtime share. It does not receive React nodes, Runtime services, or root/subcall knowledge.
+The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the frozen `block`, optional `cwd`, and plain `openFile`/`inspect`/`loadImage`/`openDetailsView` callbacks — `openDetailsView(id)` selects a `ui-conversation` `conversation.details.view` entry and opens the Details column, the same capability its session-header action seat carries. The registration receives the normal session slot runtime share. It does not receive React nodes, Runtime services, or root/subcall knowledge.
 
 This package currently owns the generic fallback and the built-in shell/pwsh, read, write/edit, grep/glob, web, todo, question, and Code Dispatch presentations. `ui-skill` demonstrates a business-owned registration for `skill`.
 
@@ -47,3 +47,4 @@ None. The package is client-only presentation.
 - The Host excludes `run_code` from Code Mode program bindings, so production events produce one dispatch level; the recursive Runtime/UI contract supports nesting.
 - First-party Tool views are colocated here and can move to their owning business packages independently through the keyed slot.
 - Tool copy reuses the `ui-conversation` locale namespace.
+- `ToolCallOwnerProps.openDetailsView` has no caller in this package — none of the first-party Tool views registered here open a Details entry; a business package's own `tool.call.toolview` registration is the intended caller.

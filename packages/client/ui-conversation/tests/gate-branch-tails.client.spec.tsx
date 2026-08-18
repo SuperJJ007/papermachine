@@ -57,12 +57,39 @@ function detailsViews(entries: readonly DetailsViewEntry[]): DetailsSlotProps['v
   return { list: () => entries, subscribe: () => () => {}, version: () => 0 }
 }
 
-/** Observe the routed dispatch without rendering the real entry component. */
+/** Observe the routed `conversation.details.view` dispatch without rendering the
+ *  real entry component; the keyed `conversation.details.header.actions`
+ *  dispatch (a separate renderSlot call DetailsPanel also makes) renders
+ *  nothing through this probe — `renderHeaderActionsProbe` below owns it. */
 function renderDetailsViewProbe(calls?: { owner: unknown; only: string | undefined }[]): DetailsSlotProps['renderSlot'] {
-  return (_key, owner, opts) => {
+  return ((key: string, owner: object, opts?: { only?: string }) => {
+    if (key !== 'conversation.details.view') return null
     calls?.push({ owner, only: opts?.only })
     return <div data-testid="details-view-seat" />
-  }
+  }) as DetailsSlotProps['renderSlot']
+}
+
+/** Observe the keyed header-actions dispatch without rendering a real entry. */
+function renderHeaderActionsProbe(calls?: { owner: unknown; entryKey: string | undefined }[]): DetailsSlotProps['renderSlot'] {
+  return ((key: string, owner: object, opts?: { entryKey?: string }) => {
+    if (key !== 'conversation.details.header.actions') return null
+    calls?.push({ owner, entryKey: opts?.entryKey })
+    return <div data-testid="details-header-actions-seat" />
+  }) as DetailsSlotProps['renderSlot']
+}
+
+/** Observe both DetailsPanel dispatches (view body + header actions) in one renderSlot. */
+function renderDetailsPanelProbe(
+  viewCalls?: { owner: unknown; only: string | undefined }[],
+  headerActionCalls?: { owner: unknown; entryKey: string | undefined }[],
+): DetailsSlotProps['renderSlot'] {
+  const view = renderDetailsViewProbe(viewCalls) as unknown as (k: string, o: object, p?: object) => unknown
+  const headerActions = renderHeaderActionsProbe(headerActionCalls) as unknown as (k: string, o: object, p?: object) => unknown
+  return ((key: string, owner: object, opts?: { only?: string; entryKey?: string }) =>
+    key === 'conversation.details.header.actions'
+      ? headerActions(key, owner, opts)
+      : view(key, owner, opts)
+  ) as DetailsSlotProps['renderSlot']
 }
 
 function snapshotBase(): ConversationSnapshot {
@@ -277,15 +304,16 @@ describe('DetailsPanel routing shell', () => {
     expect(calls).toEqual([{ owner: {}, only: 'tool' }])
   })
 
-  it('shows the generic empty state without dispatching when no entry is registered at all', () => {
+  it('shows the generic empty state without dispatching the view body or header actions when no entry is registered at all', () => {
     localStorage.clear()
     const snap = snapshotBase()
     const chat = createChatStore().create()
     const calls: { owner: unknown; only: string | undefined }[] = []
+    const headerCalls: { owner: unknown; entryKey: string | undefined }[] = []
     const view = render(
       <DetailsPanel
         {...standardKit(snap)}
-        renderSlot={renderDetailsViewProbe(calls)}
+        renderSlot={renderDetailsPanelProbe(calls, headerCalls)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
@@ -295,6 +323,63 @@ describe('DetailsPanel routing shell', () => {
     )
     expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
     expect(calls).toEqual([])
+    // No active entry at all (not even the built-in tool fallback): the shell
+    // does not attempt the header-actions dispatch either.
+    expect(headerCalls).toEqual([])
+    expect(view.queryByTestId('details-header-actions-seat')).toBeNull()
+  })
+
+  it('dispatches the active entry\'s own keyed header-actions entry between the title and the close button', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    chat.actions.setDetailsView('science')
+    const headerCalls: { owner: unknown; entryKey: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsPanelProbe(undefined, headerCalls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])}
+        t={t}
+      />,
+    )
+    // Keyed by the active entry's id, own empty owner share (same as the
+    // details-view dispatch), and rendered exactly once.
+    expect(headerCalls).toEqual([{ owner: {}, entryKey: 'science' }])
+    const seat = view.getByTestId('details-header-actions-seat')
+    const header = seat.parentElement?.parentElement
+    // Positioned between the title and the shell's own close button.
+    const positions = header === null || header === undefined ? [] : [...header.children]
+    expect(positions[0]?.textContent).toBe('Science')
+    expect(positions[1]?.contains(seat)).toBe(true)
+    expect(positions[2]?.tagName).toBe('BUTTON')
+  })
+
+  it('a different active entry (the built-in tool entry) dispatches its own header-actions key', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    const headerCalls: { owner: unknown; entryKey: string | undefined }[] = []
+    render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsPanelProbe(undefined, headerCalls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    // The dispatch always follows whichever entry is actually active (here
+    // the built-in `tool` fallback, not a hardcoded id); the keyed slot
+    // engine renders nothing for a key with no registrant (proven generically
+    // by the `tool.call.toolview` fallback coverage), so a `science`-only
+    // registration contributes no controls while `tool` is active.
+    expect(headerCalls).toEqual([{ owner: {}, entryKey: 'tool' }])
   })
 
   it('closeDetails fires on close-button activation', () => {

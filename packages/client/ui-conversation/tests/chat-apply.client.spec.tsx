@@ -84,6 +84,14 @@ describe('apply wiring', () => {
     await b.runtime.dispose()
   })
 
+  it('declares the keyed Details header-actions slot on the details shell entry', async () => {
+    const b = await bench()
+    // Declaring is claiming: the `details` shell registration put the keyed
+    // header-actions hole on the ledger with the contract's kind/scope.
+    expect(b.slots.spec('conversation.details.header.actions')).toMatchObject({ kind: 'keyed', scope: 'session' })
+    await b.runtime.dispose()
+  })
+
   it('occupies the slots + the ring; session entries share one store handle', async () => {
     const b = await bench()
     const conversation = renderEntryOf(b.slots, 'conversation')
@@ -136,6 +144,9 @@ describe('apply wiring', () => {
     expect(b.slots.entries('conversation.details.view')).toHaveLength(0)
     expect(b.slots.entries('conversation.details.tool')).toHaveLength(0)
     expect(b.slots.spec('conversation.details.tool')).toBeUndefined()
+    // The details shell's keyed header-actions hole collapses with it too.
+    expect(b.slots.entries('conversation.details.header.actions')).toHaveLength(0)
+    expect(b.slots.spec('conversation.details.header.actions')).toBeUndefined()
     expect(b.slots.entries('settings.general.item')).toHaveLength(0)
     expect(b.runtime.ctx.get('conversation')).toBeUndefined()
     await b.runtime.dispose()

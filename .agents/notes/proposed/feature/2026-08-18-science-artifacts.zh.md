@@ -49,7 +49,7 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 **打开两个客户端接缝。** `packages/client/ui-conversation`：
 
 - 声明 `conversation.details.header.actions`：一个由 `DetailsPanel` 在标题与自有关闭按钮之间渲染的键控列表槽，以 Details 条目 id 为键，因此只渲染当前活动条目的控件。关闭控件仍归面板所有；条目贡献自己的按钮。
-- 给 toolview 的 owner share 增加 `openDetailsView`，使转录行能够选中一个 Details 条目并打开该栏。这个能力、这个 owner 和这次 store 写入，正是 `ConversationHeaderActionOwnerProps` 已经在用的那一套；这是既有契约上多一个座位，不是一个新契约。
+- 给 `ToolCallOwnerProps` 增加 `openDetailsView`——它是 `ui-tool` 的 `tool.call.toolview` owner share，而不是 `ui-conversation` 的类型——使转录行能够选中一个 Details 条目并打开该栏。这个能力、这个 owner 和这次 store 写入，正是 `ConversationHeaderActionOwnerProps` 已经在用的那一套；它们顺着既有的渲染路径抵达 `ToolCallOwnerProps`：`ChatNodeOwnerProps`（`ui-conversation`）→ `ChatView`／`ChatNodeSeat` → `ToolCallTree` 的逐调用分发，这正是 `openFile` 与 trajectory 的 `inspect` 回调已经在用来抵达一个既非 `ui-tool` 也非 `ToolCallOwnerProps` 拥有的目标的同一条路径。这是既有契约与既有路径上多一个座位，不是一个新契约——曾考虑过在 `ui-conversation` 的 client service 上暴露这个能力并将其否决（见下），因为按会话选中的 Details 状态是由渲染树按会话解析的、由 slot 声明的 store 状态；渲染路径之外的任何东西都够不到同一个存活实例。
 
 ### Artifact 面板 —— Details 栏
 
@@ -81,7 +81,8 @@ ui-science 注册一个 `conversation.view` 条目，id 为 `science.provenance`
 
 - `packages/science/science-session/src/` —— `types.ts`（客户端图/运行的关联字段、`SciencePackage`、清单字段）、`projection-value.ts`（`clientChart`、`clientRun`、`clientInterpreter`）、`projection-schema.ts`、`fold.ts` 解码器、`domain.ts` 事件载荷。
 - `packages/science/science-runtime/src/` —— `environment.ts`（`packages` 探测及其上限）、`config.ts`（两个上限字段）。
-- `packages/client/ui-conversation/src/client/` —— `contract/slots.ts`（新键控槽、toolview owner share）、`skeleton/DetailsPanel.tsx`、`apply.ts`。
+- `packages/client/ui-conversation/src/client/` —— `contract/slots.ts`（新的 `conversation.details.header.actions` 键控槽、`ChatNodeOwnerProps`／`ChatViewInjected.openDetailsView`）、`skeleton/DetailsPanel.tsx`、`skeleton/DetailsPanel.module.css`、`apply.ts`、`chat/ChatView.tsx`、`chat/ChatNodeSeat.tsx`。
+- `packages/client/ui-tool/src/client/` —— `contract/slots.ts`（`ToolCallOwnerProps.openDetailsView`）、`tool/ToolCallTree.tsx`。
 - `packages/client/ui-science/src/client/` —— `ScienceDetailsView.tsx`（artifact 面板）、`ScienceChartRow.tsx`（紧凑行）、新增 `ScienceProvenanceView.tsx`、新增选择 store、`index.ts` 注册、`locales.ts`。
 - 以上每个包的 README，在同一次改动内更新。
 
@@ -98,6 +99,8 @@ ui-science 注册一个 `conversation.view` 条目，id 为 `science.provenance`
 **把 `packagesSha256` 折进 `bindingFingerprint`。** 暂时否决：那会让"同一个绑定"的含义悄悄改变，并把漂移检测的键当作新增采集的副作用重设。单独记录摘要，把它留成未来的显式决定。
 
 **把 artifact 选择放进 `ChatStoreState`。** 否决：这是只有 ui-science 会读的 Science 领域浏览状态，而 ui-conversation 持有那个 store 是为了它自己的骨架所派发的状态。
+
+**在 `ui-conversation` 的 client service（`ctx.conversation`）上暴露"打开详情"，而不是放进 `ToolCallOwnerProps`。** 否决：当前活动的 Details 条目是 slot 声明的 `chatStore` 里的按会话状态，slots 引擎在自己的注册表内部按（store handle、会话）这一对解析出唯一的存活实例，只经由某个 slot 注册在渲染时收到的 `store`／`actions` share 交给组件。`ConversationController` 是一个根作用域单例，位于这条渲染路径之外；要从它那里够到同一个存活实例，就得再加一条 service 侧的 store 解析路径，重复注册表本已拥有的东西，而这一切只是为了打开一个仅 `ui-tool` 渲染路径需要的座位。`openFile` 与 trajectory 的 `inspect` 回调出于同样的理由已经走 `ChatNodeOwnerProps` → `ToolCallOwnerProps` 这条路径：它们的目标（打开工作区、切换 trajectory 视图）归别处所有，owner-props 链正是够到它而不引入跨包值导入的认可路径。
 
 **在 Details 栏而不是视图页签里渲染溯源。** 否决：代码、执行日志和环境 JSON 块都很宽，而 Details 栏被钳制在 520px（`DETAILS_MAX`）并会在让位链中自动关闭。中间栏是唯一放得下的界面。
 

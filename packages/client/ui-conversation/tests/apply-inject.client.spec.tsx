@@ -231,6 +231,19 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('openDetailsView (chat view face) selects a routed entry through the store actions and opens the panel', async () => {
+    const b = await bench()
+    const { instance, injected } = b.chatViewApi(ROOT)
+    injected.openDetailsView('science')
+    expect(instance.store.getSnapshot().detailsView).toBe('science')
+    expect(b.layoutFake.openDetails).toHaveBeenCalledTimes(1)
+    // The chat view shares the conversation entry's store instance, same as
+    // openDetails above: the write lands where the skeleton and details read.
+    const conv = b.conversationApi(ROOT)
+    expect(conv.instance).toBe(instance)
+    await b.runtime.dispose()
+  })
+
   it('openFile (chat view face) resolves against session cwd and calls workspaces.openPath', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)
@@ -386,6 +399,21 @@ describe('details inject API', () => {
     off()
     expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }])
     unsub()
+    await b.runtime.dispose()
+  })
+
+  it('conversation.details.header.actions registers a live keyed entry and drops it on disposal (HMR-safety)', async () => {
+    const b = await bench()
+    // Declared by the `details` shell registration (declaring is claiming);
+    // a registrant such as ui-science's Details entry claims a key here.
+    expect(b.slots.spec('conversation.details.header.actions')).toMatchObject({ kind: 'keyed', scope: 'session' })
+    expect(b.slots.entries('conversation.details.header.actions')).toHaveLength(0)
+    const off = b.slots.register(
+      { name: 'conversation.details.header.actions', key: 'science' } as never, (() => null) as never)
+    expect(b.slots.entries('conversation.details.header.actions').map(e => e.options.key)).toEqual(['science'])
+    // Disposal (the fiber tearing down / HMR reload) removes the registration.
+    off()
+    expect(b.slots.entries('conversation.details.header.actions')).toHaveLength(0)
     await b.runtime.dispose()
   })
 })

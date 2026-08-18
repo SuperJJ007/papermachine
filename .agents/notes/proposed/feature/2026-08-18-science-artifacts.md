@@ -49,7 +49,7 @@ The client projection passes `packages`, `packagesTruncated`, and a `packagesSha
 **Open the two client seams.** `packages/client/ui-conversation`:
 
 - Declare `conversation.details.header.actions`, a keyed list slot rendered by `DetailsPanel` between the title and its own close button, keyed by details-entry id so only the active entry's controls render. The panel keeps owning the close control; entries contribute their own buttons.
-- Add `openDetailsView` to the toolview owner share so a transcript row can select a Details entry and open the column. The capability, the owner, and the store write are the ones `ConversationHeaderActionOwnerProps` already uses; this is one more seat on an existing contract, not a new one.
+- Add `openDetailsView` to `ToolCallOwnerProps` — `ui-tool`'s `tool.call.toolview` owner share, not a `ui-conversation` type — so a transcript row can select a Details entry and open the column. The capability, the owner, and the store write are the ones `ConversationHeaderActionOwnerProps` already uses; they reach `ToolCallOwnerProps` by riding the existing render path, `ChatNodeOwnerProps` (`ui-conversation`) → `ChatView`/`ChatNodeSeat` → `ToolCallTree`'s per-call dispatch, the same route `openFile` and the trajectory `inspect` callback already take to reach a target neither `ui-tool` nor `ToolCallOwnerProps` owns. This is one more seat on an existing contract and route, not a new one — a `ui-conversation` client-service method was considered and rejected (below) because the per-session Details selection is slot-declared store state the render tree resolves per session; nothing outside that render path can reach the same live instance.
 
 ### The artifact panel — Details column
 
@@ -81,7 +81,8 @@ With no artifact selected, and for each individually unavailable part, the view 
 
 - `packages/science/science-session/src/` — `types.ts` (client chart/run linkage fields, `SciencePackage`, inventory fields), `projection-value.ts` (`clientChart`, `clientRun`, `clientInterpreter`), `projection-schema.ts`, `fold.ts` decoders, `domain.ts` event payload.
 - `packages/science/science-runtime/src/` — `environment.ts` (the `packages` probe and its bounds), `config.ts` (the two cap fields).
-- `packages/client/ui-conversation/src/client/` — `contract/slots.ts` (new keyed slot, toolview owner share), `skeleton/DetailsPanel.tsx`, `apply.ts`.
+- `packages/client/ui-conversation/src/client/` — `contract/slots.ts` (new `conversation.details.header.actions` keyed slot, `ChatNodeOwnerProps`/`ChatViewInjected.openDetailsView`), `skeleton/DetailsPanel.tsx`, `skeleton/DetailsPanel.module.css`, `apply.ts`, `chat/ChatView.tsx`, `chat/ChatNodeSeat.tsx`.
+- `packages/client/ui-tool/src/client/` — `contract/slots.ts` (`ToolCallOwnerProps.openDetailsView`), `tool/ToolCallTree.tsx`.
 - `packages/client/ui-science/src/client/` — `ScienceDetailsView.tsx` (artifact panel), `ScienceChartRow.tsx` (compact row), new `ScienceProvenanceView.tsx`, new selection store, `index.ts` registrations, `locales.ts`.
 - READMEs for every package above, in the same change.
 
@@ -98,6 +99,8 @@ With no artifact selected, and for each individually unavailable part, the view 
 **Fold `packagesSha256` into `bindingFingerprint`.** Rejected for now: it would silently change what "the same binding" means and re-key drift detection as a side effect of adding a capture. Recording the digest separately keeps that a future explicit decision.
 
 **Put artifact selection in `ChatStoreState`.** Rejected: it is Science domain viewing state that only ui-science reads, and ui-conversation owns that store for state its own skeleton dispatches.
+
+**Expose details-opening on `ui-conversation`'s client service (`ctx.conversation`) instead of `ToolCallOwnerProps`.** Rejected: the active Details entry is per-session state in the slot-declared `chatStore`, and the slots engine resolves one live instance per (store handle, session) pair inside its own registry, handed to a component only through the `store`/`actions` share a slot registration receives at render time. `ConversationController` is a root-scoped singleton outside that render path; reaching the same live instance from it would mean adding a second, service-side store-resolution path that duplicates what the registry already owns, to open one seat only `ui-tool`'s render path needs. `openFile` and the trajectory `inspect` callback already ride the `ChatNodeOwnerProps` → `ToolCallOwnerProps` route for the same reason: their target (workspace open, trajectory view) is owned elsewhere, and the owner-props chain is the sanctioned way to reach it without a cross-package value import.
 
 **Render provenance in the Details column instead of a view tab.** Rejected: code, execution logs, and an environment JSON block are wide, and the Details column is clamped to 520px (`DETAILS_MAX`) and auto-closes under concession. The center column is the only surface with room.
 

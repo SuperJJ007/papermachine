@@ -117,7 +117,7 @@ describe('diffCardModel', () => {
 
 describe('chat row diff body', () => {
   const ownerProps = (block: RunningToolCall | ToolResultNode): GenericToolCardProps => ({
-    callId: 'c1', toolName: 'edit', block, openFile: vi.fn(), loadImage: vi.fn(), t,
+    callId: 'c1', toolName: 'edit', block, openFile: vi.fn(), loadImage: vi.fn(), openDetailsView: vi.fn(), t,
   })
 
   it('the expanded body is the applied diff, capped tighter than the panel', () => {
@@ -141,7 +141,7 @@ describe('chat row diff body', () => {
     // A non-file tool name so the row is not single-file (no path link), and its
     // args body is the fallback the diff card must not have replaced.
     const view = render(<GenericToolCard {...{
-      callId: 'c1', toolName: 'some_tool', openFile: vi.fn(), loadImage: vi.fn(), t,
+      callId: 'c1', toolName: 'some_tool', openFile: vi.fn(), loadImage: vi.fn(), openDetailsView: vi.fn(), t,
       block: settled({
         call: { name: 'some_tool', argsRaw: '{"foo":"bar"}' },
         callView: null, resultView: null,

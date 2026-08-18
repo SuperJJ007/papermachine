@@ -3,10 +3,13 @@
 // entry. The built-in `tool` entry (ToolDetailsView) keeps this shell's
 // former per-call title text (the selected tool's name) since that entry is
 // the one this package has always known about; every other entry's title
-// falls back to its registered label. Reads selection/entries off the shared
-// chat store and slot registry (conversation writes, this panel reads — the
-// cross-registration share the store seat exists for) and derives no data
-// of its own.
+// falls back to its registered label. Between the title and the close
+// button, the shell also dispatches the active entry's own keyed
+// `conversation.details.header.actions` entry (entryKey: <active id>), so an
+// entry contributes its own header controls while the shell keeps owning
+// close. Reads selection/entries off the shared chat store and slot registry
+// (conversation writes, this panel reads — the cross-registration share the
+// store seat exists for) and derives no data of its own.
 
 import { useSyncExternalStore } from 'react'
 import type { DetailsViewEntry } from '../contract/views.ts'
@@ -46,6 +49,11 @@ export function DetailsPanel({ useSession, useStore, renderSlot, closeDetails, v
     <div className={css.root}>
       <div className={css.header}>
         <div className={css.title}>{title}</div>
+        {active !== undefined && (
+          <div className={css.actions}>
+            {renderSlot('conversation.details.header.actions', {}, { entryKey: active.id })}
+          </div>
+        )}
         <button
           type="button" className={css.close} aria-label={t('details.close')}
           onClick={() => { closeDetails() }}

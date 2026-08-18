@@ -412,6 +412,10 @@ export function apply(ctx: Context): void {
           actions.setDetailsView('tool')
           layout.openDetails()
         },
+        openDetailsView: (id) => {
+          actions.setDetailsView(id)
+          layout.openDetails()
+        },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
@@ -467,6 +471,7 @@ export function apply(ctx: Context): void {
     locale: NS,
     children: {
       'conversation.details.view': { kind: 'list', scope: 'session' },
+      'conversation.details.header.actions': { kind: 'keyed', scope: 'session' },
     },
     store: chatStore,
     inject: (): DetailsInjected => ({

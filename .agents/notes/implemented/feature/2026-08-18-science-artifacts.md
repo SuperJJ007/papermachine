@@ -1,6 +1,6 @@
 # Agent Note: Science artifacts — versioned figures carrying their provenance
 
-Status: proposed
+Status: implemented
 
 English | [中文](2026-08-18-science-artifacts.zh.md)
 
@@ -14,7 +14,7 @@ The durable log already answers most of that question. `ScienceChartVersion` car
 - **No layer captures a package inventory.** `ScienceInterpreterIdentity` records `languageVersion`, `condaHistorySha256`, and `bindingFingerprint`. Nothing records which packages the environment actually contains, so an environment record cannot state what the analysis ran against.
 - **A Details entry cannot contribute header controls, and a transcript row cannot open the Details column.** `DetailsPanel` owns a fixed title-and-close header, and `ToolCallViewProps` carries no `openDetailsView` — the capability exists only on `ConversationHeaderActionOwnerProps`.
 
-## Proposal
+## Decision
 
 Name the concept the log already stores. A **Science artifact** is one logical chart, identified by `chartId`; an **artifact version** is one `ScienceChartVersion`. No new durable event and no new domain concept: the artifact is already in the log, contiguously versioned and immutable.
 
@@ -25,7 +25,7 @@ Every artifact version resolves a **provenance bundle** of four parts:
 | Code | `run_code` call arguments | chart `runId` → run `toolCallId` → transcript tool node |
 | Execution log | `run_code` call result (stdout/stderr text, exit code) | same tool node; durable byte counts and truncation flags come from the projection |
 | Conversation | the turn that issued the call | chart/run `toolCallId` and `requestHeaderSeq` |
-| Environment | `science/environment-bound` at the chart's `environmentRevision` | projection, extended with the package inventory below (see "Environment history is single-revision" under Risks) |
+| Environment | `science/environment-bound` at the chart's `environmentRevision` | projection, extended with the package inventory below (see "Environment history is single-revision" under Consequences) |
 
 The split is deliberate and already correct: **durable Science events store identity and digests; the transcript stores text.** `codeSha256` is the durable anchor and the tool call is the copy that is rendered. Provenance therefore needs no new Host read route for code or logs — only the projection linkage that makes the join possible.
 
@@ -62,25 +62,11 @@ The client projection passes `packages`, `packagesTruncated`, and a `packagesSha
 
 ### The artifact panel — Details column
 
-`ScienceDetailsView` becomes the artifact panel. It stays a pure reader of the `science` projection and keeps its own stateless attachment loader.
-
-- **Environment strip** — profile, revision, status, and per language capability, version, fingerprint preview, and package count.
-- **Artifact gallery** — one entry per `chartId`: the latest version's thumbnail, `logicalName`, title, and a `v{n}` badge.
-- **Artifact detail** — selecting an entry shows the version large, with title, caption, source run, and dimensions, plus a **version rail** listing `v1…vN`. Selecting a version switches the displayed image. This is the surface the whole proposal exists for: the versions are already durable and contiguous, and nothing today lets a person walk them.
-- **Header actions** — the entry contributes two buttons through the new slot: **provenance** (opens the view tab below for the selected version) and **expand** (opens the shared `MessageImage` lightbox). The panel's existing close button stays where it is.
-
-Selection is Science viewing state, so **ui-science owns it**: a package-local per-session store holding `{ chartId, version } | null` plus a `lightboxOpen` boolean. The flag exists because "expand" (below) is a header-actions control in a render tree sibling to the panel's own big image — it cannot reach that image's private `MessageImage` open state directly, so it opens the shared lightbox by writing this flag instead, and the panel's own detail view watches it. The whole store does not go in `ChatStoreState`, which ui-conversation owns and which no other plugin would read.
+`ScienceDetailsView` shipped as a tabbed artifact viewer, not the gallery-and-version-rail dashboard this section originally proposed. A top tab strip holds one tab per opened logical chart, each with an in-panel toolbar (title, a version stepper across that chart's durable versions, provenance/download/maximize/close-tab controls) over the dispatched content. With no open tabs the panel shows a landing view — every logical chart's latest version, opening one opens its tab, plus the latest Outcome below it. The Environment strip and Runs list this section proposed as resident panel sections did not ship as resident sections at all; environment facts live only inside a selected artifact's provenance drill-in (below), scoped to that artifact's run. Selection is an open-tabs model (`selection-store.ts`), not the `{ chartId, version } | null` this section originally proposed. See [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md) for the shipped design, its store invariant, and the alternatives it weighed.
 
 ### The provenance view — conversation view tab
 
-ui-science registers a `conversation.view` entry, id `science.provenance`, labelled from the `science` namespace, gated on the `science` preset by the same check `ScienceHeaderAction` already applies — but the check runs at a different point than in that header action. `conversation.view` tab membership (`views.list()`, `apps/web`'s tab row) is a static registration ledger the framework does not filter per session; a component that renders null for a non-Science session still leaves a clickable, empty tab visible on every other session, which fails "absent, not merely empty." So the gate governs the registration itself: `apply()` subscribes to the plain `ctx.sessions.list` observable (no React, alongside this package's other `ctx.effect`-scoped registrations) and registers or disposes the `conversation.view` entry as the current session's `agentPreset` changes, symmetric with every other registration's disposal in this file. The component itself re-checks the same fact regardless, so a stale registration can never render for the wrong session. It renders the four provenance parts for the selected artifact version:
-
-1. **Code** — the run's `code` argument, read from the conversation snapshot by `toolCallId`, with the durable `codeSha256` shown as the anchor.
-2. **Execution log** — stdout, stderr, and exit code from the same call's result, with the projection's durable `stdoutBytes`/`stderrBytes` and truncation flags shown alongside as the authoritative measure.
-3. **Conversation** — the request sequence and start time, with a jump-to-transcript action calling the owner-supplied `inspectCall` (`ConvViewOwnerProps`, above) — the existing one-shot `ChatStoreState.inspect` handoff that already switches to the trajectory view and reveals a call; this reuses it rather than adding a second channel.
-4. **Environment** — the environment revision as a JSON block: profile, revision, status, timestamps, and per language capability, version, fingerprint preview, and the package inventory, when the projection's one retained revision (`ScienceProjection.environment` keeps only the latest binding) is the same revision the run used. A superseded revision — the environment moved on since this artifact's run — renders a distinct state instead of the JSON block, naming the revision number and the run's own retained fingerprint preview; see "Environment history is single-revision" under Risks.
-
-With no artifact selected, and for each individually unavailable part, the view renders a distinct documented state. A run outside the client's loaded conversation window renders code and log as unavailable-pending-history rather than as absent — the durable digest and byte counts still render, so the record never reads as empty when it is merely unloaded.
+Provenance did not ship as a separate `conversation.view` tab (id `science.provenance`) with the session-gated dynamic registration this section proposed. It shipped as an in-panel drill-in instead: the artifact toolbar's "Provenance" control switches the active tab's view to a breadcrumbed provenance view with four sub-tabs — Code, Execution log, Messages (renamed from "Conversation" in this proposal), and Environment — showing one section at a time. Each sub-tab resolves the same provenance part this section specified: the durable code digest alongside the transcript's argument text, execution log text plus the projection's durable byte counts and truncation flags, a jump-to-transcript action (now through `DetailsViewOwnerProps.inspectCall`, the owner share for `conversation.details.view` entries, rather than the `ConvViewOwnerProps.inspectCall` this section originally proposed for a `conversation.view` entry — that field still exists and still serves ordinary `conversation.view` entries, but Science is no longer one), and the environment revision as JSON with the same superseded-revision fallback described here. See [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md) for the full decision.
 
 ### The transcript row
 
@@ -121,26 +107,21 @@ With no artifact selected, and for each individually unavailable part, the view 
 
 **Make the new inventory fields optional so existing logs replay.** Rejected under the pre-release stance: an optional durable field would carry a compatibility promise this repository explicitly does not make, and a required field fails loud at decode instead of silently producing an environment record that cannot state its packages.
 
-## Acceptance criteria
+## Consequences
 
 - A chart's client projection carries `toolCallId` and `requestHeaderSeq`, and the browser resolves that chart's `run_code` call from the conversation snapshot with no additional Host route.
 - Binding an environment records a package inventory per available interpreter, with name and version per entry, a digest over the complete sorted inventory, and a truncation flag; an unavailable interpreter records none.
 - Both inventory caps are validated `Config` fields settable from cordis.yml; an inventory exceeding either cap is truncated, flagged, and still digested over the complete pre-truncation value.
 - `bindingFingerprint` is byte-identical to what the same environment produced before this change.
-- The Details column shows every logical chart, and selecting one exposes a version rail that switches the rendered version among all durable versions of that chart.
-- The Details entry contributes two header controls through the new keyed slot; the panel's own close control is unchanged, and a different Details entry contributes none.
-- Activating a transcript chart row opens the Details column on the Science entry with that exact version selected; the thumbnail's hover control opens the lightbox without opening the column.
-- The provenance view renders code, execution log, conversation turn, and environment JSON for the selected version, and renders a distinct documented state for each part that is individually unavailable (including a superseded environment revision the projection no longer retains), for a run outside the loaded conversation window, and for no selection at all.
-- The provenance tab is absent from a Standard or custom non-Science session.
-- Disposing the ui-science and ui-conversation fibers removes every new registration.
-
-## Risks
-
-- **Existing Science session logs stop replaying.** A required inventory field means a `science/environment-bound` payload written before this change fails its decoder. The pre-release stance sanctions this (backends reject old on-disk formats) and no migration is written, but any retained fixture or recorded snapshot containing that event must be re-recorded in the same change.
+- The Details column, redesigned as the tabbed artifact viewer described above rather than the gallery-and-version-rail this section originally proposed, lets a person open any logical chart in its own tab and step through every durable version of it through the toolbar's version stepper.
+- The keyed `conversation.details.header.actions` slot this note added to `ui-conversation` remains a general framework capability, but Science's own registration into it — the panel's original provenance/expand header controls — was later deleted in favor of controls inside the artifact toolbar itself; the panel's own close control is unchanged.
+- Activating a transcript chart row opens or activates that chart's tab at the exact version the row names; the thumbnail's hover control opens the lightbox without opening the column.
+- The provenance bundle — code, execution log, conversation turn, and environment JSON for a selected version — renders as the in-panel drill-in described above rather than the separate `conversation.view` tab this section originally proposed, with a distinct documented state for each part that is individually unavailable (including a superseded environment revision the projection no longer retains) and for a run outside the loaded conversation window.
+- The artifact viewer and its provenance drill-in are absent from a Standard or custom non-Science session, because the `conversation.details.view` entry itself does not register outside the `science` preset.
+- Disposing the ui-science and ui-conversation fibers removes every registration this note and its viewer-panel redesign added.
+- **Existing Science session logs stopped replaying.** The required inventory field means a `science/environment-bound` payload written before this change fails its decoder. The pre-release stance sanctions this (backends reject old on-disk formats); no migration was written, and every retained fixture and recorded snapshot containing that event was re-recorded in the same change.
 - **Probe cost lands on environment binding.** `installed.packages()` over a large R library is not instant, and binding is on the path to a session's first run. The probe runs under the existing confinement and timeout, so the failure mode is a bounded delay or an unavailable binding, not a hang.
 - **A truncated inventory is a weaker provenance record.** The digest still covers the complete inventory, so truncation is detectable, but a capped list cannot be replayed into an environment.
 - **Code and execution log depend on loaded conversation history.** They come from the transcript, which the client loads as a window (`loadOlder`). An artifact whose run predates the loaded window renders unavailable until more history loads; the durable digest and byte counts remain visible so the state is legible rather than empty.
-- **Environment history is single-revision.** `ScienceProjection.environment` (and its client projection) retains only the latest binding, not one per revision, so the provenance view's Environment part cannot show the exact environment an older artifact ran under once the binding has moved on — it reports the retained revision number and the run's own fingerprint preview instead of the JSON block. Per-revision environment history is a larger, separately-scoped change (the durable events already carry each revision; the projection would need to retain more than the latest) and is not part of this feature.
-- **`SessionEventMap` payload change reaches both SDKs.** The TypeScript and Python SDK expected outputs and the keyless snapshots (`apps/web/tests/snapshots/science-preset`, `examples/headless-agent/tests/snapshots/science-tools`) must be updated in the same PR; `pnpm run test` covers none of them.
-</content>
-</invoke>
+- **Environment history is single-revision.** `ScienceProjection.environment` (and its client projection) retains only the latest binding, not one per revision, so the provenance drill-in's Environment part cannot show the exact environment an older artifact ran under once the binding has moved on — it reports the retained revision number and the run's own fingerprint preview instead of the JSON block. Per-revision environment history remains a larger, separately-scoped change (the durable events already carry each revision; the projection would need to retain more than the latest).
+- **The `SessionEventMap` payload change reached both SDKs.** The TypeScript and Python SDK expected outputs and the keyless snapshots (`apps/web/tests/snapshots/science-preset`, `examples/headless-agent/tests/snapshots/science-tools`) were updated in the same change; `pnpm run test` covers none of them.

@@ -1,6 +1,6 @@
 # Agent Note: Science artifacts — versioned figures carrying their provenance
 
-Status: proposed
+Status: implemented
 
 [English](2026-08-18-science-artifacts.md) | 中文
 
@@ -14,7 +14,7 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 - **没有任何一层采集包清单。** `ScienceInterpreterIdentity` 记录 `languageVersion`、`condaHistorySha256` 和 `bindingFingerprint`，但没有任何字段记录环境里实际装了哪些包，因此环境记录说不出这次分析跑在什么之上。
 - **Details 条目无法贡献头部控件，转录行也无法打开 Details 栏。** `DetailsPanel` 独占一个固定的标题加关闭头部，而 `ToolCallViewProps` 不带 `openDetailsView` —— 这个能力今天只存在于 `ConversationHeaderActionOwnerProps`。
 
-## Proposal
+## Decision
 
 给日志里已经存在的概念命名。**Science artifact** 是一张逻辑图，由 `chartId` 标识；**artifact version** 是一条 `ScienceChartVersion`。不需要新的留存事件，也不需要新的领域概念：artifact 已经在日志里，连续版本化且不可变。
 
@@ -25,7 +25,7 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 | 代码 | `run_code` 调用参数 | 图的 `runId` → 运行的 `toolCallId` → 转录里的工具节点 |
 | 执行日志 | `run_code` 调用结果（stdout/stderr 正文、退出码） | 同一个工具节点；留存字节数与截断标志来自投影 |
 | 对话 | 发出该调用的那一轮 | 图/运行的 `toolCallId` 与 `requestHeaderSeq` |
-| 环境 | 图的 `environmentRevision` 处的 `science/environment-bound` | 投影，外加下述包清单（另见 Risks 中的"环境历史只有单一版本"） |
+| 环境 | 图的 `environmentRevision` 处的 `science/environment-bound` | 投影，外加下述包清单（另见 Consequences 中的"环境历史只有单一版本"） |
 
 这个分工是刻意的，而且本来就是对的：**留存的 Science 事件存身份与摘要，转录存正文。** `codeSha256` 是留存锚点，被渲染的那份副本是工具调用。因此溯源不需要为代码和日志新增任何 Host 读取路由，只需要补上让这个连接成立的投影字段。
 
@@ -62,25 +62,11 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 
 ### Artifact 面板 —— Details 栏
 
-`ScienceDetailsView` 变成 artifact 面板。它仍然是 `science` 投影的纯读者，并保留自己的无状态附件加载器。
-
-- **环境条** —— profile、修订号、状态，以及每种语言的能力、版本、指纹前缀和包数量。
-- **Artifact 画廊** —— 每个 `chartId` 一个条目：最新版本的缩略图、`logicalName`、标题和 `v{n}` 徽章。
-- **Artifact 详情** —— 选中某条目后大图显示该版本，附标题、caption、来源运行和尺寸，外加一条列出 `v1…vN` 的**版本条**。选择某个版本即切换所显示的图像。这正是整个提案存在的理由：这些版本本来就是留存且连续的，而今天没有任何界面让人走过它们。
-- **头部动作** —— 该条目通过新槽贡献两个按钮：**溯源**（为选中版本打开下述视图页签）与**放大**（打开共享的 `MessageImage` 灯箱）。面板原有的关闭按钮位置不变。
-
-选择状态属于 Science 的浏览状态，因此**归 ui-science 所有**：一个包内的按会话 store，持有 `{ chartId, version } | null`，外加一个 `lightboxOpen` 布尔值。存在这个标记是因为下文的"放大"是一个 header-actions 控件，位于与面板自身大图互为兄弟的渲染树里——它无法直接触达那张图片私有的 `MessageImage` 打开状态，因此改为通过写这个标记来打开共享灯箱，面板自己的详情视图则监视它。整个 store 都不进 `ChatStoreState` —— 那个 store 归 ui-conversation 所有，而且不会有第二个插件去读这个字段。
+`ScienceDetailsView` 实际上线为一个带页签的 artifact 查看器，而不是本节最初提议的"画廊加版本条"仪表盘。顶部页签条为每个已打开的逻辑图各持一个页签，每个页签在所派发内容之上带一条面板内工具条（标题、跨该图全部留存版本的版本步进器、溯源/下载/最大化/关闭页签控件）。没有任何页签打开时，面板显示一个着陆视图——每张逻辑图的最新版本（打开其一即打开其页签），外加下方的最新 Outcome。本节曾提议作为常驻面板区块的环境条与 Runs 列表，最终完全没有以常驻区块的形式上线；环境事实只存在于选中某个 artifact 后的溯源下钻视图（见下文）里，且仅限于该 artifact 那次运行的范围。选择状态是一个开放页签模型（`selection-store.ts`），而不是本节最初提议的 `{ chartId, version } | null`。上线设计、其 store 不变式与权衡过的替代方案见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md)。
 
 ### 溯源视图 —— conversation 视图页签
 
-ui-science 注册一个 `conversation.view` 条目，id 为 `science.provenance`，标签来自 `science` 命名空间，并用 `ScienceHeaderAction` 已经在用的同一个检查按 `science` preset 设门——但这个检查生效的位置与那个 header action 不同。`conversation.view` 的标签成员关系（`views.list()`，`apps/web` 的标签行）是一份框架不会按会话过滤的静态注册台账；某个条目自己渲染 null，在每个非 Science 会话上仍然占着一行台账，仍然会产出一个可点击、带标签的空标签页。验收标准里的"不存在"指的是台账那一行本身消失。所以这道门管的是注册本身：`apply()` 订阅普通的 `ctx.sessions.list` observable（不涉及 React，与本文件其他 `ctx.effect` 作用域的注册并列），随当前会话的 `agentPreset` 变化而注册或销毁这个 `conversation.view` 条目，与本文件其他注册的销毁方式对称。组件自身仍然会无条件复核同一个事实，因此一份过期的注册永远不会为错误的会话渲染。它为选中的 artifact 版本渲染四个溯源部分：
-
-1. **代码** —— 该运行的 `code` 参数，按 `toolCallId` 从对话快照中读出，并展示留存的 `codeSha256` 作为锚点。
-2. **执行日志** —— 同一调用结果里的 stdout、stderr 和退出码，旁边并列展示投影里留存的 `stdoutBytes`/`stderrBytes` 与截断标志作为权威度量。
-3. **对话** —— 发出该调用的请求序号与开始时间，附一个调用 owner 提供的 `inspectCall`（`ConvViewOwnerProps`，见上文）实现的跳转到对话记录动作——既有的一次性 `ChatStoreState.inspect` 交接已经能切换到 trajectory 视图并定位一次调用，此处复用它而不是新增第二条通道。
-4. **环境** —— 当投影保留的那一个环境版本（`ScienceProjection.environment` 只保留最新绑定）恰好就是该运行所用的版本时，以 JSON 块展示：profile、修订号、状态、时间戳，以及每种语言的能力、版本、指纹前缀和包清单。若版本已被取代——环境自此 artifact 的运行之后已经更迭——则渲染一个独立状态取代 JSON 块，指出修订号与该运行自身保留的指纹前缀；另见 Risks 中的"环境历史只有单一版本"。
-
-未选中 artifact 时，以及每个单独不可用的部分，视图渲染各自独立的、有文档的状态。运行落在客户端已加载的对话窗口之外时，代码与日志渲染为"待历史加载"而非"不存在" —— 留存摘要与字节数仍然渲染，因此记录在仅仅是未加载时不会读起来像空的。
+溯源最终没有以本节提议的、按会话动态注册的独立 `conversation.view` 页签（id 为 `science.provenance`）形式上线，而是变成了面板内下钻：artifact 工具条上的"溯源"控件把当前页签的视图切换为一个带面包屑的溯源视图，内含四个子页签——代码、执行日志、Messages（本提案里原称"对话"，现已改名）、环境——一次只显示一个部分。每个子页签解析的都是本节指定的同一个溯源部分：留存的代码摘要连同转录里的参数原文、执行日志正文加投影里留存的字节数与截断标志、一个跳转到对话记录的动作（现在经由 `DetailsViewOwnerProps.inspectCall`——`conversation.details.view` 条目的 owner share——而不是本节最初为 `conversation.view` 条目提议的 `ConvViewOwnerProps.inspectCall`；后者依然存在，依然服务于普通的 `conversation.view` 条目，只是 Science 已经不再是其中之一），以及以 JSON 展示的环境版本，其被取代版本的回退行为与本节所述一致。完整决策见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md)。
 
 ### 转录行
 
@@ -121,26 +107,21 @@ ui-science 注册一个 `conversation.view` 条目，id 为 `science.provenance`
 
 **把新增的清单字段设为可选，让既有日志仍能回放。** 在预发布立场下否决：可选的留存字段会携带本仓库明确不作出的兼容承诺，而必填字段会在解码处大声失败，而不是悄悄产生一条说不出自己有哪些包的环境记录。
 
-## Acceptance criteria
+## Consequences
 
 - 图的客户端投影带有 `toolCallId` 与 `requestHeaderSeq`，浏览器无需任何额外 Host 路由即可从对话快照解析出该图的 `run_code` 调用。
 - 绑定环境时为每个可用解释器记录包清单，每条含包名与版本，并含一个对排序后完整清单的摘要和一个截断标志；不可用的解释器不记录清单。
 - 两个清单上限都是可从 cordis.yml 设置的、经校验的 `Config` 字段；超过任一上限的清单被截断、被标记，且摘要仍覆盖截断前的完整值。
 - `bindingFingerprint` 与同一环境在本次改动之前产生的值逐字节一致。
-- Details 栏展示每一张逻辑图，选中其一即出现版本条，可在该图的全部留存版本之间切换所渲染的版本。
-- Details 条目通过新键控槽贡献两个头部控件；面板自有的关闭控件不变，而另一个 Details 条目不贡献任何控件。
-- 激活转录中的图行会在 Science 条目上打开 Details 栏并精确选中该版本；缩略图上的悬浮控件打开灯箱且不打开该栏。
-- 溯源视图为选中版本渲染代码、执行日志、对话轮次和环境 JSON，并为每个单独不可用的部分（含一个投影已不再保留的、被取代的环境版本）、为落在已加载对话窗口之外的运行、以及为完全未选中，各渲染一个独立的、有文档的状态。
-- 溯源页签在 Standard 会话或自定义的非 Science 会话中不存在。
-- 释放 ui-science 与 ui-conversation 的 fiber 会移除每一项新注册。
-
-## Risks
-
-- **既有 Science 会话日志将无法回放。** 必填的清单字段意味着本次改动之前写入的 `science/environment-bound` 载荷会在其解码器处失败。预发布立场认可这一点（后端拒绝旧的落盘格式），不写迁移，但任何保留的、包含该事件的 fixture 或已录制快照必须在同一次改动内重录。
+- Details 栏被重新设计为上文所述的带页签 artifact 查看器，而不是本节最初提议的"画廊加版本条"，让人可以把任意逻辑图打开在各自的页签里，并通过工具条的版本步进器逐个走过它的全部留存版本。
+- 本笔记为 `ui-conversation` 新增的键控 `conversation.details.header.actions` 槽仍是一项通用的框架能力，但 Science 自己对它的注册——面板原来的溯源/放大头部控件——后来被删除，改由 artifact 工具条自身承载这些控件；面板自有的关闭控件不变。
+- 激活转录中的图行会打开或激活该图对应页签，并精确定位到该行所指的版本；缩略图上的悬浮控件打开灯箱且不打开该栏。
+- 溯源包——为选中版本准备的代码、执行日志、对话轮次和环境 JSON——最终以上文所述的面板内下钻形式渲染，而不是本节最初提议的独立 `conversation.view` 页签，并为每个单独不可用的部分（含一个投影已不再保留的、被取代的环境版本）以及为落在已加载对话窗口之外的运行，各渲染一个独立的、有文档的状态。
+- artifact 查看器及其溯源下钻在 Standard 会话或自定义的非 Science 会话中不存在，因为 `conversation.details.view` 条目本身就不会在 `science` preset 之外注册。
+- 释放 ui-science 与 ui-conversation 的 fiber 会移除本笔记及其后续查看器面板重设计所新增的每一项注册。
+- **既有 Science 会话日志确实无法回放了。** 必填的清单字段意味着本次改动之前写入的 `science/environment-bound` 载荷会在其解码器处失败。预发布立场认可这一点（后端拒绝旧的落盘格式）；未编写迁移，任何保留的、包含该事件的 fixture 或已录制快照都在同一次改动内被重录。
 - **探测成本落在环境绑定上。** 对一个大型 R 库执行 `installed.packages()` 并不瞬时，而绑定处在会话首次运行的路径上。探测运行在既有的限制与超时之下，因此失败模式是有界的延迟或一次不可用绑定，而不是挂起。
 - **被截断的清单是较弱的溯源记录。** 摘要仍覆盖完整清单，因此截断可被察觉，但一份被截断的列表无法被回放成一个环境。
 - **代码与执行日志依赖已加载的对话历史。** 它们来自转录，而客户端按窗口加载转录（`loadOlder`）。运行早于已加载窗口的 artifact 会渲染为不可用直至加载更多历史；留存摘要与字节数仍然可见，因此该状态是可读的而不是空的。
-- **环境历史只有单一版本。** `ScienceProjection.environment`（及其客户端投影）只保留最新绑定，而不是逐版本保留，因此一旦绑定已经更迭，溯源视图的"环境"部分就无法展示某个较旧 artifact 运行时所用的确切环境——它转而报告仍然保留的版本号与该运行自身的指纹前缀，而不是那个 JSON 块。逐版本的环境历史是一项更大、需要单独立项的改动（留存事件本已携带每个版本；投影需要保留的不只是最新一个），不属于本特性的范围。
-- **`SessionEventMap` 载荷改动会波及两个 SDK。** TypeScript 与 Python SDK 的期望输出，以及无密钥快照（`apps/web/tests/snapshots/science-preset`、`examples/headless-agent/tests/snapshots/science-tools`）必须在同一个 PR 内更新；`pnpm run test` 一个都不覆盖。
-</content>
-</invoke>
+- **环境历史只有单一版本。** `ScienceProjection.environment`（及其客户端投影）只保留最新绑定，而不是逐版本保留，因此一旦绑定已经更迭，溯源下钻的"环境"部分就无法展示某个较旧 artifact 运行时所用的确切环境——它转而报告仍然保留的版本号与该运行自身的指纹前缀，而不是那个 JSON 块。逐版本的环境历史仍是一项更大、需要单独立项的改动（留存事件本已携带每个版本；投影需要保留的不只是最新一个）。
+- **`SessionEventMap` 载荷改动波及了两个 SDK。** TypeScript 与 Python SDK 的期望输出，以及无密钥快照（`apps/web/tests/snapshots/science-preset`、`examples/headless-agent/tests/snapshots/science-tools`）在同一次改动内一并更新；`pnpm run test` 一个都不覆盖。

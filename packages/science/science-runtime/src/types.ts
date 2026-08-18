@@ -26,6 +26,8 @@ export type ScienceRuntimeErrorCode =
   | 'ENVIRONMENT_NOT_READY'
   | 'CONFINEMENT_UNAVAILABLE'
   | 'INVALID_REQUEST'
+  /** No Conda prefix is configured for the requested profile id in this deployment. */
+  | 'PROFILE_NOT_CONFIGURED'
   | 'OPERATION_CANCELLED'
   | 'OPERATION_TIMED_OUT'
   | 'INFRASTRUCTURE_FAILURE'

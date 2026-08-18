@@ -119,7 +119,7 @@ describe('Science Runtime settings-namespace ownership', () => {
 
     await expect(ctx.scienceRuntime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
     expect(session.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
     ])
@@ -129,7 +129,7 @@ describe('Science Runtime settings-namespace ownership', () => {
     // The write changed storage, not this already-constructed instance.
     await expect(ctx.scienceRuntime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
 
     // Simulate a restart: dispose the Runtime's own fiber (releasing its
     // namespace registration) and mount a fresh one over the same document.

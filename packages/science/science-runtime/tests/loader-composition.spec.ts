@@ -268,7 +268,7 @@ describe('Science Runtime real Loader composition', () => {
     const before = createScienceSession(context, 'science-settings-restart-before')
     await expect(context.scienceRuntime.bindEnvironment({
       session: before, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
     expect(before.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
     ])
@@ -277,7 +277,7 @@ describe('Science Runtime real Loader composition', () => {
     // Same Host lifecycle: the write reached storage, not this already-constructed Runtime.
     await expect(context.scienceRuntime.bindEnvironment({
       session: before, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
 
     await context.fiber.dispose()
     context = undefined

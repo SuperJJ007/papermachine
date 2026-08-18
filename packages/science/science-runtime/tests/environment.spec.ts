@@ -638,7 +638,11 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const session = createScienceSession(harness.ctx, 'science-bind-guards')
     await expect(harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('unknown'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    })).rejects.toMatchObject({
+      code: 'PROFILE_NOT_CONFIGURED',
+      message: 'no Conda prefix is configured for the Science environment profile "unknown" — '
+        + 'open Settings → Plugins → Science to configure one, then restart the Host',
+    })
     const aborted = new AbortController()
     aborted.abort()
     await expect(harness.runtime.bindEnvironment({

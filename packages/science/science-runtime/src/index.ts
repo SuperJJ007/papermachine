@@ -422,11 +422,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
   }
 
-  /** Resolve one configured profile without exposing the mutable configuration record. */
+  /**
+   * Resolve one configured profile without exposing the mutable configuration
+   * record. The requested id is fixed preset policy, never model or user
+   * input, so an unresolved id always means the deployment has not named a
+   * Conda prefix for it yet — the message names where to configure one
+   * instead of the internal profile-id vocabulary, because both a person
+   * reading it directly and a model relaying it to one need to act on it.
+   */
   private profile(id: string): ConfiguredProfile {
     const profile = this.profiles.get(id)
     if (profile === undefined) {
-      throw new ScienceRuntimeError('INVALID_REQUEST', `unknown Science environment profile ${JSON.stringify(id)}`)
+      throw new ScienceRuntimeError(
+        'PROFILE_NOT_CONFIGURED',
+        `no Conda prefix is configured for the Science environment profile ${JSON.stringify(id)} — `
+        + 'open Settings → Plugins → Science to configure one, then restart the Host',
+      )
     }
     return profile
   }

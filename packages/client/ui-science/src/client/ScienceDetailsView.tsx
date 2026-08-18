@@ -66,9 +66,25 @@ function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): stri
   }
 }
 
+/** A durable artifact version narrowed to one carrying an image attachment. */
+type ScienceImageArtifactVersion = ScienceClientArtifactVersion & {
+  attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }>
+}
+
+/**
+ * Whether a durable artifact version carries an image attachment. Auto-
+ * capture (science-runtime) can now append csv/json/md/txt versions; the
+ * viewer's content dispatch stays image-only until the non-image artifact
+ * phase extends it (README "PNG presentation only" Known Limitation), so
+ * every entry point below filters the raw projection through this first.
+ */
+function hasImageAttachment(chart: ScienceClientArtifactVersion): chart is ScienceImageArtifactVersion {
+  return 'width' in chart.attachment
+}
+
 /** Latest accepted version per logical chart, in first-appearance (commit) order. */
-function latestCharts(charts: readonly ScienceClientArtifactVersion[]): ScienceClientArtifactVersion[] {
-  const byId = new Map<string, ScienceClientArtifactVersion>()
+function latestCharts<T extends ScienceClientArtifactVersion>(charts: readonly T[]): T[] {
+  const byId = new Map<string, T>()
   for (const chart of charts) {
     const current = byId.get(chart.artifactId)
     if (current === undefined || chart.version > current.version) byId.set(chart.artifactId, chart)
@@ -77,7 +93,7 @@ function latestCharts(charts: readonly ScienceClientArtifactVersion[]): ScienceC
 }
 
 /** Every durable version of one logical chart, ascending — the version stepper's walk order. */
-function versionsOf(charts: readonly ScienceClientArtifactVersion[], chartId: ScienceArtifactId): ScienceClientArtifactVersion[] {
+function versionsOf<T extends ScienceClientArtifactVersion>(charts: readonly T[], chartId: ScienceArtifactId): T[] {
   return charts.filter(chart => chart.artifactId === chartId).sort((left, right) => left.version - right.version)
 }
 
@@ -100,7 +116,7 @@ function chartImageLabels(t: TranslateNS<'science'>): MessageImageLabels {
 }
 
 /** Trigger a browser save of the durable bytes behind one artifact version through a throwaway `data:`-URI anchor. */
-async function downloadChart(chart: ScienceClientArtifactVersion, loadImage: ImageLoader): Promise<void> {
+async function downloadChart(chart: ScienceImageArtifactVersion, loadImage: ImageLoader): Promise<void> {
   const url = await loadImage(chart.attachment)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -120,7 +136,7 @@ async function downloadChart(chart: ScienceClientArtifactVersion, loadImage: Ima
  * ordinary click-to-open path.
  */
 function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceImageArtifactVersion
   loadImage: ImageLoader
   open: boolean
   onClose: () => void
@@ -152,7 +168,7 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
  * strip or toolbar.
  */
 function ArtifactContent({ chart, loadImage, t }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceImageArtifactVersion
   loadImage: ImageLoader
   t: TranslateNS<'science'>
 }) {
@@ -181,8 +197,8 @@ function ArtifactContent({ chart, loadImage, t }: {
 }
 
 function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, t }: {
-  chart: ScienceClientArtifactVersion
-  versions: readonly ScienceClientArtifactVersion[]
+  chart: ScienceImageArtifactVersion
+  versions: readonly ScienceImageArtifactVersion[]
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
   onMaximize: () => void
@@ -276,7 +292,7 @@ function TabStrip({ tabs, charts, activeChartId, onActivate, onClose, t }: {
 }
 
 function ArtifactGallery({ charts, loadImage, onOpen, t }: {
-  charts: readonly ScienceClientArtifactVersion[]
+  charts: readonly ScienceImageArtifactVersion[]
   loadImage: ImageLoader
   onOpen: (selection: { chartId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
@@ -351,7 +367,7 @@ function OutcomeSection({ outcome, t }: {
 
 /** No open tabs: a gallery of latest chart versions (opening one opens its tab), plus the Outcome kept reachable below it. */
 function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
-  charts: readonly ScienceClientArtifactVersion[]
+  charts: readonly ScienceImageArtifactVersion[]
   outcome: ScienceClientOutcomePublication | null
   loadImage: ImageLoader
   onOpenTab: (selection: { chartId: ScienceArtifactId; version: number }) => void
@@ -369,9 +385,10 @@ function LandingView({ charts, outcome, loadImage, onOpenTab, t }: {
 }
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
-function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadImage, useStore, actions, inspectCall, t }: {
+function ArtifactTab({ science, charts, chart, view, provenanceSubTab, snapshot, loadImage, useStore, actions, inspectCall, t }: {
   science: ScienceClientProjection
-  chart: ScienceClientArtifactVersion
+  charts: readonly ScienceImageArtifactVersion[]
+  chart: ScienceImageArtifactVersion
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
@@ -382,7 +399,7 @@ function ArtifactTab({ science, chart, view, provenanceSubTab, snapshot, loadIma
   t: TranslateNS<'science'>
 }) {
   const lightboxOpen = useStore(s => s.lightboxOpen)
-  const versions = versionsOf(science.artifacts, chart.artifactId)
+  const versions = versionsOf(charts, chart.artifactId)
 
   if (view === 'provenance') {
     const run = science.runs.find(candidate => candidate.runId === chart.runId)
@@ -433,6 +450,10 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
   const activeChartId = useStore(s => s.activeChartId)
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
+  // Auto-capture (science-runtime) can append non-image versions; the viewer
+  // stays image-only until the non-image artifact phase extends content
+  // dispatch (README "PNG presentation only" Known Limitation).
+  const charts = science.artifacts.filter(hasImageAttachment)
 
   // Every selection-store action maintains one invariant
   // (selection-store.client.spec.ts): activeChartId is null iff
@@ -445,7 +466,7 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
     return (
       <div className={css.body}>
         <LandingView
-          charts={science.artifacts}
+          charts={charts}
           outcome={science.outcome}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
@@ -458,14 +479,14 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
   // The one remaining way `activeChart` resolves to undefined is the
   // durable projection not having this exact (chartId, version) pair — a
   // stale tab, handled below as "artifact unavailable".
-  const activeChart = science.artifacts.find(candidate =>
+  const activeChart = charts.find(candidate =>
     candidate.artifactId === activeTab.chartId && candidate.version === activeTab.version)
 
   return (
     <div className={css.body}>
       <TabStrip
         tabs={openArtifacts}
-        charts={science.artifacts}
+        charts={charts}
         activeChartId={activeChartId}
         onActivate={(chartId) => { actions.activateTab(chartId) }}
         onClose={(chartId) => { actions.closeTab(chartId) }}
@@ -476,6 +497,7 @@ function ArtifactViewer({ science, snapshot, loadImage, useStore, actions, inspe
         : (
           <ArtifactTab
             science={science}
+            charts={charts}
             chart={activeChart}
             view={view}
             provenanceSubTab={provenanceSubTab}

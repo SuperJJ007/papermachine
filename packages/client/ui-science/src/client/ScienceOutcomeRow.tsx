@@ -72,7 +72,10 @@ function EvidenceItem({ item, science, loadImage, t }: {
   }
   const label = t('outcome.evidenceChart', { chartId: item.chart_id, version: item.version })
   const chart = science?.artifacts.find(candidate => String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
-  if (chart === undefined) {
+  // Evidence citing a non-image artifact (auto-captured csv/json/md/txt) is
+  // reported the same as an unresolved citation until the non-image artifact
+  // phase extends this row's rendering (README "PNG presentation only").
+  if (chart === undefined || !('width' in chart.attachment)) {
     return (
       <li className={css.evidenceItem}>
         <span>{label}</span>

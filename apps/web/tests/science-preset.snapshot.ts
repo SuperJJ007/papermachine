@@ -355,7 +355,9 @@ describe('science agent preset', () => {
 
     const chartEvent = r5Events.find(event => event.type === 'science/artifact-saved')
     if (chartEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot chart event is missing')
-    const stored = await scaffold.ctx.attachments.readImage(chartEvent.data.artifact.attachment)
+    const chartAttachment = chartEvent.data.artifact.attachment
+    if (!('width' in chartAttachment)) throw new Error('R5 snapshot artifact is not an image attachment')
+    const stored = await scaffold.ctx.attachments.readImage(chartAttachment)
     expect(Buffer.from(stored.data)).toEqual(Buffer.from(PNG))
 
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])

@@ -277,6 +277,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       ...chartAuthorization,
       signal: new AbortController().signal,
     })
+    if (!('width' in chart.attachment)) throw new Error('commitChart returned a non-image attachment')
     const stored = await context.attachments.readImage(chart.attachment)
     if (String(stored.ref.attachmentId) !== String(chart.attachment.attachmentId)
       || !Buffer.from(stored.data).equals(Buffer.from(PNG))) {

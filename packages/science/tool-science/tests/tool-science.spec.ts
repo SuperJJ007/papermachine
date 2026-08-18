@@ -522,7 +522,7 @@ describe('get_science_state', () => {
       version: 1,
       title: artifactId,
       origin: 'model',
-      attachment: { attachmentId: `attachment-${String(index + 1)}`, mediaType: 'image/png' },
+      attachment: { attachmentId: `attachment-${String(index + 1)}`, mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
       runId: `run-${String(index + 1)}`,
       toolCallId: `call-${String(index + 1)}`,
       requestHeaderSeq: 1,
@@ -839,6 +839,23 @@ describe('chartReceiptFromChart / formatChartReceipt / scienceChartPresentation'
     const presentation = scienceChartPresentation(value) as { caption?: string; attachment: { name?: string } }
     expect(presentation).not.toHaveProperty('caption')
     expect(presentation.attachment).not.toHaveProperty('name')
+  })
+
+  it('throws defensively when given a non-image attachment, which commitChart never returns', () => {
+    expect(() => chartReceiptFromChart({
+      artifactId: ScienceArtifactId('chart-1'),
+      logicalName: 'main',
+      version: 1,
+      title: 'Main plot',
+      origin: 'auto',
+      attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'text/csv', bytes: 10 },
+      runId: ScienceRunId('run-1'),
+      toolCallId: CallId('call-1'),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      createdAt: 1000,
+    })).toThrow(/non-image attachment/)
   })
 })
 

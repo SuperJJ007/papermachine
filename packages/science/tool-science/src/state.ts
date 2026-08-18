@@ -123,13 +123,26 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
 }
 
 /**
+ * Narrow a durable artifact version to one carrying an image attachment.
+ * `get_science_state`'s `charts` field is PNG-only until PR4's
+ * `stateArtifact` generalization; an auto-captured text artifact is durably
+ * logged (`science/artifact-saved`) but not yet surfaced through this tool —
+ * see the runtime README's Known Limitations.
+ */
+function hasImageAttachment(
+  artifact: ScienceArtifactVersion,
+): artifact is ScienceArtifactVersion & { attachment: Extract<ScienceArtifactVersion['attachment'], { width: number }> } {
+  return 'width' in artifact.attachment
+}
+
+/**
  * Remove the internal attachment id, full environment fingerprint,
  * authorizing tool call, and request-header sequence from one durable chart
  * version. The full `ImageAttachmentRef` remains available only to the
  * durable projection, authorization, export, and Client presentation paths —
  * never to model state.
  */
-function stateChart(chart: ScienceArtifactVersion): InferValue<typeof stateChartSchema> {
+function stateChart(chart: ScienceArtifactVersion & { attachment: Extract<ScienceArtifactVersion['attachment'], { width: number }> }): InferValue<typeof stateChartSchema> {
   return {
     chartId: String(chart.artifactId),
     logicalName: chart.logicalName,
@@ -160,12 +173,13 @@ export function stateValueFromProjection(
   historyItemLimit: number,
 ): ScienceStateValue {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
-  const chartVersionsOmitted = Math.max(0, projection.artifacts.length - historyItemLimit)
+  const imageArtifacts = projection.artifacts.filter(hasImageAttachment)
+  const chartVersionsOmitted = Math.max(0, imageArtifacts.length - historyItemLimit)
   return {
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
-    charts: projection.artifacts.slice(-historyItemLimit).map(stateChart),
+    charts: imageArtifacts.slice(-historyItemLimit).map(stateChart),
     outcome: projection.outcome as unknown as JsonValue,
     metrics: projection.metrics as unknown as JsonValue,
     history: { runsOmitted, chartVersionsOmitted },

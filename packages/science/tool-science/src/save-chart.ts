@@ -39,6 +39,12 @@ export type ScienceChartReceiptValue = InferValue<typeof chartReceiptSchema>
  * @returns the canonical structured value the tool returns.
  */
 export function chartReceiptFromChart(chart: ScienceArtifactVersion): ScienceChartReceiptValue {
+  const attachment = chart.attachment
+  // commitChart only ever admits image/png (IMAGE_TYPE_NOT_ALLOWED otherwise), so this
+  // narrows the durable union back to the image shape this receipt requires.
+  if (!('width' in attachment)) {
+    throw new Error('tool-science: save_chart produced a non-image attachment, which the PNG-only commitChart path never returns')
+  }
   return {
     chartId: String(chart.artifactId),
     logicalName: chart.logicalName,
@@ -46,12 +52,12 @@ export function chartReceiptFromChart(chart: ScienceArtifactVersion): ScienceCha
     title: chart.title,
     ...chart.caption === undefined ? {} : { caption: chart.caption },
     runId: String(chart.runId),
-    attachmentId: String(chart.attachment.attachmentId),
-    mediaType: chart.attachment.mediaType,
-    bytes: chart.attachment.bytes,
-    width: chart.attachment.width,
-    height: chart.attachment.height,
-    ...chart.attachment.name === undefined ? {} : { attachmentName: chart.attachment.name },
+    attachmentId: String(attachment.attachmentId),
+    mediaType: attachment.mediaType,
+    bytes: attachment.bytes,
+    width: attachment.width,
+    height: attachment.height,
+    ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
     createdAt: chart.createdAt,
   }
 }

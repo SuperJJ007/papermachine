@@ -65,7 +65,7 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 
 ## 已知限制与暂缓事项
 
-- **仅 PNG 展示** — Science v1 只保存 PNG 图表，因此内容分派当前唯一的分支就是共享的图像渲染器；后续的非图像 artifact 阶段只需新增一个分支，而不必重新架构 viewer。
+- **仅 PNG 展示** — Science v1 只保存 PNG 图表，因此内容分派当前唯一的分支就是共享的图像渲染器；后续的非图像 artifact 阶段只需新增一个分支，而不必重新架构 viewer。`dsh-science-runtime` 现在会把 csv/json/md/txt 文件与 PNG 一起自动捕获进同一个持久化 `science` 投影的 `artifacts` 列表；在该非图像 artifact 阶段落地之前，本 viewer 的每个入口(`ScienceDetailsView.tsx`、`ScienceOutcomeRow.tsx`)都只过滤出带图像附件的版本，因此被捕获的非图像文件虽已持久化写入日志，但此处尚不会将其列出、打开或作为缩略图引用。
 - **没有独立附件缓存** — 会话记录行的缩略图沿用由会话界面拥有的会话附件加载器（宿主提供的 `loadImage`），其生命周期、重试与 object URL 回收仍归那里所有。Details 条目的缩略图与内容通过自己无状态的 `data:` URI 转换、经由 `ISession.readAttachment` 解析；两条路径都不添加自己的持久化 Map 缓存。
 - **仅一个固定配置档案、两个字段** — 卡片只编辑内置 `science` 配置档案的 `pythonPrefix`/`rPrefix`，因为内置 preset 是当前唯一的产品消费方；其他部署配置档案 id 仍是文件/配置层面的事，不由浏览器管理。
 - **没有发现、探测或即时生效** — 卡片从不列出、探测或校验某个 Conda 环境，也没有文件系统选择器或即时生效控件；已存储的前缀在 Host 重启完成绑定之前始终不可见。

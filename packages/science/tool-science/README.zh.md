@@ -34,7 +34,7 @@
 | `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，把既有的内容寻址附件重新提交为一个新的策展版本。返回文本 receipt，绝不返回文件字节。 |
 | `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/artifact/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
 
-四个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact 与 Outcome success 值为所有客户端渲染有用文本；当 `annotate_artifact` 策展的是一张图片时，还会额外保留带标签、带版本的 presentation metadata 供专用 Web 行使用（见“已知限制”）。五个工具都使用 generic render intent，不带 editor location。
+四个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact 与 Outcome success 值为所有客户端渲染有用文本；`run_python`/`run_r` 与 `annotate_artifact` 还会为每一个被捕获或被策展的 artifact（任意受支持媒体类型）额外保留一条带标签、带版本的 presentation 值，供专用 Web 行使用。五个工具都使用 generic render intent，不带 editor location。
 
 ## 模型体验
 
@@ -118,7 +118,7 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 #### 模型看到的内容
 
-`annotate_artifact` 以文本渲染稳定 artifact id、逻辑名、版本、标题、可选 caption、来源 run、媒体类型、策展版本为图片时的尺寸、字节数与创建时间；绝不输出文件字节或 image content block。`publish_outcome` 渲染 revision、标题、Markdown 摘要，以及每条 run/artifact/message evidence reference。被策展的图片会保留带标签的客户端 presentation value 于 durable tool-result metadata 中；策展一个非图片 artifact 则不会增加独立模型内容（见“已知限制”）。
+`annotate_artifact` 以文本渲染稳定 artifact id、逻辑名、版本、标题、可选 caption、来源 run、媒体类型、策展版本为图片时的尺寸、字节数与创建时间；绝不输出文件字节或 image content block。`publish_outcome` 渲染 revision、标题、Markdown 摘要，以及每条 run/artifact/message evidence reference。两个工具（以及 `run_python`/`run_r`）带标签的客户端 presentation value 都不是模型可见内容——它随 `tool/result.meta` 传递，只由 `dsh-client-ui-science` 的专用行读取。
 
 #### Token 影响
 
@@ -147,4 +147,3 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
 - **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成输出文件，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。
 - **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。
-- **`annotate_artifact` 对非图片策展没有带标签的 Client presentation** — 它的 `presentationMeta` 目前仍只投射图片专属的 `ScienceChartPresentation` 形状；策展一个 csv/json/md/txt artifact 会返回 `null`（这是 transcript 行对无法识别 presentation 的既有优雅降级，不是错误），直到后续改动把这一 presentation 泛化到每种被捕获的媒体类型为止。

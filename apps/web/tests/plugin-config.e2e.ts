@@ -248,7 +248,7 @@ describe('web e2e: plugin configuration section', () => {
     expect(await dialog.innerText()).not.toContain(SENTINEL_PYTHON_PREFIX)
     expect(await dialog.getByText('已配置', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('未配置', { exact: true }).count()).toBe(1)
-    expect(await dialog.getByText('重启 Host 后生效。').count()).toBe(1)
+    expect(await dialog.getByText('已保存；重启 Host 后生效。').count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '移除覆盖' }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
@@ -268,7 +268,14 @@ describe('web e2e: plugin configuration section', () => {
       timeout: 10_000,
     }).toBe(false)
     expect(await dialog.getByText('未配置', { exact: true }).count()).toBe(2)
-    expect(await dialog.getByText('重启 Host 后生效。').count()).toBe(1)
+    // The running Host was never restarted across this whole scenario, so it
+    // was unconfigured before the earlier write and stays unconfigured now
+    // that the override is gone — the stored and the running state agree
+    // again, and the card's host-bound status line reports "not configured",
+    // not a stale "restart required" the old restartRequired flag would have
+    // kept showing for this exact round trip.
+    expect(await dialog.getByText('已保存；重启 Host 后生效。').count()).toBe(0)
+    expect(await dialog.getByText('尚未配置 science 配置档案；填写至少一个前缀并保存。').count()).toBe(1)
     expect(await dialog.getByRole('button', { name: '移除覆盖' }).count()).toBe(0)
     expect(await dialog.innerText()).not.toContain(SENTINEL_PYTHON_PREFIX)
     expect(tripwire.pageErrors).toEqual([])

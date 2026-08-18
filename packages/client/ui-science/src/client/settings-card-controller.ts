@@ -15,6 +15,13 @@
  * never calls a wire method directly, and every write goes through the bound
  * `SettingsScope`, which owns revision fencing, write ordering, and
  * stale-write recovery.
+ *
+ * {@link ScienceSettingsCardController.hostState} answers whether the
+ * RUNNING Host has already bound the stored `science` profile, from the
+ * scope's `effective`/`value` snapshot fields rather than a client-local
+ * flag — a page reload (a fresh controller instance) reports the same
+ * pending-restart state it did before the reload, because the Host, not the
+ * browser, is what has not restarted yet.
  */
 
 import type { SettingsScope, SettingsSecretPresence, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -54,6 +61,17 @@ export interface ScienceSettingsFieldState {
   invalid: boolean
 }
 
+/**
+ * The RUNNING Host's actually-bound `science` profile compared with what is
+ * currently stored, independent of this browser session's own save history —
+ * a page reload answers exactly as it did before the reload, because it is
+ * read from the scope's `effective`/`value` snapshot fields, not from a
+ * client-local flag. `'pendingRestart'` covers both directions: a value just
+ * saved (the Host has not read it yet) and a value just cleared (the Host
+ * still has the old one bound).
+ */
+export type ScienceHostState = 'effective' | 'pendingRestart' | 'notConfigured'
+
 /** What the Science settings card renders. */
 export interface ScienceSettingsCardState {
   /** True before the first accepted section; the card shows a loading line, not the fields. */
@@ -77,12 +95,12 @@ export interface ScienceSettingsCardState {
   /**
    * Whether any field in the last save did not land, or the last reset was
    * refused; cleared by the next edit, save, or reset. True together with
-   * `restartRequired` when a multi-field save lands some fields but not
-   * others.
+   * `hostState: 'pendingRestart'` when a multi-field save lands some fields
+   * but not others.
    */
   failed: boolean
-  /** Whether any change has landed this session; every successful change requires a Host restart to apply. */
-  restartRequired: boolean
+  /** The running Host's bound state vs what is currently stored (see {@link ScienceHostState}). */
+  hostState: ScienceHostState
 }
 
 /** The write actions the card's slot entry injects. */
@@ -139,7 +157,6 @@ export class ScienceSettingsCardController {
   private readonly staged = new Map<ScienceProfileField, string>()
   private saving = false
   private failed = false
-  private restartRequired = false
 
   /** @param scope - the bound settings scope for the `science-runtime` namespace. */
   constructor(private readonly scope: SettingsScope<ScienceRuntimeSettingsSection>) {
@@ -177,9 +194,11 @@ export class ScienceSettingsCardController {
    * Host's accepted view or its stale-write recovery read, so no separate
    * poll is needed. Landing is judged per field, not as one all-or-nothing
    * outcome across the whole dirty set: a field the Host accepts clears its
-   * staged draft and requires a restart; a field the Host rejects keeps its
-   * draft and marks the card failed. `failed` and `restartRequired` may both
-   * be true after a save where only some fields land.
+   * staged draft; a field the Host rejects keeps its draft and marks the card
+   * failed. A landed field immediately moves `value` ahead of `effective` on
+   * the bound scope, which is what turns {@link ScienceHostState} to
+   * `'pendingRestart'` on the very next projection — no separate bookkeeping
+   * here.
    * @returns settlement after every write.
    */
   async save(): Promise<void> {
@@ -191,17 +210,11 @@ export class ScienceSettingsCardController {
     for (const entry of dirty) {
       await this.scope.setPath([PROFILE_ID, entry.field], entry.text)
     }
-    let anyLanded = false
     for (const entry of dirty) {
-      if (this.isSet(entry.field)) {
-        this.staged.delete(entry.field)
-        anyLanded = true
-      } else {
-        this.failed = true
-      }
+      if (this.isSet(entry.field)) this.staged.delete(entry.field)
+      else this.failed = true
     }
     this.saving = false
-    if (anyLanded) this.restartRequired = true
     this.publish()
   }
 
@@ -220,10 +233,7 @@ export class ScienceSettingsCardController {
     const landed = !this.currentlyOverridden()
     this.saving = false
     this.failed = !landed
-    if (landed) {
-      this.restartRequired = true
-      this.staged.clear()
-    }
+    if (landed) this.staged.clear()
     this.publish()
   }
 
@@ -234,6 +244,22 @@ export class ScienceSettingsCardController {
   private currentlyOverridden(): boolean {
     const user = this.scope.getSnapshot().user
     return isRecord(user) && Object.hasOwn(user, PROFILE_ID)
+  }
+
+  /**
+   * Compare the RUNNING owner's `effective` snapshot against the currently
+   * stored `value`: equal and configured means the Host already acted on the
+   * stored `science` profile; equal and absent means nothing is configured
+   * either way; any mismatch — added or removed since the Host last read —
+   * means a restart is still owed.
+   * @returns the running Host's bound state vs what is currently stored.
+   */
+  private hostState(): ScienceHostState {
+    const snapshot = this.scope.getSnapshot()
+    const stored = isRecord(snapshot.value) && Object.hasOwn(snapshot.value, PROFILE_ID)
+    const bound = isRecord(snapshot.effective) && Object.hasOwn(snapshot.effective, PROFILE_ID)
+    if (stored !== bound) return 'pendingRestart'
+    return stored ? 'effective' : 'notConfigured'
   }
 
   /**
@@ -270,7 +296,7 @@ export class ScienceSettingsCardController {
       invalid: dirty.some(entry => !looksAbsolute(entry.text)),
       saving: this.saving,
       failed: this.failed,
-      restartRequired: this.restartRequired,
+      hostState: this.hostState(),
     }
   }
 

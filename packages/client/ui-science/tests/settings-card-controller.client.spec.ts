@@ -43,7 +43,7 @@ describe('ScienceSettingsCardController', () => {
     const stub = host()
     const controller = new ScienceSettingsCardController(stub.scope)
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
-    expect(state).toMatchObject({ loading: true, configured: false, saving: false, restartRequired: false })
+    expect(state).toMatchObject({ loading: true, configured: false, saving: false, hostState: 'notConfigured' })
   })
 
   it('reports unconfigured when the profile is absent from the resolved section', () => {
@@ -69,6 +69,38 @@ describe('ScienceSettingsCardController', () => {
     expect(state.overridden).toBe(true)
     expect(state.pythonPrefix).toEqual({ text: '', configured: true, invalid: false })
     expect(state.rPrefix).toEqual({ text: '', configured: false, invalid: false })
+  })
+
+  describe('hostState', () => {
+    it("reports 'effective' when the running Host's own read already matches what is stored", () => {
+      const stub = host()
+      const controller = new ScienceSettingsCardController(stub.scope)
+      stub.publish(ready({ value: { science: {} }, effective: { science: {} } }))
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('effective')
+    })
+
+    it("reports 'notConfigured' when neither the stored value nor the running Host names the profile", () => {
+      const stub = host()
+      const controller = new ScienceSettingsCardController(stub.scope)
+      stub.publish(ready({ value: {}, effective: {} }))
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('notConfigured')
+    })
+
+    it("reports 'pendingRestart' when the stored value names the profile but the running Host has not read it yet", () => {
+      const stub = host()
+      const controller = new ScienceSettingsCardController(stub.scope)
+      stub.publish(ready({ value: { science: {} }, effective: {} }))
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('pendingRestart')
+    })
+
+    it("reports 'pendingRestart' when the running Host still has a profile the stored value no longer names", () => {
+      // A profile removed from settings since the Host last restarted: the
+      // Host is still bound to it, and clearing that binding also needs a restart.
+      const stub = host()
+      const controller = new ScienceSettingsCardController(stub.scope)
+      stub.publish(ready({ value: {}, effective: { science: {} } }))
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('pendingRestart')
+    })
   })
 
   it('matches secret presence on the full path, not a suffix or a differently-shaped path', () => {
@@ -238,7 +270,7 @@ describe('ScienceSettingsCardController', () => {
     expect(face.hooks.scienceSettingsCard.getSnapshot().saving).toBe(true)
   })
 
-  it('landed save (republished secret presence confirms it) clears drafts and marks restart-required', async () => {
+  it('landed save (republished secret presence confirms it) clears drafts and reports pending-restart', async () => {
     const stub = host()
     stub.setPath.mockImplementation((path: readonly string[]) => {
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
@@ -253,7 +285,9 @@ describe('ScienceSettingsCardController', () => {
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.saving).toBe(false)
     expect(state.failed).toBe(false)
-    expect(state.restartRequired).toBe(true)
+    // `value` moved with the landed write; `effective` (the Host's own read)
+    // never did in this stub, so the running Host has not picked it up yet.
+    expect(state.hostState).toBe('pendingRestart')
     expect(state.pythonPrefix.text).toBe('')
   })
 
@@ -270,11 +304,11 @@ describe('ScienceSettingsCardController', () => {
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.saving).toBe(false)
     expect(state.failed).toBe(true)
-    expect(state.restartRequired).toBe(false)
+    expect(state.hostState).toBe('notConfigured')
     expect(state.pythonPrefix.text).toBe(SENTINEL)
   })
 
-  it('a partial multi-field save (pythonPrefix lands, rPrefix rejected) clears only the landed draft and marks both failed and restartRequired', async () => {
+  it('a partial multi-field save (pythonPrefix lands, rPrefix rejected) clears only the landed draft and marks both failed and pending-restart', async () => {
     const stub = host()
     stub.setPath.mockImplementation((path: readonly string[]) => {
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
@@ -292,12 +326,12 @@ describe('ScienceSettingsCardController', () => {
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.saving).toBe(false)
     expect(state.failed).toBe(true)
-    expect(state.restartRequired).toBe(true)
+    expect(state.hostState).toBe('pendingRestart')
     expect(state.pythonPrefix).toEqual({ text: '', configured: true, invalid: false })
     expect(state.rPrefix).toEqual({ text: SENTINEL, configured: false, invalid: false })
   })
 
-  it('a partial multi-field save (rPrefix lands, pythonPrefix rejected) clears only the landed draft and marks both failed and restartRequired', async () => {
+  it('a partial multi-field save (rPrefix lands, pythonPrefix rejected) clears only the landed draft and marks both failed and pending-restart', async () => {
     const stub = host()
     stub.setPath.mockImplementation((path: readonly string[]) => {
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
@@ -315,7 +349,7 @@ describe('ScienceSettingsCardController', () => {
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.saving).toBe(false)
     expect(state.failed).toBe(true)
-    expect(state.restartRequired).toBe(true)
+    expect(state.hostState).toBe('pendingRestart')
     expect(state.pythonPrefix).toEqual({ text: SENTINEL, configured: false, invalid: false })
     expect(state.rPrefix).toEqual({ text: '', configured: true, invalid: false })
   })
@@ -346,6 +380,7 @@ describe('ScienceSettingsCardController', () => {
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready({
       value: { science: {} },
+      effective: { science: {} },
       base: { science: {} },
       user: { science: {} },
       secrets: [{ path: ['science', 'pythonPrefix'], set: true }],
@@ -357,7 +392,10 @@ describe('ScienceSettingsCardController', () => {
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.overridden).toBe(false)
     expect(state.configured).toBe(true) // the composition base still names the profile
-    expect(state.restartRequired).toBe(true)
+    // The composition base already named the profile the RUNNING Host read at
+    // registration, so this reset — which only reveals that base — leaves the
+    // Host's bound state unchanged, not pending.
+    expect(state.hostState).toBe('effective')
   })
 
   it('a reset the Host refuses stays overridden and reports failed', async () => {

@@ -28,8 +28,11 @@
  * A stored prefix never rides a response, so a configured field renders a
  * neutral "configured" badge and an empty input; typing replaces it, leaving
  * the field blank is a no-op, and the reset action removes only the
- * user-layer override. Every successful change requires a Host restart,
- * which the card states after it lands.
+ * user-layer override. Every successful change requires a Host restart; the
+ * card's status line reports whether the RUNNING Host has already picked up
+ * the stored profile, is still on the pre-write one, or has none at all
+ * (`ScienceHostState`), and that reading survives a page reload because it is
+ * not a client-local flag.
  */
 
 import { useState } from 'react'
@@ -119,7 +122,7 @@ export function ScienceSettingsCard(props: ScienceSettingsCardProps) {
           ) : (
             <>
               {!state.writable ? <p className={css.notice} role="status">{t('settings.readOnly')}</p> : null}
-              {!state.configured ? <p className={css.notice} role="status">{t('settings.unconfiguredHint')}</p> : null}
+              {state.hostState === 'notConfigured' ? <p className={css.notice} role="status">{t('settings.unconfiguredHint')}</p> : null}
               <PrefixField
                 id="science-settings-python-prefix"
                 label={t('settings.pythonPrefix')}
@@ -143,7 +146,11 @@ export function ScienceSettingsCard(props: ScienceSettingsCardProps) {
                 onEdit={editField('rPrefix')}
               />
               {state.failed ? <p className={css.notice} data-tone="error" role="status">{t('settings.saveFailed')}</p> : null}
-              {state.restartRequired ? <p className={css.notice} role="status">{t('settings.restartRequired')}</p> : null}
+              {state.hostState === 'pendingRestart' ? <p className={css.notice} role="status">{t('settings.restartRequired')}</p> : null}
+              {/* Static confirmation, not `role="status"`: nothing changed just
+                  now for assistive technology to announce — it is baseline
+                  informational text, like a field's own hint. */}
+              {state.hostState === 'effective' ? <p className={css.notice}>{t('settings.effective')}</p> : null}
               <div className={css.footer}>
                 {state.overridden
                   ? (

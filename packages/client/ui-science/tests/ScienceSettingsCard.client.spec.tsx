@@ -2,13 +2,13 @@
 /**
  * The Science settings card's rendering: its own collapsed-by-default
  * disclosure (equivalent in behavior and accessible naming to the Plugins
- * section's sibling cards, owned locally rather than imported), the eight
- * reachable states once expanded (loading, unconfigured, configured, saving,
- * a Host-rejected/stale-revision write, a client-blocked invalid draft,
- * saved-restart-required, and reset-to-composition), the coherent rendering
- * of a partial multi-field save (failed and restart-required together),
- * accessible names and distinct accessible text per state, and one
- * end-to-end save through the real controller.
+ * section's sibling cards, owned locally rather than imported), the nine
+ * reachable states once expanded (loading, unconfigured, configured and in
+ * effect, saving, a Host-rejected/stale-revision write, a client-blocked
+ * invalid draft, pending-restart, and reset-to-composition), the coherent
+ * rendering of a partial multi-field save (failed and pending-restart
+ * together), accessible names and distinct accessible text per state, and
+ * one end-to-end save through the real controller.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -41,7 +41,7 @@ const settled: ScienceSettingsCardState = {
   invalid: false,
   saving: false,
   failed: false,
-  restartRequired: false,
+  hostState: 'notConfigured',
 }
 
 function actions() {
@@ -124,7 +124,10 @@ describe('ScienceSettingsCard: unconfigured', () => {
 
 describe('ScienceSettingsCard: configured', () => {
   it('shows a neutral "Configured" badge per field and never echoes a stored value into the input', () => {
-    renderCard({ configured: true, pythonPrefix: field({ configured: true }), rPrefix: field({ configured: false }) })
+    renderCard({
+      configured: true, hostState: 'effective',
+      pythonPrefix: field({ configured: true }), rPrefix: field({ configured: false }),
+    })
     expect(screen.queryAllByRole('status')).toHaveLength(0)
     expect(screen.getByText('Configured')).toBeTruthy()
     expect(screen.getByText('Not configured')).toBeTruthy()
@@ -137,18 +140,30 @@ describe('ScienceSettingsCard: configured', () => {
     // keystrokes) — this proves that path is the ONLY way text can appear in
     // the input, so a freshly-loaded configured field with no staged draft
     // (the common case) never carries a stored prefix.
-    const { view: staged } = renderCard({ configured: true, pythonPrefix: field({ configured: true, text: SENTINEL }) })
+    const { view: staged } = renderCard({
+      configured: true, hostState: 'effective', pythonPrefix: field({ configured: true, text: SENTINEL }),
+    })
     expect((staged.container.querySelector('#science-settings-python-prefix') as HTMLInputElement).value).toBe(SENTINEL)
     cleanup()
-    const { view: fresh } = renderCard({ configured: true, pythonPrefix: field({ configured: true }) })
+    const { view: fresh } = renderCard({
+      configured: true, hostState: 'effective', pythonPrefix: field({ configured: true }),
+    })
     expect(fresh.container.textContent).not.toContain(SENTINEL)
     expect((fresh.container.querySelector('#science-settings-python-prefix') as HTMLInputElement).value).toBe('')
+  })
+
+  it('states plainly, not as an announced status, that the running Host already has it in effect', () => {
+    renderCard({ configured: true, hostState: 'effective', pythonPrefix: field({ configured: true }) })
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.getByText('Configured and in effect.')).toBeTruthy()
   })
 })
 
 describe('ScienceSettingsCard: read-only deployment', () => {
   it('shows the read-only status and disables the inputs', () => {
-    renderCard({ configured: true, writable: false, pythonPrefix: field({ configured: true }) })
+    renderCard({
+      configured: true, hostState: 'effective', writable: false, pythonPrefix: field({ configured: true }),
+    })
     expect(statusTexts()).toEqual(['This deployment stores settings read-only.'])
     expect(screen.getByLabelText<HTMLInputElement>('Python prefix').disabled).toBe(true)
   })
@@ -157,7 +172,7 @@ describe('ScienceSettingsCard: read-only deployment', () => {
 describe('ScienceSettingsCard: saving', () => {
   it('disables the inputs and save/discard controls and labels the save button "Saving…"', () => {
     renderCard({
-      configured: true, saving: true, dirty: true,
+      configured: true, hostState: 'effective', saving: true, dirty: true,
       pythonPrefix: field({ configured: true, text: '/opt/conda/envs/science' }),
     })
     expect(screen.getByLabelText<HTMLInputElement>('Python prefix').disabled).toBe(true)
@@ -170,23 +185,25 @@ describe('ScienceSettingsCard: saving', () => {
 
 describe('ScienceSettingsCard: a Host-rejected write (stale revision)', () => {
   it('shows the save-failed status distinct from every other notice', () => {
-    renderCard({ configured: true, failed: true, pythonPrefix: field({ configured: true, text: SENTINEL }) })
+    renderCard({
+      configured: true, hostState: 'effective', failed: true, pythonPrefix: field({ configured: true, text: SENTINEL }),
+    })
     expect(statusTexts()).toEqual(['The deployment did not accept every changed value; anything not accepted was left for you to correct.'])
   })
 })
 
 describe('ScienceSettingsCard: partial multi-field save (one field landed, one rejected)', () => {
-  it('renders the save-failed and restart-required notices together, coherently', () => {
+  it('renders the save-failed and pending-restart notices together, coherently', () => {
     renderCard({
       configured: true,
       failed: true,
-      restartRequired: true,
+      hostState: 'pendingRestart',
       pythonPrefix: field({ configured: true }),
       rPrefix: field({ configured: false, text: SENTINEL }),
     })
     expect(statusTexts()).toEqual([
       'The deployment did not accept every changed value; anything not accepted was left for you to correct.',
-      'Restart the Host to apply this change.',
+      'Saved; restart the Host to apply this change.',
     ])
     expect(screen.getByLabelText<HTMLInputElement>('Python prefix').value).toBe('')
     expect(screen.getByLabelText<HTMLInputElement>('R prefix').value).toBe(SENTINEL)
@@ -207,21 +224,25 @@ describe('ScienceSettingsCard: validation-failure', () => {
   })
 })
 
-describe('ScienceSettingsCard: saved-restart-required', () => {
-  it('shows the restart-required status distinct from the failure notice', () => {
-    renderCard({ configured: true, restartRequired: true, pythonPrefix: field({ configured: true }) })
-    expect(statusTexts()).toEqual(['Restart the Host to apply this change.'])
+describe('ScienceSettingsCard: pending-restart', () => {
+  it('shows the pending-restart status distinct from the failure notice', () => {
+    renderCard({ configured: true, hostState: 'pendingRestart', pythonPrefix: field({ configured: true }) })
+    expect(statusTexts()).toEqual(['Saved; restart the Host to apply this change.'])
   })
 })
 
 describe('ScienceSettingsCard: reset-to-composition', () => {
   it('shows the remove-override action while overridden', () => {
-    renderCard({ configured: true, overridden: true, pythonPrefix: field({ configured: true }) })
+    renderCard({
+      configured: true, hostState: 'effective', overridden: true, pythonPrefix: field({ configured: true }),
+    })
     expect(screen.getByRole('button', { name: 'Remove override' })).toBeTruthy()
   })
 
   it('hides the remove-override action once reset has revealed the composition base', () => {
-    renderCard({ configured: true, overridden: false, pythonPrefix: field({ configured: true }) })
+    renderCard({
+      configured: true, hostState: 'effective', overridden: false, pythonPrefix: field({ configured: true }),
+    })
     expect(screen.queryByRole('button', { name: 'Remove override' })).toBeNull()
   })
 })
@@ -245,7 +266,7 @@ describe('ScienceSettingsCard: accessible names', () => {
 })
 
 describe('ScienceSettingsCard: end-to-end through the real controller', () => {
-  it('a typed absolute path, saved, lands as restart-required through the real dispatch path', async () => {
+  it('a typed absolute path, saved, lands as pending-restart through the real dispatch path', async () => {
     const stub = stubSettingsScope<ScienceRuntimeSettingsSection>()
     stub.setPath.mockImplementation((path: readonly string[]) => {
       stub.publish({ value: { science: {} }, secrets: [{ path: [...path], set: true }] })
@@ -272,7 +293,7 @@ describe('ScienceSettingsCard: end-to-end through the real controller', () => {
     await act(async () => { await controller.save() })
     view.rerender(<ScienceSettingsCard {...buildProps()} />)
 
-    expect(statusTexts()).toEqual(['Restart the Host to apply this change.'])
+    expect(statusTexts()).toEqual(['Saved; restart the Host to apply this change.'])
     expect(screen.getByLabelText<HTMLInputElement>('Python prefix').value).toBe('')
     expect(screen.getByText('Configured')).toBeTruthy()
   })

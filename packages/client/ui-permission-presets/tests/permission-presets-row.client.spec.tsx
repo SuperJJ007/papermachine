@@ -25,6 +25,7 @@ function view(defaultPreset: string, revision = 0): SettingsNamespaceView {
     ns: 'permission',
     schema: SCHEMA,
     value: { defaultPreset },
+    effective: { defaultPreset },
     base: { defaultPreset: 'read-only' },
     applies: 'live',
     secrets: [],

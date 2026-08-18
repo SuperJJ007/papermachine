@@ -85,6 +85,16 @@ export interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
+  /**
+   * The resolved value THIS PROCESS's owner actually read at registration —
+   * frozen for the process lifetime, never advanced by a later write. Equal
+   * to `value` for an `applies: 'live'` owner, which re-reads on every write;
+   * a `restart`-applies owner reads once, so a later write changes `value`
+   * (what the document now holds) while `effective` keeps showing what the
+   * RUNNING owner is still acting on — the fact a configuration UI needs to
+   * tell "saved" from "in effect" apart for a restart-scoped namespace.
+   */
+  effective: unknown
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }
@@ -330,6 +340,14 @@ interface SettingsRegistration {
   validate?: (value: unknown) => void
   resolved: unknown
   /**
+   * The value the owner actually read: for `applies: 'live'` this tracks
+   * {@link resolved} on every commit (a live owner re-reads immediately, so
+   * "resolved" and "in effect" never diverge); for `applies: 'restart'` this
+   * is captured once at registration and never advanced, matching the owner
+   * reading `scope.get()` exactly once.
+   */
+  effective: unknown
+  /**
    * Monotonic counter over this namespace's RAW user section — bumped by any
    * change to what is stored, including one whose resolved value is
    * unchanged (adding an override equal to the composition base). Editors
@@ -436,6 +454,7 @@ export abstract class SettingsProvider extends Service {
     if (this.registrations.has(ns)) {
       throw new Error(`settings namespace "${ns}" is already registered`)
     }
+    const resolved = deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate))
     const registration: SettingsRegistration = {
       ns,
       schema: schema as z<unknown>,
@@ -444,7 +463,11 @@ export abstract class SettingsProvider extends Service {
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
-      resolved: deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate)),
+      resolved,
+      // The value this registration's owner reads right now, whatever
+      // `resolved` holds. A `restart`-applies owner never re-reads after
+      // this point, so this stays exactly here for the process lifetime.
+      effective: resolved,
       revision: 0,
       watchers: new Set(),
     }
@@ -493,6 +516,7 @@ export abstract class SettingsProvider extends Service {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
         value: registration.resolved,
+        effective: registration.effective,
         revision: registration.revision,
         ...base === undefined ? {} : { base },
         ...detachedUser === undefined ? {} : { user: detachedUser },
@@ -501,9 +525,13 @@ export abstract class SettingsProvider extends Service {
       if (options?.redactSecrets !== true) return descriptor
       const schema = registration.schema as z<never>
       const redacted = redactSecrets(schema, registration.resolved)
+      const redactedEffective = registration.effective === registration.resolved
+        ? redacted
+        : redactSecrets(schema, registration.effective)
       return {
         ...descriptor,
         value: redacted.value,
+        effective: redactedEffective.value,
         ...base === undefined ? {} : { base: redactSecrets(schema, base).value },
         ...detachedUser === undefined ? {} : { user: redactSecrets(schema, detachedUser).value },
         secrets: redacted.secrets,
@@ -750,6 +778,11 @@ export abstract class SettingsProvider extends Service {
     const prev = registration.resolved
     if (deepEqualJson(next, prev)) return
     registration.resolved = next
+    // A `live` owner re-reads on this same commit, so `effective` tracks
+    // `resolved` exactly; a `restart` owner already read its one value at
+    // registration and does not observe this write until the next process
+    // start, so `effective` stays exactly what it was.
+    if (registration.applies === 'live') registration.effective = next
     for (const watcher of [...registration.watchers]) {
       // Serialize per watcher: invocations of one callback run one at a time
       // in commit order, so a slow stale invocation can never apply after a

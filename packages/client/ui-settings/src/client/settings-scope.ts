@@ -59,6 +59,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     this.store = createSnapshotStore<SettingsScopeSnapshot<T>>({
       status: persistence === 'host' ? 'loading' : 'unavailable',
       value: undefined,
+      effective: undefined,
       base: undefined,
       user: undefined,
       secrets: [],
@@ -213,6 +214,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     const secrets: readonly SettingsSecretPresence[] = view.secrets
     this.store.update((draft) => {
       draft.revision = view.revision
+      draft.effective = view.effective
       draft.base = view.base
       draft.user = view.user
       draft.secrets = secrets

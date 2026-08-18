@@ -32,6 +32,14 @@ export interface SettingsScopeSnapshot<T> {
   /** Last accepted schema-resolved section; undefined before the first acceptance. */
   value: T | undefined
   /**
+   * Redacted value the RUNNING Host owner actually reads, as of the last
+   * accepted section. Equal to `value` for a `live`-applies namespace; for a
+   * `restart`-applies one, this stays fixed at what the owner read at its own
+   * registration even as `value`/`user` move with later writes — the fact a
+   * settings card needs to tell "saved" apart from "in effect."
+   */
+  effective: unknown
+  /**
    * Composition layer the Host resolved {@link value} over, when the owning
    * plugin declared one. What a field reverts to once cleared.
    */

@@ -95,7 +95,7 @@ interface SettingsScope<T> {
 
 ## Descriptors
 
-`describe()` serializes every registered namespace for configuration surfaces: the schemastery `toJSON()` envelope drives schema-rendered forms, the resolved value fills them, and the detached `base`/`user` layers let a form mark user-overridden fields by presence. `describe({ redactSecrets: true })` — mandatory on every wire surface — strips `role('secret')` fields from all three layers and enumerates their `{path, set}` slots so a page can render write-only inputs without ever receiving a secret.
+`describe()` serializes every registered namespace for configuration surfaces: the schemastery `toJSON()` envelope drives schema-rendered forms, the resolved value fills them, and the detached `base`/`user` layers let a form mark user-overridden fields by presence. `effective` is the value the registered owner actually reads — equal to `value` for an `applies: 'live'` owner, and frozen at what an `applies: 'restart'` owner read at its own registration once a later write moves `value` ahead of it — the fact a configuration UI needs to tell a stored change apart from one the owner has acted on. `describe({ redactSecrets: true })` — mandatory on every wire surface — strips `role('secret')` fields from all four value-carrying layers (`value`, `effective`, `base`, `user`) and enumerates their `{path, set}` slots so a page can render write-only inputs without ever receiving a secret.
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
@@ -120,6 +120,16 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
+  /**
+   * The resolved value THIS PROCESS's owner actually read at registration —
+   * frozen for the process lifetime, never advanced by a later write. Equal
+   * to `value` for an `applies: 'live'` owner, which re-reads on every write;
+   * a `restart`-applies owner reads once, so a later write changes `value`
+   * (what the document now holds) while `effective` keeps showing what the
+   * RUNNING owner is still acting on — the fact a configuration UI needs to
+   * tell "saved" from "in effect" apart for a restart-scoped namespace.
+   */
+  effective: unknown
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }
@@ -252,7 +262,7 @@ async replace(ns: SettingsNamespace, section: object, expectedRevision?: number)
 async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
 ```
 
-Source: [`packages/settings/settings/src/index.ts:350`](../../packages/settings/settings/src/index.ts)
+Source: [`packages/settings/settings/src/index.ts:368`](../../packages/settings/settings/src/index.ts)
 
 <a id="settings-events"></a>
 

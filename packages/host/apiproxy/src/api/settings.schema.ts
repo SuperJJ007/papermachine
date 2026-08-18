@@ -19,6 +19,7 @@ export const settingsNamespaceViewSchema = z.object({
   ns: z.string().min(1),
   schema: z.unknown(),
   value: z.unknown(),
+  effective: z.unknown(),
   base: z.unknown().optional(),
   user: z.unknown().optional(),
   applies: z.union([z.literal('live'), z.literal('restart')]),

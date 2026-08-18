@@ -30,11 +30,14 @@ function rejected<T>(): RpcResponse<T> {
   }
 }
 
-function view(value: unknown, revision = 0, secrets: SettingsNamespaceView['secrets'] = []): SettingsNamespaceView {
+function view(
+  value: unknown, revision = 0, secrets: SettingsNamespaceView['secrets'] = [], effective: unknown = value,
+): SettingsNamespaceView {
   return {
     ns: 'ui-test',
     schema: ENVELOPE,
     value,
+    effective,
     applies: 'live',
     secrets,
     revision,
@@ -74,7 +77,13 @@ describe('SettingsScopeController', () => {
     })
     await scope.load()
     expect(scope.getSnapshot()).toEqual({
-      status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host', secrets: [],
+      status: 'ready',
+      value: { preference: 'dark' },
+      effective: { preference: 'dark' },
+      revision: 3,
+      writable: true,
+      mode: 'host',
+      secrets: [],
     })
   })
 
@@ -313,6 +322,30 @@ describe('SettingsScopeController', () => {
       value: { preference: 'dark' },
       base: { preference: 'system' },
       user: { preference: 'dark' },
+    })
+  })
+
+  it('carries an `effective` value that diverges from `value` for a restart-scoped namespace', async () => {
+    // A restart-applies owner reads its section once at registration; a later
+    // write moves `value`/`user` immediately but `effective` — what the
+    // RUNNING owner still acts on — stays behind until the next Host start.
+    const restartScoped: SettingsNamespaceView = {
+      ...view({ preference: 'dark' }, 2, [], { preference: 'system' }),
+      applies: 'restart',
+      user: { preference: 'dark' },
+    }
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [restartScoped] }))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+
+    await scope.load()
+
+    expect(scope.getSnapshot()).toMatchObject({
+      value: { preference: 'dark' },
+      effective: { preference: 'system' },
     })
   })
 

@@ -8,8 +8,8 @@
 
 - `documentPath` — 提供方拥有用户可编辑文件时，该字段是文件的绝对路径；非文件提供方保留 `undefined`。Host 配置适配器据此派生可用性，而浏览器协议只暴露一个布尔能力，绝不暴露文件系统目标。
 - `prepareDocument()` — 让文档做好供原生编辑器打开的准备后返回该路径。基类实现返回 `documentPath`；文件提供方可先创建缺失的文档。
-- `register(ns, schema, { base?, applies? })` — 返回 owner 的 `SettingsScope`（`get`/`watch`/`update`）。注册是调用方插件 fiber 上的 effect：dispose（资源释放）该 fiber 即移除 namespace 及其观察者。schema 拒绝的存量分节会使注册本身失败；重复 namespace 立即报错。
-- `describe(options?)` — 每个 namespace 一条描述（`schema.toJSON()` 封装、解析值、分离出的 `base`/`user` 层、`applies`），供配置界面使用；字段出现在 `user` 中即标记其被用户覆盖。`describe({ redactSecrets: true })` 从每一层剥离 `role('secret')` 字段，并附加 `secrets` slot 列表（`{ path, set }`）；每个协议接口都必须传入它，纯遍历器 `redactSecrets(schema, value)` 已导出，供其他 wire 使用。
+- `register(ns, schema, { base?, applies? })` — 返回 owner 的 `SettingsScope`（`get`/`watch`/`update`）。注册是调用方插件 fiber 上的 effect：dispose（资源释放）该 fiber 即移除 namespace 及其观察者。schema 拒绝的存量分节会使注册本身失败；重复 namespace 立即报错。`applies`（默认 `'live'`）是 owner 自身的生效时机：`'live'` owner 的 `scope.get()` 与 `describe()` 的 `effective` 都会随每次 commit 更新；`'restart'` owner 在此处只读取一次 `scope.get()`，此后不再读取，因此之后的一次写入会推进 `describe()` 的 `value`（当前已存储的值），而 `effective`（该 owner 仍在使用的值）会保持在此次调用读到的值，直至进程重启。
+- `describe(options?)` — 每个 namespace 一条描述（`schema.toJSON()` 封装、解析值 `value`、`effective`——已注册 owner 实际读取的值，只有 `restart`-applies 的 namespace 在一次写入后才会与 `value` 出现分歧——分离出的 `base`/`user` 层、`applies`），供配置界面使用；字段出现在 `user` 中即标记其被用户覆盖。配置界面通过对比 `effective` 与 `value` 来区分"已存储的变更"与"owner 已生效的值"——这正是 restart-scoped 的 settings 卡片需要区分"已保存"与"已生效"所依赖的事实。`describe({ redactSecrets: true })` 从每一层（`value` 与 `effective` 皆然）剥离 `role('secret')` 字段，并附加 `secrets` slot 列表（`{ path, set }`）；每个协议接口都必须传入它，纯遍历器 `redactSecrets(schema, value)` 已导出，供其他 wire 使用。
 - `get(ns)` — 解析值；未注册时为 `undefined`。
 - `update(ns, patch)` — 把普通对象 patch 深合并进用户分节（绝不合并进 `base`），校验解析候选值，经提供方持久化后提交。patch 只能包含与 JSON 兼容的数据：Date、Map、BigInt、非有限数或循环引用会在任何内容持久化前被拒绝，并给出以 `$` 为根的路径（YAML/JSON 存储在重载时会静默改变这类值）。校验失败在持久化前拒绝；只读提供方（`writable: false`）拒绝一切写入。同一 namespace 的写入按调用顺序串行。
 - `replace(ns, section)` — 整体替换用户分节：这是刻意的重置（`replace({})` 重新继承 `base` 与 schema 默认值）。

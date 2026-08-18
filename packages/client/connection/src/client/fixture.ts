@@ -2936,6 +2936,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ns: 'llm-deepseek',
           schema: {},
           value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+          effective: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
           applies: 'live',
           secrets: [{ path: ['apiKey'], set: false }],
           revision: 0,

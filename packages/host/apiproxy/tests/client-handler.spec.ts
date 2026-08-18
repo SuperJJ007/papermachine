@@ -727,6 +727,7 @@ describe('config unary surface', () => {
       ns: 'llm-deepseek',
       schema: { uid: 1, refs: { 1: { type: 'object' } } },
       value: { baseURL: 'https://next' },
+      effective: { baseURL: 'https://next' },
       user: { baseURL: 'https://next' },
       applies: 'live' as const,
       secrets: [{ path: ['apiKey'], set: true }],

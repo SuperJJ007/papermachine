@@ -19,6 +19,7 @@ function view(defaultPreset: string, revision = 0, schema: SettingsNamespaceView
     ns: 'permission',
     schema,
     value: { defaultPreset },
+    effective: { defaultPreset },
     base: { defaultPreset: 'read-only' },
     applies: 'live',
     secrets: [],

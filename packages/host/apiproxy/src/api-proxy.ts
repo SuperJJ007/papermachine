@@ -1954,6 +1954,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       ns: String(descriptor.ns),
       schema: descriptor.schema,
       value: descriptor.value,
+      effective: descriptor.effective,
       ...descriptor.base === undefined ? {} : { base: descriptor.base },
       ...descriptor.user === undefined ? {} : { user: descriptor.user },
       applies: descriptor.applies,

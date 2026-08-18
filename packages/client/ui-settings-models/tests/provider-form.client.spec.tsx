@@ -52,9 +52,10 @@ function piAiNamespace(
   return {
     ns: 'llm-pi-ai',
     schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as unknown,
-    // `value` is the effective section; `user` is only the layer this page
+    // `value` is the resolved section; `user` is only the layer this page
     // writes. They differ whenever a composition `base` supplies something.
     value: { providers },
+    effective: { providers },
     base: { providers: baseProviders },
     user: { providers: userProviders },
     applies: 'live',

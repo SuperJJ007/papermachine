@@ -95,7 +95,7 @@ interface SettingsScope<T> {
 
 ## 描述符
 
-`describe()` 为配置界面序列化每个已注册 namespace：schemastery 的 `toJSON()` 封装结构驱动 schema 渲染的表单，解析值填充表单，分离出的 `base`/`user` 层让表单按字段是否出现在 user 层标注「用户已覆盖」。`describe({ redactSecrets: true })`——每个对外传输接口都必须传入——从三层剥离 `role('secret')` 字段并枚举其 `{path, set}` slot，页面因此能渲染只写输入框而永远收不到机密值。
+`describe()` 为配置界面序列化每个已注册 namespace：schemastery 的 `toJSON()` 封装结构驱动 schema 渲染的表单，解析值填充表单，分离出的 `base`/`user` 层让表单按字段是否出现在 user 层标注「用户已覆盖」。`effective` 是已注册 owner 实际读取的值——对 `applies: 'live'` 的 owner 等于 `value`；对 `applies: 'restart'` 的 owner，一旦之后的一次写入使 `value` 领先于它，`effective` 便冻结在该 owner 在自身注册时读到的值——这正是配置界面区分"已存储的变更"与"owner 已据以行动的值"所依赖的事实。`describe({ redactSecrets: true })`——每个对外传输接口都必须传入——从全部四个承载值的层（`value`、`effective`、`base`、`user`）剥离 `role('secret')` 字段并枚举其 `{path, set}` slot，页面因此能渲染只写输入框而永远收不到机密值。
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
@@ -120,6 +120,16 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
+  /**
+   * The resolved value THIS PROCESS's owner actually read at registration —
+   * frozen for the process lifetime, never advanced by a later write. Equal
+   * to `value` for an `applies: 'live'` owner, which re-reads on every write;
+   * a `restart`-applies owner reads once, so a later write changes `value`
+   * (what the document now holds) while `effective` keeps showing what the
+   * RUNNING owner is still acting on — the fact a configuration UI needs to
+   * tell "saved" from "in effect" apart for a restart-scoped namespace.
+   */
+  effective: unknown
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }
@@ -252,7 +262,7 @@ async replace(ns: SettingsNamespace, section: object, expectedRevision?: number)
 async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
 ```
 
-Source: [`packages/settings/settings/src/index.ts:350`](../../packages/settings/settings/src/index.ts)
+Source: [`packages/settings/settings/src/index.ts:368`](../../packages/settings/settings/src/index.ts)
 
 <a id="settings-events"></a>
 

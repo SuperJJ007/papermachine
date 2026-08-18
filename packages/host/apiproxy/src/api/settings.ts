@@ -24,6 +24,14 @@ export interface SettingsNamespaceView {
   schema: unknown
   /** Redacted resolved value (schema defaults → composition base → user layer). */
   value: unknown
+  /**
+   * Redacted value the RUNNING owner actually reads. Equal to `value` for an
+   * `applies: 'live'` namespace; for `applies: 'restart'`, this is what the
+   * owner read at its own registration and stays fixed until the Host
+   * restarts, even as `value`/`user` move with later writes — the fact a
+   * settings card needs to tell "saved" apart from "in effect."
+   */
+  effective: unknown
   /** Redacted composition base layer, when the registrant declared one. */
   base?: unknown
   /** Redacted raw user section, when one exists; a field's presence here marks it user-overridden. */

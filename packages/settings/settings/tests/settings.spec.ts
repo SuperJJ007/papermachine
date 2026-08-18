@@ -167,6 +167,56 @@ describe('registration', () => {
     expect(serialized.refs[String(serialized.uid)]?.type).toBe('object')
   })
 
+  it('freezes `effective` at registration for a restart-applies namespace, unaffected by a later write', async () => {
+    const { ctx } = await boot()
+    const ns = settingsNamespace('workspace')
+    const scope = ctx.settings.register(ns, NestedSchema, { applies: 'restart' })
+    const before = ctx.settings.describe().find(entry => entry.ns === ns)!
+    expect(before.effective).toEqual(before.value)
+
+    await ctx.settings.update(ns, { tags: ['changed'] })
+
+    const after = ctx.settings.describe().find(entry => entry.ns === ns)!
+    expect(after.value).toEqual({ retry: { attempts: 2, delayMs: 100 }, tags: ['changed'] })
+    // `value` moved with the write; `effective` — what the registrant already
+    // read — stays exactly what it was before the write.
+    expect(after.effective).toEqual(before.value)
+    // The registrant's own `scope.get()` tracks `resolved`, not `effective`:
+    // this package never withholds a read from the owner that asked for it,
+    // only from a later configuration-UI describe.
+    expect(scope.get()).toEqual(after.value)
+  })
+
+  it('tracks `effective` with every write for a live-applies namespace', async () => {
+    const { ctx } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    ctx.settings.register(ns, ThemeSchema)
+
+    await ctx.settings.update(ns, { fontSize: 20 })
+
+    const after = ctx.settings.describe().find(entry => entry.ns === ns)!
+    expect(after.effective).toEqual(after.value)
+    expect(after.effective).toEqual({ theme: 'dark', fontSize: 20 })
+  })
+
+  it('redacts `effective` independently of `value` once they diverge for a restart-applies namespace', async () => {
+    interface SecretConfig { token: string }
+    const SecretSchema: z<SecretConfig> = z.object({ token: z.string().role('secret') })
+    const ns = settingsNamespace('guarded')
+    const { ctx } = await boot({ doc: { guarded: { token: 'first' } } })
+    ctx.settings.register(ns, SecretSchema, { applies: 'restart' })
+
+    await ctx.settings.update(ns, { token: 'second' })
+
+    const redacted = ctx.settings.describe({ redactSecrets: true }).find(entry => entry.ns === ns)!
+    // Neither redacted view ever carries the secret string, regardless of
+    // which snapshot (the moved `resolved` or the frozen `effective`) it was
+    // computed from.
+    expect(redacted.value).toEqual({})
+    expect(redacted.effective).toEqual({})
+    expect(redacted.secrets).toEqual([{ path: ['token'], set: true }])
+  })
+
   it('reads undefined for an unregistered namespace', async () => {
     const { ctx } = await boot()
     expect(ctx.settings.get(settingsNamespace('missing'))).toBeUndefined()

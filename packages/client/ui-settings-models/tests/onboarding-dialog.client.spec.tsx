@@ -45,6 +45,7 @@ function deepSeekNamespace(apiKeyEnv: string | null): SettingsNamespaceView {
     ns: 'llm-deepseek',
     schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as unknown,
     value,
+    effective: value,
     base: value,
     user: {},
     applies: 'live',

@@ -34,4 +34,4 @@ No direct invalidation; each formatted label is appended as part of its consumer
 
 ## Known Limitations and Deferred Work
 
-- **Not localized** — every current consumer renders unlocalized model- or developer-facing text, the same register as an unlocalized file extension.
+- **Not localized** — the label's unit abbreviations are fixed regardless of caller locale. `dsh-client-ui-science`'s artifact size line interpolates the label into its own localized UI text; `dsh-tool-science`'s run summary renders it directly as unlocalized developer-facing text.

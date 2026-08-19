@@ -7,9 +7,11 @@
  */
 
 /**
- * Human-readable byte count as a compact `B`/`KB`/`MB` label. Not localized:
- * every current consumer renders unlocalized model- or developer-facing
- * text, matching the register of an unlocalized file extension.
+ * Human-readable byte count as a compact `B`/`KB`/`MB` label. The label's
+ * unit abbreviations are fixed regardless of caller locale: `ui-science`'s
+ * artifact size line interpolates the label into its own localized UI text,
+ * while `tool-science`'s run summary renders it directly as unlocalized
+ * developer-facing text.
  * @param bytes - exact byte count.
  * @returns a compact `B`/`KB`/`MB` label, one decimal place above 1024 bytes.
  */

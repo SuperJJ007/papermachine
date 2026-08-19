@@ -58,6 +58,7 @@ export type {
 } from './types.ts'
 export { ScienceRuntimeError } from './types.ts'
 export { SCIENCE_RUNTIME_SETTINGS_NAMESPACE, scienceRuntimeProfilesSchema } from './settings.ts'
+export { KERNEL_ASSETS_ROOT, resolveKernelDriverPath } from './kernel-assets.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'science-runtime'

@@ -14,7 +14,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -24,6 +24,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createUserMessage, LlmRuntime } from '@deepseek-ai/dsh-llm'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import * as ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
 import * as ScienceRuntimeInvariant from '@deepseek-ai/dsh-science-runtime/invariant'
 import * as ScienceSession from '@deepseek-ai/dsh-science-session'
@@ -31,11 +32,12 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
-import { DirectSandbox, FakeSubprocess, createFakePythonPrefix } from './harness.ts'
+import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const MODULES = new Map<string, unknown>([
@@ -45,8 +47,8 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-invariants', InvariantRegistry],
   ['@deepseek-ai/dsh-science-session', ScienceSession],
   ['@deepseek-ai/dsh-science-session/invariant', ScienceSessionInvariant],
-  ['@deepseek-ai/dsh-subprocess-local', FakeSubprocess],
-  ['@deepseek-ai/dsh-sandbox-local', DirectSandbox],
+  ['@deepseek-ai/dsh-subprocess-local', LocalSubprocessRuntime],
+  ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
   ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
   ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
   ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
@@ -83,6 +85,7 @@ async function boot(): Promise<Context> {
   const root = configRoot!
   const scratch = scratchRoot!
   const pythonPrefix = createFakePythonPrefix(scratch)
+  const runner = createFakeSandboxRunner(scratch)
   const persistenceRoot = join(scratch, 'persistence')
   const dshHome = join(scratch, 'dsh-home')
   const configPath = join(root, 'cordis.yml')
@@ -99,6 +102,9 @@ async function boot(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-science-session/invariant'",
     "- name: '@deepseek-ai/dsh-subprocess-local'",
     "- name: '@deepseek-ai/dsh-sandbox-local'",
+    '  config:',
+    `    runnerCommand: [${JSON.stringify(runner)}]`,
+    "    runnerFailureSignatures: ['science-runtime fake runner failure']",
     "- name: '@deepseek-ai/dsh-attachment-local'",
     '  config:',
     `    dshHome: ${JSON.stringify(dshHome)}`,
@@ -138,6 +144,11 @@ async function boot(): Promise<Context> {
   } as unknown as NonNullable<typeof ctx.loader.internal>
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
+  // The Loader-composed `subprocess`/`sandbox` are real local providers,
+  // capable of spawning a real kernel; redirect driver-asset resolution to
+  // the fake D2-protocol fixture so `run_python` exercises the real kernel
+  // pipeline deterministically (mirrors `science-runtime`'s own Loader test).
+  installTestKernelSet(ctx, ctx.scienceRuntime)
   return ctx
 }
 
@@ -163,9 +174,9 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
   it('binds, contextualizes, and runs through the real tool pipeline; resumes; and stays absent from a Standard session', async () => {
     const ctx = await boot()
     const adapter = new MockAdapter([
-      toolCallResponse('call-1', 'run_python', { code: 'print(1)' }),
+      toolCallResponse('call-1', 'run_python', { code: kernelAction({ status: 'ok' }) }),
       textResponse('done'),
-      toolCallResponse('call-2', 'run_python', { code: 'print(2)' }),
+      toolCallResponse('call-2', 'run_python', { code: kernelAction({ status: 'ok' }) }),
       textResponse('done again'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
@@ -230,6 +241,15 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
 
     // Resume: dispose the live agent, then resume the exact persisted session.
     await handle.dispose()
+    // Kernel teardown on session detach is fire-and-forget (D3): a same-id
+    // successor stays quarantined until the old kernel's tree is proven
+    // quiescent. Wait for its `exited` fact before resuming, or the run
+    // below can race the still-quarantined predecessor and be rejected.
+    await vi.waitFor(() => {
+      expect(agent.session.events.filter(
+        event => event.type === 'science/kernel-state' && event.data.kernel.state === 'exited',
+      )).toHaveLength(1)
+    })
     const modeBoundBeforeResume = log.filter(event => event.type === 'science/mode-bound').length
     const environmentBoundBeforeResume = log.filter(event => event.type === 'science/environment-bound').length
 

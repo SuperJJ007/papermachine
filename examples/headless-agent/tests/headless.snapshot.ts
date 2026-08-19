@@ -46,6 +46,7 @@ const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
 const scienceToolsScenarioDir = join(snapshotsDir, 'science-tools')
 const scienceToolsConfigPath = fileURLToPath(new URL('../science-tools.cordis.snapshot.yml', import.meta.url))
 const scienceToolsDriver = fileURLToPath(new URL('./fixtures/science-driver.ts', import.meta.url))
+const scienceKernelDriverPath = fileURLToPath(new URL('./fixtures/science-kernel-driver.cjs', import.meta.url))
 /** The exact PNG the Science fixture writes: neither artifact may carry its bytes. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
@@ -223,7 +224,16 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
   ])
 }
 
-/** Materialize the static prefix facts consumed by the deterministic Science providers. */
+/**
+ * Materialize the static fake Conda prefix the deterministic Science
+ * composition binds. `bindEnvironment`'s probes (`--version`/`-m`/`-c`) run
+ * for real against this script through the real `dsh-subprocess-local`
+ * provider; a persistent-kernel launch (any other invocation shape) ignores
+ * its own trailing driver-path argument — always the real production driver,
+ * never valid to run under Node — keeping only the response-FIFO path, and
+ * execs the fake D2-protocol driver instead, so no real Python interpreter
+ * or driver source is required.
+ */
 async function prepareScienceFixture(root: string): Promise<void> {
   const prefix = join(root, 'fake-conda')
   await Promise.all([
@@ -231,7 +241,17 @@ async function prepareScienceFixture(root: string): Promise<void> {
     mkdir(join(prefix, 'conda-meta'), { recursive: true }),
   ])
   await Promise.all([
-    writeFile(join(prefix, 'bin', 'python'), '#!/bin/sh\nexit 0\n', { mode: 0o700 }),
+    writeFile(join(prefix, 'bin', 'python'), `#!/bin/sh
+case " $* " in
+  *" --version "*) printf 'Python 3.13.5\\n' ;;
+  *" -m "*) printf '[{"name":"pip","version":"24.0"}]' ;;
+  *" -c "*) printf 'dsh-科学-✓' ;;
+  *)
+    while [ "$#" -gt 1 ]; do shift; done
+    exec "${process.execPath}" ${JSON.stringify(scienceKernelDriverPath)} "$1"
+    ;;
+esac
+`, { mode: 0o700 }),
     writeFile(join(prefix, 'conda-meta', 'history'), '==> 2026-08-16 <==\n+python-3.13.5\n'),
   ])
 }
@@ -241,7 +261,7 @@ function normalizeScienceValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeScienceValue)
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => {
-      if (['configuredAt', 'validatedAt', 'startedAt', 'finishedAt', 'createdAt', 'publishedAt'].includes(key)
+      if (['configuredAt', 'validatedAt', 'startedAt', 'finishedAt', 'createdAt', 'publishedAt', 'at'].includes(key)
         && typeof item === 'number') return [key, 0]
       if (key === 'executableIdentity' && typeof item === 'string') return [key, '<host-file-id>']
       if (key === 'runId' && typeof item === 'string') return [key, '{{scienceRunId}}']

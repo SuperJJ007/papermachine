@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
-import type { ScienceInterpreterBinding, ScienceProjection } from '@deepseek-ai/dsh-science-session'
+import type { ScienceInterpreterBinding, ScienceKernel, ScienceKernelEndReason, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ResolvedConfig } from './config.ts'
 
@@ -38,7 +38,48 @@ export function scienceModelObservedLabel(label: string): string | undefined {
   return /[\\/]/.test(label) ? undefined : label
 }
 
-const STATE_RULE = 'Each run_python/run_r call starts a fresh interpreter process. Reusable state belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.'
+const STATE_RULE = 'Variables persist in each language\'s kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.'
+
+/**
+ * Model-vocabulary phrase for one closed kernel's end reason — task words
+ * only, no transport/implementation vocabulary (D3's reasons stay closed;
+ * TypeScript rejects an unhandled member added later).
+ * @param reason - closed kernel end-reason from a durable `science/kernel-state` fact.
+ * @returns the model-facing phrase completing "kernel restarted (<phrase>)".
+ */
+export function modelKernelEndReason(reason: ScienceKernelEndReason): string {
+  switch (reason) {
+    case 'idle': return 'idle timeout'
+    case 'environment-rebound': return 'environment re-bind'
+    case 'run-escalation': return 'interrupt escalation'
+    case 'crash': return 'kernel crash'
+    case 'session-end': return 'session end'
+    case 'protocol': return 'the kernel stopped responding correctly'
+    case 'service-disposed': return 'Science services restarting'
+  }
+}
+
+/** A closed kernel's end reason and start time, read together by {@link closedKernelFacts}. */
+export interface ClosedKernelFacts {
+  readonly reason: ScienceKernelEndReason
+  readonly startedAt: number
+}
+
+/**
+ * Narrow a kernel record to its fold-guaranteed closed fields (types.ts:
+ * `reason`/`startedAt` present iff `state === 'exited'`) — TypeScript does
+ * not narrow those optional fields from the `state` discriminant alone, so
+ * this checks their presence directly rather than re-deriving the invariant
+ * the fold already enforced on this already-replayed projection.
+ * @param kernel - one kernel record from a replayed Science projection.
+ * @returns the closed kernel's end reason and start time, or `undefined` for a still-running or replay-derived interrupted kernel.
+ */
+export function closedKernelFacts(kernel: ScienceKernel): ClosedKernelFacts | undefined {
+  if (kernel.state !== 'exited') return undefined
+  const { reason, startedAt } = kernel
+  if (reason === undefined || startedAt === undefined) return undefined
+  return { reason, startedAt }
+}
 
 /**
  * Whether the exact live Session currently runs under the `science` preset.

@@ -29,8 +29,8 @@
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 artifact-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
-| `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 Python 解释器进程中运行 `code`，并转发该工具调用的取消信号。其结果还会列出本次 run 被自动捕获持久保存的文件（见“Run 结果”）。 |
-| `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在一个全新的 `Rscript` 进程中运行 `code`，并转发该工具调用的取消信号。其结果同样会列出本次 run 被自动捕获持久保存的文件。 |
+| `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 Python kernel 中运行 `code`，并转发该工具调用的取消信号。其结果还会列出本次 run 被自动捕获持久保存的文件（见”Run 结果”）。 |
+| `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 R kernel 中运行 `code`，并转发该工具调用的取消信号。其结果同样会列出本次 run 被自动捕获持久保存的文件。 |
 | `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，因此它为所命名的版本重新加标题，而不会提交一个字节与其前身完全相同的新版本。返回文本 receipt，绝不返回文件字节。 |
 | `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/artifact/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
 
@@ -47,12 +47,14 @@
 ##### Science 工具指引
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each call starts a fresh interpreter process; no in-memory state survives between calls. Store anything that must survive between calls under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, and run history without starting a process. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.
+Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (non-zero exit, exception, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.
 ```
+
+`run_python`/`run_r` 各自的工具描述也用各语言自己的措辞携带同一条持久化规则——重启原因、指向下文 run 结果中同一 kernel fact 的"下次 run 结果会说明"提示，以及 inline install 与 environment install 的区分（`pip install`/`install.packages()` 与 kernel 同生共死；安装进 environment 则是桌面 provisioning 那条工作线拥有的、更长生命周期的独立操作）。
 
 #### Token 影响
 
-只要插件处于活动状态，每次请求都有固定的指引开销。
+只要插件处于活动状态，每次请求都有固定的指引开销；相对此前"一次性进程"措辞，本区段与两个 run 工具描述因持久化规则的句子而变长——这是一次性的固定增量，不是按次 run 计费的开销。
 
 #### KV Cache 影响
 
@@ -62,7 +64,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；存在时最近一次 run 的 id、语言与 status；以及固定的 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 状态规则。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
+对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；存在时最近一次 run 的 id、语言与 status；以及固定的 kernel 持久化/重启规则（现在与静态指引使用同一套重启原因）加上 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 的划分。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field；也——刻意地，为了让这个每轮都渲染的区块保持小而稳定——不包含当前 kernel 状态本身：这项内容留给 run 结果里的重启 fact，以及按需读取（而非每轮重发）的 `get_science_state` 的有界 `kernels` 列表。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
 
 #### Token 影响
 
@@ -90,11 +92,11 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-一次 durable 提交的 run 会渲染为 `status: <status>`，可能附带 ` exit <code>` 和/或 ` signal <signal>` 后缀，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出：`` Captured 2 artifacts: `summary.csv` v1 (text/csv, 4.1 KB), `plots/loss.png` v1 (image/png, 812x600). ``；跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是一个错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的那些 durable `science/artifact-saved` 事件。
+当这次 run 是其自身 kernel epoch 下、在该语言更早一个 epoch 之后记录的第一次 run 时，开头会有一行陈述这一事实：`kernel restarted (<reason>): variables from earlier runs are gone`，`<reason>` 取自 `idle timeout`、`environment re-bind`、`interrupt escalation`、`kernel crash`、`session end` 之一，或 `protocol`/`service-disposed` 两个内部故障措辞——这是 run 结果会陈述的唯一 kernel fact，且只在它有信息量时才出现（该语言的最初一个 epoch，以及之后每一次复用同一 kernel 的 run，这里都不会新增任何内容）。随后每次 run 都会渲染为 `status: <status>`，可能附带 ` exit <code>` 和/或 ` signal <signal>` 后缀（kernel run 永远不会填充这两项：exit code/signal 是一次性进程的概念，持久化 kernel pipeline 不产生它们），随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出：`` Captured 2 artifacts: `summary.csv` v1 (text/csv, 4.1 KB), `plots/loss.png` v1 (image/png, 812x600). ``；跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是一个错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的那些 durable `science/artifact-saved`/`science/kernel-state` 事件。
 
 #### Token 影响
 
-受 Runtime 的 stdout/stderr 捕获上限，以及 `captureMaxFilesPerRun` 条被捕获 artifact 条目共同约束；保留的调用与结果会在压缩之前被重复发送。
+受 Runtime 的 stdout/stderr 捕获上限，以及 `captureMaxFilesPerRun` 条被捕获 artifact 条目共同约束，外加极少数紧跟 kernel 重启之后的 run 会多出的一行短文本；保留的调用与结果会在压缩之前被重复发送。
 
 #### KV Cache 影响
 
@@ -104,11 +106,13 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 #### 模型看到的内容
 
-`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`；最近的 `artifacts`（覆盖每种被捕获的媒体类型，带 `origin: 'auto' | 'model'`，`width`/`height` 只在图片时出现）；`outcome`；总量 `metrics`；`history.runsOmitted` 与 `history.artifactVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Artifact title/caption 与 Outcome text 仍属于 model-authored 或 capture-authored 的 durable content，而不是 Host observation field。
+`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`（每条各自携带自己的 `kernelEpoch`——这是"两次 run 共享同一 epoch 即共享同一 kernel 内存状态"这一 provenance fact）；最近的 `kernels`，各自带 `language`、`kernelEpoch`、`state`（`running`/`exited`/`interrupted`，对应 durable 的 `started`/`exited` 转换加上 replay 派生的中断态的模型词汇）、`reason`（仅在 `exited` 时出现，与 run 结果里的 kernel fact 使用同一套重启原因词汇）与 `startedAt`；最近的 `artifacts`（覆盖每种被捕获的媒体类型，带 `origin: 'auto' | 'model'`，`width`/`height` 只在图片时出现）；`outcome`；`metrics`；`history.runsOmitted`、`history.kernelsOmitted` 与 `history.artifactVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Artifact title/caption 与 Outcome text 仍属于 model-authored 或 capture-authored 的 durable content，而不是 Host observation field。
+
+`metrics` 是对 durable projection 计数器的显式字段选择（A2 finding 9），而不是逐字透传——这是一个刻意决定：未来任何 Host 侧新增计数器都必须在这里被有意识地接入，才会到达模型。Durable 的 `kernelCount` 计数器被刻意不选入：`kernels`/`history.kernelsOmitted` 已经用模型词汇、逐 kernel、完整地陈述了同一事实；再保留一个冗余的原始计数只会白白花费 token 而不增加信息量，并且在 `stateHistoryLimit` 更小时可能与被截断的 `kernels` 列表读起来不一致。
 
 #### Token 影响
 
-Run item 与 artifact-version item 会分别限制为最近 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics` 与 `history` 会报告总量和遗漏数，但不会返回被遗漏的值。
+Run、kernel 与 artifact-version item 会分别限制为最近 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics` 与 `history` 会报告总量和遗漏数，但不会返回被遗漏的值。
 
 #### KV Cache 影响
 
@@ -146,4 +150,3 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
 - **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成输出文件，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。
-- **没有持久化 kernel** — 每次 `run_python`/`run_r` 调用都是一个全新的解释器进程；只有 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 中的文件会跨调用持久化。

@@ -6,9 +6,10 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
-import type { ScienceArtifactVersion, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import { replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceLanguage, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { isScienceSession } from './context.ts'
+import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './context.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
 import type { ScienceArtifactPresentationItem } from './presentation.ts'
@@ -52,6 +53,11 @@ const runOutputSchema = {
   additionalProperties: false,
   properties: {
     status: { type: 'string', enum: ['success', 'failed', 'timed-out', 'cancelled'], required: true },
+    // Present only when this is the first run on a kernel epoch that
+    // followed an earlier one for this language — the one kernel fact the
+    // model needs told (D3 §4 K3.2 item 2): a fresh interpreter replaced the
+    // one that held whatever state earlier runs left behind.
+    kernelRestartReason: { type: 'string' },
     runId: { type: 'string', required: true },
     startedAt: { type: 'integer', required: true },
     finishedAt: { type: 'integer', required: true },
@@ -165,6 +171,30 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
 }
 
 /**
+ * Whether this run's terminal is the first one recorded under its own
+ * kernel epoch for its language, following an earlier epoch for that same
+ * language — the only case the model needs told: the kernel that ran this
+ * source is not the one that ran earlier calls, so whatever those calls left
+ * in memory is gone. Absent for every other run: one reusing the same
+ * kernel as the previous call, or a language's very first kernel (nothing
+ * earlier to have lost).
+ * @param projection - the exact replayed Science projection, taken after this run's terminal committed.
+ * @param terminal - this run's own durable terminal fact.
+ * @returns the model-vocabulary end reason of the kernel this run replaced, or `undefined`.
+ */
+export function kernelRestartReason(projection: ScienceProjection, terminal: ScienceRunTerminal): string | undefined {
+  const sameLanguageRuns = projection.runs.filter(run => run.language === terminal.language)
+  const firstOfEpoch = sameLanguageRuns.find(run => run.kernelEpoch === terminal.kernelEpoch)
+  if (firstOfEpoch === undefined || firstOfEpoch.runId !== terminal.runId) return undefined
+  const priorKernel = projection.kernels
+    .filter(kernel => kernel.language === terminal.language && kernel.kernelEpoch < terminal.kernelEpoch)
+    .at(-1)
+  if (priorKernel === undefined) return undefined
+  const facts = closedKernelFacts(priorKernel)
+  return facts === undefined ? undefined : modelKernelEndReason(facts.reason)
+}
+
+/**
  * Render one run result as plain text; failures stay inspectable, never
  * hidden. When capture ran synchronously and produced new versions, a
  * trailing listing names each — derived entirely from `value`'s own
@@ -178,7 +208,11 @@ export function formatRunResult(value: ScienceRunValue): string {
   const header = [`status: ${value.status}`]
   if (value.exitCode !== undefined) header.push(`exit ${String(value.exitCode)}`)
   if (value.signal !== undefined) header.push(`signal ${value.signal}`)
-  const lines = [header.join(' ')]
+  const lines: string[] = []
+  if (value.kernelRestartReason !== undefined) {
+    lines.push(`kernel restarted (${value.kernelRestartReason}): variables from earlier runs are gone`)
+  }
+  lines.push(header.join(' '))
   if (value.failureCode !== undefined) lines.push(`failureCode: ${value.failureCode}`)
   if (value.failureMessage !== undefined) lines.push(`failureMessage: ${value.failureMessage}`)
   lines.push('--- stdout ---', value.stdout.text.length > 0 ? value.stdout.text : '(empty)')
@@ -208,7 +242,7 @@ export function formatRunResult(value: ScienceRunValue): string {
 }
 
 /**
- * Register one fresh-process run tool for the given language.
+ * Register one persistent-kernel run tool for the given language.
  * @param ctx - plugin context; reads the optional `ctx.scienceRuntime` at call time.
  * @param language - `python` or `r`.
  */
@@ -216,8 +250,8 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
   ctx.tools.register(defineTool({
     name: language === 'python' ? 'run_python' : 'run_r',
     description: language === 'python'
-      ? 'Run Python source in a fresh interpreter process bound to the session\'s Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.'
-      : 'Run R source in a fresh Rscript process bound to the session\'s Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.',
+      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.'
+      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.',
     parameters: {
       code: { type: 'string', required: true, description: 'Non-empty source to execute.' },
     },
@@ -249,7 +283,11 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
         signal: exec.signal,
       })
       const result = await handle.done
-      return runValueFromResult(result)
+      const value = runValueFromResult(result)
+      const projection = replayScience(session.events)
+      /* v8 ignore next -- a run that just settled already required a bound mode; replay cannot be null here */
+      const restartReason = projection === null ? undefined : kernelRestartReason(projection, result.terminal)
+      return restartReason === undefined ? value : { ...value, kernelRestartReason: restartReason }
     },
   }))
 }

@@ -9,9 +9,11 @@ import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
+  ScienceKernel,
   ScienceProjection,
+  ScienceProjectionMetrics,
 } from '@deepseek-ai/dsh-science-session'
-import { scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
+import { closedKernelFacts, modelKernelEndReason, scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
 import { requireScienceSession } from './run.ts'
 import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
 
@@ -44,6 +46,39 @@ const stateEnvironmentSchema = {
   ],
 } as const
 
+const stateKernelSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    language: { type: 'string', enum: ['python', 'r'], required: true },
+    kernelEpoch: { type: 'integer', required: true },
+    state: { type: 'string', enum: ['running', 'exited', 'interrupted'], required: true },
+    reason: { type: 'string' },
+    startedAt: { type: 'integer', required: true },
+  },
+} as const
+
+// Explicit field selection, not a verbatim passthrough of
+// `ScienceProjectionMetrics` (A2 finding 9): a future Host-side metrics
+// addition must be deliberately wired here to reach the model, rather than
+// leaking through automatically. `kernelCount` is dropped rather than
+// selected: it is the same fact `kernels`/`history.kernelsOmitted` already
+// state per-kernel and in full, in model vocabulary; keeping a redundant raw
+// counter alongside them would spend tokens without adding information and
+// risks drifting from the bounded `kernels` list under a smaller
+// `historyItemLimit`.
+const stateMetricsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    runCount: { type: 'integer', required: true },
+    successfulRunCount: { type: 'integer', required: true },
+    artifactCount: { type: 'integer', required: true },
+    artifactVersionCount: { type: 'integer', required: true },
+    outcomeRevision: { type: 'integer', required: true },
+  },
+} as const
+
 const stateArtifactSchema = {
   type: 'object',
   additionalProperties: false,
@@ -61,15 +96,17 @@ const stateOutputSchema = {
     mode: { type: 'json', required: true },
     environment: { ...stateEnvironmentSchema, required: true },
     runs: { type: 'array', items: { type: 'json' }, required: true },
+    kernels: { type: 'array', items: stateKernelSchema, required: true },
     artifacts: { type: 'array', items: stateArtifactSchema, required: true },
     outcome: { type: 'json', required: true },
-    metrics: { type: 'json', required: true },
+    metrics: { ...stateMetricsSchema, required: true },
     history: {
       type: 'object',
       additionalProperties: false,
       required: true,
       properties: {
         runsOmitted: { type: 'integer', required: true },
+        kernelsOmitted: { type: 'integer', required: true },
         artifactVersionsOmitted: { type: 'integer', required: true },
       },
     },
@@ -152,6 +189,52 @@ function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stat
 }
 
 /**
+ * Render one kernel record in model vocabulary: `started` reads as
+ * `running` (the durable word names a fact, not the kernel's current
+ * state-of-being from the model's perspective), `exited`/`interrupted` carry
+ * their own start time, and `exited` additionally carries the model-vocabulary
+ * end reason.
+ * @param kernel - one kernel record from a replayed Science projection.
+ * @returns the bounded model-facing kernel entry.
+ */
+function stateKernel(kernel: ScienceKernel): InferValue<typeof stateKernelSchema> {
+  if (kernel.state === 'interrupted') {
+    return { language: kernel.language, kernelEpoch: kernel.kernelEpoch, state: 'interrupted', startedAt: kernel.startedAt }
+  }
+  if (kernel.state === 'started') {
+    return { language: kernel.language, kernelEpoch: kernel.kernelEpoch, state: 'running', startedAt: kernel.at }
+  }
+  const facts = closedKernelFacts(kernel)
+  /* v8 ignore next -- ScienceKernelState guarantees reason/startedAt are present iff state === 'exited' (types.ts) */
+  if (facts === undefined) throw new Error('tool-science: exited kernel fact is missing its required fields')
+  return {
+    language: kernel.language,
+    kernelEpoch: kernel.kernelEpoch,
+    state: 'exited',
+    reason: modelKernelEndReason(facts.reason),
+    startedAt: facts.startedAt,
+  }
+}
+
+/**
+ * Select the model-facing counters explicitly (A2 finding 9): never spread
+ * `ScienceProjectionMetrics` verbatim, so a future Host-side metrics field
+ * requires a deliberate addition here to reach the model. `kernelCount` is
+ * intentionally not selected — see {@link stateMetricsSchema}'s own doc.
+ * @param metrics - the exact replayed projection's derived counters.
+ * @returns the bounded model-facing metrics value.
+ */
+function stateMetrics(metrics: ScienceProjectionMetrics): InferValue<typeof stateMetricsSchema> {
+  return {
+    runCount: metrics.runCount,
+    successfulRunCount: metrics.successfulRunCount,
+    artifactCount: metrics.artifactCount,
+    artifactVersionCount: metrics.artifactVersionCount,
+    outcomeRevision: metrics.outcomeRevision,
+  }
+}
+
+/**
  * Build the bounded model-facing value from one exact replay projection.
  * Durable codecs bound every retained item; this owner additionally caps both
  * growing history collections and reports the omitted counts.
@@ -164,15 +247,17 @@ export function stateValueFromProjection(
   historyItemLimit: number,
 ): ScienceStateValue {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
+  const kernelsOmitted = Math.max(0, projection.kernels.length - historyItemLimit)
   const artifactVersionsOmitted = Math.max(0, projection.artifacts.length - historyItemLimit)
   return {
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
+    kernels: projection.kernels.slice(-historyItemLimit).map(stateKernel),
     artifacts: projection.artifacts.slice(-historyItemLimit).map(stateArtifact),
     outcome: projection.outcome as unknown as JsonValue,
-    metrics: projection.metrics as unknown as JsonValue,
-    history: { runsOmitted, artifactVersionsOmitted },
+    metrics: stateMetrics(projection.metrics),
+    history: { runsOmitted, kernelsOmitted, artifactVersionsOmitted },
     lastScienceEventSeq: projection.lastScienceEventSeq,
   }
 }
@@ -186,7 +271,7 @@ export function stateValueFromProjection(
 export function applyScienceStateTool(ctx: Context, historyItemLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'get_science_state',
-    description: 'Return the current Science session state: mode, sanitized bound environment, recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.',
+    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.',
     parameters: {},
     output: {
       schema: stateOutputSchema,

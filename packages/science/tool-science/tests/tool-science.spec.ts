@@ -18,15 +18,17 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -36,9 +38,9 @@ import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
 import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
 import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annotate-artifact.ts'
 import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
-import { formatRunResult, requireScienceSession, runValueFromResult } from '../src/run.ts'
+import { formatRunResult, kernelRestartReason, requireScienceSession, runValueFromResult } from '../src/run.ts'
 import { stateValueFromProjection } from '../src/state.ts'
-import { DirectSandbox, FakeSubprocess, createFakePythonPrefix } from './harness.ts'
+import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
 /** Minimal valid `ScienceProjection` fixture; callers override only what they test. */
 function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceProjection {
@@ -149,6 +151,14 @@ async function seedAutoArtifact(
 }
 
 let root: string
+/**
+ * Every `Context` a test created through {@link setup}, disposed in
+ * `afterEach` — required once `setup` mounts real `LocalSubprocessRuntime`/
+ * `LocalSandboxProvider` providers (they hold live OS-level process-tree
+ * tracking `FakeSubprocess`/`DirectSandbox` never did), mirroring
+ * `science-runtime/tests/kernel-set.spec.ts`'s own `contexts`/`afterEach` pattern.
+ */
+const contexts: Context[] = []
 
 beforeEach(async () => {
   // Science Runtime scratch roots must not overlap a generic sandbox temp
@@ -157,6 +167,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(process.cwd(), '.tool-science-test-'))
 })
 afterEach(async () => {
+  await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await rm(root, { recursive: true, force: true })
 })
 
@@ -169,19 +180,28 @@ interface SetupOptions {
 
 async function setup(options: SetupOptions = {}) {
   const ctx = new Context()
+  contexts.push(ctx)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(InvariantRegistry, { enabled: true })
   await ctx.plugin(ScienceSessionInvariant)
   if (options.withRuntime !== false) {
-    await ctx.plugin(FakeSubprocess)
-    await ctx.plugin(DirectSandbox)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(LocalSandboxProvider, {
+      runnerCommand: [createFakeSandboxRunner(root)],
+      runnerFailureSignatures: ['science-runtime fake runner failure'],
+    })
     await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: createFakePythonPrefix(root) } },
     })
+    // Real subprocess/sandbox providers can spawn a real persistent kernel;
+    // redirect driver-asset resolution to the fake D2-protocol fixture so
+    // `run_python`/`run_r` exercise the real kernel pipeline deterministically
+    // (mirrors `science-runtime/tests/loader-composition.spec.ts`'s own technique).
+    installTestKernelSet(ctx, ctx.scienceRuntime)
   }
   const fiber = await ctx.plugin(ToolScience, {
     profileId: options.profileId ?? 'fake',
@@ -621,6 +641,87 @@ describe('runValueFromResult / formatRunResult', () => {
     const text = formatRunResult(value)
     expect(text).not.toContain('Captured')
   })
+
+  it('prepends the kernel-restart line before status when the value carries a kernelRestartReason', () => {
+    const value = { ...runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+    }), kernelRestartReason: 'idle timeout' }
+    const text = formatRunResult(value)
+    expect(text).toBe(
+      'kernel restarted (idle timeout): variables from earlier runs are gone\n'
+      + 'status: success exit 0\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)',
+    )
+  })
+})
+
+describe('kernelRestartReason', () => {
+  const language = 'python' as const
+
+  /** Minimal `ScienceRunTerminal` fixture naming only what `kernelRestartReason` reads plus its required fields. */
+  function runAt(runId: string, kernelEpoch: number): ScienceRunTerminal {
+    return {
+      runId: ScienceRunId(runId),
+      language,
+      toolCallId: CallId(`call-${runId}`),
+      requestHeaderSeq: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: 1,
+      codeSha256: 'a'.repeat(64),
+      scratchKey: 'a'.repeat(64) as never,
+      runDirectoryRef: `runs/${runId}/`,
+      kernelEpoch,
+      status: 'success',
+      finishedAt: 2,
+      exitCode: 0,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    }
+  }
+
+  function kernelStarted(kernelEpoch: number, kernelLanguage: 'python' | 'r' = language): ScienceKernel {
+    return { kernelEpoch, language: kernelLanguage, state: 'started', environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 1 }
+  }
+
+  function kernelExited(kernelEpoch: number, reason: ScienceKernelEndReason): ScienceKernel {
+    return {
+      kernelEpoch, language, state: 'exited', reason, startedAt: 1,
+      environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 2,
+    }
+  }
+
+  it('is undefined for a language\'s very first kernel epoch', () => {
+    const projection = projectionFixture({ runs: [runAt('run-1', 1)], kernels: [kernelStarted(1)] })
+    expect(kernelRestartReason(projection, runAt('run-1', 1))).toBeUndefined()
+  })
+
+  it('is undefined for a later run reusing the same kernel epoch', () => {
+    const projection = projectionFixture({
+      runs: [runAt('run-1', 2), runAt('run-2', 2)],
+      kernels: [kernelExited(1, 'idle'), kernelStarted(2)],
+    })
+    expect(kernelRestartReason(projection, runAt('run-2', 2))).toBeUndefined()
+  })
+
+  it('names the prior kernel\'s model-vocabulary end reason on the first run of a fresh epoch', () => {
+    const projection = projectionFixture({
+      runs: [runAt('run-1', 1), runAt('run-2', 2)],
+      kernels: [kernelExited(1, 'environment-rebound'), kernelStarted(2)],
+    })
+    expect(kernelRestartReason(projection, runAt('run-2', 2))).toBe('environment re-bind')
+  })
+
+  it('ignores a different language\'s kernel even when the shared epoch counter makes it numerically earlier', () => {
+    const projection = projectionFixture({
+      runs: [runAt('run-1', 2)],
+      kernels: [kernelStarted(1, 'r'), kernelStarted(2)],
+    })
+    expect(kernelRestartReason(projection, runAt('run-1', 2))).toBeUndefined()
+  })
 })
 
 describe('get_science_state', () => {
@@ -651,6 +752,10 @@ describe('get_science_state', () => {
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('"status": "applied"')
     expect(text).toContain('"history"')
+    expect(text).toContain('"kernels"')
+    // A2 finding 9: `kernelCount` is dropped from the metrics passthrough
+    // (kernels/history.kernelsOmitted already state the same fact in full).
+    expect(text).not.toContain('kernelCount')
     expect(text).not.toContain(root)
     expect(text).not.toContain('configuredPrefix')
     expect(text).not.toContain('canonicalPrefix')
@@ -684,6 +789,68 @@ describe('get_science_state', () => {
     }), limit)
     expect(value.runs.map(run => (run as { runId: string }).runId)).toEqual(expected)
     expect(value.history.runsOmitted).toBe(omitted)
+  })
+
+  it.each([
+    { limit: 1, expected: [3], omitted: 2 },
+    { limit: 2, expected: [2, 3], omitted: 1 },
+    { limit: 3, expected: [1, 2, 3], omitted: 0 },
+  ])('caps recent kernel history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+    const kernels: readonly ScienceKernel[] = [1, 2, 3].map(kernelEpoch => ({
+      kernelEpoch,
+      language: 'python' as const,
+      state: 'exited' as const,
+      reason: 'idle' as const,
+      startedAt: kernelEpoch,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      at: kernelEpoch + 1,
+    }))
+    const value = stateValueFromProjection(projectionFixture({
+      kernels,
+      metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 3, outcomeRevision: 0 },
+    }), limit)
+    expect(value.kernels.map(kernel => kernel.kernelEpoch)).toEqual(expected)
+    expect(value.history.kernelsOmitted).toBe(omitted)
+  })
+
+  it('renders a still-running kernel as "running", named by its own start time', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      kernels: [{
+        kernelEpoch: 1, language: 'python', state: 'started',
+        environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 100,
+      }],
+    }), 4)
+    expect(value.kernels).toEqual([{ language: 'python', kernelEpoch: 1, state: 'running', startedAt: 100 }])
+  })
+
+  it('renders an exited kernel with its model-vocabulary end reason and original start time', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      kernels: [{
+        kernelEpoch: 1, language: 'r', state: 'exited', reason: 'environment-rebound',
+        startedAt: 100, environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 200,
+      }],
+    }), 4)
+    expect(value.kernels).toEqual([{ language: 'r', kernelEpoch: 1, state: 'exited', reason: 'environment re-bind', startedAt: 100 }])
+  })
+
+  it('renders a replay-derived interrupted kernel without a reason', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      kernels: [{
+        kernelEpoch: 1, language: 'python', state: 'interrupted',
+        environmentRevision: 1, environmentFingerprint: 'a'.repeat(64),
+        startedAt: 100, finishedAt: 150, interruptedAtSeq: 9,
+      }],
+    }), 4)
+    expect(value.kernels).toEqual([{ language: 'python', kernelEpoch: 1, state: 'interrupted', startedAt: 100 }])
+  })
+
+  it('selects metrics fields explicitly, dropping the raw kernelCount counter (A2 finding 9)', () => {
+    const value = stateValueFromProjection(projectionFixture({
+      metrics: { runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, kernelCount: 5, outcomeRevision: 6 },
+    }), 4)
+    expect(value.metrics).toEqual({ runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, outcomeRevision: 6 })
+    expect(value.metrics).not.toHaveProperty('kernelCount')
   })
 
   it.each([
@@ -957,7 +1124,7 @@ describe('run_python', () => {
     // direct-composition test supplies that same durable provenance fact.
     session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok', stdout: 'fake run output\n' }) },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
@@ -1144,7 +1311,7 @@ describe('annotate_artifact', () => {
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const toolCallId = authorizeToolCall(session, 1, 'run_python', id)
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
@@ -1361,7 +1528,7 @@ describe('publish_outcome', () => {
     const session = await boundSession(ctx, 'science-outcome-success')
     const runCall = authorizeToolCall(session, 2, 'run_python', 'science-outcome-run')
     const runResult = await ctx.tools.execute({
-      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
       agent: fakeAgent(session),
     })
     expect(runResult.isError).toBe(false)
@@ -1549,7 +1716,7 @@ describe('get_science_state artifact sanitization', () => {
     const runCallId = CallId('science-state-artifact-run')
     session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const runResult = await ctx.tools.execute({
-      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: 'print(1)' }, agent: fakeAgent(session),
+      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) }, agent: fakeAgent(session),
     })
     expect(runResult.isError).toBe(false)
     const started = session.events.find(event => event.type === 'science/run-started')
@@ -1593,7 +1760,7 @@ describe('get_science_state artifact sanitization', () => {
     const runCallId = CallId('science-state-artifact-auto-run')
     session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const runResult = await ctx.tools.execute({
-      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: 'print(1)' }, agent: fakeAgent(session),
+      signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) }, agent: fakeAgent(session),
     })
     expect(runResult.isError).toBe(false)
     const started = session.events.find(event => event.type === 'science/run-started')

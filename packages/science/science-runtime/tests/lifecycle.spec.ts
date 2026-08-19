@@ -1,4 +1,12 @@
-/** Exact-Session quarantine, detachment, and provider-disposal behavior. */
+/**
+ * Exact-Session quarantine, detachment, and provider-disposal behavior.
+ * Every scenario that used to depend on the deleted one-shot process's
+ * "eventual quiescence" settlement (a subprocess tree whose exit needed a
+ * separate, retained observation) no longer applies: a kernel run's own
+ * terminal is decided by the RUN/DONE protocol exchange, never by proving a
+ * process tree dead (`KernelSet`/`kernel-set.spec.ts` owns that concern for
+ * the kernel process itself, independent of any one run).
+ */
 
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -6,12 +14,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import { ScienceRuntimeError } from '../src/index.ts'
+import type ScienceRuntime from '../src/index.ts'
 import { LeaseRegistry, OperationControl } from '../src/lifecycle.ts'
 import {
   attachScienceSession,
   authorizePythonRun,
   createControlledRuntimeHarness,
   createFakePythonPrefix,
+  createKernelRuntimeHarness,
+  kernelAction,
   rejectSessionAppend,
 } from './harness.ts'
 
@@ -37,9 +48,9 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-/** Bind the controlled fake prefix through the public operation. */
+/** Bind the fake Python profile through the public operation. */
 async function bindFakePython(
-  runtime: Awaited<ReturnType<typeof createControlledRuntimeHarness>>['runtime'],
+  runtime: ScienceRuntime,
   session: ReturnType<typeof attachScienceSession>['session'],
 ): Promise<void> {
   await runtime.bindEnvironment({
@@ -47,6 +58,23 @@ async function bindFakePython(
     profileId: ScienceEnvironmentProfileId('fake'),
     signal: new AbortController().signal,
   })
+}
+
+/** Assemble a kernel-capable harness with a bound fake Python profile attached to a manually detachable Session. */
+async function readyKernelHarness(id: string): Promise<{
+  readonly ctx: Context
+  readonly runtime: Awaited<ReturnType<typeof createKernelRuntimeHarness>>['runtime']
+  readonly runtimeFiber: Awaited<ReturnType<typeof createKernelRuntimeHarness>>['runtimeFiber']
+  readonly attached: ReturnType<typeof attachScienceSession>
+}> {
+  const root = mkdtempSync(join(process.cwd(), '.science-runtime-lifecycle-'))
+  roots.push(root)
+  const prefix = createFakePythonPrefix(root)
+  const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+  contexts.push(harness.ctx)
+  const attached = attachScienceSession(harness.ctx, id)
+  await bindFakePython(harness.runtime, attached.session)
+  return { ctx: harness.ctx, runtime: harness.runtime, runtimeFiber: harness.runtimeFiber, attached }
 }
 
 describe('ScienceRuntime lifecycle ownership', () => {
@@ -98,235 +126,35 @@ describe('ScienceRuntime lifecycle ownership', () => {
     registry.release(second)
   })
 
-  it('quarantines a same-ID successor until a non-quiescent old tree is later proven dead', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-quarantine-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const { ctx, runtime, subprocess } = harness
-    const original = attachScienceSession(ctx, 'science-same-id')
-    await bindFakePython(runtime, original.session)
-    const oldRun = subprocess.queueRun('deferred')
-    const oldHandle = await runtime.startRun({
-      session: original.session,
+  it('quarantines a same-ID successor until an in-flight run\'s lease settles', async () => {
+    const { ctx, runtime, attached } = await readyKernelHarness('science-same-id')
+    const running = await runtime.startRun({
+      session: attached.session,
       language: 'python',
-      code: 'long-running old lifecycle',
-      ...authorizePythonRun(original.session),
+      code: kernelAction({ action: 'sleep', sleepMs: 60_000, trapSigint: true }),
+      ...authorizePythonRun(attached.session),
       signal: new AbortController().signal,
     })
 
-    original.detach()
-    await expect(oldHandle.done).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
-    expect(oldRun.terminations).toBeGreaterThan(0)
-    const successor = attachScienceSession(ctx, 'science-same-id', original.session.events)
+    attached.detach()
+    await expect(running.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
+    const successor = attachScienceSession(ctx, 'science-same-id', attached.session.events)
     const successorAuthorization = authorizePythonRun(successor.session, 'science-same-id-successor')
-    const retry = () => runtime.startRun({
+    await expect(runtime.startRun({
       session: successor.session,
       language: 'python',
-      code: 'must not touch shared scratch while quarantined',
+      code: kernelAction({ status: 'ok' }),
       ...successorAuthorization,
       signal: new AbortController().signal,
-    })
-
-    await expect(retry()).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
-    oldRun.proveQuiescence()
-    const successorRun = subprocess.queueRun('immediate')
-    let successorHandle: Awaited<ReturnType<typeof retry>> | undefined
-    await vi.waitFor(async () => {
-      try {
-        successorHandle = await retry()
-      } catch (error) {
-        expect(error).toMatchObject({ code: 'RUNTIME_BUSY' })
-        throw error
-      }
-    }, { timeout: 500, interval: 10 })
-    if (successorHandle === undefined) throw new Error('same-ID successor did not leave quarantine')
-    successorHandle.cancel()
-    await expect(successorHandle.done).resolves.toMatchObject({
-      terminal: { runId: successorHandle.runId, status: 'cancelled', failureCode: 'CANCELLED' },
-    })
-    expect(successorRun.terminations).toBe(1)
-  })
-
-  it('commits the terminal fact and releases a live Session only after eventual quiescence', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-eventual-terminal-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const session = attachScienceSession(harness.ctx, 'science-eventual-terminal')
-    await bindFakePython(harness.runtime, session.session)
-    const run = harness.subprocess.queueRun('deferred')
-    const handle = await harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'eventual terminal publication',
-      ...authorizePythonRun(session.session, 'science-eventual-terminal-call'),
-      signal: new AbortController().signal,
-    })
-    run.complete({ exitCode: 0, signal: null })
-    await expect(handle.done).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
-    await expect(harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'must remain quarantined before proof',
-      ...authorizePythonRun(session.session, 'science-eventual-terminal-busy'),
-      signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
-
-    run.proveQuiescence()
-    await vi.waitFor(() => {
-      expect(session.session.events.filter(event => event.type === 'science/run-finished')).toHaveLength(1)
-    })
-    const successorRun = harness.subprocess.queueRun('immediate')
-    const successor = await harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'allowed after terminal publication',
-      ...authorizePythonRun(session.session, 'science-eventual-terminal-successor'),
-      signal: new AbortController().signal,
-    })
-    successor.cancel()
-    await expect(successor.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
-    expect(successorRun.terminations).toBe(1)
-  })
-
-  it('retains the live Session quarantine when eventual terminal publication fails', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-eventual-commit-failure-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const session = attachScienceSession(harness.ctx, 'science-eventual-commit-failure')
-    await bindFakePython(harness.runtime, session.session)
-    const run = harness.subprocess.queueRun('deferred')
-    const handle = await harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'eventual terminal commit failure',
-      ...authorizePythonRun(session.session, 'science-eventual-commit-failure-call'),
-      signal: new AbortController().signal,
-    })
-    run.complete({ exitCode: 0, signal: null })
-    await expect(handle.done).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
-    const appendAttempted = Promise.withResolvers<undefined>()
-    rejectSessionAppend(session.session, 'science/run-finished', new Error('injected eventual terminal rejection'), () => {
-      appendAttempted.resolve(undefined)
-    })
-    run.proveQuiescence()
-    await appendAttempted.promise
-    await expect(harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'must remain quarantined after terminal rejection',
-      ...authorizePythonRun(session.session, 'science-eventual-commit-failure-retry'),
-      signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
-    const internal = harness.runtime as unknown as {
-      readonly leases: { readonly active: ReadonlySet<Parameters<LeaseRegistry['release']>[0]>; release(lease: Parameters<LeaseRegistry['release']>[0]): void }
-    }
-    const lease = [...internal.leases.active][0]
-    if (lease === undefined) throw new Error('eventual terminal rejection unexpectedly released the Runtime lease')
-    internal.leases.release(lease)
-  })
-
-  it('retains the Session quarantine when an eventual tree observation is false', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-false-quiescence-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const session = attachScienceSession(harness.ctx, 'science-false-quiescence')
-    await bindFakePython(harness.runtime, session.session)
-    const run = harness.subprocess.queueRun('immediate')
-    const eventual = Promise.withResolvers<boolean>()
-    ;(run.handle as { waitForExit(signal?: AbortSignal): Promise<boolean> }).waitForExit = async (signal) => {
-      if (signal === undefined) return eventual.promise
-      return false
-    }
-    const handle = await harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'false eventual quiescence',
-      ...authorizePythonRun(session.session, 'science-false-quiescence-call'),
-      signal: new AbortController().signal,
-    })
-    run.complete({ exitCode: 0, signal: null })
-    await expect(handle.done).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
-    eventual.resolve(false)
-    await vi.waitFor(async () => {
-      await expect(harness.runtime.startRun({
-        session: session.session,
-        language: 'python',
-        code: 'must remain quarantined',
-        ...authorizePythonRun(session.session, 'science-false-quiescence-retry'),
-        signal: new AbortController().signal,
-      })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
-    })
-    const internal = harness.runtime as unknown as {
-      readonly leases: { readonly active: ReadonlySet<Parameters<LeaseRegistry['release']>[0]>; release(lease: Parameters<LeaseRegistry['release']>[0]): void }
-    }
-    const lease = [...internal.leases.active][0]
-    if (lease === undefined) throw new Error('false quiescence unexpectedly released the Runtime lease')
-    internal.leases.release(lease)
-  })
-
-  it('retains the Session quarantine when an eventual tree observation rejects', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-rejected-quiescence-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const session = attachScienceSession(harness.ctx, 'science-rejected-quiescence')
-    await bindFakePython(harness.runtime, session.session)
-    const run = harness.subprocess.queueRun('immediate')
-    const eventual = Promise.withResolvers<boolean>()
-    ;(run.handle as { waitForExit(signal?: AbortSignal): Promise<boolean> }).waitForExit = async (signal) => {
-      if (signal === undefined) return eventual.promise
-      return false
-    }
-    const handle = await harness.runtime.startRun({
-      session: session.session,
-      language: 'python',
-      code: 'rejected eventual quiescence',
-      ...authorizePythonRun(session.session, 'science-rejected-quiescence-call'),
-      signal: new AbortController().signal,
-    })
-    run.complete({ exitCode: 0, signal: null })
-    await expect(handle.done).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
-    eventual.reject(new Error('provider could not prove eventual quiescence'))
-    await vi.waitFor(async () => {
-      await expect(harness.runtime.startRun({
-        session: session.session,
-        language: 'python',
-        code: 'must remain quarantined after proof rejection',
-        ...authorizePythonRun(session.session, 'science-rejected-quiescence-retry'),
-        signal: new AbortController().signal,
-      })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
-    })
-    const internal = harness.runtime as unknown as {
-      readonly leases: { readonly active: ReadonlySet<Parameters<LeaseRegistry['release']>[0]>; release(lease: Parameters<LeaseRegistry['release']>[0]): void }
-    }
-    const lease = [...internal.leases.active][0]
-    if (lease === undefined) throw new Error('rejected quiescence unexpectedly released the Runtime lease')
-    internal.leases.release(lease)
   })
 
   it('cleans an unexpectedly detached exact Session but never appends to its old log', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-detach-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const { ctx, runtime, subprocess } = harness
-    const attached = attachScienceSession(ctx, 'science-detached')
-    await bindFakePython(runtime, attached.session)
-    subprocess.queueRun('immediate')
+    const { runtime, attached } = await readyKernelHarness('science-detached')
     const handle = await runtime.startRun({
       session: attached.session,
       language: 'python',
-      code: 'detached while running',
+      code: kernelAction({ action: 'sleep', sleepMs: 60_000, trapSigint: true }),
       ...authorizePythonRun(attached.session),
       signal: new AbortController().signal,
     })
@@ -336,46 +164,22 @@ describe('ScienceRuntime lifecycle ownership', () => {
     expect(attached.session.events.some(event => event.type === 'science/run-finished')).toBe(false)
   })
 
-  it('reports terminal preparation and append failures as detached when the exact Session disappears', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-detach-preparation-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const attached = attachScienceSession(harness.ctx, 'science-detached-preparation')
-    await bindFakePython(harness.runtime, attached.session)
-    const run = harness.subprocess.queueRun('immediate')
-    run.omitStdout()
-    const handle = await harness.runtime.startRun({
+  it('reports terminal append failures as detached when the exact Session disappears at the same moment', async () => {
+    const { runtime, attached } = await readyKernelHarness('science-detached-append')
+    const handle = await runtime.startRun({
       session: attached.session,
       language: 'python',
-      code: 'detach before output preparation',
-      ...authorizePythonRun(attached.session, 'science-detached-preparation'),
+      code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(attached.session, 'science-detached-append'),
       signal: new AbortController().signal,
     })
-    attached.detach()
-    run.complete({ exitCode: 0, signal: null })
-    await expect(handle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
-    const appendRoot = mkdtempSync(join(process.cwd(), '.science-runtime-detach-append-'))
-    roots.push(appendRoot)
-    const appendPrefix = createFakePythonPrefix(appendRoot)
-    const appendHarness = await createControlledRuntimeHarness(appendRoot, { fake: { pythonPrefix: appendPrefix } })
-    contexts.push(appendHarness.ctx)
-    const appendSession = attachScienceSession(appendHarness.ctx, 'science-detached-append')
-    await bindFakePython(appendHarness.runtime, appendSession.session)
-    const appendRun = appendHarness.subprocess.queueRun('immediate')
     rejectSessionAppend(
-      appendSession.session,
+      attached.session,
       'science/run-finished',
       new Error('terminal append rejects after detachment'),
-      appendSession.detach,
+      attached.detach,
     )
-    const appendHandle = await appendHarness.runtime.startRun({
-      session: appendSession.session, language: 'python', code: 'print(1)',
-      ...authorizePythonRun(appendSession.session, 'science-detached-append'), signal: new AbortController().signal,
-    })
-    appendRun.complete({ exitCode: 0, signal: null })
-    await expect(appendHandle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
+    await expect(handle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
   })
 
   it('rejects pre-publication work when the exact Session detaches during a probe', async () => {
@@ -399,21 +203,13 @@ describe('ScienceRuntime lifecycle ownership', () => {
     })).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
   })
 
-  it('cancels and quiesces a live run, then removes its service registration on fiber disposal', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-dispose-'))
-    roots.push(root)
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const { ctx, runtime, runtimeFiber, subprocess } = harness
-    const session = attachScienceSession(ctx, 'science-runtime-dispose')
-    await bindFakePython(runtime, session.session)
-    const run = subprocess.queueRun('immediate')
+  it('cancels a live run and disposes its kernel, then removes its service registration on fiber disposal', async () => {
+    const { ctx, runtime, runtimeFiber, attached } = await readyKernelHarness('science-runtime-dispose')
     const handle = await runtime.startRun({
-      session: session.session,
+      session: attached.session,
       language: 'python',
-      code: 'dispose while running',
-      ...authorizePythonRun(session.session),
+      code: kernelAction({ action: 'sleep', sleepMs: 60_000, trapSigint: true }),
+      ...authorizePythonRun(attached.session),
       signal: new AbortController().signal,
     })
 
@@ -421,10 +217,9 @@ describe('ScienceRuntime lifecycle ownership', () => {
     await expect(handle.done).resolves.toMatchObject({
       terminal: { runId: handle.runId, status: 'cancelled', failureCode: 'CANCELLED' },
     })
-    expect(run.terminations).toBeGreaterThan(0)
     expect(ctx.scienceRuntime).toBeUndefined()
     await expect(runtime.bindEnvironment({
-      session: session.session,
+      session: attached.session,
       profileId: ScienceEnvironmentProfileId('fake'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'SERVICE_DISPOSING' } satisfies Partial<ScienceRuntimeError>)

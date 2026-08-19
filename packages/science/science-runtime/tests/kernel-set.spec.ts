@@ -35,6 +35,7 @@ import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
+const DELAYED_READY_ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets-delayed-ready')
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -236,7 +237,7 @@ describe('KernelSet', () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle')
-    const kernel = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
     await vi.advanceTimersByTimeAsync(1_000)
     vi.useRealTimers()
     await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
@@ -248,7 +249,7 @@ describe('KernelSet', () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-reset')
-    const kernel = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
     await vi.advanceTimersByTimeAsync(999)
     const request = await prepareRun(harness.root, 'run-activity', { status: 'ok' })
     await kernel.execute(request)
@@ -274,7 +275,7 @@ describe('KernelSet', () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-disarm')
-    const kernel = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
     harness.kernelSet.disarmIdleTimer(session, 'python')
     // Advance well past what would have been the idle deadline while a "run" is in flight.
     await vi.advanceTimersByTimeAsync(5_000)
@@ -297,13 +298,13 @@ describe('KernelSet', () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-coexist')
     const environment = harness.environment(1, ['python', 'r'])
-    const python = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
-    const r = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
+    const { process: python } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: r } = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
     expect(python).not.toBe(r)
     expect(harness.started).toHaveLength(2)
     expect(harness.started.map(entry => entry.fact.language).sort()).toEqual(['python', 'r'])
-    const pythonAgain = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
-    const rAgain = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
+    const { process: pythonAgain } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: rAgain } = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
     expect(pythonAgain).toBe(python)
     expect(rAgain).toBe(r)
     expect(harness.started).toHaveLength(2)
@@ -313,8 +314,8 @@ describe('KernelSet', () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-reuse')
     const environment = harness.environment(1, ['python'])
-    const first = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
-    const second = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: first } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: second } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
     expect(second).toBe(first)
     expect(harness.started).toHaveLength(1)
     expect(harness.epochAllocator.calls).toHaveLength(1)
@@ -323,8 +324,8 @@ describe('KernelSet', () => {
   it('ends a stale-revision live kernel with environment-rebound and spawns a fresh epoch', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-rebind')
-    const first = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
-    const second = await harness.kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
+    const { process: first } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const { process: second } = await harness.kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
     expect(second).not.toBe(first)
     expect(harness.ended).toHaveLength(1)
     expect(harness.ended[0]?.fact.reason).toBe('environment-rebound')
@@ -391,12 +392,12 @@ describe('KernelSet', () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-crash')
     const environment = harness.environment(1, ['python'])
-    const kernel = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
     const crashRequest = await prepareRun(harness.root, 'run-crash', { action: 'crash' })
     await expect(kernel.execute(crashRequest)).rejects.toThrow(KernelExitedError)
     await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
     expect(harness.ended[0]?.fact.reason).toBe('crash')
-    const fresh = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: fresh } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
     expect(fresh).not.toBe(kernel)
     expect(harness.started).toHaveLength(2)
   })
@@ -405,7 +406,7 @@ describe('KernelSet', () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-protocol')
     const environment = harness.environment(1, ['python'])
-    const kernel = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
     const garbageRequest = await prepareRun(harness.root, 'run-garbage', { action: 'garbage' })
     await expect(kernel.execute(garbageRequest)).rejects.toThrow(KernelProtocolError)
     await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
@@ -426,7 +427,7 @@ describe('KernelSet', () => {
       .rejects.toThrow(KernelSetQuarantinedError)
 
     await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
-    const kernel = await harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch)
+    const { process: kernel } = await harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch)
     expect(kernel).toBeInstanceOf(KernelProcess)
     expect(harness.started).toHaveLength(2)
   })
@@ -493,7 +494,7 @@ describe('KernelSet', () => {
     await vi.waitFor(() => { expect(ended).toHaveLength(1) })
     expect(ended[0]?.fact.reason).toBe('session-end')
 
-    const kernel = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
+    const { process: kernel } = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
     expect(kernel).toBeInstanceOf(KernelProcess)
     expect(started).toHaveLength(2)
   })
@@ -526,7 +527,7 @@ describe('KernelSet', () => {
     // No `started` fact ever committed, so no `exited` one is owed either.
     expect(ended).toHaveLength(0)
     // The failed attempt left nothing registered: a retry spawns cleanly.
-    const kernel = await kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const { process: kernel } = await kernelSet.acquire(session, 'python', environment, sessionScratch)
     expect(kernel).toBeInstanceOf(KernelProcess)
     expect(startedCalls).toHaveLength(2)
   })
@@ -549,18 +550,18 @@ describe('KernelSet', () => {
       },
     })
     const { session, sessionScratch } = await harness.session('kernel-ended-throws')
-    const first = await kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const { process: first } = await kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
     // acquire's environment-rebound path awaits endKernel() -> teardown()
     // inline: pre-fix, a throwing onKernelEnded rejects that await and
     // fails this SECOND acquire even though the old kernel tore down
     // successfully and a fresh one should have spawned.
-    const second = await kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
+    const { process: second } = await kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
     expect(second).not.toBe(first)
     expect(endedCalls).toHaveLength(1)
     expect(started).toHaveLength(2)
     // Quarantine bookkeeping completed despite the throw: a further acquire
     // for the same (session, language) sees no leftover conflict.
-    const third = await kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
+    const { process: third } = await kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
     expect(third).toBe(second)
   })
 
@@ -624,5 +625,98 @@ describe('KernelSet', () => {
     expect(harness.ended.map(entry => entry.fact.reason).sort()).toEqual(
       ['environment-rebound', 'service-disposed', 'service-disposed'],
     )
+  })
+
+  it('returns the acquired kernel\'s own epoch, matching the started fact, on both a fresh spawn and a reuse', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-acquired-epoch')
+    const environment = harness.environment(1, ['python'])
+    const fresh = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(fresh.epoch).toBe(1)
+    expect(harness.started[0]?.fact.kernelEpoch).toBe(1)
+    const reused = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(reused.epoch).toBe(1)
+    expect(reused.process).toBe(fresh.process)
+  })
+
+  it('retires the exact live kernel with reason run-escalation, and is a no-op with no live kernel', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-retire-escalation')
+    await expect(harness.kernelSet.retireForEscalation(session, 'python')).resolves.toBeUndefined()
+    expect(harness.ended).toHaveLength(0)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    await harness.kernelSet.retireForEscalation(session, 'python')
+    expect(harness.ended).toHaveLength(1)
+    expect(harness.ended[0]?.fact.reason).toBe('run-escalation')
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
+    const fresh = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    expect(fresh.process).not.toBe(kernel)
+  })
+
+  it('retires a kernel that finishes spawning after detach already fired (K1.3-flagged spawn-vs-teardown race)', async () => {
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const ended: Recorded<ScienceKernelEndedFact>[] = []
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+    })
+    const original = attachScienceSession(harness.ctx, 'kernel-spawn-detach-race')
+    const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
+    const environment = harness.environment(1, ['python'])
+    const acquiring = kernelSet.acquire(original.session, 'python', environment, originalScratch)
+
+    // The delayed-ready driver has not yet sent READY: this spawn is still
+    // in flight (post-subprocess-spawn, pre-registration) when detach fires.
+    original.detach()
+    kernelSet.detach(original.session)
+    expect(started).toHaveLength(0)
+    expect(ended).toHaveLength(0)
+
+    const kernel = await acquiring
+    expect(kernel.process).toBeInstanceOf(KernelProcess)
+    expect(started).toHaveLength(1)
+    // The fresh kernel registered only after detach already fired: it must
+    // still be retired, not left live and unquarantined.
+    await vi.waitFor(() => { expect(ended).toHaveLength(1) })
+    expect(ended[0]?.fact.reason).toBe('session-end')
+    await expect(kernel.process.exited).resolves.toMatchObject({ cause: 'commanded' })
+
+    const successor = attachScienceSession(harness.ctx, 'kernel-spawn-detach-race', original.session.events)
+    const successorKernel = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
+    expect(successorKernel.process).toBeInstanceOf(KernelProcess)
+  })
+
+  it('awaits an in-flight spawn before disposeAll settles, and retires whatever it registers', async () => {
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const ended: Recorded<ScienceKernelEndedFact>[] = []
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+    })
+    const { session, sessionScratch } = await harness.session('kernel-dispose-during-spawn')
+    const environment = harness.environment(1, ['python'])
+    const acquiring = kernelSet.acquire(session, 'python', environment, sessionScratch)
+
+    const settled = kernelSet.disposeAll()
+    await acquiring
+    expect(started).toHaveLength(1)
+    await expect(settled).resolves.toSatisfy((results: PromiseSettledResult<unknown>[]) =>
+      results.every(result => result.status === 'fulfilled'))
+    expect(ended).toHaveLength(1)
+    expect(ended[0]?.fact.reason).toBe('service-disposed')
   })
 })

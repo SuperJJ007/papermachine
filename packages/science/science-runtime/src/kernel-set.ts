@@ -38,6 +38,17 @@ import { KernelProcess } from './kernel-process.ts'
 import type { KernelExitFact } from './kernel-process.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
 
+/**
+ * One live, ready kernel process and its own session-local epoch — the
+ * provenance backbone a caller needs to fix a run's `kernelEpoch` (D4).
+ */
+export interface AcquiredKernel {
+  /** The live, ready kernel process. */
+  readonly process: KernelProcess
+  /** This kernel instance's own session-local epoch. */
+  readonly epoch: number
+}
+
 /** Whole-value fact for one kernel spawn — the fields D4's `science/kernel-state` (`state: 'started'`) event needs. */
 export interface ScienceKernelStartedFact {
   /** The started kernel's language. */
@@ -191,15 +202,40 @@ interface LiveKernel {
   idleTimer: ReturnType<typeof setTimeout> | undefined
 }
 
-/** One Session's kernel-set membership: live kernels plus in-flight teardowns keyed by language. */
+/** One Session's kernel-set membership: live kernels, in-flight spawns, and in-flight teardowns keyed by language. */
 interface SessionEntry {
   readonly session: Session
   readonly kernels: Map<ScienceLanguage, LiveKernel>
   readonly ending: Map<ScienceLanguage, Promise<void>>
+  /**
+   * In-flight {@link KernelSet.spawnKernel} calls, settled regardless of
+   * outcome. Read only by {@link KernelSet.syncBusyRegistration} (same-id
+   * quarantine/conflict timing, A1 finding 5) — disposal awareness for a
+   * call still inside {@link KernelSet.acquire}'s own drain/reuse/rebind
+   * steps, before a literal spawn even begins, is `KernelSet.pending`'s job,
+   * not this map's (K1.3-flagged spawn-vs-teardown race).
+   */
+  readonly spawning: Map<ScienceLanguage, Promise<void>>
   /** Highest epoch this `KernelSet` has committed (i.e. actually spawned) for this Session. */
   epochSeen: number
   /** Set once by {@link KernelSet.detach}; a detached entry never acquires a fresh kernel again (A1 finding 5). */
   detached: boolean
+}
+
+/**
+ * One whole {@link KernelSet.acquire} call still in flight, from its own
+ * synchronous call frame until it settles — a superset of `entry.spawning`'s
+ * narrower post-drain window. `KernelSet.pending` exists solely so
+ * {@link KernelSet.detach}/{@link KernelSet.disposeAll} can await and retire
+ * a call issued with no intervening await before them (closes the
+ * K1.3-flagged spawn-vs-teardown race); it is never read by
+ * {@link KernelSet.assertAcquirable}/{@link KernelSet.syncBusyRegistration},
+ * so it has no effect on same-id conflict timing.
+ */
+interface PendingAcquisition {
+  readonly entry: SessionEntry
+  readonly language: ScienceLanguage
+  readonly settlement: Promise<void>
 }
 
 /** Compile-time proof {@link ScienceKernelEndReason} stays closed; every member reaches the same end-and-notify path. */
@@ -227,6 +263,8 @@ function assertClosedEndReason(reason: ScienceKernelEndReason): void {
 export class KernelSet {
   private readonly exact = new WeakMap<Session, SessionEntry>()
   private readonly byId = new Map<string, SessionEntry>()
+  /** Every {@link acquire} call still in flight; see {@link PendingAcquisition}'s own doc. */
+  private readonly pending = new Set<PendingAcquisition>()
   private readonly subprocess: SubprocessRuntime
   private readonly sandbox: SandboxProvider
   private readonly assetsRoot: string
@@ -262,7 +300,7 @@ export class KernelSet {
    * @param language - requested interpreter language.
    * @param environment - applied durable environment revision the kernel must serve.
    * @param sessionScratch - the Session's already-materialized private scratch paths.
-   * @returns the live, ready kernel process.
+   * @returns the live, ready kernel process and its own session-local epoch.
    * @throws {@link KernelSetQuarantinedError} for a same-id successor Session
    *   while its predecessor's kernel tree is not yet proven quiescent.
    * @throws {@link KernelSetDetachedError} when this exact Session object
@@ -279,16 +317,63 @@ export class KernelSet {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
-  ): Promise<KernelProcess> {
+  ): Promise<AcquiredKernel> {
     const entry = this.entryFor(session)
     this.assertAcquirable(entry)
+    const attempt = this.acquireKernel(entry, language, environment, sessionScratch)
+    this.trackPending(entry, language, attempt)
+    return attempt
+  }
+
+  /** Drain a stale teardown, decide reuse vs. rebind vs. fresh spawn, and return the acquired kernel. */
+  private async acquireKernel(
+    entry: SessionEntry,
+    language: ScienceLanguage,
+    environment: ScienceEnvironmentBinding,
+    sessionScratch: ScienceSessionScratch,
+  ): Promise<AcquiredKernel> {
     await this.drain(entry, language)
     const live = entry.kernels.get(language)
     if (live !== undefined) {
-      if (live.environmentRevision === environment.revision) return live.process
+      if (live.environmentRevision === environment.revision) return { process: live.process, epoch: live.kernelEpoch }
       await this.endKernel(live, 'environment-rebound')
     }
-    return this.spawnKernel(entry, language, environment, sessionScratch)
+    return this.trackedSpawn(entry, language, environment, sessionScratch)
+  }
+
+  /**
+   * Register one whole {@link acquire} call (drain through reuse/rebind/spawn)
+   * in `pending`, from this exact synchronous call frame — before any of its
+   * internal awaits run — so a {@link detach}/{@link disposeAll} issued with
+   * no intervening await still observes and awaits/retires it (closes the
+   * K1.3-flagged spawn-vs-teardown race at its earliest possible point:
+   * `entry.spawning`, populated only once the literal spawn begins post-drain,
+   * leaves the drain/reuse window unobserved). Deliberately a registry
+   * separate from `byId`/`syncBusyRegistration`: it must never affect
+   * same-id conflict timing (A1 finding 5's `KernelSetConflictError` race
+   * stays exactly as narrow as `entry.spawning` already made it).
+   */
+  private trackPending(entry: SessionEntry, language: ScienceLanguage, attempt: Promise<AcquiredKernel>): void {
+    const settlement = attempt.then(() => {}, () => {})
+    const record: PendingAcquisition = { entry, language, settlement }
+    this.pending.add(record)
+    void settlement.then(() => { this.pending.delete(record) })
+  }
+
+  /**
+   * End the exact live kernel for `(session, language)` with reason
+   * `run-escalation` (D5): the caller's own run terminal has already settled
+   * (first-cause-governed, independent of this call); this only retires the
+   * kernel itself, through the same registry bookkeeping and containment
+   * every other end path uses. A no-op when no live kernel is registered —
+   * a benign race against a concurrent end, never a caller error.
+   * @param session - exact live Session that owns the kernel.
+   * @param language - the kernel's language.
+   */
+  retireForEscalation(session: Session, language: ScienceLanguage): Promise<void> {
+    const live = this.exact.get(session)?.kernels.get(language)
+    if (live === undefined) return Promise.resolve()
+    return this.endKernel(live, 'run-escalation')
   }
 
   /**
@@ -337,6 +422,10 @@ export class KernelSet {
     if (entry === undefined) return
     entry.detached = true
     for (const live of [...entry.kernels.values()]) void this.endKernel(live, 'session-end')
+    for (const record of [...this.pending]) {
+      if (record.entry !== entry) continue
+      void record.settlement.then(() => { void this.endIfStillLive(entry, record.language, 'session-end') })
+    }
   }
 
   /**
@@ -346,21 +435,56 @@ export class KernelSet {
    * @returns settled results once every tracked teardown has resolved or rejected.
    */
   disposeAll(): Promise<PromiseSettledResult<unknown>[]> {
-    const pending: Promise<unknown>[] = []
+    const awaiting: Promise<unknown>[] = []
     for (const entry of this.byId.values()) {
-      for (const settlement of entry.ending.values()) pending.push(settlement)
-      for (const live of [...entry.kernels.values()]) pending.push(this.endKernel(live, 'service-disposed'))
+      for (const settlement of entry.ending.values()) awaiting.push(settlement)
+      for (const live of [...entry.kernels.values()]) awaiting.push(this.endKernel(live, 'service-disposed'))
     }
-    return Promise.allSettled(pending)
+    for (const record of [...this.pending]) {
+      awaiting.push(record.settlement.then(() => this.endIfStillLive(record.entry, record.language, 'service-disposed')))
+    }
+    return Promise.allSettled(awaiting)
   }
 
   /** Return this Session's registry entry, creating one on first use. */
   private entryFor(session: Session): SessionEntry {
     const existing = this.exact.get(session)
     if (existing !== undefined) return existing
-    const entry: SessionEntry = { session, kernels: new Map(), ending: new Map(), epochSeen: 0, detached: false }
+    const entry: SessionEntry = { session, kernels: new Map(), ending: new Map(), spawning: new Map(), epochSeen: 0, detached: false }
     this.exact.set(session, entry)
     return entry
+  }
+
+  /**
+   * Run {@link spawnKernel} while registering its in-flight settlement in
+   * `entry.spawning`, so a same-id successor entry's {@link assertAcquirable}
+   * check (via {@link syncBusyRegistration}) sees this session as busy for
+   * the whole spawn window (A1 finding 5's conflict/quarantine timing).
+   * Disposal awareness for the caller's own drain/reuse/rebind steps, and
+   * for this spawn once it starts, is `pending`'s job (see
+   * {@link trackPending}), not this map's.
+   */
+  private trackedSpawn(
+    entry: SessionEntry,
+    language: ScienceLanguage,
+    environment: ScienceEnvironmentBinding,
+    sessionScratch: ScienceSessionScratch,
+  ): Promise<AcquiredKernel> {
+    const attempt = this.spawnKernel(entry, language, environment, sessionScratch)
+    const settlement = attempt.then(() => {}, () => {})
+    entry.spawning.set(language, settlement)
+    this.syncBusyRegistration(entry)
+    void settlement.then(() => {
+      if (entry.spawning.get(language) === settlement) entry.spawning.delete(language)
+      this.syncBusyRegistration(entry)
+    })
+    return attempt
+  }
+
+  /** End a kernel that finished spawning after `detach`/`disposeAll` already fired, if it is still the live one for its language. */
+  private endIfStillLive(entry: SessionEntry, language: ScienceLanguage, reason: ScienceKernelEndReason): Promise<void> {
+    const live = entry.kernels.get(language)
+    return live === undefined ? Promise.resolve() : this.endKernel(live, reason)
   }
 
   /**
@@ -406,7 +530,7 @@ export class KernelSet {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
-  ): Promise<KernelProcess> {
+  ): Promise<AcquiredKernel> {
     const binding = selectBinding(environment, language)
     const kernelEpoch = this.nextEpoch(entry.session)
     if (kernelEpoch <= entry.epochSeen) {
@@ -454,7 +578,7 @@ export class KernelSet {
     }
     this.armIdleTimer(live)
     void process.exited.then((fact) => { this.onProcessExited(live, fact) })
-    return process
+    return { process, epoch: kernelEpoch }
   }
 
   /**
@@ -553,7 +677,7 @@ export class KernelSet {
 
   /**
    * Keep `byId` membership exactly tracking whether this session id
-   * currently owns any live or ending kernel. Refuses to overwrite a
+   * currently owns any live, ending, or still-spawning kernel. Refuses to overwrite a
    * DIFFERENT entry already holding this id (A1 finding 5): a same-id
    * successor entry that started spawning while its predecessor's own
    * spawn was still in flight (and so found `byId` not yet claimed) must
@@ -563,7 +687,7 @@ export class KernelSet {
    */
   private syncBusyRegistration(entry: SessionEntry): void {
     const id = String(entry.session.id)
-    const busy = entry.kernels.size > 0 || entry.ending.size > 0
+    const busy = entry.kernels.size > 0 || entry.ending.size > 0 || entry.spawning.size > 0
     if (!busy) {
       if (this.byId.get(id) === entry) this.byId.delete(id)
       return

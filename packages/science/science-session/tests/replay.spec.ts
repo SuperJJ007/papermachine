@@ -92,6 +92,25 @@ describe('Science cold replay', () => {
       meta: { agentPreset: 'science' },
     })
     appendFixtureEvents(liveSession)
+    // legalEvents() leaves its kernel open; close it here so cold (seed-based)
+    // reconstruction has nothing left to interrupt and matches live exactly
+    // ('derives interrupted only when cold construction closes an unmatched
+    // seed run', below, owns the open-kernel/open-run divergence).
+    const openKernel = replayScience(liveSession.events)!.kernels[0]!
+    if (openKernel.state !== 'started') throw new Error('fixture kernel is not open')
+    liveSession.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: openKernel.kernelEpoch,
+        language: openKernel.language,
+        state: 'exited',
+        reason: 'idle',
+        environmentRevision: openKernel.environmentRevision,
+        environmentFingerprint: openKernel.environmentFingerprint,
+        startedAt: openKernel.at,
+        at: Date.now(),
+      },
+    })
     const live = liveCtx.sessionProjections.snapshot(liveSession).values.science
     expect(live).toEqual(toClientScienceProjection(replayScience(liveSession.events)))
     const seed = JSON.parse(JSON.stringify(liveSession.events)) as SessionEvent[]
@@ -197,7 +216,7 @@ describe('Science cold replay', () => {
     const source = sourceCtx.sessions.create(SessionId('science-open-source'), {
       meta: { agentPreset: 'science' },
     })
-    appendFixtureEvents(source, legalEvents().slice(0, 5))
+    appendFixtureEvents(source, legalEvents().slice(0, 6))
     expect(sourceCtx.sessionProjections.snapshot(source).values.science?.runs[0]?.status).toBe('running')
 
     const seed = JSON.parse(JSON.stringify(source.events)) as SessionEvent[]

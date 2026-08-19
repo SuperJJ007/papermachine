@@ -11,7 +11,6 @@ import {
   RUN_ID,
   event,
   kernelExited,
-  kernelStarted,
   legalEvents,
 } from './fixtures.ts'
 
@@ -25,8 +24,8 @@ describe('Science projection replay', () => {
         status: 'applied',
         python: { packages: [{ name: 'pip', version: '24.0' }], packagesTruncated: false, packagesSha256Preview: PACKAGES_SHA.slice(0, 12) },
       },
-      runs: [{ runId: RUN_ID, status: 'success', toolCallId: RUN_CALL_ID, requestHeaderSeq: 2 }],
-      artifacts: [{ artifactId: ARTIFACT_ID, version: 1, toolCallId: ARTIFACT_CALL_ID, requestHeaderSeq: 2 }],
+      runs: [{ runId: RUN_ID, status: 'success', toolCallId: RUN_CALL_ID, requestHeaderSeq: 3 }],
+      artifacts: [{ artifactId: ARTIFACT_ID, version: 1, toolCallId: ARTIFACT_CALL_ID, requestHeaderSeq: 3 }],
       outcome: { revision: 1 },
       metrics: {
         runCount: 1,
@@ -35,7 +34,7 @@ describe('Science projection replay', () => {
         artifactVersionCount: 1,
         outcomeRevision: 1,
       },
-      lastScienceEventSeq: 9,
+      lastScienceEventSeq: 10,
     })
     expect(scienceProjectionSchema.safeParse(state).success).toBe(true)
   })
@@ -63,15 +62,16 @@ describe('Science projection replay', () => {
   })
 
   it('exposes kernel history and kernelCount, redacting the full environment fingerprint to a preview', () => {
+    // legalEvents() already seeds the epoch-1 python kernel's `started` half
+    // (at time 115); this test appends only the `exited` half.
     const events: SessionEvent[] = [
       ...legalEvents(),
-      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
-      event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ startedAt: 190, at: 200 }) }),
+      event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ at: 200 }) }),
     ]
     const host = replayScience(events)!
     const client = toClientScienceProjection(host)!
 
-    expect(host.kernels).toEqual([kernelExited({ startedAt: 190, at: 200 })])
+    expect(host.kernels).toEqual([kernelExited({ at: 200 })])
     expect(host.metrics.kernelCount).toBe(1)
     expect(client.metrics.kernelCount).toBe(1)
     expect(client.kernels).toEqual([{
@@ -79,7 +79,7 @@ describe('Science projection replay', () => {
       language: 'python',
       state: 'exited',
       reason: 'idle',
-      startedAt: 190,
+      startedAt: 115,
       environmentRevision: 1,
       environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
       at: 200,

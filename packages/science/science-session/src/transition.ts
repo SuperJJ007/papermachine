@@ -110,6 +110,27 @@ function sameRunIdentity(started: ScienceRunIdentity, terminal: ScienceRunIdenti
     && started.codeSha256 === terminal.codeSha256
     && started.scratchKey === terminal.scratchKey
     && started.runDirectoryRef === terminal.runDirectoryRef
+    && started.kernelEpoch === terminal.kernelEpoch
+}
+
+/**
+ * Require `run.kernelEpoch` to name a currently open (`started`, not yet
+ * `exited`) kernel for `run.language`, and that kernel's own environment
+ * provenance to match the run's claimed `environmentRevision`/
+ * `environmentFingerprint`. At most one kernel per language is ever open at
+ * once (D3), so a matching open record is unambiguous.
+ * @param state - fold accumulator to read committed kernel facts from.
+ * @param run - the run-started value naming the kernel epoch.
+ * @throws when no open kernel matches, or its environment provenance diverges from the run's own.
+ */
+function requireOpenKernelEpoch(state: ScienceFoldState, run: ScienceRunIdentity): void {
+  const kernel = state.kernels.find(candidate => candidate.language === run.language && candidate.kernelEpoch === run.kernelEpoch)
+  if (kernel === undefined || !isOpenKernel(kernel)) {
+    throw new Error(`Science run kernelEpoch ${String(run.kernelEpoch)} does not name a started kernel for language ${JSON.stringify(run.language)}`)
+  }
+  if (kernel.environmentRevision !== run.environmentRevision || kernel.environmentFingerprint !== run.environmentFingerprint) {
+    throw new Error(`Science run kernelEpoch ${String(run.kernelEpoch)} environment provenance does not match its kernel`)
+  }
 }
 
 function applyRunStarted(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/run-started' }>): void {
@@ -122,6 +143,7 @@ function applyRunStarted(state: ScienceFoldState, event: Extract<DecodedScienceD
     throw new Error('only one Science run may be running in a session')
   }
   const environment = requireLatestAppliedBinding(state, run.environmentRevision, run.language, run.environmentFingerprint, 'Science run')
+  requireOpenKernelEpoch(state, run)
   const requestHeader = requireRequestHeader(state, run.requestHeaderSeq)
   const toolCall = requireToolCall(
     state,
@@ -391,8 +413,14 @@ function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEv
       if (environment.revision !== state.environments.length + 1) {
         throw new Error(`environment revision must be ${String(state.environments.length + 1)}`)
       }
-      if (state.runs.length > 0 && environment.status === 'applied') {
-        throw new Error('an applied Science environment cannot be replaced after the first run')
+      // A2 finding 10: an applied revision may legitimately supersede an
+      // earlier one after runs already exist (D6 environment-rebound) — the
+      // stale kernel ends and the next run starts on a fresh epoch against
+      // the new revision. Only a run genuinely in flight blocks it: rebinding
+      // out from under an executing run would leave that run's own committed
+      // environmentRevision no longer resolvable as "the latest applied" one.
+      if (environment.status === 'applied' && state.runs.some(run => run.status === 'running')) {
+        throw new Error('an applied Science environment cannot be bound while a Science run is in progress')
       }
       if (environment.validatedAt > event.time) {
         throw new Error('environment validation time cannot follow its event time')

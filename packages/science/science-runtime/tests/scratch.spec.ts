@@ -288,7 +288,6 @@ describe('Science Runtime private scratch', () => {
 
     expect(readFileSync(run.source)).toEqual(bytes)
     expectPrivateDirectory(run.directory)
-    expectPrivateDirectory(run.tmp)
     expectPrivateDirectory(run.artifacts)
     expectPrivateFile(run.source)
 

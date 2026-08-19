@@ -90,13 +90,14 @@ export const runStarted = (
   runId: RUN_ID,
   language: 'python',
   toolCallId: RUN_CALL_ID,
-  requestHeaderSeq: 2,
+  requestHeaderSeq: 3,
   environmentRevision: 1,
   environmentFingerprint: FINGERPRINT,
   startedAt: 139,
   codeSha256: CODE_SHA,
   scratchKey: SCRATCH_KEY,
   runDirectoryRef: 'runs/run-1/',
+  kernelEpoch: 1,
   status: 'running',
   ...overrides,
 })
@@ -156,7 +157,7 @@ export const artifact = (
   },
   runId: RUN_ID,
   toolCallId: ARTIFACT_CALL_ID,
-  requestHeaderSeq: 2,
+  requestHeaderSeq: 3,
   environmentRevision: 1,
   environmentFingerprint: FINGERPRINT,
   createdAt: 169,
@@ -189,7 +190,7 @@ export const outcome = (
   evidence: [{ kind: 'chart', chartId: ARTIFACT_ID, version: 1 }],
   publishedAt: 179,
   toolCallId: OUTCOME_CALL_ID,
-  requestHeaderSeq: 2,
+  requestHeaderSeq: 3,
   environmentRevisions: [1],
   ...overrides,
 })
@@ -233,17 +234,18 @@ export function legalEvents(): SessionEvent[] {
   return [
     event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
     event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
-    event('request/header', 2, 120, {
+    event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+    event('request/header', 3, 120, {
       header: { config: { provider: 'test', model: 'test-model' } },
       reason: 'initial',
     }),
-    toolCall(3, 130, RUN_CALL_ID, 'run_python'),
-    event('science/run-started', 4, 140, { version: 1, run: runStarted() }),
-    event('science/run-finished', 5, 150, { version: 1, run: runTerminal() }),
-    toolCall(6, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
-    event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact() }),
-    toolCall(8, 175, OUTCOME_CALL_ID, 'publish_outcome'),
-    event('science/outcome-published', 9, 180, { version: 1, outcome: outcome() }),
+    toolCall(4, 130, RUN_CALL_ID, 'run_python'),
+    event('science/run-started', 5, 140, { version: 1, run: runStarted() }),
+    event('science/run-finished', 6, 150, { version: 1, run: runTerminal() }),
+    toolCall(7, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
+    event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
+    toolCall(9, 175, OUTCOME_CALL_ID, 'publish_outcome'),
+    event('science/outcome-published', 10, 180, { version: 1, outcome: outcome() }),
   ]
 }
 
@@ -253,14 +255,14 @@ export function appendFixtureEvents(
   events: readonly SessionEvent[] = legalEvents(),
 ): void {
   const expected = legalEvents().slice(0, events.length)
-  if (events.length > 10 || events.some((candidate, index) => candidate.type !== expected[index]?.type)) {
+  if (events.length > 11 || events.some((candidate, index) => candidate.type !== expected[index]?.type)) {
     throw new Error('appendFixtureEvents accepts only a prefix of legalEvents()')
   }
   if (events.length === 0) return
 
   const modeBound = session.append('science/mode-bound', { version: 1, mode: mode() })
   if (events.length === 1) return
-  session.append('science/environment-bound', {
+  const environmentBound = session.append('science/environment-bound', {
     version: 1,
     environment: environment({
       configuredAt: modeBound.time,
@@ -268,11 +270,16 @@ export function appendFixtureEvents(
     }),
   })
   if (events.length === 2) return
+  session.append('science/kernel-state', {
+    version: 1,
+    kernel: kernelStarted({ at: environmentBound.time }),
+  })
+  if (events.length === 3) return
   const request = session.append('request/header', {
     header: { config: { provider: 'test', model: 'test-model' } },
     reason: 'initial',
   })
-  if (events.length === 3) return
+  if (events.length === 4) return
   const runCall = session.append('tool/call', {
     turn: 1,
     step: 1,
@@ -280,13 +287,13 @@ export function appendFixtureEvents(
     name: 'run_python',
     arguments: '{}',
   })
-  if (events.length === 4) return
+  if (events.length === 5) return
   const run = runStarted({
     requestHeaderSeq: request.seq,
     startedAt: runCall.time,
   })
   const runStart = session.append('science/run-started', { version: 1, run })
-  if (events.length === 5) return
+  if (events.length === 6) return
   const runFinish = session.append('science/run-finished', {
     version: 1,
     run: runTerminal({
@@ -295,7 +302,7 @@ export function appendFixtureEvents(
       finishedAt: runStart.time,
     }),
   })
-  if (events.length === 6) return
+  if (events.length === 7) return
   const artifactCall = session.append('tool/call', {
     turn: 1,
     step: 1,
@@ -303,7 +310,7 @@ export function appendFixtureEvents(
     name: 'annotate_artifact',
     arguments: '{}',
   })
-  if (events.length === 7) return
+  if (events.length === 8) return
   const artifactSaved = session.append('science/artifact-saved', {
     version: 1,
     artifact: artifact({
@@ -311,7 +318,7 @@ export function appendFixtureEvents(
       createdAt: Math.max(runFinish.time, artifactCall.time),
     }),
   })
-  if (events.length === 8) return
+  if (events.length === 9) return
   const outcomeCall = session.append('tool/call', {
     turn: 1,
     step: 1,
@@ -319,7 +326,7 @@ export function appendFixtureEvents(
     name: 'publish_outcome',
     arguments: '{}',
   })
-  if (events.length === 9) return
+  if (events.length === 10) return
   session.append('science/outcome-published', {
     version: 1,
     outcome: outcome({

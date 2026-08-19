@@ -45,7 +45,7 @@ export class KernelExitedError extends Error {
   override name = 'KernelExitedError'
 }
 
-/** Services `KernelProcess` needs to spawn and confine one kernel, mirroring `ExecutionServices`. */
+/** Services `KernelProcess` needs to spawn and confine one kernel. */
 export interface KernelProcessServices {
   readonly subprocess: SubprocessRuntime
   readonly sandbox: SandboxProvider

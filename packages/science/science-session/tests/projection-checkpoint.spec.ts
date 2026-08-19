@@ -20,6 +20,7 @@ import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
   event,
+  kernelExited,
   kernelStarted,
   legalEvents,
   outcome,
@@ -136,13 +137,13 @@ describe('Science private projection checkpoint', () => {
 
   it('advances the private watermark without publishing an unchanged Science value', () => {
     const complete = projectState(legalEvents())
-    const irrelevant = event('turn/start', 10, 190, { turn: 2 })
+    const irrelevant = event('turn/start', 11, 190, { turn: 2 })
     const observed = applyScienceProjectionState(complete, irrelevant)
 
-    expect(observed.observedSeq).toBe(10)
+    expect(observed.observedSeq).toBe(11)
     expect(observed.fold).toBe(complete.fold)
     expect(observed.witness).toBe(complete.witness)
-    expect(scienceProjectionStateSeq(observed)).toBe(10)
+    expect(scienceProjectionStateSeq(observed)).toBe(11)
     expect(scienceProjectionChanged(complete, observed)).toBe(false)
     expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(replayScience([
       ...legalEvents(),
@@ -177,19 +178,25 @@ describe('Science private projection checkpoint', () => {
       message: { source: { callId } },
     })
 
-    const terminalEvents = events.slice(0, 6)
+    const terminalEvents = events.slice(0, 7)
     const emptyState = emptyScienceProjectionState()
     const headerOnlyState = projectState([event('request/header', 0, 90, {})])
     const modeState = projectState(events.slice(0, 1))
     const environmentState = projectState(events.slice(0, 2))
-    const runningState = projectState(terminalEvents.slice(0, 5))
+    const runningState = projectState(terminalEvents.slice(0, 6))
     const terminalState = projectState(terminalEvents)
     const interruptedState = projectState([
-      ...terminalEvents.slice(0, 5),
-      event('session/end-seed', 5, 150, {}),
+      ...terminalEvents.slice(0, 6),
+      event('session/end-seed', 6, 150, {}),
     ])
-    const chartedState = projectState(events.slice(0, 8))
-    const completeState = projectState(events)
+    const chartedState = projectState(events.slice(0, 9))
+    // legalEvents() itself leaves the epoch-1 kernel open; close it here so
+    // a subsequently appended session/end-seed genuinely has nothing left
+    // to interrupt (the no-op scenario the block below exercises).
+    const completeState = projectState([
+      ...events,
+      event('science/kernel-state', 11, 185, { version: 1, kernel: kernelExited({ at: 185 }) }),
+    ])
     const messageOnlyState = projectState([
       events[0]!,
       event('request/header', 1, 110, {}),
@@ -241,19 +248,24 @@ describe('Science private projection checkpoint', () => {
       }, 6, 130),
     ])
     const gappedTerminalState = projectState([
-      ...terminalEvents.slice(0, 4),
-      event('turn/start', 4, 135, { turn: 1 }),
-      startedEvent({}, 5, 140),
-      finishedEvent({}, 6, 150),
+      ...terminalEvents.slice(0, 5),
+      event('turn/start', 5, 135, { turn: 1 }),
+      startedEvent({}, 6, 140),
+      finishedEvent({}, 7, 150),
     ])
+    // legalEvents() already seeds the epoch-1 python kernel's `started` half
+    // (open, at time 115): exit it, then start a fresh epoch 2 so this
+    // scenario models a realistic restart rather than a rejected duplicate
+    // open epoch.
     const kernelEvents = [
       ...events,
-      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+      event('science/kernel-state', 11, 190, { version: 1, kernel: kernelExited({ at: 190 }) }),
+      event('science/kernel-state', 12, 195, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 195 }) }),
     ]
     const kernelState = projectState(kernelEvents)
     const interruptedKernelState = projectState([
       ...kernelEvents,
-      event('session/end-seed', 11, 400, {}),
+      event('session/end-seed', 13, 400, {}),
     ])
 
     for (const [name, state] of [
@@ -279,22 +291,22 @@ describe('Science private projection checkpoint', () => {
 
     const ignoredSeed = applyScienceProjectionState(
       completeState,
-      event('session/end-seed', 10, 190, {}),
+      event('session/end-seed', 12, 190, {}),
     )
     const unrelatedTurn = applyScienceProjectionState(
       completeState,
-      event('turn/start', 10, 190, { turn: 2 }),
+      event('turn/start', 12, 190, { turn: 2 }),
     )
     const duplicateMode = applyScienceProjectionState(
       completeState,
-      event('science/mode-bound', 10, 190, events[0]!.data),
+      event('science/mode-bound', 12, 190, events[0]!.data),
     )
     const ignorableMode = applyScienceProjectionState(completeState, {
-      ...event('science/mode-bound', 10, 190, events[0]!.data),
+      ...event('science/mode-bound', 12, 190, events[0]!.data),
       ignorable: true,
     })
     for (const observed of [ignoredSeed, unrelatedTurn, duplicateMode, ignorableMode]) {
-      expect(observed).toEqual({ ...completeState, observedSeq: 10 })
+      expect(observed).toEqual({ ...completeState, observedSeq: 12 })
       expect(scienceProjectionChanged(completeState, observed)).toBe(false)
     }
 
@@ -302,7 +314,7 @@ describe('Science private projection checkpoint', () => {
       ...terminalState,
       fold: {
         ...terminalState.fold,
-        runs: [{ ...terminalState.fold.runs[0]!, requestHeaderSeq: 3 }],
+        runs: [{ ...terminalState.fold.runs[0]!, requestHeaderSeq: 99 }],
       },
     }
     expect(scienceProjectionSchema.safeParse(viewScienceProjectionState(headerTampered)).success).toBe(true)

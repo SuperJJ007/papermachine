@@ -1,15 +1,10 @@
-/** Direct-argv Science run construction, confinement, output, and terminal classification. */
+/** Kernel-run construction, confinement, bounded output reading, and terminal classification. */
 
 import { randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
+import { open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  classifyDenial,
-  classifyRunnerFailure,
-  isRunnerSpawnFailure,
-  SandboxUnavailableError,
-  writableRoots,
-} from '@deepseek-ai/dsh-sandbox'
+import { SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { ScienceRunId, ScienceScratchKey } from '@deepseek-ai/dsh-science-session'
 import type {
@@ -20,12 +15,11 @@ import type {
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { SubprocessHandle, SubprocessOutputRead, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { OperationControl } from './lifecycle.ts'
+import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import { pathsOverlap, sha256 } from './scratch.ts'
 import type { ScienceRunScratch, ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
-import type { ScienceRunOutput, ScienceRunResult } from './types.ts'
+import type { ScienceRunOutput } from './types.ts'
 
 /** Fixed maximum exact source bytes. */
 export const MAX_SOURCE_BYTES = 262_144
@@ -55,41 +49,9 @@ export interface RunPlan {
   readonly binding: ScienceInterpreterAvailableBinding
 }
 
-/** Full confinement facts retained until runner/denial classification. */
-export interface ConfinedExecution {
-  readonly argv: readonly string[]
-  readonly denialSignatures: readonly string[]
-  readonly runnerFailureRules: readonly import('@deepseek-ai/dsh-sandbox').RunnerFailureRule[]
-}
-
-/** Services needed to construct and settle one direct interpreter execution. */
-export interface ExecutionServices {
-  readonly subprocess: SubprocessRuntime
-  readonly sandbox: SandboxProvider
-  readonly session: Session
-  readonly sessionScratch: ScienceSessionScratch
-  readonly control: OperationControl
-}
-
-/** Terminal result after the owner proved complete process-tree quiescence. */
-export interface QuiescentRun {
-  readonly quiescent: true
-  readonly result: ScienceRunResult
-}
-
-/** Retained whole-tree proof when immediate quiescence was not established. */
-export interface NonQuiescentRun {
-  readonly quiescent: false
-  /** Terminal result once the retained tree observation proves quiescence. */
-  readonly eventualResult: Promise<ScienceRunResult | undefined>
-}
-
-/** Terminal result or the retained proof required before releasing its Session lease. */
-export type SettledRun = QuiescentRun | NonQuiescentRun
-
 /**
  * Exact fixed locale values for a supported POSIX child. Shared by every
- * confined interpreter spawn (one-shot runs and persistent kernels alike).
+ * confined interpreter spawn: persistent kernels and interpreter probes alike.
  * @returns fixed `LANG`/`LC_ALL`/`TZ` entries for this host platform.
  */
 export function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' | 'TZ'> {
@@ -114,9 +76,9 @@ export function interpreterPathEnv(canonicalPrefix: string): string {
 
 /**
  * Direct argv for one interpreter invocation: fixed per-language hardening
- * flags followed by the caller's trailing script arguments — a source file
- * path for a one-shot run, or a driver script path plus its own argument for
- * a persistent kernel. Never a shell command.
+ * flags followed by the caller's trailing script arguments — a persistent
+ * kernel's driver script path plus its response-FIFO path argument. Never a
+ * shell command.
  * @param language - selects the fixed flag set.
  * @param executable - canonical interpreter executable.
  * @param scriptArgs - trailing arguments appended after the fixed flags.
@@ -142,7 +104,7 @@ function sourceBytes(code: string): Buffer {
 
 /**
  * Select the durable available binding for a requested language. Shared by
- * one-shot run planning ({@link planRun}) and persistent kernel spawn
+ * run planning ({@link planRun}) and persistent kernel spawn
  * (`KernelSet.acquire` in `kernel-set.ts`).
  * @param environment - applied durable environment revision to select from.
  * @param language - requested interpreter language.
@@ -187,8 +149,9 @@ export function planRun(
 
 /**
  * Fixed confinement policy rooted at exactly one canonical Science Session
- * scratch tree. Shared by every confined interpreter spawn under that
- * Session: one-shot runs, probes, and persistent kernels alike.
+ * scratch tree. Used for every persistent kernel spawn under that Session
+ * (an interpreter probe's own policy is narrower, rooted at its probe
+ * directory instead — see `environment.ts`).
  * @param session - exact live Session that owns the scratch tree.
  * @param scratch - that Session's private scratch paths.
  * @returns the fixed `workspace-write` sandbox policy.
@@ -214,9 +177,9 @@ export function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): voi
 /**
  * Sandbox-confine one argv under an already-built policy: asserts the
  * interpreter's own prefix stays read-only and requires full enforcement.
- * Shared by every Science confinement site — one-shot runs, persistent
- * kernels, and interpreter probes alike — each of which builds its own
- * policy (a probe's differs from a run's: a narrower `workspaceRoot`).
+ * Shared by every Science confinement site — persistent kernel spawn and
+ * interpreter probes alike — each of which builds its own policy (a probe's
+ * differs from a kernel's: a narrower `workspaceRoot`).
  * @param sandbox - sandbox provider performing the confinement.
  * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
  * @param policy - the caller's already-built confinement policy.
@@ -248,9 +211,8 @@ export function confineWithFullEnforcement(
 
 /**
  * Sandbox-confine one interpreter argv under a Session's `workspace-write`
- * policy. Shared by one-shot run confinement and persistent kernel spawn
- * confinement (both root the policy at the whole Session scratch tree,
- * unlike an interpreter probe's narrower policy).
+ * policy: persistent kernel spawn confinement, rooted at the whole Session
+ * scratch tree (unlike an interpreter probe's narrower policy).
  * @param session - exact live Session that owns the confinement policy.
  * @param scratch - that Session's private scratch paths.
  * @param sandbox - sandbox provider performing the confinement.
@@ -269,74 +231,85 @@ export function confineInterpreterArgv(
   return confineWithFullEnforcement(sandbox, canonicalPrefix, confinementPolicy(session, scratch), argv)
 }
 
-/** Exact empty-base child environment for a published Science run. */
-function runEnvironment(
-  binding: ScienceInterpreterAvailableBinding,
-  scratch: ScienceSessionScratch,
-  run: ScienceRunScratch,
-): NodeJS.ProcessEnv {
+/**
+ * D10 run-terminal failure vocabulary for a kernel execution: `TIMEOUT`/
+ * `CANCELLED` describe the operation's own abort cause; `EXECUTION_FAILED`
+ * (the driver replied DONE `error`) and `KERNEL_DIED` (the kernel process
+ * exited or broke protocol mid-run) describe the kernel protocol outcome. A
+ * kernel run never populates a per-run exit code or signal.
+ */
+export type KernelRunFailureCode = 'TIMEOUT' | 'CANCELLED' | 'EXECUTION_FAILED' | 'KERNEL_DIED'
+
+/** Safe durable explanation for a kernel-run terminal classification. */
+function kernelFailureMessage(code: KernelRunFailureCode): string {
   return {
-    HOME: scratch.home,
-    TMPDIR: run.tmp,
-    PATH: interpreterPathEnv(binding.canonicalPrefix),
-    SCIENCE_STATE_DIR: scratch.state,
-    SCIENCE_ARTIFACT_DIR: run.artifacts,
-    ...localeEnvironment(),
-  }
-}
-
-/** Read a collector after settlement without treating unavailable collector state as output. */
-function output(reader: { readFrom(fromByte: number): SubprocessOutputRead } | undefined): ScienceRunOutput {
-  if (reader === undefined) throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science subprocess did not expose required collected output')
-  const read = reader.readFrom(0)
-  return { text: read.text, bytes: read.nextOffset, truncated: read.lossy }
-}
-
-/** Safely format a durable non-success explanation without retaining program output. */
-type RuntimeFailureCode =
-  | 'SPAWN_FAILED'
-  | 'SANDBOX_RUNNER_FAILED'
-  | 'SANDBOX_DENIED'
-  | 'DESCENDANT_CLEANUP_REQUIRED'
-  | 'PROCESS_SIGNALLED'
-  | 'PROCESS_EXIT_NONZERO'
-  | 'TIMEOUT'
-  | 'CANCELLED'
-
-/** Safe durable explanation for a Runtime-owned failure classification. */
-function failureMessage(code: RuntimeFailureCode): string {
-  return {
-    SPAWN_FAILED: 'The configured interpreter could not start.',
-    SANDBOX_RUNNER_FAILED: 'The confinement runner failed before the interpreter started.',
-    SANDBOX_DENIED: 'Confinement denied a requested file effect.',
-    DESCENDANT_CLEANUP_REQUIRED: 'A descendant required managed-tree cleanup.',
-    PROCESS_SIGNALLED: 'The interpreter exited from a signal.',
-    PROCESS_EXIT_NONZERO: 'The interpreter exited with a nonzero status.',
     TIMEOUT: 'The Science Runtime operation timed out.',
     CANCELLED: 'The Science Runtime operation was cancelled.',
+    EXECUTION_FAILED: 'The interpreter raised an error while executing this run.',
+    KERNEL_DIED: 'The persistent kernel stopped unexpectedly during this run.',
   }[code]
 }
 
-/** Build a terminal value from durable start fields and operational outcome facts. */
-function terminal(
+/**
+ * Build one kernel-run terminal value from durable start fields and its D5/D10 classification.
+ * @param started - already committed durable run-start value, whole-value repeated.
+ * @param stdout - bounded stdout tail read from this run's capture file.
+ * @param stderr - bounded stderr tail read from this run's capture file.
+ * @param status - D10 terminal status.
+ * @param failureCode - present on every non-success status.
+ * @param outputDegraded - whether the DONE frame carried the `capture-degraded` flag; kernel runs never populate `exitCode`/`signal`.
+ * @returns the complete terminal value ready for one atomic Session append.
+ */
+export function kernelRunTerminal(
   started: ScienceRunStarted,
   stdout: ScienceRunOutput,
   stderr: ScienceRunOutput,
   status: ScienceRunTerminal['status'],
-  failureCode: RuntimeFailureCode | undefined,
-  outcome?: { readonly exitCode: number | null; readonly signal: string | null },
+  failureCode: KernelRunFailureCode | undefined,
+  outputDegraded: boolean,
 ): ScienceRunTerminal {
   return {
     ...started,
     status,
     finishedAt: Date.now(),
-    ...(outcome?.exitCode === null || outcome?.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
-    ...(outcome?.signal === null || outcome?.signal === undefined ? {} : { signal: outcome.signal }),
     stdoutBytes: stdout.bytes,
     stderrBytes: stderr.bytes,
     stdoutTruncated: stdout.truncated,
     stderrTruncated: stderr.truncated,
-    ...(failureCode === undefined ? {} : { failureCode, failureMessage: failureMessage(failureCode) }),
+    ...(failureCode === undefined ? {} : { failureCode, failureMessage: kernelFailureMessage(failureCode) }),
+    ...(outputDegraded ? { outputDegraded: true as const } : {}),
+  }
+}
+
+/**
+ * Read a bounded tail of one already-closed per-run capture file: the exact
+ * byte count is the file's own size; `truncated` is whether that size
+ * exceeds {@link MAX_OUTPUT_BYTES}; the retained `text` is the last
+ * `MAX_OUTPUT_BYTES` bytes (D2 "retain tail"), decoded UTF-8 without
+ * multibyte-boundary alignment — matching the subprocess seam's own
+ * in-memory tail collector, which truncates the same way. A missing file
+ * (the driver never wrote to it — the run never reached user code) reads as
+ * empty, not a failure.
+ * @param path - absolute path of the per-run stdout or stderr capture file.
+ * @returns the bounded output tail.
+ */
+export async function readCaptureTail(path: string): Promise<ScienceRunOutput> {
+  let size: number
+  try {
+    size = (await stat(path)).size
+  } catch {
+    return { text: '', bytes: 0, truncated: false }
+  }
+  if (size === 0) return { text: '', bytes: 0, truncated: false }
+  const truncated = size > MAX_OUTPUT_BYTES
+  const start = truncated ? size - MAX_OUTPUT_BYTES : 0
+  const handle = await open(path, 'r')
+  try {
+    const buffer = Buffer.alloc(size - start)
+    await handle.read(buffer, 0, buffer.length, start)
+    return { text: buffer.toString('utf8'), bytes: size, truncated }
+  } finally {
+    await handle.close()
   }
 }
 
@@ -352,8 +325,9 @@ export type Quiescence =
 
 /**
  * Wait briefly for a subprocess tree to exit on its own, then escalate
- * through the seam's one termination verb and wait again. Shared by
- * one-shot run settlement and persistent kernel teardown.
+ * through the seam's one termination verb and wait again. Used by
+ * persistent kernel teardown, both ordinary (`KernelProcess.end`) and
+ * spawn-failure cleanup.
  * @param handle - the live subprocess handle to quiesce.
  * @returns whether the tree proved quiescent, whether termination was
  *   forced, and (when still unproven) the retained eventual-quiescence observation.
@@ -380,13 +354,14 @@ export async function quiesce(handle: SubprocessHandle): Promise<Quiescence> {
 }
 
 /**
- * Create a start candidate after source was flushed but before the requested argv is spawned.
+ * Create a start candidate after source was flushed but before the RUN frame is sent.
  * @param plan - Private immutable run plan.
  * @param run - Flushed private run directory facts.
  * @param language - Requested interpreter language.
  * @param environment - Applied durable environment revision.
  * @param toolCallId - Still-pending authorization call that owns the run.
  * @param requestHeaderSeq - Durable request-header sequence that owns provenance.
+ * @param kernelEpoch - session-local epoch of the kernel that will execute this run (already acquired).
  * @returns Durable start fields ready for one atomic Session append.
  */
 export function startCandidate(
@@ -396,6 +371,7 @@ export function startCandidate(
   environment: ScienceEnvironmentBinding,
   toolCallId: ScienceRunStarted['toolCallId'],
   requestHeaderSeq: number,
+  kernelEpoch: number,
 ): ScienceRunStarted {
   return {
     runId: plan.runId,
@@ -408,146 +384,7 @@ export function startCandidate(
     codeSha256: sha256(plan.sourceBytes),
     scratchKey: plan.scratchKey,
     runDirectoryRef: run.ref,
+    kernelEpoch,
     status: 'running',
-  }
-}
-
-/**
- * Wrap fixed direct argv under full Science confinement before the run directory exists.
- * @param services - Shared subprocess, sandbox, exact Session, and private scratch services.
- * @param plan - Private immutable run plan.
- * @param source - Exact private source-file path passed only as a direct argv element.
- * @returns Full confinement facts retained for spawn and result classification.
- */
-export function confineRun(
-  services: ExecutionServices,
-  plan: RunPlan,
-  source: string,
-): ConfinedExecution {
-  const confined = confineInterpreterArgv(
-    services.session,
-    services.sessionScratch,
-    services.sandbox,
-    plan.binding.canonicalPrefix,
-    interpreterArgv(plan.binding.language, plan.binding.executable, source),
-  )
-  return {
-    argv: confined.argv,
-    denialSignatures: confined.denialSignatures,
-    runnerFailureRules: confined.runnerFailureRules,
-  }
-}
-
-/**
- * Start and quiesce a published run, returning a terminal value without appending it.
- * @param services - Shared execution services for the published operation.
- * @param started - Already committed durable run-start value.
- * @param plan - Private immutable run plan.
- * @param run - Private published run directory facts.
- * @param confined - Full direct-argv confinement facts.
- * @returns Terminal output and classification only after tree quiescence, or an eventual cleanup proof.
- */
-export async function settleRun(
-  services: ExecutionServices,
-  started: ScienceRunStarted,
-  plan: RunPlan,
-  run: ScienceRunScratch,
-  confined: ConfinedExecution,
-): Promise<SettledRun> {
-  let handle: SubprocessHandle | undefined
-  let outcome: { readonly exitCode: number | null; readonly signal: string | null } | undefined
-  let spawnError: unknown
-  const stop = (): void => {
-    try {
-      handle?.terminate()
-    } catch {
-      // Settlement owns provider termination failures and still proves whole-tree exit before publishing.
-    }
-  }
-  services.control.signal.addEventListener('abort', stop, { once: true })
-  try {
-    if (!services.control.signal.aborted) {
-      try {
-        handle = services.subprocess.spawn({
-          argv: confined.argv,
-          cwd: run.directory,
-          stdio: {
-            stdin: 'ignore',
-            stdout: { maxBytes: MAX_OUTPUT_BYTES },
-            stderr: { maxBytes: MAX_OUTPUT_BYTES },
-          },
-          graceMs: DESCENDANT_GRACE_MS,
-          environmentBase: 'empty',
-          env: runEnvironment(plan.binding, services.sessionScratch, run),
-          signal: services.control.signal,
-        })
-        try {
-          outcome = await handle.done
-        } catch (error) {
-          spawnError = error
-        }
-      } catch (error) {
-        spawnError = error
-      }
-    }
-    const resultAfterQuiescence = (forced: boolean): ScienceRunResult => {
-      const stdout = handle === undefined ? { text: '', bytes: 0, truncated: false } : output(handle.collected.stdout)
-      const stderr = handle === undefined ? { text: '', bytes: 0, truncated: false } : output(handle.collected.stderr)
-      let status: ScienceRunTerminal['status'] = 'success'
-      let failureCode: RuntimeFailureCode | undefined
-      switch (services.control.cause) {
-        case 'timeout':
-          status = 'timed-out'
-          failureCode = 'TIMEOUT'
-          break
-        case 'cancelled':
-        case 'service-disposed':
-        case 'session-detached':
-          status = 'cancelled'
-          failureCode = 'CANCELLED'
-          break
-        default:
-          if (spawnError !== undefined) {
-            status = 'failed'
-            failureCode = isRunnerSpawnFailure(spawnError, confined.argv[0], run.directory)
-              ? 'SANDBOX_RUNNER_FAILED'
-              : 'SPAWN_FAILED'
-          } else if (outcome === undefined) {
-            status = 'failed'
-            failureCode = 'SPAWN_FAILED'
-          } else {
-            const runnerFailure = classifyRunnerFailure(outcome.exitCode, stderr.text, confined.runnerFailureRules)
-            if (runnerFailure !== undefined) {
-              status = 'failed'
-              failureCode = 'SANDBOX_RUNNER_FAILED'
-            } else if (classifyDenial(outcome.exitCode, stderr.text, confined.denialSignatures)) {
-              status = 'failed'
-              failureCode = 'SANDBOX_DENIED'
-            } else if (forced) {
-              status = 'failed'
-              failureCode = 'DESCENDANT_CLEANUP_REQUIRED'
-            } else if (outcome.signal !== null) {
-              status = 'failed'
-              failureCode = 'PROCESS_SIGNALLED'
-            } else if (outcome.exitCode !== 0) {
-              status = 'failed'
-              failureCode = 'PROCESS_EXIT_NONZERO'
-            }
-          }
-          break
-      }
-      const value = terminal(started, stdout, stderr, status, failureCode, outcome)
-      return { terminal: value, stdout, stderr }
-    }
-    const quiescence: Quiescence = handle === undefined ? { quiescent: true, forced: false } : await quiesce(handle)
-    if (!quiescence.quiescent) {
-      return {
-        quiescent: false,
-        eventualResult: quiescence.eventualQuiescence.then(quiescent => quiescent ? resultAfterQuiescence(true) : undefined),
-      }
-    }
-    return { result: resultAfterQuiescence(quiescence.forced), quiescent: true }
-  } finally {
-    services.control.signal.removeEventListener('abort', stop)
   }
 }

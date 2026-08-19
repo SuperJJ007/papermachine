@@ -12,6 +12,7 @@ import {
   environmentWithoutPython,
   event,
   interpreter,
+  kernelStarted,
   legalEvents,
   mode,
   outcome,
@@ -94,23 +95,24 @@ describe('strict Science provenance', () => {
 
   it('requires the latest request header and a later matching tool call', () => {
     const staleHeader = [
-      ...legalEvents().slice(0, 3),
-      event('request/header', 3, 125, {}),
-      toolCall(4, 130, RUN_CALL_ID, 'run_python'),
-      event('science/run-started', 5, 140, {
+      ...legalEvents().slice(0, 4),
+      event('request/header', 4, 125, {}),
+      toolCall(5, 130, RUN_CALL_ID, 'run_python'),
+      event('science/run-started', 6, 140, {
         version: 1,
-        run: runStarted({ requestHeaderSeq: 2 }),
+        run: runStarted({ requestHeaderSeq: 3 }),
       }),
     ]
     expect(() => foldScience(staleHeader)).toThrow(/not the latest post-mode request\/header/)
 
     const callBeforeHeader = [
       ...legalEvents().slice(0, 2),
-      toolCall(2, 115, RUN_CALL_ID, 'run_python'),
-      event('request/header', 3, 120, {}),
-      event('science/run-started', 4, 140, {
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      toolCall(3, 116, RUN_CALL_ID, 'run_python'),
+      event('request/header', 4, 120, {}),
+      event('science/run-started', 5, 140, {
         version: 1,
-        run: runStarted({ requestHeaderSeq: 3 }),
+        run: runStarted({ requestHeaderSeq: 4 }),
       }),
     ]
     expect(() => foldScience(callBeforeHeader)).toThrow(/does not identify one call after its cited request\/header/)
@@ -124,19 +126,19 @@ describe('strict Science provenance', () => {
     })
     const reuseCases: Array<readonly [string, SessionEvent[]]> = [
       ['second run', [
-        ...legalEvents().slice(0, 6),
-        event('science/run-started', 6, 160, { version: 1, run: secondRun }),
+        ...legalEvents().slice(0, 7),
+        event('science/run-started', 7, 160, { version: 1, run: secondRun }),
       ]],
       ['chart', [
-        ...legalEvents().slice(0, 8),
-        event('science/artifact-saved', 8, 180, {
+        ...legalEvents().slice(0, 9),
+        event('science/artifact-saved', 9, 180, {
           version: 1,
           artifact: artifact({ version: 2, createdAt: 179 }),
         }),
       ]],
       ['outcome', [
         ...legalEvents(),
-        event('science/outcome-published', 10, 190, {
+        event('science/outcome-published', 11, 190, {
           version: 1,
           outcome: outcome({ revision: 2, publishedAt: 189 }),
         }),
@@ -148,19 +150,19 @@ describe('strict Science provenance', () => {
 
     const settledCases: Array<readonly [string, SessionEvent[]]> = [
       ['run', [
-        ...legalEvents().slice(0, 4),
-        toolResult(4, 135, RUN_CALL_ID),
-        event('science/run-started', 5, 140, { version: 1, run: runStarted() }),
+        ...legalEvents().slice(0, 5),
+        toolResult(5, 135, RUN_CALL_ID),
+        event('science/run-started', 6, 140, { version: 1, run: runStarted() }),
       ]],
       ['chart', [
-        ...legalEvents().slice(0, 7),
-        toolResult(7, 165, ARTIFACT_CALL_ID),
-        event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
+        ...legalEvents().slice(0, 8),
+        toolResult(8, 165, ARTIFACT_CALL_ID),
+        event('science/artifact-saved', 9, 170, { version: 1, artifact: artifact() }),
       ]],
       ['outcome', [
-        ...legalEvents().slice(0, 9),
-        toolResult(9, 177, OUTCOME_CALL_ID),
-        event('science/outcome-published', 10, 180, { version: 1, outcome: outcome() }),
+        ...legalEvents().slice(0, 10),
+        toolResult(10, 177, OUTCOME_CALL_ID),
+        event('science/outcome-published', 11, 180, { version: 1, outcome: outcome() }),
       ]],
     ]
     for (const [name, events] of settledCases) {
@@ -168,27 +170,27 @@ describe('strict Science provenance', () => {
     }
 
     expect(() => foldScience([
-      ...legalEvents().slice(0, 8),
-      event('science/outcome-published', 8, 180, { version: 1, outcome: outcome() }),
+      ...legalEvents().slice(0, 9),
+      event('science/outcome-published', 9, 180, { version: 1, outcome: outcome() }),
     ])).toThrow(/does not identify one call after its cited request\/header/)
   })
 
   it('rejects a Science fact after its authorizing tool call step has ended', () => {
     const cases: Array<readonly [string, SessionEvent[]]> = [
       ['run', [
-        ...legalEvents().slice(0, 4),
-        event('step/end', 4, 135, { turn: 1, step: 1 }),
-        event('science/run-started', 5, 140, { version: 1, run: runStarted() }),
+        ...legalEvents().slice(0, 5),
+        event('step/end', 5, 135, { turn: 1, step: 1 }),
+        event('science/run-started', 6, 140, { version: 1, run: runStarted() }),
       ]],
       ['chart', [
-        ...legalEvents().slice(0, 7),
-        event('step/end', 7, 165, { turn: 1, step: 1 }),
-        event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
+        ...legalEvents().slice(0, 8),
+        event('step/end', 8, 165, { turn: 1, step: 1 }),
+        event('science/artifact-saved', 9, 170, { version: 1, artifact: artifact() }),
       ]],
       ['outcome', [
-        ...legalEvents().slice(0, 9),
-        event('step/end', 9, 177, { turn: 1, step: 1 }),
-        event('science/outcome-published', 10, 180, { version: 1, outcome: outcome() }),
+        ...legalEvents().slice(0, 10),
+        event('step/end', 10, 177, { turn: 1, step: 1 }),
+        event('science/outcome-published', 11, 180, { version: 1, outcome: outcome() }),
       ]],
     ]
 
@@ -197,22 +199,22 @@ describe('strict Science provenance', () => {
     }
 
     expect(foldScience([
-      ...legalEvents().slice(0, 4),
-      event('step/end', 4, 135, { turn: 2, step: 1 }),
-      event('science/run-started', 5, 140, { version: 1, run: runStarted() }),
+      ...legalEvents().slice(0, 5),
+      event('step/end', 5, 135, { turn: 2, step: 1 }),
+      event('science/run-started', 6, 140, { version: 1, run: runStarted() }),
     ]).runs).toEqual([runStarted()])
   })
 
   it('requires the operation-specific tool name and accepts the R runner name', () => {
     const wrongNames: Array<readonly [string, SessionEvent[], RegExp]> = [
-      ['run', legalEvents().slice(0, 5).map((candidate, index) => index === 3
-        ? toolCall(3, 130, RUN_CALL_ID, 'bash')
+      ['run', legalEvents().slice(0, 6).map((candidate, index) => index === 4
+        ? toolCall(4, 130, RUN_CALL_ID, 'bash')
         : candidate), /expected run_python/],
-      ['chart', legalEvents().slice(0, 8).map((candidate, index) => index === 6
-        ? toolCall(6, 160, ARTIFACT_CALL_ID, 'bash')
+      ['chart', legalEvents().slice(0, 9).map((candidate, index) => index === 7
+        ? toolCall(7, 160, ARTIFACT_CALL_ID, 'bash')
         : candidate), /expected annotate_artifact/],
-      ['outcome', legalEvents().map((candidate, index) => index === 8
-        ? toolCall(8, 175, OUTCOME_CALL_ID, 'bash')
+      ['outcome', legalEvents().map((candidate, index) => index === 9
+        ? toolCall(9, 175, OUTCOME_CALL_ID, 'bash')
         : candidate), /expected publish_outcome/],
     ]
     for (const [name, events, pattern] of wrongNames) {
@@ -228,23 +230,24 @@ describe('strict Science provenance', () => {
           r: interpreter({ language: 'r' }),
         }),
       }),
-      legalEvents()[2]!,
-      toolCall(3, 130, RUN_CALL_ID, 'run_r'),
-      event('science/run-started', 4, 140, { version: 1, run: rRun }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted({ language: 'r' }) }),
+      event('request/header', 3, 120, {}),
+      toolCall(4, 130, RUN_CALL_ID, 'run_r'),
+      event('science/run-started', 5, 140, { version: 1, run: rRun }),
     ]
     expect(foldScience(rEvents).runs).toEqual([rRun])
   })
 
   it('requires payload times to follow every authorizing and cited event', () => {
     const runCases: Array<readonly [string, SessionEvent[]]> = [
-      ['request header', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['request header', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ startedAt: 119 }),
         })
         : candidate)],
-      ['tool call', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['tool call', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ startedAt: 129 }),
         })
@@ -255,8 +258,8 @@ describe('strict Science provenance', () => {
     }
 
     expect(() => foldScience([
-      ...legalEvents().slice(0, 5),
-      event('science/run-finished', 5, 150, {
+      ...legalEvents().slice(0, 6),
+      event('science/run-finished', 6, 150, {
         version: 1,
         run: runTerminal({ finishedAt: 139 }),
       }),
@@ -264,25 +267,25 @@ describe('strict Science provenance', () => {
 
     const chartTimeCases: Array<readonly [string, SessionEvent[]]> = [
       ['request header', [
-        ...legalEvents().slice(0, 6),
-        event('request/header', 6, 165, {}),
-        toolCall(7, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 8, 170, {
+        ...legalEvents().slice(0, 7),
+        event('request/header', 7, 165, {}),
+        toolCall(8, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
+        event('science/artifact-saved', 9, 170, {
           version: 1,
-          artifact: artifact({ requestHeaderSeq: 6, createdAt: 164 }),
+          artifact: artifact({ requestHeaderSeq: 7, createdAt: 164 }),
         }),
       ]],
-      ['tool call', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, {
+      ['tool call', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ createdAt: 159 }),
         })
         : candidate)],
       ['source terminal event', [
-        ...legalEvents().slice(0, 5),
-        event('science/run-finished', 5, 165, { version: 1, run: runTerminal() }),
-        toolCall(6, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 7, 170, {
+        ...legalEvents().slice(0, 6),
+        event('science/run-finished', 6, 165, { version: 1, run: runTerminal() }),
+        toolCall(7, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
+        event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ createdAt: 164 }),
         }),
@@ -294,25 +297,25 @@ describe('strict Science provenance', () => {
 
     const outcomeTimeCases: Array<readonly [string, SessionEvent[], RegExp]> = [
       ['request header', [
-        ...legalEvents().slice(0, 8),
-        event('request/header', 8, 178, {}),
-        toolCall(9, 175, OUTCOME_CALL_ID, 'publish_outcome'),
-        event('science/outcome-published', 10, 180, {
+        ...legalEvents().slice(0, 9),
+        event('request/header', 9, 178, {}),
+        toolCall(10, 175, OUTCOME_CALL_ID, 'publish_outcome'),
+        event('science/outcome-published', 11, 180, {
           version: 1,
-          outcome: outcome({ requestHeaderSeq: 8, publishedAt: 177 }),
+          outcome: outcome({ requestHeaderSeq: 9, publishedAt: 177 }),
         }),
       ], /authorizing facts/],
       ['tool call', [
-        ...legalEvents().slice(0, 9),
-        event('science/outcome-published', 9, 180, {
+        ...legalEvents().slice(0, 10),
+        event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ publishedAt: 174 }),
         }),
       ], /authorizing facts/],
       ['run evidence', [
-        ...legalEvents().slice(0, 6),
-        toolCall(6, 145, OUTCOME_CALL_ID, 'publish_outcome'),
-        event('science/outcome-published', 7, 160, {
+        ...legalEvents().slice(0, 7),
+        toolCall(7, 145, OUTCOME_CALL_ID, 'publish_outcome'),
+        event('science/outcome-published', 8, 160, {
           version: 1,
           outcome: outcome({
             evidence: [{ kind: 'run', runId: RUN_ID }],
@@ -321,9 +324,9 @@ describe('strict Science provenance', () => {
         }),
       ], /precedes cited run evidence/],
       ['chart evidence', [
-        ...legalEvents().slice(0, 8),
-        toolCall(8, 165, OUTCOME_CALL_ID, 'publish_outcome'),
-        event('science/outcome-published', 9, 180, {
+        ...legalEvents().slice(0, 9),
+        toolCall(9, 165, OUTCOME_CALL_ID, 'publish_outcome'),
+        event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ publishedAt: 169 }),
         }),

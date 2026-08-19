@@ -2,10 +2,12 @@
 
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEventType } from '@deepseek-ai/dsh-session'
@@ -20,8 +22,16 @@ import type {
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import ScienceRuntime from '../src/index.ts'
 import type { Config } from '../src/config.ts'
+import { KernelSet } from '../src/kernel-set.ts'
+import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
+
+/** Full-featured fake D2-protocol driver pair (sleep/trapSigint included) named for `resolveKernelDriverPath`. */
+export const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
+/** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
+export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-no-ready/', import.meta.url))
 
 /**
  * Mount a real local attachment store at the same Harness home a test's
@@ -250,7 +260,16 @@ function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Pro
 /** Fake interpreter probe behavior that exercises lossless UTF-8 acceptance. */
 export type FakeUtf8Probe = 'valid' | 'invalid'
 
-/** Return a fake Python prefix whose executable implements frozen probes and simple runs. */
+/**
+ * Return a fake Python prefix whose executable implements frozen probes
+ * (`bindEnvironment`'s `--version`/`-c`/`-m`) and, for every other invocation
+ * shape, discards every leading hardening flag `interpreterArgv` prepends
+ * and `exec`s this Node process against the trailing driver-path/fifo-path
+ * pair (`KernelProcess`'s own confined kernel spawn) — the same forwarding
+ * `kernel-process.spec.ts`'s `createFakeInterpreterPrefix` uses, folded into
+ * one prefix so `bindEnvironment` and a persistent-kernel `startRun` can both
+ * run against it.
+ */
 export function createFakePythonPrefix(root: string, utf8Probe: FakeUtf8Probe = 'valid'): string {
   const prefix = join(root, 'fake-conda')
   mkdirSync(join(prefix, 'bin'), { recursive: true })
@@ -265,15 +284,24 @@ if [ -n "\${SCIENCE_RUNTIME_LEAK-}" ]; then
 fi
 case " $* " in
   *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+  *" -m "*) printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]' ;;
   *" -c "*) ${utf8Output} ;;
-  *) printf 'fake run output\\n' ;;
+  *)
+    while [ "$#" -gt 2 ]; do shift; done
+    exec "${process.execPath}" "$1" "$2"
+    ;;
 esac
 `)
   chmodSync(executable, 0o700)
   return prefix
 }
 
-/** Return a fake R Conda prefix with the frozen Rscript probes and direct source-file runs. */
+/**
+ * Return a fake R Conda prefix whose executable implements frozen probes
+ * (`bindEnvironment`'s `--version`/package-inventory/`-e`) and, for every
+ * other invocation shape, forwards to this Node process the same way
+ * {@link createFakePythonPrefix} does — see that function's own doc.
+ */
 export function createFakeRPrefix(root: string, prefix = join(root, 'fake-r-conda')): string {
   mkdirSync(join(prefix, 'bin'), { recursive: true })
   mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
@@ -282,8 +310,12 @@ export function createFakeRPrefix(root: string, prefix = join(root, 'fake-r-cond
   writeFileSync(executable, `#!/bin/sh
 case " $* " in
   *" --version "*) printf 'Fake R 4.5.0\\n' ;;
+  *"installed.packages"*) printf 'base\\t4.5.0\\nutils\\t4.5.0\\n' ;;
   *" -e "*) printf 'dsh-科学-✓' ;;
-  *) printf 'fake R run output\\n' ;;
+  *)
+    while [ "$#" -gt 2 ]; do shift; done
+    exec "${process.execPath}" "$1" "$2"
+    ;;
 esac
 `)
   chmodSync(executable, 0o755)
@@ -426,4 +458,109 @@ export function authorizePythonRun(session: Session, id = 'science-runtime-run-c
 /** Append the request/header and annotate_artifact tool-call facts that authorize one curated re-save. */
 export function authorizeAnnotateArtifact(session: Session, id = 'science-runtime-annotate-artifact-call') {
   return authorizeToolCall(session, 'annotate_artifact', id)
+}
+
+/**
+ * Replace a live `ScienceRuntime`'s internal `KernelSet`, reaching the
+ * private `kernels` field and its `appendKernelStarted`/`appendKernelEnded`/
+ * `nextKernelEpoch` methods the same way `lifecycle.spec.ts`'s own tests
+ * reach `leases` (TypeScript `readonly` has no runtime effect), so the
+ * replacement kernel set still commits durable facts through the exact same
+ * code the production one runs — only `assetsRoot`/the timeouts/the
+ * subprocess-sandbox pair differ.
+ * @param ctx - the context that mounted `runtime`; also the default source of `subprocess`/`sandbox` when `options` omits them.
+ * @param runtime - the live `ScienceRuntime` whose kernel set is replaced.
+ * @param options - the fake driver assets root, kernel timeouts, and (for a
+ *   Loader composition whose own `subprocess` entry cannot spawn a real
+ *   kernel process) an explicit real subprocess/sandbox pair for this replacement.
+ */
+export function installTestKernelSet(
+  ctx: Context,
+  runtime: ScienceRuntime,
+  options: {
+    readonly assetsRoot?: string
+    readonly kernelIdleTimeoutMs?: number
+    readonly kernelStartTimeoutMs?: number
+    readonly subprocess?: SubprocessRuntime
+    readonly sandbox?: SandboxProvider
+  } = {},
+): void {
+  const internal = runtime as unknown as {
+    kernels: KernelSet
+    appendKernelStarted(session: Session, fact: ScienceKernelStartedFact): void
+    appendKernelEnded(session: Session, fact: ScienceKernelEndedFact): void
+    nextKernelEpoch(session: Session): number
+  }
+  internal.kernels = new KernelSet({
+    subprocess: options.subprocess ?? ctx.subprocess,
+    sandbox: options.sandbox ?? ctx.sandbox,
+    assetsRoot: options.assetsRoot ?? KERNEL_ASSETS_FULL_ROOT,
+    kernelIdleTimeoutMs: options.kernelIdleTimeoutMs ?? 1_800_000,
+    kernelStartTimeoutMs: options.kernelStartTimeoutMs ?? 5_000,
+    nextEpoch: session => internal.nextKernelEpoch(session),
+    onKernelStarted: (session, fact) => { internal.appendKernelStarted(session, fact) },
+    onKernelEnded: (session, fact) => { internal.appendKernelEnded(session, fact) },
+  })
+}
+
+/**
+ * Assemble the Runtime against real `dsh-subprocess-local`/`dsh-sandbox-local`
+ * providers (a no-policy fake runner, matching `kernel-process.spec.ts`'s
+ * own composition) with its internal `KernelSet` replaced ({@link installTestKernelSet})
+ * to resolve driver assets under the fake D2-protocol driver pair at
+ * `kernel-set-assets-full/` instead of the package's real shipped
+ * `kernel_python.py`/`kernel_r.R`. `startRun`'s `code` argument becomes the
+ * fake driver's own JSON action string (see `fake-kernel-driver.mjs`'s own
+ * doc), never real interpreter source. `bindEnvironment` and its probes run
+ * unmodified against `createFakePythonPrefix`/`createFakeRPrefix`'s combined
+ * probe/kernel-forwarding executables.
+ * @param root - private temp root this call owns.
+ * @param profiles - Runtime profile configuration.
+ * @param timeoutMs - operation deadline forwarded to every `ScienceRuntime` call.
+ * @param kernelIdleTimeoutMs - overrides the kernel idle deadline for idle-expiry coverage.
+ * @param attachmentsOverride - Override the mounted `attachments` service, e.g. a `mediaTypes` allowlist that excludes PNG.
+ * @param configOverrides - Additional `ScienceRuntime` Config fields (e.g. the `capture*` bounds), merged over the harness's own defaults.
+ * @returns the assembled context, the live `ScienceRuntime`, and its Cordis fiber.
+ */
+export async function createKernelRuntimeHarness(
+  root: string,
+  profiles: Config['profiles'],
+  timeoutMs = 10_000,
+  kernelIdleTimeoutMs = 1_800_000,
+  attachmentsOverride?: (ctx: Context) => void,
+  configOverrides?: Partial<Config>,
+): Promise<{
+  readonly ctx: Context
+  readonly runtime: ScienceRuntime
+  readonly runtimeFiber: Awaited<ReturnType<Context['plugin']>>
+}> {
+  const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(InvariantRegistry, { enabled: true })
+  await ctx.plugin(ScienceSessionInvariant)
+  await ctx.plugin(LocalSubprocessRuntime)
+  const runner = createFakeSandboxRunner(root)
+  await ctx.plugin(LocalSandboxProvider, {
+    runnerCommand: [runner],
+    runnerFailureSignatures: ['science-runtime fake runner failure'],
+  })
+  if (attachmentsOverride === undefined) {
+    await mountAttachments(ctx, root)
+  } else {
+    attachmentsOverride(ctx)
+  }
+  const runtimeFiber = await ctx.plugin(ScienceRuntime, {
+    dshHome: join(root, 'dsh-home'),
+    profiles,
+    timeoutMs,
+    ...configOverrides,
+  })
+  const runtime = ctx.scienceRuntime
+  installTestKernelSet(ctx, runtime, { assetsRoot: KERNEL_ASSETS_FULL_ROOT, kernelIdleTimeoutMs, kernelStartTimeoutMs: 5_000 })
+  return { ctx, runtime, runtimeFiber }
+}
+
+/** Build one fake driver action string for `startRun`'s `code` argument (see `fake-kernel-driver.mjs`'s own doc). */
+export function kernelAction(action: Record<string, unknown>): string {
+  return JSON.stringify(action)
 }

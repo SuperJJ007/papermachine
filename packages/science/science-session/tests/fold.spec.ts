@@ -45,29 +45,29 @@ describe('strict Science fold', () => {
     expect(state.runs).toEqual([runTerminal()])
     expect(state.artifacts).toEqual([artifact()])
     expect(state.outcomes).toEqual([outcome()])
-    expect(state.nextSeq).toBe(10)
-    expect(state.lastScienceEventSeq).toBe(9)
+    expect(state.nextSeq).toBe(11)
+    expect(state.lastScienceEventSeq).toBe(10)
     expect(state.lastScienceTime).toBe(180)
-    expect(state.requestHeaders).toEqual([{ seq: 2, time: 120 }])
+    expect(state.requestHeaders).toEqual([{ seq: 3, time: 120 }])
     expect(state.toolCalls).toEqual([
-      { seq: 3, time: 130, callId: RUN_CALL_ID, turn: 1, step: 1, name: 'run_python' },
-      { seq: 6, time: 160, callId: ARTIFACT_CALL_ID, turn: 1, step: 1, name: 'annotate_artifact' },
-      { seq: 8, time: 175, callId: OUTCOME_CALL_ID, turn: 1, step: 1, name: 'publish_outcome' },
+      { seq: 4, time: 130, callId: RUN_CALL_ID, turn: 1, step: 1, name: 'run_python' },
+      { seq: 7, time: 160, callId: ARTIFACT_CALL_ID, turn: 1, step: 1, name: 'annotate_artifact' },
+      { seq: 9, time: 175, callId: OUTCOME_CALL_ID, turn: 1, step: 1, name: 'publish_outcome' },
     ])
     expect(state.settledToolCallSeqs).toEqual([])
     expect(state.messageFacts).toEqual([])
-    expect(state.consumedToolCallSeqs).toEqual([3, 6, 8])
+    expect(state.consumedToolCallSeqs).toEqual([4, 7, 9])
   })
 
   it('folds an auto-captured text artifact that carries its source run\'s own toolCallId, consuming no fresh tool call', () => {
     const events: SessionEvent[] = [
-      ...legalEvents().slice(0, 6),
-      event('science/artifact-saved', 6, 165, { version: 1, artifact: autoArtifact({ createdAt: 165 }) }),
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 165, { version: 1, artifact: autoArtifact({ createdAt: 165 }) }),
     ]
     const state = foldScience(events)
 
     expect(state.artifacts).toEqual([autoArtifact({ createdAt: 165 })])
-    expect(state.consumedToolCallSeqs).toEqual([3])
+    expect(state.consumedToolCallSeqs).toEqual([4])
     expect(decodeScienceArtifact(autoArtifact({ createdAt: 165 }))).toEqual(autoArtifact({ createdAt: 165 }))
   })
 
@@ -225,10 +225,10 @@ describe('strict Science fold', () => {
   })
 
   it('supersedes a version in place when a later save repeats its request turn', () => {
-    const events = legalEvents().slice(0, 8)
+    const events = legalEvents().slice(0, 9)
     events.push(
-      toolCall(8, 180, CallId('second-annotate-call'), 'annotate_artifact'),
-      event('science/artifact-saved', 9, 190, {
+      toolCall(9, 180, CallId('second-annotate-call'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
         version: 1,
         artifact: artifact({
           toolCallId: CallId('second-annotate-call'),
@@ -254,17 +254,17 @@ describe('strict Science fold', () => {
     expect(state.artifacts.at(0)?.attachment.attachmentId).toBe('attachment-2')
     // The retained fact follows the superseding event, so evidence cited
     // against this version is dated by the save that produced what it holds.
-    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 9, time: 190 }])
+    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 10, time: 190 }])
   })
 
   it('rejects a supersede that renames the artifact or walks its content backwards in time', () => {
     // Auto-captured saves need no curation call, so both candidates below
     // reach the supersede rules on the same turn the capture came from.
-    const base = legalEvents().slice(0, 6)
-    base.push(event('science/artifact-saved', 6, 170, { version: 1, artifact: autoArtifact({ createdAt: 168 }) }))
+    const base = legalEvents().slice(0, 7)
+    base.push(event('science/artifact-saved', 7, 170, { version: 1, artifact: autoArtifact({ createdAt: 168 }) }))
 
     const renamed = base.slice()
-    renamed.push(event('science/artifact-saved', 7, 175, {
+    renamed.push(event('science/artifact-saved', 8, 175, {
       version: 1,
       artifact: autoArtifact({ artifactId: ScienceArtifactId('a-different-artifact'), createdAt: 169 }),
     }))
@@ -272,7 +272,7 @@ describe('strict Science fold', () => {
 
     // A stale save must not overwrite a version with content committed before it.
     const backdated = base.slice()
-    backdated.push(event('science/artifact-saved', 7, 175, {
+    backdated.push(event('science/artifact-saved', 8, 175, {
       version: 1,
       artifact: autoArtifact({ createdAt: 160 }),
     }))
@@ -280,18 +280,18 @@ describe('strict Science fold', () => {
   })
 
   it('supersedes across turns only for an unchanged attachment, never for new content', () => {
-    const curated = legalEvents().slice(0, 8)
+    const curated = legalEvents().slice(0, 9)
     curated.push(
-      event('request/header', 8, 178, {
+      event('request/header', 9, 178, {
         header: { config: { provider: 'test', model: 'test-model' } },
         reason: 'initial',
       }),
-      toolCall(9, 180, CallId('later-annotate-call'), 'annotate_artifact', { turn: 2, step: 1 }),
-      event('science/artifact-saved', 10, 190, {
+      toolCall(10, 180, CallId('later-annotate-call'), 'annotate_artifact', { turn: 2, step: 1 }),
+      event('science/artifact-saved', 11, 190, {
         version: 1,
         artifact: artifact({
           toolCallId: CallId('later-annotate-call'),
-          requestHeaderSeq: 8,
+          requestHeaderSeq: 9,
           title: 'Titled a turn later',
           createdAt: 185,
         }),
@@ -307,11 +307,11 @@ describe('strict Science fold', () => {
     // New content in a new turn is a new result, and must not reuse the
     // version number a reader already saw.
     const rewritten = curated.slice()
-    rewritten[10] = event('science/artifact-saved', 10, 190, {
+    rewritten[11] = event('science/artifact-saved', 11, 190, {
       version: 1,
       artifact: artifact({
         toolCallId: CallId('later-annotate-call'),
-        requestHeaderSeq: 8,
+        requestHeaderSeq: 9,
         attachment: {
           attachmentId: AttachmentId('attachment-3'),
           mediaType: 'image/png',
@@ -335,28 +335,28 @@ describe('strict Science fold', () => {
     expect(() => foldScience(badEnvironment)).toThrow(/environment revision must be 1/)
 
     const badChart = legalEvents()
-    badChart[7] = event('science/artifact-saved', 7, 170, {
+    badChart[8] = event('science/artifact-saved', 8, 170, {
       version: 1,
       artifact: artifact({ version: 2 }),
     })
     expect(() => foldScience(badChart)).toThrow(/first logical artifact version must be 1/)
 
     const badOutcome = legalEvents()
-    badOutcome[9] = event('science/outcome-published', 9, 180, {
+    badOutcome[10] = event('science/outcome-published', 10, 180, {
       version: 1,
       outcome: outcome({ revision: 2 }),
     })
     expect(() => foldScience(badOutcome)).toThrow(/outcome revision must be 1/)
 
-    const duplicateRun = legalEvents().slice(0, 6)
-    duplicateRun.push(event('tool/call', 6, 160, {
+    const duplicateRun = legalEvents().slice(0, 7)
+    duplicateRun.push(event('tool/call', 7, 160, {
       turn: 1,
       step: 2,
       callId: CallId('call-run-again'),
       name: 'run_python',
       arguments: '{}',
     }))
-    duplicateRun.push(event('science/run-started', 7, 170, {
+    duplicateRun.push(event('science/run-started', 8, 170, {
       version: 1,
       run: runStarted({ toolCallId: CallId('call-run-again'), startedAt: 169 }),
     }))
@@ -372,28 +372,28 @@ describe('strict Science fold', () => {
 
   it('rejects missing or forward references and terminal whole-value rewrites', () => {
     const missingHeader = legalEvents()
-    missingHeader[4] = event('science/run-started', 4, 140, {
+    missingHeader[5] = event('science/run-started', 5, 140, {
       version: 1,
       run: runStarted({ requestHeaderSeq: 99 }),
     })
     expect(() => foldScience(missingHeader)).toThrow(/not the latest post-mode request\/header/)
 
     const missingRun = legalEvents()
-    missingRun[7] = event('science/artifact-saved', 7, 170, {
+    missingRun[8] = event('science/artifact-saved', 8, 170, {
       version: 1,
       artifact: artifact({ runId: ScienceRunId('missing-run') }),
     })
     expect(() => foldScience(missingRun)).toThrow(/reference a run that reached a terminal status/)
 
     const futureEvidence = legalEvents()
-    futureEvidence[9] = event('science/outcome-published', 9, 180, {
+    futureEvidence[10] = event('science/outcome-published', 10, 180, {
       version: 1,
       outcome: outcome({ evidence: [{ kind: 'message', seq: 99 }] }),
     })
     expect(() => foldScience(futureEvidence)).toThrow(/message evidence seq 99 is missing/)
 
     const rewrittenTerminal = legalEvents()
-    rewrittenTerminal[5] = event('science/run-finished', 5, 150, {
+    rewrittenTerminal[6] = event('science/run-finished', 6, 150, {
       version: 1,
       run: runTerminal({ codeSha256: 'e'.repeat(64) }),
     })

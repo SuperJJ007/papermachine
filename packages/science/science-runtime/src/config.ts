@@ -47,6 +47,17 @@ export const MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 1
 /** Highest accepted configured auto-capture per-session artifact-version bound. */
 export const MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 10_000
 
+/**
+ * Default persistent-kernel idle deadline (D7), matching Claude Science
+ * parity (30 minutes). Not yet a validated `Config` field — K3.3 promotes
+ * this constant into the same default/min/max triple as every field above,
+ * with `kernelIdleTimeoutMs`/`kernelStartTimeoutMs` schema entries; K3.1
+ * wires the pipeline to this fixed default first.
+ */
+export const DEFAULT_KERNEL_IDLE_TIMEOUT_MS = 1_800_000
+/** Default persistent-kernel spawn-to-READY deadline (D7); see {@link DEFAULT_KERNEL_IDLE_TIMEOUT_MS}'s own note. */
+export const DEFAULT_KERNEL_START_TIMEOUT_MS = 30_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */

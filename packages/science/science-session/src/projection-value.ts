@@ -119,6 +119,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
     environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
     startedAt: run.startedAt,
     codeSha256: run.codeSha256,
+    kernelEpoch: run.kernelEpoch,
   }
   if (run.status === 'running') return { ...common, status: run.status }
   if (run.status === 'interrupted') {
@@ -141,6 +142,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
     stdoutTruncated: run.stdoutTruncated,
     stderrTruncated: run.stderrTruncated,
     ...run.failureCode === undefined ? {} : { failureCode: run.failureCode },
+    ...run.outputDegraded === undefined ? {} : { outputDegraded: run.outputDegraded },
   }
 }
 

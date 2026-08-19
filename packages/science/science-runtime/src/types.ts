@@ -35,6 +35,10 @@ export type ScienceRuntimeErrorCode =
   | 'TERMINAL_COMMIT_FAILED'
   /** `annotate_artifact` named a `logical_name` (or an exact `version` of it) that does not exist in this session. */
   | 'ARTIFACT_NOT_FOUND'
+  /** A persistent kernel's spawn, READY handshake, or start-time confinement failed; the message names the language and cause class. */
+  | 'KERNEL_START_FAILED'
+  /** Kernel execution requires darwin or linux (D8); rejected pre-publication on every other platform. */
+  | 'KERNEL_UNSUPPORTED_PLATFORM'
 
 /** Typed error for a Runtime operation that cannot return a durable value. */
 export class ScienceRuntimeError extends Error {
@@ -99,11 +103,11 @@ export interface ScienceRunResult {
   readonly stderr: ScienceRunOutput
   /**
    * Auto-capture accounting for this run's artifact directory, run
-   * synchronously before this result returns. `undefined` only for a
-   * non-quiescent settlement, whose capture walk (run asynchronously after
-   * the eventual terminal fact commits) has no synchronous result to attach
-   * to — its captured versions are still durable `science/artifact-saved`
-   * events, discoverable through `get_science_state`.
+   * synchronously before this result returns. `undefined` only when the
+   * walk itself failed or the Session detached immediately after the
+   * terminal fact committed — captured versions from an earlier partial
+   * walk (if any) are still durable `science/artifact-saved` events,
+   * discoverable through `get_science_state`.
    */
   readonly capture?: CaptureRunArtifactsResult
 }

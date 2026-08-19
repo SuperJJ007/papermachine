@@ -54,10 +54,12 @@ export interface ScienceRunScratch {
   readonly directory: string
   /** Exact source file path. */
   readonly source: string
-  /** Owned temporary directory. */
-  readonly tmp: string
   /** Owned artifact directory. */
   readonly artifacts: string
+  /** Per-run stdout capture file path the RUN frame names (D2). */
+  readonly stdout: string
+  /** Per-run stderr capture file path the RUN frame names (D2). */
+  readonly stderr: string
 }
 
 /** Private paths prepared for one unpublished interpreter probe. */
@@ -443,8 +445,9 @@ export function planRunScratch(
     ref,
     directory,
     source: join(directory, language === 'python' ? 'code.py' : 'code.R'),
-    tmp: join(directory, 'tmp'),
     artifacts: join(directory, 'artifacts'),
+    stdout: join(directory, 'stdout.txt'),
+    stderr: join(directory, 'stderr.txt'),
   }
 }
 
@@ -488,7 +491,7 @@ export async function createRunScratch(
 ): Promise<ScienceRunScratch> {
   const run = planRunScratch(sessionScratch, runId, language)
   await createPrivateDirectory(run.directory)
-  await Promise.all([createPrivateDirectory(run.tmp), createPrivateDirectory(run.artifacts)])
+  await createPrivateDirectory(run.artifacts)
   await writePrivateFile(run.source, code)
   await syncDirectory(run.directory)
   return run

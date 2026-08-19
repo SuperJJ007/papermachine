@@ -188,6 +188,7 @@ const runIdentityShape = {
   codeSha256: SHA256,
   scratchKey: SHA256.transform(value => ScienceScratchKey(value)),
   runDirectoryRef: text(MAX_PATH_LENGTH),
+  kernelEpoch: POSITIVE_INTEGER,
 } as const
 
 const runStartedSchema = z.object({
@@ -211,13 +212,17 @@ const runTerminalSchema = z.object({
   stderrTruncated: z.boolean(),
   failureCode: z.string().regex(/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/).max(MAX_ID_LENGTH).optional(),
   failureMessage: text(MAX_REASON_LENGTH).optional(),
+  outputDegraded: z.literal(true).optional(),
 }).strict().superRefine((run, ctx) => {
   if (run.runDirectoryRef !== `runs/${run.runId}/`) {
     issue(ctx, 'runDirectoryRef must be the canonical session-relative run path', ['runDirectoryRef'])
   }
   if (run.finishedAt < run.startedAt) issue(ctx, 'finishedAt cannot precede startedAt', ['finishedAt'])
   if (run.status === 'success') {
-    if (run.exitCode !== 0) issue(ctx, 'a successful run requires exitCode 0', ['exitCode'])
+    // A kernel run never populates exitCode/signal (D10); a present
+    // exitCode is legal only as an honest process exit status, never
+    // required, since kernel execution has no per-run process exit to report.
+    if (run.exitCode !== undefined && run.exitCode !== 0) issue(ctx, 'a successful run with an exitCode requires it to be 0', ['exitCode'])
     if (run.signal !== undefined || run.failureCode !== undefined || run.failureMessage !== undefined) {
       issue(ctx, 'a successful run cannot carry failure facts')
     }

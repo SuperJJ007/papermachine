@@ -162,7 +162,7 @@ describe('Science stream invariant', () => {
     expect(session.events).toEqual([])
   })
 
-  it('accepts a fully typed six-event Science chain', async () => {
+  it('accepts a fully typed seven-event Science chain', async () => {
     const ctx = await setup()
     const session = ctx.sessions.create(SessionId('science-invariant-valid'), {
       meta: { agentPreset: 'science' },
@@ -174,6 +174,7 @@ describe('Science stream invariant', () => {
     expect(session.events.filter(event => event.type.startsWith('science/')).map(event => event.type)).toEqual([
       'science/mode-bound',
       'science/environment-bound',
+      'science/kernel-state',
       'science/run-started',
       'science/run-finished',
       'science/artifact-saved',
@@ -211,6 +212,17 @@ describe('Science stream invariant', () => {
         },
       },
     })
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: 1,
+        language: 'python',
+        state: 'started',
+        environmentRevision: 1,
+        environmentFingerprint: FINGERPRINT,
+        at: modeTime,
+      },
+    })
     session.append('step/start', { turn: 1, step: 1 })
     const request = session.append('request/header', {
       header: { config: { provider: 'test', model: 'test-model' } },
@@ -240,6 +252,7 @@ describe('Science stream invariant', () => {
         codeSha256: 'c'.repeat(64),
         scratchKey: ScienceScratchKey('d'.repeat(64)),
         runDirectoryRef: 'runs/run-after-step/',
+        kernelEpoch: 1,
         status: 'running',
       },
     })).toThrow(expect.objectContaining<Partial<InvariantError>>({

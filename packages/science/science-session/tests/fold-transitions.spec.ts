@@ -21,6 +21,8 @@ import {
   environment,
   event,
   failedInterpreter,
+  kernelExited,
+  kernelStarted,
   legalEvents,
   mode,
   outcome,
@@ -52,10 +54,44 @@ describe('strict Science fold transitions', () => {
         run: runStarted({ requestHeaderSeq: 3, startedAt: 149 }),
       }),
     ]
+    const runNamesUnstartedKernel = [
+      ...legalEvents().slice(0, 2),
+      event('request/header', 2, 120, {}),
+      toolCall(3, 130, RUN_CALL_ID, 'run_python'),
+      event('science/run-started', 4, 140, {
+        version: 1,
+        run: runStarted({ requestHeaderSeq: 2, startedAt: 139 }),
+      }),
+    ]
+    const runNamesExitedKernel = [
+      ...legalEvents().slice(0, 2),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/kernel-state', 3, 116, { version: 1, kernel: kernelExited({ at: 116 }) }),
+      event('request/header', 4, 120, {}),
+      toolCall(5, 130, RUN_CALL_ID, 'run_python'),
+      event('science/run-started', 6, 140, {
+        version: 1,
+        run: runStarted({ requestHeaderSeq: 4, startedAt: 139 }),
+      }),
+    ]
+    const runAgainstReboundKernel = [
+      ...legalEvents().slice(0, 2),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/environment-bound', 3, 120, {
+        version: 1,
+        environment: environment({ revision: 2, configuredAt: 119, validatedAt: 119 }),
+      }),
+      event('request/header', 4, 125, {}),
+      toolCall(5, 130, RUN_CALL_ID, 'run_python'),
+      event('science/run-started', 6, 140, {
+        version: 1,
+        run: runStarted({ requestHeaderSeq: 4, startedAt: 139, environmentRevision: 2 }),
+      }),
+    ]
     const secondChart = (overrides: Partial<ScienceArtifactVersion>): SessionEvent[] => [
-      ...legalEvents().slice(0, 8),
-      toolCall(8, 180, secondCall, 'annotate_artifact'),
-      event('science/artifact-saved', 9, 190, {
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 180, secondCall, 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
         version: 1,
         artifact: artifact({
           toolCallId: secondCall,
@@ -77,7 +113,7 @@ describe('strict Science fold transitions', () => {
       ['environment before mode', [
         event('science/environment-bound', 0, 110, { version: 1, environment: environment() }),
       ], /prior mode binding/],
-      ['applied environment after a run', [
+      ['applied environment while a run is in progress', [
         ...legalEvents().slice(0, 6),
         event('science/environment-bound', 6, 160, {
           version: 1,
@@ -88,7 +124,7 @@ describe('strict Science fold transitions', () => {
             validatedAt: 159,
           }),
         }),
-      ], /cannot be replaced/],
+      ], /Science run is in progress/],
       ['environment validation after event', [
         legalEvents()[0]!,
         event('science/environment-bound', 1, 108, { version: 1, environment: environment() }),
@@ -96,47 +132,50 @@ describe('strict Science fold transitions', () => {
       ['run before mode', [
         event('science/run-started', 0, 140, { version: 1, run: runStarted() }),
       ], /prior mode binding/],
-      ['run without tool call', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run without tool call', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ toolCallId: CallId('missing-call') }),
         })
         : candidate), /does not identify one call after its cited request\/header/],
-      ['run without environment', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run without environment', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ environmentRevision: 2 }),
         })
         : candidate), /revision 2 does not exist/],
       ['run against old environment', latestInvalid, /latest applied environment/],
-      ['run without R binding', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run kernel epoch never started', runNamesUnstartedKernel, /does not name a started kernel/],
+      ['run kernel epoch already exited', runNamesExitedKernel, /does not name a started kernel/],
+      ['run environment provenance does not match its kernel', runAgainstReboundKernel, /environment provenance does not match its kernel/],
+      ['run without R binding', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ language: 'r' }),
         })
         : candidate), /available environment binding/],
-      ['run fingerprint mismatch', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run fingerprint mismatch', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ environmentFingerprint: 'e'.repeat(64) }),
         })
         : candidate), /available environment binding/],
-      ['run before validation', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run before validation', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ startedAt: 108 }),
         })
         : candidate), /start time/],
-      ['run after event', legalEvents().slice(0, 5).map((candidate, index) => index === 4
-        ? event('science/run-started', 4, 140, {
+      ['run after event', legalEvents().slice(0, 6).map((candidate, index) => index === 5
+        ? event('science/run-started', 5, 140, {
           version: 1,
           run: runStarted({ startedAt: 141 }),
         })
         : candidate), /start time/],
       ['concurrent run', [
-        ...legalEvents().slice(0, 5),
-        toolCall(5, 150, secondCall, 'run_python'),
-        event('science/run-started', 6, 160, {
+        ...legalEvents().slice(0, 6),
+        toolCall(6, 150, secondCall, 'run_python'),
+        event('science/run-started', 7, 160, {
           version: 1,
           run: runStarted({
             runId: secondRunId,
@@ -150,73 +189,73 @@ describe('strict Science fold transitions', () => {
         event('science/run-finished', 0, 150, { version: 1, run: runTerminal() }),
       ], /no matching start/],
       ['finish after terminal', [
-        ...legalEvents().slice(0, 6),
-        event('science/run-finished', 6, 160, { version: 1, run: runTerminal() }),
+        ...legalEvents().slice(0, 7),
+        event('science/run-finished', 7, 160, { version: 1, run: runTerminal() }),
       ], /already terminal/],
       ['finish after event', [
-        ...legalEvents().slice(0, 5),
-        event('science/run-finished', 5, 148, { version: 1, run: runTerminal() }),
+        ...legalEvents().slice(0, 6),
+        event('science/run-finished', 6, 148, { version: 1, run: runTerminal() }),
       ], /finish time/],
       ['chart before mode', [
         event('science/artifact-saved', 0, 170, { version: 1, artifact: artifact() }),
       ], /prior mode binding/],
       ['chart from running run', [
-        ...legalEvents().slice(0, 5),
-        toolCall(5, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 6, 160, {
+        ...legalEvents().slice(0, 6),
+        toolCall(6, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
+        event('science/artifact-saved', 7, 160, {
           version: 1,
           artifact: artifact({ createdAt: 159 }),
         }),
       ], /reference a run that reached a terminal status/],
       ['auto artifact toolCallId does not match its source run', [
-        ...legalEvents().slice(0, 6),
-        event('science/artifact-saved', 6, 165, {
+        ...legalEvents().slice(0, 7),
+        event('science/artifact-saved', 7, 165, {
           version: 1,
           artifact: autoArtifact({ toolCallId: CallId('mismatched-call'), createdAt: 165 }),
         }),
       ], /must carry its source run's own toolCallId/],
       ['auto artifact requestHeaderSeq does not match its source run', [
-        ...legalEvents().slice(0, 6),
-        event('request/header', 6, 165, {
+        ...legalEvents().slice(0, 7),
+        event('request/header', 7, 165, {
           header: { config: { provider: 'test', model: 'test-model' } },
           reason: 'second',
         }),
-        event('science/artifact-saved', 7, 170, {
+        event('science/artifact-saved', 8, 170, {
           version: 1,
-          artifact: autoArtifact({ requestHeaderSeq: 6, createdAt: 170 }),
+          artifact: autoArtifact({ requestHeaderSeq: 7, createdAt: 170 }),
         }),
       ], /must carry its source run's own toolCallId/],
-      ['chart without tool call', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, {
+      ['chart without tool call', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ toolCallId: CallId('missing-call') }),
         })
         : candidate), /does not identify one call after its cited request\/header/],
-      ['chart environment revision mismatch', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, {
+      ['chart environment revision mismatch', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ environmentRevision: 2 }),
         })
         : candidate), /environment provenance/],
-      ['chart fingerprint mismatch', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, {
+      ['chart fingerprint mismatch', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, {
           version: 1,
           artifact: artifact({ environmentFingerprint: 'e'.repeat(64) }),
         })
         : candidate), /environment provenance/],
-      ['chart before run finish', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact({ createdAt: 148 }) })
+      ['chart before run finish', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact({ createdAt: 148 }) })
         : candidate), /creation time/],
-      ['chart after event', legalEvents().slice(0, 8).map((candidate, index) => index === 7
-        ? event('science/artifact-saved', 7, 170, { version: 1, artifact: artifact({ createdAt: 171 }) })
+      ['chart after event', legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact({ createdAt: 171 }) })
         : candidate), /creation time/],
       ['artifactId reused for another logical artifact', secondChart({ logicalName: 'other' }), /two logical artifacts/],
       ['chart version changes identity', secondChart({ artifactId: ScienceArtifactId('chart-2'), version: 2 }), /advance contiguously/],
       ['chart version skips', secondChart({ version: 3 }), /advance contiguously/],
       ['chart version moves creation time backwards', [
-        ...legalEvents().slice(0, 8),
-        toolCall(8, 168, secondCall, 'annotate_artifact'),
-        event('science/artifact-saved', 9, 190, {
+        ...legalEvents().slice(0, 9),
+        toolCall(9, 168, secondCall, 'annotate_artifact'),
+        event('science/artifact-saved', 10, 190, {
           version: 1,
           artifact: artifact({
             version: 2,
@@ -228,16 +267,16 @@ describe('strict Science fold transitions', () => {
       ['outcome before mode', [
         event('science/outcome-published', 0, 180, { version: 1, outcome: outcome() }),
       ], /prior mode binding/],
-      ['outcome after event', legalEvents().map((candidate, index) => index === 9
-        ? event('science/outcome-published', 9, 180, {
+      ['outcome after event', legalEvents().map((candidate, index) => index === 10
+        ? event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ publishedAt: 181 }),
         })
         : candidate), /publication time/],
       ['outcome time regresses', [
         ...legalEvents(),
-        toolCall(10, 185, CallId('call-outcome-2'), 'publish_outcome'),
-        event('science/outcome-published', 11, 190, {
+        toolCall(11, 185, CallId('call-outcome-2'), 'publish_outcome'),
+        event('science/outcome-published', 12, 190, {
           version: 1,
           outcome: outcome({
             revision: 2,
@@ -246,8 +285,8 @@ describe('strict Science fold transitions', () => {
           }),
         }),
       ], /publication time/],
-      ['outcome environment missing', legalEvents().map((candidate, index) => index === 9
-        ? event('science/outcome-published', 9, 180, {
+      ['outcome environment missing', legalEvents().map((candidate, index) => index === 10
+        ? event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ environmentRevisions: [2] }),
         })
@@ -270,19 +309,20 @@ describe('strict Science fold transitions', () => {
           outcome: outcome({
             evidence: [{ kind: 'message', seq: 3 }],
             publishedAt: 139,
+            requestHeaderSeq: 2,
           }),
         }),
       ], /environment revision 1 was not applied/],
-      ['outcome run evidence missing', legalEvents().map((candidate, index) => index === 9
-        ? event('science/outcome-published', 9, 180, {
+      ['outcome run evidence missing', legalEvents().map((candidate, index) => index === 10
+        ? event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ evidence: [{ kind: 'run', runId: ScienceRunId('missing-run') }] }),
         })
         : candidate), /not a successful prior run/],
       ['outcome run evidence not terminal', [
-        ...legalEvents().slice(0, 5),
-        toolCall(5, 145, OUTCOME_CALL_ID, 'publish_outcome'),
-        event('science/outcome-published', 6, 150, {
+        ...legalEvents().slice(0, 6),
+        toolCall(6, 145, OUTCOME_CALL_ID, 'publish_outcome'),
+        event('science/outcome-published', 7, 150, {
           version: 1,
           outcome: outcome({
             evidence: [{ kind: 'run', runId: RUN_ID }],
@@ -290,14 +330,14 @@ describe('strict Science fold transitions', () => {
           }),
         }),
       ], /not a successful prior run/],
-      ['outcome chart evidence missing', legalEvents().map((candidate, index) => index === 9
-        ? event('science/outcome-published', 9, 180, {
+      ['outcome chart evidence missing', legalEvents().map((candidate, index) => index === 10
+        ? event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ evidence: [{ kind: 'chart', chartId: ARTIFACT_ID, version: 2 }] }),
         })
         : candidate), /chart evidence/],
-      ['outcome message evidence missing', legalEvents().map((candidate, index) => index === 9
-        ? event('science/outcome-published', 9, 180, {
+      ['outcome message evidence missing', legalEvents().map((candidate, index) => index === 10
+        ? event('science/outcome-published', 10, 180, {
           version: 1,
           outcome: outcome({ evidence: [{ kind: 'message', seq: 99 }] }),
         })
@@ -349,15 +389,15 @@ describe('strict Science fold transitions', () => {
     expect(postModeStep.preModeStepStarted).toBe(false)
 
     const withMessageEvidence = [
-      ...legalEvents().slice(0, 8),
-      event('assistant/message', 8, 175, {}),
-      toolCall(9, 176, OUTCOME_CALL_ID, 'publish_outcome'),
-      event('science/outcome-published', 10, 180, {
+      ...legalEvents().slice(0, 9),
+      event('assistant/message', 9, 175, {}),
+      toolCall(10, 176, OUTCOME_CALL_ID, 'publish_outcome'),
+      event('science/outcome-published', 11, 180, {
         version: 1,
         outcome: outcome({ evidence: [
           { kind: 'run', runId: RUN_ID },
           { kind: 'chart', chartId: ARTIFACT_ID, version: 1 },
-          { kind: 'message', seq: 8 },
+          { kind: 'message', seq: 9 },
         ] }),
       }),
     ]
@@ -370,12 +410,12 @@ describe('strict Science fold transitions', () => {
       validatedAt: 119,
     })
     const runOnSecondEnvironment = runStarted({
-      requestHeaderSeq: 3,
+      requestHeaderSeq: 4,
       environmentRevision: 2,
       startedAt: 139,
     })
     const terminalOnSecondEnvironment = runTerminal({
-      requestHeaderSeq: 3,
+      requestHeaderSeq: 4,
       environmentRevision: 2,
       startedAt: 139,
     })
@@ -386,17 +426,18 @@ describe('strict Science fold transitions', () => {
         version: 1,
         environment: secondEnvironment,
       }),
-      event('request/header', 3, 130, {}),
-      toolCall(4, 135, RUN_CALL_ID, 'run_python'),
-      event('science/run-started', 5, 140, { version: 1, run: runOnSecondEnvironment }),
-      event('science/run-finished', 6, 150, { version: 1, run: terminalOnSecondEnvironment }),
-      toolCall(7, 155, OUTCOME_CALL_ID, 'publish_outcome'),
-      event('science/outcome-published', 8, 160, {
+      event('science/kernel-state', 3, 125, { version: 1, kernel: kernelStarted({ environmentRevision: 2, at: 125 }) }),
+      event('request/header', 4, 130, {}),
+      toolCall(5, 135, RUN_CALL_ID, 'run_python'),
+      event('science/run-started', 6, 140, { version: 1, run: runOnSecondEnvironment }),
+      event('science/run-finished', 7, 150, { version: 1, run: terminalOnSecondEnvironment }),
+      toolCall(8, 155, OUTCOME_CALL_ID, 'publish_outcome'),
+      event('science/outcome-published', 9, 160, {
         version: 1,
         outcome: outcome({
           evidence: [{ kind: 'run', runId: RUN_ID }],
           publishedAt: 159,
-          requestHeaderSeq: 3,
+          requestHeaderSeq: 4,
           environmentRevisions,
         }),
       }),
@@ -407,9 +448,9 @@ describe('strict Science fold transitions', () => {
       .toThrow(/environmentRevisions must exactly match cited run and chart evidence/)
 
     const chartVersionTwo = [
-      ...legalEvents().slice(0, 8),
-      toolCall(8, 180, CallId('call-chart-2'), 'annotate_artifact'),
-      event('science/artifact-saved', 9, 190, {
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 180, CallId('call-chart-2'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
         version: 1,
         artifact: artifact({
           version: 2,
@@ -428,9 +469,9 @@ describe('strict Science fold transitions', () => {
     // that only changes title, caption, and origin must still be accepted
     // as the next contiguous version.
     const events = [
-      ...legalEvents().slice(0, 8),
-      toolCall(8, 180, CallId('call-chart-2'), 'annotate_artifact'),
-      event('science/artifact-saved', 9, 190, {
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 180, CallId('call-chart-2'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
         version: 1,
         artifact: artifact({
           version: 2,
@@ -475,27 +516,32 @@ describe('strict Science fold transitions', () => {
   })
 
   it('derives interruption only for an unmatched run at session/end-seed', () => {
-    const openRun = legalEvents().slice(0, 5)
-    openRun.push(event('session/end-seed', 5, 150, {}))
+    const openRun = legalEvents().slice(0, 6)
+    openRun.push(event('session/end-seed', 6, 150, {}))
     const interrupted = foldScience(openRun)
     expect(interrupted.runs).toEqual([{
       ...runStarted(),
       status: 'interrupted',
       finishedAt: 150,
-      interruptedAtSeq: 5,
+      interruptedAtSeq: 6,
     }])
-    expect(interrupted.lastScienceEventSeq).toBe(5)
+    expect(interrupted.lastScienceEventSeq).toBe(6)
 
-    const settledRun = legalEvents().slice(0, 6)
-    settledRun.push(event('session/end-seed', 6, 160, {}))
+    const settledRun = legalEvents().slice(0, 7)
+    settledRun.push(event('session/end-seed', 7, 160, {}))
     const settled = foldScience(settledRun)
     expect(settled.runs).toEqual([runTerminal()])
-    expect(settled.lastScienceEventSeq).toBe(5)
+    // The run itself already reached terminal status, but its kernel is
+    // still open (never exited) throughout this fixture chain: the
+    // session/end-seed boundary still derives that kernel's own
+    // interruption (D4 end-seed derivation), so it still commits Science
+    // time at its own seq rather than leaving it at run-finished's.
+    expect(settled.lastScienceEventSeq).toBe(7)
 
     const twoRuns = [
-      ...legalEvents().slice(0, 6),
-      toolCall(6, 160, CallId('call-run-2'), 'run_python'),
-      event('science/run-started', 7, 170, {
+      ...legalEvents().slice(0, 7),
+      toolCall(7, 160, CallId('call-run-2'), 'run_python'),
+      event('science/run-started', 8, 170, {
         version: 1,
         run: runStarted({
           runId: ScienceRunId('run-2'),
@@ -504,13 +550,13 @@ describe('strict Science fold transitions', () => {
           runDirectoryRef: 'runs/run-2/',
         }),
       }),
-      event('session/end-seed', 8, 180, {}),
+      event('session/end-seed', 9, 180, {}),
     ]
     const mixed = foldScience(twoRuns)
     expect(mixed.runs[0]).toEqual(runTerminal())
-    expect(mixed.runs[1]).toMatchObject({ status: 'interrupted', interruptedAtSeq: 8 })
+    expect(mixed.runs[1]).toMatchObject({ status: 'interrupted', interruptedAtSeq: 9 })
 
-    const backwardsBoundary = [...openRun.slice(0, 5), event('session/end-seed', 5, 139, {})]
+    const backwardsBoundary = [...openRun.slice(0, 6), event('session/end-seed', 6, 139, {})]
     expect(() => foldScience(backwardsBoundary)).toThrow(/moves time backwards/)
   })
 })

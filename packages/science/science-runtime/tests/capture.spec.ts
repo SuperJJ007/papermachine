@@ -16,9 +16,10 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
 import {
   authorizePythonRun,
-  createControlledRuntimeHarness,
+  createKernelRuntimeHarness,
   createFakePythonPrefix,
   createScienceSession,
+  kernelAction,
   rejectSessionAppend,
 } from './harness.ts'
 
@@ -54,44 +55,43 @@ async function writeArtifact(
 
 let callCounter = 0
 
-/** Bind the fake Python profile, then start and hold one run open under manual completion control. */
+/**
+ * Bind the fake Python profile (unless `bound`), then start one run held
+ * open by the fake kernel driver's `sleep` action so the test can write the
+ * run's artifact files under its real `runId` before DONE arrives.
+ */
 async function startHeldRun(
-  harness: Awaited<ReturnType<typeof createControlledRuntimeHarness>>,
+  harness: Awaited<ReturnType<typeof createKernelRuntimeHarness>>,
   session: Session,
+  status: 'ok' | 'error' = 'ok',
   bound = false,
-): Promise<{
-  readonly run: ReturnType<typeof harness.subprocess.queueRun>
-  readonly handle: Awaited<ReturnType<typeof harness.runtime.startRun>>
-}> {
+): Promise<Awaited<ReturnType<typeof harness.runtime.startRun>>> {
   if (!bound) {
     await harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })
   }
   callCounter += 1
-  const run = harness.subprocess.queueRun('immediate')
-  const handle = await harness.runtime.startRun({
-    session, language: 'python', code: 'print(1)',
+  return harness.runtime.startRun({
+    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status }),
     ...authorizePythonRun(session, `capture-run-${String(callCounter)}`),
     signal: new AbortController().signal,
   })
-  return { run, handle }
 }
 
-/** Start one run, write every listed file into its artifact directory, then complete it and await settlement. */
+/** Start one run, write every listed file into its artifact directory, then await settlement. */
 async function runWithFiles(
-  harness: Awaited<ReturnType<typeof createControlledRuntimeHarness>>,
+  harness: Awaited<ReturnType<typeof createKernelRuntimeHarness>>,
   root: string,
   session: Session,
   files: Readonly<Record<string, Uint8Array | string>>,
-  exitCode = 0,
+  status: 'ok' | 'error' = 'ok',
   alreadyBound = false,
 ) {
-  const { run, handle } = await startHeldRun(harness, session, alreadyBound)
+  const handle = await startHeldRun(harness, session, status, alreadyBound)
   for (const [relativePath, data] of Object.entries(files)) {
     await writeArtifact(root, session, handle.runId, relativePath, data)
   }
-  run.complete({ exitCode, signal: null })
   const result = await handle.done
   return { runId: handle.runId, result }
 }
@@ -116,7 +116,7 @@ describe('Science auto-capture', () => {
   it('captures a new file as version 1 with origin auto, and a changed file as version 2', async () => {
     const root = tmp('.science-capture-new-changed-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-new')
 
@@ -131,7 +131,7 @@ describe('Science auto-capture', () => {
       attachment: { mediaType: 'image/png', width: 1, height: 1 },
     })
 
-    const second = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n3,4\n' }, 0, true)
+    const second = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n3,4\n' }, 'ok', true)
     expect(second.result.capture?.captured).toHaveLength(1)
     expect(second.result.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, origin: 'auto' })
 
@@ -143,7 +143,7 @@ describe('Science auto-capture', () => {
   it('supersedes rather than versions when the same turn rewrites the file: iteration is not a result', async () => {
     const root = tmp('.science-capture-same-turn-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-same-turn')
 
@@ -152,14 +152,12 @@ describe('Science auto-capture', () => {
 
     // A second run answering the SAME request: the model rewrote its own
     // output rather than producing a second result for the reader.
-    const run = harness.subprocess.queueRun('immediate')
     const handle = await harness.runtime.startRun({
-      session, language: 'python', code: 'print(2)',
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
       ...authorizeSameTurnRun(session, 'capture-same-turn-second'),
       signal: new AbortController().signal,
     })
     await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')
-    run.complete({ exitCode: 0, signal: null })
     const second = await handle.done
     expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 1 })
 
@@ -176,12 +174,12 @@ describe('Science auto-capture', () => {
   it('skips an identical rerun of the same file: no new version, no new event', async () => {
     const root = tmp('.science-capture-identical-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-identical')
 
     await runWithFiles(harness, root, session, { 'notes.md': '# same\n' })
-    const rerun = await runWithFiles(harness, root, session, { 'notes.md': '# same\n' }, 0, true)
+    const rerun = await runWithFiles(harness, root, session, { 'notes.md': '# same\n' }, 'ok', true)
 
     expect(rerun.result.capture?.captured).toEqual([])
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(1)
@@ -192,8 +190,8 @@ describe('Science auto-capture', () => {
   it('skips and counts a file over captureMaxFileBytes without failing the run', async () => {
     const root = tmp('.science-capture-oversized-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { captureMaxFileBytes: 1_048_576 },
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxFileBytes: 1_048_576 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-oversized')
@@ -208,8 +206,8 @@ describe('Science auto-capture', () => {
   it('truncates and flags eligible files beyond captureMaxFilesPerRun', async () => {
     const root = tmp('.science-capture-per-run-cap-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { captureMaxFilesPerRun: 2 },
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxFilesPerRun: 2 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-per-run-cap')
@@ -225,8 +223,8 @@ describe('Science auto-capture', () => {
   it('stops appending once captureMaxArtifactVersionsPerSession is reached, flagging the run that hit it', async () => {
     const root = tmp('.science-capture-per-session-cap-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { captureMaxArtifactVersionsPerSession: 1 },
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxArtifactVersionsPerSession: 1 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-per-session-cap')
@@ -235,7 +233,7 @@ describe('Science auto-capture', () => {
     expect(first.result.capture?.captured).toHaveLength(1)
     expect(first.result.capture?.truncatedPerSession).toBe(false)
 
-    const second = await runWithFiles(harness, root, session, { 'two.txt': '2' }, 0, true)
+    const second = await runWithFiles(harness, root, session, { 'two.txt': '2' }, 'ok', true)
     expect(second.result.capture?.captured).toEqual([])
     expect(second.result.capture?.truncatedPerSession).toBe(true)
     expect(replayScience(session.events)?.artifacts).toHaveLength(1)
@@ -244,7 +242,7 @@ describe('Science auto-capture', () => {
   it('excludes dotfile/dot-directory segments and non-allowlisted extensions', async () => {
     const root = tmp('.science-capture-excluded-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-excluded')
 
@@ -259,11 +257,11 @@ describe('Science auto-capture', () => {
   it('captures a failed run\'s partial output with origin auto', async () => {
     const root = tmp('.science-capture-failed-run-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-failed-run')
 
-    const { result } = await runWithFiles(harness, root, session, { 'partial.json': '{"ok":false}' }, 1)
+    const { result } = await runWithFiles(harness, root, session, { 'partial.json': '{"ok":false}' }, 'error')
     expect(result.terminal.status).toBe('failed')
     expect(result.capture?.captured).toHaveLength(1)
     expect(result.capture?.captured[0]).toMatchObject({ logicalName: 'partial.json', origin: 'auto' })
@@ -274,7 +272,7 @@ describe('Science auto-capture', () => {
   it('treats the deployment attachment store rejecting an admission as oversized, never a run failure', async () => {
     const root = tmp('.science-capture-admission-rejected-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.provide('attachments', {
         imageLimits: {
           maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 10, maxImagePixels: 1_000_000,
@@ -302,7 +300,7 @@ describe('Science auto-capture', () => {
   it('silently skips an eligible file whose media type the deployment attachment store does not accept', async () => {
     const root = tmp('.science-capture-media-type-excluded-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.provide('attachments', {
         imageLimits: {
           maxImageBytes: 10_000, maxImagesPerMessage: 1, maxMessageImageBytes: 10_000, maxImagePixels: 1_000_000, mediaTypes: [],
@@ -330,7 +328,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-capture-internal-failure-')
     const prefix = createFakePythonPrefix(root)
     const errors: string[] = []
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       ctx.provide('attachments', {
         imageLimits: { maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 10, maxImagePixels: 1_000_000, mediaTypes: ['image/png'] },
@@ -362,7 +360,7 @@ describe('Science auto-capture', () => {
     const prefix = createFakePythonPrefix(root)
     const warnings: string[] = []
     const errors: string[] = []
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       ctx.provide('attachments', {
@@ -392,7 +390,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-capture-append-refused-')
     const prefix = createFakePythonPrefix(root)
     const warnings: string[] = []
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     harness.ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-append-refused')

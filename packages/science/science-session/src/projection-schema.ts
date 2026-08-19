@@ -36,6 +36,7 @@ const RUN_IDENTITY_KEYS = [
   'environmentFingerprintPreview',
   'startedAt',
   'codeSha256',
+  'kernelEpoch',
 ] as const
 
 function safeInteger(value: unknown, minimum = 0): value is number {
@@ -110,6 +111,7 @@ function validRunIdentity(candidate: Record<string, unknown>): boolean {
     && safeInteger(candidate['startedAt'])
     && typeof candidate['codeSha256'] === 'string'
     && /^[a-f0-9]{64}$/.test(candidate['codeSha256'])
+    && safeInteger(candidate['kernelEpoch'], 1)
 }
 
 function validRun(value: unknown): boolean {
@@ -135,6 +137,7 @@ function validRun(value: unknown): boolean {
   if (candidate['exitCode'] !== undefined) keys.push('exitCode')
   if (candidate['signal'] !== undefined) keys.push('signal')
   if (candidate['failureCode'] !== undefined) keys.push('failureCode')
+  if (candidate['outputDegraded'] !== undefined) keys.push('outputDegraded')
   return projectionExactKeys(candidate, keys)
     && safeInteger(candidate['finishedAt'], candidate['startedAt'] as number)
     && (candidate['exitCode'] === undefined || Number.isSafeInteger(candidate['exitCode']))
@@ -145,6 +148,7 @@ function validRun(value: unknown): boolean {
     && typeof candidate['stdoutTruncated'] === 'boolean'
     && typeof candidate['stderrTruncated'] === 'boolean'
     && (candidate['failureCode'] === undefined || typeof candidate['failureCode'] === 'string')
+    && (candidate['outputDegraded'] === undefined || candidate['outputDegraded'] === true)
 }
 
 const KERNEL_END_REASONS = [

@@ -11,10 +11,11 @@ import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-sci
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
-  ScienceInterpreterBinding,
+  ScienceLanguage,
   ScienceProjection,
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-science-session'
@@ -22,20 +23,30 @@ import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult } from './capture.ts'
-import { configSchema, resolveConfig } from './config.ts'
+import { configSchema, DEFAULT_KERNEL_IDLE_TIMEOUT_MS, DEFAULT_KERNEL_START_TIMEOUT_MS, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
-import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
-import { confineRun, planRun, settleRun, startCandidate } from './execution.ts'
+import { assertProfileRunConfinement, observeProfile } from './environment.ts'
+import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, startCandidate } from './execution.ts'
+import type { KernelRunFailureCode } from './execution.ts'
+import { KERNEL_ASSETS_ROOT } from './kernel-assets.ts'
+import type { KernelDoneFrame, KernelExecuteRequest, KernelProcess } from './kernel-process.ts'
+import {
+  KernelEpochRegressionError,
+  KernelSet,
+  KernelSetQuarantinedError,
+} from './kernel-set.ts'
+import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from './kernel-set.ts'
 import { LeaseRegistry, OperationControl } from './lifecycle.ts'
+import type { OperationCause } from './lifecycle.ts'
 import { attachRuntimeSettings } from './settings.ts'
 import {
   createRunScratch,
   materializeSessionScratch,
-  planRunScratch,
   planSessionScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
 } from './scratch.ts'
+import type { ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type {
   AnnotateScienceArtifactRequest,
@@ -83,6 +94,110 @@ function isCaptureFilesystemFailure(error: unknown): boolean {
   return typeof (error as { readonly code?: unknown }).code === 'string'
 }
 
+/** Terminal classification for one settled kernel execution (D5/D10), independent of durable identity fields. */
+export interface KernelRunOutcome {
+  readonly status: ScienceRunTerminal['status']
+  readonly failureCode?: KernelRunFailureCode
+  readonly outputDegraded: boolean
+  /** Whether the caller must retire this kernel (D5 taint-retirement/escalation) via `KernelSet.retireForEscalation`. */
+  readonly retireKernel: boolean
+}
+
+/** Non-abort classification from one DONE frame (D10): `ok`→success, `error`→`EXECUTION_FAILED`. */
+function doneOutcome(frame: KernelDoneFrame): KernelRunOutcome {
+  switch (frame.status) {
+    case 'ok':
+      return { status: 'success', outputDegraded: frame.captureDegraded, retireKernel: false }
+    case 'error':
+      return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
+    case 'interrupted':
+      // The host only sends SIGINT while an abort is in progress (D5): an
+      // interrupted reply with no abort ever requested means the driver
+      // broke protocol despite framing a well-formed DONE line.
+      /* v8 ignore next 2 -- unreachable under a protocol-honest driver */
+      return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
+  }
+}
+
+/** First-cause classification for an aborted run (D5/D10): `TIMEOUT`/`CANCELLED`, independent of the kernel's own fate. */
+function abortOutcome(cause: OperationCause, retireKernel: boolean, outputDegraded: boolean): KernelRunOutcome {
+  switch (cause) {
+    case 'timeout':
+      return { status: 'timed-out', failureCode: 'TIMEOUT', outputDegraded, retireKernel }
+    case 'cancelled':
+    case 'service-disposed':
+    case 'session-detached':
+      return { status: 'cancelled', failureCode: 'CANCELLED', outputDegraded, retireKernel }
+  }
+}
+
+/**
+ * Run one RUN/DONE exchange against an acquired kernel, applying D5's
+ * interrupt-first cancel/timeout handling and D10's terminal classification.
+ * Never reads or appends durable state, and never itself retires the kernel
+ * — the caller owns every append and owns calling
+ * `KernelSet.retireForEscalation` when {@link KernelRunOutcome.retireKernel} is true.
+ * @param control - the run's fused cancellation/timeout signal and first-cause record.
+ * @param kernel - the acquired, ready kernel process.
+ * @param request - exact host-minted run identity and per-run capture paths.
+ * @returns the run's terminal classification.
+ */
+export async function settleKernelExecution(
+  control: OperationControl,
+  kernel: KernelProcess,
+  request: KernelExecuteRequest,
+): Promise<KernelRunOutcome> {
+  const execution = kernel.execute(request)
+  const settled = execution.then(
+    (frame): { readonly kind: 'done'; readonly frame: KernelDoneFrame } => ({ kind: 'done', frame }),
+    (): { readonly kind: 'died' } => ({ kind: 'died' }),
+  )
+  const abortWaiter = Promise.withResolvers<{ readonly kind: 'abort' }>()
+  const onAbort = (): void => { abortWaiter.resolve({ kind: 'abort' }) }
+  if (control.signal.aborted) onAbort()
+  else control.signal.addEventListener('abort', onAbort, { once: true })
+  let first: { readonly kind: 'done'; readonly frame: KernelDoneFrame } | { readonly kind: 'died' } | { readonly kind: 'abort' }
+  try {
+    first = await Promise.race([settled, abortWaiter.promise])
+  } finally {
+    control.signal.removeEventListener('abort', onAbort)
+  }
+  if (first.kind === 'done') return doneOutcome(first.frame)
+  if (first.kind === 'died') return { status: 'failed', failureCode: 'KERNEL_DIED', outputDegraded: false, retireKernel: false }
+
+  // D5: interrupt-first. The RUN frame already committed before this point,
+  // so sending SIGINT now satisfies "after RUN, before DONE" regardless of
+  // when the caller's own abort fired.
+  kernel.interrupt()
+  const escalate = new Promise<{ readonly kind: 'escalate' }>((resolve) => {
+    AbortSignal.timeout(DESCENDANT_GRACE_MS).addEventListener('abort', () => { resolve({ kind: 'escalate' }) }, { once: true })
+  })
+  const afterInterrupt = await Promise.race([settled, escalate])
+  const cause = control.cause
+  /* v8 ignore next -- OperationControl always sets a cause before its signal fires */
+  if (cause === undefined) throw new Error('science-runtime: kernel run abort settled with no first cause recorded')
+  if (afterInterrupt.kind === 'done' && afterInterrupt.frame.status === 'interrupted') {
+    // The kernel proved it caught the interrupt: it survives.
+    return abortOutcome(cause, false, afterInterrupt.frame.captureDegraded)
+  }
+  if (afterInterrupt.kind === 'done') {
+    // Taint-retirement: the SIGINT landed on an effectively idle kernel, whose state is now unknown.
+    return abortOutcome(cause, true, afterInterrupt.frame.captureDegraded)
+  }
+  // Escalation (no DONE within DESCENDANT_GRACE_MS), or the kernel died on
+  // its own while awaiting the interrupt outcome: either way this run's
+  // terminal stays first-cause-governed and the kernel is retired. `settled`
+  // itself never rejects (its own `.then` already converted `execution`'s
+  // eventual rejection into a value), so it is safely left pending here —
+  // the caller's own retirement kills the kernel, which resolves it later.
+  return abortOutcome(cause, true, false)
+}
+
+/** Stable diagnostic label for an unknown thrown value's error class. */
+function errorClassName(error: unknown): string {
+  return error instanceof Error ? error.constructor.name : typeof error
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     scienceRuntime: ScienceRuntime
@@ -119,6 +234,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly captureMaxArtifactVersionsPerSession: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
+  /** Every live persistent Science kernel across sessions (D3). */
+  private readonly kernels: KernelSet
   private disposing = false
 
   /**
@@ -137,14 +254,85 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.captureMaxFileBytes = resolved.captureMaxFileBytes
     this.captureMaxFilesPerRun = resolved.captureMaxFilesPerRun
     this.captureMaxArtifactVersionsPerSession = resolved.captureMaxArtifactVersionsPerSession
+    this.kernels = new KernelSet({
+      subprocess: ctx.subprocess,
+      sandbox: ctx.sandbox,
+      assetsRoot: KERNEL_ASSETS_ROOT,
+      kernelIdleTimeoutMs: DEFAULT_KERNEL_IDLE_TIMEOUT_MS,
+      kernelStartTimeoutMs: DEFAULT_KERNEL_START_TIMEOUT_MS,
+      nextEpoch: session => this.nextKernelEpoch(session),
+      onKernelStarted: (session, fact) => { this.appendKernelStarted(session, fact) },
+      onKernelEnded: (session, fact) => { this.appendKernelEnded(session, fact) },
+    })
     ctx.effect(() => {
-      const stopSessionObserver = ctx.on('session/disposed', (session) => { this.leases.detach(session) }, { global: true })
+      const stopSessionObserver = ctx.on('session/disposed', (session) => {
+        this.leases.detach(session)
+        this.kernels.detach(session)
+      }, { global: true })
       return async () => {
         this.disposing = true
         stopSessionObserver()
-        await this.leases.disposeAll()
+        await Promise.allSettled([this.leases.disposeAll(), this.kernels.disposeAll()])
       }
     }, 'science runtime teardown')
+  }
+
+  /**
+   * Allocate the next session-local kernel epoch, seeded from the Session's
+   * own durable projection (K1.3 built `KernelSet`'s allocator seam; this
+   * wires it to the real projection so epochs survive a Host restart).
+   * @param session - exact live Session that will own the fresh kernel.
+   * @returns one greater than the highest `kernelEpoch` the Session's log has ever admitted, or 1 before any kernel.
+   */
+  private nextKernelEpoch(session: Session): number {
+    const projection = replayScience(session.events)
+    return (projection?.kernels.at(-1)?.kernelEpoch ?? 0) + 1
+  }
+
+  /**
+   * Append the durable `started` fact for a freshly spawned kernel (D4
+   * commit ordering: `KernelSet` calls this BEFORE the kernel becomes
+   * acquirable, so a throw here ends the fresh kernel and fails its
+   * acquiring run without ever registering it).
+   * @param session - exact live Session that owns the fresh kernel.
+   * @param fact - the started kernel's whole-value provenance.
+   */
+  private appendKernelStarted(session: Session, fact: ScienceKernelStartedFact): void {
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: fact.kernelEpoch,
+        language: fact.language,
+        state: 'started',
+        environmentRevision: fact.environmentRevision,
+        environmentFingerprint: fact.environmentFingerprint,
+        at: fact.startedAt,
+      },
+    })
+  }
+
+  /**
+   * Append the durable `exited` fact for one kernel end path. Containment-
+   * wrapped by `KernelSet` itself (D4): a throw here never rejects teardown
+   * or skips quarantine bookkeeping — a legitimately dead Session's missing
+   * `exited` fact is recovered by the end-seed `ScienceKernelInterrupted` derivation.
+   * @param session - exact Session that owned the kernel (may already be detached).
+   * @param fact - the ended kernel's whole-value provenance and reason.
+   */
+  private appendKernelEnded(session: Session, fact: ScienceKernelEndedFact): void {
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: fact.kernelEpoch,
+        language: fact.language,
+        state: 'exited',
+        reason: fact.reason,
+        startedAt: fact.startedAt,
+        environmentRevision: fact.environmentRevision,
+        environmentFingerprint: fact.environmentFingerprint,
+        at: fact.endedAt,
+      },
+    })
   }
 
   /**
@@ -228,12 +416,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Publish a direct-argv run start, then settle exactly one matching terminal
-   * fact after the shared subprocess provider proves tree quiescence.
+   * Acquire this run's persistent kernel (D3/D6), publish its run start,
+   * then settle exactly one matching terminal fact through the acquired
+   * kernel's own RUN/DONE protocol exchange (D5/D10).
    * @param request - Exact live Session, source, authorization facts, and cancellation.
    * @returns A handle exposed only after `science/run-started` committed.
    */
   async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle> {
+    if (process.platform === 'win32') {
+      throw new ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', 'Science kernel execution requires darwin or linux')
+    }
     const projection = this.assertSession(request.session)
     this.assertHostLocal()
     const environment = projection.environment
@@ -245,44 +437,21 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
     const profile = this.profile(String(environment.profileId))
     const lease = this.reserve(request.session, request.signal)
-    let sessionScratch: Awaited<ReturnType<typeof planSessionScratch>> | undefined
+    let sessionScratch: ScienceSessionScratch | undefined
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
       this.assertPrepublication(request.session, lease.control)
       const plan = planRun(environment, request.language, request.code)
-      sessionScratch = await planSessionScratch(this.dshHome, request.session)
+      scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
+      sessionScratch = scratchPreparation.scratch
       await assertProfileRunConfinement(profile, request.session, sessionScratch.root)
-      const plannedRun = planRunScratch(sessionScratch, plan.runId, request.language)
-      if (request.language === 'r' && plannedRun.tmp.includes(' ')) {
-        throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R run TMPDIR cannot contain an ASCII space')
-      }
-      const confined = confineRun({
-        subprocess: this.ctx.subprocess,
-        sandbox: this.ctx.sandbox,
-        session: request.session,
-        sessionScratch,
-        control: lease.control,
-      }, plan, plannedRun.source)
-      const observed = await observeProfile({
-        subprocess: this.ctx.subprocess,
-        sandbox: this.ctx.sandbox,
-        sessionScratch,
-        sessionId: request.session.id,
-        signal: lease.control.signal,
-        prepareSessionScratch: async () => {
-          scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
-          this.assertPrepublication(request.session, lease.control)
-        },
-        packagesMaxEntries: this.packagesMaxEntries,
-        packagesMaxBytes: this.packagesMaxBytes,
-      }, profile)
       this.assertPrepublication(request.session, lease.control)
-      if (!this.matchesEnvironment(environment, observed.python?.binding, observed.r?.binding)) {
-        const drifted = this.reobservedEnvironment(environment, observed.python?.binding, observed.r?.binding)
-        request.session.append('science/environment-bound', { version: 1, environment: drifted })
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science environment changed during run preflight')
+      if (request.language === 'r' && sessionScratch.runs.includes(' ')) {
+        throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R run directory cannot contain an ASCII space')
       }
+      const kernel = await this.acquireKernel(request.session, request.language, environment, sessionScratch)
+      this.assertPrepublication(request.session, lease.control)
       runScratch = await createRunScratch(sessionScratch, plan.runId, request.language, plan.sourceBytes)
       this.assertPrepublication(request.session, lease.control)
       const started = startCandidate(
@@ -292,9 +461,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         environment,
         request.toolCallId,
         request.requestHeaderSeq,
+        kernel.epoch,
       )
       request.session.append('science/run-started', { version: 1, run: started })
-      const done = this.settlePublishedRun(lease, request.session, sessionScratch, plan, runScratch, confined, started)
+      this.kernels.disarmIdleTimer(request.session, request.language)
+      const done = this.settlePublishedKernelRun(lease, request.session, runScratch, kernel.process, started)
       return {
         runId: plan.runId,
         done,
@@ -492,100 +663,106 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
   }
 
-  /** Require each re-observed interpreter to retain its accepted binding fingerprint. */
-  private matchesEnvironment(
+  /**
+   * Acquire this run's kernel (D3/D6): reuse a live matching-revision
+   * kernel, or spawn a fresh one — ending a stale-revision kernel first
+   * (`environment-rebound`). Translates every `KernelSet.acquire` rejection
+   * onto the pre-publication `ScienceRuntimeErrorCode` vocabulary (D10).
+   * @param session - exact live Session that will own the kernel.
+   * @param language - requested interpreter language.
+   * @param environment - applied durable environment revision the kernel must serve.
+   * @param sessionScratch - the Session's already-materialized private scratch paths.
+   * @returns the acquired kernel process and its own session-local epoch.
+   */
+  private async acquireKernel(
+    session: Session,
+    language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
-    python: ScienceInterpreterBinding | undefined,
-    r: ScienceInterpreterBinding | undefined,
-  ): boolean {
-    return sameObservation(environment.python, python) && sameObservation(environment.r, r)
-  }
-
-  /** Append a whole invalid or drifted environment revision before refusing a changed run. */
-  private reobservedEnvironment(
-    environment: ScienceEnvironmentBinding,
-    python: ScienceInterpreterBinding | undefined,
-    r: ScienceInterpreterBinding | undefined,
-  ): ScienceEnvironmentBinding {
-    const bindings = [python, r].filter(binding => binding !== undefined)
-    const invalid = bindings.some(binding => binding.capability !== 'available')
-    const now = Date.now()
-    return {
-      revision: environment.revision + 1,
-      profileId: environment.profileId,
-      configuredAt: now,
-      validatedAt: now,
-      status: invalid ? 'invalid' : 'drifted',
-      ...(python === undefined ? {} : { python }),
-      ...(r === undefined ? {} : { r }),
-      failureReason: invalid ? 'configured environment is no longer usable' : 'configured environment changed during run preflight',
+    sessionScratch: ScienceSessionScratch,
+  ): Promise<AcquiredKernel> {
+    try {
+      return await this.kernels.acquire(session, language, environment, sessionScratch)
+    } catch (error) {
+      throw this.kernelAcquisitionError(error, language)
     }
   }
 
-  /** Settle a published run while retaining the exact lease through terminal commit or cleanup. */
-  private async settlePublishedRun(
+  /** Map a `KernelSet.acquire` rejection onto the pre-publication `ScienceRuntimeErrorCode` vocabulary (D10). */
+  private kernelAcquisitionError(error: unknown, language: ScienceLanguage): Error {
+    if (error instanceof KernelSetQuarantinedError) {
+      return new ScienceRuntimeError('RUNTIME_BUSY', 'science runtime already has work for this Session', { cause: error })
+    }
+    if (error instanceof KernelEpochRegressionError) {
+      return new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science kernel epoch allocation did not advance', { cause: error })
+    }
+    if (error instanceof ScienceRuntimeError) return error
+    return new ScienceRuntimeError(
+      'KERNEL_START_FAILED',
+      `Science ${language} kernel could not start (${errorClassName(error)})`,
+      { cause: error },
+    )
+  }
+
+  /**
+   * Settle a published kernel run: the RUN/DONE protocol exchange (D5),
+   * bounded output-tail reads, terminal commit, auto-capture, and (when D5
+   * requires it) background kernel retirement — while retaining the exact
+   * lease through commit or cleanup. Never proves subprocess-tree
+   * quiescence itself: that is `KernelSet`'s own concern for the kernel
+   * process, decoupled from this run's own terminal.
+   */
+  private async settlePublishedKernelRun(
     lease: ReturnType<LeaseRegistry['reserve']>,
     session: StartScienceRunRequest['session'],
-    sessionScratch: Awaited<ReturnType<typeof planSessionScratch>>,
-    plan: ReturnType<typeof planRun>,
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
-    confined: ReturnType<typeof confineRun>,
+    kernel: KernelProcess,
     started: ReturnType<typeof startCandidate>,
   ): Promise<ScienceRunResult> {
-    let releaseAfterEventualQuiescence = false
     try {
-      let settled: Awaited<ReturnType<typeof settleRun>>
+      const request: KernelExecuteRequest = {
+        runId: started.runId,
+        sourcePath: runScratch.source,
+        cwd: runScratch.directory,
+        stdoutPath: runScratch.stdout,
+        stderrPath: runScratch.stderr,
+        artifactDir: runScratch.artifacts,
+      }
+      let outcome: KernelRunOutcome
       try {
-        settled = await settleRun({
-          subprocess: this.ctx.subprocess,
-          sandbox: this.ctx.sandbox,
-          session,
-          sessionScratch,
-          control: lease.control,
-        }, started, plan, runScratch, confined)
+        outcome = await settleKernelExecution(lease.control, kernel, request)
       } catch (error) {
         if (this.ctx.sessions.get(session.id) !== session) {
           throw new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Session detached before terminal publication', { cause: error })
         }
-        throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal value could not be prepared after quiescence', { cause: error })
+        throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal value could not be prepared after kernel settlement', { cause: error })
       }
-      if (!settled.quiescent) {
-        releaseAfterEventualQuiescence = true
-        void settled.eventualResult.then(
-          async (result) => {
-            if (result === undefined) return
-            if (this.ctx.sessions.get(session.id) !== session) {
-              this.leases.release(lease)
-              return
-            }
-            try {
-              session.append('science/run-finished', { version: 1, run: result.terminal })
-            } catch {
-              // A live Session without its terminal fact remains quarantined.
-              return
-            }
-            await this.captureAfterFinish(session, runScratch, result.terminal)
-            this.leases.release(lease)
-          },
-          () => {},
-        )
-        throw new ScienceRuntimeError('QUIESCENCE_UNPROVEN', 'Science subprocess tree did not reach quiescence after termination')
-      }
+      const [stdout, stderr] = await Promise.all([readCaptureTail(runScratch.stdout), readCaptureTail(runScratch.stderr)])
+      const terminal = kernelRunTerminal(started, stdout, stderr, outcome.status, outcome.failureCode, outcome.outputDegraded)
       if (this.ctx.sessions.get(session.id) !== session) {
         throw new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Session detached before terminal publication')
       }
       try {
-        session.append('science/run-finished', { version: 1, run: settled.result.terminal })
+        session.append('science/run-finished', { version: 1, run: terminal })
       } catch (error) {
         if (this.ctx.sessions.get(session.id) !== session) {
           throw new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Session detached before terminal publication', { cause: error })
         }
         throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
       }
-      const capture = await this.captureAfterFinish(session, runScratch, settled.result.terminal)
-      return { ...settled.result, ...capture === undefined ? {} : { capture } }
+      if (outcome.retireKernel) {
+        // Fire-and-forget: D5 retires the kernel AFTER this run settles, not
+        // as part of it — a subsequent acquire() for this session drains any
+        // still-in-flight teardown internally (KernelSet.drain).
+        void this.kernels.retireForEscalation(session, started.language).catch((error: unknown) => {
+          this.ctx.logger.error(`science-runtime: kernel retirement failed for session "${session.id}": ${String(error)}`)
+        })
+      } else {
+        this.kernels.resetIdleTimer(session, started.language)
+      }
+      const capture = await this.captureAfterFinish(session, runScratch, terminal)
+      return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
     } finally {
-      if (!releaseAfterEventualQuiescence) this.leases.release(lease)
+      this.leases.release(lease)
     }
   }
 

@@ -20,7 +20,13 @@ import * as ScienceRuntimeInvariant from '../src/invariant.ts'
 import ScienceRuntime, { SCIENCE_RUNTIME_SETTINGS_NAMESPACE } from '../src/index.ts'
 import ScienceRuntimeWithSettings from '../src/with-settings.ts'
 import {
-  ControlledSubprocess, authorizePythonRun, createFakePythonPrefix, createFakeSandboxRunner, createScienceSession,
+  ControlledSubprocess,
+  authorizePythonRun,
+  createFakePythonPrefix,
+  createFakeSandboxRunner,
+  createScienceSession,
+  installTestKernelSet,
+  kernelAction,
 } from './harness.ts'
 
 let root: string | undefined
@@ -182,6 +188,21 @@ describe('Science Runtime real Loader composition', () => {
       version: 1,
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-loader-test' },
     })
+    // The Loader-composed `subprocess` entry is `ControlledSubprocess` (a
+    // pure in-memory fake, proven above) — realistic for `bindEnvironment`'s
+    // probes but incapable of spawning a real kernel process. Give the
+    // kernel set its own real subprocess/sandbox pair, the same way
+    // `createKernelRuntimeHarness` does for direct composition.
+    const kernelServices = new Context()
+    await kernelServices.plugin(LocalSubprocessRuntime)
+    await kernelServices.plugin(LocalSandboxProvider, {
+      runnerCommand: [createFakeSandboxRunner(root!)],
+      runnerFailureSignatures: ['science-runtime fake runner failure'],
+    })
+    installTestKernelSet(loaded, loaded.scienceRuntime, {
+      subprocess: kernelServices.subprocess,
+      sandbox: kernelServices.sandbox,
+    })
     process.env.SCIENCE_RUNTIME_LEAK = 'must-not-reach-real-local-providers'
     try {
       await expect(loaded.scienceRuntime.bindEnvironment({
@@ -192,20 +213,22 @@ describe('Science Runtime real Loader composition', () => {
       const handle = await loaded.scienceRuntime.startRun({
         session,
         language: 'python',
-        code: 'print("Loader path")',
+        code: kernelAction({ status: 'ok', stdout: 'Loader path\n' }),
         ...authorizePythonRun(session, 'science-loader-run'),
         signal: new AbortController().signal,
       })
       await expect(handle.done).resolves.toMatchObject({
         terminal: { runId: handle.runId, status: 'success' },
-        stdout: { text: 'fake run output\n' },
+        stdout: { text: 'Loader path\n' },
       })
     } finally {
       delete process.env.SCIENCE_RUNTIME_LEAK
+      await kernelServices.fiber.dispose()
     }
     expect(session.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
       'science/environment-bound',
+      'science/kernel-state',
       'science/run-started',
       'science/run-finished',
     ])

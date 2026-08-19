@@ -153,6 +153,12 @@ export interface ScienceRunIdentity {
   readonly scratchKey: ScienceScratchKey
   /** Session-relative run directory reference, never a Host absolute path. */
   readonly runDirectoryRef: string
+  /**
+   * Session-local epoch of the persistent kernel that executed this run.
+   * Two runs sharing an epoch share the kernel's in-memory state: this is
+   * the provenance backbone for variable-persistence continuity.
+   */
+  readonly kernelEpoch: number
 }
 
 /** Whole-value record emitted when a Science run starts. */
@@ -190,6 +196,13 @@ export interface ScienceRunTerminal extends ScienceRunIdentity {
   readonly failureCode?: string
   /** Human-readable failure explanation safe for durable storage. */
   readonly failureMessage?: string
+  /**
+   * Present iff the kernel driver's DONE frame carried the `capture-degraded`
+   * flag: it could not fully restore or attribute output capture for this
+   * run, so the run's result stands but {@link stdoutBytes}/{@link stderrBytes}
+   * (and their retained tails) may be incomplete.
+   */
+  readonly outputDegraded?: true
 }
 
 /** Replay-derived terminal record for a run open at `session/end-seed`. */
@@ -464,6 +477,7 @@ export interface ScienceClientRunIdentity {
   readonly environmentFingerprintPreview: string
   readonly startedAt: number
   readonly codeSha256: string
+  readonly kernelEpoch: number
 }
 
 /** Browser-safe running state. */
@@ -482,6 +496,8 @@ export interface ScienceClientRunTerminal extends ScienceClientRunIdentity {
   readonly stdoutTruncated: boolean
   readonly stderrTruncated: boolean
   readonly failureCode?: string
+  /** Mirrors {@link ScienceRunTerminal.outputDegraded}. */
+  readonly outputDegraded?: true
 }
 
 /** Browser-safe replay-derived interruption state. */

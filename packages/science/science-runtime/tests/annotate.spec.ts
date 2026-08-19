@@ -18,9 +18,10 @@ import {
   attachScienceSession,
   authorizeAnnotateArtifact,
   authorizePythonRun,
-  createControlledRuntimeHarness,
   createFakePythonPrefix,
+  createKernelRuntimeHarness,
   createScienceSession,
+  kernelAction,
 } from './harness.ts'
 
 const roots: string[] = []
@@ -56,7 +57,7 @@ let captureCallCounter = 0
  * versions.
  */
 async function captureFiles(
-  harness: Awaited<ReturnType<typeof createControlledRuntimeHarness>>,
+  harness: Awaited<ReturnType<typeof createKernelRuntimeHarness>>,
   root: string,
   session: Session,
   files: Readonly<Record<string, Uint8Array | string>>,
@@ -65,16 +66,17 @@ async function captureFiles(
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
   }
   captureCallCounter += 1
-  const run = harness.subprocess.queueRun('immediate')
+  // The fake driver's `sleep` action holds DONE until `sleepMs` elapses, so
+  // the test can write the artifact files under the run's own real `runId`
+  // before auto-capture walks the artifact directory after DONE.
   const handle = await harness.runtime.startRun({
-    session, language: 'python', code: 'print(1)',
+    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
     ...authorizePythonRun(session, `annotate-capture-${String(captureCallCounter)}`),
     signal: new AbortController().signal,
   })
   for (const [relativePath, data] of Object.entries(files)) {
     await writeArtifact(root, session, handle.runId, relativePath, data)
   }
-  run.complete({ exitCode: 0, signal: null })
   const result = await handle.done
   expect(result.terminal.status).toBe('success')
   return handle.runId
@@ -84,7 +86,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('curates the latest version in place, reusing its attachment and provenance, with origin model', async () => {
     const root = tmp('.science-annotate-latest-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-latest')
     const runId = await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
@@ -116,7 +118,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('curates a non-image artifact identically: no width/height required', async () => {
     const root = tmp('.science-annotate-text-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-text')
     await captureFiles(harness, root, session, { 'report.md': '# Report\n' })
@@ -132,7 +134,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('curates an exact named version in place, leaving every other version untouched', async () => {
     const root = tmp('.science-annotate-exact-version-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-exact-version')
     await captureFiles(harness, root, session, { 'notes.txt': 'v1' })
@@ -156,7 +158,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('supports a curation chain: repeated annotate calls retitle the same version', async () => {
     const root = tmp('.science-annotate-chain-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-chain')
     await captureFiles(harness, root, session, { 'plot.json': '{"ok":true}' })
@@ -180,7 +182,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('rejects an unknown logical_name', async () => {
     const root = tmp('.science-annotate-missing-name-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-missing-name')
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
@@ -194,7 +196,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {
     const root = tmp('.science-annotate-missing-version-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-missing-version')
     await captureFiles(harness, root, session, { 'a.csv': 'x' })
@@ -212,7 +214,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
   it('rejects a detached or non-Science Session before it resolves any artifact version', async () => {
     const root = tmp('.science-annotate-session-guards-')
     const prefix = createFakePythonPrefix(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const plain = harness.ctx.sessions.create(SessionId('science-annotate-plain-session'))
     await expect(harness.runtime.annotateArtifact({

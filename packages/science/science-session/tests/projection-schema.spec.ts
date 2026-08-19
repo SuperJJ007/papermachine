@@ -4,6 +4,7 @@ import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   event,
+  kernelExited,
   kernelStarted,
   legalEvents,
 } from './fixtures.ts'
@@ -16,11 +17,11 @@ describe('Science projection wire schema', () => {
     const events = legalEvents()
     const modeState = clientReplay(events.slice(0, 1))!
     const environmentState = clientReplay(events.slice(0, 2))!
-    const runningState = clientReplay(events.slice(0, 5))!
+    const runningState = clientReplay(events.slice(0, 6))!
     const state = clientReplay(events)!
     const interruptedState = clientReplay([
-      ...events.slice(0, 5),
-      event('session/end-seed', 5, 150, {}),
+      ...events.slice(0, 6),
+      event('session/end-seed', 6, 150, {}),
     ])!
 
     const currentEnvironment = state.environment!
@@ -45,14 +46,18 @@ describe('Science projection wire schema', () => {
       version: 2,
       createdAt: 179,
     }
+    // legalEvents() already seeds the epoch-1 python kernel's `started` half
+    // (open): exit it, then start a fresh epoch 2 so this scenario models a
+    // realistic restart rather than a rejected duplicate open epoch.
     const kernelEvents: SessionEvent[] = [
       ...events,
-      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+      event('science/kernel-state', 11, 190, { version: 1, kernel: kernelExited({ at: 190 }) }),
+      event('science/kernel-state', 12, 195, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 195 }) }),
     ]
     const kernelState = clientReplay(kernelEvents)!
     const interruptedKernelState = clientReplay([
       ...kernelEvents,
-      event('session/end-seed', 11, 400, {}),
+      event('session/end-seed', 13, 400, {}),
     ])!
     const structurallyIndependentMembers = [
       {
@@ -141,11 +146,11 @@ describe('Science projection wire schema', () => {
 
   it('rejects malformed members and incorrect derived metrics', () => {
     const events = legalEvents()
-    const runningState = clientReplay(events.slice(0, 5))!
+    const runningState = clientReplay(events.slice(0, 6))!
     const state = clientReplay(events)!
     const interruptedState = clientReplay([
-      ...events.slice(0, 5),
-      event('session/end-seed', 5, 150, {}),
+      ...events.slice(0, 6),
+      event('session/end-seed', 6, 150, {}),
     ])!
     const currentEnvironment = state.environment!
     const currentPython = currentEnvironment.python!
@@ -154,11 +159,15 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
     const interruptedRun = interruptedState.runs[0]!
+    // legalEvents() already seeds the epoch-1 python kernel's `started` half
+    // (open): exit it, then start a fresh epoch 2, whose still-open record
+    // is kernels[1] (kernels[0] is epoch 1, now exited).
     const kernelState = clientReplay([
       ...events,
-      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+      event('science/kernel-state', 11, 190, { version: 1, kernel: kernelExited({ at: 190 }) }),
+      event('science/kernel-state', 12, 195, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 195 }) }),
     ])!
-    const currentKernel = kernelState.kernels[0]!
+    const currentKernel = kernelState.kernels[1]!
     if (currentKernel.state === 'interrupted') throw new Error('fixture kernel is not a started/exited fact')
     const { metrics: _metrics, ...withoutMetrics } = state
     let statusReads = 0
@@ -270,7 +279,9 @@ describe('Science projection wire schema', () => {
       { ...state, metrics: { runCount: 1 } },
       { ...state, metrics: { ...state.metrics, unexpected: 1 } },
       { ...state, metrics: { ...state.metrics, runCount: 99 } },
-      { ...state, metrics: { ...state.metrics, kernelCount: 1 } },
+      // legalEvents() itself seeds one open kernel, so `state`'s own true
+      // kernelCount is 1; 0 is the wrong count here.
+      { ...state, metrics: { ...state.metrics, kernelCount: 0 } },
       { ...state, runs: [unstableInterruptedRun] },
     ]
     for (const [index, value] of invalidValues.entries()) {

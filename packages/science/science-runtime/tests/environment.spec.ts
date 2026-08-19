@@ -21,9 +21,11 @@ import {
   createFastRuntimeHarness,
   createFakeRPrefix,
   createFakePythonPrefix,
+  createKernelRuntimeHarness,
   createScienceSession,
   authorizePythonRun,
   DirectSandbox,
+  kernelAction,
   mountAttachments,
 } from './harness.ts'
 
@@ -633,8 +635,9 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-bind-guards-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
-    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
+    const spawnSpy = vi.spyOn(harness.ctx.subprocess, 'spawn')
     const session = createScienceSession(harness.ctx, 'science-bind-guards')
     await expect(harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('unknown'), signal: new AbortController().signal,
@@ -648,12 +651,12 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await expect(harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: aborted.signal,
     })).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
-    expect(harness.subprocess.specs).toEqual([])
+    expect(spawnSpy).not.toHaveBeenCalled()
     await harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })
     const handle = await harness.runtime.startRun({
-      session, language: 'python', code: 'print(1)', ...authorizePythonRun(session), signal: new AbortController().signal,
+      session, language: 'python', code: kernelAction({ status: 'ok' }), ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await handle.done
     await expect(harness.runtime.bindEnvironment({

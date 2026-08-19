@@ -7,9 +7,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import {
   authorizePythonRun,
-  createFastRuntimeHarness,
   createFakePythonPrefix,
+  createKernelRuntimeHarness,
   createScienceSession,
+  kernelAction,
 } from './harness.ts'
 import { capturePrefixManifest, diffPrefixManifest } from './prefix-manifest.ts'
 
@@ -42,7 +43,7 @@ describe('Science Runtime prefix manifests', () => {
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
     const before = await capturePrefixManifest(prefix)
-    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const { ctx, runtime } = harness
     const session = createScienceSession(ctx, 'science-prefix-unchanged')
@@ -54,7 +55,7 @@ describe('Science Runtime prefix manifests', () => {
     const handle = await runtime.startRun({
       session,
       language: 'python',
-      code: 'print("prefix must remain unchanged")',
+      code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-prefix-unchanged-call'),
       signal: new AbortController().signal,
     })

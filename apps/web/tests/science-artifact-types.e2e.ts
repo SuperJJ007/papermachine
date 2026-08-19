@@ -94,6 +94,17 @@ function scienceFixture(
     reason: 'initial',
   })
 
+  session.append('science/kernel-state', {
+    version: 1,
+    kernel: {
+      kernelEpoch: 1,
+      language: 'python',
+      state: 'started',
+      environmentRevision: 1,
+      environmentFingerprint: FINGERPRINT,
+      at: eventTime(request.seq + 1),
+    },
+  })
   const runCall = session.append('tool/call', {
     turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_python', arguments: '{}',
   })
@@ -108,6 +119,7 @@ function scienceFixture(
     codeSha256: 'c'.repeat(64),
     scratchKey: ScienceScratchKey('d'.repeat(64)),
     runDirectoryRef: 'runs/run-types-1/',
+    kernelEpoch: 1,
   }
   session.append('science/run-started', { version: 1, run: { ...run, status: 'running' } })
   session.append('science/run-finished', {

@@ -29,7 +29,7 @@ import { KernelSet } from '../src/kernel-set.ts'
 import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
 
 /** Full-featured fake D2-protocol driver pair (sleep/trapSigint included) named for `resolveKernelDriverPath`. */
-export const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
+const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
 /** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
 export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-no-ready/', import.meta.url))
 

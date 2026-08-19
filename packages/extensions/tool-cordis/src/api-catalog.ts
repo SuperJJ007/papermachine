@@ -1048,7 +1048,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
-        description: 'Publish a direct-argv run start, then settle exactly one matching terminal fact after the shared subprocess provider proves tree quiescence.',
+        description: 'Acquire this run\'s persistent kernel (D3/D6), publish its run start, then settle exactly one matching terminal fact through the acquired kernel\'s own RUN/DONE protocol exchange (D5/D10).',
         parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
@@ -3883,7 +3883,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunIdentity',
-    declaration: 'export interface ScienceRunIdentity {\n    readonly runId: ScienceRunId;\n    readonly language: ScienceLanguage;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly startedAt: number;\n    readonly codeSha256: string;\n    readonly scratchKey: ScienceScratchKey;\n    readonly runDirectoryRef: string;\n}',
+    declaration: 'export interface ScienceRunIdentity {\n    readonly runId: ScienceRunId;\n    readonly language: ScienceLanguage;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly startedAt: number;\n    readonly codeSha256: string;\n    readonly scratchKey: ScienceScratchKey;\n    readonly runDirectoryRef: string;\n    readonly kernelEpoch: number;\n}',
   },
   {
     name: 'ScienceRunOutput',
@@ -3899,7 +3899,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunTerminal',
-    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly exitCode?: number;\n    readonly signal?: string;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n}',
+    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly exitCode?: number;\n    readonly signal?: string;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n    readonly outputDegraded?: true;\n}',
   },
   {
     name: 'ScienceRunTerminalStatus',

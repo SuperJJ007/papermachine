@@ -39,8 +39,9 @@ Folded local Science Runtime provider with public types free of Host paths.
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
 
 /**
- * Publish a direct-argv run start, then settle exactly one matching terminal
- * fact after the shared subprocess provider proves tree quiescence.
+ * Acquire this run's persistent kernel (D3/D6), publish its run start,
+ * then settle exactly one matching terminal fact through the acquired
+ * kernel's own RUN/DONE protocol exchange (D5/D10).
  * @param request - Exact live Session, source, authorization facts, and cancellation.
  * @returns A handle exposed only after `science/run-started` committed.
  */
@@ -60,5 +61,5 @@ async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
 annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:93`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:208`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

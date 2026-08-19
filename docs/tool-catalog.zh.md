@@ -1918,7 +1918,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `get_science_state`
 
-返回当前 Science session 状态：mode、sanitized bound environment、带遗漏计数的最近 run 与 artifact-version 历史，以及最近一次发布的 outcome。不接受任何参数。
+返回当前 Science session 状态：mode、sanitized bound environment、每种语言 kernel 的 state（running/exited/interrupted，附带其 epoch、结束原因与启动时间）、带遗漏计数的最近 run 与 artifact-version 历史，以及最近一次发布的 outcome。不接受任何参数。
 
 ```json
 {
@@ -2027,7 +2027,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `run_python`
 
-在绑定到该 session 的 Science environment 上，用一个全新的解释器进程运行 Python 源码。每次调用都会启动一个新进程；调用之间不会在内存中保留任何状态。非零退出码或异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent Python kernel 上运行 Python 源码：变量、import 与定义会在多次调用之间保留在内存中，直到 kernel 重启。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `pip install` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。非零退出码或异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {
@@ -2048,7 +2048,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `run_r`
 
-在绑定到该 session 的 Science environment 上，用一个全新的 Rscript 进程运行 R 源码。每次调用都会启动一个新进程；调用之间不会在内存中保留任何状态。非零退出码或 condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent R kernel 上运行 R 源码：变量与已加载的 package 会在多次调用之间保留在内存中，直到 kernel 重启。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `install.packages()` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。非零退出码或 condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {

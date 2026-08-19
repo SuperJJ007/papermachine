@@ -1567,6 +1567,16 @@ export interface Config {
    * before it stops appending further versions, truncated and flagged.
    */
   readonly captureMaxArtifactVersionsPerSession?: number
+  /**
+   * Idle deadline (D3) after a persistent kernel's last `DONE` before the
+   * Runtime ends it with reason `idle`; disarmed while a run is in flight.
+   */
+  readonly kernelIdleTimeoutMs?: number
+  /**
+   * Deadline (D3) from a persistent kernel's spawn to its `READY` handshake;
+   * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
+   */
+  readonly kernelStartTimeoutMs?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1578,7 +1588,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:59`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:73`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

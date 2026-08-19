@@ -1913,7 +1913,7 @@ Source: [`packages/science/tool-science/src/annotate-artifact.ts`](../packages/s
 
 ### `get_science_state`
 
-Return the current Science session state: mode, sanitized bound environment, recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.
+Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.
 
 ```json
 {
@@ -2022,7 +2022,7 @@ Source: [`packages/science/tool-science/src/publish-outcome.ts`](../packages/sci
 
 ### `run_python`
 
-Run Python source in a fresh interpreter process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.
+Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {
@@ -2043,7 +2043,7 @@ Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-sc
 
 ### `run_r`
 
-Run R source in a fresh Rscript process bound to the session's Science environment. Each call starts a new process; nothing persists in memory between calls. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.
+Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {

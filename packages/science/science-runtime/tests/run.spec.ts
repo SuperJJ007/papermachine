@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { MAX_OUTPUT_BYTES } from '../src/execution.ts'
 import { KernelSet } from '../src/kernel-set.ts'
 import {
   authorizePythonRun,
@@ -15,6 +16,7 @@ import {
   createKernelRuntimeHarness,
   createScienceSession,
   installTestKernelSet,
+  KERNEL_ASSETS_DELAYED_READY_ROOT,
   KERNEL_ASSETS_NO_READY_ROOT,
   kernelAction,
 } from './harness.ts'
@@ -287,6 +289,37 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
+  it('bounds kernel spawn by the run\'s own cancellation, not only kernelStartTimeoutMs (A3 finding 11)', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-spawn-cancel-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-spawn-cancel')
+    await bindFakePython(harness.runtime, session)
+    // The delayed-ready driver withholds READY for 300ms; kernelStartTimeoutMs
+    // is generously long so only the request's own signal, threaded into
+    // KernelProcess.start, can end the wait early. Pre-fix, cancel() was
+    // inert during spawn: startRun would only observe it at the next
+    // assertPrepublication check once the spawn eventually finished on its
+    // own, ~300ms later.
+    installTestKernelSet(harness.ctx, harness.runtime, {
+      assetsRoot: KERNEL_ASSETS_DELAYED_READY_ROOT,
+      kernelStartTimeoutMs: 5_000,
+    })
+    const controller = new AbortController()
+    const pending = harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: controller.signal,
+    })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const abortedAt = Date.now()
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
+    expect(Date.now() - abortedAt).toBeLessThan(200)
+    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
   it('disarms the acquired kernel\'s idle timer immediately on acquisition, before run-started commits (A3 finding 5)', async () => {
     const { ctx, session, runtime } = await readyPythonHarness('science-run-idle-disarm-order')
     // Records call order across two independently observed points: the
@@ -402,6 +435,55 @@ describe('ScienceRuntime.startRun D10 terminal classification', () => {
     expect(result.stderr).toEqual({ text: 'warn\n', bytes: Buffer.byteLength('warn\n'), truncated: false })
     expect(result.terminal).toMatchObject({ stdoutBytes: result.stdout.bytes, stderrBytes: result.stderr.bytes })
     expect(JSON.stringify(session.events)).not.toContain('运行-✓')
+  })
+
+  it('truncates a stdout tail exceeding MAX_OUTPUT_BYTES, retaining exactly the last MAX_OUTPUT_BYTES bytes (A3 finding 3)', async () => {
+    const { session, runtime } = await readyPythonHarness('science-run-output-over')
+    const written = 'x'.repeat(MAX_OUTPUT_BYTES + 6_000)
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok', stdout: written }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    const result = await handle.done
+    expect(result.stdout).toEqual({ text: 'x'.repeat(MAX_OUTPUT_BYTES), bytes: written.length, truncated: true })
+    expect(result.terminal).toMatchObject({ stdoutBytes: written.length, stdoutTruncated: true })
+  })
+
+  it('does not truncate a stdout tail exactly MAX_OUTPUT_BYTES bytes long', async () => {
+    const { session, runtime } = await readyPythonHarness('science-run-output-exact')
+    const written = 'x'.repeat(MAX_OUTPUT_BYTES)
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok', stdout: written }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    const result = await handle.done
+    expect(result.stdout).toEqual({ text: written, bytes: MAX_OUTPUT_BYTES, truncated: false })
+    expect(result.terminal).toMatchObject({ stdoutBytes: MAX_OUTPUT_BYTES, stdoutTruncated: false })
+  })
+
+  it('truncates mid-multibyte-character when the tail boundary splits it, matching the byte-level split exactly', async () => {
+    const { session, runtime } = await readyPythonHarness('science-run-output-split')
+    // 'é' (2 UTF-8 bytes) at the very start, then MAX_OUTPUT_BYTES-1 ASCII
+    // bytes: total size MAX_OUTPUT_BYTES+1, so the tail cut (byte offset 1)
+    // falls between the two bytes of 'é', leaving a lone continuation byte as
+    // the tail's first byte — readCaptureTail reads raw bytes with no
+    // multibyte-boundary alignment, so decoding the retained buffer as
+    // UTF-8 turns that orphaned continuation byte into one U+FFFD
+    // replacement character.
+    const written = `é${'x'.repeat(MAX_OUTPUT_BYTES - 1)}`
+    expect(Buffer.byteLength(written)).toBe(MAX_OUTPUT_BYTES + 1)
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok', stdout: written }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    const result = await handle.done
+    // The retained raw tail is exactly MAX_OUTPUT_BYTES bytes (one lone
+    // continuation byte decoding to one U+FFFD, followed by MAX_OUTPUT_BYTES-1
+    // ASCII bytes) — this exact decoded text is the only value that byte
+    // offset can produce, so matching it proves the retained-tail length.
+    const expectedTail = `�${'x'.repeat(MAX_OUTPUT_BYTES - 1)}`
+    expect(result.stdout).toEqual({ text: expectedTail, bytes: MAX_OUTPUT_BYTES + 1, truncated: true })
+    expect(result.terminal).toMatchObject({ stdoutBytes: MAX_OUTPUT_BYTES + 1, stdoutTruncated: true })
   })
 
   it('marks a run outputDegraded iff the DONE frame carried the capture-degraded flag', async () => {

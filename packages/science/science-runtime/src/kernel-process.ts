@@ -65,6 +65,18 @@ export interface KernelProcessOptions {
   readonly index: number
   /** Spawn-to-READY deadline in milliseconds. */
   readonly kernelStartTimeoutMs: number
+  /**
+   * Caller's own operation cancellation, fused with `kernelStartTimeoutMs`
+   * to bound only the READY wait (A3 finding 11): without it, the caller's
+   * `timeoutMs`/`cancel()` bounds the RUN/DONE exchange but not spawn,
+   * which could otherwise outlive the whole operation by up to
+   * `kernelStartTimeoutMs`. Never wired into the spawned process itself —
+   * this kernel is meant to outlive the one run whose operation this signal
+   * scopes (D3), so it must stop mattering once READY arrives, not stay
+   * live for the process's whole lifetime. Absent only for a caller with no
+   * operation-scoped signal of its own.
+   */
+  readonly signal?: AbortSignal | undefined
 }
 
 /** One RUN request: exact host-minted paths, never shell-interpreted or escaped. */
@@ -297,16 +309,18 @@ export class KernelProcess {
 
   /**
    * Spawn one confined kernel and await its READY handshake.
-   * @param options - services, binding, driver path, kernel index, and start deadline.
+   * @param options - services, binding, driver path, kernel index, start
+   *   deadline, and the caller's own operation signal.
    * @returns a ready-to-use kernel process.
-   * @throws {@link KernelProtocolError} on a READY timeout, an unparseable
-   *   frame before READY, or a process exit/rejection before READY.
+   * @throws {@link KernelProtocolError} on a READY timeout, `options.signal`
+   *   aborting before READY, an unparseable frame before READY, or a
+   *   process exit/rejection before READY.
    * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
    *   sandbox is unavailable, reports less than full enforcement, or the R
    *   kernel's TMPDIR would contain a space.
    */
   static async start(options: KernelProcessOptions): Promise<KernelProcess> {
-    const { services, binding, driverPath, index, kernelStartTimeoutMs } = options
+    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal } = options
     const kernelScratch = await createKernelScratch(
       services.sessionScratch,
       planKernelScratch(services.sessionScratch, binding.language, index),
@@ -333,6 +347,14 @@ export class KernelProcess {
         binding.canonicalPrefix,
         interpreterArgv(binding.language, binding.executable, driverPath, fifoPath),
       )
+      // NOT given `signal`: that spec field stays wired to the spawned
+      // handle for the process's whole lifetime (subprocess-local's own
+      // spawn keeps its abort listener attached until exit), but this
+      // kernel outlives the one run whose operation control `signal` is
+      // (D3) — wiring it here would let any later run's own cancellation
+      // force-kill an already-READY, unrelated persistent kernel. `signal`
+      // only bounds the READY wait below; an abort during that wait is
+      // handled entirely through `cleanupOnStartFailure`'s own `quiesce()`.
       handle = services.subprocess.spawn({
         argv: confined.argv,
         cwd: kernelScratch.directory,
@@ -346,7 +368,7 @@ export class KernelProcess {
         env: kernelEnvironment(binding, services.sessionScratch, kernelScratch.tmp),
       })
       const kernel = new KernelProcess(handle, fifoPath, readStream)
-      await kernel.awaitReady(kernelStartTimeoutMs)
+      await kernel.awaitReady(kernelStartTimeoutMs, signal)
       return kernel
     } catch (error) {
       await cleanupOnStartFailure(handle, fifoPath, readStream)
@@ -421,11 +443,14 @@ export class KernelProcess {
     return quiescence
   }
 
-  private awaitReady(timeoutMs: number): Promise<void> {
+  private awaitReady(timeoutMs: number, signal: AbortSignal | undefined): Promise<void> {
     // NOT `using`: this function returns before the deadline's own timer
     // fires or clears, so disposal must be tied to the returned promise
     // settling (below), not to this synchronous function body returning.
-    const bound = deadline(undefined, timeoutMs, 'KERNEL_START_TIMEOUT')
+    // Fusing `signal` (A3 finding 11) means an abort here can be the
+    // caller's own cancellation, not only the READY deadline; `onTimeout`
+    // fires either way since both cases mean READY is not coming.
+    const bound = deadline(signal, timeoutMs, 'KERNEL_START_TIMEOUT')
     const onTimeout = (): void => {
       this.failProtocol(new KernelProtocolError(`science-runtime: kernel did not send READY within ${String(timeoutMs)}ms`))
     }

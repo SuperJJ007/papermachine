@@ -32,6 +32,8 @@ import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/ke
 const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
 /** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
 export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-no-ready/', import.meta.url))
+/** Fake driver pair that delays READY, for spawn-in-flight coverage (see `kernel-set.spec.ts`'s own use of the same fixture). */
+export const KERNEL_ASSETS_DELAYED_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-delayed-ready/', import.meta.url))
 
 /**
  * Mount a real local attachment store at the same Harness home a test's

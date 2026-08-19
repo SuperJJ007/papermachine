@@ -644,6 +644,29 @@ describe('KernelSet', () => {
     )
   })
 
+  it('captures startedAt after the READY handshake completes, not at spawn request (A3 finding 7)', async () => {
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: () => {},
+    })
+    const { session, sessionScratch } = await harness.session('kernel-started-at-ready')
+    const beforeSpawn = Date.now()
+    await kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    expect(started).toHaveLength(1)
+    // The delayed-ready fixture withholds READY for 300ms after spawn
+    // (`kernel-set-assets-delayed-ready/kernel_python.py`'s READY_DELAY_MS):
+    // a spawn-request-time capture would read close to `beforeSpawn` instead.
+    expect(started[0]?.fact.startedAt).toBeGreaterThanOrEqual(beforeSpawn + 300)
+  })
+
   it('pairs every started kernel with exactly one ended notification, one reason each', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-pairing')

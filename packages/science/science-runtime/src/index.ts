@@ -29,6 +29,7 @@ import { assertProfileRunConfinement, observeProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
 import { KERNEL_ASSETS_ROOT } from './kernel-assets.ts'
+import { KernelProtocolError } from './kernel-process.ts'
 import type { KernelDoneFrame, KernelExecuteRequest, KernelProcess } from './kernel-process.ts'
 import {
   KernelEpochRegressionError,
@@ -194,9 +195,15 @@ export async function settleKernelExecution(
   return abortOutcome(cause, true, false)
 }
 
-/** Stable diagnostic label for an unknown thrown value's error class. */
-function errorClassName(error: unknown): string {
-  return error instanceof Error ? error.constructor.name : typeof error
+/**
+ * Task-vocabulary phrase for `KERNEL_START_FAILED`'s D10 "cause class": what
+ * went wrong, never an internal TypeScript class name (A3 finding 15, the
+ * model-perspective rule) — a model may relay this message to a user.
+ */
+function kernelStartCauseClass(error: unknown): string {
+  if (error instanceof KernelProtocolError) return 'the kernel did not complete its startup handshake'
+  if (error instanceof AggregateError) return 'the kernel could not be stopped cleanly after its startup failed'
+  return 'the kernel process could not be started'
 }
 
 /**
@@ -453,7 +460,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    */
   async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle> {
     if (process.platform === 'win32') {
-      throw new ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', 'Science kernel execution requires darwin or linux')
+      throw new ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', 'Science kernel execution requires macOS or Linux')
     }
     const projection = this.assertSession(request.session)
     this.assertHostLocal()
@@ -479,7 +486,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (request.language === 'r' && sessionScratch.runs.includes(' ')) {
         throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R run directory cannot contain an ASCII space')
       }
-      const kernel = await this.acquireKernel(request.session, request.language, environment, sessionScratch)
+      const kernel = await this.acquireKernel(request.session, request.language, environment, sessionScratch, lease.control)
       // Disarmed immediately on acquisition, not only after run-started
       // commits (A3 finding 5): this run already owns the kernel the moment
       // `acquireKernel` resolves, several awaits before `run-started`
@@ -702,11 +709,17 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * Acquire this run's kernel (D3/D6): reuse a live matching-revision
    * kernel, or spawn a fresh one — ending a stale-revision kernel first
    * (`environment-rebound`). Translates every `KernelSet.acquire` rejection
-   * onto the pre-publication `ScienceRuntimeErrorCode` vocabulary (D10).
+   * onto the pre-publication `ScienceRuntimeErrorCode` vocabulary (D10). A
+   * rejection while `control`'s own signal is the cause (`control.cause` is
+   * set) goes through `prepublicationError` instead (A3 finding 11): passing
+   * `control.signal` into `KernelSet.acquire` means a fresh spawn can now be
+   * the thing that observed the abort, and that must still read as
+   * `OPERATION_TIMED_OUT`/`OPERATION_CANCELLED`, not a spawn failure.
    * @param session - exact live Session that will own the kernel.
    * @param language - requested interpreter language.
    * @param environment - applied durable environment revision the kernel must serve.
    * @param sessionScratch - the Session's already-materialized private scratch paths.
+   * @param control - this run's fused cancellation/timeout signal and first-cause record.
    * @returns the acquired kernel process and its own session-local epoch.
    */
   private async acquireKernel(
@@ -714,10 +727,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
+    control: OperationControl,
   ): Promise<AcquiredKernel> {
     try {
-      return await this.kernels.acquire(session, language, environment, sessionScratch)
+      return await this.kernels.acquire(session, language, environment, sessionScratch, control.signal)
     } catch (error) {
+      if (control.cause !== undefined) throw this.prepublicationError(control, error)
       throw this.kernelAcquisitionError(error, language)
     }
   }
@@ -736,7 +751,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    */
   private kernelAcquisitionError(error: unknown, language: ScienceLanguage): Error {
     if (error instanceof KernelSetQuarantinedError) {
-      return new ScienceRuntimeError('RUNTIME_BUSY', 'science runtime already has work for this Session', { cause: error })
+      return new ScienceRuntimeError('RUNTIME_BUSY', 'Science kernel from a predecessor Session is still tearing down', { cause: error })
     }
     if (error instanceof KernelSetDetachedError) {
       return new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Session detached before kernel acquisition', { cause: error })
@@ -750,7 +765,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     if (error instanceof ScienceRuntimeError) return error
     return new ScienceRuntimeError(
       'KERNEL_START_FAILED',
-      `Science ${language} kernel could not start (${errorClassName(error)})`,
+      `Science ${language} kernel could not start: ${kernelStartCauseClass(error)}`,
       { cause: error },
     )
   }

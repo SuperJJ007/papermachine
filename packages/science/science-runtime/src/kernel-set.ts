@@ -300,6 +300,11 @@ export class KernelSet {
    * @param language - requested interpreter language.
    * @param environment - applied durable environment revision the kernel must serve.
    * @param sessionScratch - the Session's already-materialized private scratch paths.
+   * @param signal - the caller's own operation cancellation, fused with
+   *   `kernelStartTimeoutMs` for a fresh spawn (A3 finding 11) so this call
+   *   never outlives the caller's own operation deadline/cancellation by more
+   *   than an already-live kernel's reuse/rebind step takes. Absent only for
+   *   a caller with no operation-scoped signal of its own.
    * @returns the live, ready kernel process and its own session-local epoch.
    * @throws {@link KernelSetQuarantinedError} for a same-id successor Session
    *   while its predecessor's kernel tree is not yet proven quiescent.
@@ -310,17 +315,19 @@ export class KernelSet {
    *   entry tries to register its own fresh kernel.
    * @throws {@link KernelEpochRegressionError} when the injected epoch
    *   allocator returns a non-increasing value for a fresh spawn.
-   * @throws whatever {@link KernelProcess.start} throws on spawn/handshake failure.
+   * @throws whatever {@link KernelProcess.start} throws on spawn/handshake
+   *   failure, including a `signal` abort during that spawn.
    */
   async acquire(
     session: Session,
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
+    signal?: AbortSignal,
   ): Promise<AcquiredKernel> {
     const entry = this.entryFor(session)
     this.assertAcquirable(entry)
-    const attempt = this.acquireKernel(entry, language, environment, sessionScratch)
+    const attempt = this.acquireKernel(entry, language, environment, sessionScratch, signal)
     this.trackPending(entry, language, attempt)
     return attempt
   }
@@ -331,6 +338,7 @@ export class KernelSet {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
+    signal: AbortSignal | undefined,
   ): Promise<AcquiredKernel> {
     await this.drain(entry, language)
     const live = entry.kernels.get(language)
@@ -338,7 +346,7 @@ export class KernelSet {
       if (live.environmentRevision === environment.revision) return { process: live.process, epoch: live.kernelEpoch }
       await this.endKernel(live, 'environment-rebound')
     }
-    return this.trackedSpawn(entry, language, environment, sessionScratch)
+    return this.trackedSpawn(entry, language, environment, sessionScratch, signal)
   }
 
   /**
@@ -469,8 +477,9 @@ export class KernelSet {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
+    signal: AbortSignal | undefined,
   ): Promise<AcquiredKernel> {
-    const attempt = this.spawnKernel(entry, language, environment, sessionScratch)
+    const attempt = this.spawnKernel(entry, language, environment, sessionScratch, signal)
     const settlement = attempt.then(() => {}, () => {})
     entry.spawning.set(language, settlement)
     this.syncBusyRegistration(entry)
@@ -535,13 +544,13 @@ export class KernelSet {
     language: ScienceLanguage,
     environment: ScienceEnvironmentBinding,
     sessionScratch: ScienceSessionScratch,
+    signal: AbortSignal | undefined,
   ): Promise<AcquiredKernel> {
     const binding = selectBinding(environment, language)
     const kernelEpoch = this.nextEpoch(entry.session)
     if (kernelEpoch <= entry.epochSeen) {
       throw new KernelEpochRegressionError(String(entry.session.id), kernelEpoch, entry.epochSeen)
     }
-    const startedAt = Date.now()
     const process = await KernelProcess.start({
       services: { subprocess: this.subprocess, sandbox: this.sandbox, session: entry.session, sessionScratch },
       binding,
@@ -550,7 +559,13 @@ export class KernelSet {
       // same-language predecessor whose teardown has not yet completed.
       index: kernelEpoch,
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
+      signal,
     })
+    // Captured only after the READY handshake resolves (A3 finding 7): the
+    // ScienceKernelStartedFact/ScienceKernelEndedFact `startedAt` JSDoc
+    // promises the handshake-completion instant, which can be up to
+    // `kernelStartTimeoutMs` later than the spawn request.
+    const startedAt = Date.now()
     const live: LiveKernel = {
       session: entry.session,
       language,

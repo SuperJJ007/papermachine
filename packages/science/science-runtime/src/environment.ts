@@ -11,7 +11,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
 import type { ConfiguredProfile } from './config.ts'
-import { assertPrefixReadOnly, confineWithFullEnforcement, interpreterPathEnv } from './execution.ts'
+import { assertPrefixReadOnly, confineWithFullEnforcement, interpreterPathEnv, localeEnvironment } from './execution.ts'
 import { containsPath, createProbeScratch, planProbeScratch, removeProbeScratch } from './scratch.ts'
 import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
@@ -31,11 +31,6 @@ const PACKAGES_PROBE_MAX_BYTES = 8 * 1024 * 1024
 const R_PACKAGES_EXPR = "m <- installed.packages()[, c('Package', 'Version'), drop = FALSE]; "
   + "write.table(m, file = stdout(), sep = '\\t', quote = FALSE, row.names = FALSE, col.names = FALSE)"
 const UNIX_EXECUTE_BITS = 0o111
-const POSIX_LOCALE = 'C.UTF-8'
-const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
-  aix: POSIX_LOCALE, android: POSIX_LOCALE, darwin: 'en_US.UTF-8', freebsd: POSIX_LOCALE, haiku: POSIX_LOCALE,
-  linux: POSIX_LOCALE, netbsd: POSIX_LOCALE, openbsd: POSIX_LOCALE, sunos: POSIX_LOCALE, win32: POSIX_LOCALE, cygwin: POSIX_LOCALE,
-}
 const POSIX_LAYOUT = { python: ['bin', 'python'], r: ['bin', 'Rscript'] } as const
 const WINDOWS_LAYOUT = { python: ['python.exe'], r: ['Scripts', 'Rscript.exe'] } as const
 const EXECUTABLE_LAYOUTS: Record<NodeJS.Platform, typeof POSIX_LAYOUT | typeof WINDOWS_LAYOUT> = {
@@ -118,16 +113,6 @@ function probeArgv(language: ScienceLanguage, executable: string, kind: 'version
   if (kind === 'version') return [executable, '--version']
   if (kind === 'utf8') return [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")']
   return [executable, '--vanilla', '--encoding=UTF-8', '-e', R_PACKAGES_EXPR]
-}
-
-/** Fixed locale for a supported POSIX host. */
-function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' | 'TZ'> {
-  const locale = CHILD_LOCALES[process.platform]
-  return {
-    LANG: locale,
-    LC_ALL: locale,
-    TZ: 'UTC',
-  }
 }
 
 /** Exact child environment for an unpublished probe. */

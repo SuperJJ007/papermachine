@@ -37,13 +37,13 @@ vi.mock('../src/metadata.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/metadata.ts')>()
   return {
     ...actual,
-    readPresetMetadata: (async (directory: string, options?: { readonly required?: boolean }) => {
+    readPresetMetadata: async (directory: string, options?: { readonly required?: boolean }) => {
       if (metadataHarness.throwRawErrorForDirectory === basename(directory)) {
         metadataHarness.throwRawErrorForDirectory = undefined
         throw new Error('injected non-PresetMetadataError failure')
       }
       return actual.readPresetMetadata(directory, options)
-    }) as typeof actual.readPresetMetadata,
+    },
   }
 })
 

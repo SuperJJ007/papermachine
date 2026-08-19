@@ -30,6 +30,8 @@ export interface ScienceSessionScratch {
   readonly runs: string
   /** Private unpublished-observation directory parent. */
   readonly probes: string
+  /** Private persistent-kernel directory parent. */
+  readonly kernels: string
 }
 
 /** Exact ownership created or verified by one pre-publication operation. */
@@ -65,6 +67,16 @@ export interface ScienceProbeScratch {
   /** Owned HOME forwarded to the probe. */
   readonly home: string
   /** Owned TMPDIR forwarded to the probe. */
+  readonly tmp: string
+}
+
+/** Private paths prepared for one persistent kernel process. */
+export interface ScienceKernelScratch {
+  /** Session-relative durable directory reference. */
+  readonly ref: string
+  /** Host-only kernel directory: spawn cwd and response-FIFO location. */
+  readonly directory: string
+  /** Owned baseline TMPDIR; the driver overrides it per run and restores it after. */
   readonly tmp: string
 }
 
@@ -212,6 +224,7 @@ function sessionScratchPaths(root: string): ScienceSessionScratch {
     state: join(root, 'state'),
     runs: join(root, 'runs'),
     probes: join(root, 'probes'),
+    kernels: join(root, 'kernels'),
   }
 }
 
@@ -288,7 +301,7 @@ export async function materializeSessionScratch(
     created = await ensureOwner(derived.marker, derived.root, derived.key, session)
     await createPrivateTree(derived.home, ['science', 'v1', 'sessions'])
     await createPrivateDirectory(derived.root)
-    await Promise.all([scratch.home, scratch.state, scratch.runs, scratch.probes].map(createPrivateDirectory))
+    await Promise.all([scratch.home, scratch.state, scratch.runs, scratch.probes, scratch.kernels].map(createPrivateDirectory))
     return { scratch, created, marker: derived.marker, owner }
   } catch (error) {
     const preparation = { scratch, created, marker: derived.marker, owner }
@@ -361,6 +374,45 @@ export async function createProbeScratch(
   }
   await createPrivateDirectory(planned.directory)
   await Promise.all([createPrivateDirectory(planned.home), createPrivateDirectory(planned.tmp)])
+  return planned
+}
+
+/**
+ * Plan one persistent kernel tree without creating any Host path.
+ * @param sessionScratch - Planned or existing retained Session paths.
+ * @param language - Interpreter language selecting the directory name.
+ * @param index - Caller-assigned disambiguator for this language's kernel instance.
+ * @returns Future private kernel paths suitable for exact confinement wrapping.
+ */
+export function planKernelScratch(
+  sessionScratch: ScienceSessionScratch,
+  language: ScienceLanguage,
+  index: number,
+): ScienceKernelScratch {
+  const name = `${language}-${String(index)}`
+  const directory = join(sessionScratch.kernels, name)
+  if (!containsPath(sessionScratch.kernels, directory) || directory === sessionScratch.kernels) {
+    throw new Error('science-runtime: kernel directory escapes the owned kernels directory')
+  }
+  return { ref: `kernels/${name}/`, directory, tmp: join(directory, 'tmp') }
+}
+
+/**
+ * Create a private kernel directory and its baseline TMPDIR.
+ * @param sessionScratch - Retained private root that owns the new kernel directory.
+ * @param planned - Exact pre-wrapped kernel paths, or a newly planned tree by default.
+ * @returns Private kernel paths for one persistent kernel process.
+ */
+export async function createKernelScratch(
+  sessionScratch: ScienceSessionScratch,
+  planned: ScienceKernelScratch,
+): Promise<ScienceKernelScratch> {
+  if (!containsPath(sessionScratch.kernels, planned.directory) || planned.directory === sessionScratch.kernels
+    || planned.tmp !== join(planned.directory, 'tmp')) {
+    throw new Error('science-runtime: planned kernel paths escape the owned kernels directory')
+  }
+  await createPrivateDirectory(planned.directory)
+  await createPrivateDirectory(planned.tmp)
   return planned
 }
 

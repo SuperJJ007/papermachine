@@ -1,0 +1,494 @@
+/**
+ * One confined persistent Science kernel subprocess speaking the D2 protocol
+ * (`stdin` RUN/EXIT request frames, response-FIFO READY/DONE frames): spawn
+ * sequence, execute-serialization, cooperative interrupt passthrough, and
+ * teardown. Session-scoped lifecycle is out of scope here: this module knows
+ * nothing about session events, kernel epochs, idle timers, or durable end
+ * reasons beyond the generic diagnostic string `end()` accepts.
+ * @module @deepseek-ai/dsh-science-runtime/kernel-process
+ */
+
+import { createReadStream } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Readable, Writable } from 'node:stream'
+import { deadline } from '@deepseek-ai/dsh-timeout'
+import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ScienceInterpreterAvailableBinding, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import {
+  confineInterpreterArgv,
+  DESCENDANT_GRACE_MS,
+  interpreterArgv,
+  interpreterPathEnv,
+  localeEnvironment,
+  MAX_OUTPUT_BYTES,
+  quiesce,
+} from './execution.ts'
+import { createKernelScratch, planKernelScratch } from './scratch.ts'
+import type { ScienceSessionScratch } from './scratch.ts'
+import { ScienceRuntimeError } from './types.ts'
+
+/**
+ * How long a still-alive kernel is given, after its response FIFO ends
+ * unexpectedly, to prove it actually died before that is treated as a
+ * protocol violation.
+ */
+const FIFO_EOF_GRACE_MS = 1_000
+
+/**
+ * Fatal kernel-driver protocol violation: an unparseable frame, an
+ * unexpected response-FIFO EOF while the kernel process was still alive, or
+ * a READY handshake timeout.
+ */
+export class KernelProtocolError extends Error {
+  override name = 'KernelProtocolError'
+}
+
+/** The kernel process exited before a request in flight ever received its matching DONE frame. */
+export class KernelExitedError extends Error {
+  override name = 'KernelExitedError'
+}
+
+/** Services `KernelProcess` needs to spawn and confine one kernel, mirroring `ExecutionServices`. */
+export interface KernelProcessServices {
+  readonly subprocess: SubprocessRuntime
+  readonly sandbox: SandboxProvider
+  readonly session: Session
+  readonly sessionScratch: ScienceSessionScratch
+}
+
+/** Construction inputs for one confined persistent kernel process. */
+export interface KernelProcessOptions {
+  /** Shared subprocess, sandbox, exact Session, and private scratch services. */
+  readonly services: KernelProcessServices
+  /** The requested language's available binding, selecting the interpreter executable and prefix. */
+  readonly binding: ScienceInterpreterAvailableBinding
+  /** Absolute on-disk path of the shipped driver script for `binding.language` (see `kernel-assets.ts`). */
+  readonly driverPath: string
+  /** Caller-assigned disambiguator for this language's kernel instance under the Session's `kernels/` scratch tree. */
+  readonly index: number
+  /** Spawn-to-READY deadline in milliseconds. */
+  readonly kernelStartTimeoutMs: number
+}
+
+/** One RUN request: exact host-minted paths, never shell-interpreted or escaped. */
+export interface KernelExecuteRequest {
+  /** Run identity echoed back unchanged on the matching DONE frame. */
+  readonly runId: ScienceRunId
+  /** Exact source file path already flushed into the run's private scratch directory. */
+  readonly sourcePath: string
+  /** Working directory the driver `chdir`s into for the run. */
+  readonly cwd: string
+  /** Per-run stdout capture file path. */
+  readonly stdoutPath: string
+  /** Per-run stderr capture file path. */
+  readonly stderrPath: string
+  /** Per-run artifact directory the driver publishes as `SCIENCE_ARTIFACT_DIR`. */
+  readonly artifactDir: string
+}
+
+/** D2 terminal run status. */
+export type KernelDoneStatus = 'ok' | 'error' | 'interrupted'
+
+/** Parsed DONE frame for one completed RUN. */
+export interface KernelDoneFrame {
+  /** Run identity from the matching RUN request. */
+  readonly runId: ScienceRunId
+  /** D2 terminal status. */
+  readonly status: KernelDoneStatus
+  /** Exception/condition class name on `error`; empty otherwise. */
+  readonly detail: string
+  /** Whether the D2 `capture-degraded` flag token was present; other tokens are ignored (forward-tolerant). */
+  readonly captureDegraded: boolean
+}
+
+/** How this kernel process's own subprocess lifetime ended. */
+export type KernelExitCause =
+  /** `end()` sent EXIT (or attempted to) and awaited quiesce. */
+  | 'commanded'
+  /** This `KernelProcess` detected a protocol violation and force-terminated the process itself. */
+  | 'protocol'
+  /** The process exited on its own, with no `end()` in progress and no detected protocol violation. */
+  | 'crash'
+
+/** Terminal fact for one kernel process's own subprocess lifetime. */
+export interface KernelExitFact {
+  /** Exit code; null when the process died from a signal. */
+  readonly exitCode: number | null
+  /** Terminating signal; null on normal exit. */
+  readonly signal: NodeJS.Signals | null
+  /** Classification the owner uses to pick a durable end reason. */
+  readonly cause: KernelExitCause
+}
+
+interface PendingExecute {
+  readonly runId: ScienceRunId
+  readonly resolve: (frame: KernelDoneFrame) => void
+  readonly reject: (error: Error) => void
+}
+
+/** Reject a host-minted field that must never carry frame delimiters. */
+function assertNoFrameDelimiters(value: string, label: string): void {
+  if (value.includes('\t') || value.includes('\n')) {
+    throw new Error(`science-runtime: kernel ${label} must not contain a tab or newline`)
+  }
+}
+
+/** Whether an unknown error carries the POSIX `ENOENT` code. */
+function isEnoent(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { readonly code?: unknown }).code === 'ENOENT'
+}
+
+/** Remove the response FIFO, tolerating an already-absent path. */
+async function unlinkFifo(fifoPath: string): Promise<void> {
+  try {
+    await unlink(fifoPath)
+  } catch (error) {
+    if (!isEnoent(error)) throw error
+  }
+}
+
+/**
+ * Create the kernel's response FIFO host-side, unconfined: spawns the
+ * platform `mkfifo` binary directly through the subprocess seam, never
+ * through the sandbox (D2/D9 — the FIFO must exist before the confined
+ * kernel argv is spawned).
+ * @param subprocess - subprocess runtime used unconfined for this one call.
+ * @param cwd - existing directory to spawn `mkfifo` from (irrelevant beyond existing, since `fifoPath` is absolute).
+ * @param fifoPath - absolute path at which to create the FIFO.
+ * @throws when the FIFO path carries a frame delimiter, `mkfifo` cannot be resolved, or it exits non-zero.
+ */
+async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<void> {
+  assertNoFrameDelimiters(fifoPath, 'response FIFO path')
+  const mkfifo = await subprocess.resolveExecutable('mkfifo')
+  const handle = subprocess.spawn({
+    argv: [mkfifo, fifoPath],
+    cwd,
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
+    graceMs: DESCENDANT_GRACE_MS,
+    environmentBase: 'empty',
+  })
+  const outcome = await handle.done
+  if (outcome.exitCode !== 0 || outcome.signal !== null) {
+    const stderrText = handle.collected.stderr?.readFrom(0).text ?? ''
+    throw new Error(
+      'science-runtime: mkfifo failed for the kernel response FIFO '
+      + `(exitCode=${String(outcome.exitCode)}, signal=${String(outcome.signal)}): ${stderrText}`,
+    )
+  }
+}
+
+/**
+ * Exact empty-base child environment for a persistent kernel's baseline
+ * spawn (D9: per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
+ */
+function kernelEnvironment(
+  binding: ScienceInterpreterAvailableBinding,
+  sessionScratch: ScienceSessionScratch,
+  tmp: string,
+): NodeJS.ProcessEnv {
+  return {
+    HOME: sessionScratch.home,
+    TMPDIR: tmp,
+    PATH: interpreterPathEnv(binding.canonicalPrefix),
+    SCIENCE_STATE_DIR: sessionScratch.state,
+    ...localeEnvironment(),
+  }
+}
+
+/** True D2 status literal. */
+function isDoneStatus(value: string): value is KernelDoneStatus {
+  return value === 'ok' || value === 'error' || value === 'interrupted'
+}
+
+/**
+ * One confined, long-lived kernel subprocess. Executions are strictly
+ * serialized: a second concurrent {@link execute} while one is outstanding is
+ * a programming error. Construct only through {@link KernelProcess.start}; an
+ * instance is unusable until the driver's READY handshake completes.
+ */
+export class KernelProcess {
+  /** Resolves once, when this process's own subprocess lifetime ends, however it ends. */
+  readonly exited: Promise<KernelExitFact>
+
+  private readonly resolveExited: (fact: KernelExitFact) => void
+  private readonly stdin: Writable
+  private readonly readyWaiter: ReturnType<typeof Promise.withResolvers<void>>
+  private phase: 'starting' | 'ready' = 'starting'
+  private pending: PendingExecute | undefined
+  private protocolFault: KernelProtocolError | undefined
+  private commandedReason: string | undefined
+  private exitSettled = false
+  private endPromise: Promise<void> | undefined
+  private lineBuffer = ''
+
+  private constructor(
+    private readonly handle: SubprocessHandle,
+    private readonly fifoPath: string,
+    private readonly readStream: Readable,
+  ) {
+    const stdin = handle.stdin
+    if (stdin === undefined) throw new Error('science-runtime: kernel process was not spawned with a stdin pipe')
+    this.stdin = stdin
+
+    const exitResolvers = Promise.withResolvers<KernelExitFact>()
+    this.exited = exitResolvers.promise
+    this.resolveExited = exitResolvers.resolve
+    this.readyWaiter = Promise.withResolvers<void>()
+
+    readStream.on('data', (chunk: string) => { this.onFifoData(chunk) })
+    readStream.on('end', () => { void this.onFifoEnd() })
+    readStream.on('error', (error: unknown) => { this.onFifoError(error) })
+    handle.done.then(
+      (outcome) => { this.settleExit(outcome.exitCode, outcome.signal) },
+      () => { this.settleExit(null, null) },
+    )
+  }
+
+  /**
+   * Spawn one confined kernel and await its READY handshake.
+   * @param options - services, binding, driver path, kernel index, and start deadline.
+   * @returns a ready-to-use kernel process.
+   * @throws {@link KernelProtocolError} on a READY timeout, an unparseable
+   *   frame before READY, or a process exit/rejection before READY.
+   * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
+   *   sandbox is unavailable, reports less than full enforcement, or the R
+   *   kernel's TMPDIR would contain a space.
+   */
+  static async start(options: KernelProcessOptions): Promise<KernelProcess> {
+    const { services, binding, driverPath, index, kernelStartTimeoutMs } = options
+    const kernelScratch = await createKernelScratch(
+      services.sessionScratch,
+      planKernelScratch(services.sessionScratch, binding.language, index),
+    )
+    if (binding.language === 'r' && kernelScratch.tmp.includes(' ')) {
+      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R kernel TMPDIR cannot contain an ASCII space')
+    }
+    const fifoPath = join(kernelScratch.directory, 'resp.fifo')
+    await createResponseFifo(services.subprocess, kernelScratch.directory, fifoPath)
+    // Open the read side before spawning the kernel: the safer FIFO-ordering
+    // default (K1.0 spike finding 1) — no window where the kernel's own
+    // open-for-write races an as-yet-nonexistent reader.
+    const readStream = createReadStream(fifoPath, { encoding: 'utf8' })
+    const confined = confineInterpreterArgv(
+      services.session,
+      services.sessionScratch,
+      services.sandbox,
+      binding.canonicalPrefix,
+      interpreterArgv(binding.language, binding.executable, driverPath, fifoPath),
+    )
+    const handle = services.subprocess.spawn({
+      argv: confined.argv,
+      cwd: kernelScratch.directory,
+      stdio: {
+        stdin: 'pipe',
+        stdout: { maxBytes: MAX_OUTPUT_BYTES },
+        stderr: { maxBytes: MAX_OUTPUT_BYTES },
+      },
+      graceMs: DESCENDANT_GRACE_MS,
+      environmentBase: 'empty',
+      env: kernelEnvironment(binding, services.sessionScratch, kernelScratch.tmp),
+    })
+    const kernel = new KernelProcess(handle, fifoPath, readStream)
+    try {
+      await kernel.awaitReady(kernelStartTimeoutMs)
+    } catch (error) {
+      await kernel.destroyOnStartFailure()
+      throw error
+    }
+    return kernel
+  }
+
+  /**
+   * Write one RUN frame and await its matching DONE frame.
+   * @param request - exact host-minted run identity and paths.
+   * @returns the parsed DONE frame.
+   * @throws when a previous {@link execute} on this instance is still pending (programming error).
+   */
+  execute(request: KernelExecuteRequest): Promise<KernelDoneFrame> {
+    if (this.pending !== undefined) {
+      throw new Error('science-runtime: KernelProcess.execute called while a previous execute is still pending')
+    }
+    if (this.protocolFault !== undefined) return Promise.reject(this.protocolFault)
+    if (this.exitSettled) return Promise.reject(new KernelExitedError('science-runtime: kernel process has already exited'))
+    assertNoFrameDelimiters(request.runId, 'RUN runId')
+    assertNoFrameDelimiters(request.sourcePath, 'RUN sourcePath')
+    assertNoFrameDelimiters(request.cwd, 'RUN cwd')
+    assertNoFrameDelimiters(request.stdoutPath, 'RUN stdoutPath')
+    assertNoFrameDelimiters(request.stderrPath, 'RUN stderrPath')
+    assertNoFrameDelimiters(request.artifactDir, 'RUN artifactDir')
+    const frame = [
+      'RUN', request.runId, request.sourcePath, request.cwd, request.stdoutPath, request.stderrPath, request.artifactDir,
+    ].join('\t')
+    const resolvers = Promise.withResolvers<KernelDoneFrame>()
+    this.pending = { runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
+    try {
+      this.stdin.write(`${frame}\n`)
+    } catch (error) {
+      this.pending = undefined
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    return resolvers.promise
+  }
+
+  /** Deliver a cooperative SIGINT request to the kernel process; a pure {@link SubprocessHandle.interrupt} passthrough. */
+  interrupt(): void {
+    this.handle.interrupt()
+  }
+
+  /**
+   * Best-effort EXIT frame, then the seam's quiesce escalation, then FIFO
+   * stream/file cleanup. Idempotent: a second call awaits the same teardown.
+   * @param reason - caller-owned diagnostic label; not durably interpreted here.
+   * @returns resolves once the process reached quiescence and the FIFO file was removed (or was already gone).
+   */
+  end(reason: string): Promise<void> {
+    this.endPromise ??= this.performEnd(reason)
+    return this.endPromise
+  }
+
+  private async performEnd(reason: string): Promise<void> {
+    this.commandedReason = reason
+    try {
+      this.stdin.write('EXIT\n')
+    } catch {
+      // Best-effort: a closed or broken stdin means the kernel is already gone.
+    }
+    await quiesce(this.handle)
+    this.readStream.destroy()
+    await unlinkFifo(this.fifoPath)
+  }
+
+  private async destroyOnStartFailure(): Promise<void> {
+    this.readStream.destroy()
+    await quiesce(this.handle)
+    await unlinkFifo(this.fifoPath)
+  }
+
+  private awaitReady(timeoutMs: number): Promise<void> {
+    // NOT `using`: this function returns before the deadline's own timer
+    // fires or clears, so disposal must be tied to the returned promise
+    // settling (below), not to this synchronous function body returning.
+    const bound = deadline(undefined, timeoutMs, 'KERNEL_START_TIMEOUT')
+    const onTimeout = (): void => {
+      this.failProtocol(new KernelProtocolError(`science-runtime: kernel did not send READY within ${String(timeoutMs)}ms`))
+    }
+    bound.signal.addEventListener('abort', onTimeout, { once: true })
+    // A process death before any line was parsed never reaches failProtocol
+    // through onFrameLine, so also fail the handshake when exit settles first.
+    void this.exited.then((fact) => {
+      if (this.phase === 'starting') {
+        this.failProtocol(new KernelProtocolError(
+          `science-runtime: kernel process exited before sending READY (exitCode=${String(fact.exitCode)}, signal=${String(fact.signal)})`,
+        ))
+      }
+    })
+    return this.readyWaiter.promise.finally(() => {
+      bound.signal.removeEventListener('abort', onTimeout)
+      bound[Symbol.dispose]()
+    })
+  }
+
+  private onFifoData(chunk: string): void {
+    this.lineBuffer += chunk
+    let newline: number
+    while ((newline = this.lineBuffer.indexOf('\n')) !== -1) {
+      const line = this.lineBuffer.slice(0, newline)
+      this.lineBuffer = this.lineBuffer.slice(newline + 1)
+      this.onFrameLine(line)
+    }
+  }
+
+  private onFrameLine(line: string): void {
+    if (this.exitSettled || this.protocolFault !== undefined) return
+    if (this.phase === 'starting') {
+      this.handleReadyLine(line)
+      return
+    }
+    this.handleRunLine(line)
+  }
+
+  private handleReadyLine(line: string): void {
+    const fields = line.split('\t')
+    const [tag, protocolVersion, pid, extra] = fields
+    if (tag !== 'READY' || protocolVersion !== '1' || pid === undefined || extra !== undefined) {
+      this.failProtocol(new KernelProtocolError(`science-runtime: kernel sent an unexpected line before READY: ${JSON.stringify(line)}`))
+      return
+    }
+    this.phase = 'ready'
+    this.readyWaiter.resolve()
+  }
+
+  private handleRunLine(line: string): void {
+    const fields = line.split('\t')
+    const [tag, runId, status, detail, flags, extra] = fields
+    const pending = this.pending
+    if (
+      tag !== 'DONE' || runId === undefined || status === undefined || detail === undefined || flags === undefined
+      || extra !== undefined || !isDoneStatus(status) || pending === undefined || runId !== pending.runId
+    ) {
+      this.failProtocol(new KernelProtocolError(`science-runtime: kernel sent an unexpected frame: ${JSON.stringify(line)}`))
+      return
+    }
+    this.pending = undefined
+    pending.resolve({
+      runId: pending.runId,
+      status,
+      detail,
+      captureDegraded: flags.split(',').includes('capture-degraded'),
+    })
+  }
+
+  private async onFifoEnd(): Promise<void> {
+    if (this.exitSettled || this.commandedReason !== undefined) return
+    // A crashing kernel closes its FIFO write end as an ordinary side effect
+    // of process death; give the authoritative process-exit observation a
+    // brief window to settle first so a genuine crash is not misreported as
+    // a protocol violation (a driver that closes only the FIFO and stays
+    // alive is the genuine violation this grace distinguishes).
+    const exited = await this.handle.waitForExit(AbortSignal.timeout(FIFO_EOF_GRACE_MS))
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- handle.done can settle exit while this grace wait is awaited.
+    if (this.exitSettled || exited) return
+    this.failProtocol(new KernelProtocolError(
+      'science-runtime: kernel response FIFO ended unexpectedly while the kernel process was still alive',
+    ))
+  }
+
+  private onFifoError(error: unknown): void {
+    if (this.exitSettled) return
+    this.failProtocol(error instanceof Error
+      ? new KernelProtocolError(`science-runtime: kernel response FIFO failed: ${error.message}`)
+      : new KernelProtocolError('science-runtime: kernel response FIFO failed'))
+  }
+
+  private failProtocol(error: KernelProtocolError): void {
+    if (this.protocolFault !== undefined) return
+    this.protocolFault = error
+    const pending = this.pending
+    this.pending = undefined
+    pending?.reject(error)
+    if (this.phase === 'starting') this.readyWaiter.reject(error)
+    try {
+      this.handle.terminate()
+    } catch {
+      // handle.done settling remains authoritative for exit classification.
+    }
+  }
+
+  private settleExit(exitCode: number | null, signal: NodeJS.Signals | null): void {
+    if (this.exitSettled) return
+    this.exitSettled = true
+    const cause: KernelExitCause = this.protocolFault !== undefined
+      ? 'protocol'
+      : this.commandedReason !== undefined ? 'commanded' : 'crash'
+    this.resolveExited({ exitCode, signal, cause })
+    const pending = this.pending
+    this.pending = undefined
+    if (pending === undefined) return
+    pending.reject(this.protocolFault ?? new KernelExitedError(
+      `science-runtime: kernel process exited (${cause}) before RUN ${pending.runId} completed`,
+    ))
+  }
+}

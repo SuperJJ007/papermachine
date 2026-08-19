@@ -3,7 +3,6 @@
 import { createHash } from 'node:crypto'
 import { lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { canonicalizeWatchPath } from '@deepseek-ai/dsh-home-paths'
@@ -12,7 +11,8 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
 import type { ConfiguredProfile } from './config.ts'
-import { containsPath, createProbeScratch, pathsOverlap, planProbeScratch, removeProbeScratch } from './scratch.ts'
+import { assertPrefixReadOnly, confineWithFullEnforcement } from './execution.ts'
+import { containsPath, createProbeScratch, planProbeScratch, removeProbeScratch } from './scratch.ts'
 import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
 const VERSION_MAX_BYTES = 1_024
@@ -153,15 +153,6 @@ function probePolicy(scratch: ScienceProbeScratch, sessionId: SessionId): Sandbo
   return { mode: 'workspace-write', workspaceRoot: scratch.directory, sessionId }
 }
 
-/** Reject a prefix that falls inside or contains a writable root. */
-function rejectWritableOverlap(prefix: string, policy: SandboxPolicy): void {
-  for (const root of writableRoots(policy)) {
-    if (pathsOverlap(prefix, root)) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'configured Conda prefix overlaps a sandbox writable root')
-    }
-  }
-}
-
 /**
  * Reject an allowlisted prefix that a future fixed run policy could write.
  * @param profile - Selected local profile before any scratch creation.
@@ -175,7 +166,7 @@ export async function assertProfileRunConfinement(
 ): Promise<void> {
   const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: scratchRoot, sessionId: session.id }
   for (const prefix of [profile.pythonPrefix, profile.rPrefix]) {
-    if (prefix !== undefined) rejectWritableOverlap(await canonicalizeWatchPath(prefix), policy)
+    if (prefix !== undefined) assertPrefixReadOnly(await canonicalizeWatchPath(prefix), policy)
   }
 }
 
@@ -340,21 +331,7 @@ function confineProbe(
   scratch: ScienceProbeScratch,
   argv: readonly string[],
 ): ConfinedArgv {
-  const policy = probePolicy(scratch, services.sessionId)
-  rejectWritableOverlap(prefix, policy)
-  let confined: ConfinedArgv
-  try {
-    confined = services.sandbox.confine(argv, policy)
-  } catch (error) {
-    if (error instanceof SandboxUnavailableError) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available full sandbox', { cause: error })
-    }
-    throw error
-  }
-  if (confined.enforcement !== 'full') {
-    throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires full sandbox enforcement')
-  }
-  return confined
+  return confineWithFullEnforcement(services.sandbox, prefix, probePolicy(scratch, services.sessionId), argv)
 }
 
 /** Distinguish an absent or structurally unusable configured interpreter from provider I/O failure. */

@@ -10,7 +10,7 @@ import {
   SandboxUnavailableError,
   writableRoots,
 } from '@deepseek-ai/dsh-sandbox'
-import type { SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { ScienceRunId, ScienceScratchKey } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceEnvironmentBinding,
@@ -87,8 +87,12 @@ export interface NonQuiescentRun {
 /** Terminal result or the retained proof required before releasing its Session lease. */
 export type SettledRun = QuiescentRun | NonQuiescentRun
 
-/** Exact fixed locale values for a supported POSIX child. */
-function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' | 'TZ'> {
+/**
+ * Exact fixed locale values for a supported POSIX child. Shared by every
+ * confined interpreter spawn (one-shot runs and persistent kernels alike).
+ * @returns fixed `LANG`/`LC_ALL`/`TZ` entries for this host platform.
+ */
+export function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' | 'TZ'> {
   const locale = CHILD_LOCALES[process.platform]
   return {
     LANG: locale,
@@ -97,11 +101,31 @@ function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' | 'TZ'> 
   }
 }
 
-/** Direct argv for a fresh source file, never a shell command. */
-function runArgv(language: ScienceLanguage, executable: string, source: string): string[] {
+/**
+ * Fixed `PATH` entry for a configured interpreter prefix: its own `bin`
+ * (`Scripts` on Windows) ahead of the platform's ordinary system
+ * directories. Shared by every confined interpreter spawn.
+ * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
+ * @returns the exact `PATH` value for that prefix on this host platform.
+ */
+export function interpreterPathEnv(canonicalPrefix: string): string {
+  return `${join(canonicalPrefix, PATH_DIRECTORIES[process.platform])}${PATH_SUFFIXES[process.platform]}`
+}
+
+/**
+ * Direct argv for one interpreter invocation: fixed per-language hardening
+ * flags followed by the caller's trailing script arguments — a source file
+ * path for a one-shot run, or a driver script path plus its own argument for
+ * a persistent kernel. Never a shell command.
+ * @param language - selects the fixed flag set.
+ * @param executable - canonical interpreter executable.
+ * @param scriptArgs - trailing arguments appended after the fixed flags.
+ * @returns the complete direct argv, unconfined.
+ */
+export function interpreterArgv(language: ScienceLanguage, executable: string, ...scriptArgs: readonly string[]): string[] {
   return language === 'python'
-    ? [executable, '-I', '-B', '-u', '-X', 'utf8', source]
-    : [executable, '--vanilla', '--encoding=UTF-8', source]
+    ? [executable, '-I', '-B', '-u', '-X', 'utf8', ...scriptArgs]
+    : [executable, '--vanilla', '--encoding=UTF-8', ...scriptArgs]
 }
 
 /** Reject malformed/oversized source without adding or normalizing bytes. */
@@ -152,18 +176,88 @@ export function planRun(
   }
 }
 
-/** Fixed run policy rooted at exactly one canonical Science Session scratch tree. */
-function runPolicy(session: Session, scratch: ScienceSessionScratch): SandboxPolicy {
+/**
+ * Fixed confinement policy rooted at exactly one canonical Science Session
+ * scratch tree. Shared by every confined interpreter spawn under that
+ * Session: one-shot runs, probes, and persistent kernels alike.
+ * @param session - exact live Session that owns the scratch tree.
+ * @param scratch - that Session's private scratch paths.
+ * @returns the fixed `workspace-write` sandbox policy.
+ */
+export function confinementPolicy(session: Session, scratch: ScienceSessionScratch): SandboxPolicy {
   return { mode: 'workspace-write', workspaceRoot: scratch.root, sessionId: session.id }
 }
 
-/** Reject every prefix that may be written through the selected sandbox policy. */
-function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): void {
+/**
+ * Reject every prefix that may be written through the selected sandbox policy.
+ * @param prefix - the observed binding's canonicalized Conda prefix.
+ * @param policy - the confinement policy the prefix must stay outside of.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the prefix overlaps a writable root.
+ */
+export function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): void {
   for (const root of writableRoots(policy)) {
     if (pathsOverlap(prefix, root)) {
       throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'configured Conda prefix overlaps a sandbox writable root')
     }
   }
+}
+
+/**
+ * Sandbox-confine one argv under an already-built policy: asserts the
+ * interpreter's own prefix stays read-only and requires full enforcement.
+ * Shared by every Science confinement site — one-shot runs, persistent
+ * kernels, and interpreter probes alike — each of which builds its own
+ * policy (a probe's differs from a run's: a narrower `workspaceRoot`).
+ * @param sandbox - sandbox provider performing the confinement.
+ * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
+ * @param policy - the caller's already-built confinement policy.
+ * @param argv - direct, unconfined argv (see {@link interpreterArgv}).
+ * @returns the confined argv and its denial/runner-failure classification evidence.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the sandbox is unavailable or reports less than full enforcement.
+ */
+export function confineWithFullEnforcement(
+  sandbox: SandboxProvider,
+  canonicalPrefix: string,
+  policy: SandboxPolicy,
+  argv: readonly string[],
+): ConfinedArgv {
+  assertPrefixReadOnly(canonicalPrefix, policy)
+  let confined: ConfinedArgv
+  try {
+    confined = sandbox.confine(argv, policy)
+  } catch (error) {
+    if (error instanceof SandboxUnavailableError) {
+      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available full sandbox', { cause: error })
+    }
+    throw error
+  }
+  if (confined.enforcement !== 'full') {
+    throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires full sandbox enforcement')
+  }
+  return confined
+}
+
+/**
+ * Sandbox-confine one interpreter argv under a Session's `workspace-write`
+ * policy. Shared by one-shot run confinement and persistent kernel spawn
+ * confinement (both root the policy at the whole Session scratch tree,
+ * unlike an interpreter probe's narrower policy).
+ * @param session - exact live Session that owns the confinement policy.
+ * @param scratch - that Session's private scratch paths.
+ * @param sandbox - sandbox provider performing the confinement.
+ * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
+ * @param argv - direct, unconfined argv (see {@link interpreterArgv}).
+ * @returns the confined argv and its denial/runner-failure classification evidence.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the sandbox is unavailable or reports less than full enforcement.
+ */
+export function confineInterpreterArgv(
+  session: Session,
+  scratch: ScienceSessionScratch,
+  sandbox: SandboxProvider,
+  canonicalPrefix: string,
+  argv: readonly string[],
+): ConfinedArgv {
+  return confineWithFullEnforcement(sandbox, canonicalPrefix, confinementPolicy(session, scratch), argv)
 }
 
 /** Exact empty-base child environment for a published Science run. */
@@ -175,7 +269,7 @@ function runEnvironment(
   return {
     HOME: scratch.home,
     TMPDIR: run.tmp,
-    PATH: `${join(binding.canonicalPrefix, PATH_DIRECTORIES[process.platform])}${PATH_SUFFIXES[process.platform]}`,
+    PATH: interpreterPathEnv(binding.canonicalPrefix),
     SCIENCE_STATE_DIR: scratch.state,
     SCIENCE_ARTIFACT_DIR: run.artifacts,
     ...localeEnvironment(),
@@ -243,11 +337,19 @@ function awaitEventualQuiescence(handle: SubprocessHandle): Promise<boolean> {
 }
 
 /** Wait briefly for a post-parent descendant tree, then use the one subprocess termination verb. */
-type Quiescence =
+export type Quiescence =
   | { readonly quiescent: true; readonly forced: boolean }
   | { readonly quiescent: false; readonly forced: true; readonly eventualQuiescence: Promise<boolean> }
 
-async function quiesce(handle: SubprocessHandle): Promise<Quiescence> {
+/**
+ * Wait briefly for a subprocess tree to exit on its own, then escalate
+ * through the seam's one termination verb and wait again. Shared by
+ * one-shot run settlement and persistent kernel teardown.
+ * @param handle - the live subprocess handle to quiesce.
+ * @returns whether the tree proved quiescent, whether termination was
+ *   forced, and (when still unproven) the retained eventual-quiescence observation.
+ */
+export async function quiesce(handle: SubprocessHandle): Promise<Quiescence> {
   try {
     const grace = AbortSignal.timeout(DESCENDANT_GRACE_MS)
     if (await handle.waitForExit(grace)) return { quiescent: true, forced: false }
@@ -313,20 +415,13 @@ export function confineRun(
   plan: RunPlan,
   source: string,
 ): ConfinedExecution {
-  const policy = runPolicy(services.session, services.sessionScratch)
-  assertPrefixReadOnly(plan.binding.canonicalPrefix, policy)
-  let confined: ReturnType<SandboxProvider['confine']>
-  try {
-    confined = services.sandbox.confine(runArgv(plan.binding.language, plan.binding.executable, source), policy)
-  } catch (error) {
-    if (error instanceof SandboxUnavailableError) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available full sandbox', { cause: error })
-    }
-    throw error
-  }
-  if (confined.enforcement !== 'full') {
-    throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires full sandbox enforcement')
-  }
+  const confined = confineInterpreterArgv(
+    services.session,
+    services.sessionScratch,
+    services.sandbox,
+    plan.binding.canonicalPrefix,
+    interpreterArgv(plan.binding.language, plan.binding.executable, source),
+  )
   return {
     argv: confined.argv,
     denialSignatures: confined.denialSignatures,

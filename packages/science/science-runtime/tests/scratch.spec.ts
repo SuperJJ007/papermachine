@@ -20,11 +20,13 @@ import { Context } from '@deepseek-ai/cordis'
 import { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import {
+  createKernelScratch,
   createProbeScratch,
   createRunScratch,
   canonicalWithin,
   ensureSessionScratch,
   materializeSessionScratch,
+  planKernelScratch,
   removeProbeScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
@@ -131,7 +133,7 @@ describe('Science Runtime private scratch', () => {
     expect(readFileSync(marker, 'utf8')).toBe(JSON.stringify({
       version: 1, key, sessionId: 'science-scratch-resume',
     }))
-    for (const path of [scratch.root, scratch.home, scratch.state, scratch.runs, scratch.probes]) {
+    for (const path of [scratch.root, scratch.home, scratch.state, scratch.runs, scratch.probes, scratch.kernels]) {
       expectPrivateDirectory(path)
     }
     expectPrivateFile(marker)
@@ -297,6 +299,27 @@ describe('Science Runtime private scratch', () => {
     await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/private directory/)
   })
 
+  it('plans and creates a private kernel directory named by language and index', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-scratch-'))
+    roots.push(root)
+    const session = await sessionWithId('science-kernel-scratch')
+    const scratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+
+    const planned = planKernelScratch(scratch, 'python', 0)
+    expect(planned.ref).toBe('kernels/python-0/')
+    expect(planned.directory).toBe(join(scratch.kernels, 'python-0'))
+    expect(planned.tmp).toBe(join(planned.directory, 'tmp'))
+
+    const created = await createKernelScratch(scratch, planned)
+    expect(created).toEqual(planned)
+    expectPrivateDirectory(created.directory)
+    expectPrivateDirectory(created.tmp)
+
+    const second = await createKernelScratch(scratch, planKernelScratch(scratch, 'r', 1))
+    expect(second.directory).toBe(join(scratch.kernels, 'r-1'))
+    expectPrivateDirectory(second.directory)
+  })
+
   it('rejects escaping cleanup paths and invalid configured executables', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-errors-'))
     roots.push(root)
@@ -311,6 +334,9 @@ describe('Science Runtime private scratch', () => {
     await expect(removeProbeScratch(scratch, { ...probe, directory: scratch.probes })).rejects.toThrow(/escapes/)
     const run = await createRunScratch(scratch, ScienceRunId('00000000-0000-4000-8000-000000000002'), 'r', Buffer.from('x'))
     await expect(removeUnpublishedRunScratch(scratch, { ...run, directory: scratch.runs })).rejects.toThrow(/escapes/)
+    await expect(createKernelScratch(scratch, {
+      ref: 'kernels/python-0/', directory: scratch.kernels, tmp: join(scratch.kernels, 'tmp'),
+    })).rejects.toThrow(/escape/)
     const outside = join(root, 'outside')
     writeFileSync(outside, 'outside')
     await expect(canonicalWithin(join(root, 'dsh-home'), outside)).rejects.toThrow(/escapes/)

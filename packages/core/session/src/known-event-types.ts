@@ -44,6 +44,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'schedule/change',
   'science/artifact-saved',
   'science/environment-bound',
+  'science/kernel-state',
   'science/mode-bound',
   'science/outcome-published',
   'science/run-finished',

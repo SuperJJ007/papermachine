@@ -18,26 +18,6 @@ import type { CaptureRunArtifactsResult } from './capture.ts'
 export type { CaptureRunArtifactsResult } from './capture.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
 
-/**
- * Closed reason a persistent kernel's own subprocess lifetime ended (D3).
- * `KernelSet`'s internal end path switches on every member with `assertNever`.
- */
-export type ScienceKernelEndReason =
-  /** The kernel's idle timer fired with no run activity since its last reset. */
-  | 'idle'
-  /** The Session that owned the kernel detached. */
-  | 'session-end'
-  /** A newer applied environment revision superseded the kernel's own. */
-  | 'environment-rebound'
-  /** An interrupted-but-unproven run left the kernel's state unknown (D5 taint-retirement). */
-  | 'run-escalation'
-  /** The kernel driver broke protocol (unparseable frame, unexpected EOF, READY timeout). */
-  | 'protocol'
-  /** The kernel process exited uncommanded, with no protocol violation detected. */
-  | 'crash'
-  /** The Science Runtime service disposed. */
-  | 'service-disposed'
-
 /** Stable rejection codes for Science Runtime operations. */
 export type ScienceRuntimeErrorCode =
   | 'SESSION_NOT_LIVE'

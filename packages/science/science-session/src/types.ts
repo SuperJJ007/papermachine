@@ -206,6 +206,71 @@ export interface ScienceRunInterrupted extends ScienceRunIdentity {
 export type ScienceRun = ScienceRunStarted | ScienceRunTerminal | ScienceRunInterrupted
 
 /**
+ * Closed reason a persistent Science kernel's own subprocess lifetime ended.
+ * `science-runtime`'s `KernelSet` switches on every member with `assertNever`.
+ */
+export type ScienceKernelEndReason =
+  /** The kernel's idle timer fired with no run activity since its last reset. */
+  | 'idle'
+  /** The Session that owned the kernel detached. */
+  | 'session-end'
+  /** A newer applied environment revision superseded the kernel's own. */
+  | 'environment-rebound'
+  /** An interrupted-but-unproven run left the kernel's state unknown. */
+  | 'run-escalation'
+  /** The kernel driver broke protocol (unparseable frame, unexpected EOF, READY timeout). */
+  | 'protocol'
+  /** The kernel process exited uncommanded, with no protocol violation detected. */
+  | 'crash'
+  /** The Science Runtime service disposed. */
+  | 'service-disposed'
+
+/**
+ * Whole-value fact for one persistent kernel lifecycle transition:
+ * `state: 'started'` fixes the kernel's identity and provenance; a later
+ * `state: 'exited'` fact for the same `language`/`kernelEpoch` closes it.
+ * Both transitions reuse this one shape rather than a started/terminal pair,
+ * since a kernel-state fact never repeats fields already fixed by its own
+ * prior transition the way a run terminal repeats its start-owned fields.
+ */
+export interface ScienceKernelState {
+  /** Session-local identity for this kernel instance, strictly monotonic across both languages. */
+  readonly kernelEpoch: number
+  /** The kernel's language. */
+  readonly language: ScienceLanguage
+  /** Lifecycle transition this fact records. */
+  readonly state: 'started' | 'exited'
+  /** Closed reason the kernel ended; present if and only if `state === 'exited'`. */
+  readonly reason?: ScienceKernelEndReason
+  /** Applied environment revision this kernel serves. */
+  readonly environmentRevision: number
+  /** Fingerprint of the language's available binding this kernel spawned against. */
+  readonly environmentFingerprint: string
+  /** Epoch milliseconds this transition occurred. */
+  readonly at: number
+}
+
+/** Replay-derived terminal record for a kernel still `started` at `session/end-seed`. */
+export interface ScienceKernelInterrupted {
+  /** The kernel's own session-local epoch. */
+  readonly kernelEpoch: number
+  /** The kernel's language. */
+  readonly language: ScienceLanguage
+  /** Replay-only terminal status; no `science/kernel-state` fact may carry it. */
+  readonly status: 'interrupted'
+  /** Applied environment revision the interrupted kernel served. */
+  readonly environmentRevision: number
+  /** Fingerprint of the language's available binding the interrupted kernel served. */
+  readonly environmentFingerprint: string
+  /** Epoch milliseconds when the kernel's `started` fact committed. */
+  readonly startedAt: number
+  /** Timestamp of the seed-boundary marker. */
+  readonly finishedAt: number
+  /** Sequence of the seed-boundary marker that derived this state. */
+  readonly interruptedAtSeq: number
+}
+
+/**
  * Whether one artifact version's current title and caption came from
  * unattended capture or from a model-directed curation call. `auto` names a
  * run-written file the Runtime captured and titled from its own basename;

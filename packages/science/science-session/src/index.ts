@@ -46,6 +46,7 @@ export {
   decodeScienceArtifact,
   decodeScienceDomainEvent,
   decodeScienceEnvironment,
+  decodeScienceKernelState,
   decodeScienceMode,
   decodeScienceOutcome,
   decodeScienceRunStarted,

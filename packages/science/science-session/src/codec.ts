@@ -16,6 +16,7 @@ import type {
   ScienceArtifactSavedEvent,
   ScienceDomainEventType,
   ScienceEnvironmentBoundEvent,
+  ScienceKernelStateEvent,
   ScienceModeBoundEvent,
   ScienceOutcomePublishedEvent,
   ScienceRunFinishedEvent,
@@ -24,6 +25,7 @@ import type {
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
+  ScienceKernelState,
   ScienceModeRef,
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -223,6 +225,33 @@ const runTerminalSchema = z.object({
   }
 })
 
+const KERNEL_END_REASONS = [
+  'idle',
+  'session-end',
+  'environment-rebound',
+  'run-escalation',
+  'protocol',
+  'crash',
+  'service-disposed',
+] as const
+
+const kernelStateSchema = z.object({
+  kernelEpoch: POSITIVE_INTEGER,
+  language: z.enum(['python', 'r']),
+  state: z.enum(['started', 'exited']),
+  reason: z.enum(KERNEL_END_REASONS).optional(),
+  environmentRevision: POSITIVE_INTEGER,
+  environmentFingerprint: SHA256,
+  at: SAFE_INTEGER,
+}).strict().superRefine((kernel, ctx) => {
+  if (kernel.state === 'exited' && kernel.reason === undefined) {
+    issue(ctx, 'an exited kernel state requires reason', ['reason'])
+  }
+  if (kernel.state === 'started' && kernel.reason !== undefined) {
+    issue(ctx, 'a started kernel state cannot carry reason', ['reason'])
+  }
+})
+
 const attachmentNameSchema = text(MAX_LABEL_LENGTH).refine(value => !/[\\/]/.test(value), {
   message: 'attachment name must not contain a path separator',
 }).optional()
@@ -314,6 +343,10 @@ const outcomePublishedEventSchema = z.object({
   version: z.literal(SCIENCE_EVENT_VERSION),
   outcome: outcomeSchema,
 }).strict()
+const kernelStateEventSchema = z.object({
+  version: z.literal(SCIENCE_EVENT_VERSION),
+  kernel: kernelStateSchema,
+}).strict()
 
 /** A Science event whose payload has passed the package's strict decoder. */
 export type DecodedScienceDomainEvent =
@@ -323,6 +356,7 @@ export type DecodedScienceDomainEvent =
   | { readonly type: 'science/run-finished'; readonly seq: number; readonly time: number; readonly data: ScienceRunFinishedEvent }
   | { readonly type: 'science/artifact-saved'; readonly seq: number; readonly time: number; readonly data: ScienceArtifactSavedEvent }
   | { readonly type: 'science/outcome-published'; readonly seq: number; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
+  | { readonly type: 'science/kernel-state'; readonly seq: number; readonly time: number; readonly data: ScienceKernelStateEvent }
 
 /**
  * Decode one mode binding value.
@@ -379,7 +413,16 @@ export function decodeScienceOutcome(value: unknown): ScienceOutcomePublication 
 }
 
 /**
- * Test whether a string names one of the six required Science event types.
+ * Decode one kernel lifecycle transition value.
+ * @param value - untrusted durable value.
+ * @returns the strict kernel-state value.
+ */
+export function decodeScienceKernelState(value: unknown): ScienceKernelState {
+  return kernelStateSchema.parse(value) as ScienceKernelState
+}
+
+/**
+ * Test whether a string names one of the seven required Science event types.
  * @param type - Session event type to test.
  * @returns whether the type belongs to the Science domain.
  */
@@ -390,6 +433,7 @@ export function isScienceDomainEventType(type: string): type is ScienceDomainEve
     || type === 'science/run-finished'
     || type === 'science/artifact-saved'
     || type === 'science/outcome-published'
+    || type === 'science/kernel-state'
 }
 
 /**
@@ -420,6 +464,10 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
     }
     case 'science/outcome-published':
       return { type: event.type, seq: event.seq, time: event.time, data: outcomePublishedEventSchema.parse(event.data) }
+    case 'science/kernel-state': {
+      const data = kernelStateEventSchema.parse(event.data) as ScienceKernelStateEvent
+      return { type: event.type, seq: event.seq, time: event.time, data }
+    }
     default:
       if (event.type.startsWith('science/') && event.ignorable !== true) {
         throw new Error(`unsupported required Science event type ${JSON.stringify(event.type)}`)

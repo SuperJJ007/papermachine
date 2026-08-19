@@ -613,7 +613,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:59`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:66`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceenvironment-bound--log-only"></a>
 
@@ -624,7 +624,18 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/environment-bound': ScienceEnvironmentBoundEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:53`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:60`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencekernel-state--log-only"></a>
+
+#### `science/kernel-state` — log-only
+
+```ts persistence-catalog
+/** Records one whole-value persistent Science kernel lifecycle transition. */
+'science/kernel-state': ScienceKernelStateEvent
+```
+
+来源：[`packages/science/science-session/src/domain.ts:70`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencemode-bound--log-only"></a>
 
@@ -635,7 +646,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/mode-bound': ScienceModeBoundEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:51`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:58`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceoutcome-published--log-only"></a>
 
@@ -646,7 +657,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/outcome-published': ScienceOutcomePublishedEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:61`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:68`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-finished--log-only"></a>
 
@@ -657,7 +668,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/run-finished': ScienceRunFinishedEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:57`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:64`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-started--log-only"></a>
 
@@ -668,7 +679,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'science/run-started': ScienceRunStartedEvent
 ```
 
-来源：[`packages/science/science-session/src/domain.ts:55`](../packages/science/science-session/src/domain.ts)
+来源：[`packages/science/science-session/src/domain.ts:62`](../packages/science/science-session/src/domain.ts)
 
 ### `session/*`
 

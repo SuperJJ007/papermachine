@@ -3,8 +3,8 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
-import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
-import type { ScienceEnvironmentBinding, ScienceRun, ScienceRunIdentity } from './types.ts'
+import type { ScienceFoldState, ScienceKernelRecord, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
+import type { ScienceEnvironmentBinding, ScienceKernelState, ScienceRun, ScienceRunIdentity } from './types.ts'
 
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
   const latest = state.requestHeaders.at(-1)
@@ -282,6 +282,32 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
   state.consumedToolCallSeqs.push(toolCall.seq)
 }
 
+/** Whether a replayed kernel record is a still-open `started` fact, never matched by an `exited` fact or end-seed derivation. */
+function isOpenKernel(record: ScienceKernelRecord): record is ScienceKernelState & { readonly state: 'started' } {
+  return 'state' in record && record.state === 'started'
+}
+
+function applyKernelState(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/kernel-state' }>): void {
+  if (state.mode === undefined) throw new Error('Science kernel state requires a prior mode binding')
+  const kernel = event.data.kernel
+  const latestForLanguage = state.kernels.filter(candidate => candidate.language === kernel.language).at(-1)
+  if (kernel.state === 'started') {
+    if (latestForLanguage !== undefined && isOpenKernel(latestForLanguage)) {
+      throw new Error(`Science kernel for language ${JSON.stringify(kernel.language)} is already started at epoch ${String(latestForLanguage.kernelEpoch)}`)
+    }
+    if (kernel.kernelEpoch <= state.kernelEpochWatermark) {
+      throw new Error(`Science kernel epoch ${String(kernel.kernelEpoch)} does not exceed the session's prior kernel epoch ${String(state.kernelEpochWatermark)}`)
+    }
+    state.kernels.push(kernel)
+    state.kernelEpochWatermark = kernel.kernelEpoch
+    return
+  }
+  if (latestForLanguage === undefined || !isOpenKernel(latestForLanguage) || latestForLanguage.kernelEpoch !== kernel.kernelEpoch) {
+    throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} has no matching started kernel`)
+  }
+  state.kernels[state.kernels.indexOf(latestForLanguage)] = kernel
+}
+
 function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEvent): void {
   requireScienceTime(state, event)
   switch (event.type) {
@@ -312,12 +338,15 @@ function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEv
     case 'science/run-finished': applyRunFinished(state, event); break
     case 'science/artifact-saved': applyArtifactSaved(state, event); break
     case 'science/outcome-published': applyOutcomePublished(state, event); break
+    case 'science/kernel-state': applyKernelState(state, event); break
   }
   commitScienceTime(state, event)
 }
 
 function applyEndSeed(state: ScienceFoldState, event: SessionEvent<'session/end-seed'>): void {
-  if (!state.runs.some(run => run.status === 'running')) return
+  const hasOpenRun = state.runs.some(run => run.status === 'running')
+  const hasOpenKernel = state.kernels.some(isOpenKernel)
+  if (!hasOpenRun && !hasOpenKernel) return
   requireScienceTime(state, event)
   const interruptedIds = new Set<string>(state.runs
     .filter(run => run.status === 'running')
@@ -328,6 +357,18 @@ function applyEndSeed(state: ScienceFoldState, event: SessionEvent<'session/end-
   state.runFacts = state.runFacts.map(fact => interruptedIds.has(fact.runId)
     ? { ...fact, terminalSeq: event.seq, terminalEventTime: event.time }
     : fact)
+  state.kernels = state.kernels.map((kernel): ScienceKernelRecord => isOpenKernel(kernel)
+    ? {
+      kernelEpoch: kernel.kernelEpoch,
+      language: kernel.language,
+      status: 'interrupted',
+      environmentRevision: kernel.environmentRevision,
+      environmentFingerprint: kernel.environmentFingerprint,
+      startedAt: kernel.at,
+      finishedAt: event.time,
+      interruptedAtSeq: event.seq,
+    }
+    : kernel)
   commitScienceTime(state, event)
 }
 

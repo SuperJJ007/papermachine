@@ -29,7 +29,7 @@
  */
 
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
-import type { ScienceEnvironmentBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import type { ScienceEnvironmentBinding, ScienceKernelEndReason, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { selectBinding } from './execution.ts'
@@ -37,7 +37,6 @@ import { resolveKernelDriverPath } from './kernel-assets.ts'
 import { KernelProcess } from './kernel-process.ts'
 import type { KernelExitFact } from './kernel-process.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
-import type { ScienceKernelEndReason } from './types.ts'
 
 /** Whole-value fact for one kernel spawn — the fields D4's `science/kernel-state` (`state: 'started'`) event needs. */
 export interface ScienceKernelStartedFact {

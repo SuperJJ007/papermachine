@@ -3,10 +3,15 @@
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
+  ScienceKernelInterrupted,
+  ScienceKernelState,
   ScienceModeRef,
   ScienceOutcomePublication,
   ScienceRun,
 } from './types.ts'
+
+/** One kernel's replayed state: its latest committed fact, or its end-seed derivation. */
+export type ScienceKernelRecord = ScienceKernelState | ScienceKernelInterrupted
 
 /** Indexed tool call needed to prove one Science authorization. */
 export interface IndexedToolCall {
@@ -47,6 +52,15 @@ export interface ScienceFoldState {
   preModeStepStarted: boolean
   environments: ScienceEnvironmentBinding[]
   runs: ScienceRun[]
+  /**
+   * One entry per kernel instance ever started, in start order. A `started`
+   * fact appends an open entry; the matching `exited` fact (or an end-seed
+   * `interrupted` derivation) replaces it in place — never a second entry
+   * for the same `(language, kernelEpoch)`.
+   */
+  kernels: ScienceKernelRecord[]
+  /** Highest `kernelEpoch` ever admitted by a `started` fact, across both languages; 0 before the first kernel. */
+  kernelEpochWatermark: number
   artifacts: ScienceArtifactVersion[]
   outcomes: ScienceOutcomePublication[]
   requestHeaders: IndexedSessionFact[]
@@ -72,6 +86,8 @@ export function emptyScienceFoldState(): ScienceFoldState {
     preModeStepStarted: false,
     environments: [],
     runs: [],
+    kernels: [],
+    kernelEpochWatermark: 0,
     artifacts: [],
     outcomes: [],
     requestHeaders: [],
@@ -99,6 +115,8 @@ export function cloneScienceFoldState(state: ScienceFoldState): ScienceFoldState
     preModeStepStarted: state.preModeStepStarted,
     environments: [...state.environments],
     runs: [...state.runs],
+    kernels: [...state.kernels],
+    kernelEpochWatermark: state.kernelEpochWatermark,
     artifacts: [...state.artifacts],
     outcomes: [...state.outcomes],
     requestHeaders: [...state.requestHeaders],

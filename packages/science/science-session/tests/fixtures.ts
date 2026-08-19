@@ -12,6 +12,7 @@ import type {
   ScienceEnvironmentBinding,
   ScienceInterpreterAvailableBinding,
   ScienceInterpreterUnavailableBinding,
+  ScienceKernelState,
   ScienceModeRef,
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -111,6 +112,28 @@ export const runTerminal = (
   stderrBytes: 0,
   stdoutTruncated: false,
   stderrTruncated: false,
+  ...overrides,
+})
+
+export const kernelStarted = (
+  overrides: Partial<ScienceKernelState> = {},
+): ScienceKernelState => ({
+  kernelEpoch: 1,
+  language: 'python',
+  state: 'started',
+  environmentRevision: 1,
+  environmentFingerprint: FINGERPRINT,
+  at: 115,
+  ...overrides,
+})
+
+export const kernelExited = (
+  overrides: Partial<ScienceKernelState> = {},
+): ScienceKernelState => ({
+  ...kernelStarted(),
+  state: 'exited',
+  reason: 'idle',
+  at: 200,
   ...overrides,
 })
 

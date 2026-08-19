@@ -3,6 +3,7 @@
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
+  ScienceKernelState,
   ScienceModeRef,
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -45,6 +46,12 @@ export interface ScienceOutcomePublishedEvent {
   readonly outcome: ScienceOutcomePublication
 }
 
+/** Payload that records one whole-value persistent kernel lifecycle transition. */
+export interface ScienceKernelStateEvent {
+  readonly version: 1
+  readonly kernel: ScienceKernelState
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Binds this session once to the durable Science mode contract. */
@@ -59,6 +66,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'science/artifact-saved': ScienceArtifactSavedEvent
     /** Publishes one whole-value Science outcome revision. */
     'science/outcome-published': ScienceOutcomePublishedEvent
+    /** Records one whole-value persistent Science kernel lifecycle transition. */
+    'science/kernel-state': ScienceKernelStateEvent
   }
 }
 
@@ -72,7 +81,7 @@ declare module '@deepseek-ai/dsh-session-attachment-index/types' {
   }
 }
 
-/** The six required Science event types owned by this package. */
+/** The seven required Science event types owned by this package. */
 export type ScienceDomainEventType =
   | 'science/mode-bound'
   | 'science/environment-bound'
@@ -80,3 +89,4 @@ export type ScienceDomainEventType =
   | 'science/run-finished'
   | 'science/artifact-saved'
   | 'science/outcome-published'
+  | 'science/kernel-state'

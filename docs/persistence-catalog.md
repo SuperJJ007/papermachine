@@ -611,7 +611,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:59`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:66`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceenvironment-bound--log-only"></a>
 
@@ -622,7 +622,18 @@ Source: [`packages/science/science-session/src/domain.ts:59`](../packages/scienc
 'science/environment-bound': ScienceEnvironmentBoundEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:53`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:60`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencekernel-state--log-only"></a>
+
+#### `science/kernel-state` — log-only
+
+```ts persistence-catalog
+/** Records one whole-value persistent Science kernel lifecycle transition. */
+'science/kernel-state': ScienceKernelStateEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:70`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencemode-bound--log-only"></a>
 
@@ -633,7 +644,7 @@ Source: [`packages/science/science-session/src/domain.ts:53`](../packages/scienc
 'science/mode-bound': ScienceModeBoundEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:51`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:58`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceoutcome-published--log-only"></a>
 
@@ -644,7 +655,7 @@ Source: [`packages/science/science-session/src/domain.ts:51`](../packages/scienc
 'science/outcome-published': ScienceOutcomePublishedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:61`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:68`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-finished--log-only"></a>
 
@@ -655,7 +666,7 @@ Source: [`packages/science/science-session/src/domain.ts:61`](../packages/scienc
 'science/run-finished': ScienceRunFinishedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:57`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:64`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-started--log-only"></a>
 
@@ -666,7 +677,7 @@ Source: [`packages/science/science-session/src/domain.ts:57`](../packages/scienc
 'science/run-started': ScienceRunStartedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:55`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:62`](../packages/science/science-session/src/domain.ts)
 
 ### `session/*`
 

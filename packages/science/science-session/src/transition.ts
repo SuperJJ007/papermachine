@@ -282,7 +282,11 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
   state.consumedToolCallSeqs.push(toolCall.seq)
 }
 
-/** Whether a replayed kernel record is a still-open `started` fact, never matched by an `exited` fact or end-seed derivation. */
+/**
+ * Test whether a replayed kernel record is a still-open `started` fact, never matched by an `exited` fact or end-seed derivation.
+ * @param record - kernel record from the strict replay accumulator.
+ * @returns whether `record` is an open `started` kernel.
+ */
 export function isOpenKernel(record: ScienceKernel): record is ScienceKernelState & { readonly state: 'started' } {
   return 'state' in record && record.state === 'started'
 }

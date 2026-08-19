@@ -1,0 +1,414 @@
+/**
+ * `KernelSet` against a fake D2-protocol driver (`fixtures/kernel-set-assets/`),
+ * driven through the real `dsh-subprocess-local` and `dsh-sandbox-local`
+ * providers the way `kernel-process.spec.ts` composes them: epoch
+ * allocation, idle expiry, environment-rebound respawn, same-id quarantine,
+ * detach/dispose teardown, and callback fidelity.
+ */
+
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import { ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceEnvironmentBinding, ScienceInterpreterAvailableBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { KernelExitedError, KernelProcess, KernelProtocolError } from '../src/kernel-process.ts'
+import type { KernelExecuteRequest } from '../src/kernel-process.ts'
+import { KernelEpochRegressionError, KernelSet, KernelSetQuarantinedError } from '../src/kernel-set.ts'
+import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
+import { ensureSessionScratch } from '../src/scratch.ts'
+import type { ScienceSessionScratch } from '../src/scratch.ts'
+import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
+
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
+const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
+
+const roots: string[] = []
+const contexts: Context[] = []
+
+afterEach(async () => {
+  vi.useRealTimers()
+  await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+/**
+ * A fake "interpreter" executable: discards every hardening flag
+ * `interpreterArgv` prepends and forwards the trailing driver-path/fifo-path
+ * pair to this Node process (see `kernel-process.spec.ts`'s identical fixture).
+ */
+function createFakeInterpreterPrefix(root: string, language: ScienceLanguage): string {
+  const prefix = join(root, `fake-${language}-conda`)
+  mkdirSync(join(prefix, 'bin'), { recursive: true })
+  const executable = join(prefix, 'bin', language === 'python' ? 'python' : 'Rscript')
+  writeFileSync(executable, `#!/bin/sh\nwhile [ "$#" -gt 2 ]; do shift; done\nexec "${process.execPath}" "$1" "$2"\n`)
+  chmodSync(executable, 0o755)
+  return prefix
+}
+
+/** Fabricate an already-observed available binding; `KernelSet`/`KernelProcess` never re-validate it. */
+function fakeBinding(language: ScienceLanguage, prefix: string): ScienceInterpreterAvailableBinding {
+  return {
+    language,
+    configuredPrefix: prefix,
+    canonicalPrefix: prefix,
+    executable: join(prefix, 'bin', language === 'python' ? 'python' : 'Rscript'),
+    executableIdentity: 'fake-identity',
+    languageVersion: 'fake-1.0',
+    condaHistorySha256: 'fake-history-sha',
+    bindingFingerprint: `fake-binding-${language}`,
+    packages: [],
+    packagesSha256: 'fake-packages-sha',
+    packagesTruncated: false,
+    capability: 'available',
+  }
+}
+
+/**
+ * Flush one RUN request's private scratch: a JSON action file the fake
+ * driver reads instead of real source (see `kernel-process.spec.ts`'s
+ * identical fixture).
+ */
+async function prepareRun(root: string, runId: string, action: Record<string, unknown>): Promise<KernelExecuteRequest> {
+  const dir = join(root, 'kernel-runs', runId)
+  const artifactDir = join(dir, 'artifacts')
+  await mkdir(artifactDir, { recursive: true })
+  const sourcePath = join(dir, 'action.json')
+  await writeFile(sourcePath, JSON.stringify(action))
+  return {
+    runId: ScienceRunId(runId),
+    sourcePath,
+    cwd: dir,
+    stdoutPath: join(dir, 'stdout.txt'),
+    stderrPath: join(dir, 'stderr.txt'),
+    artifactDir,
+  }
+}
+
+/** One recorded `onKernelStarted` / `onKernelEnded` invocation. */
+interface Recorded<Fact> {
+  readonly session: Session
+  readonly fact: Fact
+}
+
+/** Test-controlled epoch allocator: an auto-incrementing counter by default, or an exact scripted sequence. */
+interface EpochAllocator {
+  readonly calls: Session[]
+  sequence: number[] | undefined
+  readonly fn: (session: Session) => number
+}
+
+function createEpochAllocator(): EpochAllocator {
+  const calls: Session[] = []
+  let counter = 0
+  const allocator: EpochAllocator = {
+    calls,
+    sequence: undefined,
+    fn: (session: Session) => {
+      calls.push(session)
+      if (allocator.sequence !== undefined) {
+        const scripted = allocator.sequence[calls.length - 1]
+        if (scripted === undefined) throw new Error('test epoch sequence exhausted')
+        return scripted
+      }
+      counter += 1
+      return counter
+    },
+  }
+  return allocator
+}
+
+interface Harness {
+  readonly root: string
+  readonly ctx: Context
+  readonly dshHome: string
+  readonly kernelSet: KernelSet
+  readonly started: Recorded<ScienceKernelStartedFact>[]
+  readonly ended: Recorded<ScienceKernelEndedFact>[]
+  readonly epochAllocator: EpochAllocator
+  session(id: string): Promise<{ readonly session: Session; readonly sessionScratch: ScienceSessionScratch }>
+  environment(revision: number, languages: readonly ScienceLanguage[]): ScienceEnvironmentBinding
+}
+
+/** Assemble one real Session/subprocess-local/sandbox-local composition and a `KernelSet` sharing them. */
+async function createHarness(options: { readonly kernelIdleTimeoutMs?: number } = {}): Promise<Harness> {
+  const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-set-'))
+  roots.push(root)
+  const dshHome = join(root, 'dsh-home')
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(LocalSubprocessRuntime)
+  const runner = createFakeSandboxRunner(root)
+  await ctx.plugin(LocalSandboxProvider, {
+    runnerCommand: [runner],
+    runnerFailureSignatures: ['science-runtime fake runner failure'],
+  })
+  const started: Recorded<ScienceKernelStartedFact>[] = []
+  const ended: Recorded<ScienceKernelEndedFact>[] = []
+  const epochAllocator = createEpochAllocator()
+  const kernelSet = new KernelSet({
+    subprocess: ctx.subprocess,
+    sandbox: ctx.sandbox,
+    assetsRoot: ASSETS_ROOT,
+    kernelIdleTimeoutMs: options.kernelIdleTimeoutMs ?? 1_800_000,
+    kernelStartTimeoutMs: 5_000,
+    nextEpoch: epochAllocator.fn,
+    onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+    onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+  })
+  const pythonPrefix = createFakeInterpreterPrefix(root, 'python')
+  const rPrefix = createFakeInterpreterPrefix(root, 'r')
+  return {
+    root,
+    ctx,
+    dshHome,
+    kernelSet,
+    started,
+    ended,
+    epochAllocator,
+    session: async (id) => {
+      const session = ctx.sessions.create(SessionId(id))
+      const sessionScratch = await ensureSessionScratch(dshHome, session)
+      return { session, sessionScratch }
+    },
+    environment: (revision, languages) => ({
+      revision,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      configuredAt: Date.now(),
+      validatedAt: Date.now(),
+      status: 'applied',
+      ...(languages.includes('python') ? { python: fakeBinding('python', pythonPrefix) } : {}),
+      ...(languages.includes('r') ? { r: fakeBinding('r', rPrefix) } : {}),
+    }),
+  }
+}
+
+describe('KernelSet', () => {
+  it('ends an idle kernel with reason idle after kernelIdleTimeoutMs of no activity', async () => {
+    vi.useFakeTimers()
+    const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
+    const { session, sessionScratch } = await harness.session('kernel-idle')
+    const kernel = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    await vi.advanceTimersByTimeAsync(1_000)
+    vi.useRealTimers()
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    expect(harness.ended[0]?.fact.reason).toBe('idle')
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
+  })
+
+  it('resets the idle timer on a completed execution, extending life past the original deadline', async () => {
+    vi.useFakeTimers()
+    const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
+    const { session, sessionScratch } = await harness.session('kernel-idle-reset')
+    await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    await vi.advanceTimersByTimeAsync(999)
+    const request = await prepareRun(harness.root, 'run-activity', { status: 'ok' })
+    const live = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    await live.execute(request)
+    harness.kernelSet.resetIdleTimer(session, 'python')
+    // Past the ORIGINAL deadline (999 + 2 = 1001 > 1000) but well before the reset one (999 + 1000 = 1999).
+    await vi.advanceTimersByTimeAsync(2)
+    expect(harness.ended).toHaveLength(0)
+    // Past the reset deadline too.
+    await vi.advanceTimersByTimeAsync(1_000)
+    vi.useRealTimers()
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    expect(harness.ended[0]?.fact.reason).toBe('idle')
+  })
+
+  it('lets python and r kernels coexist independently for one session', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-coexist')
+    const environment = harness.environment(1, ['python', 'r'])
+    const python = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const r = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
+    expect(python).not.toBe(r)
+    expect(harness.started).toHaveLength(2)
+    expect(harness.started.map(entry => entry.fact.language).sort()).toEqual(['python', 'r'])
+    const pythonAgain = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const rAgain = await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
+    expect(pythonAgain).toBe(python)
+    expect(rAgain).toBe(r)
+    expect(harness.started).toHaveLength(2)
+  })
+
+  it('returns the same live kernel on a second acquire with the same environment revision (no respawn)', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-reuse')
+    const environment = harness.environment(1, ['python'])
+    const first = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const second = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(second).toBe(first)
+    expect(harness.started).toHaveLength(1)
+    expect(harness.epochAllocator.calls).toHaveLength(1)
+  })
+
+  it('ends a stale-revision live kernel with environment-rebound and spawns a fresh epoch', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-rebind')
+    const first = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    const second = await harness.kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
+    expect(second).not.toBe(first)
+    expect(harness.ended).toHaveLength(1)
+    expect(harness.ended[0]?.fact.reason).toBe('environment-rebound')
+    expect(harness.ended[0]?.fact.environmentRevision).toBe(1)
+    expect(harness.started).toHaveLength(2)
+    expect(harness.started[0]?.fact.kernelEpoch).toBe(1)
+    expect(harness.started[1]?.fact.kernelEpoch).toBe(2)
+    await expect(first.exited).resolves.toMatchObject({ cause: 'commanded' })
+  })
+
+  it('fails loud when the injected epoch allocator returns a non-increasing epoch', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-epoch-regression')
+    harness.epochAllocator.sequence = [1, 1]
+    await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python', 'r']), sessionScratch)
+    await expect(harness.kernelSet.acquire(session, 'r', harness.environment(1, ['python', 'r']), sessionScratch))
+      .rejects.toThrow(KernelEpochRegressionError)
+  })
+
+  it('ends every live kernel with session-end on detach', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-detach')
+    const environment = harness.environment(1, ['python', 'r'])
+    await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    await harness.kernelSet.acquire(session, 'r', environment, sessionScratch)
+    harness.kernelSet.detach(session)
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(2) })
+    expect(harness.ended.map(entry => entry.fact.reason)).toEqual(['session-end', 'session-end'])
+  })
+
+  it('is a no-op when detach is called for a session that owns no kernel', async () => {
+    const harness = await createHarness()
+    const { session } = await harness.session('kernel-detach-empty')
+    expect(() => { harness.kernelSet.detach(session) }).not.toThrow()
+    expect(harness.ended).toHaveLength(0)
+  })
+
+  it('ends every live kernel across every session with service-disposed on disposeAll', async () => {
+    const harness = await createHarness()
+    const a = await harness.session('kernel-dispose-a')
+    const b = await harness.session('kernel-dispose-b')
+    const environment = harness.environment(1, ['python'])
+    await harness.kernelSet.acquire(a.session, 'python', environment, a.sessionScratch)
+    await harness.kernelSet.acquire(b.session, 'python', environment, b.sessionScratch)
+    const settled = await harness.kernelSet.disposeAll()
+    expect(settled).toHaveLength(2)
+    expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
+    expect(harness.ended).toHaveLength(2)
+    expect(harness.ended.every(entry => entry.fact.reason === 'service-disposed')).toBe(true)
+  })
+
+  it('removes an uncommanded crash from the registry and reports reason crash', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-crash')
+    const environment = harness.environment(1, ['python'])
+    const kernel = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const crashRequest = await prepareRun(harness.root, 'run-crash', { action: 'crash' })
+    await expect(kernel.execute(crashRequest)).rejects.toThrow(KernelExitedError)
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    expect(harness.ended[0]?.fact.reason).toBe('crash')
+    const fresh = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(fresh).not.toBe(kernel)
+    expect(harness.started).toHaveLength(2)
+  })
+
+  it('removes an uncommanded protocol violation from the registry and reports reason protocol', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-protocol')
+    const environment = harness.environment(1, ['python'])
+    const kernel = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const garbageRequest = await prepareRun(harness.root, 'run-garbage', { action: 'garbage' })
+    await expect(kernel.execute(garbageRequest)).rejects.toThrow(KernelProtocolError)
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    expect(harness.ended[0]?.fact.reason).toBe('protocol')
+  })
+
+  it('quarantines a same-id successor session until the predecessor kernel tree is proven quiescent', async () => {
+    const harness = await createHarness()
+    const original = attachScienceSession(harness.ctx, 'kernel-quarantine')
+    const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
+    const environment = harness.environment(1, ['python'])
+    await harness.kernelSet.acquire(original.session, 'python', environment, originalScratch)
+
+    original.detach()
+    harness.kernelSet.detach(original.session)
+    const successor = attachScienceSession(harness.ctx, 'kernel-quarantine', original.session.events)
+    await expect(harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch))
+      .rejects.toThrow(KernelSetQuarantinedError)
+
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    const kernel = await harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch)
+    expect(kernel).toBeInstanceOf(KernelProcess)
+    expect(harness.started).toHaveLength(2)
+  })
+
+  it('passes onKernelStarted/onKernelEnded exactly the D4 facts', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-facts')
+    const environment = harness.environment(1, ['python'])
+    const before = Date.now()
+    await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(harness.started).toHaveLength(1)
+    const startedEntry = harness.started[0]
+    if (startedEntry === undefined) throw new Error('unreachable: length asserted above')
+    expect(startedEntry.session).toBe(session)
+    expect(startedEntry.fact).toMatchObject({
+      language: 'python',
+      kernelEpoch: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'fake-binding-python',
+    })
+    expect(startedEntry.fact.startedAt).toBeGreaterThanOrEqual(before)
+    expect(Object.keys(startedEntry.fact).sort()).toEqual(
+      ['environmentFingerprint', 'environmentRevision', 'kernelEpoch', 'language', 'startedAt'],
+    )
+
+    harness.kernelSet.detach(session)
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+    const endedEntry = harness.ended[0]
+    if (endedEntry === undefined) throw new Error('unreachable: length asserted above')
+    expect(endedEntry.session).toBe(session)
+    expect(endedEntry.fact).toMatchObject({
+      language: 'python',
+      kernelEpoch: 1,
+      environmentRevision: 1,
+      environmentFingerprint: 'fake-binding-python',
+      startedAt: startedEntry.fact.startedAt,
+      reason: 'session-end',
+    })
+    expect(endedEntry.fact.endedAt).toBeGreaterThanOrEqual(startedEntry.fact.startedAt)
+    expect(Object.keys(endedEntry.fact).sort()).toEqual(
+      ['endedAt', 'environmentFingerprint', 'environmentRevision', 'kernelEpoch', 'language', 'reason', 'startedAt'],
+    )
+  })
+
+  it('pairs every started kernel with exactly one ended notification, one reason each', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-pairing')
+    const environmentA = harness.environment(1, ['python', 'r'])
+    await harness.kernelSet.acquire(session, 'python', environmentA, sessionScratch)
+    await harness.kernelSet.acquire(session, 'r', environmentA, sessionScratch)
+    const environmentB = harness.environment(2, ['python', 'r'])
+    await harness.kernelSet.acquire(session, 'python', environmentB, sessionScratch)
+    await vi.waitFor(() => { expect(harness.ended).toHaveLength(1) })
+
+    const settled = await harness.kernelSet.disposeAll()
+    expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
+    expect(harness.started).toHaveLength(3)
+    expect(harness.ended).toHaveLength(3)
+    const startedEpochs = harness.started.map(entry => entry.fact.kernelEpoch).sort((a, b) => a - b)
+    const endedEpochs = harness.ended.map(entry => entry.fact.kernelEpoch).sort((a, b) => a - b)
+    expect(endedEpochs).toEqual(startedEpochs)
+    expect(harness.ended.map(entry => entry.fact.reason).sort()).toEqual(
+      ['environment-rebound', 'service-disposed', 'service-disposed'],
+    )
+  })
+})

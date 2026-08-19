@@ -140,8 +140,17 @@ function sourceBytes(code: string): Buffer {
   return bytes
 }
 
-/** Select the durable available binding for a requested language. */
-function selectBinding(environment: ScienceEnvironmentBinding, language: ScienceLanguage): ScienceInterpreterAvailableBinding {
+/**
+ * Select the durable available binding for a requested language. Shared by
+ * one-shot run planning ({@link planRun}) and persistent kernel spawn
+ * (`KernelSet.acquire` in `kernel-set.ts`).
+ * @param environment - applied durable environment revision to select from.
+ * @param language - requested interpreter language.
+ * @returns the selected language's fully observed, available binding.
+ * @throws {@link ScienceRuntimeError} (`ENVIRONMENT_NOT_READY`) when the
+ *   revision is not `applied` or the requested language has no available binding.
+ */
+export function selectBinding(environment: ScienceEnvironmentBinding, language: ScienceLanguage): ScienceInterpreterAvailableBinding {
   const binding = language === 'python' ? environment.python : environment.r
   if (environment.status !== 'applied' || binding?.capability !== 'available') {
     throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', `Science ${language} environment is not available`)

@@ -87,6 +87,7 @@ function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
     ...common,
     state: kernel.state,
     ...kernel.reason === undefined ? {} : { reason: kernel.reason },
+    ...kernel.startedAt === undefined ? {} : { startedAt: kernel.startedAt },
     at: kernel.at,
   }
 }

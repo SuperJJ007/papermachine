@@ -184,9 +184,13 @@ function validKernel(value: unknown): boolean {
   if (candidate['state'] !== 'started' && candidate['state'] !== 'exited') return false
   const keys = [...KERNEL_IDENTITY_KEYS, 'state', 'at']
   if (candidate['reason'] !== undefined) keys.push('reason')
+  if (candidate['startedAt'] !== undefined) keys.push('startedAt')
   return projectionExactKeys(candidate, keys)
     && safeInteger(candidate['at'])
     && (candidate['state'] === 'exited') === (candidate['reason'] !== undefined)
+    && (candidate['state'] === 'exited') === (candidate['startedAt'] !== undefined)
+    && (candidate['startedAt'] === undefined
+      || (safeInteger(candidate['startedAt']) && candidate['at'] >= candidate['startedAt']))
     && (candidate['reason'] === undefined
       || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }

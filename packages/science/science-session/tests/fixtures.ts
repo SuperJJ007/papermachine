@@ -133,6 +133,7 @@ export const kernelExited = (
   ...kernelStarted(),
   state: 'exited',
   reason: 'idle',
+  startedAt: 115,
   at: 200,
   ...overrides,
 })

@@ -66,12 +66,12 @@ describe('Science projection replay', () => {
     const events: SessionEvent[] = [
       ...legalEvents(),
       event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
-      event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ at: 200 }) }),
+      event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ startedAt: 190, at: 200 }) }),
     ]
     const host = replayScience(events)!
     const client = toClientScienceProjection(host)!
 
-    expect(host.kernels).toEqual([kernelExited({ at: 200 })])
+    expect(host.kernels).toEqual([kernelExited({ startedAt: 190, at: 200 })])
     expect(host.metrics.kernelCount).toBe(1)
     expect(client.metrics.kernelCount).toBe(1)
     expect(client.kernels).toEqual([{
@@ -79,6 +79,7 @@ describe('Science projection replay', () => {
       language: 'python',
       state: 'exited',
       reason: 'idle',
+      startedAt: 190,
       environmentRevision: 1,
       environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
       at: 200,

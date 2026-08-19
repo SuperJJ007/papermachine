@@ -291,9 +291,23 @@ export function isOpenKernel(record: ScienceKernel): record is ScienceKernelStat
   return 'state' in record && record.state === 'started'
 }
 
+/**
+ * Compare an exited kernel-state fact's start-owned fields against the open
+ * `started` fact it closes. `kernelEpoch`/`language` are already matched by
+ * the fold's lookup; this additionally proves the exited fact carries the
+ * same provenance the started fact fixed, mirroring `sameRunIdentity`.
+ */
+function sameKernelIdentity(started: ScienceKernelState, exited: ScienceKernelState): boolean {
+  return started.kernelEpoch === exited.kernelEpoch
+    && started.language === exited.language
+    && started.environmentRevision === exited.environmentRevision
+    && started.environmentFingerprint === exited.environmentFingerprint
+}
+
 function applyKernelState(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/kernel-state' }>): void {
   if (state.mode === undefined) throw new Error('Science kernel state requires a prior mode binding')
   const kernel = event.data.kernel
+  if (kernel.at > event.time) throw new Error('Science kernel state time cannot follow its event time')
   const latestForLanguage = state.kernels.filter(candidate => candidate.language === kernel.language).at(-1)
   if (kernel.state === 'started') {
     if (latestForLanguage !== undefined && isOpenKernel(latestForLanguage)) {
@@ -308,6 +322,15 @@ function applyKernelState(state: ScienceFoldState, event: Extract<DecodedScience
   }
   if (latestForLanguage === undefined || !isOpenKernel(latestForLanguage) || latestForLanguage.kernelEpoch !== kernel.kernelEpoch) {
     throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} has no matching started kernel`)
+  }
+  if (!sameKernelIdentity(latestForLanguage, kernel)) {
+    throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} terminal value rewrites start-owned fields`)
+  }
+  if (kernel.at < latestForLanguage.at) {
+    throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} time precedes its started fact's time`)
+  }
+  if (kernel.startedAt !== latestForLanguage.at) {
+    throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} startedAt does not match its started fact's at`)
   }
   const kernelIndex = state.kernels.findIndex(
     candidate => candidate.language === kernel.language && candidate.kernelEpoch === kernel.kernelEpoch,

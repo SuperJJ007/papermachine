@@ -41,10 +41,37 @@ describe('Science kernel-state codec', () => {
     expect(() => decodeScienceKernelState(withoutReason)).toThrow()
   })
 
+  it('rejects a startedAt carried by a started fact', () => {
+    expect(() => decodeScienceKernelState({ ...kernelStarted(), startedAt: 100 })).toThrow()
+  })
+
+  it('rejects an exited fact missing its startedAt', () => {
+    const { startedAt: _startedAt, ...withoutStartedAt } = kernelExited()
+    expect(() => decodeScienceKernelState(withoutStartedAt)).toThrow()
+  })
+
   it('rejects a non-positive or fractional kernel epoch', () => {
     for (const kernelEpoch of [0, -1, 1.5]) {
       expect(() => decodeScienceKernelState(kernelStarted({ kernelEpoch }))).toThrow()
     }
+  })
+
+  it('rejects an invalid state value', () => {
+    expect(() => decodeScienceKernelState({ ...kernelStarted(), state: 'weird' })).toThrow()
+  })
+
+  it('rejects a non-SHA256 environment fingerprint', () => {
+    expect(() => decodeScienceKernelState(kernelStarted({ environmentFingerprint: 'not-a-sha256' }))).toThrow()
+  })
+
+  it('rejects a negative or fractional at', () => {
+    for (const at of [-1, 1.5]) {
+      expect(() => decodeScienceKernelState(kernelStarted({ at }))).toThrow()
+    }
+  })
+
+  it('rejects a non-positive environmentRevision', () => {
+    expect(() => decodeScienceKernelState(kernelStarted({ environmentRevision: 0 }))).toThrow()
   })
 
   it('rejects an unexpected field on the fact itself or its event wrapper', () => {
@@ -84,7 +111,7 @@ describe('strict Science kernel-state fold', () => {
       event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
       event('science/kernel-state', 4, 210, {
         version: 1,
-        kernel: kernelExited({ kernelEpoch: 2, language: 'r', at: 210 }),
+        kernel: kernelExited({ kernelEpoch: 2, language: 'r', startedAt: 120, at: 210 }),
       }),
       event('science/kernel-state', 5, 300, {
         version: 1,
@@ -94,7 +121,7 @@ describe('strict Science kernel-state fold', () => {
     const state = foldScience(events)
     expect(state.kernels).toEqual([
       kernelExited(),
-      kernelExited({ kernelEpoch: 2, language: 'r', at: 210 }),
+      kernelExited({ kernelEpoch: 2, language: 'r', startedAt: 120, at: 210 }),
       kernelStarted({ kernelEpoch: 3, at: 300 }),
     ])
     expect(state.kernelEpochWatermark).toBe(3)
@@ -118,7 +145,7 @@ describe('strict Science kernel-state fold', () => {
       ], /already started/],
       ['exit with no prior started fact', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelExited() }),
+        event('science/kernel-state', 1, 200, { version: 1, kernel: kernelExited() }),
       ], /no matching started/],
       ['exit epoch does not match the currently open kernel', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
@@ -131,10 +158,48 @@ describe('strict Science kernel-state fold', () => {
         event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited() }),
         event('science/kernel-state', 3, 210, { version: 1, kernel: kernelExited({ at: 210 }) }),
       ], /no matching started/],
+      ['exited fact rewrites its started fact\'s environmentRevision', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ environmentRevision: 2 }) }),
+      ], /rewrites start-owned fields/],
+      ['exited fact rewrites its started fact\'s environmentFingerprint', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ environmentFingerprint: 'c'.repeat(64) }) }),
+      ], /rewrites start-owned fields/],
+      ['started kernel time follows its own event time', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted({ at: 116 }) }),
+      ], /cannot follow its event time/],
+      ['exited kernel time follows its own event time', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ at: 201 }) }),
+      ], /cannot follow its event time/],
+      ['exited kernel time precedes its started fact\'s time', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ startedAt: 115, at: 100 }) }),
+      ], /precedes its started fact's time/],
+      ['exited kernel startedAt does not match its started fact\'s at', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ startedAt: 116 }) }),
+      ], /startedAt does not match its started fact's at/],
     ]
     for (const [name, events, pattern] of cases) {
       expect(() => foldScience(events), name).toThrow(pattern)
     }
+  })
+
+  it('rejects a started kernel whose at exceeds its own event time before a later session/end-seed can derive an interrupted record from it', () => {
+    const events: SessionEvent[] = [
+      event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted({ at: 99999 }) }),
+      event('session/end-seed', 2, 400, {}),
+    ]
+    expect(() => foldScience(events)).toThrow(/cannot follow its event time/)
   })
 
   it('derives interrupted only for a kernel still started at session/end-seed', () => {
@@ -310,6 +375,7 @@ describe('Science kernel-state projection persistence', () => {
       language: 'python',
       state: 'exited',
       reason: 'idle',
+      startedAt: 115,
       environmentRevision: 1,
       environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
       at: 200,

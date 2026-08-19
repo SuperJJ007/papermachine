@@ -241,6 +241,7 @@ const kernelStateSchema = z.object({
   language: z.enum(['python', 'r']),
   state: z.enum(['started', 'exited']),
   reason: z.enum(KERNEL_END_REASONS).optional(),
+  startedAt: SAFE_INTEGER.optional(),
   environmentRevision: POSITIVE_INTEGER,
   environmentFingerprint: SHA256,
   at: SAFE_INTEGER,
@@ -250,6 +251,12 @@ const kernelStateSchema = z.object({
   }
   if (kernel.state === 'started' && kernel.reason !== undefined) {
     issue(ctx, 'a started kernel state cannot carry reason', ['reason'])
+  }
+  if (kernel.state === 'exited' && kernel.startedAt === undefined) {
+    issue(ctx, 'an exited kernel state requires startedAt', ['startedAt'])
+  }
+  if (kernel.state === 'started' && kernel.startedAt !== undefined) {
+    issue(ctx, 'a started kernel state cannot carry startedAt', ['startedAt'])
   }
 })
 

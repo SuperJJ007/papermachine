@@ -239,6 +239,12 @@ describe('Science projection wire schema', () => {
       { ...kernelState, kernels: [{ ...currentKernel, reason: 'idle' }] },
       { ...kernelState, kernels: [{ ...currentKernel, state: 'exited' }] },
       { ...kernelState, kernels: [{ ...currentKernel, state: 'exited', reason: 'unexpected' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, startedAt: 100 }] },
+      { ...kernelState, kernels: [{ ...currentKernel, state: 'exited', reason: 'idle' }] },
+      {
+        ...kernelState,
+        kernels: [{ ...currentKernel, state: 'exited', reason: 'idle', startedAt: currentKernel.at + 1 }],
+      },
       {
         ...kernelState,
         kernels: [{

@@ -242,6 +242,14 @@ export interface ScienceKernelState {
   readonly state: 'started' | 'exited'
   /** Closed reason the kernel ended; present if and only if `state === 'exited'`. */
   readonly reason?: ScienceKernelEndReason
+  /**
+   * Epoch milliseconds the kernel's own `started` fact recorded as its `at`;
+   * present if and only if `state === 'exited'`. Keeps a closed kernel's
+   * lifetime whole-value in this one fact instead of requiring a reader to
+   * retain its now-superseded `started` fact; the fold asserts equality with
+   * that fact's `at`.
+   */
+  readonly startedAt?: number
   /** Applied environment revision this kernel serves. */
   readonly environmentRevision: number
   /** Fingerprint of the language's available binding this kernel spawned against. */
@@ -492,6 +500,8 @@ export interface ScienceClientKernelState {
   readonly language: ScienceLanguage
   readonly state: 'started' | 'exited'
   readonly reason?: ScienceKernelEndReason
+  /** Mirrors {@link ScienceKernelState.startedAt}: present if and only if `state === 'exited'`. */
+  readonly startedAt?: number
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly at: number

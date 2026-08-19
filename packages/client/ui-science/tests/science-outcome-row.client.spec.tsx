@@ -56,6 +56,7 @@ function projectionWithChart(): ScienceClientProjection {
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
     runs: [],
+    kernels: [],
     artifacts: [{
       artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve', origin: 'model',
       attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
@@ -64,7 +65,7 @@ function projectionWithChart(): ScienceClientProjection {
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
     }],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1 },
+    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1, kernelCount: 0 },
     lastScienceEventSeq: 1,
   }
 }

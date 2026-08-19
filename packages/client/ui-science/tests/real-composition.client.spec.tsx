@@ -136,6 +136,7 @@ async function bench() {
       codeSha256: 'c'.repeat(64), status: 'success', finishedAt: 900,
       stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
     }],
+    kernels: [],
     artifacts: [{
       artifactId: ARTIFACT_ITEM.artifactId, logicalName: ARTIFACT_ITEM.logicalName, version: ARTIFACT_ITEM.version,
       title: ARTIFACT_ITEM.title, origin: 'model', attachment: ARTIFACT_ITEM.attachment, runId: 'run-1',
@@ -143,7 +144,7 @@ async function bench() {
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1_000,
     }],
     outcome: null,
-    metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 0 },
+    metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 0, kernelCount: 0 },
     lastScienceEventSeq: 5,
   })
 

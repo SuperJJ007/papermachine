@@ -4,7 +4,7 @@ import { isJsonValue } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import type { ZodType } from 'zod'
 import { decodeScienceMode } from './codec.ts'
-import type { ScienceClientProjection } from './types.ts'
+import type { ScienceClientProjection, ScienceKernelEndReason } from './types.ts'
 
 /**
  * Narrow a value to a plain record.
@@ -155,7 +155,7 @@ const KERNEL_END_REASONS = [
   'protocol',
   'crash',
   'service-disposed',
-]
+] as const satisfies readonly ScienceKernelEndReason[]
 
 const KERNEL_IDENTITY_KEYS = [
   'kernelEpoch',
@@ -188,7 +188,7 @@ function validKernel(value: unknown): boolean {
     && safeInteger(candidate['at'])
     && (candidate['state'] === 'exited') === (candidate['reason'] !== undefined)
     && (candidate['reason'] === undefined
-      || (typeof candidate['reason'] === 'string' && KERNEL_END_REASONS.includes(candidate['reason'])))
+      || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }
 
 const TEXT_ATTACHMENT_MEDIA_TYPES = ['text/csv', 'application/json', 'text/markdown', 'text/plain']

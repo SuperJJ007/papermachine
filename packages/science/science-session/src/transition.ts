@@ -309,7 +309,12 @@ function applyKernelState(state: ScienceFoldState, event: Extract<DecodedScience
   if (latestForLanguage === undefined || !isOpenKernel(latestForLanguage) || latestForLanguage.kernelEpoch !== kernel.kernelEpoch) {
     throw new Error(`Science kernel exited fact for language ${JSON.stringify(kernel.language)} epoch ${String(kernel.kernelEpoch)} has no matching started kernel`)
   }
-  state.kernels[state.kernels.indexOf(latestForLanguage)] = kernel
+  const kernelIndex = state.kernels.findIndex(
+    candidate => candidate.language === kernel.language && candidate.kernelEpoch === kernel.kernelEpoch,
+  )
+  /* v8 ignore next -- latestForLanguage above already matched this language/epoch pair by value */
+  if (kernelIndex < 0) throw new Error('Science kernel record disappeared during synchronous replay')
+  state.kernels[kernelIndex] = kernel
 }
 
 function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEvent): void {

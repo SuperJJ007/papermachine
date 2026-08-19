@@ -25,6 +25,7 @@ import type {
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
+  ScienceKernelEndReason,
   ScienceKernelState,
   ScienceModeRef,
   ScienceOutcomePublication,
@@ -233,7 +234,7 @@ const KERNEL_END_REASONS = [
   'protocol',
   'crash',
   'service-disposed',
-] as const
+] as const satisfies readonly ScienceKernelEndReason[]
 
 const kernelStateSchema = z.object({
   kernelEpoch: POSITIVE_INTEGER,

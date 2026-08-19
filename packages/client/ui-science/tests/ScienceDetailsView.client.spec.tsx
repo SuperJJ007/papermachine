@@ -32,9 +32,10 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
     environment: null,
     runs: [],
+    kernels: [],
     artifacts: [],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
+    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0, kernelCount: 0 },
     lastScienceEventSeq: 1,
     ...over,
   }

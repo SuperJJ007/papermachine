@@ -5,7 +5,11 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** Payload version shared by the first Science session event vocabulary. */
 export const SCIENCE_EVENT_VERSION = 1 as const
 
-/** Persisted-cache invalidation version for the Science projection state. */
+/**
+ * Persisted-cache invalidation version for the Science projection state.
+ * Bump whenever the state shape or the fold semantics change, per the
+ * registry's `stateVersion` rule ([session-projection](../../../session/session-projection/README.md#contract)).
+ */
 export const SCIENCE_PROJECTION_STATE_VERSION = 4
 
 /** Identifies one Science environment profile inside durable session facts. */

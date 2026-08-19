@@ -95,11 +95,33 @@ export interface KernelSetOptions {
    * greater than the last epoch it committed for the same Session.
    */
   readonly nextEpoch: (session: Session) => number
+  /**
+   * Notified synchronously, BEFORE the fresh kernel becomes acquirable,
+   * once its READY handshake completes (D4 amendment, A1 finding 4):
+   * typically appends the durable `started` fact. A throw here ends the
+   * fresh kernel without ever registering it and fails the
+   * {@link KernelSet.acquire} call that spawned it — no `started` fact
+   * exists for it, so it never requires a matching `exited` one either.
+   */
   readonly onKernelStarted: KernelStartedCallback
+  /**
+   * Notified once a kernel's end path (commanded or uncommanded) reaches
+   * quiescence, after registry bookkeeping already removed the kernel from
+   * live membership: typically appends the durable `exited` fact.
+   * Containment-wrapped (D4 amendment, A1 finding 4): a throw here is
+   * swallowed and never rejects teardown or skips quarantine bookkeeping —
+   * a legitimately dead Session's missing `exited` fact is recovered by the
+   * end-seed `ScienceKernelInterrupted` derivation.
+   */
   readonly onKernelEnded: KernelEndedCallback
 }
 
-/** A same-id successor Session tried to acquire a kernel while its predecessor's kernel tree was not yet proven quiescent. */
+/**
+ * A same-id successor Session tried to acquire a kernel while its
+ * predecessor's kernel tree was not yet proven quiescent. K3.1 maps this
+ * onto the Runtime's existing `RUNTIME_BUSY` rejection — the same user
+ * semantics as `LeaseRegistry`'s same-id quarantine (D10).
+ */
 export class KernelSetQuarantinedError extends Error {
   override name = 'KernelSetQuarantinedError'
 
@@ -112,8 +134,39 @@ export class KernelSetQuarantinedError extends Error {
 }
 
 /**
+ * `acquire` was called on an exact Session object this `KernelSet` already
+ * ran {@link KernelSet.detach} against: a detached Session can never become
+ * a fresh kernel's owner again, since `detach` already committed to ending
+ * every kernel it owned.
+ */
+export class KernelSetDetachedError extends Error {
+  override name = 'KernelSetDetachedError'
+
+  constructor(sessionId: string) {
+    super(`science-runtime: kernel set already detached session id ${JSON.stringify(sessionId)}; it cannot acquire a fresh kernel`)
+  }
+}
+
+/**
+ * Two different registry entries for the same session id both tried to
+ * hold `byId` membership at once — a same-id quarantine gap (A1 finding 5):
+ * a successor Session's entry registered a live kernel while its
+ * predecessor's entry, spawning concurrently, had not yet registered its
+ * own. Fails loud rather than letting the second registration silently
+ * clobber the first and drop quarantine over the first entry's kernel.
+ */
+export class KernelSetConflictError extends Error {
+  override name = 'KernelSetConflictError'
+
+  constructor(sessionId: string) {
+    super(`science-runtime: kernel set already tracks a different registry entry for session id ${JSON.stringify(sessionId)}`)
+  }
+}
+
+/**
  * A caller-supplied epoch allocator returned a value that was not strictly
  * greater than one this `KernelSet` already committed for the same Session.
+ * K3.1 maps this onto `INFRASTRUCTURE_FAILURE` when it reaches a caller (D10).
  */
 export class KernelEpochRegressionError extends Error {
   override name = 'KernelEpochRegressionError'
@@ -146,6 +199,8 @@ interface SessionEntry {
   readonly ending: Map<ScienceLanguage, Promise<void>>
   /** Highest epoch this `KernelSet` has committed (i.e. actually spawned) for this Session. */
   epochSeen: number
+  /** Set once by {@link KernelSet.detach}; a detached entry never acquires a fresh kernel again (A1 finding 5). */
+  detached: boolean
 }
 
 /** Compile-time proof {@link ScienceKernelEndReason} stays closed; every member reaches the same end-and-notify path. */
@@ -211,6 +266,11 @@ export class KernelSet {
    * @returns the live, ready kernel process.
    * @throws {@link KernelSetQuarantinedError} for a same-id successor Session
    *   while its predecessor's kernel tree is not yet proven quiescent.
+   * @throws {@link KernelSetDetachedError} when this exact Session object
+   *   already ran through {@link KernelSet.detach}.
+   * @throws {@link KernelSetConflictError} when a same-id predecessor's
+   *   registry entry still holds `byId` membership at the moment this
+   *   entry tries to register its own fresh kernel.
    * @throws {@link KernelEpochRegressionError} when the injected epoch
    *   allocator returns a non-increasing value for a fresh spawn.
    * @throws whatever {@link KernelProcess.start} throws on spawn/handshake failure.
@@ -222,6 +282,7 @@ export class KernelSet {
     sessionScratch: ScienceSessionScratch,
   ): Promise<KernelProcess> {
     const entry = this.entryFor(session)
+    this.assertAcquirable(entry)
     await this.drain(entry, language)
     const live = entry.kernels.get(language)
     if (live !== undefined) {
@@ -248,8 +309,26 @@ export class KernelSet {
   }
 
   /**
+   * Disarm one live kernel's idle timer for the duration of an in-flight
+   * run (D3 amendment, A1 finding 7): the idle timer must never fire while
+   * a run is executing. Callers pair this with {@link resetIdleTimer} once
+   * that run's DONE frame arrives, rearming a fresh full window. A no-op
+   * when no live kernel is registered for `(session, language)` — a benign
+   * race against a concurrent end, never a caller error.
+   * @param session - exact live Session that owns the kernel.
+   * @param language - the kernel's language.
+   */
+  disarmIdleTimer(session: Session, language: ScienceLanguage): void {
+    const live = this.exact.get(session)?.kernels.get(language)
+    if (live === undefined) return
+    if (live.idleTimer !== undefined) clearTimeout(live.idleTimer)
+    live.idleTimer = undefined
+  }
+
+  /**
    * End every live kernel this exact Session owns with reason
-   * `session-end`. Fire-and-forget, mirroring `LeaseRegistry.detach`:
+   * `session-end`, and mark the entry so it never acquires a fresh kernel
+   * again (A1 finding 5). Fire-and-forget, mirroring `LeaseRegistry.detach`:
    * teardown proceeds asynchronously and the session id stays quarantined
    * until every ended kernel's teardown settles.
    * @param session - exact detached Session object; a same-id successor is unaffected until quiescence.
@@ -257,6 +336,7 @@ export class KernelSet {
   detach(session: Session): void {
     const entry = this.exact.get(session)
     if (entry === undefined) return
+    entry.detached = true
     for (const live of [...entry.kernels.values()]) void this.endKernel(live, 'session-end')
   }
 
@@ -275,15 +355,29 @@ export class KernelSet {
     return Promise.allSettled(pending)
   }
 
-  /** Return this Session's registry entry, creating one only after passing the same-id quarantine check. */
+  /** Return this Session's registry entry, creating one on first use. */
   private entryFor(session: Session): SessionEntry {
     const existing = this.exact.get(session)
     if (existing !== undefined) return existing
-    const id = String(session.id)
-    if (this.byId.has(id)) throw new KernelSetQuarantinedError(id)
-    const entry: SessionEntry = { session, kernels: new Map(), ending: new Map(), epochSeen: 0 }
+    const entry: SessionEntry = { session, kernels: new Map(), ending: new Map(), epochSeen: 0, detached: false }
     this.exact.set(session, entry)
     return entry
+  }
+
+  /**
+   * Refuse an entry a same-id predecessor's registry entry still holds
+   * `byId` membership for (quarantine), or that already ran through
+   * {@link detach}. Checked on every {@link acquire} call, not only once at
+   * entry creation (A1 finding 5): a successor entry created while its
+   * predecessor's spawn was still in flight (so `byId` had not yet been
+   * claimed) must still be refused once the predecessor's own registration
+   * lands, and a detached entry must stay refused on every later retry.
+   */
+  private assertAcquirable(entry: SessionEntry): void {
+    const id = String(entry.session.id)
+    const holder = this.byId.get(id)
+    if (holder !== undefined && holder !== entry) throw new KernelSetQuarantinedError(id)
+    if (entry.detached) throw new KernelSetDetachedError(id)
   }
 
   /** Await this language's in-flight teardown, if any, before the caller inspects or replaces its live kernel. */
@@ -297,7 +391,17 @@ export class KernelSet {
     live.idleTimer = setTimeout(() => { void this.endKernel(live, 'idle') }, this.kernelIdleTimeoutMs)
   }
 
-  /** Select the binding, allocate and validate a fresh epoch, spawn, register, and notify. */
+  /**
+   * Select the binding, allocate and validate a fresh epoch, spawn, notify,
+   * then register. `onKernelStarted` runs BEFORE the kernel is registered
+   * acquirable (D4 amendment, A1 finding 4): a throw there — the durable
+   * `started` fact never committed — discards the fresh kernel through
+   * {@link discardUnregisteredKernel} instead of leaving it live and
+   * untracked. The same discard path covers a `byId` conflict
+   * {@link syncBusyRegistration} detects immediately after registration
+   * (A1 finding 5): either way, no `started` fact means this kernel must
+   * never become acquirable and never needs a matching `exited` one.
+   */
   private async spawnKernel(
     entry: SessionEntry,
     language: ScienceLanguage,
@@ -334,18 +438,44 @@ export class KernelSet {
       startedAt,
       idleTimer: undefined,
     }
-    entry.kernels.set(language, live)
-    this.syncBusyRegistration(entry)
+    try {
+      this.onKernelStarted(entry.session, {
+        language,
+        kernelEpoch,
+        environmentRevision: environment.revision,
+        environmentFingerprint: binding.bindingFingerprint,
+        startedAt,
+      })
+      entry.kernels.set(language, live)
+      this.syncBusyRegistration(entry)
+    } catch (error) {
+      entry.kernels.delete(language)
+      this.syncBusyRegistration(entry)
+      return this.discardUnregisteredKernel(process, error)
+    }
     this.armIdleTimer(live)
     void process.exited.then((fact) => { this.onProcessExited(live, fact) })
-    this.onKernelStarted(entry.session, {
-      language,
-      kernelEpoch,
-      environmentRevision: environment.revision,
-      environmentFingerprint: binding.bindingFingerprint,
-      startedAt,
-    })
     return process
+  }
+
+  /**
+   * End a freshly spawned kernel that must never become acquirable: its
+   * `started` fact never committed (D4 amendment, A1 findings 4/5) —
+   * either `onKernelStarted` itself rejected, or a same-id `byId` conflict
+   * surfaced immediately after registration. Never routes through
+   * {@link teardown}/`onKernelEnded`: no `started` fact exists for an
+   * `exited` one to pair against.
+   * @param process - the fresh kernel process to discard.
+   * @param cause - the original failure that requires discarding it.
+   * @throws always: `cause`, or an `AggregateError` combining it with a teardown failure.
+   */
+  private async discardUnregisteredKernel(process: KernelProcess, cause: unknown): Promise<never> {
+    try {
+      await process.end('kernel-set: discarding a kernel that never became acquirable')
+    } catch (endError) {
+      throw new AggregateError([cause, endError], 'science-runtime: tearing down an unregistered kernel also failed')
+    }
+    throw cause
   }
 
   /**
@@ -388,21 +518,32 @@ export class KernelSet {
    * escalation could not immediately prove the tree dead, this awaits its
    * `eventualQuiescence` before notifying — this method's own returned
    * promise is what `finishEnding` waits on to drop `byId` membership, so a
-   * still-possibly-alive tree never gets treated as gone.
+   * still-possibly-alive tree never gets treated as gone. `onKernelEnded`
+   * is containment-wrapped (D4 amendment, A1 finding 4): a throw there
+   * (typically a durable append against a Session that already detached)
+   * never rejects this method, so quarantine bookkeeping always completes.
    */
   private async teardown(entry: SessionEntry, kernel: LiveKernel, reason: ScienceKernelEndReason): Promise<void> {
     assertClosedEndReason(reason)
     const quiescence = await kernel.process.end(reason)
     if (!quiescence.quiescent) await quiescence.eventualQuiescence
-    this.onKernelEnded(entry.session, {
-      language: kernel.language,
-      kernelEpoch: kernel.kernelEpoch,
-      environmentRevision: kernel.environmentRevision,
-      environmentFingerprint: kernel.environmentFingerprint,
-      startedAt: kernel.startedAt,
-      endedAt: Date.now(),
-      reason,
-    })
+    try {
+      this.onKernelEnded(entry.session, {
+        language: kernel.language,
+        kernelEpoch: kernel.kernelEpoch,
+        environmentRevision: kernel.environmentRevision,
+        environmentFingerprint: kernel.environmentFingerprint,
+        startedAt: kernel.startedAt,
+        endedAt: Date.now(),
+        reason,
+      })
+    } catch {
+      // Containment (D4): the kernel's own teardown already completed and
+      // registry bookkeeping must proceed regardless of whether the
+      // caller's durable append succeeded; a legitimately dead Session's
+      // missing `exited` fact is recovered by the end-seed
+      // ScienceKernelInterrupted derivation the caller owns.
+    }
   }
 
   /** Remove a settled teardown from `ending` and drop quarantine once the Session owns no live or ending kernel. */
@@ -411,13 +552,25 @@ export class KernelSet {
     this.syncBusyRegistration(entry)
   }
 
-  /** Keep `byId` membership exactly tracking whether this session id currently owns any live or ending kernel. */
+  /**
+   * Keep `byId` membership exactly tracking whether this session id
+   * currently owns any live or ending kernel. Refuses to overwrite a
+   * DIFFERENT entry already holding this id (A1 finding 5): a same-id
+   * successor entry that started spawning while its predecessor's own
+   * spawn was still in flight (and so found `byId` not yet claimed) must
+   * not silently clobber the predecessor's registration once both land —
+   * that would drop quarantine over whichever entry lost the race.
+   * @throws {@link KernelSetConflictError} when a different entry already holds this session id.
+   */
   private syncBusyRegistration(entry: SessionEntry): void {
     const id = String(entry.session.id)
-    if (entry.kernels.size > 0 || entry.ending.size > 0) {
-      this.byId.set(id, entry)
-    } else if (this.byId.get(id) === entry) {
-      this.byId.delete(id)
+    const busy = entry.kernels.size > 0 || entry.ending.size > 0
+    if (!busy) {
+      if (this.byId.get(id) === entry) this.byId.delete(id)
+      return
     }
+    const holder = this.byId.get(id)
+    if (holder !== undefined && holder !== entry) throw new KernelSetConflictError(id)
+    this.byId.set(id, entry)
   }
 }

@@ -20,9 +20,11 @@ Status: implemented
 
 **`isScienceSession` 改为通过 `@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset` 解析**（以 session 的创建 header 为基础，被最后一条 `agent-preset/selected` 事件覆盖），而不再直接读取 `session.header.agentPreset`。`tool-science` 为此获得了一个对 `dsh-agent-presets` 的 peer/dev 依赖——只是一个纯函数，不涉及 service 或 `ctx`（`dsh-agent-presets` 没有反向依赖到 `dsh-science`，因此不构成循环）。`requireScienceSession`（`run.ts`）与 `system-prompt/assemble` 首次使用绑定 waterfall 都调用 `isScienceSession`，因此二者现在都与 tool 可见性所用的 scope layer 在"哪些 session 运行在 `science` 之下"这一点上保持一致。
 
-对于 header 与已解析 preset 在整个生命周期内始终一致的 session（在 `science` 下创建，或在其他 preset 下创建且从未切换），这一改动没有任何行为变化，直接补上了这一缺口。对于在 blank 状态下被切换到 `science` 的 session，`dsh-science-session` 自身的 durable-stream applicability 检查（`assertScienceSessionApplicability`，键控于字面量 `header.agentPreset`）仍然拒绝为其接纳 `science/mode-bound` 事件——这是一个更深层、独立的不一致，本次改动未触及（见 Consequences）。
+对于 header 与已解析 preset 在整个生命周期内始终一致的 session（在 `science` 下创建，或在其他 preset 下创建且从未切换），这一改动没有任何行为变化，直接补上了这一缺口。对于在 blank 状态下被切换到 `science` 的 session，`dsh-science-session` 自身的 durable-stream applicability 检查现在也与之一致了，并在同一改动中一并补上（见下一段与 Consequences）。
 
-**`ScienceRuntime.profile()` 改为以新的 `PROFILE_NOT_CONFIGURED` code 拒绝**，其消息会点名缺失的前缀以及 Settings → Plugins → Science 卡片，取代了此前把"你什么都没配置"与"你发送了无效内容"混为一谈的 `INVALID_REQUEST` code——既然二者现在需要不同的消息，这个区分值得保留。这个检查是 `bindEnvironment`、`startRun`、`commitChart` 解析 profile id 所共用的唯一关口，因此消息的改进只需一处编辑即可覆盖每个调用点，符合"在做出决定的那个操作中执行决定"。
+**`dsh-science-session` 的 durable-stream applicability 检查现在把 session 已解析的 preset 作为参数接收，而不再自行读取 `header.agentPreset`。** `assertScienceSessionApplicability`（`applicability.ts`）的签名从 `(header, state, event)` 改为 `(preset: string | undefined, state, event)`。其唯一调用方——`science-session-invariant` companion（`invariant.ts`）——沿着它已经在 `seed()`（Host 重启重放）与 `internal/dispatch`/`session/event` 这对 pre-commit 钩子（live 路径）中贯穿的既有 `ScienceFoldState` cursor，增量地追踪这个已解析的值——按 `resolveSessionPreset` 同样的规则（最新一次选择胜出）在每条 `agent-preset/selected` 事件后向前推进，而不是直接调用 `resolveSessionPreset` 本身。`dsh-science-session` 新增了对 `@deepseek-ai/dsh-agent-presets` 的 peer/dev 依赖，但只是为了让这次增量遍历能够针对 `agent-preset/selected` 这个 `SessionEventMap` 类型扩展做类型窄化——不涉及任何运行时调用，因此这并非下文所考虑的那个 alternative 所担心的分层倒置。
+
+**`ScienceRuntime.profile()` 改为以新的 `PROFILE_NOT_CONFIGURED` code 拒绝**，其消息会点名缺失的前缀以及 Settings → Plugins → Science 卡片，取代了此前把"你什么都没配置"与"你发送了无效内容"混为一谈的 `INVALID_REQUEST` code——既然二者现在需要不同的消息，这个区分值得保留。这个检查是 `bindEnvironment` 与 `startRun` 解析 profile id 所共用的唯一关口，因此消息的改进只需一处编辑即可覆盖每个调用点，符合"在做出决定的那个操作中执行决定"。
 
 **`SettingsProvider`（`dsh-settings`）为 `restart`-applies 的 namespace 捕获其 owner 在注册时实际读到的值**（`SettingsRegistration.effective`，在进程生命周期内冻结不变），与始终最新的 `resolved` 值并存，并在 `describe()` 中把二者都暴露出来：`value`（当前文档）与 `effective`（运行中 owner 实际据以行动的值）——对 `live`-applies 的 namespace 二者相等，因为它在每次 commit 后都会重新读取。这是对 settings seam 的一次通用添加，而非 Science 专属的：任何 `restart`-applies namespace 的配置界面，现在都能仅凭协议本身区分"已保存"与"已生效"。该字段沿着 `applies` 已经沿用的同一条路径，贯穿 `dsh-host-apiproxy` 的 `SettingsNamespaceView` 与 `dsh-client-runtime` 的 `SettingsScopeSnapshot<T>`。
 
@@ -32,7 +34,7 @@ Status: implemented
 
 **只修复 `isScienceSession`，并宣布缺陷一已收尾。** 已否决，因为不完整：blank 状态下的切换场景仍会失败——tool 可见性正确，但执行仍会被拒绝——只是换成了从 `dsh-science-session` 自身 applicability guard 冒出的一个更深层、不同的错误，而非 tool-science 的消息。记录下这个残留缺口（见 Consequences）比一个只部分收尾症状的修复更诚实。
 
-**让 `dsh-science-session` 的 applicability 检查也通过 `resolveSessionPreset` 解析。** 这会彻底补上 blank 状态切换的缺口，但它需要要么让一个基础性的、负责 durable-stream 校验的包新增一个对 preset-orchestration 包的依赖（颠倒了这两个包的自然分层——preset 组合领域包，而非反过来），要么内联重新实现该解析逻辑（重复了本仓库本应保持"一处归属"的一个 canonical 函数）。它还会触及一个 strict-fold invariant，其增量 vs 重放的事件可见性需要独立的、审慎的证明，而这不是一个范围受限的 bug 修复任务应当仓促决定的。已推迟；见 Consequences。
+**直接在 invariant 的 pre-commit 调用点调用 `resolveSessionPreset(session)`，而不是增量地追踪已解析的 preset。** 这只在 live dispatch 路径下才正确——那里 `session.events` 已经反映了此前每一条已提交的事件。但 `science-session-invariant` 还会在 Host 重启时把一个 session 的完整历史从头重放一遍（`seed()`），对每一条历史事件重放一次 `assertScienceSessionApplicability`；如果在那里调用 `resolveSessionPreset(session)`，会把每一条历史事件都按 session 当前（整份日志的）preset 来解析，错误地把之后才发生的 `science` 切换追溯性地套用到切换之前、原本运行在 `standard` 下的历史事件上。`packages/science/science-session/tests/invariant.spec.ts` 的重新 seed 测试正是为了捕获这个回归而存在。增量 cursor（在 `agent-preset/selected` 事件后前进，采用与既有 `ScienceFoldState` cursor 相同的携带方式）对 seed 路径与 live 路径都能给出正确的、按时间点解析的答案，不会出现这种失效模式。
 
 **为 settings 卡片单独开一个 Science 专属 RPC，用来回答"运行中 Host 已绑定的 profile"。** 已否决，选择了通用的 `dsh-settings` seam 添加方案：`applies: 'restart'` 早已作为一种逐 namespace 的声明存在，却始终没有办法回答"重启后会生效成什么样"，而任何其他 `restart`-applies 的 namespace 都存在完全相同的缺口。一个专属 Remote（`pluginInventory` 的模式）本只会解决这个 seam 本就缺失的一个字段所造成问题中，属于 Science 的那一个实例。
 
@@ -44,7 +46,7 @@ Status: implemented
 
 缺陷一与缺陷二作为经过 real-composition 与单元测试验证的、范围受限、风险较低的修复发布；缺陷三则作为对 settings seam 的一次小型、真正通用的添加，以及 Science 卡片对它的消费而发布。
 
-**blank 状态下的 preset 切换场景，其 Science session 仍部分处于损坏状态。** `isScienceSession` 现在与 tool 可见性一致，但 `dsh-science-session` 的 durable applicability 检查仍会拒绝为一个 header 字面上不是 `science` 的 session 接纳 `science/mode-bound`，因此首次使用绑定对一个在 blank 状态下切换到 `science` 的 session 仍会失败——现在失败信息的形态是 `Science events require session.header.agentPreset to equal "science"`，取代了此前"requires a session bound to the science preset"的那种。要完整支持"在一段 blank 对话的 hero seat 里选择 Science"，需要一个被推迟到此处的决定：`dsh-science-session` 是否应当为了 `resolveSessionPreset` 依赖 `dsh-agent-presets`、自带一套最小化的解析逻辑，还是采用别的方案——并需要把 strict fold 增量 vs 重放的事件可见性保证明确证明清楚，而非想当然。
+**blank 状态下的 preset 切换场景，其 Science session 现在得到了完整支持，而不再只是部分。** `isScienceSession` 与 `dsh-science-session` 自身的 durable applicability 检查现在一致了：二者都解析 session 的 live preset（创建 header，被最后一条 `agent-preset/selected` 事件覆盖），因此首次使用绑定——从 `science/mode-bound` 到之后整个 Science turn——对一个在 blank 状态下切换到 `science` 的 session 能够成功，不再有"tool 可见、执行仍被拒绝"的残留缺口，也不再有需要单独记录的更深层失败形态。`apps/cli/tests/web-agent-presets.e2e.ts` 中的 `fails loudly before any provider request when the mounted Science Runtime has no profile configured` 测试现在断言的是 `PROFILE_NOT_CONFIGURED` 的消息文本，取代了此前对 `INVALID_REQUEST` 时代"unknown Science environment profile"措辞的占位断言。
 
 **`ScienceRuntimeErrorCode` 新增了一个成员**（`PROFILE_NOT_CONFIGURED`）；本仓库中目前没有任何代码 switch 这个 closed union（`.code` 仅作为测试/诊断元数据被读取），因此这次新增不会带来任何穷尽性 switch 上的连锁影响。
 
@@ -53,6 +55,8 @@ Status: implemented
 ## Testing
 
 `packages/science/tool-science/tests/tool-science.spec.ts` 新增了一个在 `standard` 下创建、随后通过 `agent-preset/selected` 事件切换的 session，断言 `isScienceSession`/`requireScienceSession` 从日志中正确解析为 `true`——这正是仅凭 header 的检查会答错的场景。`apps/cli/tests/web-agent-presets.e2e.ts` 中既有的 `keeps its narrow roster out of standard, and standard's roster out of it` 仍然是证明"非 Science session 中被公告"这一最初说法在当前架构下不成立的 real-composition 证据。
+
+`packages/science/science-session/tests/applicability.spec.ts` 把每个用例都改为传入一个已解析的 preset 字符串（或 `undefined`），而不是一个 header 对象。`packages/science/science-session/tests/invariant.spec.ts` 新增两个测试：一个 live-dispatch 用例（一个在 `standard` 下创建的 session，`science/mode-bound` 在 `agent-preset/selected` 切换前被拒绝、切换后立即被接受），以及一个 seed/replay 用例（一个已切换 session 的完整历史，在模拟的 Host 重启后从头重新 seed，不会被回溯性地判定失败）。
 
 `packages/science/science-runtime/tests/{environment,settings,loader-composition}.spec.ts` 把未知/未配置 profile 的断言从 `INVALID_REQUEST` 更新为 `PROFILE_NOT_CONFIGURED`，其中一处还断言了完整的新消息文本。
 

@@ -9,13 +9,13 @@ describe('Science Session applicability policy', () => {
     const state = emptyScienceFoldState()
     const modeEvent = event('science/mode-bound', 0, 100, { version: 1, mode: mode() })
 
-    expect(() => { assertScienceSessionApplicability({}, state, modeEvent) })
-      .toThrow(/agentPreset/)
-    expect(() => { assertScienceSessionApplicability({ agentPreset: 'science' }, state, modeEvent) })
+    expect(() => { assertScienceSessionApplicability(undefined, state, modeEvent) })
+      .toThrow(/resolved agent preset/)
+    expect(() => { assertScienceSessionApplicability('science', state, modeEvent) })
       .not.toThrow()
 
     applyScienceEvent(state, modeEvent)
-    expect(() => { assertScienceSessionApplicability({ agentPreset: 'science' }, state, modeEvent) })
+    expect(() => { assertScienceSessionApplicability('science', state, modeEvent) })
       .not.toThrow()
     expect(() => { applyScienceEvent(state, { ...modeEvent, seq: 1 }) })
       .toThrow(/bound only once/)
@@ -27,8 +27,8 @@ describe('Science Session applicability policy', () => {
     event('tool/call', 0, 100, {}),
   ])('requires mode before Science-preset host activity: $type', (candidate) => {
     const state = emptyScienceFoldState()
-    expect(() => { assertScienceSessionApplicability({ agentPreset: 'science' }, state, candidate) })
+    expect(() => { assertScienceSessionApplicability('science', state, candidate) })
       .toThrow(/mode must be bound/)
-    expect(() => { assertScienceSessionApplicability({}, state, candidate) }).not.toThrow()
+    expect(() => { assertScienceSessionApplicability(undefined, state, candidate) }).not.toThrow()
   })
 })

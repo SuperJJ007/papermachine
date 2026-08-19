@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-18-science-mode-product-gaps.md
-2026-08-18-science-mode-product-gaps.md: a5e7da4652b7e6de2dd049fd08334c925b69a85e
-2026-08-18-science-mode-product-gaps.zh.md: 8394e56cb574564f44bffcaf14d8e83427bc180d
+2026-08-18-science-mode-product-gaps.md: 034c0bfa2958f54e94d1eeef7d5b90768d72da92
+2026-08-18-science-mode-product-gaps.zh.md: dd051388d2e493c62bf730ff6890640d0e865d3b

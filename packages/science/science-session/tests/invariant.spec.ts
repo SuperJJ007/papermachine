@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -82,6 +83,50 @@ describe('Science stream invariant', () => {
       header: { config: { provider: 'test', model: 'test-model' } },
       reason: 'initial',
     })).not.toThrow()
+  })
+
+  it('accepts Science mode binding after a blank session switches its live preset to `science`, even though its frozen header still names the preset it was created with', async () => {
+    // `resolveSessionPreset`'s newest-selection-wins rule, not the creation
+    // header alone: a session recomposed to `science` while blank records
+    // only an `agent-preset/selected` event, and this invariant's applicability
+    // check must agree with `dsh-tool-science`'s `isScienceSession`, which
+    // already resolves the same way.
+    const ctx = await setup()
+    const session = ctx.sessions.create(SessionId('science-invariant-standard-then-switched'), {
+      meta: { agentPreset: 'standard' },
+    })
+
+    expect(() => { appendMode(session) }).toThrow(expect.objectContaining<Partial<InvariantError>>({
+      code: 'INVARIANT',
+      packageName: PACKAGE_NAME,
+    }))
+    expect(session.events).toEqual([])
+
+    session.append('agent-preset/selected', { agentPreset: 'science' })
+    expect(() => { appendMode(session) }).not.toThrow()
+    expect(session.events.map(event => event.type)).toEqual(['agent-preset/selected', 'science/mode-bound'])
+  })
+
+  it('re-seeds a session that switched to `science` while blank without retroactively failing its history', async () => {
+    // Exercises the seed/replay path (Host restart), not just the live
+    // dispatch path the preceding test covers: a naive re-seed that resolved
+    // the preset once for the whole log, instead of incrementally as of each
+    // historical event, would carry `science` backward over events that
+    // preceded the switch.
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('science-invariant-late-seed-switched'), {
+      meta: { agentPreset: 'standard' },
+    })
+    session.append('agent-preset/selected', { agentPreset: 'science' })
+    appendLegalChain(session)
+    const before = session.seq
+
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceInvariant)
+
+    expect(() => { appendMode(session) }).toThrow(/bound only once/)
+    expect(session.seq).toBe(before)
   })
 
   it('seeds sessions that predate invariant installation', async () => {

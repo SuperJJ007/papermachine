@@ -620,11 +620,11 @@ describe('the science preset', () => {
       // triggers first-use binding and therefore this failure.
       //
       // The failure SIGNAL this test contracts on is "first-use binding fails
-      // before any provider request"; the exact message is not — a later
-      // integration replaces this unknown-profile path with a dedicated
-      // `PROFILE_NOT_CONFIGURED` outcome.
+      // before any provider request"; the exact message asserts on
+      // `ScienceRuntime.profile()`'s `PROFILE_NOT_CONFIGURED` outcome, which
+      // names the missing prefix and points at the Settings card.
       await expect(ctx.systemPrompt.assemble(assembleContextFor(handle.agent, new AbortController().signal)))
-        .rejects.toThrow(/unknown Science environment profile "science"/)
+        .rejects.toThrow(/no Conda prefix is configured for the Science environment profile "science"/)
     } finally {
       await handle.dispose()
     }

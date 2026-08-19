@@ -107,7 +107,9 @@ declare module '@deepseek-ai/cordis' {
  *   SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every
  *   platform. {@link SubprocessHandle.waitForExit} observes whole-tree
  *   liveness, so a consumer-owned teardown ladder can hold each tier on real
- *   quiescence.
+ *   quiescence. {@link SubprocessHandle.interrupt} is the seam's one
+ *   cooperative-request verb: SIGINT to the direct child only, a no-op on
+ *   `win32`.
  * - Disposal of the service terminates all still-running managed processes
  *   and awaits their exit.
  * - {@link spawnTerminal} owns terminal allocation, text transport,

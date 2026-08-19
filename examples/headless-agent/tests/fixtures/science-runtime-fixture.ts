@@ -40,6 +40,7 @@ function settledHandle(stdout: string): SubprocessHandle {
     collected: { stdout: reader(stdout), stderr: reader('') },
     done: Promise.resolve({ exitCode: 0, signal: null }),
     terminate: () => {},
+    interrupt: () => {},
     waitForExit: async () => true,
   }
 }

@@ -140,7 +140,7 @@ interface SubprocessSpawnSpec {
 
 ## Handles: streams, readers, and tree-scoped termination
 
-A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped on every platform: `terminate()` — the only termination verb — escalates SIGTERM→grace→SIGKILL, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template).
+A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped on every platform: `terminate()` — the only termination verb — escalates SIGTERM→grace→SIGKILL, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template). `interrupt()` is a separate, narrower verb: a cooperative SIGINT request to the direct child process only, with no escalation or quiescence promise and a documented no-op on `win32`.
 
 ```ts type-equiv
 /**
@@ -172,6 +172,18 @@ interface SubprocessHandle {
    * and also triggered by the spec's abort signal.
    */
   terminate(): void
+  /**
+   * Request a cooperative interrupt: deliver SIGINT to the direct child
+   * process only, never the tree it may have spawned. This is a request, not
+   * a termination verb — whether and how the child reacts (aborting current
+   * work, replying over its own protocol, exiting, or ignoring the signal
+   * entirely) is between the caller and that child's own cooperation
+   * contract. Idempotent and a no-op once the direct child has exited (the
+   * pid may be reused). Windows has no POSIX signal delivery: providers
+   * implement this as a no-op on `win32`, matching {@link terminate}'s
+   * per-platform documented behavior instead of throwing.
+   */
+  interrupt(): void
   /**
    * Wait until the process tree has exited — the tree, not just the direct
    * child, so a still-running helper is observable before teardown returns.

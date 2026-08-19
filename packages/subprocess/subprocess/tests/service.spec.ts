@@ -35,6 +35,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
       collected,
       done: Promise.resolve({ exitCode: 0, signal: null }),
       terminate: () => {},
+      interrupt: () => {},
       waitForExit: () => Promise.resolve(true),
     }
   }
@@ -70,6 +71,7 @@ describe('SubprocessRuntime seam', () => {
       lossy: false,
       utf8Validity: 'valid',
     })
+    handle.interrupt()
     handle.terminate()
     await expect(handle.waitForExit()).resolves.toBe(true)
     const outcome = await handle.done

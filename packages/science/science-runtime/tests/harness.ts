@@ -91,6 +91,7 @@ export class ControlledRun {
         this.terminations += 1
         this.completion.resolve({ exitCode: 0, signal: null })
       },
+      interrupt: () => {},
       waitForExit: async () => {
         this.waits += 1
         if (this.waits === 1) this.onFirstWait?.()
@@ -241,6 +242,7 @@ function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Pro
     collected: { stdout: reader(stdout, undefined, false, utf8Validity), stderr: reader(stderr, undefined, false, utf8Validity) },
     done: Promise.resolve({ exitCode: 0, signal: null }),
     terminate: () => {},
+    interrupt: () => {},
     waitForExit: async () => true,
   }
 }

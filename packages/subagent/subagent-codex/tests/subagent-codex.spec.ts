@@ -163,6 +163,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     collected: {},
     done,
     terminate,
+    interrupt: () => {},
     waitForExit,
   }
   return {

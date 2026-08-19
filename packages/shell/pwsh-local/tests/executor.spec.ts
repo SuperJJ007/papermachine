@@ -171,6 +171,7 @@ describe('spawn construction (pure, every platform)', () => {
         collected: { stdout: this.reader, stderr: this.reader },
         done: Promise.resolve({ exitCode: 0, signal: null }),
         terminate: () => {},
+        interrupt: () => {},
         waitForExit: async () => true,
       }
     }

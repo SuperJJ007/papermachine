@@ -248,6 +248,17 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     )
   }
 
+  /**
+   * Documented no-op: the remote bootstrap's published process identity is a
+   * process GROUP (the `setsid` leader), never the user argv's own pid, so
+   * this provider has no target that matches the seam's direct-child-only
+   * contract without new remote plumbing to publish that pid separately (see
+   * the package README's Known Limitations). Signalling the group instead
+   * would reach descendants {@link SubprocessHandle.interrupt} promises not
+   * to touch, so this stays inert rather than widening the contract.
+   */
+  interrupt(): void {}
+
   /** @inheritdoc */
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescenceProven) return true

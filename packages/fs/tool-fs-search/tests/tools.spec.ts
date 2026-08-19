@@ -136,6 +136,8 @@ class FakeHandle implements SubprocessHandle {
     this.terminated = true
   }
 
+  interrupt(): void {}
+
   waitForExit(_signal?: AbortSignal): Promise<boolean> {
     return Promise.resolve(true)
   }

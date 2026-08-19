@@ -667,6 +667,55 @@ describe('windows tree semantics (injected platform)', () => {
   })
 })
 
+describe('interrupt', () => {
+  it('delivers SIGINT to a child that traps it', async () => {
+    const running = spawnSubprocess(spec(
+      "trap 'echo trapped-sigint' INT; echo ready; while :; do sleep 60 & wait $!; done",
+    ))
+    await waitForStdout(running, 'ready\n')
+    running.interrupt()
+    await waitForStdout(running, 'trapped-sigint\n')
+    running.terminate()
+    const result = await running.done
+    expect(result.signal).toBe('SIGTERM')
+  })
+
+  it('is a no-op after the child has already exited (no throw, no signal delivered)', async () => {
+    const running = spawnSubprocess(spec('true'))
+    await running.done
+    const spy = vi.spyOn(process, 'kill')
+    try {
+      expect(() => { running.interrupt() }).not.toThrow()
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('does not affect terminate()/waitForExit() escalation when the child ignores SIGINT', async () => {
+    const running = spawnSubprocess(spec("trap '' INT; echo ready; sleep 60", { graceMs: 200 }))
+    await waitForStdout(running, 'ready\n')
+    running.interrupt()
+    running.terminate()
+    const result = await running.done
+    expect(result.signal).toBe('SIGTERM')
+    await expect(running.waitForExit()).resolves.toBe(true)
+  })
+
+  it('is a documented no-op on win32 (no POSIX signal delivery)', async () => {
+    const running = spawnSubprocess(spec('sleep 60'), { platform: 'win32', taskkill: () => {} })
+    const spy = vi.spyOn(process, 'kill')
+    try {
+      running.interrupt()
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+      process.kill(running.pid, 'SIGKILL')
+      await running.done
+    }
+  })
+})
+
 describe('waitForExit', () => {
   it('waits for the whole detached tree, not just the shell', async () => {
     const pidFile = join(spillDir, `tree-wait-${Date.now()}.pid`)

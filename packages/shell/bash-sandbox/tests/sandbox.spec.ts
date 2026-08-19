@@ -582,6 +582,7 @@ describe('background sandbox facts', () => {
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors
       done: Promise.reject(undefined),
       terminate: vi.fn(),
+      interrupt: vi.fn(),
       waitForExit: async () => true,
     } satisfies SubprocessHandle)
 

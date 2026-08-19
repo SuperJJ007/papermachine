@@ -201,6 +201,18 @@ export interface SubprocessHandle {
    */
   terminate(): void
   /**
+   * Request a cooperative interrupt: deliver SIGINT to the direct child
+   * process only, never the tree it may have spawned. This is a request, not
+   * a termination verb — whether and how the child reacts (aborting current
+   * work, replying over its own protocol, exiting, or ignoring the signal
+   * entirely) is between the caller and that child's own cooperation
+   * contract. Idempotent and a no-op once the direct child has exited (the
+   * pid may be reused). Windows has no POSIX signal delivery: providers
+   * implement this as a no-op on `win32`, matching {@link terminate}'s
+   * per-platform documented behavior instead of throwing.
+   */
+  interrupt(): void
+  /**
    * Wait until the process tree has exited — the tree, not just the direct
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.

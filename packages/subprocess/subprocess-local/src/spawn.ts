@@ -463,6 +463,20 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     kill('SIGKILL')
   }
 
+  // A cooperative request to the direct child only, never the tree: unlike
+  // kill()'s POSIX group signal (tier-scoped for terminate()'s escalation),
+  // interrupt() must not reach a detached descendant the child itself spawned.
+  // Windows has no POSIX signal delivery, so this is a documented no-op there
+  // rather than the tree-wide force-terminate `child.kill()` would perform.
+  const interrupt = (): void => {
+    if (platform === 'win32' || child.exitCode !== null || child.signalCode !== null) return
+    try {
+      child.kill('SIGINT')
+    } catch {
+      // The direct child already exited; interrupt() is a documented no-op past exit.
+    }
+  }
+
   // The caller owns timeout classification; this layer only reacts to abort.
   const onAbort = (): void => { terminate() }
   spec.signal?.addEventListener('abort', onAbort, { once: true })
@@ -545,6 +559,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     done,
     terminate,
     terminateForHostExit,
+    interrupt,
     waitForExit,
   }
 }

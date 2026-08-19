@@ -25,12 +25,35 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
+// scanRoot's own catch narrows on `PresetMetadataError` and rethrows anything
+// else unchanged; `readPresetMetadata` today wraps every failure it produces
+// into that type, so exercising the rethrow requires a metadata failure from
+// outside its own error handling, not one more `node:fs/promises` injection.
+const metadataHarness = vi.hoisted(() => ({
+  throwRawErrorForDirectory: undefined as string | undefined,
+}))
+
+vi.mock('../src/metadata.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/metadata.ts')>()
+  return {
+    ...actual,
+    readPresetMetadata: (async (directory: string, options?: { readonly required?: boolean }) => {
+      if (metadataHarness.throwRawErrorForDirectory === basename(directory)) {
+        metadataHarness.throwRawErrorForDirectory = undefined
+        throw new Error('injected non-PresetMetadataError failure')
+      }
+      return actual.readPresetMetadata(directory, options)
+    }) as typeof actual.readPresetMetadata,
+  }
+})
+
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const SYSTEM = { path: join(FIXTURES, 'system'), trust: 'system' as const }
 const USER = { path: join(FIXTURES, 'user'), trust: 'user' as const }
 
 beforeEach(() => {
   fsHarness.readErrorFile = undefined
+  metadataHarness.throwRawErrorForDirectory = undefined
 })
 
 describe('display order', () => {
@@ -130,6 +153,17 @@ describe('copy eligibility', () => {
     expect(fsHarness.readErrorFile).toBeUndefined()
     expect(found?.broken).toMatch(/preset\.yml cannot be read/)
     expect(found?.copyable).toBe(false)
+  })
+
+  it('propagates a metadata failure that is not a PresetMetadataError instead of marking the row broken', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-copyable-'))
+    await mkdir(join(root, 'unexpected'), { recursive: true })
+    await writeFile(join(root, 'unexpected', COMPOSITION_FILE), '[]\n')
+    metadataHarness.throwRawErrorForDirectory = 'unexpected'
+
+    await expect(scanRoot({ path: root, trust: 'user' }))
+      .rejects.toThrow('injected non-PresetMetadataError failure')
+    expect(metadataHarness.throwRawErrorForDirectory).toBeUndefined()
   })
 })
 

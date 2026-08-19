@@ -81,7 +81,7 @@ async function captureFiles(
 }
 
 describe('ScienceRuntime.annotateArtifact', () => {
-  it('curates the latest version, reusing its attachment and provenance, with origin model', async () => {
+  it('curates the latest version in place, reusing its attachment and provenance, with origin model', async () => {
     const root = tmp('.science-annotate-latest-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -97,7 +97,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })
 
     expect(annotated.artifactId).toBe(captured?.artifactId)
-    expect(annotated.version).toBe(2)
+    // Titling content the session already holds is not a second result: the
+    // curated metadata replaces the captured version rather than standing
+    // beside a byte-identical predecessor.
+    expect(annotated.version).toBe(1)
     expect(annotated.title).toBe('Result summary')
     expect(annotated.caption).toBe('The final table')
     expect(annotated.origin).toBe('model')
@@ -105,7 +108,9 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(annotated.runId).toBe(runId)
     expect(annotated.environmentRevision).toBe(captured?.environmentRevision)
     expect(annotated.environmentFingerprint).toBe(captured?.environmentFingerprint)
-    expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1, 2])
+    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv')
+    expect(artifacts?.map(a => a.version)).toEqual([1])
+    expect(artifacts?.at(0)?.title).toBe('Result summary')
   })
 
   it('curates a non-image artifact identically: no width/height required', async () => {
@@ -124,7 +129,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect('width' in annotated.attachment).toBe(false)
   })
 
-  it('curates an exact named version, not necessarily the latest, while still advancing the next contiguous version', async () => {
+  it('curates an exact named version in place, leaving every other version untouched', async () => {
     const root = tmp('.science-annotate-exact-version-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -139,12 +144,16 @@ describe('ScienceRuntime.annotateArtifact', () => {
       session, logicalName: 'notes.txt', version: 1, title: 'Original notes',
       ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
     })
-    expect(annotated.version).toBe(3)
+    expect(annotated.version).toBe(1)
     expect(annotated.attachment).toEqual(v1?.attachment)
     expect(annotated.runId).toBe(v1?.runId)
+    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'notes.txt')
+    expect(artifacts?.map(a => a.version)).toEqual([1, 2])
+    expect(artifacts?.at(0)?.title).toBe('Original notes')
+    expect(artifacts?.at(1)?.origin).toBe('auto')
   })
 
-  it('supports a curation chain: repeated annotate calls keep the artifactId stable and versions contiguous', async () => {
+  it('supports a curation chain: repeated annotate calls retitle the same version', async () => {
     const root = tmp('.science-annotate-chain-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -161,8 +170,11 @@ describe('ScienceRuntime.annotateArtifact', () => {
       ...authorizeAnnotateArtifact(session, 'science-annotate-chain-call-2'), signal: new AbortController().signal,
     })
     expect(second.artifactId).toBe(first.artifactId)
-    expect(second.version).toBe(first.version + 1)
+    expect(second.version).toBe(first.version)
     expect(second.title).toBe('final')
+    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'plot.json')
+    expect(artifacts?.map(a => a.version)).toEqual([1])
+    expect(artifacts?.at(0)?.title).toBe('final')
   })
 
   it('rejects an unknown logical_name', async () => {

@@ -51,10 +51,14 @@ function latestRunId(options: GenerateOptions): string {
 }
 
 /** The artifact identity the `annotate_artifact` receipt reported. */
-function curatedArtifactId(options: GenerateOptions): string {
-  const match = /\(([^)]+)\) curated from run /.exec(toolResultTexts(options).join('\n'))
-  if (match?.[1] === undefined) throw new Error('science-mock-llm: no annotate_artifact receipt names an artifact id')
-  return match[1]
+function curatedArtifactRef(options: GenerateOptions): { readonly chartId: string; readonly version: number } {
+  // Cite what the receipt reported rather than a version number written into
+  // the fixture: a curated version is the one the model was told it curated.
+  const match = /" v(\d+) \(([^)]+)\) curated from run /.exec(toolResultTexts(options).join('\n'))
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error('science-mock-llm: no annotate_artifact receipt names an artifact version and id')
+  }
+  return { chartId: match[2], version: Number(match[1]) }
 }
 
 function writeCapture(options: GenerateOptions): void {
@@ -105,16 +109,18 @@ class ScienceMockAdapter extends LlmAdapter {
           caption: 'Deterministic snapshot chart',
         })
         return
-      case 3:
+      case 3: {
+        const chart = curatedArtifactRef(options)
         yield * toolCall('science-outcome-call', 'publish_outcome', {
           title: 'Snapshot finding',
           summary_markdown: 'The deterministic run produced the **cited chart**.',
           evidence: [
             { kind: 'run', run_id: latestRunId(options) },
-            { kind: 'chart', chart_id: curatedArtifactId(options), version: 2 },
+            { kind: 'chart', chart_id: chart.chartId, version: chart.version },
           ],
         })
         return
+      }
       case 4:
         yield * toolCall('science-state-call-2', 'get_science_state', {})
         return

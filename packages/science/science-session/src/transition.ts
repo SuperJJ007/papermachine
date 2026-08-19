@@ -140,12 +140,12 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     throw new Error('Science artifact must reference a run that reached a terminal status')
   }
   const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
-  // An auto-captured version (origin 'auto') is not a distinct model-issued
+  // An auto-captured save (origin 'auto') is not a distinct model-issued
   // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
   // already proven and consumed by that run's science/run-started fact, so it
   // never re-consumes a tool call — many captured files share one run's call.
-  // A curated version (origin 'model', today only annotate_artifact) consumes
-  // a fresh tool call exactly once, as before.
+  // A curating save (origin 'model', today only annotate_artifact) consumes a
+  // fresh tool call exactly once, whether it opens a version or supersedes one.
   let toolCallTime: number | undefined
   let consumedToolCallSeq: number | undefined
   if (artifact.origin === 'auto') {
@@ -171,23 +171,43 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     || artifact.createdAt > event.time) {
     throw new Error('Science artifact creation time is outside its supporting-fact event interval')
   }
+  // A version is what one request turn produced, so a re-save either opens the
+  // next version or supersedes an existing one in place. Superseding is
+  // admitted on exactly two grounds: the save repeats the target version's own
+  // request turn (the model rewrote the same file while still answering that
+  // request), or it repeats the target's attachment byte-for-byte (a
+  // metadata-only curation). Anything else is a new turn changing the content,
+  // which is what a reader means by a new version.
   const logical = state.artifacts.filter(candidate => candidate.logicalName === artifact.logicalName)
-  const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
-  if (logical.length === 0) {
-    if (artifact.version !== 1) throw new Error('the first logical artifact version must be 1')
-    if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
-  } else {
+  const target = logical.find(candidate => candidate.version === artifact.version)
+  if (target === undefined) {
     const latest = logical.at(-1)
-    /* v8 ignore next -- the branch is entered only when logical is non-empty */
-    if (latest === undefined) throw new Error('logical artifact history disappeared during synchronous replay')
-    if (artifact.artifactId !== latest.artifactId
+    if (latest === undefined) {
+      if (artifact.version !== 1) throw new Error('the first logical artifact version must be 1')
+      const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
+      if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
+    } else if (artifact.artifactId !== latest.artifactId
       || artifact.version !== latest.version + 1
       || artifact.createdAt < latest.createdAt) {
       throw new Error('artifact versions must retain artifactId and advance contiguously')
     }
+    state.artifacts.push(artifact)
+    state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
+  } else {
+    if (artifact.artifactId !== target.artifactId || artifact.createdAt < target.createdAt) {
+      throw new Error('artifact versions must retain artifactId and advance contiguously')
+    }
+    if (artifact.requestHeaderSeq !== target.requestHeaderSeq
+      && artifact.attachment.attachmentId !== target.attachment.attachmentId) {
+      throw new Error('a Science artifact version is superseded only by its own request turn or by an unchanged attachment')
+    }
+    state.artifacts[state.artifacts.indexOf(target)] = artifact
+    const factIndex = state.artifactFacts.findIndex(candidate =>
+      candidate.artifactId === artifact.artifactId && candidate.version === artifact.version)
+    /* v8 ignore next -- every accepted version appended its matching fact */
+    if (factIndex < 0) throw new Error('Science artifact event facts disappeared during synchronous replay')
+    state.artifactFacts[factIndex] = { artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time }
   }
-  state.artifacts.push(artifact)
-  state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
   if (consumedToolCallSeq !== undefined) state.consumedToolCallSeqs.push(consumedToolCallSeq)
 }
 

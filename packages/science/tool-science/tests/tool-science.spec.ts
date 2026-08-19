@@ -25,7 +25,7 @@ import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import { ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
@@ -1151,18 +1151,22 @@ describe('annotate_artifact', () => {
     })
     expect(result.isError).toBe(false)
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
-    expect(text).toContain('artifact "plot.png" v2')
+    // Curating the capture retitles it: the reader gets one titled result,
+    // not a titled copy standing beside the untitled original.
+    expect(text).toContain('artifact "plot.png" v1')
     expect(text).toContain('title: Main plot')
     expect(text).toContain('caption: A caption')
     expect(text).not.toMatch(/sha256:/)
+    // Two durable saves (the capture and its curation), one version.
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
+    expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1])
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceArtifactReceiptValue
     expect(value.artifactId).toBeTypeOf('string')
-    expect(value).toMatchObject({ version: 2, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(value).toMatchObject({ version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
     expect(result.meta).toMatchObject({
       kind: 'science/artifact', version: 1,
-      artifacts: [{ version: 2, title: 'Main plot', attachment: { mediaType: 'image/png' } }],
+      artifacts: [{ version: 1, title: 'Main plot', attachment: { mediaType: 'image/png' } }],
     })
   })
 
@@ -1248,7 +1252,7 @@ describe('annotate_artifact', () => {
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
   })
 
-  it('commits contiguous versions for a repeat logical_name, retaining the artifactId', async () => {
+  it('retitles one version for a repeat logical_name, retaining the artifactId', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-versions')
     const run = await runSuccessfully(ctx, session, 'science-annotate-versions-run')
@@ -1268,9 +1272,14 @@ describe('annotate_artifact', () => {
     if (first.isError || second.isError) throw new Error('unreachable')
     const firstValue = first.value as unknown as ScienceArtifactReceiptValue
     const secondValue = second.value as unknown as ScienceArtifactReceiptValue
-    expect(firstValue.version).toBe(2)
+    // Two curation calls over one captured result retitle it twice; neither
+    // is a new result, so the reader keeps seeing one version.
+    expect(firstValue.version).toBe(1)
     expect(secondValue.artifactId).toBe(firstValue.artifactId)
-    expect(secondValue.version).toBe(3)
+    expect(secondValue.version).toBe(1)
+    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'plot.png')
+    expect(artifacts?.map(a => a.version)).toEqual([1])
+    expect(artifacts?.at(0)?.title).toBe('v3')
   })
 
   it('curates an exact named version rather than defaulting to latest', async () => {
@@ -1287,7 +1296,8 @@ describe('annotate_artifact', () => {
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceArtifactReceiptValue
-    expect(value.version).toBe(2)
+    expect(value.version).toBe(1)
+    expect(value.title).toBe('Named version')
   })
 
   it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
@@ -1546,10 +1556,12 @@ describe('get_science_state artifact sanitization', () => {
     expect(state.isError).toBe(false)
     if (state.isError) throw new Error('unreachable')
     const value = state.value as unknown as { artifacts: readonly Record<string, unknown>[] }
-    expect(value.artifacts).toHaveLength(2)
-    const artifact = value.artifacts[1]
+    // The curation retitled the captured version in place, so the model reads
+    // one artifact carrying the curated metadata.
+    expect(value.artifacts).toHaveLength(1)
+    const artifact = value.artifacts[0]
     expect(artifact?.artifactId).toBeTypeOf('string')
-    expect(artifact).toMatchObject({ logicalName: 'plot.png', version: 2, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(artifact).toMatchObject({ logicalName: 'plot.png', version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
     expect(artifact).not.toHaveProperty('attachmentId')
     expect(artifact).not.toHaveProperty('toolCallId')
     expect(artifact).not.toHaveProperty('requestHeaderSeq')

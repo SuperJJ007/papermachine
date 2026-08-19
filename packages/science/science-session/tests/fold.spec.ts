@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   decodeScienceArtifact,
@@ -8,6 +9,7 @@ import {
   decodeScienceOutcome,
   decodeScienceRunStarted,
   decodeScienceRunTerminal,
+  ScienceArtifactId,
   ScienceRunId,
 } from '../src/index.ts'
 import { isScienceDomainEventType } from '../src/codec.ts'
@@ -30,6 +32,7 @@ import {
   outcome,
   runStarted,
   runTerminal,
+  toolCall,
 } from './fixtures.ts'
 
 describe('strict Science fold', () => {
@@ -219,6 +222,108 @@ describe('strict Science fold', () => {
       'science/outcome-published',
     ].every(isScienceDomainEventType)).toBe(true)
     expect(isScienceDomainEventType('science/future-event')).toBe(false)
+  })
+
+  it('supersedes a version in place when a later save repeats its request turn', () => {
+    const events = legalEvents().slice(0, 8)
+    events.push(
+      toolCall(8, 180, CallId('second-annotate-call'), 'annotate_artifact'),
+      event('science/artifact-saved', 9, 190, {
+        version: 1,
+        artifact: artifact({
+          toolCallId: CallId('second-annotate-call'),
+          title: 'Trend, redrawn',
+          attachment: {
+            attachmentId: AttachmentId('attachment-2'),
+            mediaType: 'image/png',
+            bytes: 256,
+            width: 16,
+            height: 9,
+            name: 'trend.png',
+          },
+          createdAt: 185,
+        }),
+      }),
+    )
+
+    const state = foldScience(events)
+
+    // One result the reader asked for, holding the content that turn ended on.
+    expect(state.artifacts).toHaveLength(1)
+    expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Trend, redrawn' })
+    expect(state.artifacts.at(0)?.attachment.attachmentId).toBe('attachment-2')
+    // The retained fact follows the superseding event, so evidence cited
+    // against this version is dated by the save that produced what it holds.
+    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 9, time: 190 }])
+  })
+
+  it('rejects a supersede that renames the artifact or walks its content backwards in time', () => {
+    // Auto-captured saves need no curation call, so both candidates below
+    // reach the supersede rules on the same turn the capture came from.
+    const base = legalEvents().slice(0, 6)
+    base.push(event('science/artifact-saved', 6, 170, { version: 1, artifact: autoArtifact({ createdAt: 168 }) }))
+
+    const renamed = base.slice()
+    renamed.push(event('science/artifact-saved', 7, 175, {
+      version: 1,
+      artifact: autoArtifact({ artifactId: ScienceArtifactId('a-different-artifact'), createdAt: 169 }),
+    }))
+    expect(() => foldScience(renamed)).toThrow(/must retain artifactId and advance contiguously/)
+
+    // A stale save must not overwrite a version with content committed before it.
+    const backdated = base.slice()
+    backdated.push(event('science/artifact-saved', 7, 175, {
+      version: 1,
+      artifact: autoArtifact({ createdAt: 160 }),
+    }))
+    expect(() => foldScience(backdated)).toThrow(/must retain artifactId and advance contiguously/)
+  })
+
+  it('supersedes across turns only for an unchanged attachment, never for new content', () => {
+    const curated = legalEvents().slice(0, 8)
+    curated.push(
+      event('request/header', 8, 178, {
+        header: { config: { provider: 'test', model: 'test-model' } },
+        reason: 'initial',
+      }),
+      toolCall(9, 180, CallId('later-annotate-call'), 'annotate_artifact', { turn: 2, step: 1 }),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({
+          toolCallId: CallId('later-annotate-call'),
+          requestHeaderSeq: 8,
+          title: 'Titled a turn later',
+          createdAt: 185,
+        }),
+      }),
+    )
+
+    // Metadata-only curation carries the same attachment, so titling a result
+    // in a later turn retitles it rather than cloning it.
+    const state = foldScience(curated)
+    expect(state.artifacts).toHaveLength(1)
+    expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Titled a turn later' })
+
+    // New content in a new turn is a new result, and must not reuse the
+    // version number a reader already saw.
+    const rewritten = curated.slice()
+    rewritten[10] = event('science/artifact-saved', 10, 190, {
+      version: 1,
+      artifact: artifact({
+        toolCallId: CallId('later-annotate-call'),
+        requestHeaderSeq: 8,
+        attachment: {
+          attachmentId: AttachmentId('attachment-3'),
+          mediaType: 'image/png',
+          bytes: 256,
+          width: 16,
+          height: 9,
+          name: 'trend.png',
+        },
+        createdAt: 185,
+      }),
+    })
+    expect(() => foldScience(rewritten)).toThrow(/superseded only by its own request turn or by an unchanged attachment/)
   })
 
   it('rejects discontinuous revisions, duplicate identities, and backward Science time', () => {

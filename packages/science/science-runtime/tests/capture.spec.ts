@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -95,6 +96,22 @@ async function runWithFiles(
   return { runId: handle.runId, result }
 }
 
+/**
+ * Authorize one more run inside the turn the session is already answering:
+ * a fresh tool call against the latest `request/header`, with no new header
+ * of its own (`authorizePythonRun` opens a new turn every time).
+ */
+function authorizeSameTurnRun(session: Session, id: string): {
+  readonly toolCallId: ReturnType<typeof CallId>
+  readonly requestHeaderSeq: number
+} {
+  const header = session.events.filter(event => event.type === 'request/header').at(-1)
+  if (header === undefined) throw new Error('capture test: the session has no request/header to reuse')
+  const toolCallId = CallId(id)
+  session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{}' })
+  return { toolCallId, requestHeaderSeq: header.seq }
+}
+
 describe('Science auto-capture', () => {
   it('captures a new file as version 1 with origin auto, and a changed file as version 2', async () => {
     const root = tmp('.science-capture-new-changed-')
@@ -121,6 +138,39 @@ describe('Science auto-capture', () => {
     const projection = replayScience(session.events)
     const versions = projection?.artifacts.filter(candidate => candidate.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2])
+  })
+
+  it('supersedes rather than versions when the same turn rewrites the file: iteration is not a result', async () => {
+    const root = tmp('.science-capture-same-turn-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-same-turn')
+
+    const first = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    expect(first.result.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 1 })
+
+    // A second run answering the SAME request: the model rewrote its own
+    // output rather than producing a second result for the reader.
+    const run = harness.subprocess.queueRun('immediate')
+    const handle = await harness.runtime.startRun({
+      session, language: 'python', code: 'print(2)',
+      ...authorizeSameTurnRun(session, 'capture-same-turn-second'),
+      signal: new AbortController().signal,
+    })
+    await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')
+    run.complete({ exitCode: 0, signal: null })
+    const second = await handle.done
+    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 1 })
+
+    const versions = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
+    expect(versions.map(v => v.version)).toEqual([1])
+    // The surviving version is the turn's final content, and it carries the
+    // run that actually produced it.
+    expect(versions.at(0)?.runId).toBe(handle.runId)
+    expect(versions.at(0)?.attachment.attachmentId).not.toBe(first.result.capture?.captured[0]?.attachment.attachmentId)
+    // Both saves stay in the log; only the projected version list collapses.
+    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
   })
 
   it('skips an identical rerun of the same file: no new version, no new event', async () => {

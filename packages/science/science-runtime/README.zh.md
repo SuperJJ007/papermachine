@@ -39,11 +39,11 @@
 
 ### 自动捕获
 
-每个 run 的 terminal fact 一旦提交——无论 success、failed、timed-out 还是 cancelled——Runtime 会立即遍历该 run 私有的 `SCIENCE_ARTIFACT_DIR`，把每个合格文件按其相对该目录的路径（`plots/loss.png`、`summary.csv`）持久保存为对应逻辑 artifact 的下一个版本。合格是指：路径任一 segment 都不是 dotfile 或 dot-directory，且小写扩展名属于固定 allowlist `.csv`、`.json`、`.md`、`.png`、`.txt`——这份文件格式 allowlist 与附件存储自身固定的 `mediaTypes` 集合一致，不是 Loader 可配置项。被捕获的版本带有 `origin: 'auto'`，标题等于文件的 basename；内容寻址使接纳具有幂等性,因此同一逻辑名的字节级相同重跑会被静默跳过，不会提交多余版本。
+每个 run 的 terminal fact 一旦提交——无论 success、failed、timed-out 还是 cancelled——Runtime 会立即遍历该 run 私有的 `SCIENCE_ARTIFACT_DIR`，把每个合格文件按其相对该目录的路径（`plots/loss.png`、`summary.csv`）持久保存为对应逻辑 artifact 的当前版本。一个版本就是某一轮请求所产出的内容：若某次 run 回答的仍是当前版本所来自的那一个请求，它会就地取代该版本，因此读者的版本列表装的是结果，而不是其背后逐次运行的迭代过程；而新一轮的首次 run 则会开启下一个版本。合格是指：路径任一 segment 都不是 dotfile 或 dot-directory，且小写扩展名属于固定 allowlist `.csv`、`.json`、`.md`、`.png`、`.txt`——这份文件格式 allowlist 与附件存储自身固定的 `mediaTypes` 集合一致，不是 Loader 可配置项。被捕获的版本带有 `origin: 'auto'`，标题等于文件的 basename；内容寻址使接纳具有幂等性,因此同一逻辑名的字节级相同重跑会被静默跳过，不会提交多余版本。
 
 `captureMaxFileBytes` 限定单个文件的可接纳大小(超限文件会被跳过并计数，绝不导致 run 失败——包括部署方附件上限比该值更小的情形)。`captureMaxFilesPerRun` 限定单次 run 尝试的合格文件数；超出的部分会被截断(不予尝试)并在返回的统计中标记。`captureMaxArtifactVersionsPerSession` 限定一个 session 通过自动捕获在所有 run 之间累积的 artifact 版本数；一旦达到，自动捕获会在该 run 剩余部分及此后的每个 run 中停止追加新版本并做出标记，直到未来的保留策略回收空间为止。捕获失败——无论是超限文件、触发上限，还是意外异常——都绝不会使已经提交了 terminal fact 的 run 失败。
 
-`annotateArtifact({ session, logicalName, version, title, caption, toolCallId, requestHeaderSeq, signal })` 针对当前 live Science projection 解析所命名逻辑 artifact 的精确 `version`(省略时取其最新版本)，并把其内容寻址、未改变的 `attachment` 重新提交为下一个连续版本，携带传入的 `title`/`caption` 与 `origin: 'model'`。它从不读取文件系统、从不调用 `ctx.attachments`，也从不公开 Host path；除共享的 pre-publication 失败外，唯一的失败模式是当 `logicalName` 或其命名的 `version` 在本 session 中不存在时拒绝并抛出 `ARTIFACT_NOT_FOUND`。
+`annotateArtifact({ session, logicalName, version, title, caption, toolCallId, requestHeaderSeq, signal })` 针对当前 live Science projection 解析所命名逻辑 artifact 的精确 `version`(省略时取其最新版本)，并把其内容寻址、未改变的 `attachment` 重新提交为该版本自身的替换值，携带传入的 `title`/`caption` 与 `origin: 'model'`。策展是加在 session 已持有的内容之上的元数据，因此它绝不会推进读者所看到的版本号。它从不读取文件系统、从不调用 `ctx.attachments`，也从不公开 Host path；除共享的 pre-publication 失败外，唯一的失败模式是当 `logicalName` 或其命名的 `version` 在本 session 中不存在时拒绝并抛出 `ARTIFACT_NOT_FOUND`。
 
 Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。start event 提交后，普通 process、runner、denial、取消与超时 outcome 都会追加一个匹配的 terminal event，紧接着就是上文的自动捕获遍历。如果有界结算无法证明整棵 process tree 静止，`done` 会拒绝，但 Runtime 会保留 lease；后续 positive proof 会先向 still-live Session 追加 terminal fact、运行它自己的自动捕获遍历，再释放 lease，而 false 或 rejected proof 会继续保持 quarantine。still-live Session 不能提交 terminal fact，或意外 detached Session 使提交被禁止时，`done` 也会拒绝。
 

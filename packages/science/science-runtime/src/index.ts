@@ -328,13 +328,15 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Re-commit an existing artifact version's exact attachment reference as a
-   * new curated version: metadata-only, so it never reads or writes the
-   * filesystem and never calls the attachment store. A committed event is
-   * never rolled back because a later step fails; there is no later step
-   * here that can fail after the append.
+   * Re-commit an existing artifact version's exact attachment reference with
+   * a curated title and caption: metadata-only, so it never reads or writes
+   * the filesystem and never calls the attachment store, and it supersedes
+   * the version it names rather than opening a new one whose bytes would
+   * repeat their predecessor's. A committed event is never rolled back
+   * because a later step fails; there is no later step here that can fail
+   * after the append.
    * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
-   * @returns The durable curated version this operation appended.
+   * @returns The durable curated version this operation committed.
    */
   annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion> {
     // Metadata-only: every step below is synchronous, so this avoids `async`
@@ -348,7 +350,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       const lease = this.reserve(request.session, request.signal)
       try {
         this.assertPrepublication(request.session, lease.control)
-        const artifact = this.nextAnnotatedVersion(projection, request)
+        const artifact = this.curatedVersion(projection, request)
         request.session.append('science/artifact-saved', { version: 1, artifact })
         return Promise.resolve(artifact)
       } catch (error) {
@@ -365,16 +367,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Resolve the exact source version `request` names (its exact `version`,
-   * or the logical artifact's latest version), then build the next
-   * contiguous curated version reusing that source's content-addressed
-   * `attachment` and originating-run provenance unchanged.
+   * or the logical artifact's latest version), then build that same version's
+   * curated replacement, reusing its content-addressed `attachment` and
+   * originating-run provenance unchanged.
    * @param projection - exact live Science projection.
    * @param request - the annotate request naming the target logical artifact.
-   * @returns the complete curated version to append.
+   * @returns the complete curated version to commit.
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
    *   (or its named `version`) does not exist in this session.
    */
-  private nextAnnotatedVersion(
+  private curatedVersion(
     projection: ScienceProjection,
     request: AnnotateScienceArtifactRequest,
   ): ScienceArtifactVersion {
@@ -397,7 +399,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     return {
       artifactId: latest.artifactId,
       logicalName: request.logicalName,
-      version: latest.version + 1,
+      // Curation is metadata over content the session already holds, so it
+      // supersedes the version it names instead of opening one whose bytes
+      // would be identical to its predecessor's.
+      version: source.version,
       title: request.title,
       ...(request.caption === undefined ? {} : { caption: request.caption }),
       origin: 'model',

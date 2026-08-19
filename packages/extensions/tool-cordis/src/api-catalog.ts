@@ -1054,9 +1054,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
-        description: 'Re-commit an existing artifact version\'s exact attachment reference as a new curated version: metadata-only, so it never reads or writes the filesystem and never calls the attachment store. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        description: 'Re-commit an existing artifact version\'s exact attachment reference with a curated title and caption: metadata-only, so it never reads or writes the filesystem and never calls the attachment store, and it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
         parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
-        returns: 'The durable curated version this operation appended.',
+        returns: 'The durable curated version this operation committed.',
       },
     ],
   },

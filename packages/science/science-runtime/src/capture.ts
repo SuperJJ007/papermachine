@@ -166,7 +166,13 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     const artifact: ScienceArtifactVersion = {
       artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
       logicalName: relativePath,
-      version: latest === undefined ? 1 : latest.version + 1,
+      // A version is what one request turn produced: rewriting the same file
+      // while still answering the request that produced it supersedes that
+      // version rather than opening another one, so the reader's version list
+      // holds results rather than the run-to-run iteration behind them.
+      version: latest === undefined
+        ? 1
+        : latest.requestHeaderSeq === sourceRun.requestHeaderSeq ? latest.version : latest.version + 1,
       title: basename(relativePath),
       origin: 'auto',
       attachment,

@@ -206,20 +206,28 @@ export interface ScienceRunInterrupted extends ScienceRunIdentity {
 export type ScienceRun = ScienceRunStarted | ScienceRunTerminal | ScienceRunInterrupted
 
 /**
- * Whether one artifact version reached the session through unattended
- * capture or a model-directed curation call. Distinguishes every run-written
- * file the Runtime captured automatically from a version the model
- * explicitly imported or annotated.
+ * Whether one artifact version's current title and caption came from
+ * unattended capture or from a model-directed curation call. `auto` names a
+ * run-written file the Runtime captured and titled from its own basename;
+ * `model` names a version the model deliberately titled through
+ * `annotate_artifact`, which is what marks it as the result worth showing a
+ * reader first. Curation supersedes the version it names, so the two values
+ * describe one version's current metadata rather than two separate versions.
  */
 export type ScienceArtifactOrigin = 'auto' | 'model'
 
-/** One immutable version of a logical Science artifact. */
+/** One version of a logical Science artifact: the content one request turn produced. */
 export interface ScienceArtifactVersion {
   /** Stable artifact identity shared by every version. */
   readonly artifactId: ScienceArtifactId
   /** Stable logical artifact name within the session. */
   readonly logicalName: string
-  /** Positive version, contiguous within the logical artifact. */
+  /**
+   * Positive version, contiguous within the logical artifact. A version is
+   * what one request turn produced: saves that repeat the version's own turn,
+   * or repeat its attachment unchanged, supersede that version instead of
+   * opening the next one.
+   */
   readonly version: number
   /**
    * Human-readable title: always populated, either model-supplied or the
@@ -228,7 +236,7 @@ export interface ScienceArtifactVersion {
   readonly title: string
   /** Optional human-readable caption; only ever model-supplied. */
   readonly caption?: string
-  /** Whether this version reached the session through capture or curation. */
+  /** Whether this version's current title and caption are capture-derived or model-curated. */
   readonly origin: ScienceArtifactOrigin
   /** Immutable attachment metadata: an image, or admitted UTF-8 text. */
   readonly attachment: ImageAttachmentRef | TextAttachmentRef
@@ -242,7 +250,7 @@ export interface ScienceArtifactVersion {
   readonly environmentRevision: number
   /** Environment fingerprint inherited from the source run. */
   readonly environmentFingerprint: string
-  /** Epoch milliseconds when the immutable attachment was committed. */
+  /** Epoch milliseconds when this version's current content and metadata were committed. */
   readonly createdAt: number
 }
 

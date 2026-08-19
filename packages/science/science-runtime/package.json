@@ -38,9 +38,9 @@
     "lib/invariant.js",
     "lib/with-settings.js",
     "lib/types-*.js",
+    "assets",
     "lib/types/**/*.js",
-    "lib/types/**/*.d.ts",
-    "assets"
+    "lib/types/**/*.d.ts"
   ],
   "scripts": {
     "test:real-acceptance": "node --import tsx/esm tests/real-acceptance.ts"

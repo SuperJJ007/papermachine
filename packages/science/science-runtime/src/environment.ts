@@ -11,7 +11,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
 import type { ConfiguredProfile } from './config.ts'
-import { assertPrefixReadOnly, confineWithFullEnforcement } from './execution.ts'
+import { assertPrefixReadOnly, confineWithFullEnforcement, interpreterPathEnv } from './execution.ts'
 import { containsPath, createProbeScratch, planProbeScratch, removeProbeScratch } from './scratch.ts'
 import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
@@ -41,14 +41,6 @@ const WINDOWS_LAYOUT = { python: ['python.exe'], r: ['Scripts', 'Rscript.exe'] }
 const EXECUTABLE_LAYOUTS: Record<NodeJS.Platform, typeof POSIX_LAYOUT | typeof WINDOWS_LAYOUT> = {
   aix: POSIX_LAYOUT, android: POSIX_LAYOUT, darwin: POSIX_LAYOUT, freebsd: POSIX_LAYOUT, haiku: POSIX_LAYOUT,
   linux: POSIX_LAYOUT, netbsd: POSIX_LAYOUT, openbsd: POSIX_LAYOUT, sunos: POSIX_LAYOUT, win32: WINDOWS_LAYOUT, cygwin: POSIX_LAYOUT,
-}
-const PATH_DIRECTORIES: Record<NodeJS.Platform, string> = {
-  aix: 'bin', android: 'bin', darwin: 'bin', freebsd: 'bin', haiku: 'bin', linux: 'bin',
-  netbsd: 'bin', openbsd: 'bin', sunos: 'bin', win32: 'Scripts', cygwin: 'bin',
-}
-const PATH_SUFFIXES: Record<NodeJS.Platform, string> = {
-  aix: ':/usr/bin:/bin', android: ':/usr/bin:/bin', darwin: ':/usr/bin:/bin', freebsd: ':/usr/bin:/bin', haiku: ':/usr/bin:/bin',
-  linux: ':/usr/bin:/bin', netbsd: ':/usr/bin:/bin', openbsd: ':/usr/bin:/bin', sunos: ':/usr/bin:/bin', win32: '', cygwin: ':/usr/bin:/bin',
 }
 
 /** Stable facts required to start a selected interpreter. */
@@ -143,7 +135,7 @@ function probeEnvironment(prefix: string, scratch: ScienceProbeScratch): NodeJS.
   return {
     HOME: scratch.home,
     TMPDIR: scratch.tmp,
-    PATH: `${join(prefix, PATH_DIRECTORIES[process.platform])}${PATH_SUFFIXES[process.platform]}`,
+    PATH: interpreterPathEnv(prefix),
     ...localeEnvironment(),
   }
 }

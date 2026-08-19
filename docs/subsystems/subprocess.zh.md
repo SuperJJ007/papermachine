@@ -140,7 +140,7 @@ interface SubprocessSpawnSpec {
 
 ## 句柄：流、读取器与以进程树为范围的终止
 
-spawn 会立即返回一个活动句柄。收集模式的读取器接受全流字节偏移量且从不消费，因此独立的读取器不会抢走彼此的增量；管道化的流归调用方所有。终止在每个平台上都以进程树为范围：`terminate()`（唯一的终止动词）执行 SIGTERM→宽限期→SIGKILL 升级，`waitForExit()` 观察整棵进程树。这足以让消费方构建自己的分级清理流程；ACP 后端的 `disposeAcpChild` 会先关闭 stdin，让子进程收到 EOF，是仓库内的参考实现。
+spawn 会立即返回一个活动句柄。收集模式的读取器接受全流字节偏移量且从不消费，因此独立的读取器不会抢走彼此的增量；管道化的流归调用方所有。终止在每个平台上都以进程树为范围：`terminate()`（唯一的终止动词）执行 SIGTERM→宽限期→SIGKILL 升级，`waitForExit()` 观察整棵进程树。这足以让消费方构建自己的分级清理流程；ACP 后端的 `disposeAcpChild` 会先关闭 stdin，让子进程收到 EOF，是仓库内的参考实现。`interrupt()` 是另一个范围更窄的动词：仅向直接子进程发出协作式 SIGINT 请求，不承诺任何升级或完全停稳，且在 `win32` 上有文档记录的空操作行为。
 
 ```ts type-equiv
 /**
@@ -172,6 +172,18 @@ interface SubprocessHandle {
    * and also triggered by the spec's abort signal.
    */
   terminate(): void
+  /**
+   * Request a cooperative interrupt: deliver SIGINT to the direct child
+   * process only, never the tree it may have spawned. This is a request, not
+   * a termination verb — whether and how the child reacts (aborting current
+   * work, replying over its own protocol, exiting, or ignoring the signal
+   * entirely) is between the caller and that child's own cooperation
+   * contract. Idempotent and a no-op once the direct child has exited (the
+   * pid may be reused). Windows has no POSIX signal delivery: providers
+   * implement this as a no-op on `win32`, matching {@link terminate}'s
+   * per-platform documented behavior instead of throwing.
+   */
+  interrupt(): void
   /**
    * Wait until the process tree has exited — the tree, not just the direct
    * child, so a still-running helper is observable before teardown returns.
@@ -300,7 +312,7 @@ Implementations must honor these semantics:
 - Executable paths belong to one execution world shared with the mounted filesystem provider.
 - spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.
 - Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another's output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.
-- SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.
+- SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence. SubprocessHandle.interrupt is the seam's one cooperative-request verb: SIGINT to the direct child only, a no-op on `win32`.
 - Disposal of the service terminates all still-running managed processes and awaits their exit.
 - spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.
 
@@ -336,5 +348,5 @@ abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
-Source: [`packages/subprocess/subprocess/src/index.ts:119`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/index.ts:121`](../../packages/subprocess/subprocess/src/index.ts)
 <!-- END GENERATED cordis-surface -->

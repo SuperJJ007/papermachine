@@ -57,13 +57,26 @@ read_request_line <- function() {
   }
 }
 
-execute_run <- function(run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir) {
+execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir) {
   orig_cwd <- getwd()
   orig_tmpdir <- Sys.getenv("TMPDIR", unset = NA)
   orig_artifact <- Sys.getenv("SCIENCE_ARTIFACT_DIR", unset = NA)
 
   setwd(cwd)
   Sys.setenv(TMPDIR = cwd, SCIENCE_ARTIFACT_DIR = artifact_dir)
+  # Safety net for an interrupt that unwinds through this function before
+  # reaching the explicit restore near the end (A1 finding 12): on.exit
+  # runs on every exit path, including one no tryCatch below protects
+  # because the interrupt landed before that tryCatch was entered.
+  on.exit({
+    setwd(orig_cwd)
+    if (is.na(orig_tmpdir)) Sys.unsetenv("TMPDIR") else Sys.setenv(TMPDIR = orig_tmpdir)
+    if (is.na(orig_artifact)) {
+      Sys.unsetenv("SCIENCE_ARTIFACT_DIR")
+    } else {
+      Sys.setenv(SCIENCE_ARTIFACT_DIR = orig_artifact)
+    }
+  }, add = TRUE)
 
   # Record sink depth before pushing our own diversion so a run whose user
   # code calls sink() itself (push or pop, matched or not) can be unwound
@@ -75,10 +88,27 @@ execute_run <- function(run_id, source_path, cwd, stdout_path, stderr_path, arti
   err_con <- file(stderr_path, open = "wt")
   sink(out_con, type = "output")
   sink(err_con, type = "message")
+  # Safety net for an interrupt landing between here and the tryCatch below
+  # (A1 finding 12): best-effort depth-only unwind so the sink stack and
+  # these file connections never leak past this run. The explicit unwind
+  # after the tryCatch is what a normally-returning run relies on for its
+  # capture_degraded accounting; this duplicates it harmlessly there.
+  on.exit({
+    while (sink.number(type = "message") > msg_sink_before) {
+      popped <- tryCatch({ sink(type = "message"); TRUE }, error = function(e) FALSE)
+      if (!popped) break
+    }
+    while (sink.number(type = "output") > out_sink_before) {
+      popped <- tryCatch({ sink(); TRUE }, error = function(e) FALSE)
+      if (!popped) break
+    }
+    tryCatch(close(out_con), error = function(e) NULL)
+    tryCatch(close(err_con), error = function(e) NULL)
+  }, add = TRUE)
 
   result <- tryCatch(
     {
-      source(source_path, local = .GlobalEnv, echo = FALSE)
+      source(source_path, local = .GlobalEnv, echo = FALSE, print.eval = TRUE)
       list(status = "ok", detail = "")
     },
     interrupt = function(c) {
@@ -156,7 +186,7 @@ repeat {
     stdout_path <- parts[5]
     stderr_path <- parts[6]
     artifact_dir <- parts[7]
-    result <- execute_run(run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir)
+    result <- execute_run(source_path, cwd, stdout_path, stderr_path, artifact_dir)
     send(sprintf("DONE\t%s\t%s\t%s\t%s", run_id, result$status, result$detail, result$flags))
   }
   # Unknown commands are ignored, keeping the driver forward-tolerant of

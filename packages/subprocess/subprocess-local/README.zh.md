@@ -7,6 +7,7 @@
 ## 行为
 
 - **以适合平台的方式发送信号的 detached 进程树**：POSIX 子进程使用 `detached` spawn（拥有独立进程组），信号以负 pgid 发送并以直接子进程作为回退；Windows 通过 `taskkill /PID <pid> /T /F` 终止进程树。`terminate()`（句柄唯一的终止操作）先发送 SIGTERM，经过 spec 的宽限期后再发送 SIGKILL（沿用 OpenCode 的升级策略；流水线与子 shell 会随父进程一起结束），进程树消亡后为空操作；`waitForExit()` 轮询整棵进程树的存活状态，使消费方的拆卸能确认真正的完全停稳。组长进程退出后，仍然打开的管道也只获得同样有界的排空宽限期，因此存活的后代进程无法无限期地拖住结果不结算。系统会容忍 ESRCH；重新指定父进程并脱离该组的 daemon 仍可能存活。
+- **协作式中断仅面向直接子进程**：`interrupt()` 直接向被 spawn 的 `ChildProcess` 发送 SIGINT，而不是 `terminate()` 所使用的负 pgid，因此子进程自己 spawn 的后代永远不会收到该信号。Node 观察到直接子进程本身退出后，该操作即为空操作；在 `win32` 上同样为空操作，因为没有 POSIX 信号可以投递。
 - **按流划分的处置方式**：`'pipe'` 把原始流原样交给调用方（协议分帧仍归消费方所有）；`'inherit'` 直通父进程的描述符；收集模式（collect）在输出超过上限后于内存中保留尾部（错误与结果通常聚集在末尾，沿用 pi/OpenCode 的理由），并在配置了 spill 上限时把完整流追加到一个私有临时文件；省略 `spill` 则只保留用于诊断的尾部。某条流大于 spill 上限时，会丢弃已不完整的 spill，仅返回带截断标记的尾部；spill 文件描述符在结算时封存，最终关闭失败时则不公布路径，以免声称存在不完整的文件。spill 文件权限为 `0600`、名称随机，位于按需创建、权限为 `0700` 的每进程目录之下。
 - **凭据清除 + 显式合并**：先应用 `environmentBase`（`'scrubbed-parent'` 以 `process.env` 为基础，移除形似凭据的变量（`*KEY*`／`*PASSWORD*`／`*SECRET*`／`*TOKEN*`）和所有环境中已有的 `DSH_*` 名称；`'empty'` 从不继承任何名称开始），再合并 spec 的显式 `env` 且不做命名空间校验，因此有意提供的凭据或当前 `DSH_*` 事实会胜出，而陈旧的嵌套 harness 身份无法从环境中隐式漏入。提供的 stdin 会被写入后关闭；否则 fd 0 指向 `/dev/null`。参见 [stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md)与[受管环境 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-agent-session-identity-and-log-location.md)。
 - **宿主本地执行世界**：`executionWorld` 为 `'host-local'`。收集模式读取会在替换解码前，根据所保留的精确字节切片盖上 `utf8Validity`。

@@ -151,7 +151,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // all three from one multi-entry tsdown config: independent bundles would
   // inline a second copy of the Runtime and give the two entries separate
   // class identities. tsdown emits their shared code as a hashed chunk.
-  '@deepseek-ai/dsh-science-runtime': ['lib/with-settings.js', 'lib/types-*.js'],
+  // The kernel driver assets (kernel_python.py, kernel_r.R) ship read-only
+  // beside the lib; kernel-assets.ts resolves them from the package root.
+  '@deepseek-ai/dsh-science-runtime': ['lib/with-settings.js', 'lib/types-*.js', 'assets'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }

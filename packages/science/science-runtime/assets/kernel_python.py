@@ -48,7 +48,7 @@ def rebind_std_streams():
     sys.stderr = os.fdopen(2, "w", encoding="utf-8", closefd=False)
 
 
-def execute_run(global_ns, run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir):
+def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir):
     orig_cwd = os.getcwd()
     orig_tmpdir = os.environ.get("TMPDIR")
     orig_artifact = os.environ.get("SCIENCE_ARTIFACT_DIR")
@@ -75,9 +75,12 @@ def execute_run(global_ns, run_id, source_path, cwd, stdout_path, stderr_path, a
 
     # Idle SIGINT is ignored (installed by the caller before/after this call);
     # during exec, restore the default handler so KeyboardInterrupt is raised
-    # into the running user code.
-    signal.signal(signal.SIGINT, signal.default_int_handler)
+    # into the running user code. The install is the try's first statement so
+    # every path out of the interruptible window, including a failure inside
+    # this line itself, unwinds through the matching finally below and
+    # restores SIG_IGN.
     try:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         code = compile(source, source_path, "exec")
@@ -154,7 +157,7 @@ def main():
         if cmd == "RUN":
             run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir = parts[1:7]
             status, detail = execute_run(
-                global_ns, run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir
+                global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir
             )
             send(resp, "DONE\t%s\t%s\t%s\t%s" % (run_id, status, detail, ""))
         # Unknown commands are ignored, keeping the driver forward-tolerant

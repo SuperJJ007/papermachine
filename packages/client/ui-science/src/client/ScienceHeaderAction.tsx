@@ -1,6 +1,6 @@
 // Session-header action for a built-in Science session: visible only when
 // the current Session summary names the `science` preset, and its one
-// affordance opens the routed `science` Details entry through the
+// affordance toggles the routed `science` Details entry through the
 // owner-supplied callback — it never opens a panel of its own.
 
 import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -18,13 +18,14 @@ export type ScienceHeaderActionProps =
 const SCIENCE_DETAILS_ID = 'science'
 
 /**
- * Render this session's "open Science details" action. Renders nothing at
- * all for a Standard or custom non-Science session, so an ordinary
- * conversation never grows a control for a preset it is not running.
+ * Render this session's Science details action, which both opens and closes
+ * the artifact panel. Renders nothing at all for a Standard or custom
+ * non-Science session, so an ordinary conversation never grows a control for
+ * a preset it is not running.
  * @param props - runtime slot currency plus the science namespace translator.
  * @returns the action button, or null when the session names another preset.
  */
-export function ScienceHeaderAction({ sessionId, useSessions, openDetailsView, t }: ScienceHeaderActionProps) {
+export function ScienceHeaderAction({ sessionId, useSessions, toggleDetailsView, t }: ScienceHeaderActionProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   if (preset !== 'science') return null
 
@@ -33,7 +34,7 @@ export function ScienceHeaderAction({ sessionId, useSessions, openDetailsView, t
       type="button"
       className={css.action}
       aria-label={t('details.action')}
-      onClick={() => { openDetailsView(SCIENCE_DETAILS_ID) }}
+      onClick={() => { toggleDetailsView(SCIENCE_DETAILS_ID) }}
     >
       <IconDataOutline16 size={14} />
       <span>{t('details.label')}</span>

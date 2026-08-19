@@ -980,9 +980,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /** Select a registered `conversation.details.view` entry and open the Details column. */\n  openDetailsView: (id: string) => void\n}',
+      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'ChatNodeOwnerProps',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
@@ -1033,9 +1035,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /** Select a registered `conversation.details.view` entry and open the Details column. */\n  openDetailsView: (id: string) => void\n}',
+      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'ChatNodeOwnerProps',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',

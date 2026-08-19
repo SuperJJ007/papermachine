@@ -126,6 +126,7 @@ function mount(
   const stop = vi.fn()
   const open = vi.fn()
   const openDetailsView = vi.fn()
+  const toggleDetails = vi.fn()
   const slotCalls: string[] = []
   const viewTabs = options.viewTabs ?? [
     { id: 'chat', label: 'Chat' },
@@ -139,10 +140,15 @@ function mount(
   /** Owner share handed to the two composer tool-row seats, per render. */
   const seatOwners: { key: string; owner: unknown }[] = []
   let pickerOwner: unknown
+  /** Latest owner share handed to the header action row (its toggle callback). */
+  let headerActionOwner: { toggleDetailsView: (id: string) => void } | undefined
   const renderSlot = ((key: string, owner: object, opts?: { only?: string }) => {
     slotCalls.push(key)
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
+    }
+    if (key === 'conversation.session.header.actions') {
+      headerActionOwner = owner as { toggleDetailsView: (id: string) => void }
     }
     if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
     if (key === 'conversation.session.header') {
@@ -162,6 +168,7 @@ function mount(
           views={views}
           open={open}
           openDetailsView={openDetailsView}
+          toggleDetails={toggleDetails}
           t={t}
         />
       )
@@ -253,7 +260,8 @@ function mount(
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open, openDetailsView,
+    view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open, openDetailsView, toggleDetails,
+    headerActionOwner: () => headerActionOwner,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -339,6 +347,27 @@ describe('ConversationRoot resident composer', () => {
     expect(seat?.contains(textarea)).toBe(true)
     expect(b.slotCalls).toContain('conversation.session.header.actions')
     expect(b.slotCalls).toContain('conversation.session.header.utilities')
+  })
+
+  it('a header action routes to its Details entry, then flips the panel on a repeat click', () => {
+    const b = mount(conversationSnapshot())
+
+    // Nothing selected yet: the first click routes and opens.
+    act(() => { b.headerActionOwner()?.toggleDetailsView('science') })
+    expect(b.openDetailsView).toHaveBeenCalledExactlyOnceWith('science')
+    expect(b.toggleDetails).not.toHaveBeenCalled()
+
+    // The store now names that entry, so the same control closes the panel
+    // instead of re-opening what is already showing.
+    act(() => { b.chat.actions.setDetailsView('science') })
+    act(() => { b.headerActionOwner()?.toggleDetailsView('science') })
+    expect(b.toggleDetails).toHaveBeenCalledTimes(1)
+    expect(b.openDetailsView).toHaveBeenCalledTimes(1)
+
+    // Another entry while science shows: route to it, never close.
+    act(() => { b.headerActionOwner()?.toggleDetailsView('tool') })
+    expect(b.openDetailsView).toHaveBeenLastCalledWith('tool')
+    expect(b.toggleDetails).toHaveBeenCalledTimes(1)
   })
 
   it('sticky composer seat wraps the whole overlay chain, not only the fallback stack', () => {

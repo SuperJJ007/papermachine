@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CENTER_MIN, clampWidth, computeColumns,
-  DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
+  CENTER_MIN, clampWidth, computeColumns, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
+  SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
 // Numeric preference form (0 = closed); helpers keep the scenario names readable.
@@ -19,7 +19,21 @@ describe('clampWidth', () => {
 describe('computeColumns', () => {
   it('step 1: everything fits at preferred widths', () => {
     const cols = computeColumns(1920, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: 1920 - 280 - 360, details: 360 })
+    expect(cols).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      center: 1920 - SIDEBAR_DEFAULT - DETAILS_DEFAULT,
+      details: DETAILS_DEFAULT,
+    })
+  })
+
+  it('a viewport at the sidebar auto-collapse breakpoint still admits the details panel', () => {
+    // The band this pins: an expanded sidebar plus DETAILS_MIN plus CENTER_MIN
+    // must fit at SIDEBAR_AUTO_COLLAPSE, or every viewport between that
+    // breakpoint and the fitting width could never open the panel at all —
+    // below the breakpoint AppFrame rails the sidebar, which frees 224px more.
+    const cols = computeColumns(SIDEBAR_AUTO_COLLAPSE, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
+    expect(cols.details).toBeGreaterThanOrEqual(DETAILS_MIN)
+    expect(SIDEBAR_DEFAULT + DETAILS_MIN + CENTER_MIN).toBeLessThanOrEqual(SIDEBAR_AUTO_COLLAPSE)
   })
 
   it('closed sidebar keeps its compact rail while closed details contribute zero width', () => {
@@ -35,9 +49,14 @@ describe('computeColumns', () => {
   })
 
   it('step 2: details shrinks first, center pinned at min', () => {
-    // 280 + 360 + 640 = 1280 > 1250; details concedes to 1250-280-640 = 330.
-    const cols = computeColumns(1250, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: CENTER_MIN, details: 330 })
+    // 280 + 420 + 440 = 1140 > 1100; details concedes to 1100-280-440 = 380.
+    const cols = computeColumns(1100, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
+    expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: CENTER_MIN, details: 380 })
+  })
+
+  it('a dragged-wide details preference survives on a viewport that can seat it', () => {
+    const cols = computeColumns(2560, open(SIDEBAR_DEFAULT), open(DETAILS_MAX))
+    expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: 2560 - SIDEBAR_DEFAULT - DETAILS_MAX, details: DETAILS_MAX })
   })
 
   it('boundary: exactly at the step-1/step-2 seam', () => {
@@ -48,9 +67,12 @@ describe('computeColumns', () => {
   })
 
   it('step 3: details auto-closes when its min still starves center — sidebar holds its preference', () => {
-    // 280 + 300 + 640 = 1220 > 1210 → details 0; sidebar untouched: center = 1210-280 = 930.
-    const cols = computeColumns(1210, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: 930, details: 0 })
+    // 280 + 300 + 440 = 1020 > 1000 → details 0; sidebar untouched: center = 1000-280 = 720.
+    // AppFrame itself only solves this narrow with a railed sidebar (its
+    // breakpoint sits above), so an expanded sidebar reaching step 3 is the
+    // solver's own contract rather than a state the app renders.
+    const cols = computeColumns(1000, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
+    expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: 720, details: 0 })
   })
 
   it('the sidebar never concedes: center absorbs the deficit below CENTER_MIN', () => {
@@ -78,7 +100,7 @@ describe('computeColumns', () => {
   })
 
   it('recovery is pure: re-widening restores preferred widths untouched', () => {
-    const squeezed = computeColumns(1100, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
+    const squeezed = computeColumns(1000, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
     expect(squeezed.details).toBe(0)
     const restored = computeColumns(1920, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
     expect(restored.details).toBe(DETAILS_DEFAULT)

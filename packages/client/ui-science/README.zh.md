@@ -44,7 +44,7 @@ Artifact 缩略图与内容通过本包自己的会话作用域加载器（`scie
 
 ## Session-header action
 
-header action 注册进 `conversation.session.header.actions`，除非当前 Session summary 的 `agentPreset` 指向内置 `science` preset，否则什么都不渲染——Standard 或自定义的非 Science Session 不会显示该 action，也没有任何 Session 会自动打开 Details 列。激活它只会调用宿主提供的 `openDetailsView('science')`；它不会打开自己的面板。
+header action 注册进 `conversation.session.header.actions`，除非当前 Session summary 的 `agentPreset` 指向内置 `science` preset，否则什么都不渲染——Standard 或自定义的非 Science Session 不会显示该 action，也没有任何 Session 会自动打开 Details 列。激活它只会调用宿主提供的 `toggleDetailsView('science')`，因此同一个控件既打开面板也关闭面板；它不会打开自己的面板，也不持有任何面板状态——一次点击意味着哪个方向由页头决定。
 
 ## 溯源下钻
 

@@ -17,8 +17,15 @@
 export interface Columns { sidebar: number; center: number; details: number }
 
 // Contract-frozen geometry: the three-column concession chain's fixed points.
-/** Center column floor; only the final fallback may go below it. */
-export const CENTER_MIN = 640
+/**
+ * Center column floor; only the final fallback may go below it. Set so the
+ * narrowest viewport that keeps an expanded sidebar (SIDEBAR_AUTO_COLLAPSE)
+ * still admits the details panel at DETAILS_MIN: 280 + 300 + 440 <= 1024.
+ * Below that breakpoint the sidebar is already the rail, which lowers the
+ * admitting viewport to 56 + 300 + 440 = 796. A higher floor leaves a band of
+ * viewport widths where the details panel can never open at all.
+ */
+export const CENTER_MIN = 440
 /** Sidebar drag clamp floor. */
 export const SIDEBAR_MIN = 264
 /** Sidebar drag clamp ceiling. */
@@ -33,10 +40,15 @@ export const SIDEBAR_COLLAPSED = 56
 export const SIDEBAR_AUTO_COLLAPSE = 1024
 /** Details drag clamp floor. */
 export const DETAILS_MIN = 300
-/** Details drag clamp ceiling. */
-export const DETAILS_MAX = 520
+/**
+ * Details drag clamp ceiling. Artifact content (charts, tables, notebook
+ * text) reads at widths a transcript side panel never needed, so the drag
+ * range runs well past the center column's own width; the concession chain
+ * below caps what any given viewport actually grants.
+ */
+export const DETAILS_MAX = 960
 /** Details width before any user drag. */
-export const DETAILS_DEFAULT = 360
+export const DETAILS_DEFAULT = 420
 
 /**
  * Clamp a panel width into its contract range.

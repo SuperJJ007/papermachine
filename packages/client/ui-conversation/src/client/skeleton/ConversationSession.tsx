@@ -60,12 +60,21 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, openDetailsView, t,
+  renderSlot, views, open, openDetailsView, toggleDetails, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
+  // The panel's selected entry is the header's own store read, so header
+  // controls resolve their click here rather than each entry mirroring which
+  // Details view is showing: a repeat click on the showing entry flips the
+  // panel closed, any other click routes to that entry and opens it.
+  const detailsView = useStore(s => s.detailsView)
+  const toggleDetailsView = (id: string) => {
+    if (id === detailsView) toggleDetails()
+    else openDetailsView(id)
+  }
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
@@ -100,11 +109,11 @@ export function ConversationSessionHeader({
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
               <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', { openDetailsView })}
+                {renderSlot('conversation.session.header.actions', { toggleDetailsView })}
               </div>
             </div>
             <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', { openDetailsView })}
+              {renderSlot('conversation.session.header.utilities', { toggleDetailsView })}
             </div>
           </div>
           {tabs.length > 1 && (

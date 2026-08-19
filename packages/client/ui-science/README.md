@@ -44,7 +44,7 @@ Artifact thumbnails and content resolve through this package's own session-scope
 
 ## Session-header action
 
-The header action registers into `conversation.session.header.actions` and renders nothing at all unless the current Session summary's `agentPreset` names the built-in `science` preset — a Standard or custom non-Science Session shows no action, and no Session ever opens the Details column automatically. Activating it calls the owner-supplied `openDetailsView('science')`; it opens no panel of its own.
+The header action registers into `conversation.session.header.actions` and renders nothing at all unless the current Session summary's `agentPreset` names the built-in `science` preset — a Standard or custom non-Science Session shows no action, and no Session ever opens the Details column automatically. Activating it calls the owner-supplied `toggleDetailsView('science')`, so the one control both opens the panel and closes it again; it opens no panel of its own and holds no panel state — the header resolves which direction a click means.
 
 ## Provenance drill-in
 

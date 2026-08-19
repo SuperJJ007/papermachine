@@ -33,6 +33,7 @@ type LayoutActions = {
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
+  toggleDetails: (draft: LayoutState) => void
 }
 
 /**
@@ -66,6 +67,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
       closeDetails: (d) => { d.details = 0 },
+      // The header control that opened the panel closes it again: the draft
+      // is the authoritative open/closed fact, so the flip needs no mirror of
+      // panel state outside this store.
+      toggleDetails: (d) => { d.details = d.details === 0 ? DETAILS_DEFAULT : 0 },
     },
   })
   return handle

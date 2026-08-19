@@ -285,6 +285,7 @@ export function apply(ctx: Context): void {
         actions.setDetailsView(id)
         layout.openDetails()
       },
+      toggleDetails: () => { layout.toggleDetails() },
     }),
   }, ConversationSessionHeader)
 

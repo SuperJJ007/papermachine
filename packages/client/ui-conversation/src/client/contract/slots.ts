@@ -287,8 +287,15 @@ export interface ConversationSessionOwnerProps {
 
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {
-  /** Select a registered `conversation.details.view` entry and open the Details column. */
-  openDetailsView: (id: string) => void
+  /**
+   * Toggle a registered `conversation.details.view` entry from the session
+   * header: the panel opens on `id` when it is closed or showing another
+   * entry, and closes when it is already showing `id` — one header control
+   * owns both directions of the panel it opened. The chat-node path keeps
+   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click
+   * on a transcript row inspects that row, and must never close the panel.
+   */
+  toggleDetailsView: (id: string) => void
 }
 
 /**
@@ -512,8 +519,17 @@ export interface ConversationSessionHeaderInjected {
   }
   /** Select a real Session through the runtime navigation owner. */
   open: (sessionId: SessionId) => void
-  /** Select a registered `conversation.details.view` entry and open the Details column (forwarded to header action/utility entries). */
+  /** Select a registered `conversation.details.view` entry and open the Details column. */
   openDetailsView: (id: string) => void
+  /**
+   * Flip the Details column between closed and its default width, leaving the
+   * selected entry untouched. The header pairs it with the selection write
+   * above to serve its action/utility entries one
+   * {@link ConversationHeaderActionOwnerProps.toggleDetailsView} callback:
+   * which of the two an entry's click means is decided against the store's
+   * own `detailsView`, which only the header component reads.
+   */
+  toggleDetails: () => void
 }
 
 /**

@@ -3,7 +3,7 @@
  * The Science session-header action: visible only for a built-in Science
  * session, hidden for every Standard or custom preset (including no preset
  * at all), and its one click routes through the owner-supplied
- * `openDetailsView` — it opens no panel of its own.
+ * `toggleDetailsView` — it opens and closes no panel of its own.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,7 @@ const t: ScienceHeaderActionProps['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-function props(agentPreset: string | undefined, openDetailsView = vi.fn()): ScienceHeaderActionProps {
+function props(agentPreset: string | undefined, toggleDetailsView = vi.fn()): ScienceHeaderActionProps {
   const state = {
     ids: [SESSION],
     byId: {
@@ -35,7 +35,7 @@ function props(agentPreset: string | undefined, openDetailsView = vi.fn()): Scie
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
-  return { sessionId: SESSION, useSessions, openDetailsView, t } as unknown as ScienceHeaderActionProps
+  return { sessionId: SESSION, useSessions, toggleDetailsView, t } as unknown as ScienceHeaderActionProps
 }
 
 describe('ScienceHeaderAction visibility', () => {
@@ -56,11 +56,18 @@ describe('ScienceHeaderAction visibility', () => {
 })
 
 describe('ScienceHeaderAction activation', () => {
-  it('opens the routed science Details entry through openDetailsView, and nothing else', () => {
-    const openDetailsView = vi.fn()
-    render(<ScienceHeaderAction {...props('science', openDetailsView)} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Science details' }))
-    expect(openDetailsView).toHaveBeenCalledTimes(1)
-    expect(openDetailsView).toHaveBeenCalledWith('science')
+  it('routes every click to the science Details entry as a toggle, and does nothing else', () => {
+    const toggleDetailsView = vi.fn()
+    render(<ScienceHeaderAction {...props('science', toggleDetailsView)} />)
+    const button = screen.getByRole('button', { name: 'Science details' })
+    fireEvent.click(button)
+    expect(toggleDetailsView).toHaveBeenCalledExactlyOnceWith('science')
+
+    // The second click is the closing one, and reaches the owner as the same
+    // call: which direction it means is the header's decision, not this
+    // action's — the action holds no panel state of its own.
+    fireEvent.click(button)
+    expect(toggleDetailsView).toHaveBeenCalledTimes(2)
+    expect(toggleDetailsView).toHaveBeenLastCalledWith('science')
   })
 })

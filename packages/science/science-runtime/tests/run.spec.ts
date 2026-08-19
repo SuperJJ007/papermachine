@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { KernelSet } from '../src/kernel-set.ts'
 import {
   authorizePythonRun,
   authorizeRun,
@@ -213,6 +214,57 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
   })
 
+  it('allocates kernelEpoch N+1 through the real durable-projection allocator for a session seeded with prior kernel facts (A3 finding 16)', async () => {
+    const { session, runtime } = await readyPythonHarness('science-run-epoch-continuity')
+    const projection = replayScience(session.events)
+    const environment = projection?.environment
+    if (
+      environment === null || environment === undefined
+      || environment.python === undefined || environment.python.capability !== 'available'
+    ) {
+      throw new Error('missing available python environment')
+    }
+    // Seeded directly (no live kernel ever spawned in this test), matching a
+    // session resumed after a Host restart whose prior kernel history is
+    // durable but not live: `nextKernelEpoch` (index.ts) must derive the
+    // next epoch from the projection's last kernel record alone.
+    const startedAt = Date.now()
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: 1,
+        language: 'python',
+        state: 'started',
+        environmentRevision: environment.revision,
+        environmentFingerprint: environment.python.bindingFingerprint,
+        at: startedAt,
+      },
+    })
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: 1,
+        language: 'python',
+        state: 'exited',
+        reason: 'idle',
+        startedAt,
+        environmentRevision: environment.revision,
+        environmentFingerprint: environment.python.bindingFingerprint,
+        at: Date.now(),
+      },
+    })
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await handle.done
+    const started = session.events.filter(event => event.type === 'science/run-started')
+    expect(started).toHaveLength(1)
+    expect(started[0]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
+    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    expect(kernelFacts[2]?.data).toMatchObject({ kernel: { state: 'started', kernelEpoch: 2 } })
+  })
+
   it('maps a spawn that never reaches READY to a pre-publication KERNEL_START_FAILED rejection', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-start-failed-'))
     roots.push(root)
@@ -233,6 +285,47 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
+  it('disarms the acquired kernel\'s idle timer immediately on acquisition, before run-started commits (A3 finding 5)', async () => {
+    const { ctx, session, runtime } = await readyPythonHarness('science-run-idle-disarm-order')
+    // Records call order across two independently observed points: the
+    // real prototype method every KernelSet instance shares (so this
+    // catches the disarm regardless of which internal KernelSet the
+    // Runtime holds) and the durable run-started append, via the same
+    // internal/dispatch injection pattern `failures.spec.ts` uses.
+    // `mockImplementation` still calls through to the real disarm, so the
+    // kernel's idle timer is genuinely cleared, not merely observed.
+    const order: string[] = []
+    // Captured before vi.spyOn replaces the prototype method (referencing
+    // it afterward would recurse into the spy itself); called via
+    // `.apply(this, args)` below, so it is never invoked unbound.
+    // oxlint-disable-next-line typescript/unbound-method
+    const original = KernelSet.prototype.disarmIdleTimer
+    const disarmSpy = vi.spyOn(KernelSet.prototype, 'disarmIdleTimer')
+      .mockImplementation(function (this: KernelSet, ...args: Parameters<typeof original>) {
+        order.push('disarm')
+        original.apply(this, args)
+      })
+    const stop = ctx.on('internal/dispatch', (_mode, eventName, args) => {
+      if (eventName !== 'session/event') return
+      const [, event] = args as [unknown, { readonly type?: string }]
+      if (event?.type === 'science/run-started') order.push('run-started')
+    }, { global: true })
+    try {
+      const handle = await runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })
+      await handle.done
+    } finally {
+      stop()
+      disarmSpy.mockRestore()
+    }
+    // Pre-fix: `startRun` called `disarmIdleTimer` only after `run-started`
+    // committed, several real awaits after the kernel was actually
+    // acquired — a window an idle expiry could spuriously fire inside.
+    expect(order).toEqual(['disarm', 'run-started'])
   })
 })
 

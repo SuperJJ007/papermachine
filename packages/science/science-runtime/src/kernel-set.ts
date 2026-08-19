@@ -523,7 +523,12 @@ export class KernelSet {
    * untracked. The same discard path covers a `byId` conflict
    * {@link syncBusyRegistration} detects immediately after registration
    * (A1 finding 5): either way, no `started` fact means this kernel must
-   * never become acquirable and never needs a matching `exited` one.
+   * never become acquirable and never needs a matching `exited` one. The
+   * epoch watermark (`entry.epochSeen`) commits in that same window, only
+   * once `onKernelStarted` returns (A3 finding 1): a throw there must leave
+   * the watermark exactly where a retry's allocator will also find it, so
+   * the retry's freshly-derived epoch is never misclassified as a
+   * regression against an epoch no fact ever recorded.
    */
   private async spawnKernel(
     entry: SessionEntry,
@@ -546,11 +551,6 @@ export class KernelSet {
       index: kernelEpoch,
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
     })
-    // Committed only after the spawn actually succeeds: a failed attempt
-    // must not advance the watermark, or a retry through the same
-    // durable-projection-backed allocator (which never recorded the failed
-    // attempt) would be misclassified as a regression.
-    entry.epochSeen = kernelEpoch
     const live: LiveKernel = {
       session: entry.session,
       language,
@@ -569,6 +569,14 @@ export class KernelSet {
         environmentFingerprint: binding.bindingFingerprint,
         startedAt,
       })
+      // Committed only after `onKernelStarted`'s durable append actually
+      // succeeds (A3 finding 1): the production allocator
+      // (`nextKernelEpoch`, index.ts) re-derives the next epoch from the
+      // durable projection alone, so a watermark advanced ahead of a fact
+      // that never committed would make every later spawn attempt for this
+      // Session misclassified as a regression against an epoch no fact
+      // ever recorded.
+      entry.epochSeen = kernelEpoch
       entry.kernels.set(language, live)
       this.syncBusyRegistration(entry)
     } catch (error) {

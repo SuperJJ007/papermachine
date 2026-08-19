@@ -532,6 +532,45 @@ describe('KernelSet', () => {
     expect(startedCalls).toHaveLength(2)
   })
 
+  it('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws (A3 finding 1)', async () => {
+    const harness = await createHarness()
+    // Production-shaped, unlike `createEpochAllocator`'s monotonic counter
+    // (which never rewinds and so cannot reproduce this bug): derives the
+    // next epoch from a recorded fact list the throwing onKernelStarted
+    // below never appends to on its first (failing) call — exactly
+    // `nextKernelEpoch`'s own shape (`index.ts`), which reads the durable
+    // projection and therefore never records a failed attempt either.
+    const facts: ScienceKernelStartedFact[] = []
+    const startError = new Error('kernel-set.spec.ts: injected onKernelStarted failure (A3 finding 1)')
+    let calls = 0
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: () => (facts.at(-1)?.kernelEpoch ?? 0) + 1,
+      onKernelStarted: (_session, fact) => {
+        calls += 1
+        if (calls === 1) throw startError
+        facts.push(fact)
+      },
+      onKernelEnded: () => {},
+    })
+    const { session, sessionScratch } = await harness.session('kernel-epoch-watermark-retry')
+    const environment = harness.environment(1, ['python'])
+    await expect(kernelSet.acquire(session, 'python', environment, sessionScratch)).rejects.toThrow(startError)
+    // Pre-fix: `entry.epochSeen` already advanced to 1 from the failed
+    // attempt (committed before `onKernelStarted` even ran), so this
+    // retry's allocator — still correctly deriving 1, since no fact ever
+    // committed — is misclassified as a regression against a watermark no
+    // fact in the log actually justifies.
+    const { process: kernel } = await kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(kernel).toBeInstanceOf(KernelProcess)
+    expect(facts).toHaveLength(1)
+    expect(facts[0]?.kernelEpoch).toBe(1)
+  })
+
   it('does not reject the caller when onKernelEnded throws, and registry bookkeeping still completes (A1 finding 4)', async () => {
     const harness = await createHarness()
     const started: Recorded<ScienceKernelStartedFact>[] = []

@@ -20,6 +20,7 @@ import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
   event,
+  kernelStarted,
   legalEvents,
   outcome,
   runStarted,
@@ -245,6 +246,15 @@ describe('Science private projection checkpoint', () => {
       startedEvent({}, 5, 140),
       finishedEvent({}, 6, 150),
     ])
+    const kernelEvents = [
+      ...events,
+      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+    ]
+    const kernelState = projectState(kernelEvents)
+    const interruptedKernelState = projectState([
+      ...kernelEvents,
+      event('session/end-seed', 11, 400, {}),
+    ])
 
     for (const [name, state] of [
       ['empty', emptyState],
@@ -261,6 +271,8 @@ describe('Science private projection checkpoint', () => {
       ['support facts', supportState],
       ['unrelated step end', stepGuardState],
       ['gapped terminal', gappedTerminalState],
+      ['kernel started', kernelState],
+      ['kernel interrupted at end-seed', interruptedKernelState],
     ] satisfies Array<readonly [string, ScienceProjectionState]>) {
       expect(scienceProjectionStateSchema.safeParse(state).success, name).toBe(true)
     }
@@ -504,6 +516,20 @@ describe('Science private projection checkpoint', () => {
             ...completeState.fold.outcomes[0]!,
             requestHeaderSeq: completeState.fold.outcomes[0]!.requestHeaderSeq + 1,
           }],
+        },
+      }],
+      ['kernel fold differs from witness replay', {
+        ...kernelState,
+        fold: {
+          ...kernelState.fold,
+          kernelEpochWatermark: kernelState.fold.kernelEpochWatermark + 1,
+        },
+      }],
+      ['kernel fold missing a witnessed kernel-state fact', {
+        ...kernelState,
+        fold: {
+          ...kernelState.fold,
+          kernels: [],
         },
       }],
     ]

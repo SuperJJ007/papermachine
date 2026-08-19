@@ -271,6 +271,14 @@ export interface ScienceKernelInterrupted {
 }
 
 /**
+ * Kernel state served by the Science projection: a durable
+ * {@link ScienceKernelState} lifecycle fact, or its end-seed
+ * {@link ScienceKernelInterrupted} derivation for a kernel still `started`
+ * when the session was last observed live.
+ */
+export type ScienceKernel = ScienceKernelState | ScienceKernelInterrupted
+
+/**
  * Whether one artifact version's current title and caption came from
  * unattended capture or from a model-directed curation call. `auto` names a
  * run-written file the Runtime captured and titled from its own basename;
@@ -373,6 +381,7 @@ export interface ScienceProjectionMetrics {
   readonly successfulRunCount: number
   readonly artifactCount: number
   readonly artifactVersionCount: number
+  readonly kernelCount: number
   readonly outcomeRevision: number
 }
 
@@ -384,6 +393,8 @@ export interface ScienceProjection {
   readonly environment: ScienceEnvironmentBinding | null
   /** All durable and replay-derived run states in start order. */
   readonly runs: readonly ScienceRun[]
+  /** Every kernel instance ever started, in start order. */
+  readonly kernels: readonly ScienceKernel[]
   /** Every immutable artifact version in commit order. */
   readonly artifacts: readonly ScienceArtifactVersion[]
   /** Latest published outcome revision, or `null` before publication. */
@@ -472,6 +483,36 @@ export interface ScienceClientRunInterrupted extends ScienceClientRunIdentity {
 export type ScienceClientRun = ScienceClientRunStarted | ScienceClientRunTerminal | ScienceClientRunInterrupted
 
 /**
+ * Browser-safe kernel lifecycle fact mirroring {@link ScienceKernelState}.
+ * The durable value carries no Host path, so only the environment fingerprint
+ * needs redaction to {@link fingerprintPreview}'s twelve-character preview.
+ */
+export interface ScienceClientKernelState {
+  readonly kernelEpoch: number
+  readonly language: ScienceLanguage
+  readonly state: 'started' | 'exited'
+  readonly reason?: ScienceKernelEndReason
+  readonly environmentRevision: number
+  readonly environmentFingerprintPreview: string
+  readonly at: number
+}
+
+/** Browser-safe replay-derived interruption state mirroring {@link ScienceKernelInterrupted}. */
+export interface ScienceClientKernelInterrupted {
+  readonly kernelEpoch: number
+  readonly language: ScienceLanguage
+  readonly status: 'interrupted'
+  readonly environmentRevision: number
+  readonly environmentFingerprintPreview: string
+  readonly startedAt: number
+  readonly finishedAt: number
+  readonly interruptedAtSeq: number
+}
+
+/** One kernel state served to Session projection clients. */
+export type ScienceClientKernel = ScienceClientKernelState | ScienceClientKernelInterrupted
+
+/**
  * Browser-safe artifact version retaining the attachment reference needed
  * for authorized reads. `toolCallId` and `requestHeaderSeq` are session-log
  * identities the browser already holds; they let an artifact version join
@@ -508,6 +549,7 @@ export interface ScienceClientProjection {
   readonly mode: ScienceModeRef
   readonly environment: ScienceClientEnvironmentBinding | null
   readonly runs: readonly ScienceClientRun[]
+  readonly kernels: readonly ScienceClientKernel[]
   readonly artifacts: readonly ScienceClientArtifactVersion[]
   readonly outcome: ScienceClientOutcomePublication | null
   readonly metrics: ScienceProjectionMetrics

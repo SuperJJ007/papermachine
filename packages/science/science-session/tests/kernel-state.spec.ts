@@ -2,9 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {} from '../src/domain.ts'
+import * as ScienceSessionDomain from '../src/index.ts'
 import { decodeScienceDomainEvent, decodeScienceKernelState } from '../src/index.ts'
 import { foldScience } from '../src/fold.ts'
+import {
+  applyScienceProjectionState,
+  emptyScienceProjectionState,
+  viewScienceProjectionState,
+} from '../src/projection.ts'
+import type { ScienceProjectionState } from '../src/projection-private.ts'
+import { decodeScienceProjectionFold, encodeScienceProjectionFold } from '../src/projection-fold-codec.ts'
 import {
   FINGERPRINT,
   event,
@@ -216,5 +225,103 @@ describe('Science kernel-state replay equivalence', () => {
     })
     const kernel = foldScience(resumed.events).kernels[0]
     expect(kernel).toMatchObject({ status: 'interrupted', kernelEpoch: 1, interruptedAtSeq: seed.length })
+  })
+})
+
+describe('Science kernel-state projection persistence', () => {
+  it('round-trips a closed kernel lifecycle through the projection fold codec', () => {
+    const events: SessionEvent[] = [
+      event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/kernel-state', 2, 120, {
+        version: 1,
+        kernel: kernelStarted({ kernelEpoch: 2, language: 'r', at: 120 }),
+      }),
+      event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
+    ]
+    const state = foldScience(events)
+    const encoded = encodeScienceProjectionFold(state)
+    expect(encoded.kernels).toEqual(state.kernels)
+    expect(encoded.kernelEpochWatermark).toBe(2)
+
+    const decoded = decodeScienceProjectionFold(encoded, state.nextSeq)
+    expect(decoded).toEqual(state)
+  })
+
+  it('retains science/kernel-state in the incremental projection witness instead of dropping it', () => {
+    const events: SessionEvent[] = [
+      event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+    ]
+    const state = events.reduce<ScienceProjectionState>(applyScienceProjectionState, emptyScienceProjectionState())
+    expect(state.witness.map(candidate => candidate.type)).toEqual(['science/mode-bound', 'science/kernel-state'])
+    expect(decodeScienceProjectionFold(state.fold).kernels).toEqual([kernelStarted()])
+    expect(viewScienceProjectionState(state)?.kernels).toEqual([{
+      kernelEpoch: 1,
+      language: 'python',
+      state: 'started',
+      environmentRevision: 1,
+      environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
+      at: 115,
+    }])
+    expect(viewScienceProjectionState(state)?.metrics.kernelCount).toBe(1)
+  })
+
+  it('retains an end-seed-derived interruption in the incremental projection witness', () => {
+    const events: SessionEvent[] = [
+      event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+      event('session/end-seed', 2, 400, {}),
+    ]
+    const state = events.reduce<ScienceProjectionState>(applyScienceProjectionState, emptyScienceProjectionState())
+    expect(state.witness.map(candidate => candidate.type))
+      .toEqual(['science/mode-bound', 'science/kernel-state', 'session/end-seed'])
+    expect(viewScienceProjectionState(state)?.kernels).toEqual([{
+      kernelEpoch: 1,
+      language: 'python',
+      status: 'interrupted',
+      environmentRevision: 1,
+      environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
+      startedAt: 115,
+      finishedAt: 400,
+      interruptedAtSeq: 2,
+    }])
+  })
+
+  async function registryHarness(): Promise<Context> {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(ScienceSessionDomain)
+    return ctx
+  }
+
+  it('carries kernel facts through the live sessionProjections cache and a cold JSON replay identically', async () => {
+    const liveCtx = await registryHarness()
+    const live = liveCtx.sessions.create(SessionId('science-kernel-projection-live'), {
+      meta: { agentPreset: 'science' },
+    })
+    live.append('science/mode-bound', { version: 1, mode: mode() })
+    live.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
+    live.append('science/kernel-state', { version: 1, kernel: kernelExited() })
+    const liveValue = liveCtx.sessionProjections.snapshot(live).values.science
+    expect(liveValue?.kernels).toEqual([{
+      kernelEpoch: 1,
+      language: 'python',
+      state: 'exited',
+      reason: 'idle',
+      environmentRevision: 1,
+      environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
+      at: 200,
+    }])
+    expect(liveValue?.metrics.kernelCount).toBe(1)
+
+    const seed = JSON.parse(JSON.stringify(live.events)) as SessionEvent[]
+    const coldCtx = await registryHarness()
+    const cold = coldCtx.sessions.create(SessionId('science-kernel-projection-cold'), {
+      seed,
+      meta: { agentPreset: 'science' },
+    })
+    expect(coldCtx.sessionProjections.snapshot(cold).values.science).toEqual(liveValue)
   })
 })

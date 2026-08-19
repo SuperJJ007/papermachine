@@ -46,9 +46,17 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' },
     environment: null,
     runs: [],
+    kernels: [],
     artifacts: [],
     outcome: null,
-    metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
+    metrics: {
+      runCount: 0,
+      successfulRunCount: 0,
+      artifactCount: 0,
+      artifactVersionCount: 0,
+      kernelCount: 0,
+      outcomeRevision: 0,
+    },
     lastScienceEventSeq: 1,
     ...overrides,
   }
@@ -667,7 +675,7 @@ describe('get_science_state', () => {
     }))
     const value = stateValueFromProjection(projectionFixture({
       runs,
-      metrics: { runCount: 3, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 3, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
     }), limit)
     expect(value.runs.map(run => (run as { runId: string }).runId)).toEqual(expected)
     expect(value.history.runsOmitted).toBe(omitted)
@@ -694,7 +702,7 @@ describe('get_science_state', () => {
     })) as unknown as ScienceProjection['artifacts']
     const value = stateValueFromProjection(projectionFixture({
       artifacts,
-      metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 3, artifactVersionCount: 3, outcomeRevision: 0 },
+      metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 3, artifactVersionCount: 3, kernelCount: 0, outcomeRevision: 0 },
     }), limit)
     expect(value.artifacts.map(artifact => (artifact as { artifactId: string }).artifactId)).toEqual(expected)
     expect(value.history.artifactVersionsOmitted).toBe(omitted)
@@ -846,7 +854,7 @@ describe('get_science_state', () => {
         failureReason: 'python failed under /secret/prefix',
       },
       runs: [run],
-      metrics: { runCount: 1, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 1, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
     }), 1)
     const rendered = JSON.stringify(value)
     expect(rendered).not.toContain('/secret')
@@ -881,7 +889,7 @@ describe('get_science_state', () => {
     })
     const value = stateValueFromProjection(projectionFixture({
       runs: [run('without-signal'), run('with-signal', 'SIGTERM')],
-      metrics: { runCount: 2, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0 },
+      metrics: { runCount: 2, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
     }), 2)
     expect(value.runs[0]).not.toHaveProperty('signal')
     expect(value.runs[0]).not.toHaveProperty('failureMessage')

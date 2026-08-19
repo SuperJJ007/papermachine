@@ -6,7 +6,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 export const SCIENCE_EVENT_VERSION = 1 as const
 
 /** Persisted-cache invalidation version for the Science projection state. */
-export const SCIENCE_PROJECTION_STATE_VERSION = 3
+export const SCIENCE_PROJECTION_STATE_VERSION = 4
 
 /** Identifies one Science environment profile inside durable session facts. */
 export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>

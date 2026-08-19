@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
-import { ARTIFACT_CALL_ID, ARTIFACT_ID, FINGERPRINT, PACKAGES_SHA, RUN_CALL_ID, RUN_ID, legalEvents } from './fixtures.ts'
+import {
+  ARTIFACT_CALL_ID,
+  ARTIFACT_ID,
+  FINGERPRINT,
+  PACKAGES_SHA,
+  RUN_CALL_ID,
+  RUN_ID,
+  event,
+  kernelExited,
+  kernelStarted,
+  legalEvents,
+} from './fixtures.ts'
 
 describe('Science projection replay', () => {
   it('projects all six event types and derives stable metrics', () => {
@@ -48,6 +60,35 @@ describe('Science projection replay', () => {
 
   it('returns null before Science mode is bound', () => {
     expect(toClientScienceProjection(replayScience([]))).toBeNull()
+  })
+
+  it('exposes kernel history and kernelCount, redacting the full environment fingerprint to a preview', () => {
+    const events: SessionEvent[] = [
+      ...legalEvents(),
+      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+      event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ at: 200 }) }),
+    ]
+    const host = replayScience(events)!
+    const client = toClientScienceProjection(host)!
+
+    expect(host.kernels).toEqual([kernelExited({ at: 200 })])
+    expect(host.metrics.kernelCount).toBe(1)
+    expect(client.metrics.kernelCount).toBe(1)
+    expect(client.kernels).toEqual([{
+      kernelEpoch: 1,
+      language: 'python',
+      state: 'exited',
+      reason: 'idle',
+      environmentRevision: 1,
+      environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
+      at: 200,
+    }])
+    expect(client.kernels[0]).not.toHaveProperty('environmentFingerprint')
+
+    const clientJson = JSON.stringify(client)
+    expect(clientJson).toContain(FINGERPRINT.slice(0, 12))
+    expect(clientJson).not.toContain(FINGERPRINT)
+    expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
   })
 
   it('sanitizes optional interpreter, run, and artifact fields without inventing absent values', () => {

@@ -15,6 +15,8 @@ export function encodeScienceProjectionFold(state: ScienceFoldState): SciencePro
     preModeStepStarted: state.preModeStepStarted,
     environments: state.environments,
     runs: state.runs,
+    kernels: state.kernels,
+    kernelEpochWatermark: state.kernelEpochWatermark,
     artifacts: state.artifacts,
     outcomes: state.outcomes,
     requestHeaders: state.requestHeaders,
@@ -37,13 +39,6 @@ export function encodeScienceProjectionFold(state: ScienceFoldState): SciencePro
 
 /**
  * Decode a validated JSON cache value into independently mutable fold state.
- *
- * `kernels`/`kernelEpochWatermark` are not yet part of the persisted cache
- * JSON, so every decode starts them empty regardless of `state`: the durable
- * session log and this package's pre-commit invariant both fold every
- * `science/kernel-state` event directly from the log and are unaffected;
- * only this optional incremental cache does not yet retain kernel facts
- * across cached steps.
  * @param state - admitted plain-JSON fold fields.
  * @param nextSeq - sequence expected by the next strict transition.
  * @returns independently mutable strict replay state.
@@ -59,8 +54,8 @@ export function decodeScienceProjectionFold(
     preModeStepStarted: state.preModeStepStarted,
     environments: [...state.environments],
     runs: [...state.runs],
-    kernels: [],
-    kernelEpochWatermark: 0,
+    kernels: [...state.kernels],
+    kernelEpochWatermark: state.kernelEpochWatermark,
     artifacts: [...state.artifacts],
     outcomes: [...state.outcomes],
     requestHeaders: [...state.requestHeaders],

@@ -5,12 +5,14 @@ import type {
   ScienceClientArtifactVersion,
   ScienceClientEnvironmentBinding,
   ScienceClientInterpreterBinding,
+  ScienceClientKernel,
   ScienceClientOutcomePublication,
   ScienceClientProjection,
   ScienceClientRun,
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
+  ScienceKernel,
   ScienceOutcomePublication,
   ScienceProjection,
   ScienceProjectionMetrics,
@@ -57,6 +59,35 @@ function clientEnvironment(environment: ScienceEnvironmentBinding): ScienceClien
     status: environment.status,
     ...environment.python === undefined ? {} : { python: clientInterpreter(environment.python) },
     ...environment.r === undefined ? {} : { r: clientInterpreter(environment.r) },
+  }
+}
+
+/**
+ * Remove the full environment fingerprint from one kernel lifecycle fact or
+ * its end-seed `interrupted` derivation. Neither durable shape carries a
+ * Host path, so the fingerprint preview is the only redaction needed.
+ */
+function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
+  const common = {
+    kernelEpoch: kernel.kernelEpoch,
+    language: kernel.language,
+    environmentRevision: kernel.environmentRevision,
+    environmentFingerprintPreview: fingerprintPreview(kernel.environmentFingerprint),
+  }
+  if ('status' in kernel) {
+    return {
+      ...common,
+      status: kernel.status,
+      startedAt: kernel.startedAt,
+      finishedAt: kernel.finishedAt,
+      interruptedAtSeq: kernel.interruptedAtSeq,
+    }
+  }
+  return {
+    ...common,
+    state: kernel.state,
+    ...kernel.reason === undefined ? {} : { reason: kernel.reason },
+    at: kernel.at,
   }
 }
 
@@ -145,12 +176,14 @@ function clientOutcome(outcome: ScienceOutcomePublication): ScienceClientOutcome
 /**
  * Derive stable projection counters from whole-value collections.
  * @param runs - projected run history.
+ * @param kernels - projected kernel history.
  * @param artifacts - projected artifact-version history.
  * @param outcomeRevision - latest Outcome revision, or zero.
  * @returns counters derived from the supplied values.
  */
 export function scienceProjectionMetrics(
   runs: readonly ScienceRun[],
+  kernels: readonly ScienceKernel[],
   artifacts: readonly ScienceArtifactVersion[],
   outcomeRevision: number,
 ): ScienceProjectionMetrics {
@@ -159,6 +192,7 @@ export function scienceProjectionMetrics(
     successfulRunCount: runs.filter(run => run.status === 'success').length,
     artifactCount: new Set(artifacts.map(artifact => artifact.artifactId)).size,
     artifactVersionCount: artifacts.length,
+    kernelCount: kernels.length,
     outcomeRevision,
   }
 }
@@ -175,9 +209,10 @@ export function projectScienceFold(state: ScienceFoldState): ScienceProjection |
     mode: state.mode,
     environment: state.environments.at(-1) ?? null,
     runs: state.runs,
+    kernels: state.kernels,
     artifacts: state.artifacts,
     outcome,
-    metrics: scienceProjectionMetrics(state.runs, state.artifacts, outcome?.revision ?? 0),
+    metrics: scienceProjectionMetrics(state.runs, state.kernels, state.artifacts, outcome?.revision ?? 0),
     lastScienceEventSeq: state.lastScienceEventSeq,
   }
 }
@@ -195,6 +230,7 @@ export function toClientScienceProjection(
     mode: projection.mode,
     environment: projection.environment === null ? null : clientEnvironment(projection.environment),
     runs: projection.runs.map(clientRun),
+    kernels: projection.kernels.map(clientKernel),
     artifacts: projection.artifacts.map(clientArtifact),
     outcome: projection.outcome === null ? null : clientOutcome(projection.outcome),
     metrics: projection.metrics,

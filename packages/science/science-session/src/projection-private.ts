@@ -18,6 +18,8 @@ export interface ScienceProjectionFoldJson {
   readonly preModeStepStarted: boolean
   readonly environments: ScienceFoldState['environments']
   readonly runs: ScienceFoldState['runs']
+  readonly kernels: ScienceFoldState['kernels']
+  readonly kernelEpochWatermark: number
   readonly artifacts: ScienceFoldState['artifacts']
   readonly outcomes: ScienceFoldState['outcomes']
   readonly requestHeaders: ScienceFoldState['requestHeaders']

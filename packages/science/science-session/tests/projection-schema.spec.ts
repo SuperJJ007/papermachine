@@ -4,6 +4,7 @@ import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   event,
+  kernelStarted,
   legalEvents,
 } from './fixtures.ts'
 
@@ -44,6 +45,15 @@ describe('Science projection wire schema', () => {
       version: 2,
       createdAt: 179,
     }
+    const kernelEvents: SessionEvent[] = [
+      ...events,
+      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+    ]
+    const kernelState = clientReplay(kernelEvents)!
+    const interruptedKernelState = clientReplay([
+      ...kernelEvents,
+      event('session/end-seed', 11, 400, {}),
+    ])!
     const structurallyIndependentMembers = [
       {
         ...state,
@@ -120,6 +130,8 @@ describe('Science projection wire schema', () => {
       rRunningState,
       interruptedState,
       state,
+      kernelState,
+      interruptedKernelState,
       ...structurallyIndependentMembers,
     ].entries()) {
       expect(scienceProjectionSchema.safeParse(value).success, `valid projection ${String(index)}`)
@@ -142,6 +154,12 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
     const interruptedRun = interruptedState.runs[0]!
+    const kernelState = clientReplay([
+      ...events,
+      event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
+    ])!
+    const currentKernel = kernelState.kernels[0]!
+    if (!('state' in currentKernel)) throw new Error('fixture kernel is not a started/exited fact')
     const { metrics: _metrics, ...withoutMetrics } = state
     let statusReads = 0
     const unstableInterruptedRun = { ...interruptedRun }
@@ -210,6 +228,31 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
       { ...state, artifacts: [{ ...currentChart, attachment: null }] },
       { ...state, artifacts: [{ ...state.artifacts[0], attachment: { mediaType: 'text/plain' } }] },
+      { ...kernelState, kernels: {} },
+      { ...kernelState, kernels: [null] },
+      { ...kernelState, kernels: [{}] },
+      { ...kernelState, kernels: [{ ...currentKernel, unexpected: true }] },
+      { ...kernelState, kernels: [{ ...currentKernel, kernelEpoch: 0 }] },
+      { ...kernelState, kernels: [{ ...currentKernel, language: 'ruby' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, environmentFingerprintPreview: 'short' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, state: 'unknown' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, reason: 'idle' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, state: 'exited' }] },
+      { ...kernelState, kernels: [{ ...currentKernel, state: 'exited', reason: 'unexpected' }] },
+      {
+        ...kernelState,
+        kernels: [{
+          kernelEpoch: currentKernel.kernelEpoch,
+          language: currentKernel.language,
+          status: 'interrupted',
+          environmentRevision: currentKernel.environmentRevision,
+          environmentFingerprintPreview: currentKernel.environmentFingerprintPreview,
+          startedAt: 100,
+          finishedAt: 50,
+          interruptedAtSeq: 1,
+        }],
+      },
+      { ...kernelState, metrics: { ...kernelState.metrics, kernelCount: 0 } },
       { ...state, outcome: { ...state.outcome, evidence: [] } },
       { ...state, outcome: 1 },
       { ...state, outcome: { ...state.outcome, evidence: [null] } },
@@ -221,6 +264,7 @@ describe('Science projection wire schema', () => {
       { ...state, metrics: { runCount: 1 } },
       { ...state, metrics: { ...state.metrics, unexpected: 1 } },
       { ...state, metrics: { ...state.metrics, runCount: 99 } },
+      { ...state, metrics: { ...state.metrics, kernelCount: 1 } },
       { ...state, runs: [unstableInterruptedRun] },
     ]
     for (const [index, value] of invalidValues.entries()) {

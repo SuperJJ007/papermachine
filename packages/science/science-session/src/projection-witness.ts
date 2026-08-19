@@ -5,7 +5,7 @@ import type { JsonValue, SessionEvent } from '@deepseek-ai/dsh-session'
 import { emptyScienceFoldState } from './fold-state.ts'
 import type { ScienceFoldState } from './fold-state.ts'
 import type { ScienceProjectionWitnessEvent } from './projection-private.ts'
-import { applyScienceEvent } from './transition.ts'
+import { applyScienceEvent, isOpenKernel } from './transition.ts'
 
 function projectionWitnessEvent(
   event: Pick<SessionEvent, 'seq' | 'time' | 'type'>,
@@ -38,6 +38,7 @@ export function scienceProjectionWitnessEvent(event: SessionEvent): ScienceProje
     case 'science/run-finished':
     case 'science/artifact-saved':
     case 'science/outcome-published':
+    case 'science/kernel-state':
       if (event.ignorable === true) throw new Error('Science projection witness cannot omit required-event semantics')
       return projectionWitnessEvent(event, event.data)
     case 'step/start':
@@ -121,7 +122,9 @@ export function scienceProjectionEventRelevant(state: ScienceFoldState, event: S
       && call.step === event.data.step
       && !state.settledToolCallSeqs.includes(call.seq))
   }
-  if (event.type === 'session/end-seed') return state.runs.some(run => run.status === 'running')
+  if (event.type === 'session/end-seed') {
+    return state.runs.some(run => run.status === 'running') || state.kernels.some(isOpenKernel)
+  }
   return event.type.startsWith('science/')
     || event.type === 'request/header'
     || event.type === 'user/message'

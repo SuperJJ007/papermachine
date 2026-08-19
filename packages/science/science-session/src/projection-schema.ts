@@ -147,6 +147,50 @@ function validRun(value: unknown): boolean {
     && (candidate['failureCode'] === undefined || typeof candidate['failureCode'] === 'string')
 }
 
+const KERNEL_END_REASONS = [
+  'idle',
+  'session-end',
+  'environment-rebound',
+  'run-escalation',
+  'protocol',
+  'crash',
+  'service-disposed',
+]
+
+const KERNEL_IDENTITY_KEYS = [
+  'kernelEpoch',
+  'language',
+  'environmentRevision',
+  'environmentFingerprintPreview',
+] as const
+
+function validKernelIdentity(candidate: Record<string, unknown>): boolean {
+  return safeInteger(candidate['kernelEpoch'], 1)
+    && (candidate['language'] === 'python' || candidate['language'] === 'r')
+    && safeInteger(candidate['environmentRevision'], 1)
+    && typeof candidate['environmentFingerprintPreview'] === 'string'
+    && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
+}
+
+function validKernel(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  if (candidate === undefined || !validKernelIdentity(candidate)) return false
+  if (candidate['status'] === 'interrupted') {
+    return projectionExactKeys(candidate, [...KERNEL_IDENTITY_KEYS, 'status', 'startedAt', 'finishedAt', 'interruptedAtSeq'])
+      && safeInteger(candidate['startedAt'])
+      && safeInteger(candidate['finishedAt'], candidate['startedAt'])
+      && safeInteger(candidate['interruptedAtSeq'])
+  }
+  if (candidate['state'] !== 'started' && candidate['state'] !== 'exited') return false
+  const keys = [...KERNEL_IDENTITY_KEYS, 'state', 'at']
+  if (candidate['reason'] !== undefined) keys.push('reason')
+  return projectionExactKeys(candidate, keys)
+    && safeInteger(candidate['at'])
+    && (candidate['state'] === 'exited') === (candidate['reason'] !== undefined)
+    && (candidate['reason'] === undefined
+      || (typeof candidate['reason'] === 'string' && KERNEL_END_REASONS.includes(candidate['reason'])))
+}
+
 const TEXT_ATTACHMENT_MEDIA_TYPES = ['text/csv', 'application/json', 'text/markdown', 'text/plain']
 
 function validImageAttachment(candidate: Record<string, unknown>): boolean {
@@ -253,6 +297,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     'mode',
     'environment',
     'runs',
+    'kernels',
     'artifacts',
     'outcome',
     'metrics',
@@ -262,6 +307,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     decodeScienceMode(candidate['mode'])
     if (!validEnvironment(candidate['environment'])) return false
     if (!Array.isArray(candidate['runs']) || !candidate['runs'].every(validRun)) return false
+    if (!Array.isArray(candidate['kernels']) || !candidate['kernels'].every(validKernel)) return false
     if (!Array.isArray(candidate['artifacts']) || !candidate['artifacts'].every(validArtifact)) return false
     if (!validOutcome(candidate['outcome'])) return false
     const lastScienceEventSeq = candidate['lastScienceEventSeq'] as number
@@ -272,6 +318,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
       'successfulRunCount',
       'artifactCount',
       'artifactVersionCount',
+      'kernelCount',
       'outcomeRevision',
     ])) return false
     const artifactIds = new Set(candidate['artifacts'].map(value => (value as Record<string, unknown>)['artifactId']))
@@ -281,6 +328,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
       successfulRunCount: candidate['runs'].filter(value => (value as Record<string, unknown>)['status'] === 'success').length,
       artifactCount: artifactIds.size,
       artifactVersionCount: candidate['artifacts'].length,
+      kernelCount: candidate['kernels'].length,
       outcomeRevision: outcome === null ? 0 : outcome['revision'],
     }
     return Object.entries(expectedMetrics).every(([key, expected]) => storedMetrics[key] === expected)

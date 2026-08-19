@@ -3,8 +3,8 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
-import type { ScienceFoldState, ScienceKernelRecord, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
-import type { ScienceEnvironmentBinding, ScienceKernelState, ScienceRun, ScienceRunIdentity } from './types.ts'
+import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
+import type { ScienceEnvironmentBinding, ScienceKernel, ScienceKernelState, ScienceRun, ScienceRunIdentity } from './types.ts'
 
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
   const latest = state.requestHeaders.at(-1)
@@ -283,7 +283,7 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
 }
 
 /** Whether a replayed kernel record is a still-open `started` fact, never matched by an `exited` fact or end-seed derivation. */
-function isOpenKernel(record: ScienceKernelRecord): record is ScienceKernelState & { readonly state: 'started' } {
+export function isOpenKernel(record: ScienceKernel): record is ScienceKernelState & { readonly state: 'started' } {
   return 'state' in record && record.state === 'started'
 }
 
@@ -357,7 +357,7 @@ function applyEndSeed(state: ScienceFoldState, event: SessionEvent<'session/end-
   state.runFacts = state.runFacts.map(fact => interruptedIds.has(fact.runId)
     ? { ...fact, terminalSeq: event.seq, terminalEventTime: event.time }
     : fact)
-  state.kernels = state.kernels.map((kernel): ScienceKernelRecord => isOpenKernel(kernel)
+  state.kernels = state.kernels.map((kernel): ScienceKernel => isOpenKernel(kernel)
     ? {
       kernelEpoch: kernel.kernelEpoch,
       language: kernel.language,

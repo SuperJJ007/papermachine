@@ -3,15 +3,11 @@
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
-  ScienceKernelInterrupted,
-  ScienceKernelState,
+  ScienceKernel,
   ScienceModeRef,
   ScienceOutcomePublication,
   ScienceRun,
 } from './types.ts'
-
-/** One kernel's replayed state: its latest committed fact, or its end-seed derivation. */
-export type ScienceKernelRecord = ScienceKernelState | ScienceKernelInterrupted
 
 /** Indexed tool call needed to prove one Science authorization. */
 export interface IndexedToolCall {
@@ -58,7 +54,7 @@ export interface ScienceFoldState {
    * `interrupted` derivation) replaces it in place — never a second entry
    * for the same `(language, kernelEpoch)`.
    */
-  kernels: ScienceKernelRecord[]
+  kernels: ScienceKernel[]
   /** Highest `kernelEpoch` ever admitted by a `started` fact, across both languages; 0 before the first kernel. */
   kernelEpochWatermark: number
   artifacts: ScienceArtifactVersion[]

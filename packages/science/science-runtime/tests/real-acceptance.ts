@@ -9,11 +9,13 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceLanguage, ScienceOutcomePublication } from '@deepseek-ai/dsh-science-session'
+import type { ScienceEnvironmentBinding, ScienceKernelState, ScienceLanguage, ScienceOutcomePublication } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
 import ScienceRuntime from '../src/index.ts'
 import type { ScienceRunResult } from '../src/types.ts'
 import { capturePrefixManifest, diffPrefixManifest } from './prefix-manifest.ts'
@@ -27,6 +29,9 @@ const R_PREFIX = 'DSH_SCIENCE_RUNTIME_R_PREFIX'
 const CANDIDATE_SHA = 'DSH_SCIENCE_RUNTIME_CANDIDATE_SHA'
 const AMBIENT_SENTINEL = 'DSH_SCIENCE_RUNTIME_REAL_AMBIENT_SENTINEL'
 const TIMEOUT_MS = 5_000
+/** Generous upper bound for the idle-expiry poll (D3); the kernel is expected around {@link MIN_KERNEL_IDLE_TIMEOUT_MS}. */
+const IDLE_POLL_TIMEOUT_MS = 120_000
+const IDLE_POLL_INTERVAL_MS = 2_000
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const PNG = new Uint8Array(Buffer.from(PNG_BASE64, 'base64'))
 
@@ -48,13 +53,15 @@ interface LanguageReport {
 /** Full real-machine report emitted as one JSON value. */
 interface RealAcceptanceReport {
   /** Stable report type for automation. */
-  readonly kind: 'dsh-science-runtime-real-acceptance-v2'
+  readonly kind: 'dsh-science-runtime-real-acceptance-v3'
   /** Exact clean-archive source candidate supplied by the operator. */
   readonly candidateSha: string | null
   /** Python outcome, never inferred from R. */
   readonly python: LanguageReport
   /** R outcome, never inferred from Python. */
   readonly r: LanguageReport
+  /** Both languages' persistent kernels coexisting in one session, independent of either language's own report. */
+  readonly coexistence: LanguageReport
 }
 
 /** Return whether a path is equal to or contained by another canonical-looking path. */
@@ -88,7 +95,7 @@ function sha256(bytes: Uint8Array): string {
 }
 
 /** Add one valid authorization immediately before a real Science mutation. */
-function authorize(session: import('@deepseek-ai/dsh-session').Session, name: string, turn: number) {
+function authorize(session: Session, name: string, turn: number) {
   session.append('step/start', { turn, step: 1 })
   const header = session.append('request/header', {
     header: { config: { provider: 'real-acceptance', model: 'local-conda' } },
@@ -146,6 +153,42 @@ function deniedWriteSource(language: ScienceLanguage, target: string): string {
     : `writeLines("must be denied", ${JSON.stringify(target)}, useBytes = TRUE)\n`
 }
 
+/** Source that assigns one integer to a session-persistent variable name. */
+function assignSource(language: ScienceLanguage, name: string, value: number): string {
+  return language === 'python' ? `${name} = ${String(value)}\n` : `${name} <- ${String(value)}\n`
+}
+
+/** Source that prints a previously assigned variable's value alone to stdout. */
+function printSource(language: ScienceLanguage, name: string): string {
+  return language === 'python' ? `print(${name})\n` : `cat(${name}, "\\n")\n`
+}
+
+/** Source that sleeps well past the run's own operation deadline, then swallows the interrupt and finishes normally. */
+function taintingSleepSource(language: ScienceLanguage): string {
+  return language === 'python'
+    ? [
+      'import time',
+      'try:',
+      '    time.sleep(30)',
+      'except KeyboardInterrupt:',
+      '    time.sleep(0.3)',
+      'print("finished despite interrupt")',
+      '',
+    ].join('\n')
+    : [
+      'tryCatch({',
+      '  Sys.sleep(30)',
+      '}, interrupt = function(e) {',
+      '  Sys.sleep(0.3)',
+      '})',
+      'cat("finished despite interrupt\\n")',
+      '',
+    ].join('\n')
+}
+
+/** R source that leaves a bare top-level value for auto-printing (A1 finding 3), unreachable in Python's script semantics. */
+const R_BARE_VALUE_SOURCE = '41 + 1\n'
+
 /** Require one terminal value to carry the expected post-start classification. */
 function expectTerminal(result: ScienceRunResult, status: string, failureCode?: string): void {
   if (result.terminal.status !== status || result.terminal.failureCode !== failureCode) {
@@ -153,9 +196,82 @@ function expectTerminal(result: ScienceRunResult, status: string, failureCode?: 
   }
 }
 
+/** {@link expectTerminal}, returning `result` so a caller can chain an `expectEpoch` check. */
+function expectTerminalReturning(result: ScienceRunResult, status: string, failureCode?: string): ScienceRunResult {
+  expectTerminal(result, status, failureCode)
+  return result
+}
+
+/** Require one just-finished run's terminal to carry the exact expected `kernelEpoch`. */
+function expectEpoch(result: ScienceRunResult, epoch: number): void {
+  if (result.terminal.kernelEpoch !== epoch) {
+    throw new Error(`expected kernelEpoch ${String(epoch)}, got ${String(result.terminal.kernelEpoch)}`)
+  }
+}
+
+/** Resolve until a wall-clock delay elapses; used only for the real idle-expiry poll below. */
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms) })
+}
+
+/** Find `language`'s `exited` kernel-state fact for exactly `epoch` in the session's replayed projection, `undefined` before it exists. */
+function findExitedKernel(
+  session: Session,
+  language: ScienceLanguage,
+  epoch: number,
+): ScienceKernelState | undefined {
+  for (const kernel of replayScience(session.events)?.kernels ?? []) {
+    if (kernel.language === language && kernel.kernelEpoch === epoch && kernel.state === 'exited') return kernel
+  }
+  return undefined
+}
+
+/**
+ * Poll the session's replayed projection until `language`'s `kernelEpoch`
+ * closed with an `exited` fact carrying exactly `reason`, or fail after
+ * {@link IDLE_POLL_TIMEOUT_MS}. Used only for the idle-expiry scenario: every
+ * other kernel-end path this suite exercises is synchronously observable
+ * through its causing run's own settled `done` (D3/D5).
+ */
+async function waitForKernelExit(session: Session, language: ScienceLanguage, epoch: number, reason: string): Promise<void> {
+  const deadline = Date.now() + IDLE_POLL_TIMEOUT_MS
+  for (;;) {
+    const kernel = findExitedKernel(session, language, epoch)
+    if (kernel !== undefined) {
+      if (kernel.reason !== reason) throw new Error(`kernel epoch ${String(epoch)} for ${language} exited with reason "${kernel.reason}", expected "${reason}"`)
+      return
+    }
+    if (Date.now() >= deadline) throw new Error(`kernel epoch ${String(epoch)} for ${language} did not exit with reason "${reason}" within ${String(IDLE_POLL_TIMEOUT_MS)}ms`)
+    await sleepMs(IDLE_POLL_INTERVAL_MS)
+  }
+}
+
+/** Require the session's replayed projection to show `language`'s `kernelEpoch` closed with exactly `reason`. */
+function expectKernelExited(session: Session, language: ScienceLanguage, epoch: number, reason: string): void {
+  const kernel = findExitedKernel(session, language, epoch)
+  if (kernel === undefined) throw new Error(`kernel epoch ${String(epoch)} for ${language} has no exited fact`)
+  if (kernel.reason !== reason) throw new Error(`kernel epoch ${String(epoch)} for ${language} exited with reason "${kernel.reason}", expected "${reason}"`)
+}
+
 /** Render one unexpected operational error for a machine-readable language report. */
 function failureDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Latches the first failure an operation-plus-cleanup sequence records, folding any later one into an `AggregateError`. */
+class FailureLatch {
+  failed = false
+  failure: unknown
+
+  /** Record `error`; the first call latches it, every later call folds it into the running `AggregateError`. */
+  record = (error: unknown): void => {
+    if (!this.failed) {
+      this.failed = true
+      this.failure = error
+      return
+    }
+    this.failure = new AggregateError([this.failure, error], 'science-runtime: real acceptance operation and cleanup both failed')
+  }
 }
 
 /** Run one real language through binding, successful output, cancellation, timeout, and denied prefix write. */
@@ -164,16 +280,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
   const context = new Context()
   let before: ReadonlyMap<string, PrefixManifestEntry> | undefined
   let differences: readonly string[] | undefined
-  let failed = false
-  let failure: unknown
-  const recordFailure = (error: unknown): void => {
-    if (!failed) {
-      failed = true
-      failure = error
-      return
-    }
-    failure = new AggregateError([failure, error], 'science-runtime: real acceptance operation and cleanup both failed')
-  }
+  const failureLatch = new FailureLatch()
   const originalSentinel = process.env[AMBIENT_SENTINEL]
   try {
     before = await capturePrefixManifest(prefix)
@@ -187,6 +294,11 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     await context.plugin(ScienceRuntime, {
       dshHome,
       timeoutMs: TIMEOUT_MS,
+      // The shortest legal D7 idle deadline, so the idle-expiry check below
+      // proves the configured field takes effect without waiting anywhere
+      // near the 30-minute default; every other check in this sequence
+      // settles well within it.
+      kernelIdleTimeoutMs: MIN_KERNEL_IDLE_TIMEOUT_MS,
       profiles: {
         real: language === 'python' ? { pythonPrefix: prefix } : { rPrefix: prefix },
       },
@@ -264,7 +376,12 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 4),
       signal: new AbortController().signal,
     })
-    expectTerminal(await denied.done, 'failed', 'SANDBOX_DENIED')
+    // Kernel runs have no per-run exit code or signal to classify a denied
+    // write against; the driver reports the resulting exception like any
+    // other, so it settles as EXECUTION_FAILED (D10) — SANDBOX_RUNNER_FAILED
+    // and SANDBOX_DENIED are one-shot-only codes the kernel model retired
+    // (failures.spec.ts's own header documents the retirement).
+    expectTerminal(await denied.done, 'failed', 'EXECUTION_FAILED')
     checks.push('configured-prefix write denial')
 
     const capturedChart = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.png')
@@ -317,29 +434,153 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       throw new Error('Outcome publication did not replay with its run and chart evidence')
     }
     checks.push('Outcome publication and replay')
+
+    // Persistent-kernel lifecycle (D3–D6): one variable, `x`, is chained
+    // across four successive kernel epochs of the same language's kernel —
+    // state persistence and interrupt survival on epoch 1, then a fresh
+    // epoch each time timeout escalation, environment-rebound, and idle
+    // expiry replace it, losing `x` every time.
+    const toolName = language === 'python' ? 'run_python' : 'run_r'
+    const epoch1 = successResult.terminal.kernelEpoch
+
+    if (language === 'r') {
+      const bareValue = await context.scienceRuntime.startRun({
+        session, language, code: R_BARE_VALUE_SOURCE,
+        ...authorize(session, toolName, 7),
+        signal: new AbortController().signal,
+      })
+      const bareValueResult = await bareValue.done
+      expectTerminal(bareValueResult, 'success')
+      if (!bareValueResult.stdout.text.includes('[1] 42')) {
+        throw new Error('a bare top-level value did not auto-print to stdout (A1 finding 3)')
+      }
+      checks.push('R bare top-level value auto-prints (A1 finding 3)')
+    }
+
+    const assignX = await context.scienceRuntime.startRun({
+      session, language, code: assignSource(language, 'x', 1),
+      ...authorize(session, toolName, 8),
+      signal: new AbortController().signal,
+    })
+    expectTerminal(await assignX.done, 'success')
+
+    const printX1 = await context.scienceRuntime.startRun({
+      session, language, code: printSource(language, 'x'),
+      ...authorize(session, toolName, 9),
+      signal: new AbortController().signal,
+    })
+    const printX1Result = await printX1.done
+    expectTerminal(printX1Result, 'success')
+    expectEpoch(printX1Result, epoch1)
+    if (!printX1Result.stdout.text.includes('1')) throw new Error('state did not persist across two runs on the same kernel')
+    checks.push('state persistence across two runs on the same kernel')
+
+    const interrupted = await context.scienceRuntime.startRun({
+      session, language, code: waitingSource(language),
+      ...authorize(session, toolName, 10),
+      signal: new AbortController().signal,
+    })
+    setTimeout(() => { interrupted.cancel() }, 100)
+    expectEpoch(expectTerminalReturning(await interrupted.done, 'cancelled', 'CANCELLED'), epoch1)
+
+    const printX2 = await context.scienceRuntime.startRun({
+      session, language, code: printSource(language, 'x'),
+      ...authorize(session, toolName, 11),
+      signal: new AbortController().signal,
+    })
+    const printX2Result = await printX2.done
+    expectTerminal(printX2Result, 'success')
+    expectEpoch(printX2Result, epoch1)
+    if (!printX2Result.stdout.text.includes('1')) throw new Error('kernel did not survive an interrupted run (D5)')
+    checks.push('interrupt during sleep cancels the run but the kernel survives (D5)')
+
+    const escalated = await context.scienceRuntime.startRun({
+      session, language, code: taintingSleepSource(language),
+      ...authorize(session, toolName, 12),
+      signal: new AbortController().signal,
+    })
+    expectEpoch(expectTerminalReturning(await escalated.done, 'timed-out', 'TIMEOUT'), epoch1)
+
+    const printXAfterEscalation = await context.scienceRuntime.startRun({
+      session, language, code: printSource(language, 'x'),
+      ...authorize(session, toolName, 13),
+      signal: new AbortController().signal,
+    })
+    const printXAfterEscalationResult = await printXAfterEscalation.done
+    expectTerminal(printXAfterEscalationResult, 'failed', 'EXECUTION_FAILED')
+    const epoch2 = printXAfterEscalationResult.terminal.kernelEpoch
+    if (epoch2 <= epoch1) throw new Error('run timeout escalation did not replace the kernel with a fresh epoch')
+    expectKernelExited(session, language, epoch1, 'run-escalation')
+    checks.push('run timeout escalation retires the kernel and starts a fresh epoch')
+
+    const assignXAgain = await context.scienceRuntime.startRun({
+      session, language, code: assignSource(language, 'x', 42),
+      ...authorize(session, toolName, 14),
+      signal: new AbortController().signal,
+    })
+    expectEpoch(expectTerminalReturning(await assignXAgain.done, 'success'), epoch2)
+
+    const reboundEnvironment: ScienceEnvironmentBinding = {
+      ...environment,
+      revision: environment.revision + 1,
+      configuredAt: Date.now(),
+      validatedAt: Date.now(),
+    }
+    session.append('science/environment-bound', { version: 1, environment: reboundEnvironment })
+
+    const printXAfterRebind = await context.scienceRuntime.startRun({
+      session, language, code: printSource(language, 'x'),
+      ...authorize(session, toolName, 15),
+      signal: new AbortController().signal,
+    })
+    const printXAfterRebindResult = await printXAfterRebind.done
+    expectTerminal(printXAfterRebindResult, 'failed', 'EXECUTION_FAILED')
+    const epoch3 = printXAfterRebindResult.terminal.kernelEpoch
+    if (epoch3 <= epoch2) throw new Error('environment rebind did not replace the kernel with a fresh epoch')
+    expectKernelExited(session, language, epoch2, 'environment-rebound')
+    checks.push('environment-rebound restart starts a fresh epoch')
+
+    const assignXForIdle = await context.scienceRuntime.startRun({
+      session, language, code: assignSource(language, 'x', 7),
+      ...authorize(session, toolName, 16),
+      signal: new AbortController().signal,
+    })
+    expectEpoch(expectTerminalReturning(await assignXForIdle.done, 'success'), epoch3)
+
+    await waitForKernelExit(session, language, epoch3, 'idle')
+
+    const printXAfterIdle = await context.scienceRuntime.startRun({
+      session, language, code: printSource(language, 'x'),
+      ...authorize(session, toolName, 17),
+      signal: new AbortController().signal,
+    })
+    const printXAfterIdleResult = await printXAfterIdle.done
+    expectTerminal(printXAfterIdleResult, 'failed', 'EXECUTION_FAILED')
+    if (printXAfterIdleResult.terminal.kernelEpoch <= epoch3) throw new Error('idle expiry did not replace the kernel with a fresh epoch')
+    checks.push(`idle expiry (kernelIdleTimeoutMs=${String(MIN_KERNEL_IDLE_TIMEOUT_MS)}) starts a fresh epoch`)
   } catch (error) {
-    recordFailure(error)
+    failureLatch.record(error)
   } finally {
     if (originalSentinel === undefined) Reflect.deleteProperty(process.env, AMBIENT_SENTINEL)
     else process.env[AMBIENT_SENTINEL] = originalSentinel
     try {
       await context.fiber.dispose()
     } catch (error) {
-      recordFailure(error)
+      failureLatch.record(error)
     }
     if (before !== undefined) {
       try {
         const after = await capturePrefixManifest(prefix)
         differences = diffPrefixManifest(before, after).map(difference => difference.path)
       } catch (error) {
-        recordFailure(error)
+        failureLatch.record(error)
       }
     }
   }
-  if (failed) {
+  if (failureLatch.failed) {
     return {
       status: 'FAIL',
-      detail: failureDetail(failure),
+      detail: failureDetail(failureLatch.failure),
       checks,
       ...(differences === undefined || differences.length === 0 ? {} : { prefixManifestDifferences: differences }),
     }
@@ -355,6 +596,128 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
   return { status: 'PASS', detail: 'all selected real acceptance checks passed', checks }
 }
 
+/**
+ * Bind one environment naming both interpreters and run one Python then one
+ * R kernel in the same session (f), confirming both stay simultaneously
+ * live with independent epochs and independent in-memory state.
+ */
+async function runCoexistence(pythonPrefix: string, rPrefix: string, dshHome: string): Promise<LanguageReport> {
+  const checks: string[] = []
+  const context = new Context()
+  let beforePython: ReadonlyMap<string, PrefixManifestEntry> | undefined
+  let beforeR: ReadonlyMap<string, PrefixManifestEntry> | undefined
+  let differences: readonly string[] | undefined
+  const failureLatch = new FailureLatch()
+  try {
+    beforePython = await capturePrefixManifest(pythonPrefix)
+    beforeR = await capturePrefixManifest(rPrefix)
+    await context.plugin(SessionStore)
+    await context.plugin(InvariantRegistry, { enabled: true })
+    await context.plugin(ScienceSessionInvariant)
+    await context.plugin(LocalAttachmentStore, { dshHome })
+    await context.plugin(LocalSubprocessRuntime)
+    await context.plugin(LocalSandboxProvider)
+    await context.plugin(ScienceRuntime, {
+      dshHome,
+      timeoutMs: TIMEOUT_MS,
+      profiles: { real: { pythonPrefix, rPrefix } },
+    })
+    const session = context.sessions.create(SessionId(`science-real-coexistence-${randomUUID()}`), {
+      meta: { agentPreset: 'science' },
+    })
+    session.append('science/mode-bound', {
+      version: 1,
+      mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-real-acceptance' },
+    })
+    const environment = await context.scienceRuntime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('real'),
+      signal: new AbortController().signal,
+    })
+    if (environment.status !== 'applied' || environment.python?.capability !== 'available' || environment.r?.capability !== 'available') {
+      throw new Error('binding was not applied with both interpreters available')
+    }
+    checks.push('single environment binds both interpreters')
+
+    const assignPythonX = await context.scienceRuntime.startRun({
+      session, language: 'python', code: assignSource('python', 'x', 1),
+      ...authorize(session, 'run_python', 1),
+      signal: new AbortController().signal,
+    })
+    const pythonEpoch = expectTerminalReturning(await assignPythonX.done, 'success').terminal.kernelEpoch
+
+    const assignRY = await context.scienceRuntime.startRun({
+      session, language: 'r', code: assignSource('r', 'y', 2),
+      ...authorize(session, 'run_r', 2),
+      signal: new AbortController().signal,
+    })
+    const rEpoch = expectTerminalReturning(await assignRY.done, 'success').terminal.kernelEpoch
+    if (rEpoch === pythonEpoch) throw new Error('python and R kernels shared an epoch instead of coexisting independently')
+    checks.push('python and R kernels hold independent epochs')
+
+    const bothLive = replayScience(session.events)
+    const livePython = bothLive?.kernels.find(kernel => kernel.language === 'python' && kernel.kernelEpoch === pythonEpoch)
+    const liveR = bothLive?.kernels.find(kernel => kernel.language === 'r' && kernel.kernelEpoch === rEpoch)
+    if (livePython?.state !== 'started' || liveR?.state !== 'started') {
+      throw new Error('python and R kernels were not both live at once')
+    }
+    checks.push('python and R kernels are both live at once')
+
+    const printPythonX = await context.scienceRuntime.startRun({
+      session, language: 'python', code: printSource('python', 'x'),
+      ...authorize(session, 'run_python', 3),
+      signal: new AbortController().signal,
+    })
+    const printPythonXResult = await printPythonX.done
+    expectTerminal(printPythonXResult, 'success')
+    expectEpoch(printPythonXResult, pythonEpoch)
+    if (!printPythonXResult.stdout.text.includes('1')) throw new Error('python state did not survive the R kernel starting alongside it')
+
+    const printRY = await context.scienceRuntime.startRun({
+      session, language: 'r', code: printSource('r', 'y'),
+      ...authorize(session, 'run_r', 4),
+      signal: new AbortController().signal,
+    })
+    const printRYResult = await printRY.done
+    expectTerminal(printRYResult, 'success')
+    expectEpoch(printRYResult, rEpoch)
+    if (!printRYResult.stdout.text.includes('2')) throw new Error('R state did not survive interleaving with the python kernel')
+    checks.push('each kernel keeps its own state independent of the other language')
+  } catch (error) {
+    failureLatch.record(error)
+  } finally {
+    try {
+      await context.fiber.dispose()
+    } catch (error) {
+      failureLatch.record(error)
+    }
+    if (beforePython !== undefined && beforeR !== undefined) {
+      try {
+        const afterPython = await capturePrefixManifest(pythonPrefix)
+        const afterR = await capturePrefixManifest(rPrefix)
+        differences = [
+          ...diffPrefixManifest(beforePython, afterPython).map(difference => `python:${difference.path}`),
+          ...diffPrefixManifest(beforeR, afterR).map(difference => `r:${difference.path}`),
+        ]
+      } catch (error) {
+        failureLatch.record(error)
+      }
+    }
+  }
+  if (failureLatch.failed) {
+    return {
+      status: 'FAIL',
+      detail: failureDetail(failureLatch.failure),
+      checks,
+      ...(differences === undefined || differences.length === 0 ? {} : { prefixManifestDifferences: differences }),
+    }
+  }
+  if (differences !== undefined && differences.length > 0) {
+    return { status: 'FAIL', detail: 'configured prefix changed during real acceptance', checks, prefixManifestDifferences: differences }
+  }
+  return { status: 'PASS', detail: 'all selected real acceptance checks passed', checks }
+}
+
 /** Create an explicit no-side-effect report for a language whose prerequisites are absent. */
 function notRun(detail: string): LanguageReport {
   return { status: 'NOT-RUN', detail, checks: [] }
@@ -365,7 +728,13 @@ async function report(): Promise<RealAcceptanceReport> {
   const candidateSha = process.env[CANDIDATE_SHA]
   if (process.env[ENABLE] !== '1') {
     const detail = `set ${ENABLE}=1 to opt in to real Conda acceptance`
-    return { kind: 'dsh-science-runtime-real-acceptance-v2', candidateSha: null, python: notRun(detail), r: notRun(detail) }
+    return {
+      kind: 'dsh-science-runtime-real-acceptance-v3',
+      candidateSha: null,
+      python: notRun(detail),
+      r: notRun(detail),
+      coexistence: notRun(detail),
+    }
   }
   const dshHome = process.env[DSH_HOME]
   let homeIsPrivate = false
@@ -400,14 +769,30 @@ async function report(): Promise<RealAcceptanceReport> {
   }
   const python = await run('python', PYTHON_PREFIX)
   const r = await run('r', R_PREFIX)
+  const coexistence = await (async (): Promise<LanguageReport> => {
+    if (candidateDetail !== undefined) return notRun(candidateDetail)
+    if (nodeDetail !== undefined) return notRun(nodeDetail)
+    if (homeDetail !== undefined) return notRun(homeDetail)
+    const pythonPrefix = process.env[PYTHON_PREFIX]
+    const rPrefix = process.env[R_PREFIX]
+    if (pythonPrefix === undefined || !isAbsolute(pythonPrefix) || rPrefix === undefined || !isAbsolute(rPrefix)) {
+      return notRun(`set absolute ${PYTHON_PREFIX} and ${R_PREFIX} for real coexistence acceptance`)
+    }
+    try {
+      return await runCoexistence(pythonPrefix, rPrefix, dshHome!)
+    } catch (error) {
+      return { status: 'FAIL', detail: failureDetail(error), checks: [] }
+    }
+  })()
   return {
-    kind: 'dsh-science-runtime-real-acceptance-v2',
+    kind: 'dsh-science-runtime-real-acceptance-v3',
     candidateSha: candidateSha ?? null,
     python,
     r,
+    coexistence,
   }
 }
 
 const result = await report()
 console.log(JSON.stringify(result, null, 2))
-if (result.python.status === 'FAIL' || result.r.status === 'FAIL') process.exitCode = 1
+if (result.python.status === 'FAIL' || result.r.status === 'FAIL' || result.coexistence.status === 'FAIL') process.exitCode = 1

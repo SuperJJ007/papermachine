@@ -23,7 +23,7 @@ import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult } from './capture.ts'
-import { configSchema, DEFAULT_KERNEL_IDLE_TIMEOUT_MS, DEFAULT_KERNEL_START_TIMEOUT_MS, resolveConfig } from './config.ts'
+import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, startCandidate } from './execution.ts'
@@ -232,6 +232,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly captureMaxFilesPerRun: number
   /** Configured auto-capture per-session artifact-version bound. */
   private readonly captureMaxArtifactVersionsPerSession: number
+  /** Configured persistent-kernel idle deadline. */
+  private readonly kernelIdleTimeoutMs: number
+  /** Configured persistent-kernel spawn-to-READY deadline. */
+  private readonly kernelStartTimeoutMs: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Every live persistent Science kernel across sessions (D3). */
@@ -254,12 +258,14 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.captureMaxFileBytes = resolved.captureMaxFileBytes
     this.captureMaxFilesPerRun = resolved.captureMaxFilesPerRun
     this.captureMaxArtifactVersionsPerSession = resolved.captureMaxArtifactVersionsPerSession
+    this.kernelIdleTimeoutMs = resolved.kernelIdleTimeoutMs
+    this.kernelStartTimeoutMs = resolved.kernelStartTimeoutMs
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
       assetsRoot: KERNEL_ASSETS_ROOT,
-      kernelIdleTimeoutMs: DEFAULT_KERNEL_IDLE_TIMEOUT_MS,
-      kernelStartTimeoutMs: DEFAULT_KERNEL_START_TIMEOUT_MS,
+      kernelIdleTimeoutMs: this.kernelIdleTimeoutMs,
+      kernelStartTimeoutMs: this.kernelStartTimeoutMs,
       nextEpoch: session => this.nextKernelEpoch(session),
       onKernelStarted: (session, fact) => { this.appendKernelStarted(session, fact) },
       onKernelEnded: (session, fact) => { this.appendKernelEnded(session, fact) },

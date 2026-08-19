@@ -47,16 +47,19 @@ export const MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 1
 /** Highest accepted configured auto-capture per-session artifact-version bound. */
 export const MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 10_000
 
-/**
- * Default persistent-kernel idle deadline (D7), matching Claude Science
- * parity (30 minutes). Not yet a validated `Config` field — K3.3 promotes
- * this constant into the same default/min/max triple as every field above,
- * with `kernelIdleTimeoutMs`/`kernelStartTimeoutMs` schema entries; K3.1
- * wires the pipeline to this fixed default first.
- */
+/** Default persistent-kernel idle deadline (D7), matching Claude Science parity (30 minutes). */
 export const DEFAULT_KERNEL_IDLE_TIMEOUT_MS = 1_800_000
-/** Default persistent-kernel spawn-to-READY deadline (D7); see {@link DEFAULT_KERNEL_IDLE_TIMEOUT_MS}'s own note. */
+/** Lowest accepted configured kernel idle deadline (1 minute). */
+export const MIN_KERNEL_IDLE_TIMEOUT_MS = 60_000
+/** Highest accepted configured kernel idle deadline (24 hours). */
+export const MAX_KERNEL_IDLE_TIMEOUT_MS = 86_400_000
+
+/** Default persistent-kernel spawn-to-READY deadline (D7). */
 export const DEFAULT_KERNEL_START_TIMEOUT_MS = 30_000
+/** Lowest accepted configured kernel spawn-to-READY deadline. */
+export const MIN_KERNEL_START_TIMEOUT_MS = 1_000
+/** Highest accepted configured kernel spawn-to-READY deadline. */
+export const MAX_KERNEL_START_TIMEOUT_MS = 600_000
 
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
@@ -101,6 +104,16 @@ export interface Config {
    * before it stops appending further versions, truncated and flagged.
    */
   readonly captureMaxArtifactVersionsPerSession?: number
+  /**
+   * Idle deadline (D3) after a persistent kernel's last `DONE` before the
+   * Runtime ends it with reason `idle`; disarmed while a run is in flight.
+   */
+  readonly kernelIdleTimeoutMs?: number
+  /**
+   * Deadline (D3) from a persistent kernel's spawn to its `READY` handshake;
+   * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
+   */
+  readonly kernelStartTimeoutMs?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -138,6 +151,12 @@ export const configSchema: z<Config> = z.object({
   captureMaxArtifactVersionsPerSession: z.number().step(1)
     .min(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION).max(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)
     .default(DEFAULT_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION),
+  kernelIdleTimeoutMs: z.number().step(1)
+    .min(MIN_KERNEL_IDLE_TIMEOUT_MS).max(MAX_KERNEL_IDLE_TIMEOUT_MS)
+    .default(DEFAULT_KERNEL_IDLE_TIMEOUT_MS),
+  kernelStartTimeoutMs: z.number().step(1)
+    .min(MIN_KERNEL_START_TIMEOUT_MS).max(MAX_KERNEL_START_TIMEOUT_MS)
+    .default(DEFAULT_KERNEL_START_TIMEOUT_MS),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -158,6 +177,10 @@ export interface ResolvedConfig {
   readonly captureMaxFilesPerRun: number
   /** Explicitly resolved auto-capture per-session artifact-version bound. */
   readonly captureMaxArtifactVersionsPerSession: number
+  /** Explicitly resolved persistent-kernel idle deadline. */
+  readonly kernelIdleTimeoutMs: number
+  /** Explicitly resolved persistent-kernel spawn-to-READY deadline. */
+  readonly kernelStartTimeoutMs: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -220,6 +243,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'dshHome', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
+      'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
     ],
     'config',
   )
@@ -261,6 +285,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || captureMaxArtifactVersionsPerSession > MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION) {
     throw new Error(`science-runtime: captureMaxArtifactVersionsPerSession must be a safe integer from ${String(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)} through ${String(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)}`)
   }
+  const kernelIdleTimeoutMs = config.kernelIdleTimeoutMs ?? DEFAULT_KERNEL_IDLE_TIMEOUT_MS
+  if (!Number.isSafeInteger(kernelIdleTimeoutMs)
+    || kernelIdleTimeoutMs < MIN_KERNEL_IDLE_TIMEOUT_MS
+    || kernelIdleTimeoutMs > MAX_KERNEL_IDLE_TIMEOUT_MS) {
+    throw new Error(`science-runtime: kernelIdleTimeoutMs must be a safe integer from ${String(MIN_KERNEL_IDLE_TIMEOUT_MS)} through ${String(MAX_KERNEL_IDLE_TIMEOUT_MS)}`)
+  }
+  const kernelStartTimeoutMs = config.kernelStartTimeoutMs ?? DEFAULT_KERNEL_START_TIMEOUT_MS
+  if (!Number.isSafeInteger(kernelStartTimeoutMs)
+    || kernelStartTimeoutMs < MIN_KERNEL_START_TIMEOUT_MS
+    || kernelStartTimeoutMs > MAX_KERNEL_START_TIMEOUT_MS) {
+    throw new Error(`science-runtime: kernelStartTimeoutMs must be a safe integer from ${String(MIN_KERNEL_START_TIMEOUT_MS)} through ${String(MAX_KERNEL_START_TIMEOUT_MS)}`)
+  }
   return {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
@@ -270,5 +306,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     captureMaxFileBytes,
     captureMaxFilesPerRun,
     captureMaxArtifactVersionsPerSession,
+    kernelIdleTimeoutMs,
+    kernelStartTimeoutMs,
   }
 }

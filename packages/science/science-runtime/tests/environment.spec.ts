@@ -1282,4 +1282,37 @@ describe('Science Runtime configuration', () => {
     expect(resolved.captureMaxFilesPerRun).toBe(50)
     expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
   })
+
+  it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted (D7)', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 59_999,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 86_400_001,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 1.5,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 60_000,
+    }).kernelIdleTimeoutMs).toBe(60_000)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 86_400_000,
+    }).kernelIdleTimeoutMs).toBe(86_400_000)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 999,
+    })).toThrow(/kernelStartTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 600_001,
+    })).toThrow(/kernelStartTimeoutMs/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 1_000,
+    }).kernelStartTimeoutMs).toBe(1_000)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 600_000,
+    }).kernelStartTimeoutMs).toBe(600_000)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.kernelIdleTimeoutMs).toBe(1_800_000)
+    expect(resolved.kernelStartTimeoutMs).toBe(30_000)
+  })
 })

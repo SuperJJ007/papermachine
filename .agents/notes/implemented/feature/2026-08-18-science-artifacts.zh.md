@@ -55,7 +55,7 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 - 声明 `conversation.details.header.actions`：一个由 `DetailsPanel` 在标题与自有关闭按钮之间渲染的键控列表槽，以 Details 条目 id 为键，因此只渲染当前活动条目的控件。关闭控件仍归面板所有；条目贡献自己的按钮。
 - 给 `ToolCallOwnerProps` 增加 `openDetailsView`——它是 `ui-tool` 的 `tool.call.toolview` owner share，而不是 `ui-conversation` 的类型——使转录行能够选中一个 Details 条目并打开该栏。这个能力、这个 owner 和这次 store 写入，正是 `ConversationHeaderActionOwnerProps` 已经在用的那一套；它们顺着既有的渲染路径抵达 `ToolCallOwnerProps`：`ChatNodeOwnerProps`（`ui-conversation`）→ `ChatView`／`ChatNodeSeat` → `ToolCallTree` 的逐调用分发，这正是 `openFile` 与 trajectory 的 `inspect` 回调已经在用来抵达一个既非 `ui-tool` 也非 `ToolCallOwnerProps` 拥有的目标的同一条路径。这是既有契约与既有路径上多一个座位，不是一个新契约——曾考虑过在 `ui-conversation` 的 client service 上暴露这个能力并将其否决（见下），因为按会话选中的 Details 状态是由渲染树按会话解析的、由 slot 声明的 store 状态；渲染路径之外的任何东西都够不到同一个存活实例。
 
-**另外两个可加性 owner-share 字段（PR3）。** 上面两个接缝打开时都还不存在；二者都是直到 artifact 面板的头部控件与溯源页签需要一条笔记原始两个接缝未覆盖的写入路径时才浮现：
+**另外两个可加性 owner-share 字段。** 上面两个接缝打开时都还不存在；二者都是直到 artifact 面板的头部控件与溯源页签需要一条笔记原始两个接缝未覆盖的写入路径时才浮现：
 
 - `DetailsHeaderActionOwnerProps` 增加 `openView: (id: string) => void`。`DetailsPanel` 本就为自己的关闭控件与路由条目分发声明了 `store: chatStore`，因此把 `actions.setView` 暴露给 header-actions 的 owner share 对壳层没有额外代价——这是一个头部控件本无法以其他方式触达的唯一写入能力（切换中间列的 `conversation.view` 标签页，让一个"为所选 X 打开某视图"的控件无需拥有自己的 store 座位）。Artifact 面板的"溯源"按钮是第一个调用者。
 - `ConvViewOwnerProps` 增加 `inspectCall: (callId: CallId) => void`——与 chat 自身工具行已经触发的同一个一次性 inspect-并揭示交接（写入目标调用，切换到 trajectory 视图），从 `ConversationSession` 自身的渲染点泛化而来（它本就每次渲染计算一次，并闭包捕获自己的 `store: chatStore` share），因此每个 `conversation.view` 条目都能拿到它，而不只是 chat 的后代工具行。`ChatViewInjected` 去掉了自己私有的同一个闭包；`ChatView.tsx` 无需改动，该值现在经由 `PropsRuntime<'conversation.view'>` 本就合并进来的 owner share 抵达。溯源页签的跳转到对话记录动作是第一个非 chat 调用者。
@@ -76,7 +76,7 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 
 - `packages/science/science-session/src/` —— `types.ts`（客户端图/运行的关联字段、`ScienceClientRunIdentity` 上的 `codeSha256`、`SciencePackage`、清单字段）、`projection-value.ts`（`clientChart`、`clientRun`、`clientInterpreter`）、`projection-schema.ts`（关联字段与 `codeSha256` 校验）、`fold.ts` 解码器、`domain.ts` 事件载荷。
 - `packages/science/science-runtime/src/` —— `environment.ts`（`packages` 探测及其上限）、`config.ts`（两个上限字段）。
-- `packages/client/ui-conversation/src/client/` —— `contract/slots.ts`（PR2 的 `conversation.details.header.actions` 键控槽与 `ChatNodeOwnerProps`／`ChatViewInjected.openDetailsView`；PR3 新增的可加性字段 `DetailsHeaderActionOwnerProps.openView` 与 `ConvViewOwnerProps.inspectCall`）、`skeleton/DetailsPanel.tsx`、`skeleton/DetailsPanel.module.css`、`skeleton/ConversationSession.tsx`（PR3：`inspectCall` 闭包从 `ChatViewInjected` 迁移到这里）、`apply.ts`、`chat/ChatView.tsx`、`chat/ChatNodeSeat.tsx`。
+- `packages/client/ui-conversation/src/client/` —— `contract/slots.ts`（`conversation.details.header.actions` 键控槽与 `ChatNodeOwnerProps`／`ChatViewInjected.openDetailsView`；新增的可加性字段 `DetailsHeaderActionOwnerProps.openView` 与 `ConvViewOwnerProps.inspectCall`）、`skeleton/DetailsPanel.tsx`、`skeleton/DetailsPanel.module.css`、`skeleton/ConversationSession.tsx`（`inspectCall` 闭包从 `ChatViewInjected` 迁移到这里）、`apply.ts`、`chat/ChatView.tsx`、`chat/ChatNodeSeat.tsx`。
 - `packages/client/ui-tool/src/client/` —— `contract/slots.ts`（`ToolCallOwnerProps.openDetailsView`）、`tool/ToolCallTree.tsx`。
 - `packages/client/ui-science/src/client/` —— `ScienceDetailsView.tsx`（artifact 面板）、`ScienceChartRow.tsx`（紧凑行）、新增 `ScienceArtifactHeaderActions.tsx`（面板的两个头部控件）、新增 `ScienceProvenanceView.tsx`、新增 `selection-store.ts`、`index.ts` 注册（含由会话列表驱动的溯源标签页门控）、`locales.ts`。
 - 以上每个包的 README，在同一次改动内更新。

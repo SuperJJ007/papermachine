@@ -4,7 +4,14 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
-import type { ScienceEnvironmentBinding, ScienceKernel, ScienceKernelState, ScienceRun, ScienceRunIdentity } from './types.ts'
+import type {
+  ScienceEnvironmentBinding,
+  ScienceKernel,
+  ScienceKernelState,
+  ScienceLanguage,
+  ScienceRun,
+  ScienceRunIdentity,
+} from './types.ts'
 
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
   const latest = state.requestHeaders.at(-1)
@@ -47,6 +54,40 @@ function requireEnvironment(state: ScienceFoldState, revision: number): ScienceE
   return environment
 }
 
+/**
+ * Assert `revision` names the session's currently bound, latest applied
+ * environment, and that `fingerprint` matches `language`'s own available
+ * binding on that revision. Shared by the run and kernel `started` paths —
+ * the only Science facts that fix new environment provenance. A kernel
+ * `exited` fact deliberately carries no such requirement (D4): its revision
+ * is pinned to its own `started` fact by {@link sameKernelIdentity} instead,
+ * which lets an `environment-rebound` exit legitimately name a
+ * since-superseded revision.
+ * @param state - fold accumulator to read committed environments from.
+ * @param revision - environment revision the fact claims.
+ * @param language - language whose binding must match `fingerprint`.
+ * @param fingerprint - binding fingerprint the fact claims.
+ * @param subject - noun phrase identifying the fact kind in thrown messages.
+ * @returns the matched environment, so a caller needing further facts (run start timing) does not re-look it up.
+ */
+function requireLatestAppliedBinding(
+  state: ScienceFoldState,
+  revision: number,
+  language: ScienceLanguage,
+  fingerprint: string,
+  subject: string,
+): ScienceEnvironmentBinding {
+  const environment = requireEnvironment(state, revision)
+  if (environment !== state.environments.at(-1) || environment.status !== 'applied') {
+    throw new Error(`${subject} must use the latest applied environment revision`)
+  }
+  const binding = language === 'python' ? environment.python : environment.r
+  if (binding === undefined || binding.capability !== 'available' || binding.bindingFingerprint !== fingerprint) {
+    throw new Error(`${subject} does not match an available environment binding`)
+  }
+  return environment
+}
+
 function requireScienceTime(state: ScienceFoldState, event: Pick<SessionEvent, 'seq' | 'time'>): void {
   if (state.lastScienceTime !== undefined && event.time < state.lastScienceTime) {
     throw new Error(`Science event ${String(event.seq)} moves time backwards`)
@@ -80,15 +121,7 @@ function applyRunStarted(state: ScienceFoldState, event: Extract<DecodedScienceD
   if (state.runs.some(candidate => candidate.status === 'running')) {
     throw new Error('only one Science run may be running in a session')
   }
-  const environment = requireEnvironment(state, run.environmentRevision)
-  if (environment !== state.environments.at(-1) || environment.status !== 'applied') {
-    throw new Error('Science run must use the latest applied environment revision')
-  }
-  const binding = run.language === 'python' ? environment.python : environment.r
-  if (binding === undefined || binding.capability !== 'available'
-    || binding.bindingFingerprint !== run.environmentFingerprint) {
-    throw new Error('Science run does not match an available environment binding')
-  }
+  const environment = requireLatestAppliedBinding(state, run.environmentRevision, run.language, run.environmentFingerprint, 'Science run')
   const requestHeader = requireRequestHeader(state, run.requestHeaderSeq)
   const toolCall = requireToolCall(
     state,
@@ -288,7 +321,7 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
  * @returns whether `record` is an open `started` kernel.
  */
 export function isOpenKernel(record: ScienceKernel): record is ScienceKernelState & { readonly state: 'started' } {
-  return 'state' in record && record.state === 'started'
+  return record.state === 'started'
 }
 
 /**
@@ -316,6 +349,7 @@ function applyKernelState(state: ScienceFoldState, event: Extract<DecodedScience
     if (kernel.kernelEpoch <= state.kernelEpochWatermark) {
       throw new Error(`Science kernel epoch ${String(kernel.kernelEpoch)} does not exceed the session's prior kernel epoch ${String(state.kernelEpochWatermark)}`)
     }
+    requireLatestAppliedBinding(state, kernel.environmentRevision, kernel.language, kernel.environmentFingerprint, 'Science kernel started fact')
     state.kernels.push(kernel)
     state.kernelEpochWatermark = kernel.kernelEpoch
     return
@@ -393,7 +427,7 @@ function applyEndSeed(state: ScienceFoldState, event: SessionEvent<'session/end-
     ? {
       kernelEpoch: kernel.kernelEpoch,
       language: kernel.language,
-      status: 'interrupted',
+      state: 'interrupted',
       environmentRevision: kernel.environmentRevision,
       environmentFingerprint: kernel.environmentFingerprint,
       startedAt: kernel.at,

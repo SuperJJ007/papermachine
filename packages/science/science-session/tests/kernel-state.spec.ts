@@ -5,7 +5,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {} from '../src/domain.ts'
 import * as ScienceSessionDomain from '../src/index.ts'
-import { decodeScienceDomainEvent, decodeScienceKernelState } from '../src/index.ts'
+import { ScienceEnvironmentProfileId, decodeScienceDomainEvent, decodeScienceKernelState } from '../src/index.ts'
 import { foldScience } from '../src/fold.ts'
 import {
   applyScienceProjectionState,
@@ -16,11 +16,16 @@ import type { ScienceProjectionState } from '../src/projection-private.ts'
 import { decodeScienceProjectionFold, encodeScienceProjectionFold } from '../src/projection-fold-codec.ts'
 import {
   FINGERPRINT,
+  environment,
   event,
+  interpreter,
   kernelExited,
   kernelStarted,
   mode,
 } from './fixtures.ts'
+
+/** Applied environment binding both languages' kernels can start against. */
+const dualLanguageEnvironment = environment({ r: interpreter({ language: 'r' }) })
 
 describe('Science kernel-state codec', () => {
   it('round-trips a started and an exited kernel fact', () => {
@@ -103,17 +108,18 @@ describe('strict Science kernel-state fold', () => {
   it('folds a started/exited alternation across coexisting python and r kernels', () => {
     const events: SessionEvent[] = [
       event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-      event('science/kernel-state', 2, 120, {
+      event('science/environment-bound', 1, 110, { version: 1, environment: dualLanguageEnvironment }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/kernel-state', 3, 120, {
         version: 1,
         kernel: kernelStarted({ kernelEpoch: 2, language: 'r', at: 120 }),
       }),
-      event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
-      event('science/kernel-state', 4, 210, {
+      event('science/kernel-state', 4, 200, { version: 1, kernel: kernelExited() }),
+      event('science/kernel-state', 5, 210, {
         version: 1,
         kernel: kernelExited({ kernelEpoch: 2, language: 'r', startedAt: 120, at: 210 }),
       }),
-      event('science/kernel-state', 5, 300, {
+      event('science/kernel-state', 6, 300, {
         version: 1,
         kernel: kernelStarted({ kernelEpoch: 3, at: 300 }),
       }),
@@ -132,16 +138,43 @@ describe('strict Science kernel-state fold', () => {
       ['kernel state before mode', [
         event('science/kernel-state', 0, 115, { version: 1, kernel: kernelStarted() }),
       ], /prior mode binding/],
+      ['started kernel names an environment revision that was never bound', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+      ], /environment revision 1 does not exist/],
+      ['started kernel names an unbound environment revision', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted({ environmentRevision: 2 }) }),
+      ], /environment revision 2 does not exist/],
+      ['started kernel names a bound-but-not-applied environment revision', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/environment-bound', 1, 110, {
+          version: 1,
+          environment: environment({ status: 'drifted', failureReason: 'drift detected' }),
+        }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      ], /latest applied environment revision/],
+      ['started kernel fingerprint does not match its language\'s available binding', [
+        event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, {
+          version: 1,
+          kernel: kernelStarted({ environmentFingerprint: 'e'.repeat(64) }),
+        }),
+      ], /available environment binding/],
       ['epoch regression', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted({ kernelEpoch: 2 }) }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ kernelEpoch: 2, at: 200 }) }),
-        event('science/kernel-state', 3, 210, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 210 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted({ kernelEpoch: 2 }) }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ kernelEpoch: 2, at: 200 }) }),
+        event('science/kernel-state', 4, 210, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 210 }) }),
       ], /does not exceed the session's prior kernel epoch/],
       ['double start for the same language before an exit', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 120, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 120 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 120, { version: 1, kernel: kernelStarted({ kernelEpoch: 2, at: 120 }) }),
       ], /already started/],
       ['exit with no prior started fact', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
@@ -149,24 +182,28 @@ describe('strict Science kernel-state fold', () => {
       ], /no matching started/],
       ['exit epoch does not match the currently open kernel', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ kernelEpoch: 9, at: 200 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ kernelEpoch: 9, at: 200 }) }),
       ], /no matching started/],
       ['double exit for the same language', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited() }),
-        event('science/kernel-state', 3, 210, { version: 1, kernel: kernelExited({ at: 210 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
+        event('science/kernel-state', 4, 210, { version: 1, kernel: kernelExited({ at: 210 }) }),
       ], /no matching started/],
       ['exited fact rewrites its started fact\'s environmentRevision', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ environmentRevision: 2 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ environmentRevision: 2 }) }),
       ], /rewrites start-owned fields/],
       ['exited fact rewrites its started fact\'s environmentFingerprint', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ environmentFingerprint: 'c'.repeat(64) }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ environmentFingerprint: 'c'.repeat(64) }) }),
       ], /rewrites start-owned fields/],
       ['started kernel time follows its own event time', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
@@ -174,18 +211,21 @@ describe('strict Science kernel-state fold', () => {
       ], /cannot follow its event time/],
       ['exited kernel time follows its own event time', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ at: 201 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ at: 201 }) }),
       ], /cannot follow its event time/],
       ['exited kernel time precedes its started fact\'s time', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ startedAt: 115, at: 100 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ startedAt: 115, at: 100 }) }),
       ], /precedes its started fact's time/],
       ['exited kernel startedAt does not match its started fact\'s at', [
         event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-        event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-        event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited({ startedAt: 116 }) }),
+        event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+        event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+        event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited({ startedAt: 116 }) }),
       ], /startedAt does not match its started fact's at/],
     ]
     for (const [name, events, pattern] of cases) {
@@ -205,47 +245,74 @@ describe('strict Science kernel-state fold', () => {
   it('derives interrupted only for a kernel still started at session/end-seed', () => {
     const openKernel: SessionEvent[] = [
       event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/environment-bound', 1, 110, { version: 1, environment: dualLanguageEnvironment }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
     ]
-    const interrupted = foldScience([...openKernel, event('session/end-seed', 2, 400, {})])
+    const interrupted = foldScience([...openKernel, event('session/end-seed', 3, 400, {})])
     expect(interrupted.kernels).toEqual([{
       kernelEpoch: 1,
       language: 'python',
-      status: 'interrupted',
+      state: 'interrupted',
       environmentRevision: 1,
       environmentFingerprint: FINGERPRINT,
       startedAt: 115,
       finishedAt: 400,
-      interruptedAtSeq: 2,
+      interruptedAtSeq: 3,
     }])
-    expect(interrupted.lastScienceEventSeq).toBe(2)
+    expect(interrupted.lastScienceEventSeq).toBe(3)
 
     const closedKernel: SessionEvent[] = [
       ...openKernel,
-      event('science/kernel-state', 2, 200, { version: 1, kernel: kernelExited() }),
+      event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
     ]
-    const settled = foldScience([...closedKernel, event('session/end-seed', 3, 400, {})])
+    const settled = foldScience([...closedKernel, event('session/end-seed', 4, 400, {})])
     expect(settled.kernels).toEqual([kernelExited()])
     // No open kernel means end-seed leaves the fold untouched: the last Science
     // fact is still the exited kernel-state event, not the seed boundary.
-    expect(settled.lastScienceEventSeq).toBe(2)
+    expect(settled.lastScienceEventSeq).toBe(3)
 
     const mixed: SessionEvent[] = [
       ...closedKernel,
-      event('science/kernel-state', 3, 210, {
+      event('science/kernel-state', 4, 210, {
         version: 1,
         kernel: kernelStarted({ kernelEpoch: 2, language: 'r', at: 210 }),
       }),
-      event('session/end-seed', 4, 400, {}),
+      event('session/end-seed', 5, 400, {}),
     ]
     const mixedState = foldScience(mixed)
     expect(mixedState.kernels[0]).toEqual(kernelExited())
     expect(mixedState.kernels[1]).toMatchObject({
-      status: 'interrupted',
+      state: 'interrupted',
       kernelEpoch: 2,
       language: 'r',
-      interruptedAtSeq: 4,
+      interruptedAtSeq: 5,
     })
+  })
+
+  it('folds an environment-rebound exited fact naming its kernel\'s now-superseded revision', () => {
+    // The started fact fixes revision 1 as this kernel's own provenance; a
+    // later applied revision 2 supersedes it before the kernel exits. The
+    // exited direction carries no "latest revision" requirement (D4), so
+    // this folds cleanly even though revision 1 is no longer the session's
+    // latest applied environment — guarding the deliberate asymmetry with
+    // the `started` direction's environment relation.
+    const events: SessionEvent[] = [
+      event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
+      event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/environment-bound', 3, 120, {
+        version: 1,
+        environment: environment({
+          revision: 2,
+          profileId: ScienceEnvironmentProfileId('profile-2'),
+          configuredAt: 111,
+          validatedAt: 119,
+        }),
+      }),
+      event('science/kernel-state', 4, 200, { version: 1, kernel: kernelExited({ reason: 'environment-rebound' }) }),
+    ]
+    const state = foldScience(events)
+    expect(state.kernels).toEqual([kernelExited({ reason: 'environment-rebound' })])
   })
 })
 
@@ -260,6 +327,7 @@ describe('Science kernel-state replay equivalence', () => {
     const liveCtx = await harness()
     const live = liveCtx.sessions.create(SessionId('science-kernel-live'), { meta: { agentPreset: 'science' } })
     live.append('science/mode-bound', { version: 1, mode: mode() })
+    live.append('science/environment-bound', { version: 1, environment: environment() })
     live.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
     live.append('science/kernel-state', { version: 1, kernel: kernelExited() })
     const liveState = foldScience(live.events)
@@ -279,6 +347,7 @@ describe('Science kernel-state replay equivalence', () => {
       meta: { agentPreset: 'science' },
     })
     source.append('science/mode-bound', { version: 1, mode: mode() })
+    source.append('science/environment-bound', { version: 1, environment: environment() })
     source.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
     expect(foldScience(source.events).kernels).toEqual([kernelStarted()])
 
@@ -289,7 +358,7 @@ describe('Science kernel-state replay equivalence', () => {
       meta: { agentPreset: 'science' },
     })
     const kernel = foldScience(resumed.events).kernels[0]
-    expect(kernel).toMatchObject({ status: 'interrupted', kernelEpoch: 1, interruptedAtSeq: seed.length })
+    expect(kernel).toMatchObject({ state: 'interrupted', kernelEpoch: 1, interruptedAtSeq: seed.length })
   })
 })
 
@@ -297,12 +366,13 @@ describe('Science kernel-state projection persistence', () => {
   it('round-trips a closed kernel lifecycle through the projection fold codec', () => {
     const events: SessionEvent[] = [
       event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-      event('science/kernel-state', 2, 120, {
+      event('science/environment-bound', 1, 110, { version: 1, environment: dualLanguageEnvironment }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/kernel-state', 3, 120, {
         version: 1,
         kernel: kernelStarted({ kernelEpoch: 2, language: 'r', at: 120 }),
       }),
-      event('science/kernel-state', 3, 200, { version: 1, kernel: kernelExited() }),
+      event('science/kernel-state', 4, 200, { version: 1, kernel: kernelExited() }),
     ]
     const state = foldScience(events)
     const encoded = encodeScienceProjectionFold(state)
@@ -316,10 +386,12 @@ describe('Science kernel-state projection persistence', () => {
   it('retains science/kernel-state in the incremental projection witness instead of dropping it', () => {
     const events: SessionEvent[] = [
       event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
+      event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
     ]
     const state = events.reduce<ScienceProjectionState>(applyScienceProjectionState, emptyScienceProjectionState())
-    expect(state.witness.map(candidate => candidate.type)).toEqual(['science/mode-bound', 'science/kernel-state'])
+    expect(state.witness.map(candidate => candidate.type))
+      .toEqual(['science/mode-bound', 'science/environment-bound', 'science/kernel-state'])
     expect(decodeScienceProjectionFold(state.fold).kernels).toEqual([kernelStarted()])
     expect(viewScienceProjectionState(state)?.kernels).toEqual([{
       kernelEpoch: 1,
@@ -335,21 +407,22 @@ describe('Science kernel-state projection persistence', () => {
   it('retains an end-seed-derived interruption in the incremental projection witness', () => {
     const events: SessionEvent[] = [
       event('science/mode-bound', 0, 100, { version: 1, mode: mode() }),
-      event('science/kernel-state', 1, 115, { version: 1, kernel: kernelStarted() }),
-      event('session/end-seed', 2, 400, {}),
+      event('science/environment-bound', 1, 110, { version: 1, environment: environment() }),
+      event('science/kernel-state', 2, 115, { version: 1, kernel: kernelStarted() }),
+      event('session/end-seed', 3, 400, {}),
     ]
     const state = events.reduce<ScienceProjectionState>(applyScienceProjectionState, emptyScienceProjectionState())
     expect(state.witness.map(candidate => candidate.type))
-      .toEqual(['science/mode-bound', 'science/kernel-state', 'session/end-seed'])
+      .toEqual(['science/mode-bound', 'science/environment-bound', 'science/kernel-state', 'session/end-seed'])
     expect(viewScienceProjectionState(state)?.kernels).toEqual([{
       kernelEpoch: 1,
       language: 'python',
-      status: 'interrupted',
+      state: 'interrupted',
       environmentRevision: 1,
       environmentFingerprintPreview: FINGERPRINT.slice(0, 12),
       startedAt: 115,
       finishedAt: 400,
-      interruptedAtSeq: 2,
+      interruptedAtSeq: 3,
     }])
   })
 
@@ -367,6 +440,7 @@ describe('Science kernel-state projection persistence', () => {
       meta: { agentPreset: 'science' },
     })
     live.append('science/mode-bound', { version: 1, mode: mode() })
+    live.append('science/environment-bound', { version: 1, environment: environment() })
     live.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
     live.append('science/kernel-state', { version: 1, kernel: kernelExited() })
     const liveValue = liveCtx.sessionProjections.snapshot(live).values.science

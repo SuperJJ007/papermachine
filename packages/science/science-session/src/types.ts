@@ -264,8 +264,12 @@ export interface ScienceKernelInterrupted {
   readonly kernelEpoch: number
   /** The kernel's language. */
   readonly language: ScienceLanguage
-  /** Replay-only terminal status; no `science/kernel-state` fact may carry it. */
-  readonly status: 'interrupted'
+  /**
+   * Replay-only terminal state; no `science/kernel-state` fact may carry it.
+   * Shares its discriminant key with {@link ScienceKernelState.state}, so a
+   * reader switches on one tag across every kernel record.
+   */
+  readonly state: 'interrupted'
   /** Applied environment revision the interrupted kernel served. */
   readonly environmentRevision: number
   /** Fingerprint of the language's available binding the interrupted kernel served. */
@@ -511,7 +515,7 @@ export interface ScienceClientKernelState {
 export interface ScienceClientKernelInterrupted {
   readonly kernelEpoch: number
   readonly language: ScienceLanguage
-  readonly status: 'interrupted'
+  readonly state: 'interrupted'
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly startedAt: number

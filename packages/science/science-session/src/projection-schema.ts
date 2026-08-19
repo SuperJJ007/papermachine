@@ -175,8 +175,8 @@ function validKernelIdentity(candidate: Record<string, unknown>): boolean {
 function validKernel(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined || !validKernelIdentity(candidate)) return false
-  if (candidate['status'] === 'interrupted') {
-    return projectionExactKeys(candidate, [...KERNEL_IDENTITY_KEYS, 'status', 'startedAt', 'finishedAt', 'interruptedAtSeq'])
+  if (candidate['state'] === 'interrupted') {
+    return projectionExactKeys(candidate, [...KERNEL_IDENTITY_KEYS, 'state', 'startedAt', 'finishedAt', 'interruptedAtSeq'])
       && safeInteger(candidate['startedAt'])
       && safeInteger(candidate['finishedAt'], candidate['startedAt'])
       && safeInteger(candidate['interruptedAtSeq'])

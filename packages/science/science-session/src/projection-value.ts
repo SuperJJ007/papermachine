@@ -1,5 +1,6 @@
 /** Derivation of the client-safe Science projection from strict replay state. */
 
+import { assertNever } from '@deepseek-ai/dsh-llm'
 import type { ScienceFoldState } from './fold-state.ts'
 import type {
   ScienceClientArtifactVersion,
@@ -74,21 +75,26 @@ function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
     environmentRevision: kernel.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(kernel.environmentFingerprint),
   }
-  if ('status' in kernel) {
-    return {
-      ...common,
-      status: kernel.status,
-      startedAt: kernel.startedAt,
-      finishedAt: kernel.finishedAt,
-      interruptedAtSeq: kernel.interruptedAtSeq,
-    }
-  }
-  return {
-    ...common,
-    state: kernel.state,
-    ...kernel.reason === undefined ? {} : { reason: kernel.reason },
-    ...kernel.startedAt === undefined ? {} : { startedAt: kernel.startedAt },
-    at: kernel.at,
+  switch (kernel.state) {
+    case 'started':
+    case 'exited':
+      return {
+        ...common,
+        state: kernel.state,
+        ...kernel.reason === undefined ? {} : { reason: kernel.reason },
+        ...kernel.startedAt === undefined ? {} : { startedAt: kernel.startedAt },
+        at: kernel.at,
+      }
+    case 'interrupted':
+      return {
+        ...common,
+        state: kernel.state,
+        startedAt: kernel.startedAt,
+        finishedAt: kernel.finishedAt,
+        interruptedAtSeq: kernel.interruptedAtSeq,
+      }
+    default:
+      return assertNever(kernel)
   }
 }
 

@@ -159,7 +159,7 @@ describe('Science projection wire schema', () => {
       event('science/kernel-state', 10, 190, { version: 1, kernel: kernelStarted({ at: 190 }) }),
     ])!
     const currentKernel = kernelState.kernels[0]!
-    if (!('state' in currentKernel)) throw new Error('fixture kernel is not a started/exited fact')
+    if (currentKernel.state === 'interrupted') throw new Error('fixture kernel is not a started/exited fact')
     const { metrics: _metrics, ...withoutMetrics } = state
     let statusReads = 0
     const unstableInterruptedRun = { ...interruptedRun }
@@ -250,7 +250,7 @@ describe('Science projection wire schema', () => {
         kernels: [{
           kernelEpoch: currentKernel.kernelEpoch,
           language: currentKernel.language,
-          status: 'interrupted',
+          state: 'interrupted',
           environmentRevision: currentKernel.environmentRevision,
           environmentFingerprintPreview: currentKernel.environmentFingerprintPreview,
           startedAt: 100,

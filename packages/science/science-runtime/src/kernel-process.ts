@@ -8,8 +8,8 @@
  * @module @deepseek-ai/dsh-science-runtime/kernel-process
  */
 
-import { createReadStream } from 'node:fs'
-import { unlink } from 'node:fs/promises'
+import { constants as fsConstants, createReadStream } from 'node:fs'
+import { open, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { deadline } from '@deepseek-ai/dsh-timeout'
@@ -26,16 +26,10 @@ import {
   MAX_OUTPUT_BYTES,
   quiesce,
 } from './execution.ts'
+import type { Quiescence } from './execution.ts'
 import { createKernelScratch, planKernelScratch } from './scratch.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
-
-/**
- * How long a still-alive kernel is given, after its response FIFO ends
- * unexpectedly, to prove it actually died before that is treated as a
- * protocol violation.
- */
-const FIFO_EOF_GRACE_MS = 1_000
 
 /**
  * Fatal kernel-driver protocol violation: an unparseable frame, an
@@ -151,10 +145,63 @@ async function unlinkFifo(fifoPath: string): Promise<void> {
 }
 
 /**
+ * Force-complete a response FIFO's blocking read-side `open()` when it may
+ * still be stuck in the libuv threadpool because no writer ever connected —
+ * a confine/spawn failure, or a driver that never reached its own
+ * open-for-write before the READY deadline (A1 finding 2). Opening the write
+ * end non-blockingly rendezvous with a still-pending blocking read-open and
+ * lets it return; closing that transient writer immediately afterward
+ * leaves no writer behind. Best-effort and always safe to call: when the
+ * read side already opened successfully this is a harmless no-op class
+ * (POSIX tolerates a second writer opening and closing), and every failure
+ * here (the path already gone, `ENXIO` from a benign ordering race) is
+ * swallowed because the caller's own destroy/unlink cleanup is what
+ * actually matters.
+ * @param fifoPath - absolute path of the response FIFO.
+ */
+async function releaseBlockedFifoOpen(fifoPath: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(fifoPath, fsConstants.O_WRONLY | fsConstants.O_NONBLOCK)
+  } catch {
+    return
+  }
+  try {
+    await handle.close()
+  } catch {
+    // A transient unblocking writer's own close is best-effort.
+  }
+}
+
+/**
+ * Full teardown for a kernel that failed anywhere between response-FIFO
+ * creation and a successful READY handshake (A1 finding 2): quiesce the
+ * subprocess when one was spawned, destroy the host's read stream, release
+ * a still-blocked read-side open so its libuv threadpool worker is freed,
+ * then remove the FIFO file.
+ * @param handle - the spawned subprocess handle, or `undefined` when spawn itself never ran.
+ * @param fifoPath - absolute path of the response FIFO.
+ * @param readStream - the host's response-FIFO read stream.
+ */
+async function cleanupOnStartFailure(
+  handle: SubprocessHandle | undefined,
+  fifoPath: string,
+  readStream: Readable,
+): Promise<void> {
+  readStream.destroy()
+  await releaseBlockedFifoOpen(fifoPath)
+  if (handle !== undefined) await quiesce(handle)
+  await unlinkFifo(fifoPath)
+}
+
+/**
  * Create the kernel's response FIFO host-side, unconfined: spawns the
  * platform `mkfifo` binary directly through the subprocess seam, never
  * through the sandbox (D2/D9 — the FIFO must exist before the confined
- * kernel argv is spawned).
+ * kernel argv is spawned). Removes a stale FIFO left at the same path by an
+ * earlier failed attempt first (A1 finding 2): `mkfifo` refuses an existing
+ * path, and a retry after a start failure reuses the same kernel-epoch
+ * scratch directory.
  * @param subprocess - subprocess runtime used unconfined for this one call.
  * @param cwd - existing directory to spawn `mkfifo` from (irrelevant beyond existing, since `fifoPath` is absolute).
  * @param fifoPath - absolute path at which to create the FIFO.
@@ -162,6 +209,7 @@ async function unlinkFifo(fifoPath: string): Promise<void> {
  */
 async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<void> {
   assertNoFrameDelimiters(fifoPath, 'response FIFO path')
+  await unlinkFifo(fifoPath)
   const mkfifo = await subprocess.resolveExecutable('mkfifo')
   const handle = subprocess.spawn({
     argv: [mkfifo, fifoPath],
@@ -221,7 +269,7 @@ export class KernelProcess {
   private protocolFault: KernelProtocolError | undefined
   private commandedReason: string | undefined
   private exitSettled = false
-  private endPromise: Promise<void> | undefined
+  private endPromise: Promise<Quiescence> | undefined
   private lineBuffer = ''
 
   private constructor(
@@ -272,33 +320,38 @@ export class KernelProcess {
     // default (K1.0 spike finding 1) — no window where the kernel's own
     // open-for-write races an as-yet-nonexistent reader.
     const readStream = createReadStream(fifoPath, { encoding: 'utf8' })
-    const confined = confineInterpreterArgv(
-      services.session,
-      services.sessionScratch,
-      services.sandbox,
-      binding.canonicalPrefix,
-      interpreterArgv(binding.language, binding.executable, driverPath, fifoPath),
-    )
-    const handle = services.subprocess.spawn({
-      argv: confined.argv,
-      cwd: kernelScratch.directory,
-      stdio: {
-        stdin: 'pipe',
-        stdout: { maxBytes: MAX_OUTPUT_BYTES },
-        stderr: { maxBytes: MAX_OUTPUT_BYTES },
-      },
-      graceMs: DESCENDANT_GRACE_MS,
-      environmentBase: 'empty',
-      env: kernelEnvironment(binding, services.sessionScratch, kernelScratch.tmp),
-    })
-    const kernel = new KernelProcess(handle, fifoPath, readStream)
+    // Everything from here through a successful READY handshake shares one
+    // failure path (A1 finding 2): a confine/spawn throw, or an awaitReady
+    // rejection, must release the FIFO's read-side open and remove the FIFO
+    // file the same way, whether or not a subprocess was ever spawned.
+    let handle: SubprocessHandle | undefined
     try {
+      const confined = confineInterpreterArgv(
+        services.session,
+        services.sessionScratch,
+        services.sandbox,
+        binding.canonicalPrefix,
+        interpreterArgv(binding.language, binding.executable, driverPath, fifoPath),
+      )
+      handle = services.subprocess.spawn({
+        argv: confined.argv,
+        cwd: kernelScratch.directory,
+        stdio: {
+          stdin: 'pipe',
+          stdout: { maxBytes: MAX_OUTPUT_BYTES },
+          stderr: { maxBytes: MAX_OUTPUT_BYTES },
+        },
+        graceMs: DESCENDANT_GRACE_MS,
+        environmentBase: 'empty',
+        env: kernelEnvironment(binding, services.sessionScratch, kernelScratch.tmp),
+      })
+      const kernel = new KernelProcess(handle, fifoPath, readStream)
       await kernel.awaitReady(kernelStartTimeoutMs)
+      return kernel
     } catch (error) {
-      await kernel.destroyOnStartFailure()
+      await cleanupOnStartFailure(handle, fifoPath, readStream)
       throw error
     }
-    return kernel
   }
 
   /**
@@ -341,30 +394,31 @@ export class KernelProcess {
   /**
    * Best-effort EXIT frame, then the seam's quiesce escalation, then FIFO
    * stream/file cleanup. Idempotent: a second call awaits the same teardown.
+   * Returns the escalation's {@link Quiescence} verdict rather than
+   * discarding it (A1 finding 1): a caller responsible for same-id
+   * quarantine bookkeeping (`KernelSet.teardown`) must keep quarantine
+   * active until a `{ quiescent: false }` result's `eventualQuiescence`
+   * resolves — this method itself does not wait beyond the seam's own
+   * bounded escalation.
    * @param reason - caller-owned diagnostic label; not durably interpreted here.
-   * @returns resolves once the process reached quiescence and the FIFO file was removed (or was already gone).
+   * @returns the quiescence verdict once the seam's bounded escalation settles.
    */
-  end(reason: string): Promise<void> {
+  end(reason: string): Promise<Quiescence> {
     this.endPromise ??= this.performEnd(reason)
     return this.endPromise
   }
 
-  private async performEnd(reason: string): Promise<void> {
+  private async performEnd(reason: string): Promise<Quiescence> {
     this.commandedReason = reason
     try {
       this.stdin.write('EXIT\n')
     } catch {
       // Best-effort: a closed or broken stdin means the kernel is already gone.
     }
-    await quiesce(this.handle)
+    const quiescence = await quiesce(this.handle)
     this.readStream.destroy()
     await unlinkFifo(this.fifoPath)
-  }
-
-  private async destroyOnStartFailure(): Promise<void> {
-    this.readStream.destroy()
-    await quiesce(this.handle)
-    await unlinkFifo(this.fifoPath)
+    return quiescence
   }
 
   private awaitReady(timeoutMs: number): Promise<void> {
@@ -447,8 +501,15 @@ export class KernelProcess {
     // of process death; give the authoritative process-exit observation a
     // brief window to settle first so a genuine crash is not misreported as
     // a protocol violation (a driver that closes only the FIFO and stays
-    // alive is the genuine violation this grace distinguishes).
-    const exited = await this.handle.waitForExit(AbortSignal.timeout(FIFO_EOF_GRACE_MS))
+    // alive is the genuine violation this grace distinguishes). Reuses the
+    // one fixed descendant-grace constant (A1 finding 13) rather than a
+    // second, unexplained one.
+    let exited = false
+    try {
+      exited = await this.handle.waitForExit(AbortSignal.timeout(DESCENDANT_GRACE_MS))
+    } catch {
+      // A provider that cannot answer the bounded observation has not proven the tree dead (mirrors quiesce()).
+    }
     // oxlint-disable-next-line typescript/no-unnecessary-condition -- handle.done can settle exit while this grace wait is awaited.
     if (this.exitSettled || exited) return
     this.failProtocol(new KernelProtocolError(

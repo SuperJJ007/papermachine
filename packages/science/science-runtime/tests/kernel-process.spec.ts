@@ -5,7 +5,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -24,6 +24,7 @@ import {
 import type { KernelExecuteRequest, KernelProcessServices } from '../src/kernel-process.ts'
 import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
+import { ScienceRuntimeError } from '../src/types.ts'
 import { createFakeSandboxRunner } from './harness.ts'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
@@ -144,6 +145,54 @@ describe('KernelProcess', () => {
     const harness = await createHarness('kernel-ready-timeout')
     await expect(startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, kernelStartTimeoutMs: 200 }))
       .rejects.toThrow(KernelProtocolError)
+  })
+
+  it('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker (A1 finding 2)', async () => {
+    const harness = await createHarness('kernel-start-failure-threadpool')
+    // One more than the default libuv threadpool size: every prior fs.*
+    // call in this suite has already returned its worker, so this many
+    // sequential failures is enough to exhaust every worker if (pre-fix)
+    // each failed start's response-FIFO read-side open() blocks one
+    // permanently — the no-ready driver never opens the FIFO's write end.
+    const threadpoolSize = Number(process.env.UV_THREADPOOL_SIZE ?? 4)
+    for (let attempt = 0; attempt < threadpoolSize + 1; attempt += 1) {
+      await expect(startKernel(harness, 'python', {
+        driverPath: NO_READY_DRIVER_PATH,
+        kernelStartTimeoutMs: 200,
+        index: attempt,
+      })).rejects.toThrow(KernelProtocolError)
+    }
+    // No leaked worker: an ordinary fs call, which also needs a threadpool
+    // worker, still completes promptly instead of queuing forever behind
+    // permanently blocked opens.
+    const probe = stat(harness.root).then(() => 'resolved' as const)
+    const raced = await Promise.race([
+      probe,
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 2_000)),
+    ])
+    expect(raced).toBe('resolved')
+  }, 30_000)
+
+  it('a confine failure before spawn releases the FIFO so a same-index retry does not hit mkfifo: File exists (A1 finding 2)', async () => {
+    const harness = await createHarness('kernel-start-failure-retry')
+    // A prefix inside the confinement policy's own writable root fails
+    // `assertPrefixReadOnly` inside `confineInterpreterArgv`, before
+    // `services.subprocess.spawn` is ever called — no KernelProcess
+    // instance, and no driver process, ever exists for this attempt.
+    const overlappingPrefix = harness.services.sessionScratch.root
+    await expect(KernelProcess.start({
+      services: harness.services,
+      binding: fakeBinding('python', overlappingPrefix),
+      driverPath: DRIVER_PATH,
+      index: 0,
+      kernelStartTimeoutMs: 5_000,
+    })).rejects.toThrow(ScienceRuntimeError)
+    // Retry at the SAME index (the same response-FIFO path) with a valid
+    // prefix: `mkfifo` must not fail with "File exists" against a FIFO the
+    // failed attempt above left behind.
+    const kernel = await startKernel(harness, 'python', { index: 0 })
+    expect(kernel).toBeInstanceOf(KernelProcess)
+    await kernel.end('test-teardown')
   })
 
   it('routes two sequential executes to their matching DONE frames', async () => {

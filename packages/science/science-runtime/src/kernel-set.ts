@@ -381,10 +381,19 @@ export class KernelSet {
     return settlement
   }
 
-  /** Send EXIT (best-effort), quiesce, and notify — the one path every closed `ScienceKernelEndReason` member reaches. */
+  /**
+   * Send EXIT (best-effort), quiesce, and notify — the one path every closed
+   * `ScienceKernelEndReason` member reaches. Keeps quarantine active until
+   * quiescence is actually proven (A1 finding 1): when `end()`'s bounded
+   * escalation could not immediately prove the tree dead, this awaits its
+   * `eventualQuiescence` before notifying — this method's own returned
+   * promise is what `finishEnding` waits on to drop `byId` membership, so a
+   * still-possibly-alive tree never gets treated as gone.
+   */
   private async teardown(entry: SessionEntry, kernel: LiveKernel, reason: ScienceKernelEndReason): Promise<void> {
     assertClosedEndReason(reason)
-    await kernel.process.end(reason)
+    const quiescence = await kernel.process.end(reason)
+    if (!quiescence.quiescent) await quiescence.eventualQuiescence
     this.onKernelEnded(entry.session, {
       language: kernel.language,
       kernelEpoch: kernel.kernelEpoch,

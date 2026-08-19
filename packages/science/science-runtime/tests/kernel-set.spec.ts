@@ -17,6 +17,7 @@ import { ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-scie
 import type { ScienceEnvironmentBinding, ScienceInterpreterAvailableBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { KernelExitedError, KernelProcess, KernelProtocolError } from '../src/kernel-process.ts'
 import type { KernelExecuteRequest } from '../src/kernel-process.ts'
@@ -122,6 +123,40 @@ function createEpochAllocator(): EpochAllocator {
     },
   }
   return allocator
+}
+
+/**
+ * Wrap a real subprocess runtime so the kernel's own confined spawn
+ * (identified by `stdio.stdin === 'pipe'`, unique among this harness's
+ * spawns to `KernelProcess`'s spawn — `mkfifo` uses `stdin: 'ignore'`)
+ * reports its tree as never provably quiescent within `quiesce()`'s two
+ * grace-bounded observations, and its `terminate()` throws — reproducing
+ * `quiesce()`'s `{ quiescent: false }` result (as if a straggler descendant
+ * survived both escalation tiers) without waiting out real OS-level grace
+ * timing (A1 finding 1). The later unbounded observation resolves once
+ * `proveQuiescence()` is called, simulating the straggler finally being
+ * reaped.
+ */
+function wrapWithUnprovenQuiescence(inner: SubprocessRuntime): {
+  readonly subprocess: SubprocessRuntime
+  readonly proveQuiescence: () => void
+} {
+  const proven = Promise.withResolvers<boolean>()
+  const subprocess = {
+    executionWorld: inner.executionWorld,
+    resolveExecutable: (command: string) => inner.resolveExecutable(command),
+    spawn: (spec: SubprocessSpawnSpec): SubprocessHandle => {
+      const handle = inner.spawn(spec)
+      if (spec.stdio.stdin !== 'pipe') return handle
+      return {
+        ...handle,
+        terminate: () => { throw new Error('kernel-set.spec.ts: simulated termination failure (straggler simulation)') },
+        waitForExit: (signal?: AbortSignal) => (signal === undefined ? proven.promise : Promise.resolve(false)),
+      }
+    },
+    spawnTerminal: (spec: SubprocessTerminalSpawnSpec) => inner.spawnTerminal(spec),
+  } as unknown as SubprocessRuntime
+  return { subprocess, proveQuiescence: () => { proven.resolve(true) } }
 }
 
 interface Harness {
@@ -348,6 +383,48 @@ describe('KernelSet', () => {
     const kernel = await harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch)
     expect(kernel).toBeInstanceOf(KernelProcess)
     expect(harness.started).toHaveLength(2)
+  })
+
+  it('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child, A1 finding 1)', async () => {
+    const harness = await createHarness()
+    const { subprocess: wrapped, proveQuiescence } = wrapWithUnprovenQuiescence(harness.ctx.subprocess)
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const ended: Recorded<ScienceKernelEndedFact>[] = []
+    const kernelSet = new KernelSet({
+      subprocess: wrapped,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+    })
+    const original = attachScienceSession(harness.ctx, 'kernel-straggler')
+    const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
+    const environment = harness.environment(1, ['python'])
+    await kernelSet.acquire(original.session, 'python', environment, originalScratch)
+
+    original.detach()
+    kernelSet.detach(original.session)
+    // end()'s bounded escalation settles quickly here (the wrapped handle's
+    // terminate() throws), but eventualQuiescence has not been proven yet:
+    // pre-fix code releases quarantine and fires onKernelEnded regardless,
+    // so both checks below would already observe the released/notified
+    // state at this point.
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(ended).toHaveLength(0)
+    const successor = attachScienceSession(harness.ctx, 'kernel-straggler', original.session.events)
+    await expect(kernelSet.acquire(successor.session, 'python', environment, originalScratch))
+      .rejects.toThrow(KernelSetQuarantinedError)
+
+    proveQuiescence()
+    await vi.waitFor(() => { expect(ended).toHaveLength(1) })
+    expect(ended[0]?.fact.reason).toBe('session-end')
+
+    const kernel = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
+    expect(kernel).toBeInstanceOf(KernelProcess)
+    expect(started).toHaveLength(2)
   })
 
   it('passes onKernelStarted/onKernelEnded exactly the D4 facts', async () => {

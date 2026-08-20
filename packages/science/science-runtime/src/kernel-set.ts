@@ -472,6 +472,16 @@ export class KernelSet {
    * `entry.spawning`, so a same-id successor entry's {@link assertAcquirable}
    * check (via {@link syncBusyRegistration}) sees this session as busy for
    * the whole spawn window (A1 finding 5's conflict/quarantine timing).
+   * Registers the settlement's own `entry.spawning` cleanup BEFORE the
+   * immediately following `syncBusyRegistration` call: that call throws
+   * `KernelSetConflictError` when a different entry already holds `byId`
+   * (this entry lost the race), and `spawnKernel` keeps running in the
+   * background regardless of this synchronous throw — its own real spawn
+   * already started above. The cleanup must already be registered by the
+   * time it eventually settles, or `entry.spawning`'s entry for `language`
+   * is orphaned forever, permanently misreporting this entry as busy and
+   * making every later `spawnKernel` attempt's own conflict re-check see the
+   * same stale conflict.
    * Disposal awareness for the caller's own drain/reuse/rebind steps, and
    * for this spawn once it starts, is `pending`'s job (see
    * {@link trackPending}), not this map's.
@@ -486,11 +496,11 @@ export class KernelSet {
     const attempt = this.spawnKernel(entry, language, environment, sessionScratch, signal)
     const settlement = attempt.then(() => {}, () => {})
     entry.spawning.set(language, settlement)
-    this.syncBusyRegistration(entry)
     void settlement.then(() => {
       if (entry.spawning.get(language) === settlement) entry.spawning.delete(language)
       this.syncBusyRegistration(entry)
     })
+    this.syncBusyRegistration(entry)
     return attempt
   }
 
@@ -600,7 +610,15 @@ export class KernelSet {
       this.syncBusyRegistration(entry)
     } catch (error) {
       entry.kernels.delete(language)
-      this.syncBusyRegistration(entry)
+      // No `syncBusyRegistration` call here: `entry.spawning` still holds
+      // this attempt's own entry (trackedSpawn's cleanup only clears it once
+      // this whole call settles, below `discardUnregisteredKernel`'s own
+      // await), so busy/`byId` bookkeeping is already exactly what
+      // trackedSpawn's own registration established, including a same-id
+      // conflict it already reported to this attempt's caller. Calling it
+      // again here would re-detect that identical conflict and throw a
+      // second time, escaping uncaught and skipping the discard below —
+      // leaking this kernel's real process with no EXIT ever sent.
       return this.discardUnregisteredKernel(process, error)
     }
     this.armIdleTimer(live)

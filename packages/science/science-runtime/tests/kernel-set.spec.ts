@@ -28,7 +28,7 @@ import {
   KernelSetDetachedError,
   KernelSetQuarantinedError,
 } from '../src/kernel-set.ts'
-import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
+import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
 import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
@@ -165,6 +165,41 @@ function wrapWithUnprovenQuiescence(inner: SubprocessRuntime): {
     spawnTerminal: (spec: SubprocessTerminalSpawnSpec) => inner.spawnTerminal(spec),
   } as unknown as SubprocessRuntime
   return { subprocess, proveQuiescence: () => { proven.resolve(true) } }
+}
+
+/**
+ * Wrap a real subprocess runtime to count every confined kernel spawn (the
+ * same `stdio.stdin === 'pipe'` signature {@link wrapWithUnprovenQuiescence}
+ * keys on) and every `EXIT` frame written to one of their stdin pipes —
+ * `KernelProcess.end()`'s own commanded-teardown signal, the one write site
+ * for that frame — without altering any spawned handle's real behavior.
+ */
+function wrapTrackingKernelSpawns(inner: SubprocessRuntime): {
+  readonly subprocess: SubprocessRuntime
+  readonly spawnCount: () => number
+  readonly exitWriteCount: () => number
+} {
+  let spawns = 0
+  let exitWrites = 0
+  const subprocess = {
+    executionWorld: inner.executionWorld,
+    resolveExecutable: (command: string) => inner.resolveExecutable(command),
+    spawn: (spec: SubprocessSpawnSpec): SubprocessHandle => {
+      const handle = inner.spawn(spec)
+      if (spec.stdio.stdin !== 'pipe' || handle.stdin === undefined) return handle
+      spawns += 1
+      const realStdin = handle.stdin
+      const trackedStdin = {
+        write: (chunk: string) => {
+          if (chunk.startsWith('EXIT')) exitWrites += 1
+          return realStdin.write(chunk)
+        },
+      } as unknown as NonNullable<SubprocessHandle['stdin']>
+      return { ...handle, stdin: trackedStdin }
+    },
+    spawnTerminal: (spec: SubprocessTerminalSpawnSpec) => inner.spawnTerminal(spec),
+  } as unknown as SubprocessRuntime
+  return { subprocess, spawnCount: () => spawns, exitWriteCount: () => exitWrites }
 }
 
 interface Harness {
@@ -507,6 +542,63 @@ describe('KernelSet', () => {
     expect(fulfilled).toHaveLength(1)
     expect(rejected).toHaveLength(1)
     expect(rejected[0]?.reason).toBeInstanceOf(KernelSetConflictError)
+  })
+
+  it('discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered (K4.2-F)', async () => {
+    // trackedSpawn's own syncBusyRegistration call can itself be the one
+    // that throws the conflict (a different entry already claimed byId):
+    // spawnKernel's real subprocess spawn already started before that call
+    // runs, so the losing kernel keeps spawning in the background regardless
+    // of the throw, and D3's discipline still requires it to end through the
+    // ordinary EXIT/quiesce path rather than being left running outside
+    // KernelSet's own teardown.
+    const harness = await createHarness()
+    const { subprocess: wrapped, exitWriteCount, spawnCount } = wrapTrackingKernelSpawns(harness.ctx.subprocess)
+    const kernelSet = new KernelSet({
+      subprocess: wrapped,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: () => {},
+      onKernelEnded: () => {},
+    })
+    const original = attachScienceSession(harness.ctx, 'kernel-conflict-discard')
+    const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
+    original.detach()
+    const successor = attachScienceSession(harness.ctx, 'kernel-conflict-discard', original.session.events)
+    const successorScratch = await ensureSessionScratch(harness.dshHome, successor.session)
+    const environment = harness.environment(1, ['python'])
+    const [firstResult, secondResult] = await Promise.allSettled([
+      kernelSet.acquire(original.session, 'python', environment, originalScratch),
+      kernelSet.acquire(successor.session, 'python', environment, successorScratch),
+    ])
+    const fulfilled = [firstResult, secondResult].filter(
+      (result): result is PromiseFulfilledResult<AcquiredKernel> => result.status === 'fulfilled',
+    )
+    const rejected = [firstResult, secondResult].filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]?.reason).toBeInstanceOf(KernelSetConflictError)
+
+    // The loser's own spawnKernel attempt is not cancelled by the
+    // conflict throw: its real subprocess spawn still happens.
+    await vi.waitFor(() => { expect(spawnCount()).toBe(2) })
+    // Exactly one of the two spawned kernels — the loser, discarded through
+    // discardUnregisteredKernel — ever receives EXIT; the winner stays live
+    // and untouched by this whole race.
+    await vi.waitFor(() => { expect(exitWriteCount()).toBe(1) })
+
+    const winner = fulfilled[0]
+    if (winner === undefined) throw new Error('unreachable: length asserted above')
+    const request = await prepareRun(harness.root, 'run-after-conflict', { status: 'ok' })
+    await expect(winner.value.process.execute(request)).resolves.toMatchObject({ status: 'ok' })
+
+    const settled = await kernelSet.disposeAll()
+    expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
   })
 
   it('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child, A1 finding 1)', async () => {

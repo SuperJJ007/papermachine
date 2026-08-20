@@ -26,6 +26,8 @@
     "tests/scaffold-hermetic.e2e.ts",
     "tests/minimal-preset.snapshot.ts",
     "tests/science-preset.snapshot.ts",
+    "tests/science-stop.e2e.ts",
+    "tests/science-persistent-kernel-test-helpers.ts",
     "tests/science-chart-outcome.e2e.ts",
     "tests/science-artifact-types.e2e.ts",
     "tests/message-feedback-protocol.snapshot.ts",

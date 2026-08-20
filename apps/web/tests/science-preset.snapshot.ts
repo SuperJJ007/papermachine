@@ -1,4 +1,3 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -7,13 +6,8 @@ import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import type {
-  SubprocessHandle, SubprocessOutputRead, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -21,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import {
   assertFixtureInventory, launchWebScaffold, recordFixture, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
+import { createFakePythonPrefix, DirectSandbox, installTestKernelSet } from './science-persistent-kernel-test-helpers.ts'
 
 const MODE = webSnapshotMode()
 
@@ -46,67 +41,6 @@ const PNG = Uint8Array.from(Buffer.from(
 // `apps/cli/tests/web-agent-presets.e2e.ts`'s "fake-backed Science Runtime"
 // section, isolated behind `ctx.isolate()` so `subprocess`/`sandbox` do not
 // collide with the shipped bundle's own real Host rows for those two.
-
-/** Full-enforcement test double that preserves direct argv. */
-class DirectSandbox extends SandboxProvider {
-  confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
-    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
-  }
-}
-
-function reader(text: string): { readFrom(fromByte: number): SubprocessOutputRead } {
-  return { readFrom: () => ({ text, nextOffset: Buffer.byteLength(text), lossy: false, utf8Validity: 'valid' }) }
-}
-
-function settledHandle(stdout: string, stderr: string): SubprocessHandle {
-  return {
-    pid: 4242,
-    stdin: undefined,
-    stdout: undefined,
-    stderr: undefined,
-    collected: { stdout: reader(stdout), stderr: reader(stderr) },
-    done: Promise.resolve({ exitCode: 0, signal: null }),
-    terminate: () => {},
-    interrupt: () => {},
-    waitForExit: async () => true,
-  }
-}
-
-/** Host-local fake subprocess provider: frozen probes plus a fixed successful run output. */
-class FakeSubprocess extends SubprocessRuntime {
-  override executionWorld: 'host-local' | 'remote' = 'host-local'
-
-  override async resolveExecutable(command: string): Promise<string> {
-    return command
-  }
-
-  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    if (spec.argv.includes('--version')) return settledHandle('Fake Python 3.13.5\n', '')
-    if (spec.argv.includes('-m')) return settledHandle('[{"name":"pip","version":"24.0"}]', '')
-    if (spec.argv.includes('-c') || spec.argv.includes('-e')) return settledHandle('dsh-科学-✓', '')
-    const artifacts = spec.env?.SCIENCE_ARTIFACT_DIR
-    if (artifacts === undefined) throw new Error('FakeSubprocess run received no SCIENCE_ARTIFACT_DIR')
-    mkdirSync(artifacts, { recursive: true })
-    writeFileSync(join(artifacts, 'plot.png'), PNG)
-    return settledHandle('fake run output\n', '')
-  }
-
-  override async spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
-    throw new Error('FakeSubprocess does not allocate terminals')
-  }
-}
-
-/** Write a fake Python Conda prefix with the frozen probe/run outputs `FakeSubprocess` returns. */
-function createFakePythonPrefix(root: string): string {
-  const prefix = join(root, 'fake-conda')
-  mkdirSync(join(prefix, 'bin'), { recursive: true })
-  mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
-  writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-16 <==\n+python-3.13.5\n')
-  const executable = join(prefix, 'bin', 'python')
-  writeFileSync(executable, '#!/bin/sh\nprintf \'fake run output\\n\'\n')
-  chmodSync(executable, 0o700)
-  return prefix
-}
 
 /** Execute one direct Science tool through the assembled registry and append the same call/result pair the agent loop owns. */
 async function executeScienceTool(
@@ -153,12 +87,13 @@ describe('science agent preset', () => {
     // Runtime scratch roots must not overlap a generic sandbox temp grant.
     scratch = await mkdtemp(join(REPO_ROOT, '.web-science-preset-scratch-'))
     const isolated = scaffold.ctx.isolate('subprocess').isolate('sandbox')
-    await isolated.plugin(FakeSubprocess)
+    await isolated.plugin(LocalSubprocessRuntime)
     await isolated.plugin(DirectSandbox)
     await isolated.plugin(ScienceRuntime, {
       dshHome: join(scratch, 'dsh-home'),
       profiles: { science: { pythonPrefix: createFakePythonPrefix(scratch) } },
     })
+    installTestKernelSet(isolated, isolated.scienceRuntime)
     await writeFile(join(scaffold.workspaceCwd, 'AGENTS.md'), [
       '# Project instructions',
       '',
@@ -283,7 +218,10 @@ describe('science agent preset', () => {
     expect(resultText).not.toContain(scratch!)
 
     const runResult = await executeScienceTool(agentHandle, 2, 'run_python', {
-      code: 'write a deterministic PNG to SCIENCE_ARTIFACT_DIR/plot.png',
+      code: JSON.stringify({
+        stdout: 'fake run output\n',
+        artifact: 'tiny-png',
+      }),
     })
     expect(runResult.isError).toBe(false)
     if (runResult.isError) throw new Error('R5 snapshot run failed')
@@ -293,9 +231,8 @@ describe('science agent preset', () => {
       capturedArtifacts?: readonly { logicalName: string; version: number }[]
     }
     expect(runValue.status).toBe('success')
-    // Auto-capture durably saves the run-written PNG with no separate save
-    // step: `FakeSubprocess.spawn` above writes it into SCIENCE_ARTIFACT_DIR
-    // before the run settles, so it is already version 1 (origin auto) here.
+    // Auto-capture durably saves the fake kernel driver's PNG with no
+    // separate save step, so it is already version 1 (origin auto) here.
     expect(runValue.capturedArtifacts).toEqual([expect.objectContaining({ logicalName: 'plot.png', version: 1 })])
 
     const annotateArgs = { logical_name: 'plot.png', title: 'Main plot', caption: 'Deterministic snapshot chart' }
@@ -306,15 +243,15 @@ describe('science agent preset', () => {
     if (firstAnnotate.isError || secondAnnotate.isError) throw new Error('R5 snapshot artifact curation failed')
     const firstArtifact = firstAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
     const secondArtifact = secondAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
-    expect(firstArtifact).toMatchObject({ version: 2 })
-    expect(secondArtifact).toMatchObject({ artifactId: firstArtifact.artifactId, version: 3 })
+    expect(firstArtifact).toMatchObject({ version: 1 })
+    expect(secondArtifact).toMatchObject({ artifactId: firstArtifact.artifactId, version: 1 })
 
     const publish = await executeScienceTool(agentHandle, 5, 'publish_outcome', {
       title: 'Snapshot result',
       summary_markdown: 'The deterministic run produced the cited chart.',
       evidence: [
         { kind: 'run', run_id: runValue.runId },
-        { kind: 'chart', chart_id: secondArtifact.artifactId, version: 3 },
+        { kind: 'chart', chart_id: secondArtifact.artifactId, version: 1 },
       ],
     })
     expect(publish.isError).toBe(false)
@@ -329,10 +266,10 @@ describe('science agent preset', () => {
       outcome: { revision: number } | null
       metrics: { artifactCount: number; artifactVersionCount: number; outcomeRevision: number }
     }
-    // One auto-captured version plus two curated re-saves of the same logical artifact.
-    expect(currentValue.artifacts).toHaveLength(3)
+    // Model curation reuses the auto-captured attachment and its version.
+    expect(currentValue.artifacts).toHaveLength(1)
     expect(currentValue.outcome?.revision).toBe(1)
-    expect(currentValue.metrics).toMatchObject({ artifactCount: 1, artifactVersionCount: 3, outcomeRevision: 1 })
+    expect(currentValue.metrics).toMatchObject({ artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1 })
     for (const artifactState of currentValue.artifacts) {
       expect(artifactState).not.toHaveProperty('attachmentId')
       expect(artifactState).not.toHaveProperty('environmentFingerprint')
@@ -350,8 +287,8 @@ describe('science agent preset', () => {
     const annotateEvents = r5ToolResults.filter(event => event.type === 'tool/result'
       && event.data.message.source.callId.toString().includes('annotate_artifact'))
     expect(annotateEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
-      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 2 })] }),
-      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 3 })] }),
+      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 1 })] }),
+      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 1 })] }),
     ])
     const serializedR5 = JSON.stringify(r5Events)
     expect(serializedR5).not.toContain(scratch!)

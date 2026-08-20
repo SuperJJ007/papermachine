@@ -26,8 +26,8 @@ Science fallback 行也把持久化的 post-dispatch `AbortError` 代码 `ABORTE
 
 即使模型请求复用同一配置 header，artifact 历史仍按用户轮次排列。持久化日志仍保留 `requestHeaderSeq`，供授权与溯源关联使用。
 
-对 canonical post-dispatch abort，已中止展示现在与持久化的 `cancelled`/`CANCELLED` Science state 一致。组装 Web fixture 在 cancelled Science run 旁重放 `AbortError`/`ABORTED` 的 `run_python` 调用，并同时断言已中止行与持久化 projection。真实 Stop 控件交互仍需要一个可重放的运行中内核 fixture，不能由这份已完成的重放覆盖推断。
+对 canonical post-dispatch abort，已中止展示现在与持久化的 `cancelled`/`CANCELLED` Science state 一致。组装 Web fixture 还会经 composer 启动 fake persistent-kernel 的 `run_python` 调用，在 Science 行运行时点击真实 Stop 控件，并断言已中止行、`AbortError`/`ABORTED` 工具结果与持久化 cancelled projection。
 
 ## Testing
 
-Focused Runtime capture 证明共享一个 request header 的两个来源 run 轮次会产生 v1 与 v2，而同一轮次的两次 run 会取代 v1。严格重放拒绝跨轮次的字节变化 auto 取代及字节变化的后续 model 策展，同时接受未变化 attachment。组装 Chromium fixture 渲染 v1/v2 run 行小标签与 Details 导航，然后将 canonical aborted run 渲染为已中止，同时重放保留 `cancelled`/`CANCELLED`。UI component 覆盖将 `ABORTED` 固定为已中止、将 `ABORTED_BEFORE_DISPATCH` 固定为错误。
+Focused Runtime capture 证明共享一个 request header 的两个来源 run 轮次会产生 v1 与 v2，而同一轮次的两次 run 会取代 v1。严格重放拒绝跨轮次的字节变化 auto 取代及字节变化的后续 model 策展，同时接受未变化 attachment。组装 Chromium fixture 渲染 v1/v2 run 行小标签与 Details 导航；另一份 persistent-kernel fixture 经 composer 执行一轮，在 `run_python` 期间点击 Stop，并观测已中止行与 `cancelled`/`CANCELLED`。UI component 覆盖将 `ABORTED` 固定为已中止、将 `ABORTED_BEFORE_DISPATCH` 固定为错误。

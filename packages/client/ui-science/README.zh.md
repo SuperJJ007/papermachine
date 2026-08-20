@@ -6,7 +6,7 @@
 
 ## Artifact 行
 
-带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题——不包含说明、来源运行或字节数，这些都在 artifact viewer 内容工具栏中。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。
+带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题——不包含说明、来源运行或字节数，这些都在 artifact viewer 内容工具栏中。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。一份组装 Web 回归通过真实控件停止 live persistent-kernel run，并将这一已中止展示与其持久化 cancelled run 对照。
 
 ## Run 行
 

@@ -15,9 +15,11 @@
 // Usage: node kernel_r.R <fifoPath>
 //
 // Per-run JSON action shape (all fields optional):
-//   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "...", "stdout": "...", "stderr": "..." }
+//   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "...", "stdout": "...", "stderr": "...", "artifact": "tiny-png" }
 //     -- stdout/stderr, when present, are written verbatim to the RUN frame's
 //        own stdoutPath/stderrPath before DONE, modeling the wire protocol's own output capture.
+//     -- artifact tiny-png writes plot.png into the RUN frame's
+//        artifactDir for assembled auto-capture fixtures.
 //   { "action": "garbage" }            -- writes one unparseable line instead of DONE
 //   { "action": "crash" }              -- process.exit(1) without replying
 //   { "action": "close-fifo" }         -- closes the write end, stays alive, never replies
@@ -27,9 +29,11 @@
 //        the process survives it and keeps sleeping.
 
 const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
+const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
 const PROTOCOL_VERSION = 1
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 
 const fifoPath = process.argv[2]
 if (fifoPath === undefined) {
@@ -70,10 +74,10 @@ rl.on('line', (line) => {
     process.exit(0)
   }
   if (cmd !== 'RUN') return
-  handleRun(parts[1], parts[2], parts[4], parts[5])
+  handleRun(parts[1], parts[2], parts[4], parts[5], parts[6])
 })
 
-function handleRun(runId, sourcePath, stdoutPath, stderrPath) {
+function handleRun(runId, sourcePath, stdoutPath, stderrPath, artifactDir) {
   let action
   try {
     action = JSON.parse(readFileSync(sourcePath, 'utf8'))
@@ -87,6 +91,7 @@ function handleRun(runId, sourcePath, stdoutPath, stderrPath) {
   const flags = action.flags || ''
   if (typeof action.stdout === 'string') writeFileSync(stdoutPath, action.stdout)
   if (typeof action.stderr === 'string') writeFileSync(stderrPath, action.stderr)
+  if (action.artifact === 'tiny-png') writeFileSync(join(artifactDir, 'plot.png'), TINY_PNG)
 
   if (kind === 'reply') {
     send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)

@@ -112,11 +112,11 @@ function doneOutcome(frame: KernelDoneFrame): KernelRunOutcome {
       return { status: 'success', outputDegraded: frame.captureDegraded, retireKernel: false }
     case 'error':
       return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
+    // The host only sends SIGINT while an abort is in progress (D5): an
+    // interrupted reply with no abort ever requested means the driver
+    // broke protocol despite framing a well-formed DONE line.
+    /* v8 ignore next 2 -- unreachable under a protocol-honest driver */
     case 'interrupted':
-      // The host only sends SIGINT while an abort is in progress (D5): an
-      // interrupted reply with no abort ever requested means the driver
-      // broke protocol despite framing a well-formed DONE line.
-      /* v8 ignore next 2 -- unreachable under a protocol-honest driver */
       return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
   }
 }
@@ -747,15 +747,25 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * guards against; reaching here at all would mean that check raced a
    * detach in the same synchronous continuation, which cannot happen, so
    * this classification is a defensive backstop naming the actual
-   * condition rather than a spawn failure.
+   * condition rather than a spawn failure. `KernelEpochRegressionError` is
+   * equally unreachable through this production allocator (`nextKernelEpoch`
+   * above): it derives strictly from the durable projection's own latest
+   * committed epoch, appendable only through the strictly-monotonic,
+   * append-only session log, so it can never return a value the live
+   * `KernelSet` entry's own `epochSeen` watermark (which only ever advances
+   * from that exact allocator's own prior return values) already exceeds —
+   * `kernel-set.spec.ts` proves the underlying `KernelSet` guard fires
+   * correctly against a deliberately misbehaving injected allocator instead.
    */
   private kernelAcquisitionError(error: unknown, language: ScienceLanguage): Error {
     if (error instanceof KernelSetQuarantinedError) {
       return new ScienceRuntimeError('RUNTIME_BUSY', 'Science kernel from a predecessor Session is still tearing down', { cause: error })
     }
+    /* v8 ignore next 2 -- unreachable: see this method's own doc above. */
     if (error instanceof KernelSetDetachedError) {
       return new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Session detached before kernel acquisition', { cause: error })
     }
+    /* v8 ignore next 2 -- unreachable: see this method's own doc above. */
     if (error instanceof KernelEpochRegressionError) {
       return new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science kernel epoch allocation did not advance', { cause: error })
     }

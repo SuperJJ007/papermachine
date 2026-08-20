@@ -825,6 +825,19 @@ describe('E2BSubprocessHandle', () => {
     expect(fake.commandsSeen.filter(command => command.startsWith('kill -'))).toHaveLength(signals)
   })
 
+  it('interrupt() is a documented no-op: it sends no signal and leaves the process group untouched', async () => {
+    const fake = new FakeSandbox()
+    const handle = testHandle(runtime(fake), spec(), '/runtime/interrupt-noop')
+    await flush()
+    expect(() => { handle.interrupt() }).not.toThrow()
+    await flush()
+    expect(fake.commandsSeen.some(command => command.startsWith('kill -'))).toBe(false)
+    expect(fake.alive).toBe(true)
+    handle.terminate()
+    await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
   it('makes termination a permanent no-op after natural quiescence is observed', async () => {
     const fake = new FakeSandbox()
     const handle = testHandle(runtime(fake), spec(), '/runtime/natural-quiescence')

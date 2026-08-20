@@ -10,6 +10,7 @@
 // Per-run JSON action shape (all fields optional):
 //   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "..." }
 //   { "action": "garbage" }            -- writes one unparseable line instead of DONE
+//   { "action": "double-garbage" }     -- writes two unparseable lines instead of DONE
 //   { "action": "crash" }              -- process.exit(1) without replying
 //   { "action": "close-fifo" }         -- closes the write end, stays alive, never replies
 //   { "action": "sleep", "sleepMs": 5000, "trapSigint": true|false, ...reply fields }
@@ -80,6 +81,11 @@ function handleRun(runId, sourcePath) {
   }
   if (kind === 'garbage') {
     send('THIS-IS-NOT-A-VALID-FRAME')
+    return
+  }
+  if (kind === 'double-garbage') {
+    send('THIS-IS-NOT-A-VALID-FRAME-1')
+    send('THIS-IS-NOT-A-VALID-FRAME-2')
     return
   }
   if (kind === 'crash') {

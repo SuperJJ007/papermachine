@@ -393,6 +393,10 @@ export function planKernelScratch(
 ): ScienceKernelScratch {
   const name = `${language}-${String(index)}`
   const directory = join(sessionScratch.kernels, name)
+  // name is built from a closed ScienceLanguage union and a finite number's
+  // String() conversion, neither of which can ever produce a path
+  // separator, so join() cannot escape sessionScratch.kernels or reproduce it exactly.
+  /* v8 ignore next 3 -- see above */
   if (!containsPath(sessionScratch.kernels, directory) || directory === sessionScratch.kernels) {
     throw new Error('science-runtime: kernel directory escapes the owned kernels directory')
   }

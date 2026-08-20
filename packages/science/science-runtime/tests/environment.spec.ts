@@ -9,12 +9,13 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceInterpreterBinding } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
 import { MIN_PACKAGES_MAX_BYTES, resolveConfig } from '../src/config.ts'
-import { observeProfile } from '../src/environment.ts'
+import { observeProfile, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
   ControlledSubprocess,
@@ -1201,6 +1202,48 @@ describe('ScienceRuntime.bindEnvironment', () => {
       ].join('\0'))
       .digest('hex')
     expect(first.python.bindingFingerprint).toBe(expectedFingerprint)
+  })
+})
+
+describe('sameObservation', () => {
+  const available = (fingerprint: string): ScienceInterpreterBinding => ({
+    language: 'python',
+    configuredPrefix: '/prefix',
+    canonicalPrefix: '/prefix',
+    executable: '/prefix/bin/python',
+    executableIdentity: 'identity',
+    languageVersion: '3.13.5',
+    condaHistorySha256: 'a'.repeat(64),
+    bindingFingerprint: fingerprint,
+    packages: [],
+    packagesSha256: 'b'.repeat(64),
+    packagesTruncated: false,
+    capability: 'available',
+  })
+  const unavailable: ScienceInterpreterBinding = {
+    language: 'python',
+    configuredPrefix: '/prefix',
+    capability: 'unavailable',
+    reason: 'not found',
+  }
+
+  it('treats two absent bindings as the same observation', () => {
+    expect(sameObservation(undefined, undefined)).toBe(true)
+  })
+
+  it('treats an absent binding paired with a present one as different, in either position', () => {
+    expect(sameObservation(undefined, available('f'.repeat(64)))).toBe(false)
+    expect(sameObservation(available('f'.repeat(64)), undefined)).toBe(false)
+  })
+
+  it('compares two available bindings by fingerprint alone', () => {
+    expect(sameObservation(available('c'.repeat(64)), available('c'.repeat(64)))).toBe(true)
+    expect(sameObservation(available('c'.repeat(64)), available('d'.repeat(64)))).toBe(false)
+  })
+
+  it('never treats an unavailable binding as matching, even against an identical unavailable binding', () => {
+    expect(sameObservation(unavailable, unavailable)).toBe(false)
+    expect(sameObservation(unavailable, available('c'.repeat(64)))).toBe(false)
   })
 })
 

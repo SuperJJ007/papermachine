@@ -1,25 +1,40 @@
 /** Focused kernel-run pipeline coverage: acquisition, D5 cancel/timeout, D10 classification, capture, and replay. */
 
-import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MAX_OUTPUT_BYTES } from '../src/execution.ts'
 import { KernelSet } from '../src/kernel-set.ts'
+import { ensureSessionScratch, planKernelScratch, planSessionScratch } from '../src/scratch.ts'
+import ScienceRuntime from '../src/index.ts'
 import {
+  attachScienceSession,
   authorizePythonRun,
   authorizeRun,
   createFakePythonPrefix,
   createFakeRPrefix,
+  createFakeSandboxRunner,
   createKernelRuntimeHarness,
   createScienceSession,
   installTestKernelSet,
   KERNEL_ASSETS_DELAYED_READY_ROOT,
   KERNEL_ASSETS_NO_READY_ROOT,
   kernelAction,
+  mountAttachments,
+  rejectSessionAppend,
 } from './harness.ts'
+
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -58,6 +73,41 @@ async function readyPythonHarness(id: string, kernelIdleTimeoutMs?: number): Pro
   return { root, ctx: harness.ctx, runtime: harness.runtime, session }
 }
 
+/**
+ * Chmods a caller-set target read-only the moment the kernel's own confined
+ * spawn is attempted (identified by `stdio.stdin === 'pipe'`), reaching a
+ * failure window strictly after session-scratch materialization but
+ * strictly before createRunScratch.
+ */
+class ChmodOnKernelSpawnSubprocess extends LocalSubprocessRuntime {
+  chmodTarget: string | undefined
+
+  override spawn(spec: Parameters<LocalSubprocessRuntime['spawn']>[0]): ReturnType<LocalSubprocessRuntime['spawn']> {
+    if (spec.stdio.stdin === 'pipe' && this.chmodTarget !== undefined) chmodSync(this.chmodTarget, 0o500)
+    return super.spawn(spec)
+  }
+}
+
+/**
+ * Wraps a real subprocess runtime so the kernel's own confined spawn
+ * (identified by `stdio.stdin === 'pipe'`, unique among this harness's
+ * spawns — `mkfifo` uses `stdin: 'ignore'`) has its handle transformed by
+ * `transform`; every other spawn and every other method delegates
+ * unchanged. Matches `kernel-set.spec.ts`'s own `wrapWithUnprovenQuiescence` pattern.
+ */
+function wrapKernelSpawn(inner: SubprocessRuntime, transform: (handle: SubprocessHandle) => SubprocessHandle): SubprocessRuntime {
+  return {
+    executionWorld: inner.executionWorld,
+    resolveExecutable: (command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal) =>
+      inner.resolveExecutable(command, env, signal),
+    spawn: (spec: SubprocessSpawnSpec) => {
+      const handle = inner.spawn(spec)
+      return spec.stdio.stdin === 'pipe' ? transform(handle) : handle
+    },
+    spawnTerminal: (spec: Parameters<SubprocessRuntime['spawnTerminal']>[0]) => inner.spawnTerminal(spec),
+  } as unknown as SubprocessRuntime
+}
+
 describe('ScienceRuntime.startRun preflight', () => {
   it('rejects malformed source before any kernel work', async () => {
     const { runtime, session } = await readyPythonHarness('science-run-preflight-source')
@@ -80,6 +130,18 @@ describe('ScienceRuntime.startRun preflight', () => {
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
   })
 
+  it('rejects a run for a language the applied environment has no available binding for', async () => {
+    // readyPythonHarness binds a profile with only pythonPrefix configured:
+    // the environment is applied (python is available), but r was never
+    // observed at all — selectBinding must still refuse it.
+    const { runtime, session } = await readyPythonHarness('science-run-unbound-language')
+    await expect(runtime.startRun({
+      session, language: 'r', code: kernelAction({ status: 'ok' }),
+      ...authorizeRun(session, 'r'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY', message: 'Science r environment is not available' })
+    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
   it('rejects a second concurrent run with RUNTIME_BUSY', async () => {
     const { runtime, session } = await readyPythonHarness('science-run-busy')
     const first = await runtime.startRun({
@@ -92,6 +154,25 @@ describe('ScienceRuntime.startRun preflight', () => {
     })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
     first.cancel()
     await expect(first.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
+  })
+
+  it('rejects a fresh run with RUNTIME_BUSY when a prior run-finished append never committed, leaving the projection with an open run', async () => {
+    // The lease itself is released once settlePublishedKernelRun's outer
+    // finally runs, even though run-finished never committed — so a second
+    // startRun call must be refused by the projection's own open-run check
+    // (index.ts), not by the lease registry's busy check.
+    const { runtime, session } = await readyPythonHarness('science-run-stuck-open')
+    const finishError = new Error('injected run-finished append failure')
+    rejectSessionAppend(session, 'science/run-finished', finishError)
+    const stuck = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session, 'science-run-stuck-open-1'), signal: new AbortController().signal,
+    })
+    await expect(stuck.done).rejects.toMatchObject({ code: 'TERMINAL_COMMIT_FAILED' })
+    await expect(runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session, 'science-run-stuck-open-2'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
   })
 
   it('rejects kernel execution pre-publication on win32', async () => {
@@ -149,6 +230,132 @@ describe('ScienceRuntime.startRun preflight', () => {
       session, language: 'r', code: kernelAction({ status: 'ok' }),
       ...authorizeRun(session, 'r'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+  })
+
+  it('aggregates a vetoed run-started append with cleanup failures on both the unpublished run directory and the session scratch root', async () => {
+    // An environment-bound fact appended directly (bypassing bindEnvironment,
+    // as the R-space test above does) means this startRun's own
+    // materializeSessionScratch call is the FIRST ever for this session
+    // (scratchPreparation.created === true), so a vetoed run-started append
+    // reaches both real rollback attempts instead of rollbackSessionScratch's
+    // no-op fast path for already-owned scratch.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-aggregate-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-aggregate-cleanup')
+    const dshHome = join(root, 'dsh-home')
+    const sessionScratch = await planSessionScratch(dshHome, session)
+    session.append('science/environment-bound', {
+      version: 1,
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 1,
+        status: 'applied',
+        python: {
+          language: 'python',
+          configuredPrefix: prefix,
+          canonicalPrefix: prefix,
+          executable: join(prefix, 'bin', 'python'),
+          executableIdentity: 'test-identity',
+          languageVersion: 'Fake Python 3.13.5',
+          condaHistorySha256: 'a'.repeat(64),
+          bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'pip', version: '24.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
+          capability: 'available',
+        },
+      },
+    })
+    const appendError = new Error('injected run-started append failure')
+    rejectSessionAppend(session, 'science/run-started', appendError, () => {
+      // Fires only once materializeSessionScratch and createRunScratch have
+      // already succeeded, so this chmod targets cleanup, not creation.
+      chmodSync(sessionScratch.runs, 0o500)
+      chmodSync(dirname(sessionScratch.root), 0o500)
+    })
+    try {
+      await expect(harness.runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })).rejects.toThrow(AggregateError)
+    } finally {
+      chmodSync(sessionScratch.runs, 0o700)
+      chmodSync(dirname(sessionScratch.root), 0o700)
+    }
+  })
+
+  it('aggregates a kernel-acquisition failure with a session-scratch rollback failure (root not yet created by any prior operation)', async () => {
+    // An environment-bound fact appended directly (bypassing bindEnvironment,
+    // as the R-space test above does) means this startRun's own
+    // materializeSessionScratch call is the FIRST ever for this session
+    // (scratchPreparation.created === true). The kernel spawn itself then
+    // fails (no-ready driver, short deadline) before createRunScratch ever
+    // runs, so runScratch stays undefined and the AggregateError's message
+    // selects the pre-publication branch.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-aggregate-prekernel-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ChmodOnKernelSpawnSubprocess)
+    const runner = createFakeSandboxRunner(root)
+    await ctx.plugin(LocalSandboxProvider, {
+      runnerCommand: [runner],
+      runnerFailureSignatures: ['science-runtime fake runner failure'],
+    })
+    await mountAttachments(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      timeoutMs: 10_000,
+    })
+    const runtime = ctx.scienceRuntime
+    const session = createScienceSession(ctx, 'science-run-aggregate-prekernel')
+    const dshHome = join(root, 'dsh-home')
+    const sessionScratch = await planSessionScratch(dshHome, session)
+    session.append('science/environment-bound', {
+      version: 1,
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('fake'),
+        configuredAt: 1,
+        validatedAt: 1,
+        status: 'applied',
+        python: {
+          language: 'python',
+          configuredPrefix: prefix,
+          canonicalPrefix: prefix,
+          executable: join(prefix, 'bin', 'python'),
+          executableIdentity: 'test-identity',
+          languageVersion: 'Fake Python 3.13.5',
+          condaHistorySha256: 'a'.repeat(64),
+          bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'pip', version: '24.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
+          capability: 'available',
+        },
+      },
+    })
+    installTestKernelSet(ctx, runtime, { assetsRoot: KERNEL_ASSETS_NO_READY_ROOT, kernelStartTimeoutMs: 200 })
+    const subprocess = ctx.subprocess as ChmodOnKernelSpawnSubprocess
+    subprocess.chmodTarget = dirname(sessionScratch.root)
+    try {
+      await expect(runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })).rejects.toThrow(AggregateError)
+    } finally {
+      chmodSync(dirname(sessionScratch.root), 0o700)
+    }
   })
 })
 
@@ -289,6 +496,117 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
+  it('classifies a discarded kernel whose own teardown also failed as KERNEL_START_FAILED with the AggregateError cause class', async () => {
+    const { root, runtime, session } = await readyPythonHarness('science-run-discard-aggregate')
+    const sessionScratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+    // This session's first-ever startRun spawns kernel epoch 1.
+    const planned = planKernelScratch(sessionScratch, 'python', 1)
+    const appendError = new Error('injected kernel-state append failure')
+    rejectSessionAppend(session, 'science/kernel-state', appendError, () => {
+      // Also make the fresh kernel's own discard-time teardown fail: its
+      // response FIFO cannot be unlinked once the containing directory loses
+      // write access.
+      chmodSync(planned.directory, 0o500)
+    })
+    try {
+      const rejection = runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })
+      await expect(rejection).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
+      await expect(rejection).rejects.toThrow(/the kernel could not be stopped cleanly after its startup failed/)
+    } finally {
+      chmodSync(planned.directory, 0o700)
+    }
+  })
+
+  it('classifies a plain kernel spawn failure as KERNEL_START_FAILED with the default cause class', async () => {
+    // A subprocess seam that spawns the kernel's own confined process
+    // without the requested stdin pipe: KernelProcess's constructor throws a
+    // plain Error, never wrapped by discardUnregisteredKernel (that path
+    // only runs once a kernel has actually started), so kernelAcquisitionError
+    // falls through every specific class to the generic cause-class fallback.
+    const { runtime, session, ctx } = await readyPythonHarness('science-run-generic-start-failure')
+    installTestKernelSet(ctx, runtime, {
+      subprocess: wrapKernelSpawn(ctx.subprocess, handle => ({ ...handle, stdin: undefined })),
+    })
+    const rejection = runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await expect(rejection).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
+    await expect(rejection).rejects.toThrow(/the kernel process could not be started/)
+  }, 15_000)
+
+  it('classifies a settleKernelExecution rejection as TERMINAL_COMMIT_FAILED (interrupt() itself throws)', async () => {
+    // D5's interrupt-first path calls kernel.interrupt() with no try/catch
+    // of its own around that specific call: a subprocess seam whose own
+    // interrupt() throws propagates straight out of settleKernelExecution,
+    // reaching settlePublishedKernelRun's own catch around that call.
+    const { runtime, session, ctx } = await readyPythonHarness('science-run-interrupt-throws')
+    installTestKernelSet(ctx, runtime, {
+      subprocess: wrapKernelSpawn(ctx.subprocess, handle => ({
+        ...handle, interrupt: () => { throw new Error('injected interrupt failure') },
+      })),
+    })
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    handle.cancel()
+    await expect(handle.done).rejects.toMatchObject({ code: 'TERMINAL_COMMIT_FAILED' })
+  })
+
+  it('classifies a settleKernelExecution rejection as SESSION_NOT_LIVE when the Session detached at the same moment', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-interrupt-throws-detached-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const attached = attachScienceSession(harness.ctx, 'science-run-interrupt-throws-detached')
+    await bindFakePython(harness.runtime, attached.session)
+    installTestKernelSet(harness.ctx, harness.runtime, {
+      subprocess: wrapKernelSpawn(harness.ctx.subprocess, handle => ({
+        ...handle, interrupt: () => { throw new Error('injected interrupt failure') },
+      })),
+    })
+    const handle = await harness.runtime.startRun({
+      session: attached.session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
+      ...authorizePythonRun(attached.session), signal: new AbortController().signal,
+    })
+    // Detaching the Session aborts the run's own OperationControl the same
+    // way cancel() does (session-detached cause), triggering the same D5
+    // interrupt-first path — but by the time settleKernelExecution's own
+    // rejection is caught, the Session is already gone.
+    attached.detach()
+    await expect(handle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
+  })
+
+  it('passes a ScienceRuntimeError from KernelSet.acquire through unchanged (confinement failure at kernel spawn)', async () => {
+    // confine() fails before KernelProcess ever spawns a driver, so this
+    // reuses the real subprocess/sandbox composition (mkfifo genuinely
+    // creates the response FIFO) with only the kernel's own confine call
+    // wrapped to report partial enforcement — bindEnvironment's own probes,
+    // already run against the real (full) sandbox, are unaffected.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-confine-passthrough-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-confine-passthrough')
+    await bindFakePython(harness.runtime, session)
+    installTestKernelSet(harness.ctx, harness.runtime, {
+      sandbox: {
+        confine: (argv: readonly string[], policy: SandboxPolicy) =>
+          ({ ...harness.ctx.sandbox.confine(argv, policy), enforcement: 'partial' as const }),
+      } as unknown as typeof harness.ctx.sandbox,
+    })
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE', message: 'Science requires full sandbox enforcement' })
+  })
+
   it('bounds kernel spawn by the run\'s own cancellation, not only kernelStartTimeoutMs (A3 finding 11)', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-spawn-cancel-'))
     roots.push(root)
@@ -359,6 +677,62 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     // committed, several real awaits after the kernel was actually
     // acquired — a window an idle expiry could spuriously fire inside.
     expect(order).toEqual(['disarm', 'run-started'])
+  })
+
+  it('spawns a kernel through the constructor\'s own KernelSet, never a test replacement (nextEpoch/onKernelStarted/onKernelEnded wiring)', async () => {
+    // A prefix whose forwarding case ignores the given driverPath and always
+    // runs the fake D2 driver: resolveKernelDriverPath still resolves the
+    // real shipped kernel_python.py path unmodified (installTestKernelSet is
+    // never called), so this is the only way to exercise ScienceRuntime's
+    // own constructor-wired nextEpoch/onKernelStarted/onKernelEnded
+    // callbacks without a real interpreter.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-real-wiring-'))
+    roots.push(root)
+    const fakeDriverPath = join(FIXTURES, 'fake-kernel-driver.mjs')
+    const prefix = join(root, 'fake-conda-real-wiring')
+    mkdirSync(join(prefix, 'bin'), { recursive: true })
+    mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
+    writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-13 <==\n+python-3.13.5\n')
+    const executable = join(prefix, 'bin', 'python')
+    writeFileSync(executable, `#!/bin/sh
+case " $* " in
+  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+  *" -m "*) printf '[{"name":"pip","version":"24.0"}]' ;;
+  *" -c "*) printf 'dsh-科学-✓' ;;
+  *)
+    while [ "$#" -gt 2 ]; do shift; done
+    exec "${process.execPath}" "${fakeDriverPath}" "$2"
+    ;;
+esac
+`)
+    chmodSync(executable, 0o700)
+
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const runner = createFakeSandboxRunner(root)
+    await ctx.plugin(LocalSandboxProvider, {
+      runnerCommand: [runner],
+      runnerFailureSignatures: ['science-runtime fake runner failure'],
+    })
+    await mountAttachments(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      timeoutMs: 10_000,
+    })
+    const runtime = ctx.scienceRuntime
+    const session = createScienceSession(ctx, 'science-real-wiring')
+    await bindFakePython(runtime, session)
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'success' } })
+    expect(session.events.some(event => event.type === 'science/kernel-state')).toBe(true)
   })
 })
 
@@ -564,6 +938,33 @@ describe('ScienceRuntime.startRun D5 interrupt-first cancel/timeout', () => {
     })
     const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
+  })
+
+  it('logs a failed background retirement without rejecting the run\'s own settlement (taint-retirement fire-and-forget)', async () => {
+    const { root, ctx, session, runtime } = await readyPythonHarness('science-run-taint-retire-fails', 500)
+    const sessionScratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+    const planned = planKernelScratch(sessionScratch, 'python', 1)
+    const errors: string[] = []
+    ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    // Removing the response FIFO during the background retirement's own
+    // end() needs write access on the kernel directory: chmodding it after
+    // READY (already reached — the run above already completed) makes that
+    // retirement's own teardown fail, without touching this run's own
+    // settlement at all.
+    chmodSync(planned.directory, 0o500)
+    handle.cancel()
+    try {
+      const result = await handle.done
+      expect(result.terminal.status).toBe('cancelled')
+      await vi.waitFor(() => { expect(errors).toHaveLength(1) })
+      expect(errors[0]).toContain('kernel retirement failed')
+    } finally {
+      chmodSync(planned.directory, 0o700)
+    }
   })
 
   it('settles a published run as timed-out through the same D5 interrupt-first path', async () => {

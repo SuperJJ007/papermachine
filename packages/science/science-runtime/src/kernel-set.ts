@@ -239,6 +239,9 @@ interface PendingAcquisition {
 }
 
 /** Compile-time proof {@link ScienceKernelEndReason} stays closed; every member reaches the same end-and-notify path. */
+// Every ScienceKernelEndReason member is listed in assertClosedEndReason's
+// switch; reaching this requires a value TypeScript already refuses to accept.
+/* v8 ignore next 3 -- see above */
 function assertNeverEndReason(reason: never): never {
   throw new Error(`science-runtime: unreachable ScienceKernelEndReason ${JSON.stringify(reason)}`)
 }
@@ -254,6 +257,7 @@ function assertClosedEndReason(reason: ScienceKernelEndReason): void {
     case 'crash':
     case 'service-disposed':
       return
+    /* v8 ignore next 2 -- ScienceKernelEndReason is closed and every member is handled above. */
     default:
       assertNeverEndReason(reason)
   }
@@ -692,8 +696,18 @@ export class KernelSet {
     }
   }
 
-  /** Remove a settled teardown from `ending` and drop quarantine once the Session owns no live or ending kernel. */
+  /**
+   * Remove a settled teardown from `ending` and drop quarantine once the
+   * Session owns no live or ending kernel. The stale-settlement mismatch
+   * {@link trackedSpawn}'s analogous guard reaches is structurally
+   * unreachable here: `endKernel` only ever registers a fresh `ending` entry
+   * for a language after removing that language's live kernel, and
+   * {@link acquireKernel}'s `drain` always awaits any existing `ending`
+   * entry before a fresh spawn can register a new live kernel to later end —
+   * so this method's own `settlement` can never be replaced before it runs.
+   */
   private finishEnding(entry: SessionEntry, language: ScienceLanguage, settlement: Promise<void>): void {
+    /* v8 ignore next -- unreachable: see this method's own doc above. */
     if (entry.ending.get(language) === settlement) entry.ending.delete(language)
     this.syncBusyRegistration(entry)
   }

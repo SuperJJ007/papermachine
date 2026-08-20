@@ -29,13 +29,14 @@ import {
   KernelSetQuarantinedError,
 } from '../src/kernel-set.ts'
 import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
-import { ensureSessionScratch } from '../src/scratch.ts'
+import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
 const DELAYED_READY_ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets-delayed-ready')
+const NO_READY_ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets-no-ready')
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -294,6 +295,17 @@ describe('KernelSet', () => {
     expect(harness.ended[0]?.fact.reason).toBe('idle')
   })
 
+  it('is a no-op to disarm or reset a language with no live kernel, and disarm is idempotent on a live one', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-disarm-noop')
+    expect(() => { harness.kernelSet.disarmIdleTimer(session, 'python') }).not.toThrow()
+    expect(() => { harness.kernelSet.resetIdleTimer(session, 'python') }).not.toThrow()
+    await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    harness.kernelSet.disarmIdleTimer(session, 'python')
+    // A second disarm finds idleTimer already undefined for this live kernel.
+    expect(() => { harness.kernelSet.disarmIdleTimer(session, 'python') }).not.toThrow()
+  })
+
   it('lets python and r kernels coexist independently for one session', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-coexist')
@@ -334,6 +346,46 @@ describe('KernelSet', () => {
     expect(harness.started[0]?.fact.kernelEpoch).toBe(1)
     expect(harness.started[1]?.fact.kernelEpoch).toBe(2)
     await expect(first.exited).resolves.toMatchObject({ cause: 'commanded' })
+  })
+
+  it('ends the stale kernel exactly once when two concurrent acquire calls race onto the same rebind decision', async () => {
+    // Both calls fetch the same live (stale-revision) kernel reference
+    // before either has a chance to remove it from entry.kernels: whichever
+    // reaches endKernel first tears it down for real; the other's endKernel
+    // call must find it already gone and reuse the same in-flight teardown
+    // rather than starting a second one for an already-removed kernel.
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-rebind-race')
+    await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+    expect(harness.started).toHaveLength(1)
+    const rebindEnvironment = harness.environment(2, ['python'])
+    const [firstResult, secondResult] = await Promise.allSettled([
+      harness.kernelSet.acquire(session, 'python', rebindEnvironment, sessionScratch),
+      harness.kernelSet.acquire(session, 'python', rebindEnvironment, sessionScratch),
+    ])
+    expect(firstResult.status).toBe('fulfilled')
+    expect(secondResult.status).toBe('fulfilled')
+    expect(harness.ended.filter(entry => entry.fact.reason === 'environment-rebound')).toHaveLength(1)
+  })
+
+  it('keeps entry.spawning bookkeeping consistent when two concurrent acquire calls race to spawn the same (session, language)', async () => {
+    // Out-of-contract concurrent use (this module's own doc: "unspecified
+    // interleaving" outside the single-caller-per-session discipline), kept
+    // safe rather than corrupting registry bookkeeping: both spawns succeed
+    // and both are torn down cleanly regardless of which the registry ends
+    // up tracking as this language's live kernel.
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-spawning-race')
+    const environment = harness.environment(1, ['python'])
+    const [firstResult, secondResult] = await Promise.allSettled([
+      harness.kernelSet.acquire(session, 'python', environment, sessionScratch),
+      harness.kernelSet.acquire(session, 'python', environment, sessionScratch),
+    ])
+    expect(firstResult.status).toBe('fulfilled')
+    expect(secondResult.status).toBe('fulfilled')
+    expect(harness.started).toHaveLength(2)
+    const settled = await harness.kernelSet.disposeAll()
+    expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
   })
 
   it('fails loud when the injected epoch allocator returns a non-increasing epoch', async () => {
@@ -499,6 +551,39 @@ describe('KernelSet', () => {
     expect(started).toHaveLength(2)
   })
 
+  it('drains an in-flight teardown for the same (session, language) before a concurrent acquire proceeds', async () => {
+    const harness = await createHarness()
+    const { subprocess: wrapped, proveQuiescence } = wrapWithUnprovenQuiescence(harness.ctx.subprocess)
+    const kernelSet = new KernelSet({
+      subprocess: wrapped,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: () => {},
+      onKernelEnded: () => {},
+    })
+    const { session, sessionScratch } = await harness.session('kernel-drain-await')
+    const environment = harness.environment(1, ['python'])
+    const { process: first } = await kernelSet.acquire(session, 'python', environment, sessionScratch)
+
+    // retireForEscalation synchronously starts teardown (entry.ending is
+    // populated before this call returns), which stays pending until
+    // proveQuiescence(): a concurrent acquire for the same (session,
+    // language) must await it via drain() before deciding reuse/rebind/spawn.
+    void kernelSet.retireForEscalation(session, 'python')
+    const reacquiring = kernelSet.acquire(session, 'python', environment, sessionScratch)
+    let resolved = false
+    void reacquiring.then(() => { resolved = true })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(resolved).toBe(false)
+
+    proveQuiescence()
+    const { process: second } = await reacquiring
+    expect(second).not.toBe(first)
+  })
+
   it('ends the fresh kernel and fails acquire when onKernelStarted throws, leaving nothing registered (A1 finding 4)', async () => {
     const harness = await createHarness()
     const startedCalls: Session[] = []
@@ -530,6 +615,37 @@ describe('KernelSet', () => {
     const { process: kernel } = await kernelSet.acquire(session, 'python', environment, sessionScratch)
     expect(kernel).toBeInstanceOf(KernelProcess)
     expect(startedCalls).toHaveLength(2)
+  })
+
+  it('aggregates a vetoed onKernelStarted with a subsequent teardown failure while discarding the unregistered kernel', async () => {
+    const startError = new Error('kernel-set.spec.ts: injected onKernelStarted failure (discard aggregate)')
+    let plannedDirectory: string | undefined
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (_session, fact) => {
+        // Also make the fresh kernel's own discard-time teardown fail: its
+        // response FIFO cannot be unlinked once the containing directory
+        // loses write access, so discardUnregisteredKernel's own
+        // process.end() call rejects too.
+        plannedDirectory = planKernelScratch(sessionScratch, fact.language, fact.kernelEpoch).directory
+        chmodSync(plannedDirectory, 0o500)
+        throw startError
+      },
+      onKernelEnded: () => {},
+    })
+    const { session, sessionScratch } = await harness.session('kernel-discard-aggregate')
+    const environment = harness.environment(1, ['python'])
+    try {
+      await expect(kernelSet.acquire(session, 'python', environment, sessionScratch)).rejects.toThrow(AggregateError)
+    } finally {
+      if (plannedDirectory !== undefined) chmodSync(plannedDirectory, 0o700)
+    }
   })
 
   it('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws (A3 finding 1)', async () => {
@@ -602,6 +718,28 @@ describe('KernelSet', () => {
     // for the same (session, language) sees no leftover conflict.
     const { process: third } = await kernelSet.acquire(session, 'python', harness.environment(2, ['python']), sessionScratch)
     expect(third).toBe(second)
+  })
+
+  it('completes registry cleanup even when the teardown itself rejects', async () => {
+    const harness = await createHarness()
+    const { session, sessionScratch } = await harness.session('kernel-teardown-rejects')
+    const environment = harness.environment(1, ['python'])
+    const { process: kernel, epoch } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const planned = planKernelScratch(sessionScratch, 'python', epoch)
+    // Removing the response FIFO during teardown needs write access on its
+    // PARENT directory: chmodding it after READY makes end()'s own unlink
+    // fail, which propagates out of teardown() and rejects endKernel's
+    // returned settlement.
+    chmodSync(planned.directory, 0o500)
+    try {
+      await expect(harness.kernelSet.retireForEscalation(session, 'python')).rejects.toThrow()
+    } finally {
+      chmodSync(planned.directory, 0o700)
+    }
+    // Registry cleanup still completed despite the rejection: a fresh
+    // acquire for the same (session, language) sees no leftover ending state.
+    const { process: fresh } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    expect(fresh).not.toBe(kernel)
   })
 
   it('passes onKernelStarted/onKernelEnded exactly the D4 facts', async () => {
@@ -753,6 +891,75 @@ describe('KernelSet', () => {
     const successor = attachScienceSession(harness.ctx, 'kernel-spawn-detach-race', original.session.events)
     const successorKernel = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
     expect(successorKernel.process).toBeInstanceOf(KernelProcess)
+  })
+
+  it('does not touch a pending acquisition belonging to a different session when detach fires for one of two concurrent spawns', async () => {
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const ended: Recorded<ScienceKernelEndedFact>[] = []
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 5_000,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+    })
+    const alpha = attachScienceSession(harness.ctx, 'kernel-detach-scope-a')
+    const alphaScratch = await ensureSessionScratch(harness.dshHome, alpha.session)
+    const beta = attachScienceSession(harness.ctx, 'kernel-detach-scope-b')
+    const betaScratch = await ensureSessionScratch(harness.dshHome, beta.session)
+    const environment = harness.environment(1, ['python'])
+    const acquiringAlpha = kernelSet.acquire(alpha.session, 'python', environment, alphaScratch)
+    const acquiringBeta = kernelSet.acquire(beta.session, 'python', environment, betaScratch)
+
+    // Both spawns are still in flight (delayed READY); detach only alpha.
+    // Its pending record's own entry matches (retired below); beta's does
+    // not, so detach's loop must skip it (kernel-set.ts's own `continue`).
+    alpha.detach()
+    kernelSet.detach(alpha.session)
+
+    const [alphaKernel, betaKernel] = await Promise.all([acquiringAlpha, acquiringBeta])
+    expect(alphaKernel.process).toBeInstanceOf(KernelProcess)
+    expect(betaKernel.process).toBeInstanceOf(KernelProcess)
+    await vi.waitFor(() => { expect(ended.filter(entry => entry.session === alpha.session)).toHaveLength(1) })
+    expect(ended.find(entry => entry.session === alpha.session)?.fact.reason).toBe('session-end')
+    // beta's kernel is untouched: still live, no end notification for it.
+    expect(ended.some(entry => entry.session === beta.session)).toBe(false)
+    const betaReused = await kernelSet.acquire(beta.session, 'python', environment, betaScratch)
+    expect(betaReused.process).toBe(betaKernel.process)
+  })
+
+  it('is a no-op via endIfStillLive when a pending spawn fails (never registers) after detach already fired', async () => {
+    const started: Recorded<ScienceKernelStartedFact>[] = []
+    const ended: Recorded<ScienceKernelEndedFact>[] = []
+    const harness = await createHarness()
+    const kernelSet = new KernelSet({
+      subprocess: harness.ctx.subprocess,
+      sandbox: harness.ctx.sandbox,
+      assetsRoot: NO_READY_ASSETS_ROOT,
+      kernelIdleTimeoutMs: 1_800_000,
+      kernelStartTimeoutMs: 200,
+      nextEpoch: createEpochAllocator().fn,
+      onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+      onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+    })
+    const original = attachScienceSession(harness.ctx, 'kernel-spawn-fail-detach-race')
+    const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
+    const environment = harness.environment(1, ['python'])
+    const acquiring = kernelSet.acquire(original.session, 'python', environment, originalScratch)
+
+    // The no-ready driver never sends READY: this spawn is still in flight
+    // when detach fires, and will reject on its own (READY timeout) without
+    // ever registering a live kernel — endIfStillLive's own live===undefined
+    // no-op path, distinct from the sibling test's "live and must be ended" case.
+    original.detach()
+    kernelSet.detach(original.session)
+    await expect(acquiring).rejects.toThrow(KernelProtocolError)
+    expect(started).toHaveLength(0)
+    expect(ended).toHaveLength(0)
   })
 
   it('awaits an in-flight spawn before disposeAll settles, and retires whatever it registers', async () => {

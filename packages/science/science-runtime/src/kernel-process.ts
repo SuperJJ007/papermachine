@@ -564,6 +564,10 @@ export class KernelProcess {
   }
 
   private settleExit(exitCode: number | null, signal: NodeJS.Signals | null): void {
+    // settleExit is registered as the sole .then() callback on `handle.done`
+    // (the constructor), a real Promise that settles at most once, so this
+    // guard can never observe exitSettled already true.
+    /* v8 ignore next */
     if (this.exitSettled) return
     this.exitSettled = true
     const cause: KernelExitCause = this.protocolFault !== undefined

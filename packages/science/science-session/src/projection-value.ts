@@ -93,6 +93,7 @@ function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
         finishedAt: kernel.finishedAt,
         interruptedAtSeq: kernel.interruptedAtSeq,
       }
+    /* v8 ignore next -- closed-union exhaustiveness guard */
     default:
       return assertNever(kernel)
   }

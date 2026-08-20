@@ -32,7 +32,7 @@ import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, Sci
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
-import { isScienceSession, renderScienceProjection } from '../src/context.ts'
+import { closedKernelFacts, isScienceSession, renderScienceProjection } from '../src/context.ts'
 import { scienceArtifactPresentation } from '../src/presentation.ts'
 import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
 import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
@@ -705,12 +705,23 @@ describe('kernelRestartReason', () => {
     expect(kernelRestartReason(projection, runAt('run-2', 2))).toBeUndefined()
   })
 
-  it('names the prior kernel\'s model-vocabulary end reason on the first run of a fresh epoch', () => {
+  // D3's ScienceKernelEndReason union is closed at 7 members; each one
+  // names the prior kernel's exact model-facing phrase (context.ts's
+  // modelKernelEndReason), never a placeholder shared across reasons.
+  it.each<[ScienceKernelEndReason, string]>([
+    ['idle', 'idle timeout'],
+    ['environment-rebound', 'environment re-bind'],
+    ['run-escalation', 'interrupt escalation'],
+    ['crash', 'kernel crash'],
+    ['session-end', 'session end'],
+    ['protocol', 'the kernel stopped responding correctly'],
+    ['service-disposed', 'Science services restarting'],
+  ])('names the prior kernel\'s model-vocabulary end reason on the first run of a fresh epoch: %s -> %j', (reason, phrase) => {
     const projection = projectionFixture({
       runs: [runAt('run-1', 1), runAt('run-2', 2)],
-      kernels: [kernelExited(1, 'environment-rebound'), kernelStarted(2)],
+      kernels: [kernelExited(1, reason), kernelStarted(2)],
     })
-    expect(kernelRestartReason(projection, runAt('run-2', 2))).toBe('environment re-bind')
+    expect(kernelRestartReason(projection, runAt('run-2', 2))).toBe(phrase)
   })
 
   it('ignores a different language\'s kernel even when the shared epoch counter makes it numerically earlier', () => {
@@ -719,6 +730,20 @@ describe('kernelRestartReason', () => {
       kernels: [kernelStarted(1, 'r'), kernelStarted(2)],
     })
     expect(kernelRestartReason(projection, runAt('run-1', 2))).toBeUndefined()
+  })
+})
+
+describe('closedKernelFacts', () => {
+  it('returns undefined for an exited kernel fact missing reason/startedAt — a value the fold never commits but ScienceKernelState\'s plain optional fields do not forbid at the type level', () => {
+    const kernel: ScienceKernel = {
+      kernelEpoch: 1,
+      language: 'python',
+      state: 'exited',
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      at: 200,
+    }
+    expect(closedKernelFacts(kernel)).toBeUndefined()
   })
 })
 
@@ -1131,6 +1156,43 @@ describe('run_python', () => {
     // SCIENCE_ARTIFACT_DIR, so capture ran and found nothing: the
     // presentation is null, not an empty-artifacts card.
     expect(result.meta).toBeNull()
+  })
+
+  it('prepends the kernel-restart line with the exact model phrase when a mid-session environment rebind starts a fresh kernel epoch', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-run-restart-env-rebind')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    const first = authorizeToolCall(session, 1, 'run_python', 'restart-run-1')
+    const firstResult = await ctx.tools.execute({
+      signal: testSignal, callId: first, name: 'run_python',
+      arguments: { code: kernelAction({ status: 'ok' }) },
+      agent: fakeAgent(session),
+    })
+    expect(firstResult.isError).toBe(false)
+    const firstText = firstResult.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(firstText).not.toContain('kernel restarted')
+
+    // Direct log append (not `ensureScienceBound`, whose post-first-run
+    // guard blocks a product-reachable re-bind — see A3 finding 13):
+    // proves the fold-level rebind KernelSet.acquire reacts to, mirroring
+    // science-runtime/tests/run.spec.ts's own rebind test.
+    const projection = replayScience(session.events)
+    const environment = projection?.environment
+    if (environment === null || environment === undefined) throw new Error('tool-science test: missing applied environment')
+    session.append('science/environment-bound', {
+      version: 1,
+      environment: { ...environment, revision: environment.revision + 1, configuredAt: Date.now(), validatedAt: Date.now() },
+    })
+
+    const second = authorizeToolCall(session, 2, 'run_python', 'restart-run-2')
+    const secondResult = await ctx.tools.execute({
+      signal: testSignal, callId: second, name: 'run_python',
+      arguments: { code: kernelAction({ status: 'ok' }) },
+      agent: fakeAgent(session),
+    })
+    expect(secondResult.isError).toBe(false)
+    const secondText = secondResult.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(secondText.startsWith('kernel restarted (environment re-bind): variables from earlier runs are gone\n')).toBe(true)
   })
 
   it('presentationMeta projects every captured file (image and non-image) into one clickable-reference list', async () => {

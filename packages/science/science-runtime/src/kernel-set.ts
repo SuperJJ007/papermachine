@@ -545,9 +545,11 @@ export class KernelSet {
    * {@link discardUnregisteredKernel} instead of leaving it live and
    * untracked. The same discard path covers a `byId` conflict
    * {@link syncBusyRegistration} detects immediately after registration
-   * (A1 finding 5): either way, no `started` fact means this kernel must
-   * never become acquirable and never needs a matching `exited` one. The
-   * epoch watermark (`entry.epochSeen`) commits in that same window, only
+   * (A1 finding 5): on that path `onKernelStarted`'s own `started` fact has
+   * already committed, so this kernel must never become acquirable even
+   * though the fact exists. Replay's end-seed `ScienceKernelInterrupted`
+   * derivation recovers that orphaned fact; no matching `exited` fact is
+   * required. The epoch watermark (`entry.epochSeen`) commits in that same window, only
    * once `onKernelStarted` returns (A3 finding 1): a throw there must leave
    * the watermark exactly where a retry's allocator will also find it, so
    * the retry's freshly-derived epoch is never misclassified as a
@@ -627,12 +629,14 @@ export class KernelSet {
   }
 
   /**
-   * End a freshly spawned kernel that must never become acquirable: its
-   * `started` fact never committed (D4 amendment, A1 findings 4/5) —
-   * either `onKernelStarted` itself rejected, or a same-id `byId` conflict
-   * surfaced immediately after registration. Never routes through
-   * {@link teardown}/`onKernelEnded`: no `started` fact exists for an
-   * `exited` one to pair against.
+   * End a freshly spawned kernel that must never become acquirable, either
+   * because `onKernelStarted` itself rejected (no `started` fact committed)
+   * or because a same-id `byId` conflict surfaced immediately after
+   * registration (D4 amendment, A1 findings 4/5) — on that second path a
+   * `started` fact did commit, orphaned and left for replay's end-seed
+   * `ScienceKernelInterrupted` derivation to recover. Never routes through
+   * {@link teardown}/`onKernelEnded`: no `exited` fact is ever appended for
+   * either path.
    * @param process - the fresh kernel process to discard.
    * @param cause - the original failure that requires discarding it.
    * @throws always: `cause`, or an `AggregateError` combining it with a teardown failure.

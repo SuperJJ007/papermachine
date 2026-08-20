@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fake D2-protocol kernel driver for KernelProcess unit tests. Speaks the
+// Fake kernel-wire-protocol driver for KernelProcess unit tests. Speaks the
 // real frame grammar (READY/RUN/DONE/EXIT) but never executes real Python/R
 // source: each RUN's sourcePath holds a small JSON action object that tells
 // this driver exactly what to reply, so tests script precise protocol

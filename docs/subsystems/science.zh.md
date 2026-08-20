@@ -39,9 +39,9 @@ Folded local Science Runtime provider with public types free of Host paths.
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
 
 /**
- * Acquire this run's persistent kernel (D3/D6), publish its run start,
+ * Acquire this run's persistent kernel, publish its run start,
  * then settle exactly one matching terminal fact through the acquired
- * kernel's own RUN/DONE protocol exchange (D5/D10).
+ * kernel's own RUN/DONE protocol exchange.
  * @param request - Exact live Session, source, authorization facts, and cancellation.
  * @returns A handle exposed only after `science/run-started` committed.
  */

@@ -2,9 +2,9 @@
  * Owns every live persistent Science kernel across sessions: at most one
  * kernel per (session, language), epoch allocation, idle expiry, and the
  * closed set of end reasons a kernel's own subprocess lifetime can settle
- * into (D3). Emits no session events itself — the typed callbacks supplied
+ * into. Emits no session events itself — the typed callbacks supplied
  * at construction receive exactly the facts a durable `science/kernel-state`
- * event needs (D4); appending that event is the caller's job.
+ * event needs; appending that event is the caller's job.
  *
  * Registry discipline mirrors `LeaseRegistry` (`lifecycle.ts`): one exact
  * Session's kernel state lives in a `WeakMap` for as long as the Session
@@ -15,11 +15,11 @@
  * until the predecessor's kernel tree is proven quiescent — the same
  * same-id quarantine semantics `LeaseRegistry` enforces for run operations,
  * reimplemented here because a kernel-owning session and a run-leasing
- * session are different resources (D3: holding a kernel never makes the
- * runtime BUSY, so the two registries must not share membership).
+ * session are different resources: holding a kernel never makes the
+ * runtime BUSY, so the two registries must not share membership.
  *
  * `acquire` calls for the same (session, language) pair are not
- * internally serialized against each other: every production caller (K3.1)
+ * internally serialized against each other: every production caller
  * reaches `acquire` from within the session's existing per-operation lease,
  * so at most one call is ever in flight per session at a time. Calling
  * `acquire` concurrently for the same (session, language) outside that
@@ -40,7 +40,7 @@ import type { ScienceSessionScratch } from './scratch.ts'
 
 /**
  * One live, ready kernel process and its own session-local epoch — the
- * provenance backbone a caller needs to fix a run's `kernelEpoch` (D4).
+ * provenance backbone a caller needs to fix a run's `kernelEpoch`.
  */
 export interface AcquiredKernel {
   /** The live, ready kernel process. */
@@ -49,7 +49,7 @@ export interface AcquiredKernel {
   readonly epoch: number
 }
 
-/** Whole-value fact for one kernel spawn — the fields D4's `science/kernel-state` (`state: 'started'`) event needs. */
+/** Whole-value fact for one kernel spawn — the fields the durable `science/kernel-state` (`state: 'started'`) event needs. */
 export interface ScienceKernelStartedFact {
   /** The started kernel's language. */
   readonly language: ScienceLanguage
@@ -63,7 +63,7 @@ export interface ScienceKernelStartedFact {
   readonly startedAt: number
 }
 
-/** Whole-value fact for one kernel end — the fields D4's `science/kernel-state` (`state: 'exited'`) event needs. */
+/** Whole-value fact for one kernel end — the fields the durable `science/kernel-state` (`state: 'exited'`) event needs. */
 export interface ScienceKernelEndedFact {
   /** The ended kernel's language. */
   readonly language: ScienceLanguage
@@ -107,8 +107,8 @@ export interface KernelSetOptions {
   readonly nextEpoch: (session: Session) => number
   /**
    * Notified synchronously, BEFORE the fresh kernel becomes acquirable,
-   * once its READY handshake completes (D4 amendment, A1 finding 4):
-   * typically appends the durable `started` fact. A throw here ends the
+   * once its READY handshake completes: typically appends the durable
+   * `started` fact. A throw here ends the
    * fresh kernel without ever registering it and fails the
    * {@link KernelSet.acquire} call that spawned it — no `started` fact
    * exists for it, so it never requires a matching `exited` one either.
@@ -118,7 +118,7 @@ export interface KernelSetOptions {
    * Notified once a kernel's end path (commanded or uncommanded) reaches
    * quiescence, after registry bookkeeping already removed the kernel from
    * live membership: typically appends the durable `exited` fact.
-   * Containment-wrapped (D4 amendment, A1 finding 4): a throw here is
+   * Containment-wrapped: a throw here is
    * swallowed and never rejects teardown or skips quarantine bookkeeping —
    * a legitimately dead Session's missing `exited` fact is recovered by the
    * end-seed `ScienceKernelInterrupted` derivation.
@@ -128,9 +128,9 @@ export interface KernelSetOptions {
 
 /**
  * A same-id successor Session tried to acquire a kernel while its
- * predecessor's kernel tree was not yet proven quiescent. K3.1 maps this
- * onto the Runtime's existing `RUNTIME_BUSY` rejection — the same user
- * semantics as `LeaseRegistry`'s same-id quarantine (D10).
+ * predecessor's kernel tree was not yet proven quiescent. The Runtime maps
+ * this onto its existing `RUNTIME_BUSY` rejection — the same user
+ * semantics as `LeaseRegistry`'s same-id quarantine.
  */
 export class KernelSetQuarantinedError extends Error {
   override name = 'KernelSetQuarantinedError'
@@ -159,7 +159,7 @@ export class KernelSetDetachedError extends Error {
 
 /**
  * Two different registry entries for the same session id both tried to
- * hold `byId` membership at once — a same-id quarantine gap (A1 finding 5):
+ * hold `byId` membership at once — a same-id quarantine gap:
  * a successor Session's entry registered a live kernel while its
  * predecessor's entry, spawning concurrently, had not yet registered its
  * own. Fails loud rather than letting the second registration silently
@@ -176,7 +176,7 @@ export class KernelSetConflictError extends Error {
 /**
  * A caller-supplied epoch allocator returned a value that was not strictly
  * greater than one this `KernelSet` already committed for the same Session.
- * K3.1 maps this onto `INFRASTRUCTURE_FAILURE` when it reaches a caller (D10).
+ * The Runtime maps this onto `INFRASTRUCTURE_FAILURE` when it reaches a caller.
  */
 export class KernelEpochRegressionError extends Error {
   override name = 'KernelEpochRegressionError'
@@ -210,15 +210,15 @@ interface SessionEntry {
   /**
    * In-flight {@link KernelSet.spawnKernel} calls, settled regardless of
    * outcome. Read only by {@link KernelSet.syncBusyRegistration} (same-id
-   * quarantine/conflict timing, A1 finding 5) — disposal awareness for a
+   * quarantine/conflict timing) — disposal awareness for a
    * call still inside {@link KernelSet.acquire}'s own drain/reuse/rebind
    * steps, before a literal spawn even begins, is `KernelSet.pending`'s job,
-   * not this map's (K1.3-flagged spawn-vs-teardown race).
+   * not this map's (the spawn-vs-teardown race {@link trackPending} closes).
    */
   readonly spawning: Map<ScienceLanguage, Promise<void>>
   /** Highest epoch this `KernelSet` has committed (i.e. actually spawned) for this Session. */
   epochSeen: number
-  /** Set once by {@link KernelSet.detach}; a detached entry never acquires a fresh kernel again (A1 finding 5). */
+  /** Set once by {@link KernelSet.detach}; a detached entry never acquires a fresh kernel again. */
   detached: boolean
 }
 
@@ -228,7 +228,7 @@ interface SessionEntry {
  * narrower post-drain window. `KernelSet.pending` exists solely so
  * {@link KernelSet.detach}/{@link KernelSet.disposeAll} can await and retire
  * a call issued with no intervening await before them (closes the
- * K1.3-flagged spawn-vs-teardown race); it is never read by
+ * spawn-vs-teardown race); it is never read by
  * {@link KernelSet.assertAcquirable}/{@link KernelSet.syncBusyRegistration},
  * so it has no effect on same-id conflict timing.
  */
@@ -296,7 +296,7 @@ export class KernelSet {
   /**
    * Return the exact Session's live kernel for `language` when its
    * environment revision still matches `environment.revision`; otherwise end
-   * the stale kernel (`environment-rebound`) and spawn a fresh one (D6). With
+   * the stale kernel (`environment-rebound`) and spawn a fresh one. With
    * no live kernel, spawn one. `sessionScratch` must already be materialized
    * (its `kernels/` directory created) — this method only plans and creates
    * the one kernel's own subdirectory under it.
@@ -305,7 +305,7 @@ export class KernelSet {
    * @param environment - applied durable environment revision the kernel must serve.
    * @param sessionScratch - the Session's already-materialized private scratch paths.
    * @param signal - the caller's own operation cancellation, fused with
-   *   `kernelStartTimeoutMs` for a fresh spawn (A3 finding 11) so this call
+   *   `kernelStartTimeoutMs` for a fresh spawn, so this call
    *   never outlives the caller's own operation deadline/cancellation by more
    *   than an already-live kernel's reuse/rebind step takes. Absent only for
    *   a caller with no operation-scoped signal of its own.
@@ -358,11 +358,11 @@ export class KernelSet {
    * in `pending`, from this exact synchronous call frame — before any of its
    * internal awaits run — so a {@link detach}/{@link disposeAll} issued with
    * no intervening await still observes and awaits/retires it (closes the
-   * K1.3-flagged spawn-vs-teardown race at its earliest possible point:
+   * spawn-vs-teardown race at its earliest possible point:
    * `entry.spawning`, populated only once the literal spawn begins post-drain,
    * leaves the drain/reuse window unobserved). Deliberately a registry
    * separate from `byId`/`syncBusyRegistration`: it must never affect
-   * same-id conflict timing (A1 finding 5's `KernelSetConflictError` race
+   * same-id conflict timing (the `KernelSetConflictError` race
    * stays exactly as narrow as `entry.spawning` already made it).
    */
   private trackPending(entry: SessionEntry, language: ScienceLanguage, attempt: Promise<AcquiredKernel>): void {
@@ -374,7 +374,7 @@ export class KernelSet {
 
   /**
    * End the exact live kernel for `(session, language)` with reason
-   * `run-escalation` (D5): the caller's own run terminal has already settled
+   * `run-escalation`: the caller's own run terminal has already settled
    * (first-cause-governed, independent of this call); this only retires the
    * kernel itself, through the same registry bookkeeping and containment
    * every other end path uses. A no-op when no live kernel is registered —
@@ -391,7 +391,7 @@ export class KernelSet {
   /**
    * Reset one live kernel's idle deadline to a fresh full
    * `kernelIdleTimeoutMs` window measured from now. Callers invoke this
-   * after a completed execution (D3) so idle time is counted from the
+   * after a completed execution so idle time is counted from the
    * kernel's last real activity, not from when it was last acquired. A
    * no-op when no live kernel is registered for `(session, language)` — a
    * benign race against a concurrent end, never a caller error.
@@ -406,7 +406,7 @@ export class KernelSet {
 
   /**
    * Disarm one live kernel's idle timer for the duration of an in-flight
-   * run (D3 amendment, A1 finding 7): the idle timer must never fire while
+   * run: the idle timer must never fire while
    * a run is executing. Callers pair this with {@link resetIdleTimer} once
    * that run's DONE frame arrives, rearming a fresh full window. A no-op
    * when no live kernel is registered for `(session, language)` — a benign
@@ -424,7 +424,7 @@ export class KernelSet {
   /**
    * End every live kernel this exact Session owns with reason
    * `session-end`, and mark the entry so it never acquires a fresh kernel
-   * again (A1 finding 5). Fire-and-forget, mirroring `LeaseRegistry.detach`:
+   * again. Fire-and-forget, mirroring `LeaseRegistry.detach`:
    * teardown proceeds asynchronously and the session id stays quarantined
    * until every ended kernel's teardown settles.
    * @param session - exact detached Session object; a same-id successor is unaffected until quiescence.
@@ -471,7 +471,7 @@ export class KernelSet {
    * Run {@link spawnKernel} while registering its in-flight settlement in
    * `entry.spawning`, so a same-id successor entry's {@link assertAcquirable}
    * check (via {@link syncBusyRegistration}) sees this session as busy for
-   * the whole spawn window (A1 finding 5's conflict/quarantine timing).
+   * the whole spawn window (the same conflict/quarantine timing {@link assertAcquirable} enforces).
    * Registers the settlement's own `entry.spawning` cleanup BEFORE the
    * immediately following `syncBusyRegistration` call: that call throws
    * `KernelSetConflictError` when a different entry already holds `byId`
@@ -514,7 +514,7 @@ export class KernelSet {
    * Refuse an entry a same-id predecessor's registry entry still holds
    * `byId` membership for (quarantine), or that already ran through
    * {@link detach}. Checked on every {@link acquire} call, not only once at
-   * entry creation (A1 finding 5): a successor entry created while its
+   * entry creation: a successor entry created while its
    * predecessor's spawn was still in flight (so `byId` had not yet been
    * claimed) must still be refused once the predecessor's own registration
    * lands, and a detached entry must stay refused on every later retry.
@@ -540,17 +540,21 @@ export class KernelSet {
   /**
    * Select the binding, allocate and validate a fresh epoch, spawn, notify,
    * then register. `onKernelStarted` runs BEFORE the kernel is registered
-   * acquirable (D4 amendment, A1 finding 4): a throw there — the durable
+   * acquirable: a throw there — the durable
    * `started` fact never committed — discards the fresh kernel through
    * {@link discardUnregisteredKernel} instead of leaving it live and
    * untracked. The same discard path covers a `byId` conflict
-   * {@link syncBusyRegistration} detects immediately after registration
-   * (A1 finding 5): on that path `onKernelStarted`'s own `started` fact has
+   * {@link syncBusyRegistration} detects immediately after registration:
+   * on that path `onKernelStarted`'s own `started` fact has
    * already committed, so this kernel must never become acquirable even
    * though the fact exists. Replay's end-seed `ScienceKernelInterrupted`
-   * derivation recovers that orphaned fact; no matching `exited` fact is
-   * required. The epoch watermark (`entry.epochSeen`) commits in that same window, only
-   * once `onKernelStarted` returns (A3 finding 1): a throw there must leave
+   * derivation recovers that orphaned fact for later readers, but while this
+   * session stays live the fold refuses a second open `started` fact for
+   * this language, so this session could never start another kernel for it;
+   * not product-reachable, because the lease registry admits at most one
+   * operation per session id before any caller ever reaches
+   * {@link KernelSet.acquire}. The epoch watermark (`entry.epochSeen`) commits in that same window, only
+   * once `onKernelStarted` returns: a throw there must leave
    * the watermark exactly where a retry's allocator will also find it, so
    * the retry's freshly-derived epoch is never misclassified as a
    * regression against an epoch no fact ever recorded.
@@ -577,7 +581,7 @@ export class KernelSet {
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
       signal,
     })
-    // Captured only after the READY handshake resolves (A3 finding 7): the
+    // Captured only after the READY handshake resolves: the
     // ScienceKernelStartedFact/ScienceKernelEndedFact `startedAt` JSDoc
     // promises the handshake-completion instant, which can be up to
     // `kernelStartTimeoutMs` later than the spawn request.
@@ -601,7 +605,7 @@ export class KernelSet {
         startedAt,
       })
       // Committed only after `onKernelStarted`'s durable append actually
-      // succeeds (A3 finding 1): the production allocator
+      // succeeds: the production allocator
       // (`nextKernelEpoch`, index.ts) re-derives the next epoch from the
       // durable projection alone, so a watermark advanced ahead of a fact
       // that never committed would make every later spawn attempt for this
@@ -632,7 +636,7 @@ export class KernelSet {
    * End a freshly spawned kernel that must never become acquirable, either
    * because `onKernelStarted` itself rejected (no `started` fact committed)
    * or because a same-id `byId` conflict surfaced immediately after
-   * registration (D4 amendment, A1 findings 4/5) — on that second path a
+   * registration — on that second path a
    * `started` fact did commit, orphaned and left for replay's end-seed
    * `ScienceKernelInterrupted` derivation to recover. Never routes through
    * {@link teardown}/`onKernelEnded`: no `exited` fact is ever appended for
@@ -686,12 +690,12 @@ export class KernelSet {
   /**
    * Send EXIT (best-effort), quiesce, and notify — the one path every closed
    * `ScienceKernelEndReason` member reaches. Keeps quarantine active until
-   * quiescence is actually proven (A1 finding 1): when `end()`'s bounded
+   * quiescence is actually proven: when `end()`'s bounded
    * escalation could not immediately prove the tree dead, this awaits its
    * `eventualQuiescence` before notifying — this method's own returned
    * promise is what `finishEnding` waits on to drop `byId` membership, so a
    * still-possibly-alive tree never gets treated as gone. `onKernelEnded`
-   * is containment-wrapped (D4 amendment, A1 finding 4): a throw there
+   * is containment-wrapped: a throw there
    * (typically a durable append against a Session that already detached)
    * never rejects this method, so quarantine bookkeeping always completes.
    */
@@ -710,7 +714,7 @@ export class KernelSet {
         reason,
       })
     } catch {
-      // Containment (D4): the kernel's own teardown already completed and
+      // Containment: the kernel's own teardown already completed and
       // registry bookkeeping must proceed regardless of whether the
       // caller's durable append succeeded; a legitimately dead Session's
       // missing `exited` fact is recovered by the end-seed
@@ -737,7 +741,7 @@ export class KernelSet {
   /**
    * Keep `byId` membership exactly tracking whether this session id
    * currently owns any live, ending, or still-spawning kernel. Refuses to overwrite a
-   * DIFFERENT entry already holding this id (A1 finding 5): a same-id
+   * DIFFERENT entry already holding this id: a same-id
    * successor entry that started spawning while its predecessor's own
    * spawn was still in flight (and so found `byId` not yet claimed) must
    * not silently clobber the predecessor's registration once both land —

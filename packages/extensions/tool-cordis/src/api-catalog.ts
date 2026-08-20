@@ -1048,7 +1048,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
-        description: 'Acquire this run\'s persistent kernel (D3/D6), publish its run start, then settle exactly one matching terminal fact through the acquired kernel\'s own RUN/DONE protocol exchange (D5/D10).',
+        description: 'Acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact through the acquired kernel\'s own RUN/DONE protocol exchange.',
         parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
         returns: 'A handle exposed only after `science/run-started` committed.',
       },

@@ -1,5 +1,5 @@
 /**
- * `KernelProcess` against a fake D2-protocol driver (`fixtures/fake-kernel-driver.mjs`),
+ * `KernelProcess` against a fake kernel-wire-protocol driver (`fixtures/fake-kernel-driver.mjs`),
  * driven through the real `dsh-subprocess-local` and `dsh-sandbox-local`
  * providers the way `loader-composition.spec.ts` composes them.
  */
@@ -226,7 +226,7 @@ describe('KernelProcess', () => {
       .rejects.toThrow(KernelProtocolError)
   })
 
-  it('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker (A1 finding 2)', async () => {
+  it('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker', async () => {
     const harness = await createHarness('kernel-start-failure-threadpool')
     // One more than the default libuv threadpool size: every prior fs.*
     // call in this suite has already returned its worker, so this many
@@ -252,7 +252,7 @@ describe('KernelProcess', () => {
     expect(raced).toBe('resolved')
   }, 30_000)
 
-  it('a confine failure before spawn releases the FIFO so a same-index retry does not hit mkfifo: File exists (A1 finding 2)', async () => {
+  it('a confine failure before spawn releases the FIFO so a same-index retry does not hit mkfifo: File exists', async () => {
     const harness = await createHarness('kernel-start-failure-retry')
     // A prefix inside the confinement policy's own writable root fails
     // `assertPrefixReadOnly` inside `confineInterpreterArgv`, before

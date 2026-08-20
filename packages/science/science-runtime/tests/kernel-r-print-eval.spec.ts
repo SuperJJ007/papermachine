@@ -1,5 +1,5 @@
 /**
- * A1 finding 3 regression coverage: `source()`'s default `print.eval`
+ * Regression coverage: `source()`'s default `print.eval`
  * tracks `echo`, so `echo = FALSE` alone drops the top-level auto-printing
  * `Rscript` and Claude Science both produce for a bare value (`x` prints
  * `[1] 42`, a one-shot process prints nothing). The always-on assertion
@@ -7,7 +7,7 @@
  * ever regresses without needing an R toolchain. The second, opt-in suite
  * exercises the exact `source()` call `kernel_r.R`'s `execute_run` makes
  * against a real R interpreter, self-skipping without one configured — the
- * full kernel driver/FIFO protocol path is K3.3's real-acceptance job, not
+ * full kernel driver/FIFO protocol path is `real-acceptance.ts`'s job, not
  * this unit-level one.
  */
 
@@ -33,7 +33,7 @@ function resolveRscript(): string | undefined {
   }
 }
 
-describe('kernel_r.R print.eval (A1 finding 3)', () => {
+describe('kernel_r.R print.eval', () => {
   it('calls source() with print.eval = TRUE, matching Rscript and Claude Science auto-printing', () => {
     const path = resolveKernelDriverPath(KERNEL_ASSETS_ROOT, 'r')
     const content = readFileSync(path, 'utf8')

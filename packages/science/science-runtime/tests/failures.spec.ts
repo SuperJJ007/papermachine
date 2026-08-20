@@ -3,7 +3,7 @@
  * The deleted one-shot spawn path's fine-grained runner/denial/spawn-failure
  * classification (SANDBOX_RUNNER_FAILED, SANDBOX_DENIED, SPAWN_FAILED for a
  * run's own terminal) no longer applies: a kernel run's only failure codes
- * are TIMEOUT/CANCELLED/EXECUTION_FAILED/KERNEL_DIED (D10), and a kernel
+ * are TIMEOUT/CANCELLED/EXECUTION_FAILED/KERNEL_DIED, and a kernel
  * spawn failure is a pre-publication KERNEL_START_FAILED rejection
  * (`run.spec.ts` covers that path) rather than a run terminal.
  */
@@ -69,15 +69,15 @@ describe('ScienceRuntime post-start failure classification', () => {
     }
   })
 
-  it('retires a tainted kernel even when the terminal run-finished append is vetoed (A3 finding 2)', async () => {
+  it('retires a tainted kernel even when the terminal run-finished append is vetoed', async () => {
     const harness = await ready('science-taint-veto')
     const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
       if (eventName !== 'session/event') return
       const [, event] = args as [unknown, { readonly type?: string }]
-      if (event?.type === 'science/run-finished') throw new Error('injected terminal append failure (A3 finding 2)')
+      if (event?.type === 'science/run-finished') throw new Error('injected terminal append failure')
     }, { global: true })
     try {
-      // Taint-retirement (D5): a run that replies DONE ok immediately, then
+      // Taint-retirement: a run that replies DONE ok immediately, then
       // is cancelled right as it starts — the SIGINT lands on an
       // effectively idle kernel, so the run's own terminal stays
       // first-cause-governed (cancelled) and `outcome.retireKernel` is true
@@ -105,7 +105,7 @@ describe('ScienceRuntime post-start failure classification', () => {
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
   })
 
-  it('re-arms a non-tainted kernel\'s idle timer despite a vetoed terminal append, so idle expiry still fires (A3 finding 2)', async () => {
+  it('re-arms a non-tainted kernel\'s idle timer despite a vetoed terminal append, so idle expiry still fires', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-failures-idle-rearm-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -120,7 +120,7 @@ describe('ScienceRuntime post-start failure classification', () => {
     const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
       if (eventName !== 'session/event') return
       const [, event] = args as [unknown, { readonly type?: string }]
-      if (event?.type === 'science/run-finished') throw new Error('injected terminal append failure (A3 finding 2)')
+      if (event?.type === 'science/run-finished') throw new Error('injected terminal append failure')
     }, { global: true })
     // Fake timers before the kernel spawns (matching kernel-set.spec.ts's
     // own convention): the idle timer's setTimeout must be a fake one for
@@ -194,17 +194,17 @@ describe('ScienceRuntime post-start failure classification', () => {
     }
     expect(readdirSync(runs)).toEqual([])
     // The kernel-started fact already committed before run-started's own
-    // veto (D4 commit ordering) and is not rolled back: the kernel it names
+    // veto (commit ordering) and is not rolled back: the kernel it names
     // stays live for a retry to reuse.
     expect(harness.session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
   })
 
-  it('classifies a vetoed kernel-state started append as INFRASTRUCTURE_FAILURE, not KERNEL_START_FAILED (A3 finding 6)', async () => {
+  it('classifies a vetoed kernel-state started append as INFRASTRUCTURE_FAILURE, not KERNEL_START_FAILED', async () => {
     const harness = await ready('science-kernel-state-veto')
     const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
       if (eventName !== 'session/event') return
       const [, event] = args as [unknown, { readonly type?: string }]
-      if (event?.type === 'science/kernel-state') throw new Error('injected kernel-state append failure (A3 finding 6)')
+      if (event?.type === 'science/kernel-state') throw new Error('injected kernel-state append failure')
     }, { global: true })
     try {
       // Pre-fix: the raw append error falls through kernelAcquisitionError's

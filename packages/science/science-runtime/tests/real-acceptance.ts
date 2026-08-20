@@ -29,7 +29,7 @@ const R_PREFIX = 'DSH_SCIENCE_RUNTIME_R_PREFIX'
 const CANDIDATE_SHA = 'DSH_SCIENCE_RUNTIME_CANDIDATE_SHA'
 const AMBIENT_SENTINEL = 'DSH_SCIENCE_RUNTIME_REAL_AMBIENT_SENTINEL'
 const TIMEOUT_MS = 5_000
-/** Generous upper bound for the idle-expiry poll (D3); the kernel is expected around {@link MIN_KERNEL_IDLE_TIMEOUT_MS}. */
+/** Generous upper bound for the idle-expiry poll; the kernel is expected around {@link MIN_KERNEL_IDLE_TIMEOUT_MS}. */
 const IDLE_POLL_TIMEOUT_MS = 120_000
 const IDLE_POLL_INTERVAL_MS = 2_000
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
@@ -186,7 +186,7 @@ function taintingSleepSource(language: ScienceLanguage): string {
     ].join('\n')
 }
 
-/** R source that leaves a bare top-level value for auto-printing (A1 finding 3), unreachable in Python's script semantics. */
+/** R source that leaves a bare top-level value for auto-printing, unreachable in Python's script semantics. */
 const R_BARE_VALUE_SOURCE = '41 + 1\n'
 
 /** Require one terminal value to carry the expected post-start classification. */
@@ -231,7 +231,7 @@ function findExitedKernel(
  * closed with an `exited` fact carrying exactly `reason`, or fail after
  * {@link IDLE_POLL_TIMEOUT_MS}. Used only for the idle-expiry scenario: every
  * other kernel-end path this suite exercises is synchronously observable
- * through its causing run's own settled `done` (D3/D5).
+ * through its causing run's own settled `done`.
  */
 async function waitForKernelExit(session: Session, language: ScienceLanguage, epoch: number, reason: string): Promise<void> {
   const deadline = Date.now() + IDLE_POLL_TIMEOUT_MS
@@ -294,7 +294,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     await context.plugin(ScienceRuntime, {
       dshHome,
       timeoutMs: TIMEOUT_MS,
-      // The shortest legal D7 idle deadline, so the idle-expiry check below
+      // The shortest legal idle deadline, so the idle-expiry check below
       // proves the configured field takes effect without waiting anywhere
       // near the 30-minute default; every other check in this sequence
       // settles well within it.
@@ -378,7 +378,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     })
     // Kernel runs have no per-run exit code or signal to classify a denied
     // write against; the driver reports the resulting exception like any
-    // other, so it settles as EXECUTION_FAILED (D10) — SANDBOX_RUNNER_FAILED
+    // other, so it settles as EXECUTION_FAILED — SANDBOX_RUNNER_FAILED
     // and SANDBOX_DENIED are one-shot-only codes the kernel model retired
     // (failures.spec.ts's own header documents the retirement).
     expectTerminal(await denied.done, 'failed', 'EXECUTION_FAILED')
@@ -435,7 +435,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     }
     checks.push('Outcome publication and replay')
 
-    // Persistent-kernel lifecycle (D3–D6): one variable, `x`, is chained
+    // Persistent-kernel lifecycle: one variable, `x`, is chained
     // across four successive kernel epochs of the same language's kernel —
     // state persistence and interrupt survival on epoch 1, then a fresh
     // epoch each time timeout escalation, environment-rebound, and idle
@@ -452,9 +452,9 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       const bareValueResult = await bareValue.done
       expectTerminal(bareValueResult, 'success')
       if (!bareValueResult.stdout.text.includes('[1] 42')) {
-        throw new Error('a bare top-level value did not auto-print to stdout (A1 finding 3)')
+        throw new Error('a bare top-level value did not auto-print to stdout')
       }
-      checks.push('R bare top-level value auto-prints (A1 finding 3)')
+      checks.push('R bare top-level value auto-prints')
     }
 
     const assignX = await context.scienceRuntime.startRun({
@@ -491,8 +491,8 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     const printX2Result = await printX2.done
     expectTerminal(printX2Result, 'success')
     expectEpoch(printX2Result, epoch1)
-    if (!printX2Result.stdout.text.includes('1')) throw new Error('kernel did not survive an interrupted run (D5)')
-    checks.push('interrupt during sleep cancels the run but the kernel survives (D5)')
+    if (!printX2Result.stdout.text.includes('1')) throw new Error('kernel did not survive an interrupted run')
+    checks.push('interrupt during sleep cancels the run but the kernel survives')
 
     const escalated = await context.scienceRuntime.startRun({
       session, language, code: taintingSleepSource(language),

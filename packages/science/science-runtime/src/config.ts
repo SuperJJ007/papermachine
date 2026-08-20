@@ -47,14 +47,14 @@ export const MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 1
 /** Highest accepted configured auto-capture per-session artifact-version bound. */
 export const MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 10_000
 
-/** Default persistent-kernel idle deadline (D7), matching Claude Science parity (30 minutes). */
+/** Default persistent-kernel idle deadline, matching Claude Science parity (30 minutes). */
 export const DEFAULT_KERNEL_IDLE_TIMEOUT_MS = 1_800_000
 /** Lowest accepted configured kernel idle deadline (1 minute). */
 export const MIN_KERNEL_IDLE_TIMEOUT_MS = 60_000
 /** Highest accepted configured kernel idle deadline (24 hours). */
 export const MAX_KERNEL_IDLE_TIMEOUT_MS = 86_400_000
 
-/** Default persistent-kernel spawn-to-READY deadline (D7). */
+/** Default persistent-kernel spawn-to-READY deadline. */
 export const DEFAULT_KERNEL_START_TIMEOUT_MS = 30_000
 /** Lowest accepted configured kernel spawn-to-READY deadline. */
 export const MIN_KERNEL_START_TIMEOUT_MS = 1_000
@@ -105,12 +105,12 @@ export interface Config {
    */
   readonly captureMaxArtifactVersionsPerSession?: number
   /**
-   * Idle deadline (D3) after a persistent kernel's last `DONE` before the
+   * Idle deadline after a persistent kernel's last `DONE` before the
    * Runtime ends it with reason `idle`; disarmed while a run is in flight.
    */
   readonly kernelIdleTimeoutMs?: number
   /**
-   * Deadline (D3) from a persistent kernel's spawn to its `READY` handshake;
+   * Deadline from a persistent kernel's spawn to its `READY` handshake;
    * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
    */
   readonly kernelStartTimeoutMs?: number

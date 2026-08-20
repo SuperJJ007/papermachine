@@ -55,7 +55,7 @@ const runOutputSchema = {
     status: { type: 'string', enum: ['success', 'failed', 'timed-out', 'cancelled'], required: true },
     // Present only when this is the first run on a kernel epoch that
     // followed an earlier one for this language — the one kernel fact the
-    // model needs told (D3 §4 K3.2 item 2): a fresh interpreter replaced the
+    // model needs told: a fresh interpreter replaced the
     // one that held whatever state earlier runs left behind.
     kernelRestartReason: { type: 'string' },
     runId: { type: 'string', required: true },

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-science-persistent-kernel.md
-2026-08-20-science-persistent-kernel.md: 236384cf81bb59c82a69036c31bf0cef86808b76
-2026-08-20-science-persistent-kernel.zh.md: bc7ad97f3ce37105c3420843f236da7679f6054f
+2026-08-20-science-persistent-kernel.md: 6738729f50cd360ccef1aeb75e4cce914b9fd03d
+2026-08-20-science-persistent-kernel.zh.md: 7fb704c79f22bd5a34375a5dfe36eaa31655fce5

@@ -220,7 +220,7 @@ describe('Science projection wire schema', () => {
       { ...state, runs: [{}] },
       { ...state, runs: [{ ...runningState.runs[0], unexpected: true }] },
       { ...state, runs: [{ ...state.runs[0], status: 'unknown' }] },
-      // A kernel run has no per-run exit code or signal (D10): neither field
+      // A kernel run has no per-run exit code or signal: neither field
       // exists on the wire schema any more, so either one is an unrecognized key.
       { ...state, runs: [{ ...currentRun, exitCode: 0 }] },
       { ...state, runs: [{ ...currentRun, signal: 'TERM' }] },

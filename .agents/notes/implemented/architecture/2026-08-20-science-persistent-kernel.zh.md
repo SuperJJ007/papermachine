@@ -60,7 +60,7 @@ inline 安装不需要任何 Runtime 代码：它们会改变存活的 kernel pr
 
 ### 配置、平台范围与错误
 
-两个配置字段治理 kernel 时序，均为可从 `cordis.yml` 更改的、经校验的 safe integer：一个默认 1,800,000ms(30 分钟，与 Claude Science 自身文档记载的默认值一致；范围 60,000–86,400,000)的 idle timeout，以及一个默认 30,000ms(范围 1,000–600,000)的 spawn-to-ready 截止时限。既有的 per-run timeout 保留其含义，但只被 fuse 进一次 run 自身的请求/响应交换中，而不进入 kernel spawn，因此在调用方自身的取消到达之前，一次 spawn 完全可能合法地比该 timeout 多存活最多一个 spawn-to-ready 截止时限的时长。protocol 常量——frame grammar、protocol 版本，以及那个共享的宽限窗口——保持固定：它们描述的是 wire protocol 本身，而不是一个部署层面的选择。
+两个配置字段治理 kernel 时序，均为可从 `cordis.yml` 更改的、经校验的 safe integer：一个默认 1,800,000ms(30 分钟，与 Claude Science 自身文档记载的默认值一致；范围 60,000–86,400,000)的 idle timeout，以及一个默认 30,000ms(范围 1,000–600,000)的 spawn-to-ready 截止时限。既有的 per-run timeout 保留其含义，并被 fuse 进一次新 kernel 的 spawn 之中：调用方自身的 operation signal 会被送入 spawn 的 `READY` 等待，因此一次 spawn 会以调用方自身的截止时限与 spawn-to-ready 截止时限两者中先触发的那一个为界。交给 subprocess 能力的 spawn spec 本身则刻意不携带 signal，因此该 kernel process 会比启动它的这一次 run 存活得更久。protocol 常量——frame grammar、protocol 版本，以及那个共享的宽限窗口——保持固定：它们描述的是 wire protocol 本身，而不是一个部署层面的选择。
 
 kernel 执行要求 POSIX(一个 FIFO、`SIGINT`，以及 `mkfifo` 这个可执行文件)：仅限 darwin 与 linux。一次 run 会在任何 scratch 或 process 工作之前，就在其他一切平台上以一个专门的 unsupported-platform code 做 pre-publication 拒绝——这与 Claude Science 自身的平台覆盖范围一致，后者本就不提供原生 Windows build。仅为 Windows 保留一个每次 run 都重新 spawn 的 fallback 的方案被拒绝了：与其维护两种持久化语义不同的执行模型，不如坚持一个诚实划定边界的单一执行模型。
 

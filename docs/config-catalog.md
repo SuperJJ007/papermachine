@@ -1568,12 +1568,12 @@ export interface Config {
    */
   readonly captureMaxArtifactVersionsPerSession?: number
   /**
-   * Idle deadline (D3) after a persistent kernel's last `DONE` before the
+   * Idle deadline after a persistent kernel's last `DONE` before the
    * Runtime ends it with reason `idle`; disarmed while a run is in flight.
    */
   readonly kernelIdleTimeoutMs?: number
   /**
-   * Deadline (D3) from a persistent kernel's spawn to its `READY` handshake;
+   * Deadline from a persistent kernel's spawn to its `READY` handshake;
    * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
    */
   readonly kernelStartTimeoutMs?: number

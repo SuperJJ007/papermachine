@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Fake D2-protocol kernel driver that delays its READY handshake by a fixed
+// Fake kernel-wire-protocol driver that delays its READY handshake by a fixed
 // window before opening the response FIFO's write side: exercises a spawn
 // still in flight (post-subprocess-spawn, pre-READY) when a concurrent
-// detach/disposeAll fires (the K1.3-flagged spawn-vs-teardown race). Speaks
-// the ordinary D2 protocol afterward, identical to fake-kernel-driver.mjs's
+// detach/disposeAll fires (the spawn-vs-teardown race). Speaks
+// the ordinary kernel wire protocol afterward, identical to fake-kernel-driver.mjs's
 // `reply` action.
 //
 // Usage: node fake-kernel-driver-delayed-ready.mjs <fifoPath>

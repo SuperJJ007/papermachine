@@ -292,7 +292,7 @@ describe('strict Science kernel-state fold', () => {
   it('folds an environment-rebound exited fact naming its kernel\'s now-superseded revision', () => {
     // The started fact fixes revision 1 as this kernel's own provenance; a
     // later applied revision 2 supersedes it before the kernel exits. The
-    // exited direction carries no "latest revision" requirement (D4), so
+    // exited direction carries no "latest revision" requirement, so
     // this folds cleanly even though revision 1 is no longer the session's
     // latest applied environment — guarding the deliberate asymmetry with
     // the `started` direction's environment relation.

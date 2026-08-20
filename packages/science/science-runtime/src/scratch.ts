@@ -56,9 +56,9 @@ export interface ScienceRunScratch {
   readonly source: string
   /** Owned artifact directory. */
   readonly artifacts: string
-  /** Per-run stdout capture file path the RUN frame names (D2). */
+  /** Per-run stdout capture file path the RUN frame names. */
   readonly stdout: string
-  /** Per-run stderr capture file path the RUN frame names (D2). */
+  /** Per-run stderr capture file path the RUN frame names. */
   readonly stderr: string
 }
 

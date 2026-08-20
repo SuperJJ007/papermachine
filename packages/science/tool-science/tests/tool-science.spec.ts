@@ -120,7 +120,7 @@ interface RunProvenance {
  * Directly append one `origin: 'auto'` artifact version citing `run`'s own
  * authorizing facts — the durable shape `dsh-science-runtime`'s real capture
  * walk appends, for a file the fake kernel driver never writes (it only
- * replies over the D2 FIFO protocol, never touching `SCIENCE_ARTIFACT_DIR`).
+ * replies over the kernel wire protocol's FIFO, never touching `SCIENCE_ARTIFACT_DIR`).
  * Persists a real attachment through the mounted `ctx.attachments` first, so
  * the seeded event references a real content-addressed ref exactly as
  * capture would.
@@ -198,7 +198,7 @@ async function setup(options: SetupOptions = {}) {
       profiles: { fake: { pythonPrefix: createFakePythonPrefix(root) } },
     })
     // Real subprocess/sandbox providers can spawn a real persistent kernel;
-    // redirect driver-asset resolution to the fake D2-protocol fixture so
+    // redirect driver-asset resolution to the fake kernel-wire-protocol fixture so
     // `run_python`/`run_r` exercise the real kernel pipeline deterministically
     // (mirrors `science-runtime/tests/loader-composition.spec.ts`'s own technique).
     installTestKernelSet(ctx, ctx.scienceRuntime)
@@ -473,7 +473,7 @@ describe('isScienceSession / requireScienceSession', () => {
 })
 
 describe('runValueFromResult / formatRunResult', () => {
-  it('carries failureCode and failureMessage when present (D10: a kernel run has no per-run exit code or signal)', () => {
+  it('carries failureCode and failureMessage when present (a kernel run has no per-run exit code or signal)', () => {
     const value = runValueFromResult({
       terminal: {
         runId: ScienceRunId('run-2'),
@@ -705,7 +705,7 @@ describe('kernelRestartReason', () => {
     expect(kernelRestartReason(projection, runAt('run-2', 2))).toBeUndefined()
   })
 
-  // D3's ScienceKernelEndReason union is closed at 7 members; each one
+  // ScienceKernelEndReason is closed at 7 members; each one
   // names the prior kernel's exact model-facing phrase (context.ts's
   // modelKernelEndReason), never a placeholder shared across reasons.
   it.each<[ScienceKernelEndReason, string]>([
@@ -776,7 +776,7 @@ describe('get_science_state', () => {
     expect(text).toContain('"status": "applied"')
     expect(text).toContain('"history"')
     expect(text).toContain('"kernels"')
-    // A2 finding 9: `kernelCount` is dropped from the metrics passthrough
+    // `kernelCount` is dropped from the metrics passthrough
     // (kernels/history.kernelsOmitted already state the same fact in full).
     expect(text).not.toContain('kernelCount')
     expect(text).not.toContain(root)
@@ -868,7 +868,7 @@ describe('get_science_state', () => {
     expect(value.kernels).toEqual([{ language: 'python', kernelEpoch: 1, state: 'interrupted', startedAt: 100 }])
   })
 
-  it('selects metrics fields explicitly, dropping the raw kernelCount counter (A2 finding 9)', () => {
+  it('selects metrics fields explicitly, dropping the raw kernelCount counter', () => {
     const value = stateValueFromProjection(projectionFixture({
       metrics: { runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, kernelCount: 5, outcomeRevision: 6 },
     }), 4)
@@ -1173,7 +1173,7 @@ describe('run_python', () => {
     expect(firstText).not.toContain('kernel restarted')
 
     // Direct log append (not `ensureScienceBound`, whose post-first-run
-    // guard blocks a product-reachable re-bind — see A3 finding 13):
+    // guard blocks a product-reachable re-bind):
     // proves the fold-level rebind KernelSet.acquire reacts to, mirroring
     // science-runtime/tests/run.spec.ts's own rebind test.
     const projection = replayScience(session.events)

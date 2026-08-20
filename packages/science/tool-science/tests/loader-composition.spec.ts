@@ -146,7 +146,7 @@ async function boot(): Promise<Context> {
   await ctx.loader.await()
   // The Loader-composed `subprocess`/`sandbox` are real local providers,
   // capable of spawning a real kernel; redirect driver-asset resolution to
-  // the fake D2-protocol fixture so `run_python` exercises the real kernel
+  // the fake kernel-wire-protocol fixture so `run_python` exercises the real kernel
   // pipeline deterministically (mirrors `science-runtime`'s own Loader test).
   installTestKernelSet(ctx, ctx.scienceRuntime)
   return ctx
@@ -241,7 +241,7 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
 
     // Resume: dispose the live agent, then resume the exact persisted session.
     await handle.dispose()
-    // Kernel teardown on session detach is fire-and-forget (D3): a same-id
+    // Kernel teardown on session detach is fire-and-forget: a same-id
     // successor stays quarantined until the old kernel's tree is proven
     // quiescent. Wait for its `exited` fact before resuming, or the run
     // below can race the still-quarantined predecessor and be rejected.

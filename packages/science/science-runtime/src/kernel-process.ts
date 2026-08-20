@@ -1,6 +1,6 @@
 /**
- * One confined persistent Science kernel subprocess speaking the D2 protocol
- * (`stdin` RUN/EXIT request frames, response-FIFO READY/DONE frames): spawn
+ * One confined persistent Science kernel subprocess speaking the kernel wire
+ * protocol (`stdin` RUN/EXIT request frames, response-FIFO READY/DONE frames): spawn
  * sequence, execute-serialization, cooperative interrupt passthrough, and
  * teardown. Session-scoped lifecycle is out of scope here: this module knows
  * nothing about session events, kernel epochs, idle timers, or durable end
@@ -67,12 +67,12 @@ export interface KernelProcessOptions {
   readonly kernelStartTimeoutMs: number
   /**
    * Caller's own operation cancellation, fused with `kernelStartTimeoutMs`
-   * to bound only the READY wait (A3 finding 11): without it, the caller's
+   * to bound only the READY wait: without it, the caller's
    * `timeoutMs`/`cancel()` bounds the RUN/DONE exchange but not spawn,
    * which could otherwise outlive the whole operation by up to
    * `kernelStartTimeoutMs`. Never wired into the spawned process itself —
    * this kernel is meant to outlive the one run whose operation this signal
-   * scopes (D3), so it must stop mattering once READY arrives, not stay
+   * scopes, so it must stop mattering once READY arrives, not stay
    * live for the process's whole lifetime. Absent only for a caller with no
    * operation-scoped signal of its own.
    */
@@ -95,18 +95,18 @@ export interface KernelExecuteRequest {
   readonly artifactDir: string
 }
 
-/** D2 terminal run status. */
+/** Terminal run status the kernel wire protocol carries on a DONE frame. */
 export type KernelDoneStatus = 'ok' | 'error' | 'interrupted'
 
 /** Parsed DONE frame for one completed RUN. */
 export interface KernelDoneFrame {
   /** Run identity from the matching RUN request. */
   readonly runId: ScienceRunId
-  /** D2 terminal status. */
+  /** Terminal status the DONE frame carried. */
   readonly status: KernelDoneStatus
   /** Exception/condition class name on `error`; empty otherwise. */
   readonly detail: string
-  /** Whether the D2 `capture-degraded` flag token was present; other tokens are ignored (forward-tolerant). */
+  /** Whether the wire protocol's `capture-degraded` flag token was present; other tokens are ignored (forward-tolerant). */
   readonly captureDegraded: boolean
 }
 
@@ -160,7 +160,7 @@ async function unlinkFifo(fifoPath: string): Promise<void> {
  * Force-complete a response FIFO's blocking read-side `open()` when it may
  * still be stuck in the libuv threadpool because no writer ever connected —
  * a confine/spawn failure, or a driver that never reached its own
- * open-for-write before the READY deadline (A1 finding 2). Opening the write
+ * open-for-write before the READY deadline. Opening the write
  * end non-blockingly rendezvous with a still-pending blocking read-open and
  * lets it return; closing that transient writer immediately afterward
  * leaves no writer behind. Best-effort and always safe to call: when the
@@ -187,7 +187,7 @@ async function releaseBlockedFifoOpen(fifoPath: string): Promise<void> {
 
 /**
  * Full teardown for a kernel that failed anywhere between response-FIFO
- * creation and a successful READY handshake (A1 finding 2): quiesce the
+ * creation and a successful READY handshake: quiesce the
  * subprocess when one was spawned, destroy the host's read stream, release
  * a still-blocked read-side open so its libuv threadpool worker is freed,
  * then remove the FIFO file.
@@ -209,9 +209,9 @@ async function cleanupOnStartFailure(
 /**
  * Create the kernel's response FIFO host-side, unconfined: spawns the
  * platform `mkfifo` binary directly through the subprocess seam, never
- * through the sandbox (D2/D9 — the FIFO must exist before the confined
- * kernel argv is spawned). Removes a stale FIFO left at the same path by an
- * earlier failed attempt first (A1 finding 2): `mkfifo` refuses an existing
+ * through the sandbox — the FIFO must exist before the confined
+ * kernel argv is spawned. Removes a stale FIFO left at the same path by an
+ * earlier failed attempt first: `mkfifo` refuses an existing
  * path, and a retry after a start failure reuses the same kernel-epoch
  * scratch directory.
  * @param subprocess - subprocess runtime used unconfined for this one call.
@@ -242,7 +242,7 @@ async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fi
 
 /**
  * Exact empty-base child environment for a persistent kernel's baseline
- * spawn (D9: per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
+ * spawn (per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
  */
 function kernelEnvironment(
   binding: ScienceInterpreterAvailableBinding,
@@ -258,7 +258,7 @@ function kernelEnvironment(
   }
 }
 
-/** True D2 status literal. */
+/** True kernel wire-protocol status literal. */
 function isDoneStatus(value: string): value is KernelDoneStatus {
   return value === 'ok' || value === 'error' || value === 'interrupted'
 }
@@ -331,11 +331,11 @@ export class KernelProcess {
     const fifoPath = join(kernelScratch.directory, 'resp.fifo')
     await createResponseFifo(services.subprocess, kernelScratch.directory, fifoPath)
     // Open the read side before spawning the kernel: the safer FIFO-ordering
-    // default (K1.0 spike finding 1) — no window where the kernel's own
+    // default — no window where the kernel's own
     // open-for-write races an as-yet-nonexistent reader.
     const readStream = createReadStream(fifoPath, { encoding: 'utf8' })
     // Everything from here through a successful READY handshake shares one
-    // failure path (A1 finding 2): a confine/spawn throw, or an awaitReady
+    // failure path: a confine/spawn throw, or an awaitReady
     // rejection, must release the FIFO's read-side open and remove the FIFO
     // file the same way, whether or not a subprocess was ever spawned.
     let handle: SubprocessHandle | undefined
@@ -350,8 +350,8 @@ export class KernelProcess {
       // NOT given `signal`: that spec field stays wired to the spawned
       // handle for the process's whole lifetime (subprocess-local's own
       // spawn keeps its abort listener attached until exit), but this
-      // kernel outlives the one run whose operation control `signal` is
-      // (D3) — wiring it here would let any later run's own cancellation
+      // kernel outlives the one run whose operation `signal` this is —
+      // wiring it here would let any later run's own cancellation
       // force-kill an already-READY, unrelated persistent kernel. `signal`
       // only bounds the READY wait below; an abort during that wait is
       // handled entirely through `cleanupOnStartFailure`'s own `quiesce()`.
@@ -417,7 +417,7 @@ export class KernelProcess {
    * Best-effort EXIT frame, then the seam's quiesce escalation, then FIFO
    * stream/file cleanup. Idempotent: a second call awaits the same teardown.
    * Returns the escalation's {@link Quiescence} verdict rather than
-   * discarding it (A1 finding 1): a caller responsible for same-id
+   * discarding it: a caller responsible for same-id
    * quarantine bookkeeping (`KernelSet.teardown`) must keep quarantine
    * active until a `{ quiescent: false }` result's `eventualQuiescence`
    * resolves — this method itself does not wait beyond the seam's own
@@ -447,7 +447,7 @@ export class KernelProcess {
     // NOT `using`: this function returns before the deadline's own timer
     // fires or clears, so disposal must be tied to the returned promise
     // settling (below), not to this synchronous function body returning.
-    // Fusing `signal` (A3 finding 11) means an abort here can be the
+    // Fusing `signal` means an abort here can be the
     // caller's own cancellation, not only the READY deadline; `onTimeout`
     // fires either way since both cases mean READY is not coming.
     const bound = deadline(signal, timeoutMs, 'KERNEL_START_TIMEOUT')
@@ -527,7 +527,7 @@ export class KernelProcess {
     // brief window to settle first so a genuine crash is not misreported as
     // a protocol violation (a driver that closes only the FIFO and stays
     // alive is the genuine violation this grace distinguishes). Reuses the
-    // one fixed descendant-grace constant (A1 finding 13) rather than a
+    // one fixed descendant-grace constant rather than a
     // second, unexplained one.
     let exited = false
     try {

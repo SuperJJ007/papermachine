@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CommonJS fake D2-protocol kernel driver for KernelSet unit tests. A
+// CommonJS fake kernel-wire-protocol driver for KernelSet unit tests. A
 // `kernel_python.py` / `kernel_r.R` pair under one `assetsRoot` is what
 // `resolveKernelDriverPath` requires (see `kernel-assets.ts`); this
 // directory's own `package.json` pins `"type": "commonjs"` so Node accepts

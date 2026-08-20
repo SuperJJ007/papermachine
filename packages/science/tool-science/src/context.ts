@@ -42,8 +42,8 @@ const STATE_RULE = 'Variables persist in each language\'s kernel across run_pyth
 
 /**
  * Model-vocabulary phrase for one closed kernel's end reason — task words
- * only, no transport/implementation vocabulary (D3's reasons stay closed;
- * TypeScript rejects an unhandled member added later).
+ * only, no transport/implementation vocabulary. `ScienceKernelEndReason`
+ * stays closed; TypeScript rejects an unhandled member added later.
  * @param reason - closed kernel end-reason from a durable `science/kernel-state` fact.
  * @returns the model-facing phrase completing "kernel restarted (<phrase>)".
  */

@@ -1326,7 +1326,7 @@ describe('Science Runtime configuration', () => {
     expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
   })
 
-  it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted (D7)', () => {
+  it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 59_999,
     })).toThrow(/kernelIdleTimeoutMs/)

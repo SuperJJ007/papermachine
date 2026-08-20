@@ -1,5 +1,5 @@
 /**
- * `KernelSet` against a fake D2-protocol driver (`fixtures/kernel-set-assets/`),
+ * `KernelSet` against a fake kernel-wire-protocol driver (`fixtures/kernel-set-assets/`),
  * driven through the real `dsh-subprocess-local` and `dsh-sandbox-local`
  * providers the way `kernel-process.spec.ts` composes them: epoch
  * allocation, idle expiry, environment-rebound respawn, same-id quarantine,
@@ -141,7 +141,7 @@ function createEpochAllocator(): EpochAllocator {
  * grace-bounded observations, and its `terminate()` throws — reproducing
  * `quiesce()`'s `{ quiescent: false }` result (as if a straggler descendant
  * survived both escalation tiers) without waiting out real OS-level grace
- * timing (A1 finding 1). The later unbounded observation resolves once
+ * timing. The later unbounded observation resolves once
  * `proveQuiescence()` is called, simulating the straggler finally being
  * reaped.
  */
@@ -281,7 +281,7 @@ describe('KernelSet', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  it('resets the idle timer on a completed execution, extending life past the original deadline (A1 finding 6)', async () => {
+  it('resets the idle timer on a completed execution, extending life past the original deadline', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-reset')
@@ -293,7 +293,7 @@ describe('KernelSet', () => {
     // Past the ORIGINAL deadline (999 + 2 = 1001 > 1000) but well before the reset one (999 + 1000 = 1999).
     await vi.advanceTimersByTimeAsync(2)
     expect(harness.ended).toHaveLength(0)
-    // Positive liveness proof (A1 finding 6): a no-op resetIdleTimer would
+    // Positive liveness proof: a no-op resetIdleTimer would
     // already have ended this kernel from the ORIGINAL deadline by now (a
     // mutation the acceptor verified this test previously did not catch);
     // a successful execute against the same kernel object only succeeds
@@ -307,7 +307,7 @@ describe('KernelSet', () => {
     expect(harness.ended[0]?.fact.reason).toBe('idle')
   })
 
-  it('never fires the idle timer while a run is in flight (disarmed) and rearms only after it completes (A1 finding 7)', async () => {
+  it('never fires the idle timer while a run is in flight (disarmed) and rearms only after it completes', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-disarm')
@@ -450,7 +450,7 @@ describe('KernelSet', () => {
     expect(harness.ended).toHaveLength(0)
   })
 
-  it('rejects acquire on an exact Session object already detached (A1 finding 5)', async () => {
+  it('rejects acquire on an exact Session object already detached', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-detached-acquire')
     const environment = harness.environment(1, ['python'])
@@ -519,7 +519,7 @@ describe('KernelSet', () => {
     expect(harness.started).toHaveLength(2)
   })
 
-  it('refuses a same-id successor entry that would clobber a predecessor entry racing to register its own kernel (A1 finding 5)', async () => {
+  it('refuses a same-id successor entry that would clobber a predecessor entry racing to register its own kernel', async () => {
     const harness = await createHarness()
     const original = attachScienceSession(harness.ctx, 'kernel-conflict')
     const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
@@ -529,8 +529,8 @@ describe('KernelSet', () => {
     const environment = harness.environment(1, ['python'])
     // Neither acquire is awaited before the other starts: both spawns race
     // to register a live kernel for the same session id before either has
-    // claimed `byId`, reproducing the predecessor's-spawn-window race A1
-    // finding 5 describes.
+    // claimed `byId`, reproducing the predecessor's-spawn-window race
+    // `KernelSetConflictError`'s own doc describes.
     const [firstResult, secondResult] = await Promise.allSettled([
       harness.kernelSet.acquire(original.session, 'python', environment, originalScratch),
       harness.kernelSet.acquire(successor.session, 'python', environment, successorScratch),
@@ -544,14 +544,14 @@ describe('KernelSet', () => {
     expect(rejected[0]?.reason).toBeInstanceOf(KernelSetConflictError)
   })
 
-  it('discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered (K4.2-F)', async () => {
+  it('discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered', async () => {
     // trackedSpawn's own syncBusyRegistration call can itself be the one
     // that throws the conflict (a different entry already claimed byId):
     // spawnKernel's real subprocess spawn already started before that call
     // runs, so the losing kernel keeps spawning in the background regardless
-    // of the throw, and D3's discipline still requires it to end through the
-    // ordinary EXIT/quiesce path rather than being left running outside
-    // KernelSet's own teardown.
+    // of the throw, and KernelSet's own discipline still requires it to end
+    // through the ordinary EXIT/quiesce path rather than being left running
+    // outside its own teardown.
     const harness = await createHarness()
     const { subprocess: wrapped, exitWriteCount, spawnCount } = wrapTrackingKernelSpawns(harness.ctx.subprocess)
     const kernelSet = new KernelSet({
@@ -601,7 +601,7 @@ describe('KernelSet', () => {
     expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
   })
 
-  it('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child, A1 finding 1)', async () => {
+  it('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child)', async () => {
     const harness = await createHarness()
     const { subprocess: wrapped, proveQuiescence } = wrapWithUnprovenQuiescence(harness.ctx.subprocess)
     const started: Recorded<ScienceKernelStartedFact>[] = []
@@ -676,7 +676,7 @@ describe('KernelSet', () => {
     expect(second).not.toBe(first)
   })
 
-  it('ends the fresh kernel and fails acquire when onKernelStarted throws, leaving nothing registered (A1 finding 4)', async () => {
+  it('ends the fresh kernel and fails acquire when onKernelStarted throws, leaving nothing registered', async () => {
     const harness = await createHarness()
     const startedCalls: Session[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
@@ -740,7 +740,7 @@ describe('KernelSet', () => {
     }
   })
 
-  it('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws (A3 finding 1)', async () => {
+  it('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws', async () => {
     const harness = await createHarness()
     // Production-shaped, unlike `createEpochAllocator`'s monotonic counter
     // (which never rewinds and so cannot reproduce this bug): derives the
@@ -749,7 +749,7 @@ describe('KernelSet', () => {
     // `nextKernelEpoch`'s own shape (`index.ts`), which reads the durable
     // projection and therefore never records a failed attempt either.
     const facts: ScienceKernelStartedFact[] = []
-    const startError = new Error('kernel-set.spec.ts: injected onKernelStarted failure (A3 finding 1)')
+    const startError = new Error('kernel-set.spec.ts: injected onKernelStarted failure')
     let calls = 0
     const kernelSet = new KernelSet({
       subprocess: harness.ctx.subprocess,
@@ -779,7 +779,7 @@ describe('KernelSet', () => {
     expect(facts[0]?.kernelEpoch).toBe(1)
   })
 
-  it('does not reject the caller when onKernelEnded throws, and registry bookkeeping still completes (A1 finding 4)', async () => {
+  it('does not reject the caller when onKernelEnded throws, and registry bookkeeping still completes', async () => {
     const harness = await createHarness()
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const endedCalls: Session[] = []
@@ -834,7 +834,7 @@ describe('KernelSet', () => {
     expect(fresh).not.toBe(kernel)
   })
 
-  it('passes onKernelStarted/onKernelEnded exactly the D4 facts', async () => {
+  it('passes onKernelStarted/onKernelEnded exactly the durable kernel-state facts', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-facts')
     const environment = harness.environment(1, ['python'])
@@ -874,7 +874,7 @@ describe('KernelSet', () => {
     )
   })
 
-  it('captures startedAt after the READY handshake completes, not at spawn request (A3 finding 7)', async () => {
+  it('captures startedAt after the READY handshake completes, not at spawn request', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const harness = await createHarness()
     const kernelSet = new KernelSet({
@@ -945,7 +945,7 @@ describe('KernelSet', () => {
     expect(fresh.process).not.toBe(kernel)
   })
 
-  it('retires a kernel that finishes spawning after detach already fired (K1.3-flagged spawn-vs-teardown race)', async () => {
+  it('retires a kernel that finishes spawning after detach already fired (the spawn-vs-teardown race)', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
     const harness = await createHarness()

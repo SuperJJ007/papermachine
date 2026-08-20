@@ -65,7 +65,7 @@ execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir
   setwd(cwd)
   Sys.setenv(TMPDIR = cwd, SCIENCE_ARTIFACT_DIR = artifact_dir)
   # Safety net for an interrupt that unwinds through this function before
-  # reaching the explicit restore near the end (A1 finding 12): on.exit
+  # reaching the explicit restore near the end: on.exit
   # runs on every exit path, including one no tryCatch below protects
   # because the interrupt landed before that tryCatch was entered.
   on.exit({
@@ -88,8 +88,8 @@ execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir
   err_con <- file(stderr_path, open = "wt")
   sink(out_con, type = "output")
   sink(err_con, type = "message")
-  # Safety net for an interrupt landing between here and the tryCatch below
-  # (A1 finding 12): best-effort depth-only unwind so the sink stack and
+  # Safety net for an interrupt landing between here and the tryCatch below:
+  # best-effort depth-only unwind so the sink stack and
   # these file connections never leak past this run. The explicit unwind
   # after the tryCatch is what a normally-returning run relies on for its
   # capture_degraded accounting; this duplicates it harmlessly there.

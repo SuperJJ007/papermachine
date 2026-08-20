@@ -37,7 +37,7 @@ export type ScienceRuntimeErrorCode =
   | 'ARTIFACT_NOT_FOUND'
   /** A persistent kernel's spawn, READY handshake, or start-time confinement failed; the message names the language and cause class. */
   | 'KERNEL_START_FAILED'
-  /** Kernel execution requires darwin or linux (D8); rejected pre-publication on every other platform. */
+  /** Kernel execution requires darwin or linux; rejected pre-publication on every other platform. */
   | 'KERNEL_UNSUPPORTED_PLATFORM'
 
 /** Typed error for a Runtime operation that cannot return a durable value. */

@@ -59,7 +59,7 @@ const stateKernelSchema = {
 } as const
 
 // Explicit field selection, not a verbatim passthrough of
-// `ScienceProjectionMetrics` (A2 finding 9): a future Host-side metrics
+// `ScienceProjectionMetrics`: a future Host-side metrics
 // addition must be deliberately wired here to reach the model, rather than
 // leaking through automatically. `kernelCount` is dropped rather than
 // selected: it is the same fact `kernels`/`history.kernelsOmitted` already
@@ -216,7 +216,7 @@ function stateKernel(kernel: ScienceKernel): InferValue<typeof stateKernelSchema
 }
 
 /**
- * Select the model-facing counters explicitly (A2 finding 9): never spread
+ * Select the model-facing counters explicitly: never spread
  * `ScienceProjectionMetrics` verbatim, so a future Host-side metrics field
  * requires a deliberate addition here to reach the model. `kernelCount` is
  * intentionally not selected — see {@link stateMetricsSchema}'s own doc.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CommonJS fake D2-protocol kernel driver for KernelSet's dispose/detach-
+// CommonJS fake kernel-wire-protocol driver for KernelSet's dispose/detach-
 // during-spawn race test: delays its READY handshake by a fixed window
 // before opening the response FIFO's write side, so a spawn is still in
 // flight (post-subprocess-spawn, pre-READY) when the test's detach/dispose

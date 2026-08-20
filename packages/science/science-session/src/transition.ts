@@ -59,7 +59,7 @@ function requireEnvironment(state: ScienceFoldState, revision: number): ScienceE
  * environment, and that `fingerprint` matches `language`'s own available
  * binding on that revision. Shared by the run and kernel `started` paths —
  * the only Science facts that fix new environment provenance. A kernel
- * `exited` fact deliberately carries no such requirement (D4): its revision
+ * `exited` fact deliberately carries no such requirement: its revision
  * is pinned to its own `started` fact by {@link sameKernelIdentity} instead,
  * which lets an `environment-rebound` exit legitimately name a
  * since-superseded revision.
@@ -118,7 +118,7 @@ function sameRunIdentity(started: ScienceRunIdentity, terminal: ScienceRunIdenti
  * `exited`) kernel for `run.language`, and that kernel's own environment
  * provenance to match the run's claimed `environmentRevision`/
  * `environmentFingerprint`. At most one kernel per language is ever open at
- * once (D3), so a matching open record is unambiguous.
+ * once, so a matching open record is unambiguous.
  * @param state - fold accumulator to read committed kernel facts from.
  * @param run - the run-started value naming the kernel epoch.
  * @throws when no open kernel matches, or its environment provenance diverges from the run's own.
@@ -413,8 +413,8 @@ function applyDomainEvent(state: ScienceFoldState, event: DecodedScienceDomainEv
       if (environment.revision !== state.environments.length + 1) {
         throw new Error(`environment revision must be ${String(state.environments.length + 1)}`)
       }
-      // A2 finding 10: an applied revision may legitimately supersede an
-      // earlier one after runs already exist (D6 environment-rebound) — the
+      // An applied revision may legitimately supersede an
+      // earlier one after runs already exist (environment-rebound) — the
       // stale kernel ends and the next run starts on a fresh epoch against
       // the new revision. Only a run genuinely in flight blocks it: rebinding
       // out from under an executing run would leave that run's own committed

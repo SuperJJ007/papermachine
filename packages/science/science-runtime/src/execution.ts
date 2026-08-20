@@ -232,7 +232,7 @@ export function confineInterpreterArgv(
 }
 
 /**
- * D10 run-terminal failure vocabulary for a kernel execution: `TIMEOUT`/
+ * Run-terminal failure vocabulary for a kernel execution: `TIMEOUT`/
  * `CANCELLED` describe the operation's own abort cause; `EXECUTION_FAILED`
  * (the driver replied DONE `error`) and `KERNEL_DIED` (the kernel process
  * exited or broke protocol mid-run) describe the kernel protocol outcome. A
@@ -251,11 +251,11 @@ function kernelFailureMessage(code: KernelRunFailureCode): string {
 }
 
 /**
- * Build one kernel-run terminal value from durable start fields and its D5/D10 classification.
+ * Build one kernel-run terminal value from durable start fields and its terminal classification.
  * @param started - already committed durable run-start value, whole-value repeated.
  * @param stdout - bounded stdout tail read from this run's capture file.
  * @param stderr - bounded stderr tail read from this run's capture file.
- * @param status - D10 terminal status.
+ * @param status - the run's terminal status.
  * @param failureCode - present on every non-success status.
  * @param outputDegraded - whether the DONE frame carried the `capture-degraded` flag.
  * @returns the complete terminal value ready for one atomic Session append.
@@ -285,7 +285,7 @@ export function kernelRunTerminal(
  * Read a bounded tail of one already-closed per-run capture file: the exact
  * byte count is the file's own size; `truncated` is whether that size
  * exceeds {@link MAX_OUTPUT_BYTES}; the retained `text` is the last
- * `MAX_OUTPUT_BYTES` bytes (D2 "retain tail"), decoded UTF-8 without
+ * `MAX_OUTPUT_BYTES` bytes ("retain tail"), decoded UTF-8 without
  * multibyte-boundary alignment — matching the subprocess seam's own
  * in-memory tail collector, which truncates the same way. A missing file
  * (the driver never wrote to it — the run never reached user code) reads as

@@ -534,7 +534,7 @@ describe('strict Science fold transitions', () => {
     // The run itself already reached terminal status, but its kernel is
     // still open (never exited) throughout this fixture chain: the
     // session/end-seed boundary still derives that kernel's own
-    // interruption (D4 end-seed derivation), so it still commits Science
+    // interruption, so it still commits Science
     // time at its own seq rather than leaving it at run-finished's.
     expect(settled.lastScienceEventSeq).toBe(7)
 

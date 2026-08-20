@@ -96,32 +96,32 @@ function isCaptureFilesystemFailure(error: unknown): boolean {
   return typeof (error as { readonly code?: unknown }).code === 'string'
 }
 
-/** Terminal classification for one settled kernel execution (D5/D10), independent of durable identity fields. */
+/** Terminal classification for one settled kernel execution, independent of durable identity fields. */
 export interface KernelRunOutcome {
   readonly status: ScienceRunTerminal['status']
   readonly failureCode?: KernelRunFailureCode
   readonly outputDegraded: boolean
-  /** Whether the caller must retire this kernel (D5 taint-retirement/escalation) via `KernelSet.retireForEscalation`. */
+  /** Whether the caller must retire this kernel (taint-retirement/escalation) via `KernelSet.retireForEscalation`. */
   readonly retireKernel: boolean
 }
 
-/** Non-abort classification from one DONE frame (D10): `ok`→success, `error`→`EXECUTION_FAILED`. */
+/** Non-abort classification from one DONE frame: `ok`→success, `error`→`EXECUTION_FAILED`. */
 function doneOutcome(frame: KernelDoneFrame): KernelRunOutcome {
   switch (frame.status) {
     case 'ok':
       return { status: 'success', outputDegraded: frame.captureDegraded, retireKernel: false }
     case 'error':
       return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
-    // The host only sends SIGINT while an abort is in progress (D5): an
-    // interrupted reply with no abort ever requested means the driver
-    // broke protocol despite framing a well-formed DONE line.
-    /* v8 ignore next 2 -- unreachable under a protocol-honest driver */
+    // A DONE frame can carry `interrupted` with no host SIGINT ever sent:
+    // user code raising its own interrupt (Python's `KeyboardInterrupt`,
+    // R's run-scoped interrupt `tryCatch`) reaches the driver the same way
+    // an escalated host interrupt does, so both settle identically here.
     case 'interrupted':
       return { status: 'failed', failureCode: 'EXECUTION_FAILED', outputDegraded: frame.captureDegraded, retireKernel: false }
   }
 }
 
-/** First-cause classification for an aborted run (D5/D10): `TIMEOUT`/`CANCELLED`, independent of the kernel's own fate. */
+/** First-cause classification for an aborted run: `TIMEOUT`/`CANCELLED`, independent of the kernel's own fate. */
 function abortOutcome(cause: OperationCause, retireKernel: boolean, outputDegraded: boolean): KernelRunOutcome {
   switch (cause) {
     case 'timeout':
@@ -134,8 +134,8 @@ function abortOutcome(cause: OperationCause, retireKernel: boolean, outputDegrad
 }
 
 /**
- * Run one RUN/DONE exchange against an acquired kernel, applying D5's
- * interrupt-first cancel/timeout handling and D10's terminal classification.
+ * Run one RUN/DONE exchange against an acquired kernel, applying
+ * interrupt-first cancel/timeout handling and terminal classification.
  * Never reads or appends durable state, and never itself retires the kernel
  * — the caller owns every append and owns calling
  * `KernelSet.retireForEscalation` when {@link KernelRunOutcome.retireKernel} is true.
@@ -167,7 +167,7 @@ export async function settleKernelExecution(
   if (first.kind === 'done') return doneOutcome(first.frame)
   if (first.kind === 'died') return { status: 'failed', failureCode: 'KERNEL_DIED', outputDegraded: false, retireKernel: false }
 
-  // D5: interrupt-first. The RUN frame already committed before this point,
+  // Interrupt-first. The RUN frame already committed before this point,
   // so sending SIGINT now satisfies "after RUN, before DONE" regardless of
   // when the caller's own abort fired.
   kernel.interrupt()
@@ -196,9 +196,9 @@ export async function settleKernelExecution(
 }
 
 /**
- * Task-vocabulary phrase for `KERNEL_START_FAILED`'s D10 "cause class": what
- * went wrong, never an internal TypeScript class name (A3 finding 15, the
- * model-perspective rule) — a model may relay this message to a user.
+ * Task-vocabulary phrase for `KERNEL_START_FAILED`'s "cause class": what
+ * went wrong, never an internal TypeScript class name — a model may relay
+ * this message to a user.
  */
 function kernelStartCauseClass(error: unknown): string {
   if (error instanceof KernelProtocolError) return 'the kernel did not complete its startup handshake'
@@ -209,9 +209,9 @@ function kernelStartCauseClass(error: unknown): string {
 /**
  * `ScienceRuntime.appendKernelStarted`'s own durable `science/kernel-state`
  * append was vetoed. Marked so `kernelAcquisitionError` classifies it the
- * same way `run-started`'s veto already is (D10, `TERMINAL_COMMIT_FAILED`'s
+ * same way `run-started`'s veto already is (`TERMINAL_COMMIT_FAILED`'s
  * sibling on the pre-publication path): `INFRASTRUCTURE_FAILURE`, not the
- * unclassified spawn-failure fallback `KERNEL_START_FAILED` (A3 finding 6).
+ * unclassified spawn-failure fallback `KERNEL_START_FAILED`.
  */
 class KernelStartedAppendError extends Error {
   override name = 'KernelStartedAppendError'
@@ -261,7 +261,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly kernelStartTimeoutMs: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
-  /** Every live persistent Science kernel across sessions (D3). */
+  /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
 
@@ -308,8 +308,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Allocate the next session-local kernel epoch, seeded from the Session's
-   * own durable projection (K1.3 built `KernelSet`'s allocator seam; this
-   * wires it to the real projection so epochs survive a Host restart).
+   * own durable projection, so epochs survive a Host restart.
    * @param session - exact live Session that will own the fresh kernel.
    * @returns one greater than the highest `kernelEpoch` the Session's log has ever admitted, or 1 before any kernel.
    */
@@ -319,12 +318,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Append the durable `started` fact for a freshly spawned kernel (D4
-   * commit ordering: `KernelSet` calls this BEFORE the kernel becomes
+   * Append the durable `started` fact for a freshly spawned kernel
+   * (commit ordering: `KernelSet` calls this BEFORE the kernel becomes
    * acquirable, so a throw here ends the fresh kernel and fails its
    * acquiring run without ever registering it). A vetoed append is
    * re-thrown wrapped in {@link KernelStartedAppendError} so
-   * `kernelAcquisitionError` classifies it correctly (A3 finding 6).
+   * `kernelAcquisitionError` classifies it correctly.
    * @param session - exact live Session that owns the fresh kernel.
    * @param fact - the started kernel's whole-value provenance.
    * @throws {@link KernelStartedAppendError} when `session.append` itself throws.
@@ -349,7 +348,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Append the durable `exited` fact for one kernel end path. Containment-
-   * wrapped by `KernelSet` itself (D4): a throw here never rejects teardown
+   * wrapped by `KernelSet` itself: a throw here never rejects teardown
    * or skips quarantine bookkeeping — a legitimately dead Session's missing
    * `exited` fact is recovered by the end-seed `ScienceKernelInterrupted` derivation.
    * @param session - exact Session that owned the kernel (may already be detached).
@@ -452,9 +451,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Acquire this run's persistent kernel (D3/D6), publish its run start,
+   * Acquire this run's persistent kernel, publish its run start,
    * then settle exactly one matching terminal fact through the acquired
-   * kernel's own RUN/DONE protocol exchange (D5/D10).
+   * kernel's own RUN/DONE protocol exchange.
    * @param request - Exact live Session, source, authorization facts, and cancellation.
    * @returns A handle exposed only after `science/run-started` committed.
    */
@@ -488,11 +487,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const kernel = await this.acquireKernel(request.session, request.language, environment, sessionScratch, lease.control)
       // Disarmed immediately on acquisition, not only after run-started
-      // commits (A3 finding 5): this run already owns the kernel the moment
+      // commits: this run already owns the kernel the moment
       // `acquireKernel` resolves, several awaits before `run-started`
-      // actually appends (`createRunScratch` below), and D3 requires the
-      // idle timer never fire in that window. `settlePublishedKernelRun`'s
-      // own `finally` (D5) re-arms it once this run settles.
+      // actually appends (`createRunScratch` below), and the idle timer must
+      // never fire in that window. `settlePublishedKernelRun`'s
+      // own `finally` re-arms it once this run settles.
       this.kernels.disarmIdleTimer(request.session, request.language)
       this.assertPrepublication(request.session, lease.control)
       runScratch = await createRunScratch(sessionScratch, plan.runId, request.language, plan.sourceBytes)
@@ -706,12 +705,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Acquire this run's kernel (D3/D6): reuse a live matching-revision
+   * Acquire this run's kernel: reuse a live matching-revision
    * kernel, or spawn a fresh one — ending a stale-revision kernel first
    * (`environment-rebound`). Translates every `KernelSet.acquire` rejection
-   * onto the pre-publication `ScienceRuntimeErrorCode` vocabulary (D10). A
+   * onto the pre-publication `ScienceRuntimeErrorCode` vocabulary. A
    * rejection while `control`'s own signal is the cause (`control.cause` is
-   * set) goes through `prepublicationError` instead (A3 finding 11): passing
+   * set) goes through `prepublicationError` instead: passing
    * `control.signal` into `KernelSet.acquire` means a fresh spawn can now be
    * the thing that observed the abort, and that must still read as
    * `OPERATION_TIMED_OUT`/`OPERATION_CANCELLED`, not a spawn failure.
@@ -739,8 +738,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Map a `KernelSet.acquire` rejection onto the pre-publication
-   * `ScienceRuntimeErrorCode` vocabulary (D10). `KernelSetDetachedError`
-   * maps to `SESSION_NOT_LIVE` (A3 finding 6): it means this exact Session
+   * `ScienceRuntimeErrorCode` vocabulary. `KernelSetDetachedError`
+   * maps to `SESSION_NOT_LIVE`: it means this exact Session
    * object already detached from the kernel set's registry — the same fact
    * `assertPrepublication`'s synchronous liveness check, run immediately
    * before every `acquireKernel` call with no intervening `await`, already
@@ -781,9 +780,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Settle a published kernel run: the RUN/DONE protocol exchange (D5),
-   * bounded output-tail reads, terminal commit, auto-capture, and (when D5
-   * requires it) background kernel retirement — while retaining the exact
+   * Settle a published kernel run: the RUN/DONE protocol exchange,
+   * bounded output-tail reads, terminal commit, auto-capture, and (when
+   * the run's classification requires it) background kernel retirement — while retaining the exact
    * lease through commit or cleanup. Never proves subprocess-tree
    * quiescence itself: that is `KernelSet`'s own concern for the kernel
    * process, decoupled from this run's own terminal.
@@ -830,10 +829,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         const capture = await this.captureAfterFinish(session, runScratch, terminal)
         return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
       } finally {
-        // D5 retire-vs-rearm derives from `outcome` alone, already settled
+        // Retire-vs-rearm derives from `outcome` alone, already settled
         // above, so it must run on every exit from this block — including a
-        // thrown `readCaptureTail` or a vetoed `run-finished` append (A3
-        // finding 2): a tainted kernel left unretired stays live with an
+        // thrown `readCaptureTail` or a vetoed `run-finished` append: a
+        // tainted kernel left unretired stays live with an
         // unknown post-interrupt state for the next run to reuse, and a
         // non-tainted kernel left unrearmed can never end `idle`.
         if (outcome.retireKernel) {

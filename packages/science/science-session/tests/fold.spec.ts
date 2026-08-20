@@ -169,7 +169,7 @@ describe('strict Science fold', () => {
     const invalidTerminals: unknown[] = [
       runTerminal({ runDirectoryRef: 'runs/not-the-run/' }),
       runTerminal({ finishedAt: 138 }),
-      // A kernel run has no per-run exit code or signal (D10); the strict
+      // A kernel run has no per-run exit code or signal; the strict
       // schema refuses both as unrecognized keys regardless of status.
       { ...runTerminal(), exitCode: 1 },
       { ...runTerminal(), signal: 'TERM' },

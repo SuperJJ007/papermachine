@@ -25,7 +25,7 @@ describe('settleKernelExecution', () => {
     const control = new OperationControl(controller.signal, 10_000)
     let interrupted = false
     // A cooperative fake kernel: execute() resolves quickly with interrupted,
-    // as if the driver caught the SIGINT settleKernelExecution's D5 path sends.
+    // as if the driver caught the SIGINT settleKernelExecution's interrupt-first path sends.
     const kernel = {
       execute: () => Promise.resolve<KernelDoneFrame>({
         runId: ScienceRunId('run-1'), status: 'interrupted', detail: '', captureDegraded: false,

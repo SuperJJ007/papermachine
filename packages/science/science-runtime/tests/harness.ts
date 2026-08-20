@@ -28,7 +28,7 @@ import type { Config } from '../src/config.ts'
 import { KernelSet } from '../src/kernel-set.ts'
 import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
 
-/** Full-featured fake D2-protocol driver pair (sleep/trapSigint included) named for `resolveKernelDriverPath`. */
+/** Full-featured fake kernel-wire-protocol driver pair (sleep/trapSigint included) named for `resolveKernelDriverPath`. */
 const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
 /** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
 export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-no-ready/', import.meta.url))
@@ -509,7 +509,7 @@ export function installTestKernelSet(
  * Assemble the Runtime against real `dsh-subprocess-local`/`dsh-sandbox-local`
  * providers (a no-policy fake runner, matching `kernel-process.spec.ts`'s
  * own composition) with its internal `KernelSet` replaced ({@link installTestKernelSet})
- * to resolve driver assets under the fake D2-protocol driver pair at
+ * to resolve driver assets under the fake kernel-wire-protocol driver pair at
  * `kernel-set-assets-full/` instead of the package's real shipped
  * `kernel_python.py`/`kernel_r.R`. `startRun`'s `code` argument becomes the
  * fake driver's own JSON action string (see `fake-kernel-driver.mjs`'s own

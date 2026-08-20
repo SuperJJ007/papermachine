@@ -1,4 +1,4 @@
-/** Focused kernel-run pipeline coverage: acquisition, D5 cancel/timeout, D10 classification, capture, and replay. */
+/** Focused kernel-run pipeline coverage: acquisition, interrupt-first cancel/timeout, terminal classification, capture, and replay. */
 
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -359,7 +359,7 @@ describe('ScienceRuntime.startRun preflight', () => {
   })
 })
 
-describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
+describe('ScienceRuntime.startRun kernel acquisition', () => {
   it('commits kernel-state(started) before run-started on a fresh spawn, carrying the run\'s kernelEpoch', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-fresh-spawn')
     const handle = await runtime.startRun({
@@ -423,7 +423,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
   })
 
-  it('allocates kernelEpoch N+1 through the real durable-projection allocator for a session seeded with prior kernel facts (A3 finding 16)', async () => {
+  it('allocates kernelEpoch N+1 through the real durable-projection allocator for a session seeded with prior kernel facts', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-epoch-continuity')
     const projection = replayScience(session.events)
     const environment = projection?.environment
@@ -539,7 +539,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
   }, 15_000)
 
   it('classifies a settleKernelExecution rejection as TERMINAL_COMMIT_FAILED (interrupt() itself throws)', async () => {
-    // D5's interrupt-first path calls kernel.interrupt() with no try/catch
+    // The interrupt-first path calls kernel.interrupt() with no try/catch
     // of its own around that specific call: a subprocess seam whose own
     // interrupt() throws propagates straight out of settleKernelExecution,
     // reaching settlePublishedKernelRun's own catch around that call.
@@ -575,7 +575,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
       ...authorizePythonRun(attached.session), signal: new AbortController().signal,
     })
     // Detaching the Session aborts the run's own OperationControl the same
-    // way cancel() does (session-detached cause), triggering the same D5
+    // way cancel() does (session-detached cause), triggering the same
     // interrupt-first path — but by the time settleKernelExecution's own
     // rejection is caught, the Session is already gone.
     attached.detach()
@@ -607,7 +607,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE', message: 'Science requires full sandbox enforcement' })
   })
 
-  it('bounds kernel spawn by the run\'s own cancellation, not only kernelStartTimeoutMs (A3 finding 11)', async () => {
+  it('bounds kernel spawn by the run\'s own cancellation, not only kernelStartTimeoutMs', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-spawn-cancel-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -638,7 +638,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
-  it('disarms the acquired kernel\'s idle timer immediately on acquisition, before run-started commits (A3 finding 5)', async () => {
+  it('disarms the acquired kernel\'s idle timer immediately on acquisition, before run-started commits', async () => {
     const { ctx, session, runtime } = await readyPythonHarness('science-run-idle-disarm-order')
     // Records call order across two independently observed points: the
     // real prototype method every KernelSet instance shares (so this
@@ -681,7 +681,7 @@ describe('ScienceRuntime.startRun kernel acquisition (D3/D4/D6)', () => {
 
   it('spawns a kernel through the constructor\'s own KernelSet, never a test replacement (nextEpoch/onKernelStarted/onKernelEnded wiring)', async () => {
     // A prefix whose forwarding case ignores the given driverPath and always
-    // runs the fake D2 driver: resolveKernelDriverPath still resolves the
+    // runs the fake kernel-wire-protocol driver: resolveKernelDriverPath still resolves the
     // real shipped kernel_python.py path unmodified (installTestKernelSet is
     // never called), so this is the only way to exercise ScienceRuntime's
     // own constructor-wired nextEpoch/onKernelStarted/onKernelEnded
@@ -736,7 +736,7 @@ esac
   })
 })
 
-describe('ScienceRuntime.startRun D10 terminal classification', () => {
+describe('ScienceRuntime.startRun terminal classification', () => {
   it('classifies a DONE ok/error frame as success/EXECUTION_FAILED with bounded output tails', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-classify')
     const ok = await runtime.startRun({
@@ -753,6 +753,26 @@ describe('ScienceRuntime.startRun D10 terminal classification', () => {
       terminal: { status: 'failed', failureCode: 'EXECUTION_FAILED' },
     })
     expect(session.events.filter(event => event.type === 'science/run-finished')).toHaveLength(2)
+  })
+
+  it('classifies a DONE interrupted frame with no host abort in flight as failed/EXECUTION_FAILED and keeps the kernel', async () => {
+    const { session, runtime } = await readyPythonHarness('science-run-self-interrupted')
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'interrupted' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await expect(handle.done).resolves.toMatchObject({
+      terminal: { status: 'failed', failureCode: 'EXECUTION_FAILED' },
+    })
+    // The kernel survives (no exited kernel-state fact) and serves a following run on the same epoch.
+    expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    const next = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session, 'science-run-self-interrupted-next'), signal: new AbortController().signal,
+    })
+    await expect(next.done).resolves.toMatchObject({ terminal: { status: 'success' } })
+    const started = session.events.filter(event => event.type === 'science/run-started')
+    expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
   })
 
   it('never populates exitCode/signal on a kernel-run terminal', async () => {
@@ -811,7 +831,7 @@ describe('ScienceRuntime.startRun D10 terminal classification', () => {
     expect(JSON.stringify(session.events)).not.toContain('运行-✓')
   })
 
-  it('truncates a stdout tail exceeding MAX_OUTPUT_BYTES, retaining exactly the last MAX_OUTPUT_BYTES bytes (A3 finding 3)', async () => {
+  it('truncates a stdout tail exceeding MAX_OUTPUT_BYTES, retaining exactly the last MAX_OUTPUT_BYTES bytes', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-output-over')
     const written = 'x'.repeat(MAX_OUTPUT_BYTES + 6_000)
     const handle = await runtime.startRun({
@@ -876,7 +896,7 @@ describe('ScienceRuntime.startRun D10 terminal classification', () => {
   })
 })
 
-describe('ScienceRuntime.startRun D5 interrupt-first cancel/timeout', () => {
+describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
   it('survives a cancel answered by DONE interrupted (interrupt-survive)', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-interrupt-survive')
     const handle = await runtime.startRun({
@@ -967,7 +987,7 @@ describe('ScienceRuntime.startRun D5 interrupt-first cancel/timeout', () => {
     }
   })
 
-  it('settles a published run as timed-out through the same D5 interrupt-first path', async () => {
+  it('settles a published run as timed-out through the same interrupt-first path', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-timeout-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1004,7 +1024,7 @@ describe('ScienceRuntime.startRun capture and replay', () => {
     const live = replayScience(session.events)
     // The live kernel survives a successful run (reusable, not retired), but
     // a cold resume has no live process to observe: `session/end-seed`
-    // derives it interrupted (D4) rather than presenting a kernel a fresh
+    // derives it interrupted rather than presenting a kernel a fresh
     // Host restart could never actually own.
     expect(live?.kernels).toMatchObject([{ state: 'started' }])
     const cold = Session.create(SessionId('science-run-cold-replay-cold'), session.events)

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// CommonJS fake D2-protocol kernel driver for full-pipeline tests
+// CommonJS fake kernel-wire-protocol driver for full-pipeline tests
 // (run.spec.ts/lifecycle.spec.ts/failures.spec.ts), reached through
 // `KernelSet`/`ScienceRuntime.startRun` rather than `KernelProcess` directly.
 // Identical protocol surface to `fake-kernel-driver.mjs` (KernelProcess's own
-// fixture, including `sleep`/`trapSigint` for D5 interrupt coverage); ported
+// fixture, including `sleep`/`trapSigint` for interrupt-first coverage); ported
 // to CommonJS because a `kernel_python.py` / `kernel_r.R` pair under one
 // `assetsRoot` is what `resolveKernelDriverPath` requires (see
 // `kernel-assets.ts`), and this directory's own `package.json` pins
@@ -17,7 +17,7 @@
 // Per-run JSON action shape (all fields optional):
 //   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "...", "stdout": "...", "stderr": "..." }
 //     -- stdout/stderr, when present, are written verbatim to the RUN frame's
-//        own stdoutPath/stderrPath before DONE, modeling D2 output capture.
+//        own stdoutPath/stderrPath before DONE, modeling the wire protocol's own output capture.
 //   { "action": "garbage" }            -- writes one unparseable line instead of DONE
 //   { "action": "crash" }              -- process.exit(1) without replying
 //   { "action": "close-fifo" }         -- closes the write end, stays alive, never replies
@@ -53,7 +53,7 @@ function closeFifo() {
 
 send(`READY\t${PROTOCOL_VERSION}\t${process.pid}`)
 
-// Ignore SIGINT while idle, matching D2's real-driver contract ("SIGINT
+// Ignore SIGINT while idle, matching the real driver's own contract ("SIGINT
 // ignored except during exec"): only the sleep action's own trapSigint
 // handler ever reacts to it. Without this, an interrupt() aimed at a
 // between-runs kernel would hit Node's default (terminating) disposition.

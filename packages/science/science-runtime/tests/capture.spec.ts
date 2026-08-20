@@ -101,19 +101,19 @@ async function runWithFiles(
  * a fresh tool call against the latest `request/header`, with no new header
  * of its own (`authorizePythonRun` opens a new turn every time).
  */
-function authorizeSameTurnRun(session: Session, id: string): {
+function authorizeRunInTurn(session: Session, id: string, turn: number): {
   readonly toolCallId: ReturnType<typeof CallId>
   readonly requestHeaderSeq: number
 } {
   const header = session.events.filter(event => event.type === 'request/header').at(-1)
   if (header === undefined) throw new Error('capture test: the session has no request/header to reuse')
   const toolCallId = CallId(id)
-  session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{}' })
+  session.append('tool/call', { turn, step: 1, callId: toolCallId, name: 'run_python', arguments: '{}' })
   return { toolCallId, requestHeaderSeq: header.seq }
 }
 
 describe('Science auto-capture', () => {
-  it('captures a new file as version 1 with origin auto, and a changed file as version 2', async () => {
+  it('opens version 2 for changed bytes from a later tool-call turn sharing one request header', async () => {
     const root = tmp('.science-capture-new-changed-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -131,9 +131,14 @@ describe('Science auto-capture', () => {
       attachment: { mediaType: 'image/png', width: 1, height: 1 },
     })
 
-    const second = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n3,4\n' }, 'ok', true)
-    expect(second.result.capture?.captured).toHaveLength(1)
-    expect(second.result.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, origin: 'auto' })
+    const handle = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
+      ...authorizeRunInTurn(session, 'capture-later-turn', 2), signal: new AbortController().signal,
+    })
+    await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')
+    const second = await handle.done
+    expect(second.capture?.captured).toHaveLength(1)
+    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, origin: 'auto' })
 
     const projection = replayScience(session.events)
     const versions = projection?.artifacts.filter(candidate => candidate.logicalName === 'summary.csv') ?? []
@@ -154,7 +159,7 @@ describe('Science auto-capture', () => {
     // output rather than producing a second result for the reader.
     const handle = await harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
-      ...authorizeSameTurnRun(session, 'capture-same-turn-second'),
+      ...authorizeRunInTurn(session, 'capture-same-turn-second', 1),
       signal: new AbortController().signal,
     })
     await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')

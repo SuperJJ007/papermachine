@@ -54,6 +54,7 @@ export {
   foldScience,
   projectScienceFold,
   replayScience,
+  scienceRunsShareTurn,
 } from './fold.ts'
 export type { ScienceFoldState } from './fold.ts'
 export { toClientScienceProjection }

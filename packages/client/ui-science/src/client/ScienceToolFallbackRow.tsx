@@ -36,7 +36,7 @@ export interface ScienceToolFallbackRowProps {
  */
 export function scienceToolRowState(block: ToolCallViewProps['block']): ScienceToolRowState {
   if (!('kind' in block)) return 'running'
-  if (block.error?.code === 'interrupted') return 'stopped'
+  if (block.error?.code === 'interrupted' || block.error?.code === 'ABORTED') return 'stopped'
   return block.isError ? 'error' : 'ok'
 }
 

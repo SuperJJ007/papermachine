@@ -59,4 +59,5 @@ export function replayScience(events: readonly SessionEvent[]): ScienceProjectio
 // `nextSeq` at zero.
 export { applyScienceEvent } from './transition.ts'
 export { projectScienceFold } from './projection-value.ts'
+export { scienceRunsShareTurn } from './fold-state.ts'
 export type { ScienceFoldState } from './fold-state.ts'

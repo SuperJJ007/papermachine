@@ -3,6 +3,7 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
+import { scienceRunsShareTurn } from './fold-state.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
 import type {
   ScienceEnvironmentBinding,
@@ -227,12 +228,10 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     throw new Error('Science artifact creation time is outside its supporting-fact event interval')
   }
   // A version is what one request turn produced, so a re-save either opens the
-  // next version or supersedes an existing one in place. Superseding is
-  // admitted on exactly two grounds: the save repeats the target version's own
-  // request turn (the model rewrote the same file while still answering that
-  // request), or it repeats the target's attachment byte-for-byte (a
-  // metadata-only curation). Anything else is a new turn changing the content,
-  // which is what a reader means by a new version.
+  // next version or supersedes an existing one in place. An auto-capture may
+  // replace changed content only when its source run repeats the target
+  // version's tool-call turn. A model curation is metadata-only and must retain
+  // the target attachment. Any unchanged attachment may be superseded in place.
   const logical = state.artifacts.filter(candidate => candidate.logicalName === artifact.logicalName)
   const target = logical.find(candidate => candidate.version === artifact.version)
   if (target === undefined) {
@@ -252,9 +251,15 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (artifact.artifactId !== target.artifactId || artifact.createdAt < target.createdAt) {
       throw new Error('artifact versions must retain artifactId and advance contiguously')
     }
-    if (artifact.requestHeaderSeq !== target.requestHeaderSeq
-      && artifact.attachment.attachmentId !== target.attachment.attachmentId) {
-      throw new Error('a Science artifact version is superseded only by its own request turn or by an unchanged attachment')
+    const targetSource = state.runs.find(candidate => candidate.runId === target.runId)
+    /* v8 ignore next -- strict replay admits every projected artifact only after its source run, and target came from this exact fold */
+    if (targetSource === undefined) throw new Error('Science artifact target source run is missing')
+    const attachmentUnchanged = artifact.attachment.attachmentId === target.attachment.attachmentId
+    if (artifact.origin === 'model' && !attachmentUnchanged) {
+      throw new Error('a model-curated Science artifact may supersede only with an unchanged attachment')
+    }
+    if (artifact.origin === 'auto' && !attachmentUnchanged && !scienceRunsShareTurn(state, source, targetSource)) {
+      throw new Error('an auto-captured Science artifact may supersede changed content only from its source run\'s tool-call turn')
     }
     state.artifacts[state.artifacts.indexOf(target)] = artifact
     const factIndex = state.artifactFacts.findIndex(candidate =>

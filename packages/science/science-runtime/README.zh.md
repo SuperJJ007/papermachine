@@ -47,7 +47,7 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 ### 自动捕获
 
-每个 run 的 terminal fact 一旦提交——无论 success、failed、timed-out 还是 cancelled——Runtime 会立即遍历该 run 私有的 `SCIENCE_ARTIFACT_DIR`，把每个合格文件按其相对该目录的路径（`plots/loss.png`、`summary.csv`）持久保存为对应逻辑 artifact 的当前版本。一个版本就是某一轮请求所产出的内容：若某次 run 回答的仍是当前版本所来自的那一个请求，它会就地取代该版本，因此读者的版本列表装的是结果，而不是其背后逐次运行的迭代过程；而新一轮的首次 run 则会开启下一个版本。合格是指：路径任一 segment 都不是 dotfile 或 dot-directory，且小写扩展名属于固定 allowlist `.csv`、`.json`、`.md`、`.png`、`.txt`——这份文件格式 allowlist 与附件存储自身固定的 `mediaTypes` 集合一致，不是 Loader 可配置项。被捕获的版本带有 `origin: 'auto'`，标题等于文件的 basename；内容寻址使接纳具有幂等性,因此同一逻辑名的字节级相同重跑会被静默跳过，不会提交多余版本。
+每个 run 的 terminal fact 一旦提交——无论 success、failed、timed-out 还是 cancelled——Runtime 会立即遍历该 run 私有的 `SCIENCE_ARTIFACT_DIR`，把每个合格文件按其相对该目录的路径（`plots/loss.png`、`summary.csv`）持久保存为对应逻辑 artifact 的当前版本。一个版本就是某一轮请求所产出的内容：自动捕获的 run 只有在其来源 run 的 `tool/call.turn` 与当前版本来源 run 相同时，才能就地取代不同字节；新一轮的首次 run 则会开启下一个版本。`requestHeaderSeq` 仍是授权与溯源信息，而非版本身份。合格是指：路径任一 segment 都不是 dotfile 或 dot-directory，且小写扩展名属于固定 allowlist `.csv`、`.json`、`.md`、`.png`、`.txt`——这份文件格式 allowlist 与附件存储自身固定的 `mediaTypes` 集合一致，不是 Loader 可配置项。被捕获的版本带有 `origin: 'auto'`，标题等于文件的 basename；内容寻址使接纳具有幂等性,因此同一逻辑名的字节级相同重跑会被静默跳过，不会提交多余版本。
 
 `captureMaxFileBytes` 限定单个文件的可接纳大小(超限文件会被跳过并计数，绝不导致 run 失败——包括部署方附件上限比该值更小的情形)。`captureMaxFilesPerRun` 限定单次 run 尝试的合格文件数；超出的部分会被截断(不予尝试)并在返回的统计中标记。`captureMaxArtifactVersionsPerSession` 限定一个 session 通过自动捕获在所有 run 之间累积的 artifact 版本数；一旦达到，自动捕获会在该 run 剩余部分及此后的每个 run 中停止追加新版本并做出标记，直到未来的保留策略回收空间为止。捕获失败——无论是超限文件、触发上限，还是意外异常——都绝不会使已经提交了 terminal fact 的 run 失败。
 

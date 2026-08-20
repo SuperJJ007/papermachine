@@ -16,4 +16,4 @@
 - paragraph: stdout 2 bytes, stderr 0 bytes
 - text: text
 - button "Copy"
-- code: run complete
+- code: revised run complete

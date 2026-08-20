@@ -214,8 +214,11 @@ describe('ScienceArtifactRow', () => {
     expect(view.container.querySelector('img')).toBeNull()
   })
 
-  it('renders a stopped row for an interrupted call', () => {
-    const view = render(<ScienceArtifactRow {...props(settled({ error: { name: 'InterruptedError', code: 'interrupted' } }))} />)
+  it.each([
+    { name: 'InterruptedError', code: 'interrupted' },
+    { name: 'AbortError', code: 'ABORTED' },
+  ])('renders a stopped row for $code', (error) => {
+    const view = render(<ScienceArtifactRow {...props(settled({ error }))} />)
     expect(view.container.querySelector('[data-tool="science-artifact"]')?.getAttribute('data-state')).toBe('stopped')
     expect(view.container.textContent).toContain('文件标注已中止')
   })

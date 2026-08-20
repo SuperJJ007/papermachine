@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-session-title'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
+  replayScience,
   ScienceRunId,
   ScienceScratchKey,
 } from '@deepseek-ai/dsh-science-session'
@@ -56,8 +57,12 @@ const PNG = Uint8Array.from(Buffer.from(
 ))
 const FINGERPRINT = 'b'.repeat(64)
 const RUN_ID = ScienceRunId('run-browser-1')
+const SECOND_RUN_ID = ScienceRunId('run-browser-2')
+const CANCELLED_RUN_ID = ScienceRunId('run-browser-cancelled')
 const CHART_ID = ScienceArtifactId('chart-browser-1')
 const RUN_CALL_ID = CallId('call-run-browser')
+const SECOND_RUN_CALL_ID = CallId('call-run-browser-2')
+const CANCELLED_RUN_CALL_ID = CallId('call-run-browser-cancelled')
 const FIRST_CHART_CALL_ID = CallId('call-chart-browser-1')
 const SECOND_CHART_CALL_ID = CallId('call-chart-browser-2')
 const FIRST_OUTCOME_CALL_ID = CallId('call-outcome-browser-1')
@@ -70,16 +75,19 @@ function appendToolResult(
   callSeq: number,
   text: string,
   meta?: JsonValue,
+  turn = 1,
+  error?: { readonly name: string; readonly code: string },
 ): void {
   session.append('tool/result', {
-    turn: 1,
+    turn,
     step: 1,
     message: createToolResultMessage({
       callId,
       content: [{ type: 'text', text }],
-      isError: false,
+      isError: error !== undefined,
     }),
     ...meta === undefined ? {} : { meta },
+    ...error === undefined ? {} : { error },
   }, { surfaceOp: 'append', sourceEventSeqs: [callSeq] })
 }
 
@@ -178,15 +186,68 @@ function scienceFixture(stored: ImageAttachmentRef): string {
       stderrTruncated: false,
     },
   })
-  appendToolResult(session, RUN_CALL_ID, runCall.seq, 'run complete')
+  const artifactPresentation = (
+    version: number,
+    attachment: ImageAttachmentRef,
+    title: string,
+  ): JsonValue => ({
+    kind: 'science/artifact',
+    version: 1,
+    artifacts: [{
+      artifactId: CHART_ID,
+      logicalName: 'observed-series',
+      version,
+      title,
+      attachment: {
+        attachmentId: attachment.attachmentId,
+        mediaType: attachment.mediaType,
+        bytes: attachment.bytes,
+        width: attachment.width,
+        height: attachment.height,
+        ...attachment.name === undefined ? {} : { name: attachment.name },
+      },
+    }],
+  })
+
+  const appendCapturedChart = (
+    version: number,
+    attachment: ImageAttachmentRef,
+    sourceRunId: ReturnType<typeof ScienceRunId>,
+    sourceCallId: ReturnType<typeof CallId>,
+    sourceCallSeq: number,
+    resultText: string,
+    turn: number,
+  ): void => {
+    const title = 'observed-series'
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: CHART_ID,
+        logicalName: 'observed-series',
+        version,
+        title,
+        origin: 'auto',
+        attachment,
+        runId: sourceRunId,
+        toolCallId: sourceCallId,
+        requestHeaderSeq: request.seq,
+        environmentRevision: 1,
+        environmentFingerprint: FINGERPRINT,
+        createdAt: eventTime(sourceCallSeq + 3),
+      },
+    })
+    appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, attachment, title), turn)
+  }
 
   const appendChart = (
     version: number,
     callId: ReturnType<typeof CallId>,
     attachment: ImageAttachmentRef,
+    sourceRunId: ReturnType<typeof ScienceRunId>,
+    turn: number,
   ): void => {
     const call = session.append('tool/call', {
-      turn: 1, step: 1, callId, name: 'annotate_artifact', arguments: '{}',
+      turn, step: 1, callId, name: 'annotate_artifact', arguments: '{}',
     })
     const createdAt = eventTime(call.seq + 1)
     const title = version === 1 ? 'Observed series' : 'Missing revision'
@@ -200,7 +261,7 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
         origin: 'model',
         attachment,
-        runId: RUN_ID,
+        runId: sourceRunId,
         toolCallId: callId,
         requestHeaderSeq: request.seq,
         environmentRevision: 1,
@@ -208,33 +269,17 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt,
       },
     })
-    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, {
-      kind: 'science/artifact',
-      version: 1,
-      artifacts: [{
-        artifactId: CHART_ID,
-        logicalName: 'observed-series',
-        version,
-        title,
-        attachment: {
-          attachmentId: attachment.attachmentId,
-          mediaType: attachment.mediaType,
-          bytes: attachment.bytes,
-          width: attachment.width,
-          height: attachment.height,
-          ...attachment.name === undefined ? {} : { name: attachment.name },
-        },
-      }],
-    })
+    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, attachment, title), turn)
   }
 
   const appendOutcome = (
     revision: number,
     callId: ReturnType<typeof CallId>,
     chartVersion: number,
+    turn: number,
   ): void => {
     const call = session.append('tool/call', {
-      turn: 1, step: 1, callId, name: 'publish_outcome', arguments: '{}',
+      turn, step: 1, callId, name: 'publish_outcome', arguments: '{}',
     })
     const publishedAt = eventTime(call.seq + 1)
     const publication = {
@@ -258,15 +303,82 @@ function scienceFixture(stored: ImageAttachmentRef): string {
       summaryMarkdown: publication.summaryMarkdown,
       evidence: [{ kind: 'chart', chart_id: CHART_ID, version: chartVersion }],
       publishedAt,
-    })
+    }, turn)
   }
 
-  appendChart(1, FIRST_CHART_CALL_ID, stored)
-  appendOutcome(1, FIRST_OUTCOME_CALL_ID, 1)
-  appendChart(2, SECOND_CHART_CALL_ID, missing)
-  appendOutcome(2, SECOND_OUTCOME_CALL_ID, 2)
+  appendCapturedChart(1, stored, RUN_ID, RUN_CALL_ID, runCall.seq, 'run complete', 1)
+  appendChart(1, FIRST_CHART_CALL_ID, stored, RUN_ID, 1)
+  appendOutcome(1, FIRST_OUTCOME_CALL_ID, 1, 1)
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  session.append('turn/start', { turn: 2 })
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'Revise the accepted Science result.' }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('step/start', { turn: 2, step: 1 })
+  const secondRunCall = session.append('tool/call', {
+    turn: 2, step: 1, callId: SECOND_RUN_CALL_ID, name: 'run_python', arguments: '{}',
+  })
+  const secondRun = {
+    ...run,
+    runId: SECOND_RUN_ID,
+    toolCallId: SECOND_RUN_CALL_ID,
+    startedAt: eventTime(secondRunCall.seq + 1),
+    runDirectoryRef: 'runs/run-browser-2/',
+  }
+  session.append('science/run-started', { version: 1, run: { ...secondRun, status: 'running' } })
+  session.append('science/run-finished', {
+    version: 1,
+    run: {
+      ...secondRun,
+      status: 'success',
+      finishedAt: eventTime(secondRunCall.seq + 2),
+      stdoutBytes: 2,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    },
+  })
+  appendCapturedChart(2, missing, SECOND_RUN_ID, SECOND_RUN_CALL_ID, secondRunCall.seq, 'revised run complete', 2)
+  appendChart(2, SECOND_CHART_CALL_ID, missing, SECOND_RUN_ID, 2)
+  appendOutcome(2, SECOND_OUTCOME_CALL_ID, 2, 2)
+  const cancelledRunCall = session.append('tool/call', {
+    turn: 2, step: 1, callId: CANCELLED_RUN_CALL_ID, name: 'run_python', arguments: '{}',
+  })
+  const cancelledRun = {
+    ...run,
+    runId: CANCELLED_RUN_ID,
+    toolCallId: CANCELLED_RUN_CALL_ID,
+    startedAt: eventTime(cancelledRunCall.seq + 1),
+    runDirectoryRef: 'runs/run-browser-cancelled/',
+  }
+  session.append('science/run-started', { version: 1, run: { ...cancelledRun, status: 'running' } })
+  session.append('science/run-finished', {
+    version: 1,
+    run: {
+      ...cancelledRun,
+      status: 'cancelled',
+      finishedAt: eventTime(cancelledRunCall.seq + 2),
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      failureCode: 'CANCELLED',
+      failureMessage: 'tool call aborted',
+    },
+  })
+  appendToolResult(
+    session,
+    CANCELLED_RUN_CALL_ID,
+    cancelledRunCall.seq,
+    'Error: tool call aborted',
+    undefined,
+    2,
+    { name: 'AbortError', code: 'ABORTED' },
+  )
+  session.append('step/end', { turn: 2, step: 1 })
+  session.append('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } })
 
   const header = {
     type: 'session',
@@ -368,7 +480,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     }
     expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('observed-series', { exact: true }).count()).toBe(2)
+    expect(await page.getByText('observed-series', { exact: true }).count()).toBe(4)
     await expect.poll(() => page.getByRole('button', { name: 'Failed to load, click to retry' }).count(), {
       timeout: 15_000,
     }).toBe(2)
@@ -400,6 +512,21 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
+
+  it('renders a canonical post-dispatch abort as stopped while replay retains CANCELLED', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-cancelled-run'))
+    await openSessionByTitle(SEED_TITLE)
+    await page.getByText('Error: tool call aborted', { exact: true }).waitFor({ timeout: 15_000 })
+    const row = page.locator('[data-tool="science-run"][data-state="stopped"]')
+    await row.waitFor({ timeout: 15_000 })
+    expect(await row.getByText('Run stopped', { exact: true }).count()).toBe(1)
+    expect(await row.getByText('Error: tool call aborted', { exact: true }).count()).toBe(1)
+
+    const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
+    if (session === undefined) throw new Error('Science cancelled-run fixture was not seeded')
+    expect(replayScience(session.events)?.runs.find(run => run.runId === CANCELLED_RUN_ID))
+      .toMatchObject({ status: 'cancelled', failureCode: 'CANCELLED' })
+  })
 
   it('shows the Science header action only for the Science session and opens the client-safe landing view', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-header-details'))
@@ -479,10 +606,21 @@ describe('web e2e: Science chart and Outcome replay', () => {
     // open, and the artifact viewer's landing view renders this same title.
     await centerCol.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
 
-    // Activating the v2 transcript row (the one with the missing attachment)
-    // opens that exact version's tab directly in the content view — no
-    // intermediate gallery click.
-    await page.getByText('Missing revision', { exact: true }).first().click()
+    // Each run result carries its own auto-capture receipt. Its chip opens
+    // the exact durable version, rather than relying on later curation rows.
+    const runRows = centerCol.locator('[data-tool="science-run"]')
+    expect(await runRows.count()).toBe(3)
+    const firstRun = runRows.nth(0)
+    const secondRun = runRows.nth(1)
+    expect(await firstRun.innerText()).toContain('run complete')
+    expect(await secondRun.innerText()).toContain('revised run complete')
+    await firstRun.getByRole('button', { name: /observed-series.*v1/ }).click()
+    await detailsPanel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
+    await secondRun.getByRole('button', { name: /observed-series.*v2/ }).click()
+    await detailsPanel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
+
+    // The v2 run chip opens its exact version directly in the content view —
+    // no intermediate gallery click.
     const tab = detailsPanel.getByRole('tab', { name: 'Missing revision' })
     await tab.waitFor({ timeout: 10_000 })
     expect(await tab.getAttribute('aria-selected')).toBe('true')

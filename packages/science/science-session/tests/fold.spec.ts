@@ -11,6 +11,7 @@ import {
   decodeScienceRunTerminal,
   ScienceArtifactId,
   ScienceRunId,
+  scienceRunsShareTurn,
 } from '../src/index.ts'
 import { isScienceDomainEventType } from '../src/codec.ts'
 import { foldScience } from '../src/fold.ts'
@@ -57,6 +58,17 @@ describe('strict Science fold', () => {
     expect(state.settledToolCallSeqs).toEqual([])
     expect(state.messageFacts).toEqual([])
     expect(state.consumedToolCallSeqs).toEqual([4, 7, 9])
+  })
+
+  it('requires each source run to identify exactly one indexed tool call when comparing turns', () => {
+    const state = foldScience(legalEvents())
+    expect(() => scienceRunsShareTurn(state, { toolCallId: CallId('missing-call') }, runTerminal()))
+      .toThrow(/does not identify one indexed tool\/call/)
+
+    const call = state.toolCalls[0]!
+    state.toolCalls.push({ ...call, seq: 99 })
+    expect(() => scienceRunsShareTurn(state, runTerminal(), runTerminal()))
+      .toThrow(/does not identify one indexed tool\/call/)
   })
 
   it('folds an auto-captured text artifact that carries its source run\'s own toolCallId, consuming no fresh tool call', () => {
@@ -225,7 +237,7 @@ describe('strict Science fold', () => {
     expect(isScienceDomainEventType('science/future-event')).toBe(false)
   })
 
-  it('supersedes a version in place when a later save repeats its request turn', () => {
+  it('supersedes a version in place when a later model curation retains its attachment', () => {
     const events = legalEvents().slice(0, 9)
     events.push(
       toolCall(9, 180, CallId('second-annotate-call'), 'annotate_artifact'),
@@ -234,8 +246,68 @@ describe('strict Science fold', () => {
         artifact: artifact({
           toolCallId: CallId('second-annotate-call'),
           title: 'Trend, redrawn',
+          createdAt: 185,
+        }),
+      }),
+    )
+
+    const state = foldScience(events)
+
+    // One result the reader asked for, holding the content that turn ended on.
+    expect(state.artifacts).toHaveLength(1)
+    expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Trend, redrawn' })
+    expect(state.artifacts.at(0)?.attachment.attachmentId).toBe('attachment-1')
+    // The retained fact follows the superseding event, so evidence cited
+    // against this version is dated by the save that produced what it holds.
+    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 10, time: 190 }])
+  })
+
+  it('rejects changed bytes that reuse a shared request header across source-run turns', () => {
+    const secondRunId = ScienceRunId('run-2')
+    const secondRunCall = CallId('call-run-second-turn')
+    const first = autoArtifact({ createdAt: 160 })
+    const secondStart = runStarted({
+      runId: secondRunId,
+      toolCallId: secondRunCall,
+      requestHeaderSeq: 3,
+      startedAt: 180,
+      runDirectoryRef: 'runs/run-2/',
+    })
+    const second = runTerminal({ ...secondStart, status: 'success', finishedAt: 190 })
+    const events = [
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
+      toolCall(8, 170, secondRunCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 9, 180, { version: 1, run: secondStart }),
+      event('science/run-finished', 10, 190, { version: 1, run: second }),
+    ]
+    const unchanged = autoArtifact({
+      runId: secondRunId,
+      toolCallId: secondRunCall,
+      requestHeaderSeq: 3,
+      createdAt: 200,
+    })
+    expect(foldScience([...events, event('science/artifact-saved', 11, 200, { version: 1, artifact: unchanged })]).artifacts)
+      .toHaveLength(1)
+
+    const changed = autoArtifact({
+      ...unchanged,
+      attachment: { attachmentId: AttachmentId('attachment-3'), mediaType: 'text/csv', bytes: 48, name: 'summary.csv' },
+    })
+    expect(() => foldScience([...events, event('science/artifact-saved', 11, 200, { version: 1, artifact: changed })]))
+      .toThrow(/auto-captured Science artifact may supersede changed content only from its source run's tool-call turn/)
+  })
+
+  it('rejects a later model curation that changes the target attachment', () => {
+    const events = legalEvents().slice(0, 9)
+    events.push(
+      toolCall(9, 180, CallId('changed-annotate-call'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({
+          toolCallId: CallId('changed-annotate-call'),
           attachment: {
-            attachmentId: AttachmentId('attachment-2'),
+            attachmentId: AttachmentId('attachment-3'),
             mediaType: 'image/png',
             bytes: 256,
             width: 16,
@@ -247,15 +319,7 @@ describe('strict Science fold', () => {
       }),
     )
 
-    const state = foldScience(events)
-
-    // One result the reader asked for, holding the content that turn ended on.
-    expect(state.artifacts).toHaveLength(1)
-    expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Trend, redrawn' })
-    expect(state.artifacts.at(0)?.attachment.attachmentId).toBe('attachment-2')
-    // The retained fact follows the superseding event, so evidence cited
-    // against this version is dated by the save that produced what it holds.
-    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 10, time: 190 }])
+    expect(() => foldScience(events)).toThrow(/model-curated Science artifact may supersede only with an unchanged attachment/)
   })
 
   it('rejects a supersede that renames the artifact or walks its content backwards in time', () => {
@@ -280,7 +344,7 @@ describe('strict Science fold', () => {
     expect(() => foldScience(backdated)).toThrow(/must retain artifactId and advance contiguously/)
   })
 
-  it('supersedes across turns only for an unchanged attachment, never for new content', () => {
+  it('allows later model curation only when it retains the target attachment', () => {
     const curated = legalEvents().slice(0, 9)
     curated.push(
       event('request/header', 9, 178, {
@@ -305,8 +369,8 @@ describe('strict Science fold', () => {
     expect(state.artifacts).toHaveLength(1)
     expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Titled a turn later' })
 
-    // New content in a new turn is a new result, and must not reuse the
-    // version number a reader already saw.
+    // Curation belongs to a later call and still names the original source
+    // run, but its metadata-only durable form cannot replace attachment bytes.
     const rewritten = curated.slice()
     rewritten[11] = event('science/artifact-saved', 11, 190, {
       version: 1,
@@ -324,7 +388,7 @@ describe('strict Science fold', () => {
         createdAt: 185,
       }),
     })
-    expect(() => foldScience(rewritten)).toThrow(/superseded only by its own request turn or by an unchanged attachment/)
+    expect(() => foldScience(rewritten)).toThrow(/model-curated Science artifact may supersede only with an unchanged attachment/)
   })
 
   it('rejects discontinuous revisions, duplicate identities, and backward Science time', () => {

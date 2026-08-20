@@ -215,8 +215,11 @@ describe('ScienceOutcomeRow', () => {
     expect(load.mock.calls[0]?.[0]).toMatchObject({ name: 'loss.png' })
   })
 
-  it('renders a stopped row for an interrupted call', () => {
-    const view = render(<ScienceOutcomeRow {...props(settled({ error: { name: 'InterruptedError', code: 'interrupted' } }))} />)
+  it.each([
+    { name: 'InterruptedError', code: 'interrupted' },
+    { name: 'AbortError', code: 'ABORTED' },
+  ])('renders a stopped row for $code', (error) => {
+    const view = render(<ScienceOutcomeRow {...props(settled({ error }))} />)
     expect(view.container.querySelector('[data-tool="science-outcome"]')?.getAttribute('data-state')).toBe('stopped')
     expect(view.container.textContent).toContain('结论发布已中止')
   })

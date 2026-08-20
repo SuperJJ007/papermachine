@@ -14,16 +14,13 @@ Science 此前把 artifact 版本定义为对某个逻辑文件的一次持久�
 
 ## Decision
 
-一个版本就是某一轮请求所产出的内容。`requestHeaderSeq`——它作为授权来源证明，本就记录在每个 artifact 版本上——即是这一轮的锚点，因此该变更既不需要新的跟踪状态，也不需要新的事件类型。
+一个版本就是某一轮请求所产出的内容。来源 run 的授权 `tool/call.turn` 才是这一轮的锚点；`requestHeaderSeq` 仍是授权来源证明，且可以覆盖多个轮次的调用，因此该规则既不需要新的跟踪状态，也不需要新的事件类型。[持久化内核来源 run 与 abort 展示修复](../bug-fix/2026-08-20-persistent-kernel-artifact-turn-and-abort-presentation.md)修正了这一实现细节，同时保留本条面向读者的规则。
 
-`science/artifact-saved` 现在要么开启下一个连续版本，要么就地取代某个既有版本。`applyArtifactSaved`（`packages/science/science-session/src/transition.ts`）按 `(logicalName, version)` 定位目标，并且只在两种情况下接受就地取代：
-
-- 该次保存重复了目标版本自身的 `requestHeaderSeq`——模型仍在回答该版本所来自的那个请求时重写了这个文件；
-- 该次保存逐字节重复了目标的 `attachment`——纯元数据策展，任意轮次均可。
+`science/artifact-saved` 现在要么开启下一个连续版本，要么就地取代某个既有版本。`applyArtifactSaved`（`packages/science/science-session/src/transition.ts`）只允许 `origin: 'auto'` 在来源 run 与目标版本来源 run 重复同一个 `tool/call.turn` 时用不同字节就地取代；`origin: 'model'` 的策展必须逐字节重复目标 attachment。任一来源都可以在任意轮次就地取代未变化 attachment。
 
 若一次保存在新的一轮里改变了内容，就必须开启下一个版本；在那里复用版本号会被拒绝，同样被拒绝的还有改写 `artifactId` 或把版本 `createdAt` 回拨的取代。两次保存都保留在持久化日志中——被折叠的只是投影出的版本列表——且该版本保留的 `IndexedArtifactFact` 会跟随取代它的那个事件，因此针对某个版本引用的 Outcome 证据，其时间取自真正产出该版本当前内容的那次保存。
 
-两个生产方各自计算版本号，再由 fold 校验。自动捕获（`science-runtime/src/capture.ts`）在本次 run 与当前版本共享 `requestHeaderSeq` 时沿用 `latest.version`，否则递进；它原有的内容哈希跳过逻辑仍会在这两条路径之前丢弃字节级相同的重跑。策展（`ScienceRuntime.annotateArtifact`）提交源版本自身的版本号，因此加标题绝不会推进读者所看到的版本。
+两个生产方各自计算版本号，再由 fold 校验。自动捕获（`science-runtime/src/capture.ts`）在来源 run 与当前版本来源 run 共享 `tool/call.turn` 时沿用 `latest.version`，否则递进；它原有的内容哈希跳过逻辑仍会在这两条路径之前丢弃字节级相同的重跑。策展（`ScienceRuntime.annotateArtifact`）提交源版本自身的版本号，因此加标题绝不会推进读者所看到的版本。
 
 `origin` 被保留下来，含义更加精确：它现在描述某个版本**当前**的元数据来源——`auto` 表示由捕获自动加标题的版本，`model` 表示模型刻意加过标题的版本——而不再用于区分两个版本。这正是 artifact 面板优先展示策展结果所需的标记，且它仍是一个两值枚举，两个值都仍会被产出。
 
@@ -31,7 +28,7 @@ Science 此前把 artifact 版本定义为对某个逻辑文件的一次持久�
 
 ## Alternatives considered
 
-**新增一个只承载元数据的 `science/artifact-annotated` 事件。** 这是最初仅针对重复版本缺陷起草的修法，也是更窄的变更：标注成为 fold 施加到指定版本上的一层覆盖，内容路径仍保持"一次保存，一个版本"。它能修好 v1/v2 重复，却修不了迭代噪音——同一轮里的四次 run 仍会产生四个版本。它还要付出一个新的 `SessionEventMap` 成员及其 codec、projection schema 与客户端渲染的代价：比被采纳的规则多出更多持久化面，却只解决了问题的一部分。轮次规则把它包含在内：标注携带的是未改变的附件，而这正是两条取代依据之一。
+**新增一个只承载元数据的 `science/artifact-annotated` 事件。** 这是最初仅针对重复版本缺陷起草的修法，也是更窄的变更：标注成为 fold 施加到指定版本上的一层覆盖，内容路径仍保持"一次保存，一个版本"。它能修好 v1/v2 重复，却修不了迭代噪音——同一轮里的四次 run 仍会产生四个版本。它还要付出一个新的 `SessionEventMap` 成员及其 codec、projection schema 与客户端渲染的代价：比被采纳的规则多出更多持久化面，却只解决了问题的一部分。被采纳的 model-capture 规则通过要求标注附件不变来保持标注只承载元数据。
 
 **只改提示词，让模型少调用标注。** 半小时的工作量，却让数据模型继续把版本定义为一次保存。任何遵循随附指示、为最佳结果加标题的模型仍会铸出一个字节相同的版本，于是只要模型照做，缺陷就会重现。
 

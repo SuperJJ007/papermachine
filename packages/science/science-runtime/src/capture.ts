@@ -10,7 +10,7 @@ import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, TextMediaType } from '@deepseek-ai/dsh-attachment'
-import { applyScienceEvent, foldScience, projectScienceFold, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
+import { applyScienceEvent, foldScience, projectScienceFold, scienceRunsShareTurn, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactVersion, ScienceFoldState, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { canonicalWithin } from './scratch.ts'
@@ -162,17 +162,24 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === relativePath)
     const latest = logical.at(-1)
     if (latest !== undefined && latest.attachment.attachmentId === attachment.attachmentId) continue
+    let version = 1
+    if (latest !== undefined) {
+      const latestSource = state.runs.find(candidate => candidate.runId === latest.runId)
+      /* v8 ignore next -- strict fold admits only artifacts with source runs. */
+      if (latestSource === undefined) {
+        throw new Error('science-runtime: latest artifact source run is missing from its strict fold')
+      }
+      version = scienceRunsShareTurn(state, sourceRun, latestSource) ? latest.version : latest.version + 1
+    }
 
     const artifact: ScienceArtifactVersion = {
       artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
       logicalName: relativePath,
       // A version is what one request turn produced: rewriting the same file
-      // while still answering the request that produced it supersedes that
+      // while still answering the tool-call turn that produced it supersedes that
       // version rather than opening another one, so the reader's version list
       // holds results rather than the run-to-run iteration behind them.
-      version: latest === undefined
-        ? 1
-        : latest.requestHeaderSeq === sourceRun.requestHeaderSeq ? latest.version : latest.version + 1,
+      version,
       title: basename(relativePath),
       origin: 'auto',
       attachment,

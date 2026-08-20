@@ -14,16 +14,13 @@ The same definition also counted iteration as history. A model debugging its own
 
 ## Decision
 
-A version is the content one request turn produced. `requestHeaderSeq` — already carried on every artifact version as authorizing provenance — is the turn anchor, so the change needs no new tracked state and no new event type.
+A version is the content one request turn produced. The source run's authorizing `tool/call.turn` is the turn anchor; `requestHeaderSeq` remains authorization provenance and may cover calls from more than one turn, so the rule needs no new tracked state or event type. The [persistent-kernel source-run and abort presentation fix](../bug-fix/2026-08-20-persistent-kernel-artifact-turn-and-abort-presentation.md) corrects that implementation detail while retaining this reader-visible rule.
 
-`science/artifact-saved` now either opens the next contiguous version or supersedes an existing one in place. `applyArtifactSaved` (`packages/science/science-session/src/transition.ts`) locates the target by `(logicalName, version)` and admits a supersede on exactly two grounds:
-
-- the save repeats the target version's own `requestHeaderSeq` — the model rewrote the file while still answering the request that version came from;
-- the save repeats the target's `attachment` byte for byte — a metadata-only curation, valid in any turn.
+`science/artifact-saved` now either opens the next contiguous version or supersedes an existing one in place. `applyArtifactSaved` (`packages/science/science-session/src/transition.ts`) admits changed bytes only for `origin: 'auto'` when the source run repeats the target version's source run `tool/call.turn`; an `origin: 'model'` curation must repeat the target's attachment byte for byte. Either origin may supersede an unchanged attachment in any turn.
 
 A save that changes content in a new turn must open the next version; reusing a version number there is rejected, as is a supersede that renames the `artifactId` or backdates the version's `createdAt`. Both saves stay in the durable log — only the projected version list collapses — and the version's retained `IndexedArtifactFact` follows the superseding event, so Outcome evidence cited against a version is dated by the save that produced what that version currently holds.
 
-The two producers compute the version the fold then validates. Auto-capture (`science-runtime/src/capture.ts`) keeps `latest.version` when the run shares the current version's `requestHeaderSeq` and otherwise advances it; its existing content-hash skip still drops a byte-identical rerun before either path. Curation (`ScienceRuntime.annotateArtifact`) commits the source version's own number, so titling never advances what a reader sees.
+The two producers compute the version the fold then validates. Auto-capture (`science-runtime/src/capture.ts`) keeps `latest.version` when the source run shares the current version's source `tool/call.turn` and otherwise advances it; its existing content-hash skip still drops a byte-identical rerun before either path. Curation (`ScienceRuntime.annotateArtifact`) commits the source version's own number, so titling never advances what a reader sees.
 
 `origin` survives with a sharpened meaning: it now describes one version's *current* metadata — `auto` for a capture-titled version, `model` for one the model deliberately titled — rather than distinguishing two versions. That is the marker the artifact panel needs to show the curated result first, and it stays a two-value enum with both values still produced.
 
@@ -31,7 +28,7 @@ The two producers compute the version the fold then validates. Auto-capture (`sc
 
 ## Alternatives considered
 
-**A dedicated `science/artifact-annotated` event carrying metadata only.** This was the first fix drafted for the duplicate-version defect alone, and it is the narrower change: annotation becomes an overlay the fold applies to a named version, and the content path keeps "one save, one version". It fixes the v1/v2 duplicate but not the iteration noise, because four runs in one turn still produce four versions. It also costs a new `SessionEventMap` member, its codec, projection schema, and client rendering — more durable surface than the accepted rule, for strictly less of the problem. The turn rule subsumes it: annotation carries an unchanged attachment, which is one of the two supersede grounds.
+**A dedicated `science/artifact-annotated` event carrying metadata only.** This was the first fix drafted for the duplicate-version defect alone, and it is the narrower change: annotation becomes an overlay the fold applies to a named version, and the content path keeps "one save, one version". It fixes the v1/v2 duplicate but not the iteration noise, because four runs in one turn still produce four versions. It also costs a new `SessionEventMap` member, its codec, projection schema, and client rendering — more durable surface than the accepted rule, for strictly less of the problem. The accepted model-capture rule keeps annotation metadata-only by requiring its attachment to remain unchanged.
 
 **Prompt-only: tell the model to annotate less.** Half an hour of work, and it leaves the data model defining a version as a save. Any model that follows the shipped instruction to title its best result still mints a byte-identical version, so the defect returns whenever the model behaves as asked.
 

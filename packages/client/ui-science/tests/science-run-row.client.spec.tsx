@@ -162,9 +162,18 @@ describe('ScienceRunRow', () => {
     expect(failed.container.textContent).toContain('运行失败')
   })
 
-  it('renders a stopped row for an interrupted call', () => {
-    const view = render(<ScienceRunRow {...props(settled({ error: { name: 'InterruptedError', code: 'interrupted' } }))} />)
+  it.each([
+    { name: 'InterruptedError', code: 'interrupted' },
+    { name: 'AbortError', code: 'ABORTED' },
+  ])('renders a stopped row for $code', (error) => {
+    const view = render(<ScienceRunRow {...props(settled({ error }))} />)
     expect(view.container.querySelector('[data-tool="science-run"]')?.getAttribute('data-state')).toBe('stopped')
     expect(view.container.textContent).toContain('运行已中止')
+  })
+
+  it('keeps a pre-dispatch abort in the generic error state', () => {
+    const view = render(<ScienceRunRow {...props(settled({ isError: true, error: { name: 'AbortError', code: 'ABORTED_BEFORE_DISPATCH' } }))} />)
+    expect(view.container.querySelector('[data-tool="science-run"]')?.getAttribute('data-state')).toBe('error')
+    expect(view.container.textContent).toContain('运行失败')
   })
 })

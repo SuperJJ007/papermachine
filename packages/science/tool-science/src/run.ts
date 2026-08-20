@@ -61,8 +61,6 @@ const runOutputSchema = {
     runId: { type: 'string', required: true },
     startedAt: { type: 'integer', required: true },
     finishedAt: { type: 'integer', required: true },
-    exitCode: { type: 'integer' },
-    signal: { type: 'string' },
     failureCode: { type: 'string' },
     failureMessage: { type: 'string' },
     stdout: { ...outputStreamSchema, required: true },
@@ -155,8 +153,6 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
     runId: String(terminal.runId),
     startedAt: terminal.startedAt,
     finishedAt: terminal.finishedAt,
-    ...terminal.exitCode === undefined ? {} : { exitCode: terminal.exitCode },
-    ...terminal.signal === undefined ? {} : { signal: terminal.signal },
     ...terminal.failureCode === undefined ? {} : { failureCode: terminal.failureCode },
     ...terminal.failureMessage === undefined ? {} : { failureMessage: terminal.failureMessage },
     stdout: result.stdout,
@@ -206,8 +202,6 @@ export function kernelRestartReason(projection: ScienceProjection, terminal: Sci
  */
 export function formatRunResult(value: ScienceRunValue): string {
   const header = [`status: ${value.status}`]
-  if (value.exitCode !== undefined) header.push(`exit ${String(value.exitCode)}`)
-  if (value.signal !== undefined) header.push(`signal ${value.signal}`)
   const lines: string[] = []
   if (value.kernelRestartReason !== undefined) {
     lines.push(`kernel restarted (${value.kernelRestartReason}): variables from earlier runs are gone`)
@@ -250,8 +244,8 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
   ctx.tools.register(defineTool({
     name: language === 'python' ? 'run_python' : 'run_r',
     description: language === 'python'
-      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.'
-      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.',
+      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.'
+      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.',
     parameters: {
       code: { type: 'string', required: true, description: 'Non-empty source to execute.' },
     },

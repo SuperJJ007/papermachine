@@ -125,7 +125,7 @@ function scienceFixture(
   session.append('science/run-finished', {
     version: 1,
     run: {
-      ...run, status: 'success', finishedAt: eventTime(runCall.seq + 2), exitCode: 0,
+      ...run, status: 'success', finishedAt: eventTime(runCall.seq + 2),
       stdoutBytes: 2, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
     },
   })

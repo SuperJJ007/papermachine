@@ -180,10 +180,6 @@ export interface ScienceRunTerminal extends ScienceRunIdentity {
   readonly status: ScienceRunTerminalStatus
   /** Epoch milliseconds when execution settled. */
   readonly finishedAt: number
-  /** Process exit status when one was observed. */
-  readonly exitCode?: number
-  /** Process signal when one was observed. */
-  readonly signal?: string
   /** Exact captured standard-output byte count. */
   readonly stdoutBytes: number
   /** Exact captured standard-error byte count. */
@@ -489,8 +485,6 @@ export interface ScienceClientRunStarted extends ScienceClientRunIdentity {
 export interface ScienceClientRunTerminal extends ScienceClientRunIdentity {
   readonly status: ScienceRunTerminalStatus
   readonly finishedAt: number
-  readonly exitCode?: number
-  readonly signal?: string
   readonly stdoutBytes: number
   readonly stderrBytes: number
   readonly stdoutTruncated: boolean

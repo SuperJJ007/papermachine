@@ -46,6 +46,7 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
     environmentFingerprintPreview: 'f'.repeat(12),
     startedAt: 1_000,
     codeSha256: 'c'.repeat(64),
+    kernelEpoch: 1,
     status: 'success',
     finishedAt: 2_000,
     stdoutBytes: 12,
@@ -53,6 +54,10 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
     stdoutTruncated: false,
     stderrTruncated: false,
     ...over,
+    // `over` can widen `status` to any ScienceClientRun member (e.g.
+    // 'interrupted'), which no single discriminated member's field set
+    // matches on its own; the cast asserts the caller's own override is
+    // internally consistent.
   } as ScienceClientRun
 }
 

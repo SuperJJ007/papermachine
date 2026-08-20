@@ -169,18 +169,19 @@ describe('strict Science fold', () => {
     const invalidTerminals: unknown[] = [
       runTerminal({ runDirectoryRef: 'runs/not-the-run/' }),
       runTerminal({ finishedAt: 138 }),
-      runTerminal({ exitCode: 1 }),
-      runTerminal({ signal: 'TERM' }),
+      // A kernel run has no per-run exit code or signal (D10); the strict
+      // schema refuses both as unrecognized keys regardless of status.
+      { ...runTerminal(), exitCode: 1 },
+      { ...runTerminal(), signal: 'TERM' },
       runTerminal({ failureCode: 'FAILED' }),
       runTerminal({ failureMessage: 'unexpected' }),
-      runTerminal({ status: 'failed', exitCode: 1 }),
+      runTerminal({ status: 'failed' }),
     ]
     for (const candidate of invalidTerminals) {
       expect(() => decodeScienceRunTerminal(candidate)).toThrow()
     }
     expect(() => decodeScienceRunTerminal(runTerminal({
       status: 'failed',
-      exitCode: 1,
       failureCode: 'RUN_FAILED',
       failureMessage: 'expected failure',
     }))).not.toThrow()

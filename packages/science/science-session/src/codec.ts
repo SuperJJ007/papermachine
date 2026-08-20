@@ -204,8 +204,6 @@ const runTerminalSchema = z.object({
   ...runIdentityShape,
   status: z.enum(['success', 'failed', 'timed-out', 'cancelled']),
   finishedAt: SAFE_INTEGER,
-  exitCode: z.number().int().min(-2147483648).max(2147483647).optional(),
-  signal: text(MAX_LABEL_LENGTH).optional(),
   stdoutBytes: SAFE_INTEGER,
   stderrBytes: SAFE_INTEGER,
   stdoutTruncated: z.boolean(),
@@ -219,11 +217,7 @@ const runTerminalSchema = z.object({
   }
   if (run.finishedAt < run.startedAt) issue(ctx, 'finishedAt cannot precede startedAt', ['finishedAt'])
   if (run.status === 'success') {
-    // A kernel run never populates exitCode/signal (D10); a present
-    // exitCode is legal only as an honest process exit status, never
-    // required, since kernel execution has no per-run process exit to report.
-    if (run.exitCode !== undefined && run.exitCode !== 0) issue(ctx, 'a successful run with an exitCode requires it to be 0', ['exitCode'])
-    if (run.signal !== undefined || run.failureCode !== undefined || run.failureMessage !== undefined) {
+    if (run.failureCode !== undefined || run.failureMessage !== undefined) {
       issue(ctx, 'a successful run cannot carry failure facts')
     }
   } else if (run.failureCode === undefined) {

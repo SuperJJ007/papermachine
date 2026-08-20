@@ -133,7 +133,7 @@
     },
     {
       "name": "run_python",
-      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or exception is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -149,7 +149,7 @@
     },
     {
       "name": "run_r",
-      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. A non-zero exit or condition is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -169,6 +169,7 @@
   ],
   "runtimeContext": [
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR."
   ],
   "toolResults": [
@@ -214,6 +215,15 @@
         {
           "type": "text",
           "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 1,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"origin\": \"model\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"width\": 1,\n      \"height\": 1,\n      \"createdAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"summary.csv\",\n      \"version\": 1,\n      \"title\": \"summary.csv\",\n      \"origin\": \"auto\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"text/csv\",\n      \"bytes\": 27,\n      \"createdAt\": 0\n    }\n  ],\n  \"outcome\": {\n    \"revision\": 1,\n    \"title\": \"Snapshot finding\",\n    \"summaryMarkdown\": \"The deterministic run produced the **cited chart**.\",\n    \"evidence\": [\n      {\n        \"kind\": \"run\",\n        \"runId\": \"{{scienceRunId}}\"\n      },\n      {\n        \"kind\": \"chart\",\n        \"chartId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      }\n    ],\n    \"publishedAt\": 0,\n    \"toolCallId\": \"science-outcome-call\",\n    \"requestHeaderSeq\": 9,\n    \"environmentRevisions\": [\n      1\n    ]\n  },\n  \"metrics\": {\n    \"runCount\": 1,\n    \"successfulRunCount\": 1,\n    \"artifactCount\": 4,\n    \"artifactVersionCount\": 4,\n    \"outcomeRevision\": 1\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 2\n  },\n  \"lastScienceEventSeq\": 53\n}"
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-run-call-2",
+      "content": [
+        {
+          "type": "text",
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)"
         }
       ]
     }

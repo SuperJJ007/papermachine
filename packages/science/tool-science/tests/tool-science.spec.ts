@@ -119,8 +119,8 @@ interface RunProvenance {
 /**
  * Directly append one `origin: 'auto'` artifact version citing `run`'s own
  * authorizing facts — the durable shape `dsh-science-runtime`'s real capture
- * walk appends, for a file `FakeSubprocess` cannot itself write (it returns
- * fixed output, never a real process that writes to `SCIENCE_ARTIFACT_DIR`).
+ * walk appends, for a file the fake kernel driver never writes (it only
+ * replies over the D2 FIFO protocol, never touching `SCIENCE_ARTIFACT_DIR`).
  * Persists a real attachment through the mounted `ctx.attachments` first, so
  * the seeded event references a real content-addressed ref exactly as
  * capture would.
@@ -153,9 +153,9 @@ async function seedAutoArtifact(
 let root: string
 /**
  * Every `Context` a test created through {@link setup}, disposed in
- * `afterEach` — required once `setup` mounts real `LocalSubprocessRuntime`/
- * `LocalSandboxProvider` providers (they hold live OS-level process-tree
- * tracking `FakeSubprocess`/`DirectSandbox` never did), mirroring
+ * `afterEach` — required because `setup` mounts real `LocalSubprocessRuntime`/
+ * `LocalSandboxProvider` providers, which hold live OS-level process-tree
+ * state that must be torn down explicitly, mirroring
  * `science-runtime/tests/kernel-set.spec.ts`'s own `contexts`/`afterEach` pattern.
  */
 const contexts: Context[] = []
@@ -473,7 +473,7 @@ describe('isScienceSession / requireScienceSession', () => {
 })
 
 describe('runValueFromResult / formatRunResult', () => {
-  it('carries exitCode, signal, failureCode, and failureMessage when present', () => {
+  it('carries failureCode and failureMessage when present (D10: a kernel run has no per-run exit code or signal)', () => {
     const value = runValueFromResult({
       terminal: {
         runId: ScienceRunId('run-2'),
@@ -489,31 +489,33 @@ describe('runValueFromResult / formatRunResult', () => {
         kernelEpoch: 1,
         status: 'failed',
         finishedAt: 2,
-        exitCode: 1,
-        signal: 'SIGKILL',
         stdoutBytes: 0,
         stderrBytes: 5,
         stdoutTruncated: true,
         stderrTruncated: true,
-        failureCode: 'NONZERO_EXIT',
-        failureMessage: 'process exited 1',
+        failureCode: 'EXECUTION_FAILED',
+        failureMessage: 'ValueError',
       },
       stdout: { text: '', bytes: 0, truncated: true },
       stderr: { text: 'boom', bytes: 5, truncated: true },
     })
     expect(value).toMatchObject({
-      status: 'failed', exitCode: 1, signal: 'SIGKILL', failureCode: 'NONZERO_EXIT', failureMessage: 'process exited 1',
+      status: 'failed', failureCode: 'EXECUTION_FAILED', failureMessage: 'ValueError',
     })
+    expect(value).not.toHaveProperty('exitCode')
+    expect(value).not.toHaveProperty('signal')
     const text = formatRunResult(value)
-    expect(text).toContain('status: failed exit 1 signal SIGKILL')
-    expect(text).toContain('failureCode: NONZERO_EXIT')
-    expect(text).toContain('failureMessage: process exited 1')
+    expect(text).toContain('status: failed')
+    expect(text).not.toContain('exit')
+    expect(text).not.toContain('signal')
+    expect(text).toContain('failureCode: EXECUTION_FAILED')
+    expect(text).toContain('failureMessage: ValueError')
     expect(text).toContain('(empty)')
     expect(text).toContain('(stdout truncated)')
     expect(text).toContain('(stderr truncated)')
   })
 
-  it('omits exitCode, signal, failureCode, and failureMessage when absent', () => {
+  it('omits failureCode and failureMessage when absent', () => {
     const value = runValueFromResult({
       terminal: {
         runId: ScienceRunId('run-3'),
@@ -537,8 +539,6 @@ describe('runValueFromResult / formatRunResult', () => {
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
     })
-    expect(value).not.toHaveProperty('exitCode')
-    expect(value).not.toHaveProperty('signal')
     expect(value).not.toHaveProperty('failureCode')
     expect(value).not.toHaveProperty('failureMessage')
     const text = formatRunResult(value)
@@ -561,7 +561,6 @@ describe('runValueFromResult / formatRunResult', () => {
       kernelEpoch: 1,
       status: 'success',
       finishedAt: 2,
-      exitCode: 0,
       stdoutBytes: 0,
       stderrBytes: 0,
       stdoutTruncated: false,
@@ -651,7 +650,7 @@ describe('runValueFromResult / formatRunResult', () => {
     const text = formatRunResult(value)
     expect(text).toBe(
       'kernel restarted (idle timeout): variables from earlier runs are gone\n'
-      + 'status: success exit 0\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)',
+      + 'status: success\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)',
     )
   })
 })
@@ -675,7 +674,6 @@ describe('kernelRestartReason', () => {
       kernelEpoch,
       status: 'success',
       finishedAt: 2,
-      exitCode: 0,
       stdoutBytes: 0,
       stderrBytes: 0,
       stdoutTruncated: false,
@@ -1002,13 +1000,11 @@ describe('get_science_state', () => {
       kernelEpoch: 1,
       status: 'failed',
       finishedAt: 2,
-      exitCode: 1,
       stdoutBytes: 0,
       stderrBytes: 0,
       stdoutTruncated: false,
       stderrTruncated: false,
-      signal: '/secret/runtime/signal',
-      failureCode: 'SPAWN_FAILED',
+      failureCode: 'EXECUTION_FAILED',
       failureMessage: 'failed at /secret/runtime/bin/python',
     } as const
     const value = stateValueFromProjection(projectionFixture({
@@ -1034,11 +1030,10 @@ describe('get_science_state', () => {
     expect(rendered).not.toContain('failureMessage')
     expect(rendered).not.toContain('failureReason')
     expect(rendered).not.toContain('"reason"')
-    expect(rendered).not.toContain('"signal"')
   })
 
-  it('omits an absent signal and retains a path-free signal label', () => {
-    const run = (runId: string, signal?: string) => ({
+  it('passes through a run with no failure fields unchanged, and strips only failureMessage from one that has it', () => {
+    const run = (runId: string, failureMessage?: string) => ({
       runId: ScienceRunId(runId),
       language: 'python' as const,
       toolCallId: CallId(`call-${runId}`),
@@ -1052,22 +1047,20 @@ describe('get_science_state', () => {
       kernelEpoch: 1,
       status: 'failed' as const,
       finishedAt: 2,
-      exitCode: 1,
       stdoutBytes: 0,
       stderrBytes: 0,
       stdoutTruncated: false,
       stderrTruncated: false,
-      failureCode: 'NONZERO_EXIT',
-      failureMessage: 'process failed',
-      ...signal === undefined ? {} : { signal },
+      failureCode: 'EXECUTION_FAILED',
+      ...failureMessage === undefined ? {} : { failureMessage },
     })
     const value = stateValueFromProjection(projectionFixture({
-      runs: [run('without-signal'), run('with-signal', 'SIGTERM')],
+      runs: [run('without-message'), run('with-message', 'ValueError at /secret/path')],
       metrics: { runCount: 2, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
     }), 2)
-    expect(value.runs[0]).not.toHaveProperty('signal')
+    expect(value.runs[0]).toMatchObject({ runId: 'without-message', failureCode: 'EXECUTION_FAILED' })
     expect(value.runs[0]).not.toHaveProperty('failureMessage')
-    expect(value.runs[1]).toMatchObject({ signal: 'SIGTERM' })
+    expect(value.runs[1]).toMatchObject({ runId: 'with-message', failureCode: 'EXECUTION_FAILED' })
     expect(value.runs[1]).not.toHaveProperty('failureMessage')
   })
 
@@ -1134,8 +1127,9 @@ describe('run_python', () => {
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('status: success')
     expect(text).toContain('fake run output')
-    // FakeSubprocess writes no real artifact files, so capture ran and found
-    // nothing: the presentation is null, not an empty-artifacts card.
+    // The fake kernel driver replies with fixed stdout only, never writing to
+    // SCIENCE_ARTIFACT_DIR, so capture ran and found nothing: the
+    // presentation is null, not an empty-artifacts card.
     expect(result.meta).toBeNull()
   })
 

@@ -148,10 +148,9 @@ function stateEnvironment(environment: ScienceEnvironmentBinding | null): Scienc
 
 /** Remove Runtime-owned free text that could contain a Host path from one recent run. */
 function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
-  if (!('failureMessage' in run) && !('signal' in run)) return run as unknown as JsonValue
-  const { failureMessage: _failureMessage, signal, ...safe } = run
-  const modelSignal = signal === undefined ? undefined : scienceModelObservedLabel(signal)
-  return { ...safe, ...modelSignal === undefined ? {} : { signal: modelSignal } }
+  if (!('failureMessage' in run)) return run as unknown as JsonValue
+  const { failureMessage: _failureMessage, ...safe } = run
+  return safe
 }
 
 /**

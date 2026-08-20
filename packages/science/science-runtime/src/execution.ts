@@ -257,7 +257,7 @@ function kernelFailureMessage(code: KernelRunFailureCode): string {
  * @param stderr - bounded stderr tail read from this run's capture file.
  * @param status - D10 terminal status.
  * @param failureCode - present on every non-success status.
- * @param outputDegraded - whether the DONE frame carried the `capture-degraded` flag; kernel runs never populate `exitCode`/`signal`.
+ * @param outputDegraded - whether the DONE frame carried the `capture-degraded` flag.
  * @returns the complete terminal value ready for one atomic Session append.
  */
 export function kernelRunTerminal(

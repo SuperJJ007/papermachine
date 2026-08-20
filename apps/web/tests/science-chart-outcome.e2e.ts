@@ -172,7 +172,6 @@ function scienceFixture(stored: ImageAttachmentRef): string {
       ...run,
       status: 'success',
       finishedAt: eventTime(runCall.seq + 2),
-      exitCode: 0,
       stdoutBytes: 2,
       stderrBytes: 0,
       stdoutTruncated: false,

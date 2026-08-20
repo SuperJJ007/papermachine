@@ -30,7 +30,6 @@ describe('Science projection wire schema', () => {
     const { python: _python, ...environmentWithoutPython } = currentEnvironment
     const currentRun = state.runs[0]!
     if (currentRun.status !== 'success') throw new Error('fixture run is not successful')
-    const { exitCode: _exitCode, ...runWithoutExitCode } = currentRun
     const currentChart = state.artifacts[0]!
     const { name: _attachmentName, ...attachmentWithoutName } = currentChart.attachment
     const rRunningState = {
@@ -78,8 +77,8 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
-        runs: [runWithoutExitCode, { ...currentRun, signal: 'TERM', failureCode: 'RUN_FAILED' }],
-        metrics: { ...state.metrics, runCount: 2, successfulRunCount: 2 },
+        runs: [currentRun, { ...currentRun, status: 'failed', failureCode: 'RUN_FAILED', outputDegraded: true }],
+        metrics: { ...state.metrics, runCount: 2, successfulRunCount: 1 },
       },
       {
         ...state,
@@ -221,10 +220,12 @@ describe('Science projection wire schema', () => {
       { ...state, runs: [{}] },
       { ...state, runs: [{ ...runningState.runs[0], unexpected: true }] },
       { ...state, runs: [{ ...state.runs[0], status: 'unknown' }] },
-      { ...state, runs: [{ ...currentRun, exitCode: 1.5 }] },
-      { ...state, runs: [{ ...currentRun, signal: 1 }] },
-      { ...state, runs: [{ ...currentRun, signal: '/private/TERM' }] },
+      // A kernel run has no per-run exit code or signal (D10): neither field
+      // exists on the wire schema any more, so either one is an unrecognized key.
+      { ...state, runs: [{ ...currentRun, exitCode: 0 }] },
+      { ...state, runs: [{ ...currentRun, signal: 'TERM' }] },
       { ...state, runs: [{ ...currentRun, failureCode: 1 }] },
+      { ...state, runs: [{ ...currentRun, status: 'failed', failureCode: 'RUN_FAILED', outputDegraded: false }] },
       { ...state, runs: [{ status: 'interrupted' }] },
       { ...state, runs: [{ ...interruptedRun, finishedAt: '150' }] },
       { ...state, runs: [{ ...interruptedRun, finishedAt: Number.NaN }] },

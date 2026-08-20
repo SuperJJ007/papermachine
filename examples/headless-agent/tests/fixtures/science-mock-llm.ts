@@ -88,7 +88,8 @@ class ScienceMockAdapter extends LlmAdapter {
     // One step per settled tool result: read state, run code that writes
     // csv/json/md/png artifacts (auto-captured with no separate save step),
     // curate the file that best demonstrates the result, publish the cited
-    // Outcome, then read the sanitized state those facts produced.
+    // Outcome, read the sanitized state those facts produced, then run a
+    // second time on the same kernel (proving epoch reuse and no restart line).
     switch (toolResultTexts(options).length) {
       case 0:
         yield * toolCall('science-state-call', 'get_science_state', {})
@@ -123,6 +124,14 @@ class ScienceMockAdapter extends LlmAdapter {
       }
       case 4:
         yield * toolCall('science-state-call-2', 'get_science_state', {})
+        return
+      case 5:
+        // Same kernel as the first run, so the result carries no restart
+        // line (the driver's own artifact side effect repeats the first
+        // run's byte-identical files, deduped rather than a new version).
+        yield * toolCall('science-run-call-2', 'run_python', {
+          code: 'print("second run, same kernel")',
+        })
         return
       default: {
         const reply = 'SCIENCE_TOOLS_SNAPSHOT_OK'

@@ -98,7 +98,6 @@ describe('Science projection replay', () => {
     const python = environment.python!
     const terminal = host.runs[0]!
     if (terminal.status !== 'success') throw new Error('fixture run is not successful')
-    const { exitCode: _exitCode, ...withoutExitCode } = terminal
     const artifact = host.artifacts[0]!
     const unavailableR = {
       language: 'r' as const,
@@ -115,9 +114,9 @@ describe('Science projection replay', () => {
         r: unavailableR,
       },
       runs: [
-        withoutExitCode,
-        { ...terminal, signal: 'TERM', failureCode: 'RUN_FAILED' },
-        { ...terminal, signal: '/private/TERM' },
+        terminal,
+        { ...terminal, status: 'failed', failureCode: 'RUN_FAILED' },
+        { ...terminal, status: 'failed', failureCode: 'RUN_FAILED', outputDegraded: true },
       ],
       artifacts: [{ ...artifact, caption: 'A safe caption.' }],
     })!
@@ -130,9 +129,11 @@ describe('Science projection replay', () => {
     expect(client.environment?.r).not.toHaveProperty('languageVersion')
     expect(client.environment?.r).not.toHaveProperty('fingerprintPreview')
     expect(client.environment?.r).not.toHaveProperty('packages')
-    expect(client.runs[0]).not.toHaveProperty('exitCode')
-    expect(client.runs[1]).toMatchObject({ signal: 'TERM', failureCode: 'RUN_FAILED' })
-    expect(client.runs[2]).not.toHaveProperty('signal')
+    expect(client.runs[0]).not.toHaveProperty('failureCode')
+    expect(client.runs[0]).not.toHaveProperty('outputDegraded')
+    expect(client.runs[1]).toMatchObject({ failureCode: 'RUN_FAILED' })
+    expect(client.runs[1]).not.toHaveProperty('outputDegraded')
+    expect(client.runs[2]).toMatchObject({ failureCode: 'RUN_FAILED', outputDegraded: true })
     expect(client.artifacts[0]).toMatchObject({ caption: 'A safe caption.' })
 
     const { python: _python, ...environmentWithoutPython } = environment

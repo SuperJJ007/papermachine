@@ -108,7 +108,6 @@ export const runTerminal = (
   ...runStarted(),
   status: 'success',
   finishedAt: 149,
-  exitCode: 0,
   stdoutBytes: 12,
   stderrBytes: 0,
   stdoutTruncated: false,

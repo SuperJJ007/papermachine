@@ -130,13 +130,10 @@ function clientRun(run: ScienceRun): ScienceClientRun {
       interruptedAtSeq: run.interruptedAtSeq,
     }
   }
-  const signal = pathFreeLabel(run.signal)
   return {
     ...common,
     status: run.status,
     finishedAt: run.finishedAt,
-    ...run.exitCode === undefined ? {} : { exitCode: run.exitCode },
-    ...signal === undefined ? {} : { signal },
     stdoutBytes: run.stdoutBytes,
     stderrBytes: run.stderrBytes,
     stdoutTruncated: run.stdoutTruncated,

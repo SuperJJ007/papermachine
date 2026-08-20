@@ -134,15 +134,10 @@ function validRun(value: unknown): boolean {
     'stdoutTruncated',
     'stderrTruncated',
   ]
-  if (candidate['exitCode'] !== undefined) keys.push('exitCode')
-  if (candidate['signal'] !== undefined) keys.push('signal')
   if (candidate['failureCode'] !== undefined) keys.push('failureCode')
   if (candidate['outputDegraded'] !== undefined) keys.push('outputDegraded')
   return projectionExactKeys(candidate, keys)
     && safeInteger(candidate['finishedAt'], candidate['startedAt'] as number)
-    && (candidate['exitCode'] === undefined || Number.isSafeInteger(candidate['exitCode']))
-    && (candidate['signal'] === undefined
-      || (typeof candidate['signal'] === 'string' && !/[\\/]/.test(candidate['signal'])))
     && safeInteger(candidate['stdoutBytes'])
     && safeInteger(candidate['stderrBytes'])
     && typeof candidate['stdoutTruncated'] === 'boolean'

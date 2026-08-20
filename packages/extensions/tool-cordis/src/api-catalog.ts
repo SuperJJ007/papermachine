@@ -3899,7 +3899,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunTerminal',
-    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly exitCode?: number;\n    readonly signal?: string;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n    readonly outputDegraded?: true;\n}',
+    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n    readonly outputDegraded?: true;\n}',
   },
   {
     name: 'ScienceRunTerminalStatus',

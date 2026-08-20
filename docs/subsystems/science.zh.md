@@ -61,5 +61,5 @@ async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
 annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
 ```
 
-Source: [`packages/science/science-runtime/src/index.ts:208`](../../packages/science/science-runtime/src/index.ts)
+Source: [`packages/science/science-runtime/src/index.ts:231`](../../packages/science/science-runtime/src/index.ts)
 <!-- END GENERATED cordis-surface -->

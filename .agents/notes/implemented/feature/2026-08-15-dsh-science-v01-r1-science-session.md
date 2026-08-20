@@ -22,7 +22,7 @@ The [R0 closure record](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-
 
 ### Science Session behavior
 
-The package owns `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/chart-saved`, and `science/outcome-published`. Each payload has `version: 1`, is lossless JSON, carries a complete domain value rather than a patch, and is required on read. The generated `KNOWN_SESSION_EVENT_TYPES` list includes all six through `gen-persistence-catalog`; no Science event is marked `ignorable`.
+The package owns `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/artifact-saved`, `science/outcome-published`, and `science/kernel-state`. Each payload has `version: 1`, is lossless JSON, carries a complete domain value rather than a patch, and is required on read. The generated `KNOWN_SESSION_EVENT_TYPES` list includes all seven through `gen-persistence-catalog`; no Science event is marked `ignorable`.
 
 `science/mode-bound` is legal once, only for a Session whose `agentPreset` is `science`, and before the first Science-preset request, step, or tool-call fact. The strict fold rejects discontinuous sequences, malformed values, invalid transitions, forward provenance, reused or settled tool calls, non-monotonic revisions or times, and foreign evidence. The invariant applies the Session-header applicability rule and the same strict fold before commit, so rejection appends nothing.
 
@@ -63,7 +63,7 @@ The completed [R0 scope record](../../archived/process/2026-08-15-dsh-science-v0
 
 ## Consequences
 
-R1 gives the Science overlay one independently reviewable domain slice with a strict, deterministic fold and checkpoint admission that cannot be spliced under the wrong watermark, at the cost of a durable vocabulary with no current producer: Science Runtime and its tool Consumers must still be built before any real Python/R execution can append these events. Required-on-read Science events make sessions containing them unreadable by a build that does not know the six event types; this is deliberate (domain truth over compatibility) and is not weakened by marking them `ignorable`.
+R1 gives the Science overlay one independently reviewable domain slice with a strict, deterministic fold and checkpoint admission that cannot be spliced under the wrong watermark, at the cost of a durable vocabulary with no current producer: Science Runtime and its tool Consumers must still be built before any real Python/R execution can append these events. Required-on-read Science events make sessions containing them unreadable by a build that does not know the seven event types; this is deliberate (domain truth over compatibility) and is not weakened by marking them `ignorable`.
 
 `packages/session/session-projection/src/index.ts` is now a shared generic dependency of the Science domain, not a Science-owned file. Its three optional members are exercised by every existing consumer's regression suite (`session-projection-cache`, JSONL, SQLite, `session-query`, `session-query-sqlite`; 497 tests, unmodified) and by 27 session-projection-specific tests plus 43 Science-specific tests (70 total), with 100% statement/branch/function/line coverage on both packages' `src/` combined. A future change to `ProjectionDefinition` must preserve this compatibility contract for every registrant that omits the three optional members.
 

@@ -67,9 +67,9 @@ config-catalog generator 会跟随同一 package 内导入的 `configSchema`，�
 
 Binding 与 run setup 共享非排队的 exact-Session reservation。同一 live Session 上的第二次 operation 返回 `RUNTIME_BUSY`。Detached lifecycle 会保留 same-ID quarantine，直到每一个 owned probe 与 process tree 都 quiescent，并且 cleanup 已经 settled。每次 append 都会再次检查 `ctx.sessions.get(session.id) === session`，因此旧对象不能写入 same-ID successor。
 
-Environment binding 在追加一个完整的 `science/environment-bound` value 之前观察并限制 interpreter。一次 run 会写入并 sync 精确 source 与 run directory，追加 `science/run-started`，然后才 spawn。start 提交之后，ordinary program failure、timeout、cancellation、sandbox denial 与 runner failure 成为 terminal values，并且仅在 whole-tree quiescence 之后追加一条匹配的 `science/run-finished`。Detached Session 不会收到 terminal append；replay 从未匹配的 durable start 推导 `interrupted`。无法证明 quiescence 或无法提交 terminal fact 时，永不返回看起来已经 durably settled 的值。
+Environment binding 在追加一个完整的 `science/environment-bound` value 之前观察并限制 interpreter。一次 run 的执行机制——每个 (session, language) 一个持久化 kernel process，而非每次 run 都重新 spawn——归 [persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.md) 所有，该决策还携带 kernel 生命周期 fact，以及 R2 当时尚不具备的 run→epoch identity。Detached Session 不会收到 terminal append；replay 从未匹配的 durable start 推导 `interrupted`。无法证明 quiescence 或无法提交 terminal fact 时，永不返回看起来已经 durably settled 的值。
 
-每一次 probe 与 run 都使用 direct argv、`environmentBase: 'empty'`、owned cwd、固定 locale/timezone，以及完整的 `workspace-write` confinement。Python probes/runs 使用冻结的 isolated UTF-8 flags。R version discovery 使用 standalone `Rscript --version`；其 UTF-8 probe 与 runs 使用 `--vanilla --encoding=UTF-8`。Scratch 只位于已解析的 DSH home 之下，使用独占 owner markers 与 private modes，拒绝 symlinks 与 path overlap，并保留已接受的 run state，同时只删除当前 operation 所拥有的 unpublished setup。
+每一次 probe 都使用 direct argv、`environmentBase: 'empty'`、owned cwd、固定 locale/timezone，以及完整的 `workspace-write` confinement；Python probe 使用冻结的 isolated UTF-8 flags，R version discovery 使用 standalone `Rscript --version`，其 UTF-8 probe 使用 `--vanilla --encoding=UTF-8`。kernel process 以同样的方式被 confine，且贯穿其整个生命周期保持，而非每次 run 重新套用(参见上文链接的 persistent-kernel 决策)。Scratch 只位于已解析的 DSH home 之下，使用独占 owner markers 与 private modes，拒绝 symlinks 与 path overlap，并保留已接受的 run state，同时只删除当前 operation 所拥有的 unpublished setup。
 
 Confinement 限制已记录的 file writes；它不声称 file-read、network、syscall 或 scientific-result isolation。在可用 sandbox 无法提供 full enforcement 的地方，Windows 保持 fail-closed。Source code、stdout、stderr、credentials 与绝对 scratch paths 永不进入 Science Session events 或 public Science projection。
 
@@ -105,7 +105,7 @@ Runtime package manifest 依据 RC5 同级 packages 重新推导：版本 `0.1.0
 
 ## 取代关系与生命周期
 
-本 Note 不 supersede Science Session、subprocess、sandbox、session-log、timeout、home-path、invariant 或 distribution decisions。它消费或窄幅扩展这些 decisions。它反向链接这些 owners，并且只陈述实际落地的 behavior。
+本 Note 不 supersede Science Session、subprocess、sandbox、session-log、timeout、home-path、invariant 或 distribution decisions。它消费或窄幅扩展这些 decisions。它反向链接这些 owners，并且只陈述实际落地的 behavior。[persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.md) 部分取代了本 Note：它拥有 run 的执行机制，取代了上文"每次 run 都重新 spawn"的描述；而 R2 的其余结果——provenance、scope、通用能力新增，以及 confinement/quarantine 机制——仍然归本 Note 所有。
 
 本 implemented triplet 保持 active，因为它的 alternatives、ownership boundary、negative guarantees 与 real-acceptance split 对后续 Science slices 仍然有用。Dated evidence record 负责 volatile candidate SHAs、command outputs、host details 与 reproduced baseline exceptions；本 Note 负责 stable scope、ordering、exclusions 与 acceptance meaning。
 

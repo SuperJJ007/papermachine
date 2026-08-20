@@ -75,6 +75,7 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'sandbox/mode',
   'schedule/change',
   'science/environment-bound',
+  'science/kernel-state',
   'science/mode-bound',
   'science/outcome-published',
   'science/run-finished',

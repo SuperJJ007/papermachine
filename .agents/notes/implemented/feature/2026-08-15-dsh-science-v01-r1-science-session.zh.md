@@ -22,7 +22,7 @@ R1 把持久化的 Science Session 领域加入到 `packages/science/science-ses
 
 ### Science Session 行为
 
-该包拥有 `science/mode-bound`、`science/environment-bound`、`science/run-started`、`science/run-finished`、`science/chart-saved`、`science/outcome-published`。每个 payload 都是 `version: 1`、无损 JSON、携带完整的领域值而非补丁，且 required on read。生成的 `KNOWN_SESSION_EVENT_TYPES` 列表通过 `gen-persistence-catalog` 包含全部六个；没有任何 Science 事件被标记为 `ignorable`。
+该包拥有 `science/mode-bound`、`science/environment-bound`、`science/run-started`、`science/run-finished`、`science/artifact-saved`、`science/outcome-published`、`science/kernel-state`。每个 payload 都是 `version: 1`、无损 JSON、携带完整的领域值而非补丁，且 required on read。生成的 `KNOWN_SESSION_EVENT_TYPES` 列表通过 `gen-persistence-catalog` 包含全部七个；没有任何 Science 事件被标记为 `ignorable`。
 
 `science/mode-bound` 只能对 `agentPreset` 为 `science` 的 Session 合法绑定一次，且必须早于该 Science preset 的首个 request、step 或 tool-call 事实。严格 fold 会拒绝不连续的序列、格式错误的值、非法转移、逆向来源证明、被复用或已 settle 的 tool call、非单调的 revision 或时间，以及外来证据。invariant 在提交前应用同一条 Session-header 适用性规则与同一严格 fold，因此被拒绝的候选事件不会向日志追加任何内容。
 
@@ -63,7 +63,7 @@ R1 把持久化的 Science Session 领域加入到 `packages/science/science-ses
 
 ## 后果
 
-R1 为 Science overlay 提供了一个可独立评审的领域切片：拥有严格确定性的 fold，以及不会在错误水位线下被拼接的 checkpoint admission；其代价是一份目前尚无生产方的持久化词汇——仍需先构建 Science Runtime 及其工具 Consumer，才能有任何真实的 Python/R 执行来追加这些事件。Required-on-read 的 Science 事件会使包含它们的会话对不认识这六种事件类型的构建版本不可读；这是刻意为之（领域真相优先于兼容性），把它们标为 `ignorable` 并不能削弱这一点。
+R1 为 Science overlay 提供了一个可独立评审的领域切片：拥有严格确定性的 fold，以及不会在错误水位线下被拼接的 checkpoint admission；其代价是一份目前尚无生产方的持久化词汇——仍需先构建 Science Runtime 及其工具 Consumer，才能有任何真实的 Python/R 执行来追加这些事件。Required-on-read 的 Science 事件会使包含它们的会话对不认识这七种事件类型的构建版本不可读；这是刻意为之（领域真相优先于兼容性），把它们标为 `ignorable` 并不能削弱这一点。
 
 `packages/session/session-projection/src/index.ts` 现在是 Science 领域的一个共享通用依赖，而不再是 Science 专属文件。它的三个可选成员被每一个既有消费方的回归测试套件（`session-projection-cache`、JSONL、SQLite、`session-query`、`session-query-sqlite`；共 497 个测试，未作修改）以及 27 个 session-projection 专属测试加 43 个 Science 专属测试（共 70 个）行使到；两个包 `src/` 合计的语句/分支/函数/行覆盖率均为 100%。未来对 `ProjectionDefinition` 的任何改动，都必须为每一个省略这三个可选成员的注册方保留这份兼容性约定。
 

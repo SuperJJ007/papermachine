@@ -95,7 +95,7 @@ class ScienceMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     writeCapture(options)
     // One step per settled tool result: read state, run code that writes
-    // csv/json/md/png artifacts (auto-captured with no separate save step),
+    // csv/json/vl.json/md/png artifacts (auto-captured with no separate save step),
     // curate the file that best demonstrates the result, publish the cited
     // Outcome, read the sanitized state those facts produced, then run a
     // second time on the same kernel (proving epoch reuse and no restart line).
@@ -108,6 +108,7 @@ class ScienceMockAdapter extends LlmAdapter {
           code: 'from pathlib import Path\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "summary.csv").write_text("metric,value\\naccuracy,0.97\\n")\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "meta.json").write_text(\'{"ok":true}\')\n'
+            + 'Path(SCIENCE_ARTIFACT_DIR, "chart.vl.json").write_text(\'{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}\')\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "notes.md").write_text("# Notes\\n\\nDeterministic snapshot run.\\n")\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "plot.png").write_bytes(png)',
         })

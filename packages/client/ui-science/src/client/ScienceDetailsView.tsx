@@ -88,8 +88,16 @@ function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly 
   return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
 }
 
-/** Filename base without its extension, plus the extension (including the dot), splitting on the last dot only. */
+/**
+ * Filename base without its extension, plus the extension (including the
+ * dot). Splits on the last dot, except the two-part `.vl.json` suffix, which
+ * stays whole so a version insertion never breaks the suffix the Vega-Lite
+ * capture rule keys on.
+ */
 function splitExtension(name: string): { stem: string; ext: string } {
+  if (name.toLowerCase().endsWith('.vl.json') && name.length > '.vl.json'.length) {
+    return { stem: name.slice(0, -'.vl.json'.length), ext: name.slice(-'.vl.json'.length) }
+  }
   const dot = name.lastIndexOf('.')
   return dot === -1 ? { stem: name, ext: '' } : { stem: name.slice(0, dot), ext: name.slice(dot) }
 }

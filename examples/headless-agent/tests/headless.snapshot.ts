@@ -406,10 +406,10 @@ describe('headless stream-json snapshots', () => {
       if (refreshing) await writeFile(streamExpected, stream)
       expect(stream).toBe(await readFile(streamExpected, 'utf8'))
       expect(stream).not.toContain(PNG_BASE64)
-      // Four initial auto-captures, one curated re-save reusing the PNG id,
+      // Five initial auto-captures, one curated re-save reusing the PNG id,
       // and one edited branch whose parent pins that curated version.
-      expect(ids.chartIds).toHaveLength(6)
-      expect(new Set(ids.chartIds).size).toBe(5)
+      expect(ids.chartIds).toHaveLength(7)
+      expect(new Set(ids.chartIds).size).toBe(6)
       // Both the plot's own id and the edited branch's own id normalize to the
       // same {{scienceChartId}} placeholder, so a renderer that echoed its own
       // id as its parent would still pass the normalized stream comparison
@@ -426,7 +426,7 @@ describe('headless stream-json snapshots', () => {
       const editedArtifact = ((editedSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
       const parent = editedArtifact.parent as JsonObject | undefined
       if (parent === undefined) throw new Error('edited.png artifact-saved event carries no parent reference')
-      expect(parent.artifactId).toBe(ids.chartIds[2])
+      expect(parent.artifactId).toBe(ids.chartIds[3])
       expect(parent.artifactId).not.toBe(editedArtifact.artifactId)
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
     } finally {

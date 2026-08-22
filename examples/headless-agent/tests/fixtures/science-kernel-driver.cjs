@@ -55,9 +55,10 @@ rl.on('line', (line) => {
   const [, runId, , cwd, stdoutPath, stderrPath, artifactDir] = parts
   mkdirSync(artifactDir, { recursive: true })
   // One file per allowlisted auto-capture media type this snapshot pins —
-  // csv, json, md, and png — proving one science/artifact-saved event per file.
+  // csv, json, vl.json, md, and png — proving one science/artifact-saved event per file.
   writeFileSync(join(artifactDir, 'summary.csv'), 'metric,value\naccuracy,0.97\n')
   writeFileSync(join(artifactDir, 'meta.json'), '{"ok":true}\n')
+  writeFileSync(join(artifactDir, 'chart.vl.json'), '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}\n')
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)

@@ -57,6 +57,10 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 
 结构化编辑消息 `text` block 的确切渲染措辞(决策 4)仍然刻意不锁定——由 C2 连同它的 snapshot 一起决定。
 
+## C1 依赖评估(2026-08-23)
+
+C1 钉下 `vega-embed@7.1.0`(闭包:`vega@6.4.0`、`vega-lite@6.4.3`)作为 `dsh-client-ui-science` 唯一新增的运行时依赖;`THIRD_PARTY_NOTICES.md` 列出该直接依赖(BSD-3-Clause),闭包由 lockfile 承载。实测成本:`lib/client.js` 增至约 2.0 MB(gzip 约 475 KB),约为次大客户端插件的 4.5 倍,且只要插件挂载就静态加载。对照 maintained-dependency 标准接受进 v1——该渲染器替代的是一整个本要手写的图表面——按需加载记入 ui-science README 的已知限制而非投机性先建。一项风险保持开放并同样记录在那里:embed 的 loader 未受限,spec 的 `data.url` 会让 viewer 所在浏览器请求外部资源;限制 loader 还是接受该行为尚未决定,最迟必须在引入人工提交 spec 版本的 C3 之前定案。
+
 ## Alternatives considered
 
 - **把 R 图表桥接到 Vega-Lite。** v1 拒绝:没有哪个维护中的 R 包能以接近 Altair 的覆盖度产出 Vega-Lite JSON,自建一座桥本身就会成为依赖政策所警惕的手搓基础设施;R 图表已经有一条能用的 raster 路径。

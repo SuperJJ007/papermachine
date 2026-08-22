@@ -507,6 +507,36 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(embedMock).not.toHaveBeenCalled()
   })
 
+  it('does not re-embed the same Vega-Lite spec on a parent re-render', async () => {
+    embedMock.mockImplementation(async (element: HTMLElement) => {
+      element.innerHTML = '<svg aria-label="Rendered Vega-Lite chart"></svg>'
+      return { view: { finalize: finalizeMock } }
+    })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy() })
+    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    expect(embedMock).toHaveBeenCalledTimes(1)
+    expect(finalizeMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy()
+  })
+
+  it('keeps the JSON-tree fallback alive across a re-render after the renderer rejected the spec', async () => {
+    embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
+    const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByRole('tree')).toBeTruthy() })
+    expect(screen.getByTestId('vega-lite-view').hidden).toBe(true)
+    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    expect(screen.getByRole('tree')).toBeTruthy()
+    expect(view.container.textContent).toContain('not-a-mark')
+  })
+
   it('discards a text load that resolves after the component already unmounted', async () => {
     let resolveLoad: ((text: string) => void) | undefined
     const loadText = vi.fn(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
@@ -711,6 +741,26 @@ describe('ScienceDetailsView: download', () => {
     expect(created[0]?.href).toBe(`data:text/csv;charset=utf-8,${encodeURIComponent('a,b\n1,2\n')}`)
     expect(created[0]?.download).toBe('summary-v1.csv')
     expect(loadImage).not.toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  it('inserts the version ahead of the whole .vl.json two-part suffix, not inside it', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadImage = vi.fn()
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const science = baseProjection({
+      artifacts: [chart({ logicalName: 'summary.vl.json', attachment: { attachmentId: 'sha256:vl' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 14 } })],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const created: HTMLAnchorElement[] = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      created.push(this)
+    })
+    render(<ScienceDetailsView {...props(science, { store, loadImage, loadText })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
+    expect(created[0]?.download).toBe('summary-v1.vl.json')
     clickSpy.mockRestore()
   })
 

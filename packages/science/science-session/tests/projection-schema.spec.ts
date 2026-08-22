@@ -102,6 +102,13 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
+        artifacts: [{
+          ...currentChart,
+          attachment: { attachmentId: currentChart.attachment.attachmentId, mediaType: 'application/vnd.vega-lite+json', bytes: 64, name: 'summary.vl.json' },
+        }],
+      },
+      {
+        ...state,
         runs: [state.runs[0], state.runs[0]],
         metrics: {
           ...state.metrics,

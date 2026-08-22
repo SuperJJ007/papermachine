@@ -87,9 +87,9 @@ describe('text attachment admission', () => {
 
   it('trusts the caller-declared media type: admission never inspects content format', async () => {
     // Every accepted text media type means only "valid UTF-8 bytes" at the
-    // admission layer — there is no byte-level
-    // signature distinguishing them the way a raster header distinguishes
-    // PNG from JPEG, so a JSON-shaped body admits under any declared type.
+    // admission layer — there is no byte-level signature distinguishing them
+    // the way a raster header distinguishes PNG from JPEG, so a JSON-shaped
+    // body admits under any declared type.
     const storageRoot = await root()
     const data = new TextEncoder().encode('{"not":"csv"}')
     const ref = await saveTextFile(storageRoot, { data, mediaType: 'text/csv' }, LIMITS)

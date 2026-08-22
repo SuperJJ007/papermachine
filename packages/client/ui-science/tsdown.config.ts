@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import type { UserConfig } from 'tsdown'
 import { clientBundle } from '../tsdown.client.ts'
@@ -24,7 +25,11 @@ function config(options: Pick<UserConfig, 'env'>): UserConfig[] {
               handler(source: string, importer: string | undefined) {
                 if ((source !== 'vega-canvas' && source !== 'vega-loader') || importer === undefined) return null
                 const nodeEntry = createRequire(importer).resolve(source)
-                return nodeEntry.replace(/\.node\.js$/, '.browser.js')
+                const browserEntry = nodeEntry.replace(/\.node\.js$/, '.browser.js')
+                if (browserEntry === nodeEntry || !existsSync(browserEntry)) {
+                  throw new Error(`${source} no longer resolves to a .node.js entry with a .browser.js sibling (got ${nodeEntry}); its node implementation must not reach the browser bundle`)
+                }
+                return browserEntry
               },
             },
           }, ...(entry.plugins ?? [])],

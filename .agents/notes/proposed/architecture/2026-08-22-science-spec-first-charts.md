@@ -57,6 +57,10 @@ The user accepted decisions 1–6 and resolved the three questions this note had
 
 The exact rendered wording of the structured edit message's `text` block (decision 4) remains deliberately unpinned — C2 decides it with its snapshot.
 
+## C1 dependency evaluation (2026-08-23)
+
+C1 pinned `vega-embed@7.1.0` (closure: `vega@6.4.0`, `vega-lite@6.4.3`) as `dsh-client-ui-science`'s only new runtime dependency; `THIRD_PARTY_NOTICES.md` lists the direct dependency (BSD-3-Clause) and the lockfile carries the closure. Measured cost: `lib/client.js` grows to ~2.0 MB (~475 KB gzip), roughly 4.5× the next-largest client plugin, imported statically whenever the plugin mounts. Accepted for v1 against the maintained-dependency bar — the renderer replaces an entire hand-rolled charting surface — with deferred-loading recorded in the ui-science README's Known Limitations rather than built speculatively. One risk stays open, also recorded there: the embed loader is unrestricted, so a spec's `data.url` makes the viewer's browser fetch external resources; restricting the loader versus accepting the behavior is undecided and must be resolved no later than C3, which introduces human-committed spec versions.
+
 ## Alternatives considered
 
 - **Bridge R charts to Vega-Lite.** Rejected for v1: no maintained R package emits Vega-Lite JSON with coverage close to Altair's, and a hand-built bridge would itself be the hand-rolled infrastructure the dependency policy warns against; R charts already have a working raster path.

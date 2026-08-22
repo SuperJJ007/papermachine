@@ -68,6 +68,9 @@
     "@deepseek-ai/dsh-tool-science": "workspace:^",
     "react": "^18.2.0"
   },
+  "dependencies": {
+    "vega-embed": "^7.1.0"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
@@ -95,8 +98,5 @@
     "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ],
-  "dependencies": {
-    "vega-embed": "^7.1.0"
-  }
+  ]
 }

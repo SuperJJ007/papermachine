@@ -9,8 +9,7 @@
  * case here, never a change to the viewer's tab strip, toolbar, or gallery.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import embed from 'vega-embed'
 import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { formatBytes } from '@deepseek-ai/dsh-byte-size'
@@ -90,13 +89,28 @@ function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
   return parsed === undefined || Array.isArray(parsed) ? undefined : parsed as VegaLiteDocument
 }
 
-/** Mount one Vega-Lite document through the maintained client renderer, finalizing its view on replacement or unmount. */
-function VegaLiteArtifact({ document, fallback }: { document: VegaLiteDocument; fallback: ReactNode }) {
+/**
+ * Render one Vega-Lite attachment: parse, mount through the maintained
+ * client renderer, and finalize the view on replacement or unmount. Owns the
+ * complete degrade ladder — unparseable text falls back to preformatted
+ * text, a spec the renderer rejects falls back to `JsonTree`. The parse is
+ * memoized on the text so a parent re-render never re-embeds, and the mount
+ * container stays in the tree (hidden) while the fallback shows, so the
+ * effect's element reference is never `null` across failure and re-render.
+ */
+function VegaLiteArtifact({ text, logicalName, t }: {
+  text: string
+  logicalName: string
+  t: TranslateNS<'science'>
+}) {
+  const capped = useMemo(() => capTextForDisplay(text, MAX_ARTIFACT_TEXT_CHARACTERS), [text])
+  const document = useMemo(() => parseVegaLiteDocument(capped.value), [capped.value])
   const container = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    const element = container.current as HTMLDivElement
+    const element = container.current
+    if (document === undefined || element === null) return
     let live = true
     let finalize: (() => void) | undefined
     setFailed(false)
@@ -113,7 +127,15 @@ function VegaLiteArtifact({ document, fallback }: { document: VegaLiteDocument; 
     }
   }, [document])
 
-  return failed ? fallback : <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" />
+  if (document === undefined) {
+    return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
+  }
+  return (
+    <>
+      <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failed} />
+      {failed && <JsonTree data={document} label={logicalName} />}
+    </>
+  )
 }
 
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
@@ -160,14 +182,8 @@ function TextArtifactBody({ logicalName, attachment, loadText, t }: {
         ? <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
         : <JsonTree data={parsed} label={logicalName} />
     }
-    case 'application/vnd.vega-lite+json': {
-      const capped = capTextForDisplay(state.text, MAX_ARTIFACT_TEXT_CHARACTERS)
-      const document = parseVegaLiteDocument(capped.value)
-      const fallback = document === undefined
-        ? <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
-        : <JsonTree data={document} label={logicalName} />
-      return document === undefined ? fallback : <VegaLiteArtifact document={document} fallback={fallback} />
-    }
+    case 'application/vnd.vega-lite+json':
+      return <VegaLiteArtifact text={state.text} logicalName={logicalName} t={t} />
     case 'text/markdown':
       return <MarkdownText text={state.text} />
     case 'text/plain': {

@@ -472,4 +472,154 @@ describe('strict Science fold', () => {
     }))).toThrow()
   })
 
+  it('accepts committed artifact ancestry and run inputs, and rejects unresolved or self references', () => {
+    const branchCall = CallId('call-branch')
+    const branchId = ScienceArtifactId('artifact-branch')
+    const parent = { artifactId: ARTIFACT_ID, version: 1 }
+    const branch = artifact({
+      artifactId: branchId,
+      logicalName: 'branch.png',
+      parent,
+      toolCallId: branchCall,
+      createdAt: 179,
+    })
+    const secondRunCall = CallId('call-run-with-input')
+    const secondRun = runStarted({
+      runId: ScienceRunId('run-with-input'),
+      toolCallId: secondRunCall,
+      startedAt: 189,
+      runDirectoryRef: 'runs/run-with-input/',
+      inputs: [{ artifactId: branchId, version: 1, path: 'source/branch.png' }],
+    })
+    const events = [
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 175, branchCall, 'annotate_artifact'),
+      event('science/artifact-saved', 10, 180, { version: 1, artifact: branch }),
+      toolCall(11, 185, secondRunCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 12, 190, { version: 1, run: secondRun }),
+    ]
+
+    const state = foldScience(events)
+    expect(state.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
+    expect(state.runs.at(-1)).toMatchObject({ runId: secondRun.runId, inputs: secondRun.inputs })
+
+    const missingInput = events.slice()
+    missingInput[12] = event('science/run-started', 12, 190, {
+      version: 1,
+      run: { ...secondRun, inputs: [{ artifactId: ScienceArtifactId('missing'), version: 1, path: 'missing.png' }] },
+    })
+    expect(() => foldScience(missingInput)).toThrow(/run input .* does not identify a committed artifact version/)
+
+    const missingParent = events.slice(0, 10)
+    missingParent.push(event('science/artifact-saved', 10, 180, {
+      version: 1,
+      artifact: { ...branch, parent: { artifactId: ScienceArtifactId('missing'), version: 1 } },
+    }))
+    expect(() => foldScience(missingParent)).toThrow(/artifact parent .* does not identify a committed artifact version/)
+
+    const selfParent = legalEvents()
+    selfParent[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ parent: { artifactId: ARTIFACT_ID, version: 1 } }),
+    })
+    expect(() => foldScience(selfParent)).toThrow(/parent cannot name the version being committed/)
+
+    const rewriteCall = CallId('call-rewrite-parent')
+    const rewrittenParent = [
+      ...events.slice(0, 11),
+      toolCall(11, 185, rewriteCall, 'annotate_artifact'),
+      event('science/artifact-saved', 12, 190, {
+        version: 1,
+        artifact: { ...branch, parent: undefined, toolCallId: rewriteCall, createdAt: 189 },
+      }),
+    ]
+    expect(() => foldScience(rewrittenParent)).toThrow(/cannot rewrite its parent/)
+  })
+
+  it('accepts sibling versions from one baseline, preserves a parent on replacement, and rejects another parent', () => {
+    const parent = { artifactId: ARTIFACT_ID, version: 1 }
+    const versionTwoCall = CallId('call-version-two')
+    const versionTwo = artifact({ version: 2, parent, toolCallId: versionTwoCall, createdAt: 179 })
+    const versionThreeCall = CallId('call-version-three')
+    const versionThree = artifact({ version: 3, parent, toolCallId: versionThreeCall, createdAt: 189 })
+    const siblings = [
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 175, versionTwoCall, 'annotate_artifact'),
+      event('science/artifact-saved', 10, 180, { version: 1, artifact: versionTwo }),
+      toolCall(11, 185, versionThreeCall, 'annotate_artifact'),
+      event('science/artifact-saved', 12, 190, { version: 1, artifact: versionThree }),
+    ]
+
+    expect(foldScience(siblings).artifacts.slice(1)).toMatchObject([
+      { version: 2, parent },
+      { version: 3, parent },
+    ])
+
+    const replacementCall = CallId('call-replace-version-three')
+    const replacementPrefix = [
+      ...siblings,
+      toolCall(13, 195, replacementCall, 'annotate_artifact'),
+    ]
+    const sameParent = [
+      ...replacementPrefix,
+      event('science/artifact-saved', 14, 200, {
+        version: 1,
+        artifact: { ...versionThree, toolCallId: replacementCall, createdAt: 199 },
+      }),
+    ]
+    expect(foldScience(sameParent).artifacts.at(-1)).toMatchObject({ version: 3, parent })
+
+    const differentParent = [
+      ...replacementPrefix,
+      event('science/artifact-saved', 14, 200, {
+        version: 1,
+        artifact: {
+          ...versionThree,
+          parent: { artifactId: ARTIFACT_ID, version: 2 },
+          toolCallId: replacementCall,
+          createdAt: 199,
+        },
+      }),
+    ]
+    expect(() => foldScience(differentParent)).toThrow(/cannot rewrite its parent/)
+
+    const futureParent = siblings.slice(0, 10)
+    futureParent.push(event('science/artifact-saved', 10, 180, {
+      version: 1,
+      artifact: { ...versionTwo, parent: { artifactId: ARTIFACT_ID, version: 3 } },
+    }))
+    expect(() => foldScience(futureParent)).toThrow(/does not identify a committed artifact version/)
+  })
+
+  it('requires canonical distinct input paths and terminal repetition of start-owned inputs', () => {
+    const { inputs: _startedInputs, ...legacyStarted } = runStarted()
+    const { inputs: _terminalInputs, ...legacyTerminal } = runTerminal()
+    const legacyEvents = legalEvents()
+    legacyEvents[5] = event('science/run-started', 5, 140, { version: 1, run: legacyStarted })
+    legacyEvents[6] = event('science/run-finished', 6, 150, { version: 1, run: legacyTerminal })
+    expect(foldScience(legacyEvents).runs).toEqual([legacyTerminal])
+    expect(() => decodeScienceRunStarted(runStarted({
+      inputs: [{ artifactId: ARTIFACT_ID, version: 1, path: '../escape.png' }],
+    }))).toThrow(/run input path/)
+    expect(() => decodeScienceRunStarted(runStarted({
+      inputs: [{ artifactId: ARTIFACT_ID, version: 1, path: '/absolute.png' }],
+    }))).toThrow(/run input path/)
+    expect(() => decodeScienceRunStarted(runStarted({
+      inputs: [{ artifactId: ARTIFACT_ID, version: 1, path: 'nul\0path.png' }],
+    }))).toThrow(/run input path/)
+    expect(() => decodeScienceRunStarted(runStarted({
+      inputs: [
+        { artifactId: ARTIFACT_ID, version: 1, path: 'same.png' },
+        { artifactId: ARTIFACT_ID, version: 1, path: 'same.png' },
+      ],
+    }))).toThrow(/input paths must be unique/)
+
+    const rewrittenTerminal = legalEvents()
+    rewrittenTerminal[6] = event('science/run-finished', 6, 150, {
+      version: 1,
+      run: runTerminal({ inputs: [{ artifactId: ARTIFACT_ID, version: 1, path: 'late.png' }] }),
+    })
+    expect(() => foldScience(rewrittenTerminal)).toThrow(/rewrites start-owned fields/)
+  })
+
 })

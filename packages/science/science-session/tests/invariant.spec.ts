@@ -8,12 +8,16 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import * as ScienceInvariant from '../src/invariant.ts'
 import {
   ScienceEnvironmentProfileId,
+  ScienceArtifactId,
   ScienceRunId,
   ScienceScratchKey,
 } from '../src/index.ts'
 import {
   FINGERPRINT,
+  artifact,
   appendFixtureEvents,
+  legalEvents,
+  runStarted,
 } from './fixtures.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-science-session'
@@ -180,6 +184,47 @@ describe('Science stream invariant', () => {
       'science/artifact-saved',
       'science/outcome-published',
     ])
+  })
+
+  it('rejects unresolved artifact parents and run inputs before commit', async () => {
+    const ctx = await setup()
+    const parentSession = ctx.sessions.create(SessionId('science-invariant-parent'), {
+      meta: { agentPreset: 'science' },
+    })
+    appendFixtureEvents(parentSession, legalEvents().slice(0, 8))
+    const parentSeq = parentSession.seq
+    expect(() => parentSession.append('science/artifact-saved', {
+      version: 1,
+      artifact: artifact({
+        parent: { artifactId: ScienceArtifactId('missing-parent'), version: 1 },
+        createdAt: parentSession.events.at(-1)!.time,
+      }),
+    })).toThrow(/does not identify a committed artifact version/)
+    expect(parentSession.seq).toBe(parentSeq)
+
+    const inputSession = ctx.sessions.create(SessionId('science-invariant-input'), {
+      meta: { agentPreset: 'science' },
+    })
+    appendFixtureEvents(inputSession, legalEvents().slice(0, 9))
+    const call = inputSession.append('tool/call', {
+      turn: 2,
+      step: 1,
+      callId: CallId('call-input-run'),
+      name: 'run_python',
+      arguments: '{}',
+    })
+    const inputSeq = inputSession.seq
+    expect(() => inputSession.append('science/run-started', {
+      version: 1,
+      run: runStarted({
+        runId: ScienceRunId('input-run'),
+        toolCallId: call.data.callId,
+        startedAt: call.time,
+        runDirectoryRef: 'runs/input-run/',
+        inputs: [{ artifactId: ScienceArtifactId('missing-input'), version: 1, path: 'input.png' }],
+      }),
+    })).toThrow(/does not identify a committed artifact version/)
+    expect(inputSession.seq).toBe(inputSeq)
   })
 
   it('rejects a Science fact after the authorizing call step ended without committing it', async () => {

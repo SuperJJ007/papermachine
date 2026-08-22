@@ -120,6 +120,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
     environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
     startedAt: run.startedAt,
     codeSha256: run.codeSha256,
+    ...run.inputs === undefined ? {} : { inputs: run.inputs },
     kernelEpoch: run.kernelEpoch,
   }
   if (run.status === 'running') return { ...common, status: run.status }
@@ -155,6 +156,7 @@ function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifact
     artifactId: artifact.artifactId,
     logicalName: artifact.logicalName,
     version: artifact.version,
+    ...artifact.parent === undefined ? {} : { parent: artifact.parent },
     title: artifact.title,
     ...artifact.caption === undefined ? {} : { caption: artifact.caption },
     origin: artifact.origin,

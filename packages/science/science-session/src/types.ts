@@ -131,6 +131,20 @@ export interface ScienceEnvironmentBinding {
   readonly failureReason?: string
 }
 
+/** Exact immutable Science artifact version identity. */
+export interface ScienceArtifactVersionRef {
+  /** Stable logical artifact identity. */
+  readonly artifactId: ScienceArtifactId
+  /** Positive version within that logical artifact. */
+  readonly version: number
+}
+
+/** One exact artifact version materialized as an input to a Science run. */
+export interface ScienceRunArtifactInput extends ScienceArtifactVersionRef {
+  /** Forward-slash path below the run's reserved `inputs/` directory. */
+  readonly path: string
+}
+
 /** Fields fixed by `science/run-started` and repeated by its terminal event. */
 export interface ScienceRunIdentity {
   /** Stable session-local run identity. */
@@ -153,6 +167,8 @@ export interface ScienceRunIdentity {
   readonly scratchKey: ScienceScratchKey
   /** Session-relative run directory reference, never a Host absolute path. */
   readonly runDirectoryRef: string
+  /** Exact prior artifact versions materialized for this run, in request order. */
+  readonly inputs?: readonly ScienceRunArtifactInput[]
   /**
    * Session-local epoch of the persistent kernel that executed this run.
    * Two runs sharing an epoch share the kernel's in-memory state: this is
@@ -323,6 +339,8 @@ export interface ScienceArtifactVersion {
    * opening the next one.
    */
   readonly version: number
+  /** Exact baseline version this content descends from, when an operation named one. */
+  readonly parent?: ScienceArtifactVersionRef
   /**
    * Human-readable title: always populated, either model-supplied or the
    * captured file's basename.
@@ -473,6 +491,7 @@ export interface ScienceClientRunIdentity {
   readonly environmentFingerprintPreview: string
   readonly startedAt: number
   readonly codeSha256: string
+  readonly inputs?: readonly ScienceRunArtifactInput[]
   readonly kernelEpoch: number
 }
 
@@ -546,6 +565,7 @@ export interface ScienceClientArtifactVersion {
   readonly artifactId: ScienceArtifactId
   readonly logicalName: string
   readonly version: number
+  readonly parent?: ScienceArtifactVersionRef
   readonly title: string
   readonly caption?: string
   readonly origin: ScienceArtifactOrigin

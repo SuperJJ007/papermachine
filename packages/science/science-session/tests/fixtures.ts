@@ -97,6 +97,7 @@ export const runStarted = (
   codeSha256: CODE_SHA,
   scratchKey: SCRATCH_KEY,
   runDirectoryRef: 'runs/run-1/',
+  inputs: [],
   kernelEpoch: 1,
   status: 'running',
   ...overrides,

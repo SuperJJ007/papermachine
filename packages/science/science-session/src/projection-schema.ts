@@ -39,6 +39,24 @@ const RUN_IDENTITY_KEYS = [
   'kernelEpoch',
 ] as const
 
+function validArtifactVersionRef(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  return candidate !== undefined
+    && projectionExactKeys(candidate, ['artifactId', 'version'])
+    && typeof candidate['artifactId'] === 'string'
+    && candidate['artifactId'].length > 0
+    && safeInteger(candidate['version'], 1)
+}
+
+function validRunInput(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  return candidate !== undefined
+    && projectionExactKeys(candidate, ['artifactId', 'version', 'path'])
+    && validArtifactVersionRef({ artifactId: candidate['artifactId'], version: candidate['version'] })
+    && typeof candidate['path'] === 'string'
+    && candidate['path'].length > 0
+}
+
 function safeInteger(value: unknown, minimum = 0): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
 }
@@ -111,22 +129,26 @@ function validRunIdentity(candidate: Record<string, unknown>): boolean {
     && safeInteger(candidate['startedAt'])
     && typeof candidate['codeSha256'] === 'string'
     && /^[a-f0-9]{64}$/.test(candidate['codeSha256'])
+    && (candidate['inputs'] === undefined
+      || (Array.isArray(candidate['inputs']) && candidate['inputs'].every(validRunInput)))
     && safeInteger(candidate['kernelEpoch'], 1)
 }
 
 function validRun(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined || !validRunIdentity(candidate)) return false
+  const identityKeys: string[] = [...RUN_IDENTITY_KEYS]
+  if (candidate['inputs'] !== undefined) identityKeys.push('inputs')
   const status = candidate['status']
-  if (status === 'running') return projectionExactKeys(candidate, [...RUN_IDENTITY_KEYS, 'status'])
+  if (status === 'running') return projectionExactKeys(candidate, [...identityKeys, 'status'])
   if (status === 'interrupted') {
-    return projectionExactKeys(candidate, [...RUN_IDENTITY_KEYS, 'status', 'finishedAt', 'interruptedAtSeq'])
+    return projectionExactKeys(candidate, [...identityKeys, 'status', 'finishedAt', 'interruptedAtSeq'])
       && safeInteger(candidate['finishedAt'], candidate['startedAt'] as number)
       && safeInteger(candidate['interruptedAtSeq'])
   }
   if (!['success', 'failed', 'timed-out', 'cancelled'].includes(String(status))) return false
   const keys = [
-    ...RUN_IDENTITY_KEYS,
+    ...identityKeys,
     'status',
     'finishedAt',
     'stdoutBytes',
@@ -235,10 +257,12 @@ function validArtifact(value: unknown): boolean {
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt',
   ]
   if (candidate['caption'] !== undefined) keys.push('caption')
+  if (candidate['parent'] !== undefined) keys.push('parent')
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
+    && (candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
     && (candidate['origin'] === 'auto' || candidate['origin'] === 'model')

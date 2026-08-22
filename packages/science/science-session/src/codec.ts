@@ -39,6 +39,12 @@ const MAX_LABEL_LENGTH = 512
 const MAX_REASON_LENGTH = 4096
 const MAX_SUMMARY_BYTES = 32 * 1024
 /**
+ * Fixed decoder ceiling for durable run inputs, independent of the Runtime's
+ * configurable materialization limit. The decoder accepts every value that a
+ * conforming Runtime may append.
+ */
+const MAX_ARTIFACT_INPUTS = 4096
+/**
  * Fixed decoder ceiling for a durable package inventory, independent of the
  * Runtime's configurable `packagesMaxEntries` cap. Comfortably above that
  * cap's own allowed maximum so the decoder accepts every value the Runtime
@@ -63,6 +69,22 @@ const SAFE_LOGICAL_NAME = z.string()
   .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
     message: 'logicalName must be forward-slash segments each matching the safe artifact-name grammar',
   })
+
+const RUN_INPUT_PATH = z.string()
+  .min(1)
+  .max(MAX_PATH_LENGTH)
+  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
+    message: 'run input path must be forward-slash segments each matching the safe artifact-name grammar',
+  })
+
+const artifactVersionRefSchema = z.object({
+  artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
+  version: POSITIVE_INTEGER,
+}).strict()
+
+const runArtifactInputSchema = artifactVersionRefSchema.extend({
+  path: RUN_INPUT_PATH,
+}).strict()
 
 /** Require normalized, bounded durable text. */
 function text(maximum: number): z.ZodString {
@@ -188,6 +210,7 @@ const runIdentityShape = {
   codeSha256: SHA256,
   scratchKey: SHA256.transform(value => ScienceScratchKey(value)),
   runDirectoryRef: text(MAX_PATH_LENGTH),
+  inputs: z.array(runArtifactInputSchema).max(MAX_ARTIFACT_INPUTS).optional(),
   kernelEpoch: POSITIVE_INTEGER,
 } as const
 
@@ -198,6 +221,8 @@ const runStartedSchema = z.object({
   if (run.runDirectoryRef !== `runs/${run.runId}/`) {
     issue(ctx, 'runDirectoryRef must be the canonical session-relative run path', ['runDirectoryRef'])
   }
+  const paths = (run.inputs ?? []).map(input => input.path)
+  if (new Set(paths).size !== paths.length) issue(ctx, 'run input paths must be unique', ['inputs'])
 })
 
 const runTerminalSchema = z.object({
@@ -286,6 +311,7 @@ const artifactSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
   logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
+  parent: artifactVersionRefSchema.optional(),
   title: text(MAX_LABEL_LENGTH),
   caption: text(MAX_REASON_LENGTH).optional(),
   origin: z.enum(['auto', 'model']),
@@ -389,7 +415,7 @@ export function decodeScienceEnvironment(value: unknown): ScienceEnvironmentBind
  * @returns the strict running-run value.
  */
 export function decodeScienceRunStarted(value: unknown): ScienceRunStarted {
-  return runStartedSchema.parse(value)
+  return runStartedSchema.parse(value) as ScienceRunStarted
 }
 
 /**
@@ -459,8 +485,10 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
       const data = environmentEventSchema.parse(event.data) as ScienceEnvironmentBoundEvent
       return { type: event.type, seq: event.seq, time: event.time, data }
     }
-    case 'science/run-started':
-      return { type: event.type, seq: event.seq, time: event.time, data: runStartedEventSchema.parse(event.data) }
+    case 'science/run-started': {
+      const data = runStartedEventSchema.parse(event.data) as ScienceRunStartedEvent
+      return { type: event.type, seq: event.seq, time: event.time, data }
+    }
     case 'science/run-finished': {
       const data = runFinishedEventSchema.parse(event.data) as ScienceRunFinishedEvent
       return { type: event.type, seq: event.seq, time: event.time, data }

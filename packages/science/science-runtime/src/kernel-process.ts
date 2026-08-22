@@ -93,6 +93,8 @@ export interface KernelExecuteRequest {
   readonly stderrPath: string
   /** Per-run artifact directory the driver publishes as `SCIENCE_ARTIFACT_DIR`. */
   readonly artifactDir: string
+  /** Per-run materialized-input directory the driver publishes as `SCIENCE_INPUT_DIR`. */
+  readonly inputDir: string
 }
 
 /** Terminal run status the kernel wire protocol carries on a DONE frame. */
@@ -403,8 +405,10 @@ export class KernelProcess {
     assertNoFrameDelimiters(request.stdoutPath, 'RUN stdoutPath')
     assertNoFrameDelimiters(request.stderrPath, 'RUN stderrPath')
     assertNoFrameDelimiters(request.artifactDir, 'RUN artifactDir')
+    assertNoFrameDelimiters(request.inputDir, 'RUN inputDir')
     const frame = [
-      'RUN', request.runId, request.sourcePath, request.cwd, request.stdoutPath, request.stderrPath, request.artifactDir,
+      'RUN', request.runId, request.sourcePath, request.cwd, request.stdoutPath, request.stderrPath,
+      request.artifactDir, request.inputDir,
     ].join('\t')
     const resolvers = Promise.withResolvers<KernelDoneFrame>()
     this.pending = { runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }

@@ -12,7 +12,7 @@ Science Runtime 已能物化已提交的产物版本并为捕获结果指定显�
 
 ## Decision
 
-`run_python` 与 `run_r` 接受相同的可选 `artifact_inputs` 和 `edit_of` 数组。每项都使用模型可见的 `{artifactId, version, path}` 字段。`artifact_inputs` 的 path 相对于 run 保留的 `inputs/` 目录；`edit_of` 的 path 相对于 `SCIENCE_ARTIFACT_DIR`，并为该 output 命名精确父版本。消费方为不透明 id 添加品牌类型，并把两个数组转换为 `StartScienceRunRequest.artifactInputs` 与 `.editBaselines`；Runtime 仍是版本解析、path 安全、字节/数量上限、物化与捕获归属的唯一所有者。
+`run_python` 与 `run_r` 接受相同的可选 `artifact_inputs` 和 `edit_of` 数组。每项都使用模型可见的 `{artifactId, version, path}` 字段。`artifact_inputs` 的 path 相对于 `SCIENCE_INPUT_DIR`——kernel driver 会把这个环境变量设为 run 保留的已物化 input 目录，方式与设置 `SCIENCE_STATE_DIR`、`SCIENCE_ARTIFACT_DIR` 相同；`edit_of` 的 path 相对于 `SCIENCE_ARTIFACT_DIR`，并为该 output 命名精确父版本。消费方为不透明 id 添加品牌类型，并把两个数组转换为 `StartScienceRunRequest.artifactInputs` 与 `.editBaselines`；Runtime 仍是版本解析、path 安全（包括对 `artifact_inputs` 与 `edit_of` path 分别在各自集合内做大小写折叠/NFC 归一化碰撞拒绝——两者物化到 run 目录下互不相交的子树，因此只需各自集合内部检查）、字节/数量上限、物化与捕获归属的唯一所有者。
 
 重复的 `edit_of` path 会在 run 发布前拒绝，因为把模型数组转换为 Runtime 按 path 键控的记录时绝不能静默覆盖 baseline。其它无效或无法解析的值会原样交给 Runtime，并保留其稳定错误分类。
 

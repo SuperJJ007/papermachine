@@ -1,6 +1,6 @@
 {
   "guidance": [
-    "Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it."
+    "Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it."
   ],
   "tools": [
     {
@@ -133,7 +133,7 @@
     },
     {
       "name": "run_python",
-      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -143,7 +143,7 @@
           },
           "artifact_inputs": {
             "type": "array",
-            "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+            "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -197,7 +197,7 @@
     },
     {
       "name": "run_r",
-      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -207,7 +207,7 @@
           },
           "artifact_inputs": {
             "type": "array",
-            "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+            "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -264,9 +264,9 @@
     "read"
   ],
   "runtimeContext": [
-    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.",
-    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.",
-    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR."
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR."
   ],
   "toolResults": [
     {

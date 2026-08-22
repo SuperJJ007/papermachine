@@ -2370,7 +2370,7 @@ Source: [`packages/science/tool-science/src/publish-outcome.ts`](../packages/sci
 
 ### `run_python`
 
-Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.
+Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {
@@ -2382,7 +2382,7 @@ Run Python source against this session's persistent Python kernel: variables, im
     },
     "artifact_inputs": {
       "type": "array",
-      "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -2439,7 +2439,7 @@ Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-sc
 
 ### `run_r`
 
-Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.
+Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {
@@ -2451,7 +2451,7 @@ Run R source against this session's persistent R kernel: variables and loaded pa
     },
     "artifact_inputs": {
       "type": "array",
-      "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
       "items": {
         "type": "object",
         "additionalProperties": false,

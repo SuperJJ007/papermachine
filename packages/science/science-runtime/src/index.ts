@@ -835,6 +835,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         stdoutPath: runScratch.stdout,
         stderrPath: runScratch.stderr,
         artifactDir: runScratch.artifacts,
+        inputDir: runScratch.inputs,
       }
       let outcome: KernelRunOutcome
       try {

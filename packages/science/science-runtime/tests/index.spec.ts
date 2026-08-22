@@ -15,6 +15,7 @@ function fakeRequest(): KernelExecuteRequest {
     stdoutPath: '/run/stdout.txt',
     stderrPath: '/run/stderr.txt',
     artifactDir: '/run/artifacts',
+    inputDir: '/run/inputs',
   }
 }
 

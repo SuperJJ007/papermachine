@@ -38,7 +38,7 @@ export function scienceModelObservedLabel(label: string): string | undefined {
   return /[\\/]/.test(label) ? undefined : label
 }
 
-const STATE_RULE = 'Variables persist in each language\'s kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR.'
+const STATE_RULE = 'Variables persist in each language\'s kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.'
 
 /**
  * Model-vocabulary phrase for one closed kernel's end reason — task words

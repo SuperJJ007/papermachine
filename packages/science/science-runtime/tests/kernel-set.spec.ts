@@ -97,6 +97,7 @@ async function prepareRun(root: string, runId: string, action: Record<string, un
     stdoutPath: join(dir, 'stdout.txt'),
     stderrPath: join(dir, 'stderr.txt'),
     artifactDir,
+    inputDir: join(dir, 'inputs'),
   }
 }
 

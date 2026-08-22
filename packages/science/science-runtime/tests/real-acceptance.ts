@@ -130,6 +130,8 @@ function successSource(language: ScienceLanguage, prefix: string): string {
       `assert os.environ['PATH'] == ${JSON.stringify(`${join(prefix, 'bin')}:/usr/bin:/bin`)}`,
       "assert Path.cwd().is_dir() and Path(os.environ['HOME']).is_dir() and Path(os.environ['TMPDIR']).is_dir()",
       "assert Path(os.environ['SCIENCE_STATE_DIR']).is_dir() and Path(os.environ['SCIENCE_ARTIFACT_DIR']).is_dir()",
+      // Reserved but not always materialized (only created when a run requests inputs), so only its presence is checked here.
+      "assert os.environ.get('SCIENCE_INPUT_DIR', '') != ''",
       `Path(os.environ['SCIENCE_ARTIFACT_DIR'], 'real-chart.png').write_bytes(base64.b64decode(${JSON.stringify(PNG_BASE64)}))`,
       'print("dsh-real-运行-✓")',
       '',
@@ -140,6 +142,8 @@ function successSource(language: ScienceLanguage, prefix: string): string {
     `stopifnot(Sys.getenv("PATH") == ${JSON.stringify(`${join(prefix, 'bin')}:/usr/bin:/bin`)})`,
     'stopifnot(dir.exists(getwd()), dir.exists(Sys.getenv("HOME")), dir.exists(Sys.getenv("TMPDIR")))',
     'stopifnot(dir.exists(Sys.getenv("SCIENCE_STATE_DIR")), dir.exists(Sys.getenv("SCIENCE_ARTIFACT_DIR")))',
+    // Reserved but not always materialized (only created when a run requests inputs), so only its presence is checked here.
+    'stopifnot(nzchar(Sys.getenv("SCIENCE_INPUT_DIR")))',
     `writeBin(as.raw(c(${[...PNG].join(',')})), file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), "real-chart.png"))`,
     'cat("dsh-real-运行-✓\\n")',
     '',

@@ -9,6 +9,7 @@
 //
 // Per-run JSON action shape (all fields optional):
 //   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "..." }
+//   { "action": "echo-request" }       -- replies DONE ok with detail = "<cwd>|<artifactDir>|<inputDir>"
 //   { "action": "garbage" }            -- writes one unparseable line instead of DONE
 //   { "action": "double-garbage" }     -- writes two unparseable lines instead of DONE
 //   { "action": "crash" }              -- process.exit(1) without replying
@@ -59,10 +60,13 @@ rl.on('line', (line) => {
   if (cmd !== 'RUN') return
   const runId = parts[1]
   const sourcePath = parts[2]
-  handleRun(runId, sourcePath)
+  const cwd = parts[3]
+  const artifactDir = parts[6]
+  const inputDir = parts[7]
+  handleRun(runId, sourcePath, cwd, artifactDir, inputDir)
 })
 
-function handleRun(runId, sourcePath) {
+function handleRun(runId, sourcePath, cwd, artifactDir, inputDir) {
   let action
   try {
     action = JSON.parse(readFileSync(sourcePath, 'utf8'))
@@ -75,6 +79,10 @@ function handleRun(runId, sourcePath) {
   const detail = action.detail ?? ''
   const flags = action.flags ?? ''
 
+  if (kind === 'echo-request') {
+    send(`DONE\t${runId}\tok\t${cwd}|${artifactDir}|${inputDir}\t`)
+    return
+  }
   if (kind === 'reply') {
     send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
     return

@@ -41,13 +41,25 @@ function safeRelativePath(
   return path
 }
 
-/** Reject exact, case-folded, ancestor, and descendant path collisions. */
-function assertNoPathCollisions(paths: readonly string[]): void {
+/**
+ * Reject exact, case-folded, ancestor, and descendant path collisions within
+ * one caller-supplied path set. Case-folded so a case-insensitive filesystem
+ * (the materialization target for both `artifact_inputs` and `edit_of`
+ * paths) cannot admit two paths that would land on the same on-disk entry.
+ * @param paths - Candidate paths already validated by `safeRelativePath`.
+ * @param code - Stable classification for the collision this set represents.
+ * @param message - Safe caller-facing explanation naming the colliding set.
+ */
+function assertNoPathCollisions(
+  paths: readonly string[],
+  code: 'INPUT_PATH_INVALID' | 'INVALID_REQUEST',
+  message: string,
+): void {
   const folded = paths.map(path => path.normalize('NFC').toLocaleLowerCase('en-US'))
   for (const [index, candidate] of folded.entries()) {
     for (const existing of folded.slice(0, index)) {
       if (candidate === existing || candidate.startsWith(`${existing}/`) || existing.startsWith(`${candidate}/`)) {
-        throw new ScienceRuntimeError('INPUT_PATH_INVALID', 'Science artifact input paths collide inside the reserved inputs directory')
+        throw new ScienceRuntimeError(code, message)
       }
     }
   }
@@ -111,7 +123,11 @@ export async function prepareRunArtifacts(
   if (inputs.length > maxFiles) {
     throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxFiles)}-file bound`)
   }
-  assertNoPathCollisions(inputs.map(input => input.path))
+  assertNoPathCollisions(
+    inputs.map(input => input.path),
+    'INPUT_PATH_INVALID',
+    'Science artifact input paths collide inside the reserved inputs directory',
+  )
 
   const resolved = inputs.map(input => ({
     input,
@@ -134,9 +150,17 @@ export async function prepareRunArtifacts(
     materialized.push({ path: entry.input.path, data })
   }
 
+  const baselines = Object.entries(requestedBaselines ?? {}).map(([rawPath, ref]) => ({
+    path: safeRelativePath(rawPath, 'Science edit baseline path', 'INVALID_REQUEST'),
+    ref,
+  }))
+  assertNoPathCollisions(
+    baselines.map(baseline => baseline.path),
+    'INVALID_REQUEST',
+    'Science edit baseline paths collide under the reserved artifact directory',
+  )
   const editBaselines = new Map<string, ScienceArtifactVersionRef>()
-  for (const [rawPath, ref] of Object.entries(requestedBaselines ?? {})) {
-    const path = safeRelativePath(rawPath, 'Science edit baseline path', 'INVALID_REQUEST')
+  for (const { path, ref } of baselines) {
     artifactVersion(projection, ref, 'ARTIFACT_NOT_FOUND', 'Science edit baseline')
     editBaselines.set(path, { artifactId: ref.artifactId, version: ref.version })
   }

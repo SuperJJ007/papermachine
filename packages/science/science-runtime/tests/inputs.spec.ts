@@ -122,4 +122,32 @@ describe('prepareRunArtifacts', () => {
       'output.txt': { artifactId: TEXT_ID, version: 2 },
     }, 1, 2, signal)).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
   })
+
+  it.each([
+    ['Edited.PNG', 'edited.png'],
+    ['édited.png', 'édited.png'],
+    ['out', 'out/edited.png'],
+    ['out/edited.png', 'out'],
+  ])('rejects colliding edit baseline paths %j and %j on a case-insensitive filesystem', async (first, second) => {
+    await expect(prepareRunArtifacts(projection, attachments(), undefined, {
+      [first]: { artifactId: TEXT_ID, version: 1 },
+      [second]: { artifactId: TEXT_ID, version: 1 },
+    }, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
+  it('admits an artifact-input path and an edit-baseline path that share the same literal string', async () => {
+    // The two sets materialize into disjoint directories (inputs/ vs the
+    // per-run artifact directory), so an identical string in each is not a
+    // filesystem collision — only within-set collisions are rejected.
+    const { store, readText } = attachmentHarness()
+    await expect(prepareRunArtifacts(projection, store, [
+      { artifactId: TEXT_ID, version: 1, path: 'shared.txt' },
+    ], {
+      'shared.txt': { artifactId: TEXT_ID, version: 1 },
+    }, 1, 2, signal)).resolves.toMatchObject({
+      inputs: [{ artifactId: TEXT_ID, version: 1, path: 'shared.txt' }],
+      editBaselines: new Map([['shared.txt', { artifactId: TEXT_ID, version: 1 }]]),
+    })
+    expect(readText).toHaveBeenCalledOnce()
+  })
 })

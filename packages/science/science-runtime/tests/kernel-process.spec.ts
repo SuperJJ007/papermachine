@@ -224,6 +224,7 @@ async function prepareRun(root: string, runId: string, action: Record<string, un
     stdoutPath: join(dir, 'stdout.txt'),
     stderrPath: join(dir, 'stderr.txt'),
     artifactDir,
+    inputDir: join(dir, 'inputs'),
   }
 }
 
@@ -434,6 +435,16 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
+  it('forwards the RUN frame\'s own reserved inputDir distinctly from cwd and artifactDir', async () => {
+    const harness = await createHarness('kernel-input-dir')
+    const kernel = await startKernel(harness, 'python')
+    const request = await prepareRun(harness.root, 'run-echo-request', { action: 'echo-request' })
+    const result = await kernel.execute(request)
+    expect(result.detail).toBe(`${request.cwd}|${request.artifactDir}|${request.inputDir}`)
+    expect(request.inputDir).not.toBe(request.artifactDir)
+    await kernel.end('test-teardown')
+  })
+
   it('parses the capture-degraded flag and ignores unknown flag tokens', async () => {
     const harness = await createHarness('kernel-flags')
     const kernel = await startKernel(harness, 'python')
@@ -456,6 +467,7 @@ describe('KernelProcess', () => {
       void kernel.execute({
         runId: ScienceRunId('run-second'), sourcePath: '/nowhere', cwd: '/nowhere',
         stdoutPath: '/nowhere/out', stderrPath: '/nowhere/err', artifactDir: '/nowhere/artifacts',
+        inputDir: '/nowhere/inputs',
       })
     }).toThrow(/still pending/)
     // Let the driver finish parsing RUN and register its SIGINT trap before
@@ -474,6 +486,7 @@ describe('KernelProcess', () => {
       void kernel.execute({
         runId: ScienceRunId('run-delimiter'), sourcePath: '/run/action.json', cwd: '/run',
         stdoutPath: '/run/stdout.txt', stderrPath: 'bad\tpath', artifactDir: '/run/artifacts',
+        inputDir: '/run/inputs',
       })
     }).toThrow(/must not contain a tab or newline/)
     // The rejected request never reached the driver: a normal run still works.

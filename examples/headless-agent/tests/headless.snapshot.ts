@@ -410,6 +410,24 @@ describe('headless stream-json snapshots', () => {
       // and one edited branch whose parent pins that curated version.
       expect(ids.chartIds).toHaveLength(6)
       expect(new Set(ids.chartIds).size).toBe(5)
+      // Both the plot's own id and the edited branch's own id normalize to the
+      // same {{scienceChartId}} placeholder, so a renderer that echoed its own
+      // id as its parent would still pass the normalized stream comparison
+      // above. Check the raw (pre-normalization) event instead: the edited
+      // chart's parent must name the plot's own id, not its own.
+      const editedSaved = parseJsonl(result.stdout).find((record) => {
+        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
+        const event = record.event as JsonObject
+        const data = event.data as JsonObject | undefined
+        const artifact = data?.artifact as JsonObject | undefined
+        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'edited.png'
+      })
+      if (editedSaved === undefined) throw new Error(`science snapshot stream carries no edited.png artifact-saved event; stdout:\n${result.stdout}`)
+      const editedArtifact = ((editedSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
+      const parent = editedArtifact.parent as JsonObject | undefined
+      if (parent === undefined) throw new Error('edited.png artifact-saved event carries no parent reference')
+      expect(parent.artifactId).toBe(ids.chartIds[2])
+      expect(parent.artifactId).not.toBe(editedArtifact.artifactId)
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })

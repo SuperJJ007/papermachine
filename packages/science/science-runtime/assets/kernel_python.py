@@ -6,7 +6,7 @@ runs within a session. Python stdlib only — no third-party imports.
 Invocation: python3 -B -u -X utf8 kernel_python.py <fifoPath>
 
 Frame grammar (single line, tab-separated, newline-terminated):
-  host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>
+  host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
   host -> kernel:  EXIT
   kernel -> host:  READY\t<protocolVersion=1>\t<pid>
   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>
@@ -49,14 +49,16 @@ def rebind_std_streams():
     sys.stderr = os.fdopen(2, "w", encoding="utf-8", closefd=False)
 
 
-def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir):
+def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir):
     orig_cwd = os.getcwd()
     orig_tmpdir = os.environ.get("TMPDIR")
     orig_artifact = os.environ.get("SCIENCE_ARTIFACT_DIR")
+    orig_input = os.environ.get("SCIENCE_INPUT_DIR")
 
     os.chdir(cwd)
     os.environ["TMPDIR"] = cwd
     os.environ["SCIENCE_ARTIFACT_DIR"] = artifact_dir
+    os.environ["SCIENCE_INPUT_DIR"] = input_dir
 
     stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
@@ -120,6 +122,10 @@ def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_
             os.environ.pop("SCIENCE_ARTIFACT_DIR", None)
         else:
             os.environ["SCIENCE_ARTIFACT_DIR"] = orig_artifact
+        if orig_input is None:
+            os.environ.pop("SCIENCE_INPUT_DIR", None)
+        else:
+            os.environ["SCIENCE_INPUT_DIR"] = orig_input
 
     return status, detail
 
@@ -177,9 +183,9 @@ def main():
         if cmd == "EXIT":
             break
         if cmd == "RUN":
-            run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir = parts[1:7]
+            run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir = parts[1:8]
             status, detail = execute_run(
-                global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir
+                global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir
             )
             send(resp, "DONE\t%s\t%s\t%s\t%s" % (run_id, status, detail, ""))
         # Unknown commands are ignored, keeping the driver forward-tolerant

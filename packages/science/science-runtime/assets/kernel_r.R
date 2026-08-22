@@ -5,7 +5,7 @@
 # Invocation: Rscript --vanilla --encoding=UTF-8 kernel_r.R <fifoPath>
 #
 # Frame grammar (single line, tab-separated, newline-terminated):
-#   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>
+#   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
 #   host -> kernel:  EXIT
 #   kernel -> host:  READY\t<protocolVersion=1>\t<pid>
 #   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>
@@ -57,13 +57,14 @@ read_request_line <- function() {
   }
 }
 
-execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir) {
+execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir) {
   orig_cwd <- getwd()
   orig_tmpdir <- Sys.getenv("TMPDIR", unset = NA)
   orig_artifact <- Sys.getenv("SCIENCE_ARTIFACT_DIR", unset = NA)
+  orig_input <- Sys.getenv("SCIENCE_INPUT_DIR", unset = NA)
 
   setwd(cwd)
-  Sys.setenv(TMPDIR = cwd, SCIENCE_ARTIFACT_DIR = artifact_dir)
+  Sys.setenv(TMPDIR = cwd, SCIENCE_ARTIFACT_DIR = artifact_dir, SCIENCE_INPUT_DIR = input_dir)
   # Safety net for an interrupt that unwinds through this function before
   # reaching the explicit restore near the end: on.exit
   # runs on every exit path, including one no tryCatch below protects
@@ -75,6 +76,11 @@ execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir
       Sys.unsetenv("SCIENCE_ARTIFACT_DIR")
     } else {
       Sys.setenv(SCIENCE_ARTIFACT_DIR = orig_artifact)
+    }
+    if (is.na(orig_input)) {
+      Sys.unsetenv("SCIENCE_INPUT_DIR")
+    } else {
+      Sys.setenv(SCIENCE_INPUT_DIR = orig_input)
     }
   }, add = TRUE)
 
@@ -167,6 +173,11 @@ execute_run <- function(source_path, cwd, stdout_path, stderr_path, artifact_dir
   } else {
     Sys.setenv(SCIENCE_ARTIFACT_DIR = orig_artifact)
   }
+  if (is.na(orig_input)) {
+    Sys.unsetenv("SCIENCE_INPUT_DIR")
+  } else {
+    Sys.setenv(SCIENCE_INPUT_DIR = orig_input)
+  }
 
   result$flags <- if (capture_degraded) "capture-degraded" else ""
   result
@@ -186,7 +197,8 @@ repeat {
     stdout_path <- parts[5]
     stderr_path <- parts[6]
     artifact_dir <- parts[7]
-    result <- execute_run(source_path, cwd, stdout_path, stderr_path, artifact_dir)
+    input_dir <- parts[8]
+    result <- execute_run(source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir)
     send(sprintf("DONE\t%s\t%s\t%s\t%s", run_id, result$status, result$detail, result$flags))
   }
   # Unknown commands are ignored, keeping the driver forward-tolerant of

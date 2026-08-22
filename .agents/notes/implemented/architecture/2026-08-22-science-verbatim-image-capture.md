@@ -14,7 +14,11 @@ The attachment store's image admission runs a normalization pipeline (EXIF orien
 
 The strict Science codec keeps rejecting `originalDimensions`: with capture verbatim by construction, a normalized reference reaching a Science event indicates a producer bug, and the strict schema surfaces it loudly rather than admitting silently rewritten evidence.
 
-## What was given up
+## Consequences
+
+Science capture can promise byte-identical evidence while chat uploads retain normalized storage. Callers that require verbatim persistence must opt in for each image, and the attachment store remains responsible for full decode verification and source admission limits on both routes.
+
+## Alternatives considered
 
 - A store-wide or per-store-instance policy toggle: the route is a per-call fact of each submission, so one store serves chat normalization and Science evidence simultaneously.
 - Widening the Science codec to accept normalized references: that would trade the byte-exactness guarantee for tolerance of exactly the rewriting this decision exists to prevent.

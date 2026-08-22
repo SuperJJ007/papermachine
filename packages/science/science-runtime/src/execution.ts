@@ -11,6 +11,7 @@ import type {
   ScienceEnvironmentBinding,
   ScienceInterpreterAvailableBinding,
   ScienceLanguage,
+  ScienceRunArtifactInput,
   ScienceRunStarted,
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
@@ -368,6 +369,7 @@ export async function quiesce(handle: SubprocessHandle): Promise<Quiescence> {
  * @param toolCallId - Still-pending authorization call that owns the run.
  * @param requestHeaderSeq - Durable request-header sequence that owns provenance.
  * @param kernelEpoch - session-local epoch of the kernel that will execute this run (already acquired).
+ * @param inputs - Exact artifact-version inputs materialized for this run.
  * @returns Durable start fields ready for one atomic Session append.
  */
 export function startCandidate(
@@ -378,6 +380,7 @@ export function startCandidate(
   toolCallId: ScienceRunStarted['toolCallId'],
   requestHeaderSeq: number,
   kernelEpoch: number,
+  inputs: readonly ScienceRunArtifactInput[],
 ): ScienceRunStarted {
   return {
     runId: plan.runId,
@@ -390,6 +393,7 @@ export function startCandidate(
     codeSha256: sha256(plan.sourceBytes),
     scratchKey: plan.scratchKey,
     runDirectoryRef: run.ref,
+    ...(inputs.length === 0 ? {} : { inputs }),
     kernelEpoch,
     status: 'running',
   }

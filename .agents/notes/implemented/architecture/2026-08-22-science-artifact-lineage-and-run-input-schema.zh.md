@@ -18,7 +18,7 @@ Science artifact version 记录了生产来源证明，却无法说明一次编�
 
 只有当指定 artifact version 已在同一 Session 中更早提交时，严格 fold 才接受 parent 或 input。Parent 不能指名正在提交的 version，一次就地取代也不能改写该 version 既有的 parent。Terminal run 事实必须逐项、按序原样重复 input 数组。包 invariant 在 commit 前执行这些规则，客户端 projection 与由 witness 验证的 checkpoint 则无损保留两种关系。
 
-`ScienceRuntime.startRun` 尚不写入 `inputs`。读取附件字节、执行可配置的物化限制、写入保留 input 目录，以及分配编辑基线，仍是本决策以外的 Runtime 职责。
+`ScienceRuntime.startRun` 通过独立的 [input 物化与 edit baseline 决策](../feature/2026-08-22-science-runtime-input-materialization-and-edit-baselines.zh.md)产生这些关系。面向模型的工具参数与 receipt 仍是本 schema 决策以外的 Consumer 职责。
 
 ## Alternatives considered
 
@@ -36,7 +36,7 @@ Science artifact version 记录了生产来源证明，却无法说明一次编�
 
 Artifact 谱系与 run 依赖都可以从 Session log 重建，能够跨过 terminal 替换与 projection checkpoint，并在未来的 transcript、viewer、export 与 tool 入口之间共用同一种可序列化 `{artifactId, version}` identity。
 
-该 schema 没有让当前 Runtime 或工具能够到达非空 input。它建立了这些生产方必须满足、明确失败的持久化 authority；其字节移动、限制、错误码与面向模型的 receipt 仍属于独立变更。
+Runtime 已能产生非空 input 与 artifact parent，而该 schema 仍是两者明确失败的持久化 authority。面向模型的工具参数与 receipt 仍属于独立的 Consumer 变更。
 
 ## Testing
 

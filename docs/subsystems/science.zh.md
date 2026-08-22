@@ -8,7 +8,7 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 ## 操作
 
-`bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，在 spawn 前追加不带 artifact input 的 `science/run-started`，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`；物化 artifact input 属于独立的 Runtime 阶段。`commitChart` 只接受由精确 Session 本地启动且已成功的 run，解析其 artifact directory 内的普通非 symlink PNG，通过 `ctx.attachments` 持久化，并在不公开 Host path 的前提下追加带有 `origin: 'model'` 的下一条不可变 logical artifact version。同一活 Session 上的第二项 Runtime 操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。
+`bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，通过经过校验的附件读取解析可选的 artifact-version input，把它们物化到保留的 `inputs/` 目录下，在 `science/run-started` 上追加完整映射，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。可选 edit baseline 会在 terminal 之后的捕获遍历中指定精确 `parent` 引用，包括陈旧分支与跨 artifact 分支。`commitChart` 只接受由精确 Session 本地启动且已成功的 run，解析其 artifact directory 内的普通非 symlink PNG，通过 `ctx.attachments` 持久化，并在不公开 Host path 的前提下追加带有 `origin: 'model'` 的下一条不可变 logical artifact version。同一活 Session 上的第二项 Runtime 操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。
 
 注册给客户端的 projection 与完整 Host replay 分离。它保留无 path 的 environment 摘要、run status/history（包括存在时的精确 artifact-version input）、带可选精确 parent identity 的 artifact 附件引用、最新 Outcome 与 metrics，同时省略 prefix/executable path、完整 fingerprint、source/scratch fact、授权 request identity，以及 Runtime free-text failure。严格 fold 与 pre-commit invariant 要求每个已记录的 parent 和 input 都解析到更早提交的 artifact version；自 parent 与 terminal 对 start-owned input 的改写会明确失败。
 
@@ -39,10 +39,10 @@ Folded local Science Runtime provider with public types free of Host paths.
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
 
 /**
- * Acquire this run's persistent kernel, publish its run start,
- * then settle exactly one matching terminal fact through the acquired
- * kernel's own RUN/DONE protocol exchange.
- * @param request - Exact live Session, source, authorization facts, and cancellation.
+ * Resolve and materialize exact artifact inputs, acquire this run's
+ * persistent kernel, publish its run start, then settle exactly one
+ * matching terminal fact and baseline-attributed capture walk.
+ * @param request - Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>

@@ -1326,6 +1326,32 @@ describe('Science Runtime configuration', () => {
     expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
   })
 
+  it('validates artifact-input count and aggregate-byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 0,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1_001,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 0,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 1_073_741_825,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1,
+    })).toMatchObject({ inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } },
+      inputMaxFilesPerRun: 1_000,
+      inputMaxBytesPerRun: 1_073_741_824,
+    })).toMatchObject({ inputMaxFilesPerRun: 1_000, inputMaxBytesPerRun: 1_073_741_824 })
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.inputMaxFilesPerRun).toBe(20)
+    expect(resolved.inputMaxBytesPerRun).toBe(50 * 1024 * 1024)
+  })
+
   it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 59_999,

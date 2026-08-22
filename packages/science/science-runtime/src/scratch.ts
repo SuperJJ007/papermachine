@@ -56,6 +56,8 @@ export interface ScienceRunScratch {
   readonly source: string
   /** Owned artifact directory. */
   readonly artifacts: string
+  /** Reserved artifact-input directory, absent until a run requests inputs. */
+  readonly inputs: string
   /** Per-run stdout capture file path the RUN frame names. */
   readonly stdout: string
   /** Per-run stderr capture file path the RUN frame names. */
@@ -467,9 +469,56 @@ export function planRunScratch(
     directory,
     source: join(directory, language === 'python' ? 'code.py' : 'code.R'),
     artifacts: join(directory, 'artifacts'),
+    inputs: join(directory, 'inputs'),
     stdout: join(directory, 'stdout.txt'),
     stderr: join(directory, 'stderr.txt'),
   }
+}
+
+/** One validated artifact input ready for byte-exact scratch materialization. */
+export interface ScienceRunInputBytes {
+  /** Forward-slash relative path below the run's reserved `inputs/` directory. */
+  readonly path: string
+  /** Attachment-store-verified immutable bytes. */
+  readonly data: Uint8Array
+}
+
+/**
+ * Materialize validated artifact inputs byte-exactly below one unpublished
+ * run's reserved `inputs/` directory.
+ * @param run - Exact unpublished run tree that owns the input directory.
+ * @param inputs - Validated non-colliding relative paths and verified bytes.
+ * @returns completion after every file and containing directory are flushed.
+ */
+export async function materializeRunInputs(
+  run: ScienceRunScratch,
+  inputs: readonly ScienceRunInputBytes[],
+): Promise<void> {
+  if (inputs.length === 0) return
+  await createPrivateDirectory(run.inputs)
+  const createdDirectories = new Set<string>([run.inputs])
+  for (const input of inputs) {
+    const target = join(run.inputs, ...input.path.split('/'))
+    /* v8 ignore next 3 -- prepareRunArtifacts admits no empty, dot, parent, or absolute path before this private writer is called */
+    if (!containsPath(run.inputs, target) || target === run.inputs) {
+      throw new Error('science-runtime: validated input path escaped the owned input directory')
+    }
+    const parent = dirname(target)
+    const missing: string[] = []
+    for (let directory = parent; !createdDirectories.has(directory); directory = dirname(directory)) {
+      /* v8 ignore next 3 -- every parent is derived from the already-contained validated target above */
+      if (!containsPath(run.inputs, directory) || directory === dirname(directory)) {
+        throw new Error('science-runtime: validated input parent escaped the owned input directory')
+      }
+      missing.push(directory)
+    }
+    for (const directory of missing.reverse()) {
+      await createPrivateDirectory(directory)
+      createdDirectories.add(directory)
+    }
+    await writePrivateFile(target, input.data)
+  }
+  await syncDirectory(run.inputs)
 }
 
 /**

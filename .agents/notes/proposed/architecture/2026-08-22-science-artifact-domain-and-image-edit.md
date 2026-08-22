@@ -10,7 +10,7 @@ Science needs its first human content operation — region-selected image editin
 
 This note assumes the upstream `dsh-v0.1.1-rc.2` merge as its base: multimodal DeepSeek messages (`image_url` content parts), the unified image attachment pipeline, and composer mentions all exist there.
 
-## Decision summary
+## Proposal
 
 1. **The persistent kernel drivers do not change.** `kernel_python.py` / `kernel_r.R`, the six-field `RUN` frame, the FIFO response channel, fd-level output redirection, `SIGINT` interrupt semantics, and per-run `SCIENCE_ARTIFACT_DIR` stay at protocol version 1. The Host owns a run's private directory before it sends `RUN`, so every new capability lands Host-side around the kernel, never inside it.
 2. **Artifact identity is the interaction currency.** Every entry point — transcript rows, gallery, viewer tabs, future library and mentions — exchanges a serializable selection `{artifactId, version}` (plus an explicit follow-latest flag where live-following is genuinely wanted). No entry point reconstructs artifact state from filenames, tool result text, or a private card cache. This is the rule that makes Claude Science's surfaces read as one product, adopted before DSH grows more entry points.
@@ -84,7 +84,22 @@ Each slice updates READMEs/JSDoc in the same PR, holds per-file coverage, and ad
 5. **S5 — notebook export.** Deterministic full/sliced bundle ZIP (`manifest.json`, `README.md`, `run.sh`, per-kernel `.ipynb`, referenced inputs/outputs) as a pure projection; no Artifact is created unless the user explicitly saves the bundle.
 6. **Deferred.** Project artifact catalog seam, folders/copy/rename, anchored annotations, verification records (designed with the Reviewer), retention/GC.
 
-## Rejected shortcuts
+## Acceptance criteria
+
+- S1 records and strictly validates ancestry and exact run inputs in the durable Science session schema.
+- S2 materializes bounded, collision-free inputs outside the capture directory, records them on `science/run-started`, preserves captured bytes exactly, and assigns explicit existing, stale, and cross-artifact edit baselines.
+- S3 exposes the runtime fields through both run tools and proves model-visible receipts with a keyless assembled-app snapshot.
+- S4 emits a durable structured edit message from an exact viewer version and proves the real server/model flow with a GIF.
+- S5 exports deterministic full and sliced notebook bundles strictly as projections over durable events and transcript calls.
+
+## Risks
+
+- A caller that follows latest implicitly can edit or cite different evidence from the version the user selected; every entry point must keep exact-version selection explicit.
+- Materialized paths or byte budgets implemented inconsistently across tools and Runtime could weaken the pre-dispatch guarantees; the Runtime remains the single enforcement owner.
+- Notebook or project-library work could introduce a second durable history; those surfaces must remain projections or use the deferred catalog seam explicitly.
+- Discipline preset copies can drift as the Science roster changes; an authoring helper is deferred only while the number of copies stays small.
+
+## Alternatives considered
 
 - **Filename as identity** — rename, copy, and cross-artifact branching all require ids independent of paths and display names.
 - **Advancing a content version on title/caption changes** — curation stays metadata; readers keep a duplicate-free history.

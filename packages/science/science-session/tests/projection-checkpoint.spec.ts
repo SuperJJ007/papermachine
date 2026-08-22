@@ -10,7 +10,7 @@ import {
   scienceProjectionStateSeq,
   viewScienceProjectionState,
 } from '../src/projection.ts'
-import { replayScience, toClientScienceProjection } from '../src/index.ts'
+import { replayScience, ScienceArtifactId, ScienceRunId, toClientScienceProjection } from '../src/index.ts'
 import type {
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -19,6 +19,8 @@ import type {
 import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
+  ARTIFACT_ID,
+  artifact,
   event,
   kernelExited,
   kernelStarted,
@@ -26,6 +28,7 @@ import {
   outcome,
   runStarted,
   runTerminal,
+  toolCall,
 } from './fixtures.ts'
 
 function projectState(events: readonly SessionEvent[]): ScienceProjectionState {
@@ -150,6 +153,44 @@ describe('Science private projection checkpoint', () => {
       irrelevant,
     ])))
     expect(scienceProjectionStateSchema.safeParse(observed).success).toBe(true)
+  })
+
+  it('round-trips artifact ancestry and run inputs through the witness-backed checkpoint', () => {
+    const branchCall = CallId('checkpoint-branch-call')
+    const branchId = ScienceArtifactId('checkpoint-branch')
+    const parent = { artifactId: ARTIFACT_ID, version: 1 }
+    const runCall = CallId('checkpoint-input-run')
+    const inputs = [{ artifactId: branchId, version: 1, path: 'source/branch.png' }]
+    const events: SessionEvent[] = [
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 175, branchCall, 'annotate_artifact'),
+      event('science/artifact-saved', 10, 180, {
+        version: 1,
+        artifact: artifact({
+          artifactId: branchId,
+          logicalName: 'checkpoint-branch.png',
+          parent,
+          toolCallId: branchCall,
+          createdAt: 179,
+        }),
+      }),
+      toolCall(11, 185, runCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 12, 190, {
+        version: 1,
+        run: runStarted({
+          runId: ScienceRunId('checkpoint-input-run'),
+          toolCallId: runCall,
+          startedAt: 189,
+          runDirectoryRef: 'runs/checkpoint-input-run/',
+          inputs,
+        }),
+      }),
+    ]
+
+    const state = projectState(events)
+    expect(scienceProjectionStateSchema.safeParse(state).success).toBe(true)
+    expect(viewScienceProjectionState(state)?.artifacts.at(-1)).toMatchObject({ parent })
+    expect(viewScienceProjectionState(state)?.runs.at(-1)).toMatchObject({ inputs })
   })
 
   it('rejects checkpoint witnesses that cannot replay to the public value', () => {

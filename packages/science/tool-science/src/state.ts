@@ -150,7 +150,7 @@ function stateEnvironment(environment: ScienceEnvironmentBinding | null): Scienc
 function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
   if (!('failureMessage' in run)) return run as unknown as JsonValue
   const { failureMessage: _failureMessage, ...safe } = run
-  return safe
+  return safe as unknown as JsonValue
 }
 
 /**

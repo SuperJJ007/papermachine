@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { replayScience, toClientScienceProjection } from '../src/index.ts'
+import { replayScience, ScienceArtifactId, ScienceRunId, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   ARTIFACT_CALL_ID,
@@ -9,9 +10,13 @@ import {
   PACKAGES_SHA,
   RUN_CALL_ID,
   RUN_ID,
+  artifact,
   event,
   kernelExited,
   legalEvents,
+  runStarted,
+  runTerminal,
+  toolCall,
 } from './fixtures.ts'
 
 describe('Science projection replay', () => {
@@ -59,6 +64,57 @@ describe('Science projection replay', () => {
 
   it('returns null before Science mode is bound', () => {
     expect(toClientScienceProjection(replayScience([]))).toBeNull()
+  })
+
+  it('projects exact artifact parents and run inputs to clients', () => {
+    const branchCall = CallId('projection-branch-call')
+    const branchId = ScienceArtifactId('projection-branch')
+    const parent = { artifactId: ARTIFACT_ID, version: 1 }
+    const runCall = CallId('projection-input-run')
+    const inputs = [{ artifactId: branchId, version: 1, path: 'reference/branch.png' }]
+    const events: SessionEvent[] = [
+      ...legalEvents().slice(0, 9),
+      toolCall(9, 175, branchCall, 'annotate_artifact'),
+      event('science/artifact-saved', 10, 180, {
+        version: 1,
+        artifact: artifact({
+          artifactId: branchId,
+          logicalName: 'projection-branch.png',
+          parent,
+          toolCallId: branchCall,
+          createdAt: 179,
+        }),
+      }),
+      toolCall(11, 185, runCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 12, 190, {
+        version: 1,
+        run: runStarted({
+          runId: ScienceRunId('projection-input-run'),
+          toolCallId: runCall,
+          startedAt: 189,
+          runDirectoryRef: 'runs/projection-input-run/',
+          inputs,
+        }),
+      }),
+    ]
+
+    const client = toClientScienceProjection(replayScience(events))!
+    expect(client.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
+    expect(client.runs.at(-1)).toMatchObject({ inputs })
+    expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
+  })
+
+  it('retains a legacy run whose durable events predate artifact inputs', () => {
+    const events = legalEvents()
+    const { inputs: _startedInputs, ...started } = runStarted()
+    const { inputs: _terminalInputs, ...finished } = runTerminal()
+    events[5] = event('science/run-started', 5, 140, { version: 1, run: started })
+    events[6] = event('science/run-finished', 6, 150, { version: 1, run: finished })
+
+    const client = toClientScienceProjection(replayScience(events))!
+    expect(client.runs).toHaveLength(1)
+    expect(client.runs[0]).not.toHaveProperty('inputs')
+    expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
   })
 
   it('exposes kernel history and kernelCount, redacting the full environment fingerprint to a preview', () => {

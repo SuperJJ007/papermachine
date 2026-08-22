@@ -6,6 +6,7 @@ import type { DecodedScienceDomainEvent } from './codec.ts'
 import { scienceRunsShareTurn } from './fold-state.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
 import type {
+  ScienceArtifactVersionRef,
   ScienceEnvironmentBinding,
   ScienceKernel,
   ScienceKernelState,
@@ -13,6 +14,22 @@ import type {
   ScienceRun,
   ScienceRunIdentity,
 } from './types.ts'
+
+function sameArtifactVersionRef(
+  left: ScienceArtifactVersionRef | undefined,
+  right: ScienceArtifactVersionRef | undefined,
+): boolean {
+  return left === undefined
+    ? right === undefined
+    : right !== undefined && left.artifactId === right.artifactId && left.version === right.version
+}
+
+function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): void {
+  if (!state.artifacts.some(candidate =>
+    candidate.artifactId === ref.artifactId && candidate.version === ref.version)) {
+    throw new Error(`${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`)
+  }
+}
 
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
   const latest = state.requestHeaders.at(-1)
@@ -101,6 +118,8 @@ function commitScienceTime(state: ScienceFoldState, event: Pick<SessionEvent, 's
 }
 
 function sameRunIdentity(started: ScienceRunIdentity, terminal: ScienceRunIdentity): boolean {
+  const startedInputs = started.inputs ?? []
+  const terminalInputs = terminal.inputs ?? []
   return started.runId === terminal.runId
     && started.language === terminal.language
     && started.toolCallId === terminal.toolCallId
@@ -111,6 +130,14 @@ function sameRunIdentity(started: ScienceRunIdentity, terminal: ScienceRunIdenti
     && started.codeSha256 === terminal.codeSha256
     && started.scratchKey === terminal.scratchKey
     && started.runDirectoryRef === terminal.runDirectoryRef
+    && startedInputs.length === terminalInputs.length
+    && startedInputs.every((input, index) => {
+      const other = terminalInputs[index]
+      return other !== undefined
+        && input.artifactId === other.artifactId
+        && input.version === other.version
+        && input.path === other.path
+    })
     && started.kernelEpoch === terminal.kernelEpoch
 }
 
@@ -143,6 +170,7 @@ function applyRunStarted(state: ScienceFoldState, event: Extract<DecodedScienceD
   if (state.runs.some(candidate => candidate.status === 'running')) {
     throw new Error('only one Science run may be running in a session')
   }
+  for (const input of run.inputs ?? []) requireArtifactVersion(state, input, 'Science run input')
   const environment = requireLatestAppliedBinding(state, run.environmentRevision, run.language, run.environmentFingerprint, 'Science run')
   requireOpenKernelEpoch(state, run)
   const requestHeader = requireRequestHeader(state, run.requestHeaderSeq)
@@ -191,6 +219,12 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
 function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/artifact-saved' }>): void {
   if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
   const artifact = event.data.artifact
+  if (artifact.parent !== undefined) {
+    if (artifact.parent.artifactId === artifact.artifactId && artifact.parent.version === artifact.version) {
+      throw new Error('Science artifact parent cannot name the version being committed')
+    }
+    requireArtifactVersion(state, artifact.parent, 'Science artifact parent')
+  }
   const source = state.runs.find(candidate => candidate.runId === artifact.runId)
   if (source === undefined || source.status === 'running' || source.status === 'interrupted') {
     throw new Error('Science artifact must reference a run that reached a terminal status')
@@ -250,6 +284,9 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   } else {
     if (artifact.artifactId !== target.artifactId || artifact.createdAt < target.createdAt) {
       throw new Error('artifact versions must retain artifactId and advance contiguously')
+    }
+    if (!sameArtifactVersionRef(artifact.parent, target.parent)) {
+      throw new Error('a superseding Science artifact cannot rewrite its parent')
     }
     const targetSource = state.runs.find(candidate => candidate.runId === target.runId)
     /* v8 ignore next -- strict replay admits every projected artifact only after its source run, and target came from this exact fold */

@@ -423,19 +423,30 @@ export function attachScienceSession(ctx: Context, id: string, seed?: readonly i
   return { session, detach }
 }
 
-/** Append the request/header and a named tool-call fact that authorizes one direct Science mutation. */
+/**
+ * The next fresh turn number for one more {@link authorizeToolCall} in this
+ * session: one past however many `step/start` facts already exist, the only
+ * source of `step/start` in this harness (`authorizeRunInTurn`-style helpers
+ * that stay inside an already-open turn append `tool/call` alone).
+ */
+function nextFreshTurn(session: Session): number {
+  return session.events.filter(event => event.type === 'step/start').length + 1
+}
+
+/** Append the request/header and a named tool-call fact that authorizes one direct Science mutation, opening a fresh turn every call. */
 function authorizeToolCall(session: Session, name: string, id: string): {
   readonly toolCallId: ReturnType<typeof CallId>
   readonly requestHeaderSeq: number
 } {
-  session.append('step/start', { turn: 1, step: 1 })
+  const turn = nextFreshTurn(session)
+  session.append('step/start', { turn, step: 1 })
   const header = session.append('request/header', {
     header: { config: { provider: 'test', model: 'test-model' } },
     reason: 'initial',
   })
   const toolCallId = CallId(id)
   session.append('tool/call', {
-    turn: 1,
+    turn,
     step: 1,
     callId: toolCallId,
     name,

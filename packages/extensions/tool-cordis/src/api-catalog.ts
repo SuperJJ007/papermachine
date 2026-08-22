@@ -4133,7 +4133,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SaveImageAttachment',
-    declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
+    declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n    normalization?: \'normalize\' | \'verbatim\';\n}',
   },
   {
     name: 'SaveTextAttachment',

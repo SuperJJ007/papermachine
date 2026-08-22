@@ -89,9 +89,13 @@ export interface PreparedImageFile {
 
 /**
  * Decode, normalize, and verify one submitted image without touching storage.
- * @param input - submitted encoded bytes and declared media type.
+ * A `'verbatim'` submission skips normalization entirely after the same
+ * decode verification and source admission limits: the returned bytes are the
+ * submitted bytes, digested as-is, and the reference carries the detected
+ * dimensions with no `originalDimensions`.
+ * @param input - submitted encoded bytes, declared media type, and admission route.
  * @param limits - source admission policy.
- * @param policy - independent normalization policy.
+ * @param policy - independent normalization policy; unused for a verbatim submission.
  * @returns immutable reference facts beside bytes ready for atomic publication.
  */
 export async function prepareImageFile(
@@ -103,6 +107,21 @@ export async function prepareImageFile(
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
   const detected = await inspectMetadata(input.data, input.mediaType, limits)
+  if (input.normalization === 'verbatim') {
+    const sha256 = digest(input.data)
+    const name = displayName(input.name)
+    return {
+      data: input.data,
+      ref: {
+        attachmentId: AttachmentId(`sha256:${sha256}`),
+        mediaType: detected.mediaType,
+        width: detected.width,
+        height: detected.height,
+        bytes: input.data.byteLength,
+        ...(name !== undefined ? { name } : {}),
+      },
+    }
+  }
   const normalized = await normalizeImage(input.data, detected, policy)
   const sha256 = digest(normalized.data)
   const name = displayName(input.name)

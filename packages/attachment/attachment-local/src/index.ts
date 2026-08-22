@@ -32,6 +32,7 @@ export { readRequestImageFile, requestImageDimensions, requestImageVariantId } f
 export const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 /** Default maximum images in one prompt. */
 export const DEFAULT_MAX_IMAGES_PER_MESSAGE = 20
+/** Default maximum aggregate encoded bytes across every image in one message. */
 export const DEFAULT_MAX_MESSAGE_IMAGE_BYTES = 200 * 1024 * 1024
 /** Default maximum intrinsic pixels for one submitted image. */
 export const DEFAULT_MAX_IMAGE_PIXELS = 64_000_000

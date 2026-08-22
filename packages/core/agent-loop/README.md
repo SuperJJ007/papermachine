@@ -59,6 +59,8 @@ The unified `send()` primitive routes content and source by (`target` × `wakeup
 
 Every inbox mutation publishes one normalized `agent/inbox/spliced` event before changing the live projection. Insertions, edits, removals, claiming, and cancellation replay through the same standard splice coordinates. Ordinary removals carry `outcome: 'canceled'` and emit `agent/inbox/discarded { message }`; claiming uses pure deletions with no outcome, after which the loop emits `agent/inbox/claimed`. Every insertion emits `agent/inbox/inserted { message }`. `MessageId` stays unique across both pending lists, and synchronous durable-event observers can reconstruct removed values from the pre-splice projection.
 
+<a id="loop-lifecycle-agentts"></a>
+
 ### Loop lifecycle (`agent.ts`)
 
 The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. Package-private orchestration entry points recover the exact Agent, derive `agent.session` once, and let operation-local helpers capture it instead of forwarding the concrete driver or per-operation `Session` through shallow interfaces. A helper keeps an explicit `Session` when that is its actual interface, while creation, persistence load, unpublished setup, services, workers, processes, persistence, and wire protocols retain their explicit identities. The [agent service](../agent/README.md#initiating-agent-scope) owns propagation, teardown, and detached-work rules.

@@ -216,9 +216,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /** Select a registered `conversation.details.view` entry and open the Details column. */\n  openDetailsView: (id: string) => void\n}',
+      '/** Stable owner currency delivered to one keyed Chat business renderer. */\nexport interface ChatNodeOwnerProps {\n  /** Selected Tool call, when the shared details store names one. */\n  selectedCallId?: CallId | undefined\n  /** Session workspace root; Tool summaries display paths relative to it. */\n  cwd?: string | undefined\n  openFile: (path: string) => void\n  inspectCall: (callId: CallId) => void\n  forkAt: (seq: number) => void\n  /** Render a historical image group through the attachment slot. */\n  renderMessageImages: RenderMessageImages\n  fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined\n  /** Select a registered `conversation.details.view` entry and open the Details column. */\n  openDetailsView: (id: string) => void\n  /**\n   * Resolve a session-authorized historical image for inline display, for a\n   * business row that renders one on its own (outside `renderMessageImages`).\n   */\n  loadImage: (attachment: ImageAttachmentRef) => Promise<string>\n}',
     ],
     ownerPropsReferences: [
+      'ImageAttachmentRef',
       'MarkdownFileMentions',
       'RenderMessageImages',
       'TurnTailOwnerProps',

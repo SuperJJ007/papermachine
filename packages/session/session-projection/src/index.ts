@@ -260,23 +260,29 @@ export class SessionProjectionRegistry extends Service {
       viewSchema: ZodType
       view(state: S): unknown
     } | undefined
+    const checkpointStateSchema = definition.checkpointStateSchema
     const checkpointStateSeq = definition.checkpointStateSeq
     const viewChanged = definition.viewChanged
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
-      checkpointStateSchema: definition.checkpointStateSchema,
-      checkpointStateSeq: checkpointStateSeq === undefined
-        ? undefined
-        : state => checkpointStateSeq(state as S),
+      // `checkpointStateSchema`/`checkpointStateSeq`/`viewChanged` are optional
+      // (`foo?: T`) on `ErasedDefinition`, not `foo: T | undefined`; under
+      // `exactOptionalPropertyTypes` an explicit `undefined` value is rejected
+      // for an optional property, so an absent source omits the key entirely
+      // instead of assigning `undefined` through it.
+      ...(checkpointStateSchema === undefined ? {} : { checkpointStateSchema }),
+      ...(checkpointStateSeq === undefined ? {} : {
+        checkpointStateSeq: (state: unknown) => checkpointStateSeq(state as S),
+      }),
       init: () => definition.init(),
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
         : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
-      viewChanged: viewChanged === undefined
-        ? undefined
-        : (previous, next) => viewChanged(previous as S, next as S),
+      ...(viewChanged === undefined ? {} : {
+        viewChanged: (previous: unknown, next: unknown) => viewChanged(previous as S, next as S),
+      }),
       stateVersion: definition.stateVersion,
     }
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {

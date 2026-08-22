@@ -274,11 +274,13 @@ restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
 
 /**
  * View a checkpoint's rows without any log read: for every registered
- * client-visible unit whose row's `ver` matches, serve the schema-validated
- * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
+ * client-visible unit whose row's `ver` matches and whose private state
+ * passes optional admission (schema-validated, and watermark-checked when
+ * the unit supplies `checkpointStateSeq`), serve the schema-validated
+ * `view`; mismatched, malformed, rejected, or absent rows leave their key
  * absent (a cold or listing consumer treats it as not-yet-available and a
  * fuller read path refolds it). The zero-I/O rung of the read ladder —
- * values are as stale as their rows, never wrong.
+ * admitted values are as stale as their rows, never wrong.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @returns whole values per key with a usable row; empty when none.
  */

@@ -19,7 +19,7 @@
 
 import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import type { ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 
 /** Resolves one durable text attachment to its decoded UTF-8 content, mirroring `ImageLoader` for the text family. */
 export type TextLoader = (attachment: TextAttachmentRef) => Promise<string>

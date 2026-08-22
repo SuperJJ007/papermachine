@@ -188,7 +188,10 @@ export interface Config {
 export interface PresetRoot {
   /** Directory holding one subdirectory per preset; a leading `~` expands. */
   path: string
-  /** Trust recorded on every preset discovered under this root. */
+  /**
+   * Trust recorded on every preset discovered under this root. System presets
+   * must provide valid metadata; user presets may omit the metadata file.
+   */
   trust: PresetTrust
 }
 
@@ -200,7 +203,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-Source: [`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+Source: [`packages/preset/agent-presets/src/preset.ts:61`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-spine-demo"></a>
 
@@ -343,10 +346,12 @@ export interface Config {
   normalizedImageMaxBytes?: number
   /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
+  /** Maximum encoded UTF-8 bytes accepted for one text file. */
+  maxTextBytes?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:51`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:56`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -393,7 +398,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
-Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
+Source: [`packages/shell/bash-sandbox/src/index.ts:40`](../packages/shell/bash-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -795,7 +800,7 @@ Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-c
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessionAttachments` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -1587,7 +1592,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-pwsh-local)
 
-Source: [`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-sandbox/src/index.ts)
+Source: [`packages/shell/pwsh-sandbox/src/index.ts:45`](../packages/shell/pwsh-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 
@@ -1681,6 +1686,71 @@ export interface Config {
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
 Source: [`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
+
+<a id="deepseek-aidsh-science-runtime"></a>
+
+## `@deepseek-ai/dsh-science-runtime`
+
+Requires: `attachments` · `sessions` · `subprocess` · `sandbox`
+
+```ts config-catalog
+/** Runtime configuration supplied by one Cordis row. */
+export interface Config {
+  /** Explicit Harness home; omitted follows the shared resolver. */
+  readonly dshHome?: string
+  /**
+   * Map of profile identifiers to existing language prefixes. An empty map
+   * is a valid explicit unconfigured state — for example a deployment that
+   * defers every profile to the restart-scoped `science-runtime` settings
+   * namespace.
+   */
+  readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
+  /** One caller-independent bound for bind and run operations. */
+  readonly timeoutMs?: number
+  /**
+   * Maximum package-inventory entries retained per observed interpreter.
+   * An inventory exceeding this cap is truncated and flagged; the digest
+   * still covers the complete pre-truncation inventory.
+   */
+  readonly packagesMaxEntries?: number
+  /**
+   * Maximum package-inventory UTF-8 bytes (summed name and version) retained
+   * per observed interpreter. An inventory exceeding this cap is truncated
+   * and flagged; the digest still covers the complete pre-truncation
+   * inventory.
+   */
+  readonly packagesMaxBytes?: number
+  /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
+  readonly captureMaxFileBytes?: number
+  /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
+  readonly captureMaxFilesPerRun?: number
+  /**
+   * Maximum artifact versions a session accumulates through auto-capture
+   * before it stops appending further versions, truncated and flagged.
+   */
+  readonly captureMaxArtifactVersionsPerSession?: number
+  /**
+   * Idle deadline after a persistent kernel's last `DONE` before the
+   * Runtime ends it with reason `idle`; disarmed while a run is in flight.
+   */
+  readonly kernelIdleTimeoutMs?: number
+  /**
+   * Deadline from a persistent kernel's spawn to its `READY` handshake;
+   * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
+   */
+  readonly kernelStartTimeoutMs?: number
+}
+
+/** One allowlisted existing Conda prefix. */
+export interface ScienceEnvironmentProfileConfig {
+  /** Existing prefix containing `bin/python` or `python.exe`. */
+  readonly pythonPrefix?: string
+  /** Existing prefix containing `bin/Rscript` or `Scripts/Rscript.exe`. */
+  readonly rPrefix?: string
+}
+```
+
+Source: [`packages/science/science-runtime/src/config.ts:73`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
@@ -2563,7 +2633,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-fs/src/index.ts:25`](../packages/fs/tool-fs/src/index.ts)
+Source: [`packages/fs/tool-fs/src/config.ts:15`](../packages/fs/tool-fs/src/config.ts)
 
 <a id="deepseek-aidsh-tool-fs-search"></a>
 
@@ -2729,6 +2799,26 @@ export interface Config {
 ```
 
 Source: [`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+Requires: `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Required deployment identity and model-facing history bound. */
+export interface Config {
+  /** Runtime allowlist profile this Consumer binds on first use. */
+  readonly profileId: string
+  /** Deployment-owned Science mode contract revision. */
+  readonly modeRevision: string
+  /** Maximum recent runs and chart versions returned by `get_science_state`, per collection. */
+  readonly stateHistoryLimit: number
+}
+```
+
+Source: [`packages/science/tool-science/src/config.ts:14`](../packages/science/tool-science/src/config.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 
@@ -3248,6 +3338,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-science` ([`packages/client/ui-science/src/index.ts`](../packages/client/ui-science/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
@@ -3276,7 +3367,9 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
+- `@deepseek-ai/dsh-science-session` ([`packages/science/science-session/src/index.ts`](../packages/science/science-session/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
+- `@deepseek-ai/dsh-session-attachment-index` ([`packages/session/session-attachment-index/src/index.ts`](../packages/session/session-attachment-index/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
 - `@deepseek-ai/dsh-session-log-export` — requires `commands` ([`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts))
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
@@ -3325,6 +3418,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
+- `@deepseek-ai/dsh-byte-size` ([`packages/util/byte-size/src/index.ts`](../packages/util/byte-size/src/index.ts))
 - `@deepseek-ai/dsh-client-test-runtime` ([`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-primitives` ([`packages/client/ui-primitives/src/index.ts`](../packages/client/ui-primitives/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-slots` ([`packages/client/ui-slots/src/index.ts`](../packages/client/ui-slots/src/index.ts))

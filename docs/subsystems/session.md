@@ -691,7 +691,7 @@ collectReferencedTexts(events: Iterable<ExtractableEvent>): ReadonlyMap<string, 
 
 Types: [ImageAttachmentRef](attachment.md) · [TextAttachmentRef](attachment.md)
 
-Source: [`packages/session/session-attachment-index/src/index.ts:80`](../../packages/session/session-attachment-index/src/index.ts)
+Source: [`packages/session/session-attachment-index/src/index.ts`](../../packages/session/session-attachment-index/src/index.ts)
 
 <a id="ctxsessions--sessionstore"></a>
 

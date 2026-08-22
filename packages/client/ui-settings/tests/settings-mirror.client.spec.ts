@@ -19,7 +19,7 @@ function rejected<T>(message: string): RpcResponse<T> {
 }
 
 function view(ns: string, revision = 0): SettingsNamespaceView {
-  return { ns, schema: {}, value: { field: ns }, applies: 'live', secrets: [], revision }
+  return { ns, schema: {}, value: { field: ns }, effective: { field: ns }, applies: 'live', secrets: [], revision }
 }
 
 function described(namespaces: SettingsNamespaceView[]): RpcResponse<SettingsDescribeView> {

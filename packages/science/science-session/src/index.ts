@@ -74,12 +74,12 @@ export function apply(ctx: Context): void {
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'science', ScienceProjectionState>({
       key: 'science',
-      schema: scienceProjectionSchema,
+      stateSchema: scienceProjectionStateSchema,
       checkpointStateSchema: scienceProjectionStateSchema,
       checkpointStateSeq: scienceProjectionStateSeq,
       init: emptyScienceProjectionState,
       apply: applyScienceProjectionState,
-      view: viewScienceProjectionState,
+      wire: { viewSchema: scienceProjectionSchema, view: viewScienceProjectionState },
       viewChanged: scienceProjectionChanged,
       stateVersion: SCIENCE_PROJECTION_STATE_VERSION,
     })

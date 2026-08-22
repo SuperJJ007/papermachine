@@ -36,7 +36,11 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-tool",
         "@deepseek-ai/dsh-client-ui-settings-plugins",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-attachment"
+      ],
+      "external": [
+        "@deepseek-ai/dsh-client-ui-attachment/client"
       ],
       "platform": "web"
     }

@@ -442,6 +442,7 @@ export function ChatView({
               renderMessageImages={renderMessageImages}
               fileMentions={fileMentions}
               openDetailsView={openDetailsView}
+              loadImage={loadImage}
               renderSlot={renderSlot}
               t={t}
             />

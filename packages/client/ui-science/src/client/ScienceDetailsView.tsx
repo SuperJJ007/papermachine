@@ -23,7 +23,7 @@
 // states below are unrelated to that strip and are unchanged.
 
 import { useEffect, useState } from 'react'
-import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText,

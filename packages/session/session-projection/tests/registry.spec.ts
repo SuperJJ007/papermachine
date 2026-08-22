@@ -15,14 +15,19 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '../src/index.ts'
 import type { ProjectionDefinition } from '../src/index.ts'
 
+/** Checkpoint state carries its own watermark and needs schema admission. */
+type WatermarkedState = { readonly label: string; readonly seq: number }
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     'test/marks': MarksState
     'test/count': number
+    'test/watermarked': WatermarkedState
   }
 
   interface SessionProjectionMap {
     'test/marks': { marks: string[] }
+    'test/watermarked': { marks: string[] }
   }
 }
 
@@ -418,18 +423,20 @@ describe('SessionProjectionRegistry drive', () => {
     expect(() => ctx.sessionProjections.snapshot(session)).toThrow()
   })
 
-  /** Checkpoint state carries its own watermark and needs schema admission. */
-  type WatermarkedState = { readonly label: string; readonly seq: number }
-  const watermarkedUnit = (): ProjectionDefinition<'test/marks', WatermarkedState> => ({
-    key: 'test/marks',
-    schema: z.object({ marks: z.array(z.string()) }),
+  const watermarkedUnit = (): Omit<ProjectionDefinition<'test/watermarked', WatermarkedState>, 'wire'>
+    & { wire: NonNullable<ProjectionDefinition<'test/watermarked', WatermarkedState>['wire']> } => ({
+    key: 'test/watermarked',
+    stateSchema: z.object({ label: z.string(), seq: z.number() }).strict(),
     checkpointStateSchema: z.object({ label: z.string(), seq: z.number() }).strict(),
     checkpointStateSeq: state => state.seq,
     init: () => ({ label: '', seq: -1 }),
     apply: (state, event) => event.type === 'test/mark'
       ? { label: (event).data.marks.join(','), seq: event.seq }
       : state,
-    view: state => ({ marks: state.label === '' ? [] : state.label.split(',') }),
+    wire: {
+      viewSchema: z.object({ marks: z.array(z.string()) }),
+      view: state => ({ marks: state.label === '' ? [] : state.label.split(',') }),
+    },
     stateVersion: 1,
   })
 
@@ -438,26 +445,26 @@ describe('SessionProjectionRegistry drive', () => {
     ctx.sessionProjections.register(watermarkedUnit())
     const event = mark(session, ['a', 'b'])
     const rows = ctx.sessionProjections.checkpoint(session)
-    expect(rows['test/marks']).toEqual({ ver: 1, seq: event.seq, val: { label: 'a,b', seq: event.seq } })
+    expect(rows['test/watermarked']).toEqual({ ver: 1, seq: event.seq, val: { label: 'a,b', seq: event.seq } })
     // Zero-I/O view of that exact row serves the derived public value.
-    expect(ctx.sessionProjections.viewCheckpoint(rows)['test/marks']).toEqual({ marks: ['a', 'b'] })
+    expect(ctx.sessionProjections.viewCheckpoint(rows)['test/watermarked']).toEqual({ marks: ['a', 'b'] })
     // The watermark is usable, so restoreFloor anchors one below it.
     expect(ctx.sessionProjections.restoreFloor(rows)).toBe(event.seq)
     // restore with no further tail reuses the admitted row unchanged.
     const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, [], event.seq + 1)
-    expect(snapshot.values['test/marks']).toEqual({ marks: ['a', 'b'] })
-    expect(checkpoint['test/marks']).toEqual(rows['test/marks'])
+    expect(snapshot.values['test/watermarked']).toEqual({ marks: ['a', 'b'] })
+    expect(checkpoint['test/watermarked']).toEqual(rows['test/watermarked'])
   })
 
   it('treats a checkpoint row that fails checkpointStateSchema as unusable, not as a thrown error', async () => {
     const { ctx } = await harness()
     ctx.sessionProjections.register(watermarkedUnit())
-    const malformed = { 'test/marks': { ver: 1, seq: 3, val: { label: 123, seq: 'not-a-number' } } }
+    const malformed = { 'test/watermarked': { ver: 1, seq: 3, val: { label: 123, seq: 'not-a-number' } } }
     expect(ctx.sessionProjections.viewCheckpoint(malformed)).toEqual({})
     expect(ctx.sessionProjections.restoreFloor(malformed)).toBe(0)
     const full = [{ type: 'test/mark', seq: 0, time: 0, data: { marks: ['x'] } } satisfies SessionEvent]
     const { snapshot } = ctx.sessionProjections.restore(malformed, full, 0)
-    expect(snapshot.values['test/marks']).toEqual({ marks: ['x'] }) // refolded from init, row discarded
+    expect(snapshot.values['test/watermarked']).toEqual({ marks: ['x'] }) // refolded from init, row discarded
   })
 
   it('rejects a checkpointStateSchema whose parsed output is not deeply equal to its input', async () => {
@@ -469,7 +476,7 @@ describe('SessionProjectionRegistry drive', () => {
       checkpointStateSchema: z.object({ label: z.string(), seq: z.number() }).strict()
         .transform(value => ({ ...value, label: value.label.toUpperCase() })),
     })
-    const row = { 'test/marks': { ver: 1, seq: 2, val: { label: 'a', seq: 2 } } }
+    const row = { 'test/watermarked': { ver: 1, seq: 2, val: { label: 'a', seq: 2 } } }
     expect(ctx.sessionProjections.viewCheckpoint(row)).toEqual({})
   })
 
@@ -501,7 +508,7 @@ describe('SessionProjectionRegistry drive', () => {
     session.append('turn/start', { turn: 1 }) // count's apply always returns a new reference
     expect(seen).toEqual([])
     // The state still committed even though no notification fired.
-    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(1)
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(1)
   })
 
   it('viewChanged explicitly returning true still notifies a reference change', async () => {

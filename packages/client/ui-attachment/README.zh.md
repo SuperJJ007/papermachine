@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-对话 UI 的动态附件呈现插件。它通过 `ctx.slots.inject` 等待 conversation 包声明 `conversation.input.attachments` 与 `conversation.message.images`，随后注册输入框草稿图片栏、文档拖放目标、聊天历史图片画廊和原图灯箱。conversation slot 持有方提供附件数据、图片加载、回调及其命名空间翻译器；呈现组件保持纯 props，且不从包入口导出。
+对话 UI 的动态附件呈现插件。它通过 `ctx.slots.inject` 等待 conversation 包声明 `conversation.input.attachments` 与 `conversation.message.images`，随后注册输入框草稿图片栏、文档拖放目标、聊天历史图片画廊和原图灯箱。conversation slot 持有方提供附件数据、图片加载、回调及其命名空间翻译器；呈现组件保持纯 props。插件注册入口（`apply`）本身不需要导出任何组件，但 `MessageImage`、`ImageGallery`、`ImageLightbox` 及其 `ImageLoader`／文案类型都从 `/client` 子路径重新导出，供在本插件自身聊天消息流之外渲染图片的领域包使用（`@deepseek-ai/dsh-client-ui-science` 的 artifact 面板）。
 
 ## 附件栏
 

@@ -203,6 +203,13 @@ Immutable binary attachment service. Implementations validate bytes before publi
 abstract validateImage(input: SaveImageAttachment): Promise<void>
 
 /**
+ * Validate one text file without persisting it.
+ * @param input - encoded bytes, declared media type, and optional display name.
+ * @returns completion after the encoded bytes have been proven non-empty, valid UTF-8, and within the byte cap.
+ */
+abstract validateText(input: SaveTextAttachment): Promise<void>
+
+/**
  * Validate and durably commit one ordered image batch.
  * @param inputs - encoded images in owning-message order.
  * @returns durable normalized attachment references in the same order after every member succeeds.
@@ -237,6 +244,15 @@ abstract saveText(input: SaveTextAttachment): Promise<TextAttachmentRef>
  * @throws the signal reason when aborted, or a storage error when verification fails.
  */
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+/**
+ * Read one text file and verify that bytes still match the recorded reference.
+ * @param ref - durable reference from the session log.
+ * @param signal - optional cancellation for backend read and verification work.
+ * @returns the verified bytes and canonical reference.
+ * @throws the signal reason when aborted, or a storage error when verification fails.
+ */
+abstract readText(ref: TextAttachmentRef, signal?: AbortSignal): Promise<StoredTextAttachment>
 
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.

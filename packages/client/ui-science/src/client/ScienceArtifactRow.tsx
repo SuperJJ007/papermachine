@@ -13,7 +13,7 @@
 // broken or empty card.
 
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment'
+import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { IconDataOutline16, IconFullscreenOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'

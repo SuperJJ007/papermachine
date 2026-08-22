@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Dynamic attachment presentation plugin for the conversation UI. It waits for the conversation package's `conversation.input.attachments` and `conversation.message.images` declarations through `ctx.slots.inject`, then registers the composer draft-image rail, document drop target, chat-history image gallery, and original-image lightbox. The conversation slot owner supplies attachment data, image loading, callbacks, and its namespace translator; presentation components remain pure props and are not exported from the package entry.
+Dynamic attachment presentation plugin for the conversation UI. It waits for the conversation package's `conversation.input.attachments` and `conversation.message.images` declarations through `ctx.slots.inject`, then registers the composer draft-image rail, document drop target, chat-history image gallery, and original-image lightbox. The conversation slot owner supplies attachment data, image loading, callbacks, and its namespace translator; presentation components remain pure props. The plugin registration entry (`apply`) needs none of them exported, but `MessageImage`, `ImageGallery`, `ImageLightbox`, and their `ImageLoader`/label types are re-exported from the `/client` subpath for a domain package rendering images outside this plugin's own chat-message flow (`@deepseek-ai/dsh-client-ui-science`'s artifact panel).
 
 ## Attachment rail
 

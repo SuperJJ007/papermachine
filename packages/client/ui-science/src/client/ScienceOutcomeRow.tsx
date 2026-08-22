@@ -8,8 +8,8 @@
 // inventing a replacement. A running, failed, stopped, or unrecognized/stale
 // presentation falls back to a plain row.
 
-import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { IconGoalOutline16, MarkdownText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'

@@ -1225,10 +1225,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ctx.inject(['sessionProjections', 'attachments'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'textLimits', null>({
       key: 'textLimits',
-      schema: textLimitsProjectionSchema,
+      stateSchema: zod.null(),
       init: () => null,
       apply: state => state,
-      view: () => projectionCtx.attachments.textLimits,
+      wire: { viewSchema: textLimitsProjectionSchema, view: () => projectionCtx.attachments.textLimits },
       stateVersion: 1,
     })
   })

@@ -179,7 +179,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async copy(from: string, id: string, name?: string): Promise<void>',
         description: 'Create a locally authored preset by copying an existing one whole.\n\nCopy is the only authoring write. Composition text never crosses this seam: the source is named by id and its directory is copied as it stands, so the copy is exactly as loadable as its source and authoring grants no capability the roster did not already carry. The copy is NOT mounted to validate — a source that mounts today yields a copy that mounts today.',
         parameters: [{ name: 'from', description: 'the preset the copy starts from; shipped presets are the primary source, so any trust is accepted.' }, { name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'name', description: 'display name for the copy; absent falls back to the id.' }],
-        throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
+        throws: ['when the source is unknown, broken, or explicitly non-copyable; the id is unusable or already taken; or the deployment configures no writable root.'],
       },
       {
         signature: 'async remove(id: string): Promise<void>',
@@ -431,10 +431,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'abstract readonly textLimits: TextAttachmentLimits',
+        description: 'Deployment-resolved text policy used by authoritative and fast-path validation.',
+        parameters: [],
+      },
+      {
         signature: 'abstract validateImage(input: SaveImageAttachment): Promise<void>',
         description: 'Validate one image without persisting it. Batch callers validate every member before saving any member.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
         returns: 'completion after the encoded raster has been fully decoded.',
+      },
+      {
+        signature: 'abstract validateText(input: SaveTextAttachment): Promise<void>',
+        description: 'Validate one text file without persisting it.',
+        parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
+        returns: 'completion after the encoded bytes have been proven non-empty, valid UTF-8, and within the byte cap.',
       },
       {
         signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
@@ -449,10 +460,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the durable content-addressed normalized image reference.',
       },
       {
+        signature: 'abstract saveText(input: SaveTextAttachment): Promise<TextAttachmentRef>',
+        description: 'Validate and durably commit one text file before its owning session event is appended. No batch entry point exists here: no current caller uploads text files the way `saveImages` batches a chat message\'s images, so a Science capture caller saves each file with its own loop over single `saveText` calls.',
+        parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
+        returns: 'a durable content-addressed reference.',
+      },
+      {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
         returns: 'the verified bytes and normalized attachment reference.',
+        throws: ['the signal reason when aborted, or a storage error when verification fails.'],
+      },
+      {
+        signature: 'abstract readText(ref: TextAttachmentRef, signal?: AbortSignal): Promise<StoredTextAttachment>',
+        description: 'Read one text file and verify that bytes still match the recorded reference.',
+        parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
+        returns: 'the verified bytes and canonical reference.',
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
@@ -1177,6 +1201,75 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'scienceRuntime',
+    summary: 'Folded local Science Runtime provider with public types free of Host paths.',
+    description: 'Folded local Science Runtime provider with public types free of Host paths.',
+    methods: [
+      {
+        signature: 'async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>',
+        description: 'Observe one configured existing Conda profile and append its whole-value environment revision. Static unusability becomes an honest `invalid` revision; capability, cancellation, and I/O failures append nothing.',
+        parameters: [{ name: 'request', description: 'Exact live Session, profile identity, and caller signal.' }],
+        returns: 'The accepted durable environment revision.',
+      },
+      {
+        signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
+        description: 'Acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact through the acquired kernel\'s own RUN/DONE protocol exchange.',
+        parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
+        returns: 'A handle exposed only after `science/run-started` committed.',
+      },
+      {
+        signature: 'annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
+        description: 'Re-commit an existing artifact version\'s exact attachment reference with a curated title and caption: metadata-only, so it never reads or writes the filesystem and never calls the attachment store, and it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
+        returns: 'The durable curated version this operation committed.',
+      },
+    ],
+  },
+  {
+    key: 'sessionAttachments',
+    summary: 'Generic Session attachment-reference registry.',
+    description: 'Generic Session attachment-reference registry. Subscribes to no event bus itself — every method is a pure, synchronous read over event values the caller already holds (live `Session.events`, or rows parsed from a stored artifact).',
+    methods: [
+      {
+        signature: 'register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly (ImageAttachmentRef | TextAttachmentRef)[], ): () => void',
+        description: 'Register one domain\'s extractor for an extractor-required known event type. Effect-owned: disposing the calling fiber (or calling the returned disposer) removes the registration, and a subsequent read of that event type fails loud with SessionAttachmentIndexError instead of silently authorizing nothing.',
+        parameters: [{ name: 'eventType', description: 'a known event type this package does not itself classify `built-in` or `attachment-free`; typed against the merge-extensible {@link SessionAttachmentExtractorMap}.' }, { name: 'extractor', description: 'validates the event\'s own durable fields and returns every complete reference it authorizes (never a bare id).' }],
+        returns: 'the exact disposer that unregisters this extractor.',
+      },
+      {
+        signature: 'extract(event: ExtractableEvent): readonly (ImageAttachmentRef | TextAttachmentRef)[]',
+        description: 'Extract every complete attachment reference one durable event authorizes. A `built-in` type is scanned directly; an `attachment-free` type (or an unrecognized type, which persistence admits only when `ignorable` is set) authorizes nothing; a known type outside both closed lists requires a live registration and fails loud when one is absent.',
+        parameters: [{ name: 'event', description: 'one durable Session event (live or a parsed durable row).' }],
+        returns: 'every reference the event durably names, in encounter order.',
+        throws: ['{@link SessionAttachmentIndexError} when a known extractor-required type has no live registration.'],
+      },
+      {
+        signature: 'findReferencedImage(events: Iterable<ExtractableEvent>, attachmentId: string): ImageAttachmentRef | undefined',
+        description: 'Resolve the first reference matching one opaque attachment id across an ordered event sequence — the live single-reference authorization read.',
+        parameters: [{ name: 'events', description: 'the exact Session\'s events (or a prefix/suffix of them).' }, { name: 'attachmentId', description: 'the opaque id a client requested.' }],
+        returns: 'the matching reference, or `undefined` when no event names it.',
+      },
+      {
+        signature: 'findReferencedText(events: Iterable<ExtractableEvent>, attachmentId: string): TextAttachmentRef | undefined',
+        description: 'Resolve the first text reference matching one opaque attachment id across an ordered event sequence — the live single-reference authorization read, mirroring findReferencedImage.',
+        parameters: [{ name: 'events', description: 'the exact Session\'s events (or a prefix/suffix of them).' }, { name: 'attachmentId', description: 'the opaque id a client requested.' }],
+        returns: 'the matching reference, or `undefined` when no event names it.',
+      },
+      {
+        signature: 'collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef>',
+        description: 'Collect every distinct image reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id) — the Session-export media-collection read.',
+        parameters: [{ name: 'events', description: 'one artifact\'s parsed durable rows, in log order.' }],
+        returns: 'every distinct image reference, keyed by its string attachment id.',
+      },
+      {
+        signature: 'collectReferencedTexts(events: Iterable<ExtractableEvent>): ReadonlyMap<string, TextAttachmentRef>',
+        description: 'Collect every distinct text reference across an ordered event sequence, deduped by attachment id (last write wins for a repeated id), mirroring collectReferencedImages.',
+        parameters: [{ name: 'events', description: 'one artifact\'s parsed durable rows, in log order.' }],
+        returns: 'every distinct text reference, keyed by its string attachment id.',
+      },
+    ],
+  },
+  {
     key: 'sessionPersistence',
     summary: 'Durable append-only session storage.',
     description: 'Durable append-only session storage. Implementations preserve contiguous, losslessly JSON-serializable events; append resolves only after durability, and load balances a complete interrupted tail without rewriting committed events.',
@@ -1315,19 +1408,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined',
-        description: 'The stored seq a restore tail read over `checkpoint` must start at: one event BELOW the lowest usable watermark (a row is usable when its `ver` matches the live unit\'s `stateVersion`; an absent or mismatched row pulls the floor to `0` — that key must refold the full log). The one-below anchor is load-bearing: the tail then proves how far the stored log still extends, so restore can detect a log that shrank below a row\'s watermark (crash-repair truncation) instead of serving the stale row as current — an empty tail read from the anchor yields an end below every watermark and the restore rejects for a full re-read.',
+        description: 'The stored seq a restore tail read over `checkpoint` must start at: one event BELOW the lowest usable watermark. A row is usable when its `ver` matches the live unit\'s `stateVersion` and its private state passes the unit\'s optional schema and embedded-watermark admission; an absent, mismatched, or rejected row pulls the floor to `0` — that key must refold the full log. The one-below anchor is load-bearing: the tail then proves how far the stored log still extends, so restore can detect a log that shrank below a row\'s watermark (crash-repair truncation) instead of serving the stale row as current — an empty tail read from the anchor yields an end below every watermark and the restore rejects for a full re-read.',
         parameters: [{ name: 'checkpoint', description: 'persisted rows for one session (possibly stale or empty).' }],
         returns: 'the seq to hand the persistence `readFrom`, or `undefined` when no unit is registered (no read needed — {@link restore} would serve empty values regardless).',
       },
       {
         signature: 'viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>',
-        description: 'View a checkpoint\'s rows without any log read: for every registered client-visible unit whose row\'s `ver` matches, serve the schema-validated `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key absent (a cold or listing consumer treats it as not-yet-available and a fuller read path refolds it). The zero-I/O rung of the read ladder — values are as stale as their rows, never wrong.',
+        description: 'View a checkpoint\'s rows without any log read: for every registered client-visible unit whose row\'s `ver` matches and whose private state passes optional admission (schema-validated, and watermark-checked when the unit supplies `checkpointStateSeq`), serve the schema-validated `view`; mismatched, malformed, rejected, or absent rows leave their key absent (a cold or listing consumer treats it as not-yet-available and a fuller read path refolds it). The zero-I/O rung of the read ladder — admitted values are as stale as their rows, never wrong.',
         parameters: [{ name: 'checkpoint', description: 'persisted rows for one session (possibly stale or empty).' }],
         returns: 'whole values per key with a usable row; empty when none.',
       },
       {
         signature: 'restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }',
-        description: 'Cold read: fold every persisted unit over a stored log suffix, seeding each from its checkpoint row when usable — the one read recipe (cached state + forward tail replay + `view`) applied without a live `Session`. Call with the events returned by a persistence `readFrom(id, restoreFloor(checkpoint))` and that same floor as `baseSeq`; the floor\'s one-below anchor makes the supplied end honest, so a shrunk log is detected here. A row is usable iff its `ver` matches the live unit\'s `stateVersion`, it does not predate `baseSeq` (`seq >= baseSeq - 1`), and it does not claim events past the supplied end (`seq <= endSeq`); an unusable row is discarded and its key refolds from `init` — which is only sound over the full log, so a discarded row with `baseSeq > 0` throws (the caller re-reads from seq 0, e.g. after a crash-repair truncation shrank the log below a row\'s watermark).',
+        description: 'Cold read: fold every persisted unit over a stored log suffix, seeding each from its checkpoint row when usable — the one read recipe (cached state + forward tail replay + `view`) applied without a live `Session`. Call with the events returned by a persistence `readFrom(id, restoreFloor(checkpoint))` and that same floor as `baseSeq`; the floor\'s one-below anchor makes the supplied end honest, so a shrunk log is detected here. A row is usable iff its `ver` matches the live unit\'s `stateVersion`, its private state passes optional admission, it does not predate `baseSeq` (`seq >= baseSeq - 1`), and it does not claim events past the supplied end (`seq <= endSeq`); an unusable row is discarded and its key refolds from `init` — which is only sound over the full log, so a discarded row with `baseSeq > 0` throws (the caller re-reads from seq 0, e.g. after a crash-repair truncation shrank the log below a row\'s watermark).',
         parameters: [{ name: 'checkpoint', description: 'persisted rows for one session (possibly stale or empty).' }, { name: 'events', description: 'the stored events with `seq >= baseSeq`, in seq order.' }, { name: 'baseSeq', description: 'the seq `events` starts at (its first event\'s seq when non-empty).' }],
         returns: 'the snapshot cut at the supplied log end (`asOfSeq` is the last supplied event\'s seq, `baseSeq - 1` for an empty tail) plus the refreshed checkpoint rows at that cut, ready for a durable write-back.',
       },
@@ -1867,8 +1960,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'subprocess',
     summary: 'Abstract subprocess service.',
-    description: 'Abstract subprocess service. Subclass, implement spawn, and load the subclass as a plugin — it registers as `ctx.subprocess` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Executable paths belong to one execution world shared with the mounted filesystem provider.\n- spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.\n- Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another\'s output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.\n- SubprocessHandle.terminate (and the spec\'s abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.\n- Disposal of the service terminates all still-running managed processes and awaits their exit.\n- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.',
+    description: 'Abstract subprocess service. Subclass, implement spawn, and load the subclass as a plugin — it registers as `ctx.subprocess` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Executable paths belong to one execution world shared with the mounted filesystem provider.\n- spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.\n- Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another\'s output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.\n- SubprocessHandle.terminate (and the spec\'s abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence. SubprocessHandle.interrupt is the seam\'s one cooperative-request verb: SIGINT to the direct child only, a no-op on `win32`.\n- Disposal of the service terminates all still-running managed processes and awaits their exit.\n- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.',
     methods: [
+      {
+        signature: 'abstract readonly executionWorld: \'host-local\' | \'remote\'',
+        description: 'Whether this provider\'s process world shares the host kernel and host paths (`\'host-local\'`) or a remote execution world (`\'remote\'`). A host-path consumer such as Science must require `\'host-local\'` before creating owner records, directories, or Session events.',
+        parameters: [],
+      },
       {
         signature: 'abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>',
         description: 'Resolve one configured executable in this provider\'s execution world. Absolute paths are verified; bare names use the provider\'s scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.',
@@ -2867,7 +2965,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPreset',
-    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly copyable: boolean;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentSetup',
@@ -2880,6 +2978,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentStatus',
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
+  },
+  {
+    name: 'AnnotateScienceArtifactRequest',
+    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -3014,12 +3116,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
+    name: 'BindScienceEnvironmentRequest',
+    declaration: 'export interface BindScienceEnvironmentRequest {\n    readonly session: Session;\n    readonly profileId: ScienceEnvironmentProfileId;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
   {
     name: 'CancelOptions',
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
+  },
+  {
+    name: 'CaptureRunArtifactsResult',
+    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n}',
   },
   {
     name: 'ClientResponse',
@@ -3336,6 +3446,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'ExtractableEvent',
+    declaration: 'export type ExtractableEvent = Pick<SessionEvent, \'type\' | \'data\'> & {\n    readonly ignorable?: true;\n};',
   },
   {
     name: 'FileDiff',
@@ -3863,7 +3977,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProjectionDefinition',
-    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    init(): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    stateVersion: number;\n}',
+    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    checkpointStateSchema?: ZodType<S>;\n    checkpointStateSeq?(state: S): number;\n    init(): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    viewChanged?(previous: S, next: S): boolean;\n    stateVersion: number;\n}',
   },
   {
     name: 'ProjectionSnapshot',
@@ -4022,6 +4136,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
   },
   {
+    name: 'SaveTextAttachment',
+    declaration: 'export interface SaveTextAttachment {\n    data: Uint8Array;\n    mediaType: TextMediaType;\n    name?: string;\n}',
+  },
+  {
     name: 'SaveTextSpill',
     declaration: 'export interface SaveTextSpill {\n    owner: SpillOwner;\n    source: SpillSource;\n    suggestedName: string;\n    content: string;\n}',
   },
@@ -4032,6 +4150,98 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduledToolPreparation',
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
+  },
+  {
+    name: 'ScienceArtifactId',
+    declaration: 'export type ScienceArtifactId = Branded<\'ScienceArtifactId\'>;',
+  },
+  {
+    name: 'ScienceArtifactOrigin',
+    declaration: 'export type ScienceArtifactOrigin = \'auto\' | \'model\';',
+  },
+  {
+    name: 'ScienceArtifactVersion',
+    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef | TextAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'ScienceEnvironmentBinding',
+    declaration: 'export interface ScienceEnvironmentBinding {\n    readonly revision: number;\n    readonly profileId: ScienceEnvironmentProfileId;\n    readonly configuredAt: number;\n    readonly validatedAt: number;\n    readonly status: ScienceEnvironmentStatus;\n    readonly python?: ScienceInterpreterBinding;\n    readonly r?: ScienceInterpreterBinding;\n    readonly failureReason?: string;\n}',
+  },
+  {
+    name: 'ScienceEnvironmentProfileId',
+    declaration: 'export type ScienceEnvironmentProfileId = Branded<\'ScienceEnvironmentProfileId\'>;',
+  },
+  {
+    name: 'ScienceEnvironmentStatus',
+    declaration: 'export type ScienceEnvironmentStatus = \'applied\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceInterpreterAvailableBinding',
+    declaration: 'export type ScienceInterpreterAvailableBinding = ScienceInterpreterSelection & ScienceInterpreterIdentity & {\n    readonly capability: \'available\';\n    readonly reason?: never;\n};',
+  },
+  {
+    name: 'ScienceInterpreterBinding',
+    declaration: 'export type ScienceInterpreterBinding = ScienceInterpreterAvailableBinding | ScienceInterpreterUnavailableBinding;',
+  },
+  {
+    name: 'ScienceInterpreterCapability',
+    declaration: 'export type ScienceInterpreterCapability = \'available\' | \'unavailable\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceInterpreterIdentity',
+    declaration: 'export interface ScienceInterpreterIdentity {\n    readonly canonicalPrefix: string;\n    readonly executable: string;\n    readonly executableIdentity: string;\n    readonly languageVersion: string;\n    readonly condaHistorySha256: string;\n    readonly bindingFingerprint: string;\n    readonly packages: readonly SciencePackage[];\n    readonly packagesSha256: string;\n    readonly packagesTruncated: boolean;\n}',
+  },
+  {
+    name: 'ScienceInterpreterSelection',
+    declaration: 'export interface ScienceInterpreterSelection {\n    readonly language: ScienceLanguage;\n    readonly configuredPrefix: string;\n}',
+  },
+  {
+    name: 'ScienceInterpreterUnavailableBinding',
+    declaration: 'export type ScienceInterpreterUnavailableBinding = ScienceInterpreterSelection & Partial<ScienceInterpreterIdentity> & {\n    readonly capability: Exclude<ScienceInterpreterCapability, \'available\'>;\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'ScienceLanguage',
+    declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
+  },
+  {
+    name: 'SciencePackage',
+    declaration: 'export interface SciencePackage {\n    readonly name: string;\n    readonly version: string;\n}',
+  },
+  {
+    name: 'ScienceRunHandle',
+    declaration: 'export interface ScienceRunHandle {\n    readonly runId: ScienceRunId;\n    readonly done: Promise<ScienceRunResult>;\n    cancel(): void;\n}',
+  },
+  {
+    name: 'ScienceRunId',
+    declaration: 'export type ScienceRunId = Branded<\'ScienceRunId\'>;',
+  },
+  {
+    name: 'ScienceRunIdentity',
+    declaration: 'export interface ScienceRunIdentity {\n    readonly runId: ScienceRunId;\n    readonly language: ScienceLanguage;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly startedAt: number;\n    readonly codeSha256: string;\n    readonly scratchKey: ScienceScratchKey;\n    readonly runDirectoryRef: string;\n    readonly kernelEpoch: number;\n}',
+  },
+  {
+    name: 'ScienceRunOutput',
+    declaration: 'export interface ScienceRunOutput {\n    readonly text: string;\n    readonly bytes: number;\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'ScienceRunResult',
+    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n    readonly capture?: CaptureRunArtifactsResult;\n}',
+  },
+  {
+    name: 'ScienceRunStarted',
+    declaration: 'export interface ScienceRunStarted extends ScienceRunIdentity {\n    readonly status: \'running\';\n}',
+  },
+  {
+    name: 'ScienceRunTerminal',
+    declaration: 'export interface ScienceRunTerminal extends ScienceRunIdentity {\n    readonly status: ScienceRunTerminalStatus;\n    readonly finishedAt: number;\n    readonly stdoutBytes: number;\n    readonly stderrBytes: number;\n    readonly stdoutTruncated: boolean;\n    readonly stderrTruncated: boolean;\n    readonly failureCode?: string;\n    readonly failureMessage?: string;\n    readonly outputDegraded?: true;\n}',
+  },
+  {
+    name: 'ScienceRunTerminalStatus',
+    declaration: 'export type ScienceRunTerminalStatus = \'success\' | \'failed\' | \'timed-out\' | \'cancelled\';',
+  },
+  {
+    name: 'ScienceScratchKey',
+    declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
   },
   {
     name: 'Scoped',
@@ -4072,6 +4282,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ServerResponse',
     declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
+  },
+  {
+    name: 'SessionAttachmentExtractorEventType',
+    declaration: 'export type SessionAttachmentExtractorEventType = keyof SessionAttachmentExtractorMap extends infer EventType ? EventType extends SessionEventType ? EventType : never : never;',
+  },
+  {
+    name: 'SessionAttachmentExtractorMap',
+    declaration: 'export interface SessionAttachmentExtractorMap {\n}',
   },
   {
     name: 'SessionAvailability',
@@ -4323,7 +4541,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsDescriptor',
-    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
+    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    effective: unknown;\n    secrets?: RedactedSecret[];\n}',
   },
   {
     name: 'SettingsNamespace',
@@ -4446,6 +4664,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: CallId;\n    label: string;\n}',
   },
   {
+    name: 'StartScienceRunRequest',
+    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'StorageBackend',
     declaration: 'export interface StorageBackend {\n    readonly kv?: KvFacet;\n    close(): Promise<void>;\n}',
   },
@@ -4456,6 +4678,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'StoredImageAttachment',
     declaration: 'export interface StoredImageAttachment {\n    ref: ImageAttachmentRef;\n    data: Uint8Array;\n}',
+  },
+  {
+    name: 'StoredTextAttachment',
+    declaration: 'export interface StoredTextAttachment {\n    ref: TextAttachmentRef;\n    data: Uint8Array;\n}',
   },
   {
     name: 'StreamChunk',
@@ -4539,7 +4765,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessHandle',
-    declaration: 'export interface SubprocessHandle {\n    readonly pid: number;\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
+    declaration: 'export interface SubprocessHandle {\n    readonly pid: number;\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    interrupt(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
   },
   {
     name: 'SubprocessOutcome',
@@ -4551,7 +4777,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessOutputRead',
-    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    spillPath?: string;\n}',
+    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    utf8Validity: \'valid\' | \'invalid\' | \'unknown\';\n    spillPath?: string;\n}',
   },
   {
     name: 'SubprocessOutputReader',
@@ -4559,7 +4785,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessSpawnSpec',
-    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    env?: NodeJS.ProcessEnv | undefined;\n}',
+    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    environmentBase: \'scrubbed-parent\' | \'empty\';\n    env?: NodeJS.ProcessEnv | undefined;\n}',
   },
   {
     name: 'SubprocessStdinMode',
@@ -4724,6 +4950,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TerminalWaitReason',
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
+  },
+  {
+    name: 'TextAttachmentLimits',
+    declaration: 'export interface TextAttachmentLimits {\n    maxTextBytes: number;\n    mediaTypes: readonly TextMediaType[];\n}',
+  },
+  {
+    name: 'TextAttachmentRef',
+    declaration: 'export interface TextAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: TextMediaType;\n    bytes: number;\n    name?: string;\n}',
+  },
+  {
+    name: 'TextMediaType',
+    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'TodoItem',

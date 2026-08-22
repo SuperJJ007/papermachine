@@ -466,6 +466,11 @@ export interface ChatNodeOwnerProps {
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
   /** Select a registered `conversation.details.view` entry and open the Details column. */
   openDetailsView: (id: string) => void
+  /**
+   * Resolve a session-authorized historical image for inline display, for a
+   * business row that renders one on its own (outside `renderMessageImages`).
+   */
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
 }
 
 /** Full props of one registered keyed Chat business renderer. */

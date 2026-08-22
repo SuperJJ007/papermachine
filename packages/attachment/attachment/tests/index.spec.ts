@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  ImageVariantId,
   isImageAdmissionError,
   type ImageAttachmentRef,
   type ImageMediaType,
+  type ImageRequestPolicy,
+  type RequestImageAttachment,
   type SaveImageAttachment,
   type SaveTextAttachment,
   type StoredImageAttachment,
@@ -18,6 +21,7 @@ const LIMITS = {
   maxImagesPerMessage: 2,
   maxMessageImageBytes: 5,
   maxImagePixels: 4,
+  maxImageDimension: 2000,
   mediaTypes: ['image/png'] as const,
 }
 
@@ -68,6 +72,54 @@ class RecordingStore extends AttachmentStore {
   readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
     throw new Error('not used')
   }
+
+  override readImageRequest(
+    ref: ImageAttachmentRef,
+    _policy: ImageRequestPolicy,
+  ): Promise<RequestImageAttachment> {
+    this.calls.push(`request:${ref.name}`)
+    return Promise.resolve({
+      variantId: ImageVariantId(`sha256:${String(ref.bytes).padStart(64, '0')}`),
+      attachment: ref,
+      data: Uint8Array.of(ref.bytes),
+      mediaType: ref.mediaType,
+      bytes: 1,
+      width: ref.width,
+      height: ref.height,
+      depth: 'uchar',
+      space: 'srgb',
+      hasAlpha: false,
+    })
+  }
+}
+
+class UnsupportedProjectionStore extends AttachmentStore {
+  readonly imageLimits = LIMITS
+  readonly textLimits = TEXT_LIMITS
+
+  validateImage(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  validateText(): Promise<void> {
+    throw new Error('not used')
+  }
+
+  saveImage(): Promise<ImageAttachmentRef> {
+    throw new Error('not used')
+  }
+
+  saveText(): Promise<TextAttachmentRef> {
+    throw new Error('not used')
+  }
+
+  readImage(): Promise<StoredImageAttachment> {
+    throw new Error('not used')
+  }
+
+  readText(): Promise<StoredTextAttachment> {
+    throw new Error('not used')
+  }
 }
 
 function image(value: number, mediaType: ImageMediaType = 'image/png'): SaveImageAttachment {
@@ -114,6 +166,19 @@ describe('AttachmentStore.saveImages', () => {
     await expect(store.saveImages([image(1), image(2)]))
       .rejects.toThrow('write:2')
     expect(store.calls).toEqual(['validate:1', 'validate:2', 'save:1', 'save:2'])
+  })
+})
+
+describe('AttachmentStore.readImageRequest', () => {
+  it('reports unsupported request projection while preserving cancellation', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const ref = await new RecordingStore(new Context()).saveImage(image(1))
+    await expect(store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported projection')
+    controller.abort(reason)
+    expect(() => store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }, controller.signal)).toThrow(reason)
   })
 })
 

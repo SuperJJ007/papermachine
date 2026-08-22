@@ -8,22 +8,25 @@ Source: [`packages/session/session-projection/src/index.ts`](../../packages/sess
 
 ## The unit
 
-`SessionProjectionMap` is the merge-extensible type table for the whole chain (host unit, wire block, client hook); values are wire-JSON whole values, and rendering belongs to the slot system, never this layer. A domain contributes one `ProjectionDefinition` per key:
+`SessionProjectionStateMap` is the merge-extensible table of host fold states, while `SessionProjectionMap` retains the client-visible whole values. A domain contributes one `ProjectionDefinition` per state key; a `wire` block makes that key client-visible, and rendering belongs to the slot system, never this layer:
 
 ```ts type-equiv
 /**
- * One domain's state-driven computation unit: three pure synchronous
- * functions plus declarations — never an opaque getter. The framework drives
+ * One domain's state-driven computation unit: a pure synchronous fold plus
+ * declarations and an optional client view — never an opaque getter. The framework drives
  * `apply` on every committed session event; the domain holds no
- * subscriptions and owns only the mathematics. All three functions MUST be
- * synchronous (an async unit would tear the carriers' consistency cut) and
+ * subscriptions and owns only the computation. All functions MUST be
+ * synchronous (an async unit would tear the carriers' consistency cut), and
  * `state` MUST be plain JSON (the persisted-cache precondition).
  */
-interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
-  /** The projection key this unit owns (its `SessionProjectionMap` entry). */
+interface ProjectionDefinition<
+  K extends keyof SessionProjectionStateMap,
+  S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K],
+> {
+  /** The projection key this unit owns (its `SessionProjectionStateMap` entry). */
   key: K
-  /** Validates the wire payload (`view` output) before it leaves the host. */
-  schema: ZodType<SessionProjectionMap[K]>
+  /** Validates persisted state before it seeds a fold. */
+  stateSchema: ZodType<S>
   /**
    * Admits persisted private state read back from a checkpoint row. Omitted
    * for a unit whose state needs no admission beyond the outer row shape.
@@ -45,7 +48,7 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    * State for the empty log.
    * @returns the initial state.
    */
-  init(): S
+  init(): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -54,13 +57,18 @@ interface ProjectionDefinition<K extends keyof SessionProjectionMap, S> {
    * @param event - the next committed session event.
    * @returns the next state (same reference when the event is not the unit's).
    */
-  apply(state: S, event: SessionEvent): S
-  /**
-   * State → wire payload (the read-side projection).
-   * @param state - the current state.
-   * @returns the whole current value for this unit's key.
-   */
-  view(state: S): SessionProjectionMap[K]
+  apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>
+  /** Client view. Omit for host-only units. */
+  wire?: K extends keyof SessionProjectionMap ? {
+    /** Validates the wire payload before it leaves the host. */
+    viewSchema: ZodType<SessionProjectionMap[K]>
+    /**
+     * State → wire payload (the read-side projection).
+     * @param state - the current state.
+     * @returns the whole current value for this unit's key.
+     */
+    view(state: NoInfer<S>): SessionProjectionMap[K]
+  } : never
   /**
    * Narrows public-change notification after `apply` already returned a
    * different reference. It cannot turn a same-reference no-op into a
@@ -86,14 +94,14 @@ The whole-value event rule is load-bearing: a state-carrying log event carries t
 
 ```ts type-equiv
 /**
- * One consistent read cut over every registered unit for one session.
+ * One consistent read cut over every registered client-visible unit for one session.
  * `asOfSeq` is the shared watermark — the seq of the last event every value
  * reflects (`-1` for an empty log, mirroring `session/subscribed.lastSeq`).
  */
 interface ProjectionSnapshot {
   /** Seq of the last event the values reflect; -1 for an empty log. */
   asOfSeq: number
-  /** Whole current value per registered key. */
+  /** Whole current client value per registered key. */
   values: Partial<SessionProjectionMap>
 }
 ```
@@ -112,7 +120,7 @@ type ProjectionChangeListener = (
 ) => void
 ```
 
-`snapshot(session)` is fully synchronous: a carrier reads it in the same tick as its page slice, so `asOfSeq` covers both reads at one sequence number. Every value passes its unit's schema before return; an accidentally async `view` returns a Promise, which schema validation rejects. The change feed fires once per unit whose state *reference* changed for each committed event; `apply` must return the same reference when its state did not change.
+`snapshot(session)` is fully synchronous: a carrier reads it in the same tick as its page slice, so `asOfSeq` covers both reads at one sequence number. It returns only client views, and every value passes its unit's `viewSchema` before return. `stateOf(session, key)` reads one live host state without computing unrelated views; callers must not mutate the borrowed reference. The change feed fires once per client-visible unit whose state *reference* changed for each committed event; `apply` must return the same reference when its state did not change.
 
 ## The registry: `ctx.sessionProjections`
 
@@ -124,7 +132,7 @@ type ProjectionChangeListener = (
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxsessionprojectioncache--sessionprojectioncache"></a>
 
@@ -174,13 +182,13 @@ async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnaps
 
 Types: [Session](session.md) · [SessionHeader](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/session/session-projection-cache/src/index.ts:71`](../../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts`](../../packages/session/session-projection-cache/src/index.ts)
 
 <a id="ctxsessionprojections--sessionprojectionregistry"></a>
 
 ### `ctx.sessionProjections` — `SessionProjectionRegistry`
 
-`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference notifies the change feed with the schema-validated view. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
+`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
 
 ```ts cordis-catalog
 /**
@@ -191,28 +199,45 @@ Source: [`packages/session/session-projection-cache/src/index.ts:71`](../../pack
  * @param definition - key, state schema, pure unit functions, and stateVersion.
  * @returns the exact disposer that unregisters this unit.
  */
-register<K extends keyof SessionProjectionMap, S>(definition: ProjectionDefinition<K, S>): () => void
+register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
+
+/**
+ * Register one host-only unit. Its state is omitted from client snapshots
+ * and always checkpointed like every other unit.
+ * @param definition - key, state schema, pure unit functions, and stateVersion.
+ * @returns the exact disposer that unregisters this unit.
+ */
+register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjectionMap>, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'>, ): () => void
 
 /**
  * Subscribe to the change feed. The registration is an effect on the
  * calling context's fiber.
- * @param listener - called once per unit whose state reference changed, per committed event.
+ * @param listener - called once per client-visible unit whose state reference changed, per committed event.
  * @returns the exact disposer that unsubscribes.
  */
 onChanged(listener: ProjectionChangeListener): () => void
 
 /**
- * One consistent cut over every registered unit for one session, read from
+ * Read one unit's current host state without computing unrelated views.
+ * The returned value is live; callers must not mutate it.
+ * @param session - the session whose state is read.
+ * @param key - the registered unit key.
+ * @returns current state, or `undefined` when the key is not registered.
+ */
+stateOf<K extends keyof SessionProjectionStateMap>( session: Session, key: K, ): SessionProjectionStateMap[K] | undefined
+
+/**
+ * One consistent cut over every registered client-visible unit for one session, read from
  * the watermark cache (missing cells fold lazily over the in-memory log).
  * Fully synchronous — every value and `asOfSeq` reflect the same log
- * position. Each value passes its unit's schema before leaving.
+ * position. Each value passes its unit's `viewSchema` before leaving.
  * @param session - the session whose projection values are read.
- * @returns the snapshot; `values` is empty when no unit is registered.
+ * @returns the snapshot; `values` is empty when no client-visible unit is registered.
  */
 snapshot(session: Session): ProjectionSnapshot
 
 /**
- * State-level checkpoint of every registered unit for one session, read
+ * State-level checkpoint of every persisted unit for one session, read
  * from the watermark cache (missing cells fold lazily over the in-memory
  * log). This is the write side of the persisted projection cache: the
  * returned rows are the `(key → {ver, seq, val})` part of the durable
@@ -223,7 +248,7 @@ snapshot(session: Session): ProjectionSnapshot
  * every subsequent snapshot and frame through it (plain JSON by the unit
  * contract, so the clone is total).
  * @param session - the session whose unit states are checkpointed.
- * @returns one row per registered key; empty when no unit is registered.
+ * @returns one row per registered key.
  */
 checkpoint(session: Session): ProjectionCheckpoint
 
@@ -249,18 +274,18 @@ restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
 
 /**
  * View a checkpoint's rows without any log read: for every registered
- * unit whose row's `ver` matches and whose private state passes optional
- * admission, serve the schema-validated `view`; absent, mismatched, or
- * rejected rows leave their key absent (a cold or listing consumer treats
- * it as not-yet-available and a fuller read path refolds it). The zero-I/O
- * rung of the read ladder — admitted values are as stale as their rows.
+ * client-visible unit whose row's `ver` matches, serve the schema-validated
+ * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
+ * absent (a cold or listing consumer treats it as not-yet-available and a
+ * fuller read path refolds it). The zero-I/O rung of the read ladder —
+ * values are as stale as their rows, never wrong.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @returns whole values per key with a usable row; empty when none.
  */
 viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
 
 /**
- * Cold read: fold every registered unit over a stored log suffix, seeding
+ * Cold read: fold every persisted unit over a stored log suffix, seeding
  * each from its checkpoint row when usable — the one read recipe (cached
  * state + forward tail replay + `view`) applied without a live `Session`.
  * Call with the events returned by a persistence
@@ -282,10 +307,10 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:204`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

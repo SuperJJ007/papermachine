@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 [preset](../../preset/agent-presets/README.md)；新建会话界面上的一枚 chip，用于选择**下一个会话**的 preset；会话标题旁的一个只读标签；以及一个设置页分区，用于管理名单——复制、删除、默认值，以及通往 preset 自身文件的入口。
+agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 [preset](../../preset/agent-presets/README.zh.md)；新建会话界面上的一枚 chip，用于选择**下一个会话**的 preset；会话标题旁的一个只读标签；以及一个设置页分区，用于管理名单——复制、删除、默认值，以及通往 preset 自身文件的入口。
 
 ## 为什么它是"新建会话"的偏好设置
 
@@ -50,9 +50,9 @@ preset 自行发布描述，长度不限，而网格让每一行卡片等高—�
 
 行的 `copyable: false` 是与 `broken` 不同、更弱的一种拒绝：该 preset 健康、可选中，也能成为默认，但其自身元信息说明对它的复制无法绑定或执行——`dsh-tool-science` 把持久身份绑定到字面 `science` preset，因此逐字节复制会挂载相同工具却永远无法工作。仅复制按钮禁用，并带有独立于 `brokenNoCopy` 的本地化原因（`notCopyable`）；两个选择器仍会像展示任何其他可选 preset 一样展示该行。
 
-设置默认值写入的是 `agent-presets` settings 命名空间，宿主需将其暴露给配置客户端（[`dsh-apiproxy`](../../host/apiproxy/README.md) 维护一份显式白名单——不在其中的命名空间会让选择器动一下然后悄悄忘记）。
+设置默认值写入的是 `agent-presets` settings 命名空间，宿主需将其暴露给配置客户端（[`dsh-apiproxy`](../../host/apiproxy/README.zh.md) 维护一份显式白名单——不在其中的命名空间会让选择器动一下然后悄悄忘记）。
 
-`agentPreset.read`、`copy`、`openDocument` 与 `remove` 被固定在环回地址（见 [`dsh-client-connection`](../connection/README.md)）：组装指明了一个会话所运行的插件，因此读取它是侦察，其余几个则管理名单并驱动宿主桌面。`agentPreset.list` 不在其中——它携带 id、信任级别与两个不含路径的能力标志，而局域网客户端的选择器需要它。
+`agentPreset.read`、`copy`、`openDocument` 与 `remove` 被固定在环回地址（见 [`dsh-client-connection`](../connection/README.zh.md)）：组装指明了一个会话所运行的插件，因此读取它是侦察，其余几个则管理名单并驱动宿主桌面。`agentPreset.list` 不在其中——它携带 id、信任级别与两个不含路径的能力标志，而局域网客户端的选择器需要它。
 
 ## 何时不显示这些表层
 
@@ -60,7 +60,7 @@ preset 自行发布描述，长度不限，而网格让每一行卡片等高—�
 
 ## 模型体验
 
-Indirectly, through the preset a later session is composed from; [`dsh-agent-presets`](../../preset/agent-presets/README.md) owns what that composition puts in front of the model.
+Indirectly, through the preset a later session is composed from; [`dsh-agent-presets`](../../preset/agent-presets/README.zh.md) owns what that composition puts in front of the model.
 
 #### KV Cache effect
 

@@ -11,6 +11,10 @@
 
 import { globSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  officialClientBuildEnvironment,
+  readClientBuildRecord,
+} from '../client-build-environment.ts'
 import { validateTarballPayload } from '../publication-payload.ts'
 
 /**
@@ -110,6 +114,13 @@ export abstract class ReleaseFamily {
 
   /** Git tag prefix this family publishes from. */
   abstract readonly tagPrefix: string
+
+  /**
+   * Assert that built artifacts match this release family's required profile.
+   * Families without environment-selected artifacts accept every build tree.
+   * @param _root - repository root containing generated artifacts.
+   */
+  verifyBuildArtifacts(_root: string): void {}
 
   /**
    * Discover this family's members.
@@ -305,11 +316,16 @@ export abstract class ReleaseFamily {
   abstract readonly installedEntry: InstalledEntry | undefined
 }
 
-/** `packages/*` and `apps/*`: one shared version across the whole family. */
+/** Release packages and apps: one shared version across the whole family. */
 class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
-  readonly patterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
+  readonly patterns = ['packages/!(experimental)/*/package.json', 'apps/*/package.json'] as const
   readonly tagPrefix = 'dsh-v'
+
+  /** Require current artifacts from a complete official client build. */
+  override verifyBuildArtifacts(root: string): void {
+    readClientBuildRecord(root, officialClientBuildEnvironment(root))
+  }
 
   /**
    * Require one version across the family, the way a single tag can name it.

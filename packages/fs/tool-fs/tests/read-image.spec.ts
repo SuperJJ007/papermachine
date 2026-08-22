@@ -13,14 +13,14 @@ import { Context } from '@deepseek-ai/cordis'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { Config as ToolConfig } from '@deepseek-ai/dsh-tools'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
@@ -102,7 +102,7 @@ interface SetupOptions {
   resolvedModels?: LlmModelInfo[]
   attachments?: boolean
   llm?: boolean
-  storeConfig?: { maxImageBytes?: number; maxImagePixels?: number; maxMessageImageBytes?: number }
+  storeConfig?: { maxImageBytes?: number; maxImagePixels?: number; maxImageDimension?: number; maxMessageImageBytes?: number }
   toolMode?: ToolConfig['mode']
 }
 
@@ -131,12 +131,13 @@ async function setup(options: SetupOptions = {}) {
 }
 
 /** A fake calling agent pinned to one routed provider/model. */
-function agentOn(model: string | undefined, provider = 'visual'): object {
+function agentOn(model: string | undefined, provider = 'visual', messages: readonly Message[] = []): object {
   return {
     options: {},
     session: {
       header: { cwd: dir },
       requestHeader: () => (model === undefined ? undefined : { config: { provider, model } }),
+      deriveMessages: () => [...messages],
       append: () => undefined,
     },
   }
@@ -178,6 +179,8 @@ describe('imageRefFromValue', () => {
     const base = { attachmentId: 'sha256:00', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
     expect(imageRefFromValue(base)).toEqual(base)
     expect(imageRefFromValue({ ...base, name: 'a.png' })).toEqual({ ...base, name: 'a.png' })
+    expect(imageRefFromValue({ ...base, originalDimensions: { width: 4, height: 2 } }))
+      .toEqual({ ...base, originalDimensions: { width: 4, height: 2 } })
   })
 })
 
@@ -345,6 +348,7 @@ describe('argument and service preconditions', () => {
         maxImagesPerMessage: 1,
         maxMessageImageBytes: 1024,
         maxImagePixels: 100,
+        maxImageDimension: 2000,
         mediaTypes: Object.freeze(['image/jpeg'] as const),
       })
 
@@ -413,6 +417,85 @@ describe('image admission failures', () => {
     const ctx = await setup({ storeConfig: { maxImagePixels: 4 } })
     const result = await readImage(ctx, { file_path: 'big.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
+    expect(text(result)).toContain('exceeds the 4-pixel decoded-size limit')
+    expect(text(result)).toContain('downscale the image and read the smaller copy')
+  })
+
+  it('surfaces the per-side limit from attachment admission', async () => {
+    await writeFile(join(dir, 'wide.png'), PNG_3X3)
+    const ctx = await setup({ storeConfig: { maxImageDimension: 2 } })
+    const result = await readImage(ctx, { file_path: 'wide.png' }, agentOn('vision-model'))
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('at least one image side exceeds the 2px limit')
+    expect(text(result)).toContain('downscale the image and read the smaller copy')
+  })
+
+  it('passes storage faults and non-attachment failures through unchanged', async () => {
+    /** Store whose commit fails with a configurable error; admission itself passes. */
+    class FailingStore extends AttachmentStore {
+      static failure: unknown
+      readonly imageLimits: ImageAttachmentLimits = Object.freeze({
+        maxImageBytes: 1024,
+        maxImagesPerMessage: 1,
+        maxMessageImageBytes: 1024,
+        maxImagePixels: 100,
+        maxImageDimension: 2000,
+        mediaTypes: Object.freeze(['image/png'] as const),
+      })
+
+      readonly textLimits: TextAttachmentLimits = Object.freeze({ maxTextBytes: 0, mediaTypes: Object.freeze([]) })
+
+      validateImage(_input: SaveImageAttachment): Promise<void> {
+        return Promise.resolve()
+      }
+
+      validateText(_input: SaveTextAttachment): Promise<void> {
+        throw new Error('unreachable in this test')
+      }
+
+      async saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+        throw FailingStore.failure
+      }
+
+      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+        throw new Error('unreachable in this test')
+      }
+
+      readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+        throw new Error('unreachable in this test')
+      }
+
+      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
+        throw new Error('unreachable in this test')
+      }
+    }
+    await writeFile(join(dir, 'red.png'), PNG_1X1)
+    const ctx = await setup({ attachments: false })
+    await ctx.plugin(FailingStore)
+
+    FailingStore.failure = new AttachmentError('Unable to persist image attachment.', 'ATTACHMENT_WRITE_FAILED')
+    const storageFault = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(storageFault.isError).toBe(true)
+    expect(text(storageFault)).toContain('Unable to persist image attachment.')
+
+    FailingStore.failure = new AttachmentError(
+      'The 16-bit PNG could not be converted to the normalized 8-bit sRGB form.',
+      'ATTACHMENT_WRITE_FAILED',
+    )
+    const sixteenBit = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(text(sixteenBit)).toContain(
+      `cannot read "${join(dir, 'red.png')}": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
+    )
+
+    FailingStore.failure = new AttachmentError('Image cannot be encoded within the configured normalized-image byte cap.', 'IMAGE_TOO_LARGE')
+    const overBudget = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(overBudget.isError).toBe(true)
+    expect(text(overBudget)).toContain('cannot be stored within the deployment\'s byte limits; downscale the image and read the smaller copy')
+
+    FailingStore.failure = new Error('unrelated infrastructure failure')
+    const unrelated = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(unrelated.isError).toBe(true)
+    expect(text(unrelated)).toContain('unrelated infrastructure failure')
   })
 
   it('reports a missing image file and a directory target through the fs vocabulary', async () => {
@@ -438,6 +521,7 @@ describe('image admission failures', () => {
         maxImagesPerMessage: 1,
         maxMessageImageBytes: 1024,
         maxImagePixels: 100,
+        maxImageDimension: 2000,
         mediaTypes: Object.freeze(['image/png'] as const),
       })
 
@@ -474,6 +558,67 @@ describe('image admission failures', () => {
     expect(result.isError).toBe(false)
     const image = result.content[1] as { attachment: ImageAttachmentRef }
     expect(image.attachment.name).toBeUndefined()
+  })
+
+  it('names the on-disk dimensions and coordinate multiplier when storage downscales', async () => {
+    /** Store whose normalized image halves the input on both sides. */
+    class DownscalingStore extends AttachmentStore {
+      readonly imageLimits: ImageAttachmentLimits = Object.freeze({
+        maxImageBytes: 1024,
+        maxImagesPerMessage: 1,
+        maxMessageImageBytes: 1024,
+        maxImagePixels: 100,
+        maxImageDimension: 2000,
+        mediaTypes: Object.freeze(['image/png'] as const),
+      })
+
+      readonly textLimits: TextAttachmentLimits = Object.freeze({ maxTextBytes: 0, mediaTypes: Object.freeze([]) })
+
+      validateImage(_input: SaveImageAttachment): Promise<void> {
+        return Promise.resolve()
+      }
+
+      validateText(_input: SaveTextAttachment): Promise<void> {
+        throw new Error('unreachable in this test')
+      }
+
+      async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+        return {
+          attachmentId: AttachmentId('sha256:feed'),
+          mediaType: input.mediaType,
+          bytes: 7,
+          width: 2,
+          height: 1,
+          originalDimensions: { width: 4, height: 2 },
+        }
+      }
+
+      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
+        throw new Error('unreachable in this test')
+      }
+
+      readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+        throw new Error('unreachable in this test')
+      }
+
+      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
+        throw new Error('unreachable in this test')
+      }
+    }
+    await writeFile(join(dir, 'red.png'), PNG_1X1)
+    const ctx = await setup({ attachments: false })
+    await ctx.plugin(DownscalingStore)
+    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(result.isError).toBe(false)
+    expect(text(result)).toContain('image/png image, 2x1 px, 7 bytes (downscaled from 4x2 px; multiply coordinates by 2.00 to locate features in the original file)')
+  })
+
+  it('names per-axis multipliers when integer rounding makes the ratios differ', () => {
+    const envelope = formatImageReadOutput('/img/photo.jpg', {
+      attachmentId: 'sha256:feed', mediaType: 'image/jpeg', bytes: 9, width: 2, height: 1,
+      originalDimensions: { width: 5, height: 2 },
+    })
+    expect(envelope).toContain('downscaled from 5x2 px; multiply x coordinates by 2.50 and y coordinates by 2.00 to locate features in the original file')
   })
 })
 

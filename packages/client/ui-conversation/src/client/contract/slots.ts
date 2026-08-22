@@ -30,6 +30,33 @@ export interface ComposerAttachment {
   previewUrl: string
 }
 
+/** Input state handed to the optional attachment presentation plugin. */
+export interface ComposerAttachmentsOwnerProps {
+  /** Browser-owned draft images in input order. */
+  attachments: readonly ComposerAttachment[]
+  /** Whether a document-level file drop may add images now. */
+  canAcceptDrop: boolean
+  /** Add one dropped batch through the composer's validation path. */
+  onAddImages: (files: readonly File[]) => void
+  /** Remove one draft image through the conversation service. */
+  onRemoveImage: (id: DraftAttachmentId) => void
+  /** Display-ready limits for the drop invitation. */
+  dropLimits?: { readonly count: number; readonly size: string } | undefined
+}
+
+/** Historical image group handed to the optional attachment presentation plugin. */
+export interface MessageImagesOwnerProps {
+  /** Consecutive image blocks rendered as one gallery. */
+  images: readonly { readonly attachment: ImageAttachmentRef }[]
+  /** Session-authorized durable image loader. */
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Message-side alignment. */
+  align: 'start' | 'end'
+}
+
+/** Slot-backed renderer used by chat nodes without importing an attachment implementation. */
+export type RenderMessageImages = (owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
@@ -50,6 +77,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * takes every action entry down with it.
      */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
+    /**
+     * One breadcrumb title and its lineage controls. The render site keeps
+     * the ordinary title as fallback; an occupant receives plain title data
+     * and may replace a subagent title with one combined navigation control.
+     */
+    'conversation.session.header.lineage': {
+      kind: 'single'
+      scope: 'session'
+      owner: ConversationHeaderLineageOwnerProps
+    }
     /**
      * One button in the session header's action row — the additive way to put
      * a per-session control beside the title without replacing the header.
@@ -83,6 +120,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: string
       inject: ChatNodeTurnDataInjected
     }
+    /** Optional renderer for one consecutive group of durable message images. */
+    'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
     /**
      * The chat view's per-command row hole: keyed dispatch on the command
      * name (`command/run.name`; a run-less cross-window node has none and
@@ -161,6 +200,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /**
+     * Brand mark leading the blank-session headline. Declared by this
+     * package's `conversation` entry; the shell supplies a fish fallback.
+     */
+    'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
+    /**
      * The agent-preset chip beside the workspace picker on the new-session
      * screen. Root scope: no session exists yet, so the choice is staged for
      * the next one rather than applied to a current one.
@@ -222,6 +266,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * command face through its own inject.
      */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
+    /** Optional draft-image rail, drop target, and preview surface inside the composer. */
+    'conversation.input.attachments': {
+      kind: 'single'
+      scope: 'session-maybe'
+      owner: ComposerAttachmentsOwnerProps
+    }
     /**
      * The named plan-status seat in the composer tool row, immediately right
      * of the access-mode control — one occupant, so taking it means rendering
@@ -296,6 +346,16 @@ export interface ConversationHeaderActionOwnerProps {
    * on a transcript row inspects that row, and must never close the panel.
    */
   toggleDetailsView: (id: string) => void
+}
+
+/** Plain breadcrumb data handed to the optional lineage renderer. */
+export interface ConversationHeaderLineageOwnerProps {
+  /** Session represented by this breadcrumb title. */
+  lineageSessionId: SessionId
+  /** Display title available to a renderer that combines the title with a control. */
+  displayTitle: string
+  /** Navigate to an ancestor title when its combined control is clicked. */
+  openTitle?: () => void
 }
 
 /**
@@ -401,8 +461,8 @@ export interface ChatNodeOwnerProps {
   openFile: (path: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
-  /** Resolve a session-authorized historical image for inline display. */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Render a historical image group through the attachment slot. */
+  renderMessageImages: RenderMessageImages
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
   /** Select a registered `conversation.details.view` entry and open the Details column. */
   openDetailsView: (id: string) => void
@@ -626,7 +686,9 @@ export interface InputControlOwnerProps {
 /** Full composer-bar props: standard kit & owner share & control-seat render share & injected share (hooks bound) & locale seat. */
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
-  & PropsRenderSlots<'conversation.input.plan' | 'conversation.input.model'>
+  & PropsRenderSlots<
+    'conversation.input.attachments' | 'conversation.input.plan' | 'conversation.input.model'
+  >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>
 
@@ -643,6 +705,14 @@ export interface ComposerChainProps {
   session: ConversationSnapshot | undefined
 }
 
+/** Presentation props supplied to the blank-session brand-mark occupant. */
+export interface HeroBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+  /** Host CSS class for preserving the default hero mark color and hover motion. */
+  className?: string | undefined
+}
+
 /**
  * Full conversation-slot component props: runtime & child-render (view ring
  * + composer chain/bar + input-region + hero picker slots) & store & injected
@@ -655,6 +725,7 @@ export type ConversationSlotProps =
     | 'conversation.input.overlay'
     | 'conversation.input.dock' | 'conversation.composer.dock'
     | 'conversation.input.left' | 'conversation.input.right'
+    | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
   >
@@ -671,7 +742,11 @@ export type ConversationSessionSlotProps =
 /** Full strict-session header props: shared store, tabs/actions render shares, navigation, and locale. */
 export type ConversationSessionHeaderSlotProps =
   PropsRuntime<'conversation.session.header'>
-  & PropsRenderSlots<'conversation.session.header.actions' | 'conversation.session.header.utilities'>
+  & PropsRenderSlots<
+    'conversation.session.header.lineage'
+    | 'conversation.session.header.actions'
+    | 'conversation.session.header.utilities'
+  >
   & PropsStore<ChatStore>
   & ConversationSessionHeaderInjected
   & PropsLocale<'conversation'>
@@ -767,9 +842,11 @@ export interface ChatViewInjected {
   openDetailsView: (id: string) => void
   /**
    * Open a tool-arg filesystem path with the host OS default application
-   * (relative paths resolve against the session cwd).
+   * (relative paths resolve against the session cwd). Always returns a
+   * promise: fulfills when the Host opens the path, rejects when it cannot
+   * hand the path off (the chat view shows that reason and a retry).
    */
-  openFile: (path: string) => void
+  openFile: (path: string) => Promise<void>
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
@@ -797,8 +874,16 @@ export interface ChatViewInjected {
 
 /** Full chat-view component props: runtime & its Tool/command/tail render shares & store & injected & locale seat. */
 export type ChatViewSlotProps =
-  PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node'>
+  PropsRuntime<'conversation.view'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
   & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
+
+/** Full props of the attachment plugin's composer entry. */
+export type ComposerAttachmentsProps =
+  PropsRuntime<'conversation.input.attachments'> & PropsLocale<'conversation'>
+
+/** Full props of the attachment plugin's message-gallery entry. */
+export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & PropsLocale<'conversation'>
 
 /**
  * Injected share of the details slot: the panel is otherwise a pure reader of

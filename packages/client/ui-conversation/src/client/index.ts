@@ -30,10 +30,12 @@ export type {
 export type {
   ChatFileMentions, ChatNodeOwnerProps, ChatNodeViewProps,
   ChatStore, ChatViewInjected, ChatViewSlotProps, CommandRowOwnerProps, CommandRowProps, ComposerBarInjected,
-  ComposerAttachment, ComposerChainProps, ConversationHeaderActionOwnerProps, ConversationInjected,
+  ComposerAttachment, ComposerAttachmentsOwnerProps, ComposerAttachmentsProps, ComposerChainProps,
+  ConversationHeaderActionOwnerProps, ConversationHeaderLineageOwnerProps, ConversationInjected,
   ConversationSessionHeaderInjected, ConversationSessionInjected, ConversationSlotProps, ConvViewOwnerProps,
   ConvViewProps, DetailsHeaderActionOwnerProps, DetailsInjected, DetailsSlotProps, DetailsToolOwnerProps,
-  DetailsViewOwnerProps, EmptyWorkspaceOwnerProps, ToolDetailsViewProps, TurnTailOwnerProps, UseChatNodeTurnData,
+  DetailsViewOwnerProps, EmptyWorkspaceOwnerProps, HeroBrandMarkOwnerProps, MessageImagesOwnerProps,
+  MessageImagesProps, RenderMessageImages, ToolDetailsViewProps, TurnTailOwnerProps, UseChatNodeTurnData,
 } from './contract/slots.ts'
 // Export discipline: packages/client/AGENTS.md.
 

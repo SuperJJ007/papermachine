@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-30-current-sandbox-policy-context.md
 2026-07-30-current-sandbox-policy-context.md: c61ffcfa061c9d695ca4d68a7794c7efc2c9b738
-2026-07-30-current-sandbox-policy-context.zh.md: 206e6723302ab8aa7acdb32fd664eef8c56a455f
+2026-07-30-current-sandbox-policy-context.zh.md: df7aec5f8a537faca1491fc4b180ba14a45a79ac

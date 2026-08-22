@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-04-doc-tiers-and-budgets.md
 2026-07-04-doc-tiers-and-budgets.md: 6e9dc1f561a0060356d59aff37b517064cd0df52
-2026-07-04-doc-tiers-and-budgets.zh.md: afb991184e2620dbc178d5ed902eae122503c114
+2026-07-04-doc-tiers-and-budgets.zh.md: 95b75d1bba1a9e752cb080b764b7daab6b75e89c

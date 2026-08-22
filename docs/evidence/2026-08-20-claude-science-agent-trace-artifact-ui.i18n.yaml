@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/evidence/2026-08-20-claude-science-agent-trace-artifact-ui.md
+2026-08-20-claude-science-agent-trace-artifact-ui.md: 9ecf9cdefdeb4649e199aba2d86bd2d51cf553cc
+2026-08-20-claude-science-agent-trace-artifact-ui.zh.md: 0743c0d9b87bf54aa97785d4b521969e7cd12306

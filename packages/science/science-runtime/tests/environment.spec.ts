@@ -917,6 +917,46 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
+  it('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-rollback-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-rollback')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const sessionRoot = join(root, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(session))
+    const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
+      if (eventName !== 'session/event') return
+      const [, event] = args as [unknown, { readonly type?: string; readonly data?: { readonly run?: { readonly runId?: string } } }]
+      if (event?.type !== 'science/run-started') return
+      // Faulting the exact run directory makes removeUnpublishedRunScratch
+      // fail during the veto's cleanup, reaching the aggregated
+      // unpublished-run rollback classification.
+      staticFsFault.cleanupPath = join(sessionRoot, 'runs', String(event.data?.run?.runId))
+      throw new Error('injected start append failure')
+    }, { global: true })
+    try {
+      await expect(harness.runtime.startRun({
+        session,
+        language: 'python',
+        code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session, 'science-run-rollback-call'),
+        signal: new AbortController().signal,
+      })).rejects.toMatchObject({
+        message: 'science-runtime: unpublished run rollback failed',
+        errors: [
+          { message: 'injected start append failure' },
+          { message: 'injected managed cleanup failure' },
+        ],
+      })
+    } finally {
+      stop()
+    }
+  })
+
   it('selects Windows executable candidates and refuses host probes before a partial Windows boundary can run', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-windows-probe-'))
     roots.push(root)

@@ -558,6 +558,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (cleanupFailures.length > 0) {
         throw new AggregateError(
           [error, ...cleanupFailures],
+          // Defensive arm: bindEnvironment materializes the Session scratch
+          // before any run can start, so a cleanup failure here always
+          // follows createRunScratch today; the arm remains for a future
+          // producer that reaches startRun on a freshly created tree.
+          /* v8 ignore next 3 */
           runScratch === undefined
             ? 'science-runtime: pre-publication Session scratch rollback failed'
             : 'science-runtime: unpublished run rollback failed',

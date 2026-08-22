@@ -261,8 +261,6 @@ export class SessionProjectionRegistry extends Service {
       view(state: S): unknown
     } | undefined
     const checkpointStateSchema = definition.checkpointStateSchema
-    const checkpointStateSeq = definition.checkpointStateSeq
-    const viewChanged = definition.viewChanged
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
@@ -270,18 +268,22 @@ export class SessionProjectionRegistry extends Service {
       // (`foo?: T`) on `ErasedDefinition`, not `foo: T | undefined`; under
       // `exactOptionalPropertyTypes` an explicit `undefined` value is rejected
       // for an optional property, so an absent source omits the key entirely
-      // instead of assigning `undefined` through it.
+      // instead of assigning `undefined` through it. Each optional is called
+      // through `definition.foo(...)` rather than extracted to a local first —
+      // a bare method-shorthand reference trips the unbound-method lint rule.
       ...(checkpointStateSchema === undefined ? {} : { checkpointStateSchema }),
-      ...(checkpointStateSeq === undefined ? {} : {
-        checkpointStateSeq: (state: unknown) => checkpointStateSeq(state as S),
+      ...(definition.checkpointStateSeq === undefined ? {} : {
+        checkpointStateSeq: (state: unknown) =>
+          (definition.checkpointStateSeq as (state: S) => number)(state as S),
       }),
       init: () => definition.init(),
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
         : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
-      ...(viewChanged === undefined ? {} : {
-        viewChanged: (previous: unknown, next: unknown) => viewChanged(previous as S, next as S),
+      ...(definition.viewChanged === undefined ? {} : {
+        viewChanged: (previous: unknown, next: unknown) =>
+          (definition.viewChanged as (previous: S, next: S) => boolean)(previous as S, next as S),
       }),
       stateVersion: definition.stateVersion,
     }

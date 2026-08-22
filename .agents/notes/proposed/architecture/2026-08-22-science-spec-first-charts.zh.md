@@ -18,7 +18,7 @@ Spec 格式选 Vega-Lite:一份 JSON 文档、一个维护中的 SVG/canvas 渲�
 
 ### 2. Agent 如何产出 spec:普通的 run 产物,内核与工具都不改
 
-[`capture.ts`](../../../../packages/science/science-runtime/src/capture.ts) 的 `CAPTURE_MEDIA_TYPE_BY_EXTENSION` 按 `extname()`(路径的最后一段后缀)取键;`.json` 已经映射到 `application/json`,所以一份 `.vl.json` 文件今天在技术上已经满足 capture 资格,但它会与任何其他 JSON 产物(比如随附示例 fixture 里的 `meta.json`)一起坍缩到同一个通用媒体类型上,查看器无法区分一份 Vega-Lite spec 与一份任意结果文件。方案是:在既有的单段后缀查找之前,先识别两段式后缀 `.vl.json`——这是 `isCaptureEligible` 与媒体类型查找内部的一处局部改动,不涉及目录走查或内核——映射到 [`dsh-attachment` 封闭联合类型](../../../../packages/attachment/attachment/src/types.ts)上新增的一个 `TextMediaType` 成员(具体字符串留在下文待定)。Vega-Lite 自己的约定已经把 `.vl.json` 这个文件名与文档内部携带确切 spec 版本的 `$schema` 字段配对,所以媒体类型本身不需要再固定一个版本。spec 的字节走既有的 `saveText` admission 路径,不需要任何改动:JSON 文本不带被捕获图片才有的 EXIF/sRGB/缩放归一化问题,不需要新的字节精确性豁免。不需要新工具:agent 已经在向 `SCIENCE_ARTIFACT_DIR` 写入;capture、`annotate_artifact`、`publish_outcome` 以及 `edit_of` 基线机制已经在通用地操作 capture-relative 路径与媒体类型,今天怎么处理 `.csv` 或 `.md`,就会怎么处理一份 spec 文件。
+[`capture.ts`](../../../../packages/science/science-runtime/src/capture.ts) 的 `CAPTURE_MEDIA_TYPE_BY_EXTENSION` 按 `extname()`(路径的最后一段后缀)取键;`.json` 已经映射到 `application/json`,所以一份 `.vl.json` 文件今天在技术上已经满足 capture 资格,但它会与任何其他 JSON 产物(比如随附示例 fixture 里的 `meta.json`)一起坍缩到同一个通用媒体类型上,查看器无法区分一份 Vega-Lite spec 与一份任意结果文件。方案是:在既有的单段后缀查找之前,先识别两段式后缀 `.vl.json`——这是 `isCaptureEligible` 与媒体类型查找内部的一处局部改动,不涉及目录走查或内核——映射到 [`dsh-attachment` 封闭联合类型](../../../../packages/attachment/attachment/src/types.ts)上新增的一个 `TextMediaType` 成员:不带版本号的 `application/vnd.vega-lite+json`。Vega-Lite 自己的约定已经把 `.vl.json` 这个文件名与文档内部携带确切 spec 版本的 `$schema` 字段配对,所以媒体类型不需要再固定一个版本——带版本的媒体类型会让每次 Vega-Lite 主版本升级都被迫改动允许列表与联合类型,却不提供任何 spec 字节本身不携带的信息。spec 的字节走既有的 `saveText` admission 路径,不需要任何改动:JSON 文本不带被捕获图片才有的 EXIF/sRGB/缩放归一化问题,不需要新的字节精确性豁免。不需要新工具:agent 已经在向 `SCIENCE_ARTIFACT_DIR` 写入;capture、`annotate_artifact`、`publish_outcome` 以及 `edit_of` 基线机制已经在通用地操作 capture-relative 路径与媒体类型,今天怎么处理 `.csv` 或 `.md`,就会怎么处理一份 spec 文件。
 
 ### 3. 人工样式编辑的溯源:一个判别式的 `origin` 分支
 
@@ -47,19 +47,22 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 3. **C3 —— 样式编辑器**(`science/s4c-style-editor`)。选中元素打开一个限定在安全样式子集(颜色、字号、标签——绝不含数据变换,那属于 agent 的地盘)的属性面板;定稿提交一个决策 3 的人工编辑 Version。验收:一份 GIF、对新判别式 schema 分支及其严格 fold 校验的单元与 snapshot 覆盖。
 4. **C4 —— 导出**(`science/s4d-export`)。实现决策 5。验收:导出的 PNG/PDF 是对确切 spec Version 的一次可信渲染,不要求跨环境字节相同(决策 5 的既定代价);一份 GIF。
 
-## 待用户拍板的开放问题
+## 拍板记录(2026-08-22)
 
-- Vega-Lite spec 的确切 `TextMediaType` 字符串。`application/vnd.vega-lite.v5+json` 固定了一个 spec 自身 `$schema` 字段已经携带的 schema 主版本号;不带版本号的 `application/vnd.vega-lite+json` 可能是更合适的选择。需要在 C1 的 capture 改动落地前定下来。
-- Host 侧确定性导出(决策 5)是推迟,不是否决;目前没有任何非 Web 的 Science Client 提出过 PNG/PDF 导出需求。建设它的触发条件——某个具体 Client 承诺支持 Science 图表——留待开放。
-- 人工编辑溯源(决策 3)只能把一个 Version 标记为"由人工通过编辑器编辑",因为 [`dsh-anonymous-user-id`](../../../../packages/identity) 是 harness 唯一的身份概念,而且是部署级而非按用户级的。Science 是否会需要比"不是模型、不是自动"更细的人工归属,是一个开放问题,不在本文范围内。
-- 结构化编辑消息 `text` block 的确切渲染措辞(决策 4)留给 C2 的实现去定,本文不锁定。
+用户接受了决策 1–6,并对本文原先留待开放的三个问题做出裁决:
+
+- **媒体类型**:采用不带版本号的 `application/vnd.vega-lite+json`,并入决策 2;spec 的 `$schema` 字段是版本的权威来源。
+- **Host 侧确定性导出**:维持推迟,并定下具体触发条件——当某个具体的非 Web Client 承诺支持 Science 图表时才建设,此前不建。
+- **人工编辑归属**:不做比 `'human-edit'` origin 更细的粒度。部署本身是匿名单用户的([`dsh-anonymous-user-id`](../../../../packages/identity) 是部署级身份);按人归属的字段没有任何消费方。
+
+结构化编辑消息 `text` block 的确切渲染措辞(决策 4)仍然刻意不锁定——由 C2 连同它的 snapshot 一起决定。
 
 ## Alternatives considered
 
 - **把 R 图表桥接到 Vega-Lite。** v1 拒绝:没有哪个维护中的 R 包能以接近 Altair 的覆盖度产出 Vega-Lite JSON,自建一座桥本身就会成为依赖政策所警惕的手搓基础设施;R 图表已经有一条能用的 raster 路径。
 - **新增一个专门用于保存 spec 的工具(比如 `save_chart_spec`)。** 拒绝理由与前一份 note 拒绝专用编辑工具相同:spec 是一个普通的 run 产物,新增一个保存工具会把 capture 走查已经在做的记账和 run 本身已经携带的溯源重复一遍。
 - **让 `ScienceArtifactVersion` 保持单一扁平形状,为人工编辑伪造一个假 run。** 拒绝:伪造的 run 会把从未发生过的授权说成 `runId`/`toolCallId`/`requestHeaderSeq` 这些字面事实,破坏每一个当前把这些字段当真的消费方。
-- **一开始就上 Host 侧无头导出。** v1 拒绝:目前没有任何非 Web Client 需要它,而且在没有现存消费方的情况下会新增一个 Host 渲染依赖;推迟建设的触发条件见上文开放问题。
+- **一开始就上 Host 侧无头导出。** v1 拒绝:目前没有任何非 Web Client 需要它,而且在没有现存消费方的情况下会新增一个 Host 渲染依赖;推迟建设的触发条件见「拍板记录」一节。
 - **新增一个 `ContentBlockMap` 条目来表达结构化编辑目标,而不是新增一个 `MessageSourceMap` key。** 拒绝:新的 content-block 类型需要"跨每个 provider 的 adapter、UI 与 compaction 支持"(其自身文档注释所述),而 `MessageSourceMap` 正是为这种生产方专属的结构化伴随数据设计的,并且已经有五个包在实践这个模式。
 
 ## Acceptance criteria
@@ -75,5 +78,5 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 - 没有 R 侧的 spec 路径(决策 1)会永久性地把 R 图表限制在 raster/降级管线上;如果 R 的采用相对 Python 增长,这会变成一个反复出现的产品缺口,而不是一次性的代价。
 - 判别式的 `ScienceArtifactVersion` schema(决策 3)是 `origin` 上第一个形状真正偏离 run-centric 基础的分支;C3 开工前,该类型当前每一个读者(`publish_outcome`、`annotate_artifact`、capture、Notebook 投影、呈现渲染)都需要针对新分支做一次明确审查,而不只是类型层面的窄化。
 - 客户端 Vega-Lite/Vega 渲染器(决策 1–2)是一个带有真实包体积与供应链暴露面的新 Web 依赖;C1 锁定具体包版本时,要对照[维护中依赖的门槛](../../implemented/process/2026-07-26-dependencies-over-hand-rolling.zh.md)评估它,而不是因为本文推荐了这个格式就默认它可以接受。
-- 推迟 Host 侧导出(决策 5)有风险:日后某个非 Web Client 可能在时间压力下才提出这个需求,而不是作为一个有计划的分片;上文的开放问题就是缓解手段——一旦有第二个 Client 承诺支持 Science 图表,就应尽早决定。
+- 推迟 Host 侧导出(决策 5)有风险:日后某个非 Web Client 可能在时间压力下才提出这个需求,而不是作为一个有计划的分片;「拍板记录」定下的触发条件就是缓解手段——一旦有第二个 Client 承诺支持 Science 图表,立即建设。
 - 一条引用了已被取代 Version 的结构化编辑消息(一次过期的选择)需要在 C2 里显式处理;前一份 note 那种发布前的 `INPUT_NOT_FOUND` 式拒绝是模板,不能静默地回退到最新 Version。

@@ -10,7 +10,7 @@ Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readIm
 
 Text write admission checks only the byte cap and UTF-8 validity — no raster-style decode, no content-format check — and reads re-check the digest and byte length. Byte and pixel limits are write-time admission policy, so a later policy reduction does not make already-admitted history unreadable.
 
-`DSH_HOME` resolves through the shared path policy: explicit config, `$DSH_HOME`, then `~/.dsh`. Session logs contain only the reference and verified metadata, never this host path. `readImage` and `readText` forward optional cancellation into the filesystem read, observe it around verification, and preserve it instead of wrapping it as `ATTACHMENT_READ_FAILED`. `Config.maxTextBytes` (default `DEFAULT_MAX_TEXT_BYTES`, 5 MiB, matching `DEFAULT_MAX_IMAGE_BYTES`) is the only text admission bound; the accepted `TextMediaType` set (`text/csv`, `application/json`, `text/markdown`, `text/plain`) is a fixed constant, not a Loader-exposed knob, mirroring `imageLimits.mediaTypes`.
+`DSH_HOME` resolves through the shared path policy: explicit config, `$DSH_HOME`, then `~/.dsh`. Session logs contain only the reference and verified metadata, never this host path. `readImage` and `readText` forward optional cancellation into the filesystem read, observe it around verification, and preserve it instead of wrapping it as `ATTACHMENT_READ_FAILED`. `Config.maxTextBytes` (default `DEFAULT_MAX_TEXT_BYTES`, 5 MiB, matching `DEFAULT_MAX_IMAGE_BYTES`) is the only text admission bound; the accepted `TextMediaType` set (`text/csv`, `application/json`, `application/vnd.vega-lite+json`, `text/markdown`, `text/plain`) is a fixed constant, not a Loader-exposed knob, mirroring `imageLimits.mediaTypes`.
 
 ## Model Experience
 
@@ -26,4 +26,4 @@ Normalization and request projection are deterministic. An unchanged attachment 
 - The local backend assumes the host and provider adapter share this filesystem service.
 - Animated GIF sources keep only their first frame; animation is outside the version-one image contract.
 - The normalization and request encoders are pinned by the installed sharp/libvips build; an encoder or transform-version upgrade re-addresses future normalized attachments or request variants while existing objects stay valid.
-- A text file's declared `mediaType` is never verified against its content: `text/csv`, `application/json`, `text/markdown`, and `text/plain` carry no distinguishing byte-level signature the way a raster header does, so admission trusts the caller's declaration.
+- A text file's declared `mediaType` is never verified against its content: `text/csv`, `application/json`, `application/vnd.vega-lite+json`, `text/markdown`, and `text/plain` carry no distinguishing byte-level signature the way a raster header does, so admission trusts the caller's declaration.

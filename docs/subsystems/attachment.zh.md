@@ -144,7 +144,12 @@ interface RequestImageAttachment {
 
 ```ts type-equiv
 /** Text formats accepted by the version-one text attachment path. */
-type TextMediaType = 'text/csv' | 'application/json' | 'text/markdown' | 'text/plain'
+type TextMediaType =
+  | 'text/csv'
+  | 'application/json'
+  | 'application/vnd.vega-lite+json'
+  | 'text/markdown'
+  | 'text/plain'
 ```
 
 ```ts type-equiv

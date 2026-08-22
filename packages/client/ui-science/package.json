@@ -51,9 +51,9 @@
   },
   "license": "MIT",
   "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-byte-size": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-attachment": "workspace:^",
@@ -69,9 +69,9 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-byte-size": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
@@ -95,5 +95,8 @@
     "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ]
+  ],
+  "dependencies": {
+    "vega-embed": "^7.1.0"
+  }
 }

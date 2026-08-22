@@ -299,7 +299,7 @@ const imageAttachmentSchema = z.object({
 
 const textAttachmentSchema = z.object({
   attachmentId: text(MAX_ID_LENGTH).transform(value => AttachmentId(value)),
-  mediaType: z.enum(['text/csv', 'application/json', 'text/markdown', 'text/plain']),
+  mediaType: z.enum(['text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain']),
   bytes: POSITIVE_INTEGER,
   name: attachmentNameSchema,
 }).strict()

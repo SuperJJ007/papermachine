@@ -13,6 +13,7 @@ describe('artifactExtensionLabel', () => {
   it.each([
     ['text/csv', 'CSV'],
     ['application/json', 'JSON'],
+    ['application/vnd.vega-lite+json', 'VL'],
     ['text/markdown', 'MD'],
     ['text/plain', 'TXT'],
   ])('labels %s as %s', (mediaType, label) => {

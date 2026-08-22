@@ -11,7 +11,7 @@ import {
   sessionIdSchema, sessionListRequestSchema, sessionListValueSchema, sessionModelsRequestSchema,
   sessionModelsValueSchema, sessionPromptRequestSchema, sessionPromptValueSchema,
   sessionSearchRequestSchema, sessionSearchValueSchema, sessionSelectModelRequestSchema,
-  sessionSelectModelValueSchema, sessionSummarySchema,
+  sessionSelectModelValueSchema, sessionSummarySchema, sessionTextAttachmentValueSchema,
   sessionUpdateQueueRequestSchema, sessionUpdateQueueValueSchema,
 } from '../src/api/sessions.schema.ts'
 import {
@@ -135,6 +135,22 @@ describe('rpcReceiptSchema', () => {
 })
 
 describe('sessions domain schemas', () => {
+  it('accepts Vega-Lite text attachments on the browser wire', () => {
+    expect(sessionTextAttachmentValueSchema.parse({
+      attachment: {
+        attachmentId: 'sha256:vl',
+        mediaType: 'application/vnd.vega-lite+json',
+        bytes: 2,
+        name: 'chart.vl.json',
+      },
+      data: '{}',
+    }).attachment.mediaType).toBe('application/vnd.vega-lite+json')
+    expect(() => sessionTextAttachmentValueSchema.parse({
+      attachment: { attachmentId: 'sha256:vl', mediaType: 'application/vnd.vega+json', bytes: 2 },
+      data: '{}',
+    })).toThrow()
+  })
+
   it('validates ids, summaries, and the event passthrough envelope', () => {
     expect(sessionIdSchema.parse('s1')).toBe('s1')
     expect(() => sessionIdSchema.parse('')).toThrow()

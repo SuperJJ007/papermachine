@@ -3,13 +3,15 @@
  * `ScienceDetailsView.tsx`'s toolbar/tab-strip never touches. An image
  * attachment renders through `MessageImage`; a text attachment fetches its
  * decoded bytes through `loadText` and dispatches again on media type — CSV
- * as a sortable table (`ArtifactTable`), JSON as `JsonTree`, Markdown as
- * `MarkdownText`, and plain text as preformatted text. Adding a future
- * accepted media type is a new `switch` case here, never a change to the
- * viewer's tab strip, toolbar, or gallery.
+ * as a sortable table (`ArtifactTable`), Vega-Lite as an SVG visualization,
+ * JSON as `JsonTree`, Markdown as `MarkdownText`, and plain text as
+ * preformatted text. Adding a future accepted media type is a new `switch`
+ * case here, never a change to the viewer's tab strip, toolbar, or gallery.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import embed from 'vega-embed'
 import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { formatBytes } from '@deepseek-ai/dsh-byte-size'
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
@@ -79,6 +81,41 @@ function parseJsonForTree(text: string): object | unknown[] | undefined {
   return typeof value === 'object' && value !== null ? value : undefined
 }
 
+/** A parsed Vega-Lite document accepted at the file boundary before the renderer performs schema validation. */
+type VegaLiteDocument = Record<string, unknown>
+
+/** Parse one Vega-Lite attachment as a JSON object; arrays and scalar JSON are not specifications. */
+function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
+  const parsed = parseJsonForTree(text)
+  return parsed === undefined || Array.isArray(parsed) ? undefined : parsed as VegaLiteDocument
+}
+
+/** Mount one Vega-Lite document through the maintained client renderer, finalizing its view on replacement or unmount. */
+function VegaLiteArtifact({ document, fallback }: { document: VegaLiteDocument; fallback: ReactNode }) {
+  const container = useRef<HTMLDivElement>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const element = container.current as HTMLDivElement
+    let live = true
+    let finalize: (() => void) | undefined
+    setFailed(false)
+    void embed(element, document, { actions: false, mode: 'vega-lite', renderer: 'svg' })
+      .then((result) => {
+        if (!live) result.view.finalize()
+        else finalize = () => { result.view.finalize() }
+      })
+      .catch(() => { if (live) setFailed(true) })
+    return () => {
+      live = false
+      finalize?.()
+      element.replaceChildren()
+    }
+  }, [document])
+
+  return failed ? fallback : <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" />
+}
+
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
 function TextArtifactBody({ logicalName, attachment, loadText, t }: {
   logicalName: string
@@ -122,6 +159,14 @@ function TextArtifactBody({ logicalName, attachment, loadText, t }: {
       return parsed === undefined
         ? <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
         : <JsonTree data={parsed} label={logicalName} />
+    }
+    case 'application/vnd.vega-lite+json': {
+      const capped = capTextForDisplay(state.text, MAX_ARTIFACT_TEXT_CHARACTERS)
+      const document = parseVegaLiteDocument(capped.value)
+      const fallback = document === undefined
+        ? <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
+        : <JsonTree data={document} label={logicalName} />
+      return document === undefined ? fallback : <VegaLiteArtifact document={document} fallback={fallback} />
     }
     case 'text/markdown':
       return <MarkdownText text={state.text} />

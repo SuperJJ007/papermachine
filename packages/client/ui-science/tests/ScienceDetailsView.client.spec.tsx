@@ -20,12 +20,19 @@ import { ScienceDetailsView, type ScienceDetailsViewProps } from '../src/client/
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
+const { embedMock, finalizeMock } = vi.hoisted(() => ({ embedMock: vi.fn(), finalizeMock: vi.fn() }))
+vi.mock('vega-embed', () => ({ default: embedMock }))
+
 type Props = ScienceDetailsViewProps
 
 const SESSION = 'session-1' as SessionId
 const t: Props['t'] = makeTranslate(en)
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  embedMock.mockReset()
+  finalizeMock.mockReset()
+})
 
 function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
   return {
@@ -434,6 +441,70 @@ describe('ScienceDetailsView: content dispatch', () => {
     const { science, store } = textArtifact('application/json')
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
     await waitFor(() => { expect(screen.getByText('5').tagName).toBe('PRE') })
+  })
+
+  it('renders a Vega-Lite attachment as SVG and finalizes the renderer on unmount', async () => {
+    embedMock.mockImplementation(async (element: HTMLElement) => {
+      element.innerHTML = '<svg aria-label="Rendered Vega-Lite chart"></svg>'
+      return { view: { finalize: finalizeMock } }
+    })
+    const loadText = vi.fn().mockResolvedValue('{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","mark":"bar"}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy() })
+    expect(embedMock).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ mark: 'bar' }),
+      { actions: false, mode: 'vega-lite', renderer: 'svg' },
+    )
+    view.unmount()
+    expect(finalizeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('finalizes a Vega-Lite view that resolves after unmount', async () => {
+    let resolveEmbed: ((result: { view: { finalize: typeof finalizeMock } }) => void) | undefined
+    embedMock.mockImplementation(() => new Promise((resolve) => { resolveEmbed = resolve }))
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
+    view.unmount()
+    await act(async () => { resolveEmbed?.({ view: { finalize: finalizeMock } }) })
+    expect(finalizeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards a Vega-Lite rejection that arrives after unmount', async () => {
+    let rejectEmbed: ((reason: Error) => void) | undefined
+    embedMock.mockImplementation(() => new Promise((_resolve, reject) => { rejectEmbed = reject }))
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
+    view.unmount()
+    await act(async () => { rejectEmbed?.(new Error('late rejection')) })
+    expect(finalizeMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the JSON tree when Vega-Lite rejects a parsed document', async () => {
+    embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
+    const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByRole('tree')).toBeTruthy() })
+    expect(view.container.textContent).toContain('not-a-mark')
+  })
+
+  it('falls back to raw text without loading Vega for malformed .vl.json bytes', async () => {
+    const loadText = vi.fn().mockResolvedValue('{not valid Vega-Lite')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByText('{not valid Vega-Lite').tagName).toBe('PRE') })
+    expect(embedMock).not.toHaveBeenCalled()
   })
 
   it('discards a text load that resolves after the component already unmounted', async () => {

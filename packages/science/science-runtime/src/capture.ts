@@ -35,10 +35,19 @@ const CAPTURE_MEDIA_TYPE_BY_EXTENSION: ReadonlyMap<string, 'image/png' | TextMed
   ['.txt', 'text/plain'],
 ])
 
+const VEGA_LITE_EXTENSION = '.vl.json'
+
+/** Resolve a capture media type, preserving the two-part Vega-Lite suffix before the ordinary last-suffix lookup. */
+function captureMediaType(relativePath: string): 'image/png' | TextMediaType | undefined {
+  const lower = relativePath.toLowerCase()
+  if (lower.endsWith(VEGA_LITE_EXTENSION)) return 'application/vnd.vega-lite+json'
+  return CAPTURE_MEDIA_TYPE_BY_EXTENSION.get(extname(lower))
+}
+
 /** Whether a walked relative path is eligible for auto-capture: no dotfile/dot-directory segment, and an allowlisted extension. */
 function isCaptureEligible(relativePath: string): boolean {
   if (relativePath.split('/').some(segment => segment.startsWith('.'))) return false
-  return CAPTURE_MEDIA_TYPE_BY_EXTENSION.has(extname(relativePath).toLowerCase())
+  return captureMediaType(relativePath) !== undefined
 }
 
 /** Inputs for one terminal run's auto-capture walk. */
@@ -109,7 +118,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   const state: ScienceFoldState = foldScience(session.events)
 
   for (const relativePath of files) {
-    const mediaType = CAPTURE_MEDIA_TYPE_BY_EXTENSION.get(extname(relativePath).toLowerCase())
+    const mediaType = captureMediaType(relativePath)
     /* v8 ignore next -- isCaptureEligible already required a mapped extension */
     if (mediaType === undefined) continue
 

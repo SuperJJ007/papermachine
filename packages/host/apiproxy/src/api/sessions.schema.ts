@@ -298,6 +298,7 @@ export const imageMediaTypeSchema = z.union([
 export const textMediaTypeSchema = z.union([
   z.literal('text/csv'),
   z.literal('application/json'),
+  z.literal('application/vnd.vega-lite+json'),
   z.literal('text/markdown'),
   z.literal('text/plain'),
 ])

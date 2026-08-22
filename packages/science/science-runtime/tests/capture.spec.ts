@@ -259,6 +259,27 @@ describe('Science auto-capture', () => {
     expect(stored.data).toEqual(source)
   })
 
+  it('captures a two-part .vl.json suffix as Vega-Lite while ordinary JSON stays generic', async () => {
+    const root = tmp('.science-capture-vega-lite-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-vega-lite')
+
+    const { result } = await runWithFiles(harness, root, session, {
+      'plots/summary.VL.JSON': '{"mark":"bar"}',
+      'plots/meta.json': '{"rows":2}',
+    })
+
+    expect(result.capture?.captured).toHaveLength(2)
+    expect(result.capture?.captured.find(version => version.logicalName === 'plots/summary.VL.JSON')).toMatchObject({
+      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+    })
+    expect(result.capture?.captured.find(version => version.logicalName === 'plots/meta.json')).toMatchObject({
+      attachment: { mediaType: 'application/json' },
+    })
+  })
+
   it('opens version 2 for changed bytes from a later tool-call turn sharing one request header', async () => {
     const root = tmp('.science-capture-new-changed-')
     const prefix = createFakePythonPrefix(root)

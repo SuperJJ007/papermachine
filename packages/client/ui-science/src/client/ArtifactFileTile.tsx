@@ -22,6 +22,7 @@ export function artifactExtensionLabel(mediaType: string): string {
   switch (mediaType) {
     case 'text/csv': return 'CSV'
     case 'application/json': return 'JSON'
+    case 'application/vnd.vega-lite+json': return 'VL'
     case 'text/markdown': return 'MD'
     case 'text/plain': return 'TXT'
     default: return (mediaType.split('/')[1] ?? mediaType).toUpperCase()

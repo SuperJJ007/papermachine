@@ -4969,7 +4969,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TextMediaType',
-    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
+    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'application/vnd.vega-lite+json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'TodoItem',

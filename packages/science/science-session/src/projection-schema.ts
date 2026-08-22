@@ -216,7 +216,13 @@ function validKernel(value: unknown): boolean {
       || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }
 
-const TEXT_ATTACHMENT_MEDIA_TYPES = ['text/csv', 'application/json', 'text/markdown', 'text/plain']
+const TEXT_ATTACHMENT_MEDIA_TYPES = [
+  'text/csv',
+  'application/json',
+  'application/vnd.vega-lite+json',
+  'text/markdown',
+  'text/plain',
+]
 
 function validImageAttachment(candidate: Record<string, unknown>): boolean {
   const keys = ['attachmentId', 'mediaType', 'bytes', 'width', 'height']

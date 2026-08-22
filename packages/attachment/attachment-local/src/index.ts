@@ -139,7 +139,13 @@ class SharedRequest<T> {
 }
 
 /** Local attachment backend's fixed, non-configurable text media-type allowlist (v1). */
-const TEXT_MEDIA_TYPES = Object.freeze(['text/csv', 'application/json', 'text/markdown', 'text/plain'] as const)
+const TEXT_MEDIA_TYPES = Object.freeze([
+  'text/csv',
+  'application/json',
+  'application/vnd.vega-lite+json',
+  'text/markdown',
+  'text/plain',
+] as const)
 
 /** Persistent content-addressed local attachment store. */
 export class LocalAttachmentStore extends AttachmentStore {

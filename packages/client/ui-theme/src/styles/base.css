@@ -12,4 +12,9 @@
   --ds-transition-duration: 0.2s;
   --ds-transition-duration-fast: 0.1s;
   --ds-transition-duration-slow: 0.3s;
+  /* Outer height of every session-column header (conversation two-row header:
+     12 pad + 32 title row + 4 gap + 27 tab strip + 1 border). Side panels
+     (Details) pin their single-row header to this token so both headers'
+     bottom divider lines land on the same pixels. */
+  --dsh-column-header-height: 76px;
 }

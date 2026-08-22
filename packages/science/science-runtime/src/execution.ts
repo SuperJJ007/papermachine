@@ -75,10 +75,16 @@ export function interpreterPathEnv(canonicalPrefix: string): string {
 }
 
 /**
- * Direct argv for one interpreter invocation: fixed per-language hardening
- * flags followed by the caller's trailing script arguments — a persistent
- * kernel's driver script path plus its response-FIFO path argument. Never a
- * shell command.
+ * Direct argv for one persistent kernel's interpreter invocation: fixed
+ * per-language hardening flags followed by the caller's trailing script
+ * arguments — the driver script path plus its response-FIFO path argument.
+ * Never a shell command. Kernel-only: an interpreter probe builds its own
+ * direct argv (`probeArgv` in `environment.ts`) and keeps Python `-I`
+ * (isolated mode), since a probe never needs a writable package-install
+ * target. A kernel drops `-I` so pip's user-site fallback under
+ * `PYTHONUSERBASE` (`kernel-process.ts`'s `kernelEnvironment`) lands on
+ * `sys.path` — the mechanism that makes an inline `pip install` importable
+ * within the same kernel (see the README's "Confinement and environment").
  * @param language - selects the fixed flag set.
  * @param executable - canonical interpreter executable.
  * @param scriptArgs - trailing arguments appended after the fixed flags.
@@ -86,7 +92,7 @@ export function interpreterPathEnv(canonicalPrefix: string): string {
  */
 export function interpreterArgv(language: ScienceLanguage, executable: string, ...scriptArgs: readonly string[]): string[] {
   return language === 'python'
-    ? [executable, '-I', '-B', '-u', '-X', 'utf8', ...scriptArgs]
+    ? [executable, '-B', '-u', '-X', 'utf8', ...scriptArgs]
     : [executable, '--vanilla', '--encoding=UTF-8', ...scriptArgs]
 }
 

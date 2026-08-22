@@ -308,15 +308,20 @@ describe('Science Runtime private scratch', () => {
     expect(planned.ref).toBe('kernels/python-0/')
     expect(planned.directory).toBe(join(scratch.kernels, 'python-0'))
     expect(planned.tmp).toBe(join(planned.directory, 'tmp'))
+    expect(planned.userLibrary).toBe(join(planned.directory, 'pyuser'))
 
     const created = await createKernelScratch(scratch, planned)
     expect(created).toEqual(planned)
     expectPrivateDirectory(created.directory)
     expectPrivateDirectory(created.tmp)
+    expectPrivateDirectory(created.userLibrary)
 
-    const second = await createKernelScratch(scratch, planKernelScratch(scratch, 'r', 1))
+    const plannedR = planKernelScratch(scratch, 'r', 1)
+    expect(plannedR.userLibrary).toBe(join(plannedR.directory, 'rlibs'))
+    const second = await createKernelScratch(scratch, plannedR)
     expect(second.directory).toBe(join(scratch.kernels, 'r-1'))
     expectPrivateDirectory(second.directory)
+    expectPrivateDirectory(second.userLibrary)
   })
 
   it('rejects escaping cleanup paths and invalid configured executables', async () => {
@@ -334,7 +339,11 @@ describe('Science Runtime private scratch', () => {
     const run = await createRunScratch(scratch, ScienceRunId('00000000-0000-4000-8000-000000000002'), 'r', Buffer.from('x'))
     await expect(removeUnpublishedRunScratch(scratch, { ...run, directory: scratch.runs })).rejects.toThrow(/escapes/)
     await expect(createKernelScratch(scratch, {
-      ref: 'kernels/python-0/', directory: scratch.kernels, tmp: join(scratch.kernels, 'tmp'),
+      ref: 'kernels/python-0/', directory: scratch.kernels, tmp: join(scratch.kernels, 'tmp'), userLibrary: join(scratch.kernels, 'pyuser'),
+    })).rejects.toThrow(/escape/)
+    const validKernelDirectory = join(scratch.kernels, 'python-1')
+    await expect(createKernelScratch(scratch, {
+      ref: 'kernels/python-1/', directory: validKernelDirectory, tmp: join(validKernelDirectory, 'tmp'), userLibrary: join(scratch.kernels, 'pyuser'),
     })).rejects.toThrow(/escape/)
     const outside = join(root, 'outside')
     writeFileSync(outside, 'outside')

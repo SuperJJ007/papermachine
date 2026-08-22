@@ -3,7 +3,7 @@
 long-lived process's module-level globals dict, so variables persist across
 runs within a session. Python stdlib only — no third-party imports.
 
-Invocation: python3 -I -B -u -X utf8 kernel_python.py <fifoPath>
+Invocation: python3 -B -u -X utf8 kernel_python.py <fifoPath>
 
 Frame grammar (single line, tab-separated, newline-terminated):
   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>
@@ -18,6 +18,7 @@ arity parity with the R driver, which uses it to report degraded capture.
 """
 import os
 import signal
+import site
 import sys
 import traceback
 
@@ -123,11 +124,32 @@ def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_
     return status, detail
 
 
+def ensure_user_site_importable():
+    # PYTHONUSERBASE is set only for this persistent kernel (never for an
+    # interpreter probe): under sandbox confinement the Conda prefix's own
+    # site-packages is read-only, so an inline `pip install` falls back to a
+    # user-site install here. Python only adds the user site-packages
+    # directory to sys.path once, during interpreter startup (site.py, before
+    # this driver's own code ever runs), and only if the directory already
+    # exists at that instant. Kernel spawn only creates PYTHONUSERBASE itself
+    # (a Host scratch directory) -- the nested "lib/pythonX.Y/site-packages"
+    # leaf pip actually installs into is created lazily by pip's own first
+    # install, too late for that one-time startup scan. Create the leaf now
+    # and add it explicitly so an install from any later RUN on this kernel
+    # is importable without a kernel restart.
+    if os.environ.get("PYTHONUSERBASE") and site.ENABLE_USER_SITE:
+        user_site = site.getusersitepackages()
+        os.makedirs(user_site, exist_ok=True)
+        site.addsitedir(user_site)
+
+
 def main():
     if len(sys.argv) != 2:
         print("usage: kernel_python.py <fifoPath>", file=sys.stderr)
         sys.exit(2)
     fifo_path = sys.argv[1]
+
+    ensure_user_site_importable()
 
     # Idle SIGINT hardening: ignored except during exec (see execute_run).
     signal.signal(signal.SIGINT, signal.SIG_IGN)

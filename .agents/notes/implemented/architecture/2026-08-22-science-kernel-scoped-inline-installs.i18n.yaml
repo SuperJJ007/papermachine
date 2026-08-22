@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-science-kernel-scoped-inline-installs.md
+2026-08-22-science-kernel-scoped-inline-installs.md: 85bfd4e5c98ca6d229b7ab18a37a69310492a520
+2026-08-22-science-kernel-scoped-inline-installs.zh.md: 8d15e80e7ac468749cb5d0d1d39d46bf803d8296

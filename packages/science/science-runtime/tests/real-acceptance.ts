@@ -1,9 +1,11 @@
 /** Opt-in real Conda acceptance with independent Python/R PASS, FAIL, or NOT-RUN reports. */
 
+import { execFile as execFileCallback } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -34,6 +36,11 @@ const IDLE_POLL_TIMEOUT_MS = 120_000
 const IDLE_POLL_INTERVAL_MS = 2_000
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const PNG = new Uint8Array(Buffer.from(PNG_BASE64, 'base64'))
+const execFile = promisify(execFileCallback)
+/** Stable marker both the Python wheel and R source-tarball fixtures print once imported, proving the exact installed fixture ran. */
+const INLINE_INSTALL_PROBE_MARKER = 'dsh-science-acceptance-probe-marker'
+const PYTHON_PROBE_MODULE = 'dsh_science_acceptance_probe'
+const R_PROBE_PACKAGE = 'dshscienceprobe'
 
 /** Per-language real acceptance status; fake prefixes never produce this report. */
 type RealAcceptanceStatus = 'PASS' | 'FAIL' | 'NOT-RUN'
@@ -188,6 +195,128 @@ function taintingSleepSource(language: ScienceLanguage): string {
 
 /** R source that leaves a bare top-level value for auto-printing, unreachable in Python's script semantics. */
 const R_BARE_VALUE_SOURCE = '41 + 1\n'
+
+/**
+ * Build one trivial, dependency-free, network-free Python wheel: a
+ * single-module package whose only content is a `MARKER` string. Built by
+ * the target prefix's own interpreter through stdlib `zipfile`/`hashlib`
+ * alone (no build backend, no `pip wheel`), so it needs nothing beyond what
+ * every configured Python prefix already provides. Proves inline
+ * `pip install --no-index` visibility for the K?.? real-acceptance check.
+ * @param pythonExecutable - the target prefix's canonical `python` executable.
+ * @param scratchDir - test-owned directory (outside the Runtime's own scratch tree) to build under.
+ * @returns absolute path of the built `.whl` file.
+ */
+async function buildTrivialPythonWheel(pythonExecutable: string, scratchDir: string): Promise<string> {
+  await mkdir(scratchDir, { recursive: true })
+  const buildScript = join(scratchDir, 'build_probe_wheel.py')
+  const wheelPath = join(scratchDir, `${PYTHON_PROBE_MODULE}-0.0.1-py3-none-any.whl`)
+  await writeFile(buildScript, [
+    'import base64, hashlib, sys, zipfile',
+    '',
+    'wheel_path, marker = sys.argv[1], sys.argv[2]',
+    'module_source = "MARKER = " + repr(marker) + "\\n"',
+    'metadata = "Metadata-Version: 2.1\\nName: dsh-science-acceptance-probe\\nVersion: 0.0.1\\n"',
+    'wheel_metadata = (',
+    '    "Wheel-Version: 1.0\\nGenerator: dsh-science-runtime-real-acceptance\\n"',
+    '    "Root-Is-Purelib: true\\nTag: py3-none-any\\n"',
+    ')',
+    'entries = {',
+    '    "dsh_science_acceptance_probe.py": module_source,',
+    '    "dsh_science_acceptance_probe-0.0.1.dist-info/METADATA": metadata,',
+    '    "dsh_science_acceptance_probe-0.0.1.dist-info/WHEEL": wheel_metadata,',
+    '}',
+    'record_lines = []',
+    'with zipfile.ZipFile(wheel_path, "w", zipfile.ZIP_DEFLATED) as archive:',
+    '    for name, content in entries.items():',
+    '        data = content.encode("utf-8")',
+    '        archive.writestr(name, data)',
+    '        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode("ascii")',
+    '        record_lines.append(name + ",sha256=" + digest + "," + str(len(data)))',
+    '    record_lines.append("dsh_science_acceptance_probe-0.0.1.dist-info/RECORD,,")',
+    '    archive.writestr(',
+    '        "dsh_science_acceptance_probe-0.0.1.dist-info/RECORD",',
+    '        "\\n".join(record_lines) + "\\n",',
+    '    )',
+    '',
+  ].join('\n'), 'utf8')
+  await execFile(pythonExecutable, [buildScript, wheelPath, INLINE_INSTALL_PROBE_MARKER])
+  return wheelPath
+}
+
+/** Python source that pip-installs the built wheel with no network and no external index, inside the confined kernel. */
+function pipInstallSource(wheelPath: string): string {
+  return [
+    'import subprocess, sys',
+    'subprocess.run(',
+    '    [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps", "--disable-pip-version-check", ' + JSON.stringify(wheelPath) + '],',
+    '    check=True,',
+    ')',
+    '',
+  ].join('\n')
+}
+
+/** Imports the probe module and prints its marker; fails `ModuleNotFoundError` once the install did not survive a restart. */
+const PYTHON_PROBE_IMPORT_SOURCE = [
+  `import ${PYTHON_PROBE_MODULE}`,
+  `print(${PYTHON_PROBE_MODULE}.MARKER)`,
+  '',
+].join('\n')
+
+/**
+ * Build one trivial, dependency-free, network-free R source-package tarball:
+ * a single exported function returning a marker string. Built by the target
+ * prefix's own `Rscript` through base `utils::tar()` alone (`tar = "internal"`,
+ * a pure-R implementation — no system `tar` binary, no CRAN, no compiler
+ * toolchain since the package has no compiled code). Proves inline
+ * `install.packages()` visibility for the K?.? real-acceptance check.
+ * @param rscriptExecutable - the target prefix's canonical `Rscript` executable.
+ * @param scratchDir - test-owned directory (outside the Runtime's own scratch tree) to build under.
+ * @returns absolute path of the built `.tar.gz` source package.
+ */
+async function buildTrivialRSourceTarball(rscriptExecutable: string, scratchDir: string): Promise<string> {
+  const pkgDir = join(scratchDir, R_PROBE_PACKAGE)
+  await mkdir(join(pkgDir, 'R'), { recursive: true })
+  await writeFile(join(pkgDir, 'DESCRIPTION'), [
+    `Package: ${R_PROBE_PACKAGE}`,
+    'Version: 0.0.1',
+    'Title: DSH Science real-acceptance probe',
+    'Description: Trivial local source package built only to prove inline install.packages() visibility.',
+    'License: MIT',
+    '',
+  ].join('\n'), 'utf8')
+  await writeFile(join(pkgDir, 'NAMESPACE'), 'export(dsh_probe_marker)\n', 'utf8')
+  await writeFile(
+    join(pkgDir, 'R', 'probe.R'),
+    `dsh_probe_marker <- function() ${JSON.stringify(INLINE_INSTALL_PROBE_MARKER)}\n`,
+    'utf8',
+  )
+  const buildScript = join(scratchDir, 'build_probe_package.R')
+  const tarballPath = join(scratchDir, `${R_PROBE_PACKAGE}_0.0.1.tar.gz`)
+  await writeFile(buildScript, [
+    'args <- commandArgs(trailingOnly = TRUE)',
+    'pkgDir <- args[[1]]',
+    'tarballPath <- args[[2]]',
+    'oldwd <- setwd(dirname(pkgDir))',
+    'on.exit(setwd(oldwd))',
+    'utils::tar(tarfile = tarballPath, files = basename(pkgDir), compression = "gzip", tar = "internal")',
+    '',
+  ].join('\n'), 'utf8')
+  await execFile(rscriptExecutable, [buildScript, pkgDir, tarballPath])
+  return tarballPath
+}
+
+/** R source that non-interactively installs the built local source tarball, no network, no CRAN mirror. */
+function installPackagesSource(tarballPath: string): string {
+  return `install.packages(${JSON.stringify(tarballPath)}, repos = NULL, type = "source", quiet = TRUE)\n`
+}
+
+/** Loads the probe package and prints its marker; fails R's "there is no package called" once the install did not survive a restart. */
+const R_PROBE_LIBRARY_SOURCE = [
+  `library(${R_PROBE_PACKAGE})`,
+  'cat(dsh_probe_marker(), "\\n")',
+  '',
+].join('\n')
 
 /** Require one terminal value to carry the expected post-start classification. */
 function expectTerminal(result: ScienceRunResult, status: string, failureCode?: string): void {
@@ -558,6 +687,63 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     expectTerminal(printXAfterIdleResult, 'failed', 'EXECUTION_FAILED')
     if (printXAfterIdleResult.terminal.kernelEpoch <= epoch3) throw new Error('idle expiry did not replace the kernel with a fresh epoch')
     checks.push(`idle expiry (kernelIdleTimeoutMs=${String(MIN_KERNEL_IDLE_TIMEOUT_MS)}) starts a fresh epoch`)
+
+    // Inline-install visibility (the defect this fix closes): a same-kernel
+    // pip install/install.packages() must be importable in the same kernel
+    // and gone after the next fresh kernel — proving the install landed
+    // under the kernel-scoped PYTHONUSERBASE/R_LIBS_USER, not carried by the
+    // session or the environment.
+    const installEpoch = printXAfterIdleResult.terminal.kernelEpoch
+    const fixtureRoot = join(dshHome, 'real-acceptance-fixtures', language)
+    const installSource = language === 'python'
+      ? pipInstallSource(await buildTrivialPythonWheel(executable, fixtureRoot))
+      : installPackagesSource(await buildTrivialRSourceTarball(executable, fixtureRoot))
+
+    const install = await context.scienceRuntime.startRun({
+      session, language, code: installSource,
+      ...authorize(session, toolName, 18),
+      signal: new AbortController().signal,
+    })
+    expectEpoch(expectTerminalReturning(await install.done, 'success'), installEpoch)
+    checks.push('inline install (no network, no external index) succeeds against the kernel-scoped user-install base')
+
+    const importSource = language === 'python' ? PYTHON_PROBE_IMPORT_SOURCE : R_PROBE_LIBRARY_SOURCE
+    const importSameKernel = await context.scienceRuntime.startRun({
+      session, language, code: importSource,
+      ...authorize(session, toolName, 19),
+      signal: new AbortController().signal,
+    })
+    const importSameKernelResult = await importSameKernel.done
+    expectTerminal(importSameKernelResult, 'success')
+    expectEpoch(importSameKernelResult, installEpoch)
+    if (!importSameKernelResult.stdout.text.includes(INLINE_INSTALL_PROBE_MARKER)) {
+      throw new Error('inline install was not importable within the same kernel that installed it')
+    }
+    checks.push('inline install is importable within the same kernel that installed it')
+
+    const restartedEnvironment: ScienceEnvironmentBinding = {
+      ...environment,
+      revision: environment.revision + 2,
+      configuredAt: Date.now(),
+      validatedAt: Date.now(),
+    }
+    session.append('science/environment-bound', { version: 1, environment: restartedEnvironment })
+
+    const importAfterRestart = await context.scienceRuntime.startRun({
+      session, language, code: importSource,
+      ...authorize(session, toolName, 20),
+      signal: new AbortController().signal,
+    })
+    const importAfterRestartResult = await importAfterRestart.done
+    expectTerminal(importAfterRestartResult, 'failed', 'EXECUTION_FAILED')
+    if (importAfterRestartResult.terminal.kernelEpoch <= installEpoch) {
+      throw new Error('environment-rebound did not replace the kernel before the post-restart import check')
+    }
+    const expectedRestartError = language === 'python' ? 'ModuleNotFoundError' : 'there is no package called'
+    if (!importAfterRestartResult.stderr.text.includes(expectedRestartError)) {
+      throw new Error(`inline install survived a fresh kernel: expected ${JSON.stringify(expectedRestartError)} in stderr, got ${JSON.stringify(importAfterRestartResult.stderr.text)}`)
+    }
+    checks.push('inline install does not survive a fresh kernel: kernel-scoped, not session- or environment-scoped')
   } catch (error) {
     failureLatch.record(error)
   } finally {

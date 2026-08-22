@@ -78,6 +78,21 @@ class KernelStdinFaultSubprocess extends LocalSubprocessRuntime {
 }
 
 /**
+ * Records the exact confined argv and child environment for the kernel's own
+ * spawn (identified the same way as {@link KernelStdinFaultSubprocess}:
+ * `stdio.stdin === 'pipe'`, unique to `KernelProcess`'s spawn among this
+ * harness's spawns), without altering the real spawn.
+ */
+class CapturingSubprocess extends LocalSubprocessRuntime {
+  captured: SubprocessSpawnSpec | undefined
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    if (spec.stdio.stdin === 'pipe') this.captured = spec
+    return super.spawn(spec)
+  }
+}
+
+/**
  * Overrides the mkfifo spawn's own settled outcome to a nonzero exit with no
  * collected stderr stream, reaching createResponseFifo's defensive `?? ''` fallback.
  */
@@ -217,6 +232,36 @@ describe('KernelProcess', () => {
     const harness = await createHarness('kernel-handshake')
     const kernel = await startKernel(harness, 'python')
     expect(kernel).toBeInstanceOf(KernelProcess)
+    await kernel.end('test-teardown')
+  })
+
+  it('spawns a Python kernel without isolated mode and with a kernel-scoped PYTHONUSERBASE', async () => {
+    const harness = await createHarness('kernel-python-userbase', { subprocess: CapturingSubprocess })
+    const kernel = await startKernel(harness, 'python', { index: 3 })
+    const capturing = harness.services.subprocess as CapturingSubprocess
+    const spec = capturing.captured
+    if (spec === undefined) throw new Error('kernel spawn was never captured')
+    expect(spec.argv).not.toContain('-I')
+    expect(spec.argv).toEqual(expect.arrayContaining(['-B', '-u', '-X', 'utf8']))
+    const kernelDirectory = join(harness.services.sessionScratch.kernels, 'python-3')
+    const expectedUserBase = join(kernelDirectory, 'pyuser')
+    expect(spec.env?.PYTHONUSERBASE).toBe(expectedUserBase)
+    expect(spec.env?.R_LIBS_USER).toBeUndefined()
+    expect(existsSync(expectedUserBase)).toBe(true)
+    await kernel.end('test-teardown')
+  })
+
+  it('spawns an R kernel with a kernel-scoped R_LIBS_USER and no PYTHONUSERBASE', async () => {
+    const harness = await createHarness('kernel-r-libs-user', { subprocess: CapturingSubprocess })
+    const kernel = await startKernel(harness, 'r', { index: 2 })
+    const capturing = harness.services.subprocess as CapturingSubprocess
+    const spec = capturing.captured
+    if (spec === undefined) throw new Error('kernel spawn was never captured')
+    const kernelDirectory = join(harness.services.sessionScratch.kernels, 'r-2')
+    const expectedLibsUser = join(kernelDirectory, 'rlibs')
+    expect(spec.env?.R_LIBS_USER).toBe(expectedLibsUser)
+    expect(spec.env?.PYTHONUSERBASE).toBeUndefined()
+    expect(existsSync(expectedLibsUser)).toBe(true)
     await kernel.end('test-teardown')
   })
 

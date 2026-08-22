@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { quiesce, readCaptureTail } from '../src/execution.ts'
+import { interpreterArgv, quiesce, readCaptureTail } from '../src/execution.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -13,6 +13,18 @@ const contexts: Context[] = []
 afterEach(async () => {
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+describe('interpreterArgv', () => {
+  it('drops isolated mode for a Python kernel so PYTHONUSERBASE-scoped inline installs are importable', () => {
+    expect(interpreterArgv('python', '/prefix/bin/python', '/driver.py', '/resp.fifo'))
+      .toEqual(['/prefix/bin/python', '-B', '-u', '-X', 'utf8', '/driver.py', '/resp.fifo'])
+  })
+
+  it('leaves the R kernel flag set unaffected', () => {
+    expect(interpreterArgv('r', '/prefix/bin/Rscript', '/driver.R', '/resp.fifo'))
+      .toEqual(['/prefix/bin/Rscript', '--vanilla', '--encoding=UTF-8', '/driver.R', '/resp.fifo'])
+  })
 })
 
 describe('readCaptureTail', () => {

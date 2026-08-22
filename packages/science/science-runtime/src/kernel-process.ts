@@ -28,7 +28,7 @@ import {
 } from './execution.ts'
 import type { Quiescence } from './execution.ts'
 import { createKernelScratch, planKernelScratch } from './scratch.ts'
-import type { ScienceSessionScratch } from './scratch.ts'
+import type { ScienceKernelScratch, ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
 
 /**
@@ -243,17 +243,26 @@ async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fi
 /**
  * Exact empty-base child environment for a persistent kernel's baseline
  * spawn (per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
+ * Carries the kernel-scoped user-install base
+ * ({@link ScienceKernelScratch.userLibrary}) as `PYTHONUSERBASE` (Python) or
+ * `R_LIBS_USER` (R): the writable target an inline `pip install`/
+ * `install.packages()` falls back to under sandbox confinement, and the
+ * location the dropped `-I` flag ({@link interpreterArgv}) lets Python's
+ * `sys.path` see again within the same kernel.
  */
 function kernelEnvironment(
   binding: ScienceInterpreterAvailableBinding,
   sessionScratch: ScienceSessionScratch,
-  tmp: string,
+  kernelScratch: ScienceKernelScratch,
 ): NodeJS.ProcessEnv {
   return {
     HOME: sessionScratch.home,
-    TMPDIR: tmp,
+    TMPDIR: kernelScratch.tmp,
     PATH: interpreterPathEnv(binding.canonicalPrefix),
     SCIENCE_STATE_DIR: sessionScratch.state,
+    ...(binding.language === 'python'
+      ? { PYTHONUSERBASE: kernelScratch.userLibrary }
+      : { R_LIBS_USER: kernelScratch.userLibrary }),
     ...localeEnvironment(),
   }
 }
@@ -365,7 +374,7 @@ export class KernelProcess {
         },
         graceMs: DESCENDANT_GRACE_MS,
         environmentBase: 'empty',
-        env: kernelEnvironment(binding, services.sessionScratch, kernelScratch.tmp),
+        env: kernelEnvironment(binding, services.sessionScratch, kernelScratch),
       })
       const kernel = new KernelProcess(handle, fifoPath, readStream)
       await kernel.awaitReady(kernelStartTimeoutMs, signal)

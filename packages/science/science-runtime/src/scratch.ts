@@ -80,6 +80,15 @@ export interface ScienceKernelScratch {
   readonly directory: string
   /** Owned baseline TMPDIR; the driver overrides it per run and restores it after. */
   readonly tmp: string
+  /**
+   * Owned per-kernel user-install base: forwarded as `PYTHONUSERBASE` for a
+   * Python kernel (subdirectory `pyuser`) or `R_LIBS_USER` for an R kernel
+   * (subdirectory `rlibs`) so an inline `pip install`/`install.packages()`
+   * lands somewhere writable and importable within this kernel process —
+   * scoped to this exact kernel instance and never carried to a same-language
+   * successor kernel (idle restart, crash, or environment-rebound).
+   */
+  readonly userLibrary: string
 }
 
 const OWNER_VERSION = 1
@@ -400,11 +409,17 @@ export function planKernelScratch(
   if (!containsPath(sessionScratch.kernels, directory) || directory === sessionScratch.kernels) {
     throw new Error('science-runtime: kernel directory escapes the owned kernels directory')
   }
-  return { ref: `kernels/${name}/`, directory, tmp: join(directory, 'tmp') }
+  return {
+    ref: `kernels/${name}/`,
+    directory,
+    tmp: join(directory, 'tmp'),
+    userLibrary: join(directory, language === 'python' ? 'pyuser' : 'rlibs'),
+  }
 }
 
 /**
- * Create a private kernel directory and its baseline TMPDIR.
+ * Create a private kernel directory, its baseline TMPDIR, and its owned
+ * per-language user-install base ({@link ScienceKernelScratch.userLibrary}).
  * @param sessionScratch - Retained private root that owns the new kernel directory.
  * @param planned - Exact pre-wrapped kernel paths, or a newly planned tree by default.
  * @returns Private kernel paths for one persistent kernel process.
@@ -414,11 +429,13 @@ export async function createKernelScratch(
   planned: ScienceKernelScratch,
 ): Promise<ScienceKernelScratch> {
   if (!containsPath(sessionScratch.kernels, planned.directory) || planned.directory === sessionScratch.kernels
-    || planned.tmp !== join(planned.directory, 'tmp')) {
+    || planned.tmp !== join(planned.directory, 'tmp')
+    || dirname(planned.userLibrary) !== planned.directory) {
     throw new Error('science-runtime: planned kernel paths escape the owned kernels directory')
   }
   await createPrivateDirectory(planned.directory)
   await createPrivateDirectory(planned.tmp)
+  await createPrivateDirectory(planned.userLibrary)
   return planned
 }
 

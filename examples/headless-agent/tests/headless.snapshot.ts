@@ -406,10 +406,10 @@ describe('headless stream-json snapshots', () => {
       if (refreshing) await writeFile(streamExpected, stream)
       expect(stream).toBe(await readFile(streamExpected, 'utf8'))
       expect(stream).not.toContain(PNG_BASE64)
-      // Four auto-captured artifact-saved events (one per csv/json/md/png
-      // file) plus one curated re-save reusing the PNG's own artifact id.
-      expect(ids.chartIds).toHaveLength(5)
-      expect(new Set(ids.chartIds).size).toBe(4)
+      // Four initial auto-captures, one curated re-save reusing the PNG id,
+      // and one edited branch whose parent pins that curated version.
+      expect(ids.chartIds).toHaveLength(6)
+      expect(new Set(ids.chartIds).size).toBe(5)
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })

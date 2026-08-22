@@ -6,7 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
-import { replayScience } from '@deepseek-ai/dsh-science-session'
+import { replayScience, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactVersion, ScienceLanguage, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './context.ts'
@@ -21,6 +21,24 @@ const outputStreamSchema = {
     text: { type: 'string', required: true },
     bytes: { type: 'integer', required: true },
     truncated: { type: 'boolean', required: true },
+  },
+} as const
+
+const artifactVersionRefSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    artifactId: { type: 'string', required: true },
+    version: { type: 'integer', required: true },
+  },
+} as const
+
+const runArtifactRefSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ...artifactVersionRefSchema.properties,
+    path: { type: 'string', required: true },
   },
 } as const
 
@@ -45,6 +63,7 @@ const capturedArtifactSchema = {
     title: { type: 'string', required: true },
     attachmentId: { type: 'string', required: true },
     attachmentName: { type: 'string' },
+    parent: artifactVersionRefSchema,
   },
 } as const
 
@@ -120,6 +139,9 @@ function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typ
     title: artifact.title,
     attachmentId: String(attachment.attachmentId),
     ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
+    ...artifact.parent === undefined ? {} : {
+      parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
+    },
   }
 }
 
@@ -218,7 +240,10 @@ export function formatRunResult(value: ScienceRunValue): string {
       const dimensions = artifact.width !== undefined && artifact.height !== undefined
         ? `, ${String(artifact.width)}x${String(artifact.height)}`
         : ''
-      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.mediaType}${dimensions}, ${formatBytes(artifact.bytes)})`
+      const ancestry = artifact.parent === undefined
+        ? ''
+        : `, edited from ${artifact.parent.artifactId} v${String(artifact.parent.version)}`
+      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.artifactId}; ${artifact.mediaType}${dimensions}, ${formatBytes(artifact.bytes)}${ancestry})`
     })
     const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
     lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)
@@ -244,10 +269,20 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
   ctx.tools.register(defineTool({
     name: language === 'python' ? 'run_python' : 'run_r',
     description: language === 'python'
-      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.'
-      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.',
+      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.'
+      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.',
     parameters: {
       code: { type: 'string', required: true, description: 'Non-empty source to execute.' },
+      artifact_inputs: {
+        type: 'array',
+        items: runArtifactRefSchema,
+        description: 'Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.',
+      },
+      edit_of: {
+        type: 'array',
+        items: runArtifactRefSchema,
+        description: 'Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.',
+      },
     },
     output: {
       schema: runOutputSchema,
@@ -268,10 +303,25 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
       if (requestHeaderSeq === undefined) {
         throw new Error('tool-science: no request/header is recorded for this session')
       }
+      const editPaths = args.edit_of?.map(item => item.path)
+      if (editPaths !== undefined && new Set(editPaths).size !== editPaths.length) {
+        throw new Error('tool-science: edit_of paths must be unique')
+      }
       const handle = await scienceRuntime.startRun({
         session,
         language,
         code,
+        ...args.artifact_inputs === undefined ? {} : {
+          artifactInputs: args.artifact_inputs.map(input => ({
+            artifactId: ScienceArtifactId(input.artifactId), version: input.version, path: input.path,
+          })),
+        },
+        ...args.edit_of === undefined ? {} : {
+          editBaselines: Object.fromEntries(args.edit_of.map(edit => [
+            edit.path,
+            { artifactId: ScienceArtifactId(edit.artifactId), version: edit.version },
+          ])),
+        },
         toolCallId: exec.callId,
         requestHeaderSeq,
         signal: exec.signal,

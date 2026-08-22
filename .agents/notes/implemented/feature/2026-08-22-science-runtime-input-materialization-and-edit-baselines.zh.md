@@ -38,7 +38,7 @@ input path 会拒绝空值、点、父级、反斜线、NUL、异常 Unicode、�
 
 Runtime 调用方可以针对精确既有证据执行，并在 Session log 中记录依赖，而无需公开附件存储或 Host path。捕获祖先关系会保留既有名称 edit、跨 artifact 分支与陈旧 baseline，且不改变 artifact 版本顺序。
 
-面向模型的 `run_python` 与 `run_r` schema 仍未开放这些字段；该 Consumer 工作、receipt 与 assembled-app snapshot 属于下一个工具切片。物化 input 会按既有保留策略随已接纳的 run scratch 一并保留。
+面向模型的 `run_python` 与 `run_r` schema 通过 [Science run 工具的精确版本 input](2026-08-22-science-run-tool-exact-version-inputs.zh.md)决策开放这些字段。物化 input 会按既有保留策略随已接纳的 run scratch 一并保留。
 
 ## Testing
 

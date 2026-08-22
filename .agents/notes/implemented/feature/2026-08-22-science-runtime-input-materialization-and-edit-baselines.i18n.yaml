@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-science-runtime-input-materialization-and-edit-baselines.md
-2026-08-22-science-runtime-input-materialization-and-edit-baselines.md: 36173f907e1dd0961a73dcace99081fe68c9e4d0
-2026-08-22-science-runtime-input-materialization-and-edit-baselines.zh.md: 6ae28e352ff729dac547125ee20e77bb5314314e
+2026-08-22-science-runtime-input-materialization-and-edit-baselines.md: 7938f95b5daae279b236a4fc5136c5049222a6e7
+2026-08-22-science-runtime-input-materialization-and-edit-baselines.zh.md: b5cc5b60e77f4aace95096511524845a41f11df6

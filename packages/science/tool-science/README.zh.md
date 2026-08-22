@@ -29,8 +29,8 @@
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 artifact-version 历史、遗漏计数、outcome 与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
-| `run_python` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 Python kernel 中运行 `code`，并转发该工具调用的取消信号。其结果还会列出本次 run 被自动捕获持久保存的文件（见”Run 结果”）。 |
-| `run_r` | `code`（非空字符串） | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 R kernel 中运行 `code`，并转发该工具调用的取消信号。其结果同样会列出本次 run 被自动捕获持久保存的文件。 |
+| `run_python` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of` | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 Python kernel 中运行 `code`，并转发该工具调用的取消信号。`artifact_inputs` 把精确的 `{artifactId, version}` 物化到 `inputs/` 下的路径；`edit_of` 把捕获相对输出路径映射到精确父版本。其结果会列出本次 run 被自动捕获并持久保存的文件（见“Run 结果”）。 |
+| `run_r` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of` | 对该 session 的持久化 R kernel 应用相同的精确版本 input 与 edit parent 行为。 |
 | `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，因此它为所命名的版本重新加标题，而不会提交一个字节与其前身完全相同的新版本。返回文本 receipt，绝不返回文件字节。 |
 | `publish_outcome` | `title`、`summary_markdown`、非空 `evidence` | 解析唯一的先前 run/artifact/message 引用并派生其 environment revision 后，追加下一条连续 Outcome revision。 |
 
@@ -76,7 +76,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact` 与 `publish_outcome` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
+模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact` 与 `publish_outcome` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
 
 #### Token 影响
 
@@ -90,7 +90,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-当这次 run 是其自身 kernel epoch 下、在该语言更早一个 epoch 之后记录的第一次 run 时，开头会有一行陈述这一事实：`kernel restarted (<reason>): variables from earlier runs are gone`，`<reason>` 取自 `idle timeout`、`environment re-bind`、`interrupt escalation`、`kernel crash`、`session end` 之一，或 `protocol`/`service-disposed` 两个内部故障措辞——这是 run 结果会陈述的唯一 kernel fact，且只在它有信息量时才出现（该语言的最初一个 epoch，以及之后每一次复用同一 kernel 的 run，这里都不会新增任何内容）。随后每次 run 都会渲染为 `status: <status>`，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出：`` Captured 2 artifacts: `summary.csv` v1 (text/csv, 4.1 KB), `plots/loss.png` v1 (image/png, 812x600). ``；跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是一个错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的那些 durable `science/artifact-saved`/`science/kernel-state` 事件。
+当这次 run 是其自身 kernel epoch 下、在该语言更早一个 epoch 之后记录的第一次 run 时，开头会有一行陈述这一事实：`kernel restarted (<reason>): variables from earlier runs are gone`，`<reason>` 取自 `idle timeout`、`environment re-bind`、`interrupt escalation`、`kernel crash`、`session end` 之一，或 `protocol`/`service-disposed` 两个内部故障措辞——这是 run 结果会陈述的唯一 kernel fact，且只在它有信息量时才出现（该语言的最初一个 epoch，以及之后每一次复用同一 kernel 的 run，这里都不会新增任何内容）。随后每次 run 都会渲染为 `status: <status>`，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出产物的逻辑名、版本、稳定产物 id、媒体类型、可选尺寸与字节数：`` Captured 2 artifacts: `summary.csv` v1 (artifact-a; text/csv, 4.1 KB), `plots/loss.png` v4 (artifact-b; image/png, 812x600, edited from artifact-b v2). `` 带显式祖先关系的产物还会命名其精确父级 id 与版本；跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的 durable `science/artifact-saved`/`science/kernel-state` 事件。
 
 #### Token 影响
 
@@ -132,7 +132,7 @@ Append-only；新出现的结果文本位于可复用 request prefix 之后。
 
 #### 模型看到的内容
 
-配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source 或 publication field、嵌套 mutation dispatch、未知的 artifact `logical_name`/`version`，以及无效或重复的 Outcome evidence。
+配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source 或 publication field、嵌套 mutation dispatch、重复的 `edit_of` path、无法解析或无效的 artifact input/edit parent、未知的 artifact `logical_name`/`version`，以及无效或重复的 Outcome evidence。
 
 #### Token 影响
 
@@ -144,5 +144,5 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 ## 已知限制与暂缓事项
 
-- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
+- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.zh.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md) Agent Note。
 - **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成输出文件，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。

@@ -38,7 +38,7 @@ Captured images continue through the attachment provider's verbatim admission ro
 
 Runtime callers can execute against exact prior evidence and record the dependency in the Session log without exposing attachment storage or Host paths. Capture ancestry preserves existing-name edits, cross-artifact branches, and stale baselines without changing artifact version ordering.
 
-The model-facing `run_python` and `run_r` schemas still do not expose these fields; that Consumer work, receipts, and assembled-app snapshot belong to the next tool slice. Materialized inputs remain retained with accepted run scratch under the existing retention policy.
+The model-facing `run_python` and `run_r` schemas expose these fields through the [Science run-tool exact-version inputs](2026-08-22-science-run-tool-exact-version-inputs.md) decision. Materialized inputs remain retained with accepted run scratch under the existing retention policy.
 
 ## Testing
 

@@ -2378,7 +2378,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `run_python`
 
-在该 session 绑定的 persistent Python kernel 上运行 Python 源码：变量、import 与定义会在多次调用之间保留在内存中，直到 kernel 重启。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `pip install` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent Python kernel 上运行 Python 源码：变量、import 与定义会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 inputs/ 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `pip install` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {
@@ -2387,6 +2387,54 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
     "code": {
       "type": "string",
       "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
     }
   },
   "required": [
@@ -2399,7 +2447,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `run_r`
 
-在该 session 绑定的 persistent R kernel 上运行 R 源码：变量与已加载的 package 会在多次调用之间保留在内存中，直到 kernel 重启。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `install.packages()` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。error condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent R kernel 上运行 R 源码：变量与已加载的 package 会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 inputs/ 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `install.packages()` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。error condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {
@@ -2408,6 +2456,54 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
     "code": {
       "type": "string",
       "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
     }
   },
   "required": [

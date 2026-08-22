@@ -133,13 +133,61 @@
     },
     {
       "name": "run_python",
-      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
           "code": {
             "type": "string",
             "description": "Non-empty source to execute."
+          },
+          "artifact_inputs": {
+            "type": "array",
+            "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "edit_of": {
+            "type": "array",
+            "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
           }
         },
         "required": [
@@ -149,13 +197,61 @@
     },
     {
       "name": "run_r",
-      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
+      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under inputs/ with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
       "parameters": {
         "type": "object",
         "properties": {
           "code": {
             "type": "string",
             "description": "Non-empty source to execute."
+          },
+          "artifact_inputs": {
+            "type": "array",
+            "description": "Exact artifact versions to materialize below inputs/. Each item is {artifactId, version, path}, where path is relative to inputs/.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "edit_of": {
+            "type": "array",
+            "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
           }
         },
         "required": [
@@ -187,7 +283,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 4 artifacts: `meta.json` v1 (application/json, 12 B), `notes.md` v1 (text/markdown, 37 B), `plot.png` v1 (image/png, 1x1, 68 B), `summary.csv` v1 (text/csv, 27 B)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 4 artifacts: `meta.json` v1 ({{scienceChartId}}; application/json, 12 B), `notes.md` v1 ({{scienceChartId}}; text/markdown, 37 B), `plot.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B), `summary.csv` v1 ({{scienceChartId}}; text/csv, 27 B)."
         }
       ]
     },
@@ -223,7 +319,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)"
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `edited.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B, edited from {{scienceChartId}} v1)."
         }
       ]
     }

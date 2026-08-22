@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
@@ -38,7 +38,7 @@ import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
 import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
 import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annotate-artifact.ts'
 import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
-import { formatRunResult, kernelRestartReason, requireScienceSession, runValueFromResult } from '../src/run.ts'
+import { formatRunResult, kernelRestartReason, latestRequestHeaderSeq, requireScienceSession, runValueFromResult } from '../src/run.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
@@ -580,6 +580,7 @@ describe('runValueFromResult / formatRunResult', () => {
     const csv = artifactVersionFixture({
       logicalName: 'summary.csv',
       version: 1,
+      parent: { artifactId: ScienceArtifactId('source-artifact'), version: 2 },
       attachment: { attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), mediaType: 'text/csv', bytes: 2048 },
     })
     const value = runValueFromResult({
@@ -596,13 +597,14 @@ describe('runValueFromResult / formatRunResult', () => {
       {
         artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048,
         title: 'file', attachmentId: `sha256:${'c'.repeat(64)}`,
+        parent: { artifactId: 'source-artifact', version: 2 },
       },
     ])
     expect(value.captureSkippedOversizedCount).toBe(3)
     expect(value.captureTruncatedPerRun).toBe(true)
     expect(value.captureTruncatedPerSession).toBe(true)
     const text = formatRunResult(value)
-    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (image/png, 10x20, 500 B), `summary.csv` v1 (text/csv, 2.0 KB).')
+    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 10x20, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB, edited from source-artifact v2).')
     expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
     expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
@@ -624,7 +626,7 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(value).not.toHaveProperty('captureTruncatedPerRun')
     expect(value).not.toHaveProperty('captureTruncatedPerSession')
     const text = formatRunResult(value)
-    expect(text).toContain('Captured 1 artifact: `dataset.json` v1 (application/json, 3.0 MB).')
+    expect(text).toContain('Captured 1 artifact: `dataset.json` v1 (artifact-1; application/json, 3.0 MB).')
     expect(text).not.toContain('eligible file(s) skipped')
     expect(text).not.toContain('capture limit')
   })
@@ -730,6 +732,24 @@ describe('kernelRestartReason', () => {
       kernels: [kernelStarted(1, 'r'), kernelStarted(2)],
     })
     expect(kernelRestartReason(projection, runAt('run-1', 2))).toBeUndefined()
+  })
+
+  it('is undefined when the prior exited kernel lacks its required closing facts', () => {
+    const projection = projectionFixture({
+      runs: [runAt('run-1', 1), runAt('run-2', 2)],
+      kernels: [
+        {
+          kernelEpoch: 1,
+          language,
+          state: 'exited',
+          environmentRevision: 1,
+          environmentFingerprint: 'a'.repeat(64),
+          at: 1,
+        },
+        kernelStarted(2),
+      ],
+    })
+    expect(kernelRestartReason(projection, runAt('run-2', 2))).toBeUndefined()
   })
 })
 
@@ -1097,6 +1117,21 @@ describe('get_science_state', () => {
 })
 
 describe('run_python', () => {
+  it('registers identical exact-version input and edit schemas for both run tools', async () => {
+    const { ctx } = await setup()
+    const schemas = ctx.tools.schemas()
+    const python = schemas.find(schema => schema.name === 'run_python')
+    const r = schemas.find(schema => schema.name === 'run_r')
+    const pythonProperties = python?.parameters.properties as Record<string, unknown> | undefined
+    const rProperties = r?.parameters.properties as Record<string, unknown> | undefined
+    expect(pythonProperties).toMatchObject({
+      artifact_inputs: { type: 'array' },
+      edit_of: { type: 'array' },
+    })
+    expect(rProperties?.artifact_inputs).toEqual(pythonProperties?.artifact_inputs)
+    expect(rProperties?.edit_of).toEqual(pythonProperties?.edit_of)
+  })
+
   it('rejects empty code before starting a run', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-empty')
@@ -1132,6 +1167,76 @@ describe('run_python', () => {
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no Science Runtime is mounted'))).toBe(true)
+  })
+
+  it('rejects duplicate edit_of paths before publishing a run', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-run-duplicate-edit-path')
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: CallId('run-duplicate-edit-path'),
+      name: 'run_python',
+      arguments: {
+        code: 'print(1)',
+        edit_of: [
+          { artifactId: 'artifact-1', version: 1, path: 'edited.png' },
+          { artifactId: 'artifact-2', version: 1, path: 'edited.png' },
+        ],
+      },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('edit_of paths must be unique'))).toBe(true)
+    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
+  it('maps artifact_inputs and edit_of into the Runtime request without changing model field values', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-run-exact-inputs')
+    const terminal: ScienceRunTerminal = {
+      runId: ScienceRunId('run-exact-inputs'),
+      language: 'python',
+      toolCallId: CallId('run-exact-inputs'),
+      requestHeaderSeq: latestRequestHeaderSeq(session) ?? 0,
+      environmentRevision: 1,
+      environmentFingerprint: 'a'.repeat(64),
+      startedAt: 1,
+      codeSha256: 'b'.repeat(64),
+      scratchKey: 'c'.repeat(64) as never,
+      runDirectoryRef: 'runs/run-exact-inputs/',
+      kernelEpoch: 1,
+      status: 'success',
+      finishedAt: 2,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    }
+    const startRun = vi.spyOn(ctx.scienceRuntime, 'startRun').mockResolvedValue({
+      runId: terminal.runId,
+      done: Promise.resolve({
+        terminal,
+        stdout: { text: '', bytes: 0, truncated: false },
+        stderr: { text: '', bytes: 0, truncated: false },
+      }),
+      cancel() {},
+    })
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: terminal.toolCallId,
+      name: 'run_python',
+      arguments: {
+        code: 'print(1)',
+        artifact_inputs: [{ artifactId: 'artifact-input', version: 2, path: 'source/data.csv' }],
+        edit_of: [{ artifactId: 'artifact-parent', version: 3, path: 'plots/edited.png' }],
+      },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    expect(startRun).toHaveBeenCalledWith(expect.objectContaining({
+      artifactInputs: [{ artifactId: 'artifact-input', version: 2, path: 'source/data.csv' }],
+      editBaselines: { 'plots/edited.png': { artifactId: 'artifact-parent', version: 3 } },
+    }))
   })
 
   it('runs source through ctx.scienceRuntime and returns the durable terminal result', async () => {

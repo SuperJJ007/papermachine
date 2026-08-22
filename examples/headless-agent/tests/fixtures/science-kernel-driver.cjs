@@ -12,7 +12,7 @@
 //
 // Usage: node science-kernel-driver.cjs <fifoPath>
 
-const { closeSync, mkdirSync, openSync, writeFileSync, writeSync } = require('node:fs')
+const { closeSync, existsSync, mkdirSync, openSync, writeFileSync, writeSync } = require('node:fs')
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
@@ -52,7 +52,7 @@ rl.on('line', (line) => {
     process.exit(0)
   }
   if (parts[0] !== 'RUN') return
-  const [, runId, , , stdoutPath, stderrPath, artifactDir] = parts
+  const [, runId, , cwd, stdoutPath, stderrPath, artifactDir] = parts
   mkdirSync(artifactDir, { recursive: true })
   // One file per allowlisted auto-capture media type this snapshot pins —
   // csv, json, md, and png — proving one science/artifact-saved event per file.
@@ -60,6 +60,7 @@ rl.on('line', (line) => {
   writeFileSync(join(artifactDir, 'meta.json'), '{"ok":true}\n')
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
   writeFileSync(stdoutPath, 'science snapshot run output\n')
   writeFileSync(stderrPath, '')
   send(`DONE\t${runId}\tok\t\t`)

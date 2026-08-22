@@ -51,14 +51,23 @@ function latestRunId(options: GenerateOptions): string {
 }
 
 /** The artifact identity the `annotate_artifact` receipt reported. */
-function curatedArtifactRef(options: GenerateOptions): { readonly chartId: string; readonly version: number } {
+function curatedArtifactRef(options: GenerateOptions): { readonly artifactId: string; readonly version: number } {
   // Cite what the receipt reported rather than a version number written into
   // the fixture: a curated version is the one the model was told it curated.
   const match = /" v(\d+) \(([^)]+)\) curated from run /.exec(toolResultTexts(options).join('\n'))
   if (match?.[1] === undefined || match[2] === undefined) {
     throw new Error('science-mock-llm: no annotate_artifact receipt names an artifact version and id')
   }
-  return { chartId: match[2], version: Number(match[1]) }
+  return { artifactId: match[2], version: Number(match[1]) }
+}
+
+/** The exact plot version reported by the auto-capture receipt. */
+function capturedPlotRef(options: GenerateOptions): { readonly artifactId: string; readonly version: number } {
+  const match = /`plot\.png` v(\d+) \(([^;]+);/.exec(toolResultTexts(options).join('\n'))
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error('science-mock-llm: no run receipt names the captured plot version and id')
+  }
+  return { artifactId: match[2], version: Number(match[1]) }
 }
 
 function writeCapture(options: GenerateOptions): void {
@@ -117,7 +126,7 @@ class ScienceMockAdapter extends LlmAdapter {
           summary_markdown: 'The deterministic run produced the **cited chart**.',
           evidence: [
             { kind: 'run', run_id: latestRunId(options) },
-            { kind: 'chart', chart_id: chart.chartId, version: chart.version },
+            { kind: 'chart', chart_id: chart.artifactId, version: chart.version },
           ],
         })
         return
@@ -127,10 +136,13 @@ class ScienceMockAdapter extends LlmAdapter {
         return
       case 5:
         // Same kernel as the first run, so the result carries no restart
-        // line (the driver's own artifact side effect repeats the first
-        // run's byte-identical files, deduped rather than a new version).
+        // line. This assembled call also materializes the curated exact
+        // version and branches one edited output from that baseline.
+        const baseline = capturedPlotRef(options)
         yield * toolCall('science-run-call-2', 'run_python', {
-          code: 'print("second run, same kernel")',
+          code: 'from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "edited.png").write_bytes(Path("inputs/source.png").read_bytes())',
+          artifact_inputs: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'source.png' }],
+          edit_of: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'edited.png' }],
         })
         return
       default: {

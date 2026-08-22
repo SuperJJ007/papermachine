@@ -116,7 +116,8 @@ function resolveEvidence(
         const artifact = projection.artifacts.find(candidate =>
           candidate.artifactId === ScienceArtifactId(item.chart_id) && candidate.version === item.version)
         if (artifact === undefined) {
-          throw new Error(`tool-science: evidence chart ${JSON.stringify(item.chart_id)}@${String(item.version)} does not exist`)
+          throw new Error(`tool-science: evidence chart ${JSON.stringify(item.chart_id)}@${String(item.version)} does not exist`
+            + chartIdMistakeHint(projection, item.chart_id))
         }
         revisions.add(artifact.environmentRevision)
         evidence.push({ kind: 'chart', chartId: artifact.artifactId, version: artifact.version })
@@ -139,6 +140,25 @@ function resolveEvidence(
   // is ever relaxed to allow more than one applied revision per session.
   /* v8 ignore next -- see above: unreachable while at most one applied revision exists per session */
   return { evidence, environmentRevisions: [...revisions].sort((left, right) => left - right) }
+}
+
+/**
+ * A hint appended to the chart-evidence-not-found error when the supplied id
+ * looks like a filename rather than the artifact id save/capture receipts
+ * report in parentheses (`artifact-…`): it contains a dot, or it exactly
+ * matches a logical name already present in the live projection.
+ * @param projection - the exact live Science projection.
+ * @param chartId - the model-supplied `chart_id` that failed to resolve.
+ * @returns an appended sentence naming the mistake, or `''` when neither heuristic matches.
+ */
+function chartIdMistakeHint(projection: ScienceProjection, chartId: string): string {
+  if (projection.artifacts.some(candidate => candidate.logicalName === chartId)) {
+    return `; ${JSON.stringify(chartId)} is a logical name, not an artifact id — pass the artifact id from the save receipt (artifact-…)`
+  }
+  if (chartId.includes('.')) {
+    return `; ${JSON.stringify(chartId)} looks like a filename — chart_id must be the artifact id from the save receipt (artifact-…), not a filename`
+  }
+  return ''
 }
 
 /** Reject an empty or whitespace-only field before it reaches the durable codec. */
@@ -204,7 +224,7 @@ export function applyPublishOutcomeTool(ctx: Context): void {
       summary_markdown: { type: 'string', required: true, description: 'Markdown summary of the result.' },
       evidence: {
         type: 'array', required: true,
-        description: 'Non-empty, unique list of prior facts this Outcome cites: {kind:"run",run_id}, {kind:"chart",chart_id,version}, or {kind:"message",seq}.',
+        description: 'Non-empty, unique list of prior facts this Outcome cites: {kind:"run",run_id}, {kind:"chart",chart_id,version}, or {kind:"message",seq}. chart_id is the artifact id shown in parentheses in save/capture receipts (e.g. "artifact-xxx"), never the file\'s logical name or filename.',
         items: evidenceItemSchema,
       },
     },

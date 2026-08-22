@@ -1865,6 +1865,45 @@ describe('publish_outcome', () => {
     expect(messageRejection.isError).toBe(true)
     expect(messageRejection.content.some(block => block.type === 'text' && block.text.includes('does not name a prior message'))).toBe(true)
   })
+
+  it('hints that a chart_id matching a known logical name is not an artifact id', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-chart-id-logical-name')
+    const runCall = authorizeToolCall(session, 2, 'run_python', 'science-outcome-chart-id-logical-name-run')
+    const runResult = await ctx.tools.execute({
+      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
+      agent: fakeAgent(session),
+    })
+    expect(runResult.isError).toBe(false)
+    const started = session.events.find(event => event.type === 'science/run-started')
+    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+    await seedAutoArtifact(ctx, session, started.data.run, 'plot.png', PNG, 'image/png')
+    const chartCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-chart-id-logical-name-call')
+    const rejection = await ctx.tools.execute({
+      signal: testSignal, callId: chartCall, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'plot.png', version: 1 }] },
+      agent: fakeAgent(session),
+    })
+    expect(rejection.isError).toBe(true)
+    expect(rejection.content.some(block => block.type === 'text'
+      && block.text.includes('"plot.png" is a logical name, not an artifact id')
+      && block.text.includes('save receipt (artifact-…)'))).toBe(true)
+  })
+
+  it('hints that a filename-shaped chart_id is not the artifact id, even without a matching logical name', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-outcome-chart-id-filename')
+    const chartCall = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-chart-id-filename-call')
+    const rejection = await ctx.tools.execute({
+      signal: testSignal, callId: chartCall, name: 'publish_outcome',
+      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'unknown.png', version: 1 }] },
+      agent: fakeAgent(session),
+    })
+    expect(rejection.isError).toBe(true)
+    expect(rejection.content.some(block => block.type === 'text'
+      && block.text.includes('"unknown.png" looks like a filename')
+      && block.text.includes('save receipt (artifact-…)'))).toBe(true)
+  })
 })
 
 describe('get_science_state artifact sanitization', () => {

@@ -140,7 +140,8 @@ class ScienceMockAdapter extends LlmAdapter {
         // version and branches one edited output from that baseline.
         const baseline = capturedPlotRef(options)
         yield * toolCall('science-run-call-2', 'run_python', {
-          code: 'from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "edited.png").write_bytes(Path("inputs/source.png").read_bytes())',
+          code: 'import os\nfrom pathlib import Path\n'
+            + 'Path(os.environ["SCIENCE_ARTIFACT_DIR"], "edited.png").write_bytes(Path("inputs/source.png").read_bytes())',
           artifact_inputs: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'source.png' }],
           edit_of: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'edited.png' }],
         })

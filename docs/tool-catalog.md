@@ -2290,7 +2290,7 @@ Publish the current Science result as the session's next Outcome revision: a tit
     },
     "evidence": {
       "type": "array",
-      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}.",
+      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}. chart_id is the artifact id shown in parentheses in save/capture receipts (e.g. \"artifact-xxx\"), never the file's logical name or filename.",
       "items": {
         "oneOf": [
           {

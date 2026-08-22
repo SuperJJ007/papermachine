@@ -2298,7 +2298,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
     },
     "evidence": {
       "type": "array",
-      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}.",
+      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}. chart_id is the artifact id shown in parentheses in save/capture receipts (e.g. \"artifact-xxx\"), never the file's logical name or filename.",
       "items": {
         "oneOf": [
           {

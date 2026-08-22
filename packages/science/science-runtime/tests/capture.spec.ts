@@ -6,6 +6,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { crc32 } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
@@ -112,7 +113,46 @@ function authorizeRunInTurn(session: Session, id: string, turn: number): {
   return { toolCallId, requestHeaderSeq: header.seq }
 }
 
+/**
+ * The 1x1 PNG with a `tEXt` metadata chunk spliced in before IEND: the
+ * attachment store's normalize route strips metadata (rewriting the bytes),
+ * so only verbatim admission can read this back byte-identical.
+ */
+function pngWithMetadata(): Uint8Array {
+  const type = Buffer.from('tEXt')
+  const payload = Buffer.from('Software\0Matplotlib', 'latin1')
+  const length = Buffer.alloc(4)
+  length.writeUInt32BE(payload.byteLength)
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(crc32(Buffer.concat([type, payload])))
+  const iendOffset = PNG.byteLength - 12
+  return Uint8Array.from(Buffer.concat([
+    PNG.subarray(0, iendOffset), length, type, payload, crc, PNG.subarray(iendOffset),
+  ]))
+}
+
 describe('Science auto-capture', () => {
+  it('captures an image byte-exactly as evidence, never normalized', async () => {
+    const root = tmp('.science-capture-verbatim-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-verbatim')
+    const source = pngWithMetadata()
+
+    const { result } = await runWithFiles(harness, root, session, { 'plots/evidence.png': source })
+
+    const captured = result.capture?.captured.at(0)
+    expect(captured).toMatchObject({ logicalName: 'plots/evidence.png', version: 1 })
+    if (captured === undefined) throw new Error('capture test: expected one captured version')
+    expect('originalDimensions' in captured.attachment).toBe(false)
+    const attachments = harness.ctx.get('attachments')
+    if (attachments === undefined) throw new Error('capture test: no attachments service mounted')
+    if (!('width' in captured.attachment)) throw new Error('capture test: expected an image attachment')
+    const stored = await attachments.readImage(captured.attachment)
+    expect(stored.data).toEqual(source)
+  })
+
   it('opens version 2 for changed bytes from a later tool-call turn sharing one request header', async () => {
     const root = tmp('.science-capture-new-changed-')
     const prefix = createFakePythonPrefix(root)

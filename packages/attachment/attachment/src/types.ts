@@ -59,6 +59,17 @@ export interface SaveImageAttachment {
   mediaType: ImageMediaType
   /** Optional browser/provider display name; it is never interpreted as a path. */
   name?: string
+  /**
+   * Admission route for the submitted bytes. `'normalize'` (the default) runs
+   * the store's normalization pipeline before persisting. `'verbatim'`
+   * persists the submitted bytes exactly as given — full decode verification
+   * and every source admission limit still apply, but no metadata stripping,
+   * color conversion, re-encoding, or downscaling — for callers whose stored
+   * bytes are evidence that must read back byte-identical. A verbatim
+   * reference never carries `originalDimensions`, and the normalized-image
+   * byte cap does not apply to it.
+   */
+  normalization?: 'normalize' | 'verbatim'
 }
 
 /** Stored image bytes returned after reference and digest verification. */

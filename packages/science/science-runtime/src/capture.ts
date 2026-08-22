@@ -145,8 +145,12 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
 
     let attachment
     try {
+      // Captured images are scientific evidence: verbatim admission stores
+      // the run's exact bytes, so a later read-back compares byte-identical
+      // to what the run wrote (the store's default route normalizes — strips
+      // metadata, may re-encode or downscale — which breaks that contract).
       attachment = isImage
-        ? await request.attachments.saveImage({ data, mediaType: 'image/png', name: basename(relativePath) })
+        ? await request.attachments.saveImage({ data, mediaType: 'image/png', name: basename(relativePath), normalization: 'verbatim' })
         : await request.attachments.saveText({ data, mediaType, name: basename(relativePath) })
     } catch (error) {
       // The deployment's own image/text byte cap can be narrower than this

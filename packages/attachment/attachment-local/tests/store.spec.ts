@@ -161,6 +161,50 @@ describe('local attachment store', () => {
     expect(String(saved.attachmentId)).toBe(`sha256:${createHash('sha256').update(read.data).digest('hex')}`)
   })
 
+  it('stores a verbatim submission byte-identically where the normalize route would rewrite it', async () => {
+    const storageRoot = await root()
+    const source = new Uint8Array(await sharp({
+      create: { width: 4, height: 4, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    }).png().toBuffer())
+    const limits = { ...LIMITS, maxImagePixels: 64 }
+    const policy = { maxDimension: 2, maxBytes: 1024 * 1024 }
+
+    const normalized = await saveImageFile(storageRoot, {
+      data: source, mediaType: 'image/png',
+    }, limits, policy)
+    const verbatim = await saveImageFile(storageRoot, {
+      data: source, mediaType: 'image/png', name: 'evidence.png', normalization: 'verbatim',
+    }, limits, policy)
+
+    expect(normalized.originalDimensions).toEqual({ width: 4, height: 4 })
+    expect(verbatim).toEqual({
+      attachmentId: `sha256:${createHash('sha256').update(source).digest('hex')}`,
+      mediaType: 'image/png',
+      bytes: source.byteLength,
+      width: 4,
+      height: 4,
+      name: 'evidence.png',
+    })
+    await expect(readImageFile(storageRoot, verbatim)).resolves.toEqual({ ref: verbatim, data: source })
+  })
+
+  it('holds a nameless verbatim submission to the same admission checks as the normalize route', async () => {
+    const storageRoot = await root()
+
+    const ref = await saveImageFile(storageRoot, {
+      data: PNG, mediaType: 'image/png', normalization: 'verbatim',
+    }, LIMITS, POLICY)
+    expect(ref.name).toBeUndefined()
+    expect(ref.originalDimensions).toBeUndefined()
+
+    await expect(saveImageFile(storageRoot, {
+      data: PNG, mediaType: 'image/jpeg', normalization: 'verbatim',
+    }, LIMITS, POLICY)).rejects.toMatchObject({ code: 'IMAGE_TYPE_MISMATCH' })
+    await expect(saveImageFile(storageRoot, {
+      data: PNG, mediaType: 'image/png', normalization: 'verbatim',
+    }, { ...LIMITS, maxImageBytes: 1 }, POLICY)).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+  })
+
   it('keeps admitted history readable after deployment limits become stricter', async () => {
     const storageRoot = await root()
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)

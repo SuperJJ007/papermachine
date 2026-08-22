@@ -1729,6 +1729,10 @@ export interface Config {
    * before it stops appending further versions, truncated and flagged.
    */
   readonly captureMaxArtifactVersionsPerSession?: number
+  /** Maximum artifact-version inputs materialized for one run. */
+  readonly inputMaxFilesPerRun?: number
+  /** Maximum aggregate attachment bytes materialized as inputs for one run. */
+  readonly inputMaxBytesPerRun?: number
   /**
    * Idle deadline after a persistent kernel's last `DONE` before the
    * Runtime ends it with reason `idle`; disarmed while a run is in flight.
@@ -1750,7 +1754,7 @@ export interface ScienceEnvironmentProfileConfig {
 }
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:73`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:87`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

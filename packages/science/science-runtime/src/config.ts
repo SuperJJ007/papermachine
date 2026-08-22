@@ -47,6 +47,20 @@ export const MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 1
 /** Highest accepted configured auto-capture per-session artifact-version bound. */
 export const MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION = 10_000
 
+/** Default maximum artifact inputs materialized for one run. */
+export const DEFAULT_INPUT_MAX_FILES_PER_RUN = 20
+/** Lowest accepted configured artifact-input count bound. */
+export const MIN_INPUT_MAX_FILES_PER_RUN = 1
+/** Highest accepted configured artifact-input count bound. */
+export const MAX_INPUT_MAX_FILES_PER_RUN = 1_000
+
+/** Default maximum aggregate bytes materialized as artifact inputs for one run. */
+export const DEFAULT_INPUT_MAX_BYTES_PER_RUN = 50 * 1024 * 1024
+/** Lowest accepted configured artifact-input aggregate-byte bound. */
+export const MIN_INPUT_MAX_BYTES_PER_RUN = 1
+/** Highest accepted configured artifact-input aggregate-byte bound. */
+export const MAX_INPUT_MAX_BYTES_PER_RUN = 1024 * 1024 * 1024
+
 /** Default persistent-kernel idle deadline, matching Claude Science parity (30 minutes). */
 export const DEFAULT_KERNEL_IDLE_TIMEOUT_MS = 1_800_000
 /** Lowest accepted configured kernel idle deadline (1 minute). */
@@ -104,6 +118,10 @@ export interface Config {
    * before it stops appending further versions, truncated and flagged.
    */
   readonly captureMaxArtifactVersionsPerSession?: number
+  /** Maximum artifact-version inputs materialized for one run. */
+  readonly inputMaxFilesPerRun?: number
+  /** Maximum aggregate attachment bytes materialized as inputs for one run. */
+  readonly inputMaxBytesPerRun?: number
   /**
    * Idle deadline after a persistent kernel's last `DONE` before the
    * Runtime ends it with reason `idle`; disarmed while a run is in flight.
@@ -151,6 +169,12 @@ export const configSchema: z<Config> = z.object({
   captureMaxArtifactVersionsPerSession: z.number().step(1)
     .min(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION).max(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)
     .default(DEFAULT_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION),
+  inputMaxFilesPerRun: z.number().step(1)
+    .min(MIN_INPUT_MAX_FILES_PER_RUN).max(MAX_INPUT_MAX_FILES_PER_RUN)
+    .default(DEFAULT_INPUT_MAX_FILES_PER_RUN),
+  inputMaxBytesPerRun: z.number().step(1)
+    .min(MIN_INPUT_MAX_BYTES_PER_RUN).max(MAX_INPUT_MAX_BYTES_PER_RUN)
+    .default(DEFAULT_INPUT_MAX_BYTES_PER_RUN),
   kernelIdleTimeoutMs: z.number().step(1)
     .min(MIN_KERNEL_IDLE_TIMEOUT_MS).max(MAX_KERNEL_IDLE_TIMEOUT_MS)
     .default(DEFAULT_KERNEL_IDLE_TIMEOUT_MS),
@@ -177,6 +201,10 @@ export interface ResolvedConfig {
   readonly captureMaxFilesPerRun: number
   /** Explicitly resolved auto-capture per-session artifact-version bound. */
   readonly captureMaxArtifactVersionsPerSession: number
+  /** Explicitly resolved artifact-input count bound. */
+  readonly inputMaxFilesPerRun: number
+  /** Explicitly resolved artifact-input aggregate-byte bound. */
+  readonly inputMaxBytesPerRun: number
   /** Explicitly resolved persistent-kernel idle deadline. */
   readonly kernelIdleTimeoutMs: number
   /** Explicitly resolved persistent-kernel spawn-to-READY deadline. */
@@ -243,6 +271,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'dshHome', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
+      'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
     ],
     'config',
@@ -285,6 +314,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || captureMaxArtifactVersionsPerSession > MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION) {
     throw new Error(`science-runtime: captureMaxArtifactVersionsPerSession must be a safe integer from ${String(MIN_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)} through ${String(MAX_CAPTURE_MAX_ARTIFACT_VERSIONS_PER_SESSION)}`)
   }
+  const inputMaxFilesPerRun = config.inputMaxFilesPerRun ?? DEFAULT_INPUT_MAX_FILES_PER_RUN
+  if (!Number.isSafeInteger(inputMaxFilesPerRun)
+    || inputMaxFilesPerRun < MIN_INPUT_MAX_FILES_PER_RUN
+    || inputMaxFilesPerRun > MAX_INPUT_MAX_FILES_PER_RUN) {
+    throw new Error(`science-runtime: inputMaxFilesPerRun must be a safe integer from ${String(MIN_INPUT_MAX_FILES_PER_RUN)} through ${String(MAX_INPUT_MAX_FILES_PER_RUN)}`)
+  }
+  const inputMaxBytesPerRun = config.inputMaxBytesPerRun ?? DEFAULT_INPUT_MAX_BYTES_PER_RUN
+  if (!Number.isSafeInteger(inputMaxBytesPerRun)
+    || inputMaxBytesPerRun < MIN_INPUT_MAX_BYTES_PER_RUN
+    || inputMaxBytesPerRun > MAX_INPUT_MAX_BYTES_PER_RUN) {
+    throw new Error(`science-runtime: inputMaxBytesPerRun must be a safe integer from ${String(MIN_INPUT_MAX_BYTES_PER_RUN)} through ${String(MAX_INPUT_MAX_BYTES_PER_RUN)}`)
+  }
   const kernelIdleTimeoutMs = config.kernelIdleTimeoutMs ?? DEFAULT_KERNEL_IDLE_TIMEOUT_MS
   if (!Number.isSafeInteger(kernelIdleTimeoutMs)
     || kernelIdleTimeoutMs < MIN_KERNEL_IDLE_TIMEOUT_MS
@@ -306,6 +347,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     captureMaxFileBytes,
     captureMaxFilesPerRun,
     captureMaxArtifactVersionsPerSession,
+    inputMaxFilesPerRun,
+    inputMaxBytesPerRun,
     kernelIdleTimeoutMs,
     kernelStartTimeoutMs,
   }

@@ -18,7 +18,7 @@ The broader [artifact-domain and image-edit proposal](../../proposed/architectur
 
 The strict fold admits a parent or input only when the named artifact version was committed earlier in the same Session. A parent cannot name the version being committed, and a superseding save cannot rewrite that version's existing parent. Terminal run facts must repeat the ordered input array exactly. The package invariant applies these rules before commit, while the client projection and witness-backed checkpoint retain both relationships losslessly.
 
-`ScienceRuntime.startRun` does not yet write `inputs`. Reading attachment bytes, enforcing configurable materialization bounds, writing the reserved input directory, and assigning edit baselines remain Runtime responsibilities outside this decision.
+`ScienceRuntime.startRun` produces these relationships through the separate [input-materialization and edit-baseline decision](../feature/2026-08-22-science-runtime-input-materialization-and-edit-baselines.md). Model-facing tool parameters and receipts remain Consumer responsibilities outside this schema decision.
 
 ## Alternatives considered
 
@@ -36,7 +36,7 @@ The strict fold admits a parent or input only when the named artifact version wa
 
 Artifact ancestry and run dependencies are reconstructable from the Session log, survive terminal replacement and projection checkpoints, and use the same serializable `{artifactId, version}` identity across future transcript, viewer, export, and tool entry points.
 
-This schema does not make non-empty inputs reachable through the current Runtime or tools. It establishes the fail-loud durable authority that those producers must satisfy; their byte movement, limits, error codes, and model-visible receipts remain separate changes.
+The Runtime can produce non-empty inputs and artifact parents while this schema remains their fail-loud durable authority. Model-facing tool parameters and receipts remain a separate Consumer change.
 
 ## Testing
 

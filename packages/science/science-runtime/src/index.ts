@@ -40,9 +40,12 @@ import {
 import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from './kernel-set.ts'
 import { LeaseRegistry, OperationControl } from './lifecycle.ts'
 import type { OperationCause } from './lifecycle.ts'
+import { prepareRunArtifacts } from './inputs.ts'
+import type { PreparedRunArtifacts } from './inputs.ts'
 import { attachRuntimeSettings } from './settings.ts'
 import {
   createRunScratch,
+  materializeRunInputs,
   materializeSessionScratch,
   planSessionScratch,
   removeUnpublishedRunScratch,
@@ -255,6 +258,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly captureMaxFilesPerRun: number
   /** Configured auto-capture per-session artifact-version bound. */
   private readonly captureMaxArtifactVersionsPerSession: number
+  /** Configured per-run artifact-input count bound. */
+  private readonly inputMaxFilesPerRun: number
+  /** Configured per-run artifact-input aggregate-byte bound. */
+  private readonly inputMaxBytesPerRun: number
   /** Configured persistent-kernel idle deadline. */
   private readonly kernelIdleTimeoutMs: number
   /** Configured persistent-kernel spawn-to-READY deadline. */
@@ -281,6 +288,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.captureMaxFileBytes = resolved.captureMaxFileBytes
     this.captureMaxFilesPerRun = resolved.captureMaxFilesPerRun
     this.captureMaxArtifactVersionsPerSession = resolved.captureMaxArtifactVersionsPerSession
+    this.inputMaxFilesPerRun = resolved.inputMaxFilesPerRun
+    this.inputMaxBytesPerRun = resolved.inputMaxBytesPerRun
     this.kernelIdleTimeoutMs = resolved.kernelIdleTimeoutMs
     this.kernelStartTimeoutMs = resolved.kernelStartTimeoutMs
     this.kernels = new KernelSet({
@@ -451,10 +460,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Acquire this run's persistent kernel, publish its run start,
-   * then settle exactly one matching terminal fact through the acquired
-   * kernel's own RUN/DONE protocol exchange.
-   * @param request - Exact live Session, source, authorization facts, and cancellation.
+   * Resolve and materialize exact artifact inputs, acquire this run's
+   * persistent kernel, publish its run start, then settle exactly one
+   * matching terminal fact and baseline-attributed capture walk.
+   * @param request - Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.
    * @returns A handle exposed only after `science/run-started` committed.
    */
   async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle> {
@@ -478,6 +487,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     try {
       this.assertPrepublication(request.session, lease.control)
       const plan = planRun(environment, request.language, request.code)
+      const preparedArtifacts = await prepareRunArtifacts(
+        projection,
+        this.ctx.attachments,
+        request.artifactInputs,
+        request.editBaselines,
+        this.inputMaxFilesPerRun,
+        this.inputMaxBytesPerRun,
+        lease.control.signal,
+      )
+      this.assertPrepublication(request.session, lease.control)
       scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
       sessionScratch = scratchPreparation.scratch
       await assertProfileRunConfinement(profile, request.session, sessionScratch.root)
@@ -485,16 +504,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (request.language === 'r' && sessionScratch.runs.includes(' ')) {
         throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R run directory cannot contain an ASCII space')
       }
+      runScratch = await createRunScratch(sessionScratch, plan.runId, request.language, plan.sourceBytes)
+      await materializeRunInputs(runScratch, preparedArtifacts.materialized)
+      this.assertPrepublication(request.session, lease.control)
       const kernel = await this.acquireKernel(request.session, request.language, environment, sessionScratch, lease.control)
       // Disarmed immediately on acquisition, not only after run-started
       // commits: this run already owns the kernel the moment
-      // `acquireKernel` resolves, several awaits before `run-started`
-      // actually appends (`createRunScratch` below), and the idle timer must
+      // `acquireKernel` resolves, before `run-started` actually appends, and the idle timer must
       // never fire in that window. `settlePublishedKernelRun`'s
       // own `finally` re-arms it once this run settles.
       this.kernels.disarmIdleTimer(request.session, request.language)
-      this.assertPrepublication(request.session, lease.control)
-      runScratch = await createRunScratch(sessionScratch, plan.runId, request.language, plan.sourceBytes)
       this.assertPrepublication(request.session, lease.control)
       const started = startCandidate(
         plan,
@@ -504,9 +523,17 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         request.toolCallId,
         request.requestHeaderSeq,
         kernel.epoch,
+        preparedArtifacts.inputs,
       )
       request.session.append('science/run-started', { version: 1, run: started })
-      const done = this.settlePublishedKernelRun(lease, request.session, runScratch, kernel.process, started)
+      const done = this.settlePublishedKernelRun(
+        lease,
+        request.session,
+        runScratch,
+        kernel.process,
+        started,
+        preparedArtifacts,
+      )
       return {
         runId: plan.runId,
         done,
@@ -531,6 +558,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (cleanupFailures.length > 0) {
         throw new AggregateError(
           [error, ...cleanupFailures],
+          // Defensive arm: bindEnvironment materializes the Session scratch
+          // before any run can start, so a cleanup failure here always
+          // follows createRunScratch today; the arm remains for a future
+          // producer that reaches startRun on a freshly created tree.
+          /* v8 ignore next 3 */
           runScratch === undefined
             ? 'science-runtime: pre-publication Session scratch rollback failed'
             : 'science-runtime: unpublished run rollback failed',
@@ -793,6 +825,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
     kernel: KernelProcess,
     started: ReturnType<typeof startCandidate>,
+    preparedArtifacts: PreparedRunArtifacts,
   ): Promise<ScienceRunResult> {
     try {
       const request: KernelExecuteRequest = {
@@ -826,7 +859,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           }
           throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
         }
-        const capture = await this.captureAfterFinish(session, runScratch, terminal)
+        const capture = await this.captureAfterFinish(session, runScratch, terminal, preparedArtifacts.editBaselines)
         return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
       } finally {
         // Retire-vs-rearm derives from `outcome` alone, already settled
@@ -870,12 +903,14 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @param session - exact live Session that owns the just-finished run.
    * @param runScratch - the run's private Host scratch, including its artifact directory.
    * @param terminal - the exact terminal record just committed, supplying every captured version's provenance.
+   * @param editBaselines - Validated exact parents keyed by capture-relative path.
    * @returns capture accounting, or `undefined` when the Session detached or capture itself failed.
    */
   private async captureAfterFinish(
     session: StartScienceRunRequest['session'],
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
     terminal: ScienceRunTerminal,
+    editBaselines: PreparedRunArtifacts['editBaselines'],
   ): Promise<CaptureRunArtifactsResult | undefined> {
     // The caller already re-verified liveness immediately before the
     // run-finished append this method follows; only a detach racing that
@@ -890,6 +925,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         session,
         runArtifacts: runScratch.artifacts,
         sourceRun: terminal,
+        editBaselines,
         captureMaxFileBytes: this.captureMaxFileBytes,
         captureMaxFilesPerRun: this.captureMaxFilesPerRun,
         captureMaxArtifactVersionsPerSession: this.captureMaxArtifactVersionsPerSession,

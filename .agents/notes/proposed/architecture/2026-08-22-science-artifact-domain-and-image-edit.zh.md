@@ -10,7 +10,7 @@ Science 需要第一个人工内容操作——对精确产物 Version 的框选
 
 本文以上游 `dsh-v0.1.1-rc.2` 合并后的基座为前提:多模态 DeepSeek 消息(`image_url` 内容块)、统一图片附件管线和 composer mention 都已存在。
 
-## 决定摘要
+## 提案
 
 1. **持久内核驱动不改。**`kernel_python.py` / `kernel_r.R`、六字段 `RUN` 帧、FIFO 响应通道、fd 级输出重定向、`SIGINT` 中断语义和逐 run 的 `SCIENCE_ARTIFACT_DIR` 保持协议版本 1。Host 在发送 `RUN` 之前就拥有 run 私有目录,因此所有新能力都落在内核周边的 Host 侧,绝不进入内核内部。
 2. **产物身份是交互通货。**每个入口——transcript 行、画廊、查看器标签页、未来的产物库与 mention——交换同一个可序列化选择 `{artifactId, version}`(仅在确实需要实时跟随处附带显式的跟随最新标志)。任何入口都不从文件名、工具结果文本或私有卡片缓存重建产物状态。这正是让 Claude Science 各界面读起来像一个产品的规则,在 DSH 长出更多入口之前先行确立。
@@ -84,7 +84,22 @@ Science 需要第一个人工内容操作——对精确产物 Version 的框选
 5. **S5 — Notebook 导出。**确定性的完整/裁剪 bundle ZIP(`manifest.json`、`README.md`、`run.sh`、逐内核 `.ipynb`、所引输入/输出),纯投影;除非用户显式保存 bundle,不创建任何 Artifact。
 6. **延后。**项目产物目录 seam、文件夹/复制/重命名、锚定批注、验证记录(与 Reviewer 一起设计)、保留/GC。
 
-## 被拒绝的捷径
+## 验收标准
+
+- S1 在 durable Science session schema 中记录并严格验证 ancestry 与 exact run inputs。
+- S2 在 capture directory 外物化有界且无冲突的 inputs,将其记录到 `science/run-started`,保持捕获字节完全相同,并归属明确的既有、陈旧与跨 Artifact 编辑基线。
+- S3 通过两个 run 工具暴露 Runtime 字段,并用无密钥组装应用 snapshot 证明模型可见回执。
+- S4 从查看器的精确 Version 发出耐久结构化编辑消息,并以 GIF 证明真实服务器/模型流。
+- S5 严格以耐久事件与 transcript 调用的投影导出确定性的完整与裁剪 notebook bundle。
+
+## 风险
+
+- 隐式跟随最新的调用方可能编辑或引用不同于用户所选版本的证据;每个入口都必须保持精确 Version 选择为显式选择。
+- 若工具与 Runtime 对物化路径或字节预算的实现不一致,会削弱派发前保证;Runtime 仍是唯一执行所有者。
+- Notebook 或项目产物库工作可能引入第二份耐久历史;这些界面必须保持投影,或显式使用延后的目录 seam。
+- 随着 Science 名册变化,学科 preset 副本可能发生漂移;只有在副本数量仍少时才继续推迟 authoring 辅助。
+
+## 考虑过的替代方案
 
 - **文件名当身份**——重命名、复制和跨 Artifact 分支都要求独立于路径与显示名的 id。
 - **标题/说明变化推进内容 Version**——策展保持元数据;读者的历史不重复。

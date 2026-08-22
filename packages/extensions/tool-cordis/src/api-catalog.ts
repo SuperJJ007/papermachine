@@ -1213,8 +1213,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
-        description: 'Acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact through the acquired kernel\'s own RUN/DONE protocol exchange.',
-        parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, and cancellation.' }],
+        description: 'Resolve and materialize exact artifact inputs, acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact and baseline-attributed capture walk.',
+        parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.' }],
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
       {
@@ -4673,7 +4673,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StartScienceRunRequest',
-    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly artifactInputs?: readonly ScienceRunArtifactInput[];\n    readonly editBaselines?: Readonly<Record<string, ScienceArtifactVersionRef>>;\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'StorageBackend',

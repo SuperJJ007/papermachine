@@ -917,6 +917,46 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
+  it('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-rollback-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-rollback')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const sessionRoot = join(root, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(session))
+    const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
+      if (eventName !== 'session/event') return
+      const [, event] = args as [unknown, { readonly type?: string; readonly data?: { readonly run?: { readonly runId?: string } } }]
+      if (event?.type !== 'science/run-started') return
+      // Faulting the exact run directory makes removeUnpublishedRunScratch
+      // fail during the veto's cleanup, reaching the aggregated
+      // unpublished-run rollback classification.
+      staticFsFault.cleanupPath = join(sessionRoot, 'runs', String(event.data?.run?.runId))
+      throw new Error('injected start append failure')
+    }, { global: true })
+    try {
+      await expect(harness.runtime.startRun({
+        session,
+        language: 'python',
+        code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session, 'science-run-rollback-call'),
+        signal: new AbortController().signal,
+      })).rejects.toMatchObject({
+        message: 'science-runtime: unpublished run rollback failed',
+        errors: [
+          { message: 'injected start append failure' },
+          { message: 'injected managed cleanup failure' },
+        ],
+      })
+    } finally {
+      stop()
+    }
+  })
+
   it('selects Windows executable candidates and refuses host probes before a partial Windows boundary can run', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-windows-probe-'))
     roots.push(root)
@@ -1324,6 +1364,32 @@ describe('Science Runtime configuration', () => {
     expect(resolved.captureMaxFileBytes).toBe(5 * 1024 * 1024)
     expect(resolved.captureMaxFilesPerRun).toBe(50)
     expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
+  })
+
+  it('validates artifact-input count and aggregate-byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 0,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1_001,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 0,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 1_073_741_825,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1,
+    })).toMatchObject({ inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } },
+      inputMaxFilesPerRun: 1_000,
+      inputMaxBytesPerRun: 1_073_741_824,
+    })).toMatchObject({ inputMaxFilesPerRun: 1_000, inputMaxBytesPerRun: 1_073_741_824 })
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.inputMaxFilesPerRun).toBe(20)
+    expect(resolved.inputMaxBytesPerRun).toBe(50 * 1024 * 1024)
   })
 
   it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted', () => {

@@ -11,7 +11,12 @@ import { basename, extname, join } from 'node:path'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, TextMediaType } from '@deepseek-ai/dsh-attachment'
 import { applyScienceEvent, foldScience, projectScienceFold, scienceRunsShareTurn, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceFoldState, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import type {
+  ScienceArtifactVersion,
+  ScienceArtifactVersionRef,
+  ScienceFoldState,
+  ScienceRunTerminal,
+} from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { canonicalWithin } from './scratch.ts'
 import { readBoundedFile, walkArtifactFiles } from './artifact-file.ts'
@@ -46,6 +51,8 @@ export interface CaptureRunArtifactsRequest {
   readonly runArtifacts: string
   /** The exact terminal run whose artifact directory is walked; supplies every version's provenance fields. */
   readonly sourceRun: ScienceRunTerminal
+  /** Validated exact parent refs keyed by capture-relative output path. */
+  readonly editBaselines?: ReadonlyMap<string, ScienceArtifactVersionRef>
   /** Validated Runtime config bound on one captured file's encoded bytes. */
   readonly captureMaxFileBytes: number
   /** Validated Runtime config bound on eligible files captured from one run. */
@@ -176,6 +183,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       version = scienceRunsShareTurn(state, sourceRun, latestSource) ? latest.version : latest.version + 1
     }
 
+    const parent = request.editBaselines?.get(relativePath)
     const artifact: ScienceArtifactVersion = {
       artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
       logicalName: relativePath,
@@ -184,6 +192,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       // version rather than opening another one, so the reader's version list
       // holds results rather than the run-to-run iteration behind them.
       version,
+      ...(parent === undefined ? {} : { parent }),
       title: basename(relativePath),
       origin: 'auto',
       attachment,

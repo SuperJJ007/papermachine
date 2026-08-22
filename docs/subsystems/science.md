@@ -8,7 +8,7 @@ Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science
 
 ## Operations
 
-`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, appends `science/run-started` before spawn without artifact inputs, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`; materializing artifact inputs belongs to the separate Runtime track. `commitChart` accepts one successful run started locally in the exact Session, resolves a regular non-symlink PNG inside its artifact directory, persists it through `ctx.attachments`, and appends the next immutable logical artifact version with `origin: 'model'` without publishing a Host path. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
+`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, resolves optional artifact-version inputs through verified attachment reads, materializes them below the reserved `inputs/` directory, appends the complete mapping on `science/run-started`, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. Optional edit baselines assign exact `parent` refs during the post-terminal capture walk, including stale and cross-artifact branches. `commitChart` accepts one successful run started locally in the exact Session, resolves a regular non-symlink PNG inside its artifact directory, persists it through `ctx.attachments`, and appends the next immutable logical artifact version with `origin: 'model'` without publishing a Host path. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
 
 The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history with exact artifact-version inputs when recorded, artifact attachment references with optional exact parent identities, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures. The strict fold and pre-commit invariant require every recorded parent and input to resolve to an earlier committed artifact version; self-parenting and terminal rewrites of start-owned inputs fail loud.
 
@@ -39,10 +39,10 @@ Folded local Science Runtime provider with public types free of Host paths.
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
 
 /**
- * Acquire this run's persistent kernel, publish its run start,
- * then settle exactly one matching terminal fact through the acquired
- * kernel's own RUN/DONE protocol exchange.
- * @param request - Exact live Session, source, authorization facts, and cancellation.
+ * Resolve and materialize exact artifact inputs, acquire this run's
+ * persistent kernel, publish its run start, then settle exactly one
+ * matching terminal fact and baseline-attributed capture walk.
+ * @param request - Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>

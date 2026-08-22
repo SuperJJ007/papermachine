@@ -4,7 +4,7 @@
  * exclusion, capture on a failed run, and non-fatal capture failure.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,6 +14,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { StartScienceRunRequest } from '../src/types.ts'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
 import {
   authorizePythonRun,
@@ -66,6 +67,7 @@ async function startHeldRun(
   session: Session,
   status: 'ok' | 'error' = 'ok',
   bound = false,
+  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines'>,
 ): Promise<Awaited<ReturnType<typeof harness.runtime.startRun>>> {
   if (!bound) {
     await harness.runtime.bindEnvironment({
@@ -75,6 +77,7 @@ async function startHeldRun(
   callCounter += 1
   return harness.runtime.startRun({
     session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status }),
+    ...artifacts,
     ...authorizePythonRun(session, `capture-run-${String(callCounter)}`),
     signal: new AbortController().signal,
   })
@@ -88,8 +91,9 @@ async function runWithFiles(
   files: Readonly<Record<string, Uint8Array | string>>,
   status: 'ok' | 'error' = 'ok',
   alreadyBound = false,
+  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines'>,
 ) {
-  const handle = await startHeldRun(harness, session, status, alreadyBound)
+  const handle = await startHeldRun(harness, session, status, alreadyBound, artifacts)
   for (const [relativePath, data] of Object.entries(files)) {
     await writeArtifact(root, session, handle.runId, relativePath, data)
   }
@@ -132,6 +136,108 @@ function pngWithMetadata(): Uint8Array {
 }
 
 describe('Science auto-capture', () => {
+  it('materializes verified artifact inputs byte-exactly and records the complete mapping', async () => {
+    const root = tmp('.science-input-materialization-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { inputMaxBytesPerRun: 8 },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-input-materialization')
+    const source = 'a,b\n1,2\n'
+    const first = await runWithFiles(harness, root, session, { 'source.csv': source })
+    const version = first.result.capture?.captured.at(0)
+    if (version === undefined) throw new Error('input test: expected one captured version')
+
+    const handle = await startHeldRun(harness, session, 'ok', true, {
+      artifactInputs: [{ artifactId: version.artifactId, version: version.version, path: 'data/source.csv' }],
+    })
+    const scratch = await planSessionScratch(join(root, 'dsh-home'), session)
+    expect(readFileSync(join(scratch.runs, String(handle.runId), 'inputs/data/source.csv'), 'utf8')).toBe(source)
+    expect(replayScience(session.events)?.runs.at(-1)).toMatchObject({
+      inputs: [{ artifactId: version.artifactId, version: 1, path: 'data/source.csv' }],
+    })
+    await expect(handle.done).resolves.toMatchObject({ terminal: {
+      status: 'success',
+      inputs: [{ artifactId: version.artifactId, version: 1, path: 'data/source.csv' }],
+    } })
+
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      artifactInputs: [
+        { artifactId: version.artifactId, version: 1, path: 'a.csv' },
+        { artifactId: version.artifactId, version: 1, path: 'b.csv' },
+      ],
+      ...authorizePythonRun(session, 'science-input-too-large'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
+  })
+
+  it('rejects missing versions and unsafe or colliding input paths before publication', async () => {
+    const root = tmp('.science-input-preflight-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-input-preflight')
+    const first = await runWithFiles(harness, root, session, { 'source.csv': 'x\n' })
+    const version = first.result.capture?.captured.at(0)
+    if (version === undefined) throw new Error('input test: expected one captured version')
+
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      artifactInputs: [{ artifactId: version.artifactId, version: 99, path: 'missing.csv' }],
+      ...authorizePythonRun(session, 'science-input-missing'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      artifactInputs: [{ artifactId: version.artifactId, version: 1, path: '../escape.csv' }],
+      ...authorizePythonRun(session, 'science-input-escape'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      artifactInputs: [
+        { artifactId: version.artifactId, version: 1, path: 'data' },
+        { artifactId: version.artifactId, version: 1, path: 'data/source.csv' },
+      ],
+      ...authorizePythonRun(session, 'science-input-collision'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+    await expect(harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      editBaselines: { 'output.csv': { artifactId: version.artifactId, version: 99 } },
+      ...authorizePythonRun(session, 'science-baseline-missing'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+  })
+
+  it('attributes existing, cross-artifact, and stale-baseline captures to the exact named parent', async () => {
+    const root = tmp('.science-edit-baselines-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-edit-baselines')
+    const first = await runWithFiles(harness, root, session, { 'summary.csv': 'v1\n' })
+    const baseline = first.result.capture?.captured.at(0)
+    if (baseline === undefined) throw new Error('baseline test: expected one captured version')
+    const parent = { artifactId: baseline.artifactId, version: baseline.version }
+
+    const second = await runWithFiles(
+      harness, root, session, { 'summary.csv': 'v2\n' }, 'ok', true,
+      { editBaselines: { 'summary.csv': parent } },
+    )
+    expect(second.result.capture?.captured.at(0)).toMatchObject({
+      artifactId: baseline.artifactId, version: 2, parent,
+    })
+
+    const third = await runWithFiles(
+      harness, root, session, { 'summary.csv': 'v3\n', 'branch.csv': 'branch\n' }, 'ok', true,
+      { editBaselines: { 'summary.csv': parent, 'branch.csv': parent } },
+    )
+    expect(third.result.capture?.captured.find(candidate => candidate.logicalName === 'summary.csv')).toMatchObject({
+      artifactId: baseline.artifactId, version: 3, parent,
+    })
+    const branch = third.result.capture?.captured.find(candidate => candidate.logicalName === 'branch.csv')
+    expect(branch).toMatchObject({ version: 1, parent })
+    expect(branch?.artifactId).not.toBe(baseline.artifactId)
+  })
+
   it('captures an image byte-exactly as evidence, never normalized', async () => {
     const root = tmp('.science-capture-verbatim-')
     const prefix = createFakePythonPrefix(root)

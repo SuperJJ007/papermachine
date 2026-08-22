@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-science-verbatim-image-capture.md
-2026-08-22-science-verbatim-image-capture.md: dd60aeeae00c5f18236b069a40e89aea7aea3d6b
-2026-08-22-science-verbatim-image-capture.zh.md: 44089e124f35848b4a0fb28bd15390e1f2d726e3
+2026-08-22-science-verbatim-image-capture.md: dd0b2c4ca9964617789ee9f56aed5a95fbe7855d
+2026-08-22-science-verbatim-image-capture.zh.md: 33dc49c7dbacb95ebf8bef024ee26af0ee503a3b

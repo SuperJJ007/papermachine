@@ -5,12 +5,14 @@
  */
 
 import type {
+  ScienceArtifactVersionRef,
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceEnvironmentProfileId,
   ScienceLanguage,
   ScienceRunId,
   ScienceRunStarted,
+  ScienceRunArtifactInput,
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type { CaptureRunArtifactsResult } from './capture.ts'
@@ -35,6 +37,12 @@ export type ScienceRuntimeErrorCode =
   | 'TERMINAL_COMMIT_FAILED'
   /** `annotate_artifact` named a `logical_name` (or an exact `version` of it) that does not exist in this session. */
   | 'ARTIFACT_NOT_FOUND'
+  /** A requested run input does not identify a committed artifact version. */
+  | 'INPUT_NOT_FOUND'
+  /** A requested run input path is unsafe or collides with another input path. */
+  | 'INPUT_PATH_INVALID'
+  /** Requested run inputs exceed the configured count or aggregate-byte bound. */
+  | 'INPUT_TOO_LARGE'
   /** A persistent kernel's spawn, READY handshake, or start-time confinement failed; the message names the language and cause class. */
   | 'KERNEL_START_FAILED'
   /** Kernel execution requires darwin or linux; rejected pre-publication on every other platform. */
@@ -75,6 +83,10 @@ export interface StartScienceRunRequest {
   readonly language: ScienceLanguage
   /** Exact, non-empty Unicode source to flush before the start fact commits. */
   readonly code: string
+  /** Exact committed artifact versions to materialize below the run's reserved `inputs/` directory. */
+  readonly artifactInputs?: readonly ScienceRunArtifactInput[]
+  /** Exact parent version for each named capture-relative output path. */
+  readonly editBaselines?: Readonly<Record<string, ScienceArtifactVersionRef>>
   /** Model-issued call already recorded in the Session log. */
   readonly toolCallId: ScienceRunStarted['toolCallId']
   /** Latest Science-era `request/header` event already recorded in the log. */
@@ -151,8 +163,10 @@ export interface ScienceRuntimeService {
    */
   bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
   /**
-   * Publish a run start, then launch the selected interpreter in owned scratch.
-   * @param request - Exact Session, prior authorization facts, source, and cancellation.
+   * Resolve and materialize exact artifact inputs, publish a run start, then
+   * launch the selected interpreter in owned scratch. Every rejection before
+   * publication removes the unpublished run tree.
+   * @param request - Exact Session, prior authorization facts, source, optional artifact inputs and edit baselines, and cancellation.
    * @returns The published run handle; its `done` owns terminal settlement.
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>

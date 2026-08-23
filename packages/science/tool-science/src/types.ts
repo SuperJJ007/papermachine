@@ -10,6 +10,59 @@
  * @module @deepseek-ai/dsh-tool-science/types
  */
 
+import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
+
+/** A Vega-Lite structural target selected in the artifact viewer. */
+export interface ScienceSpecPathTarget {
+  readonly kind: 'spec-path'
+  /** Dot-separated path into the selected Vega-Lite document, such as `mark` or `encoding.color`. */
+  readonly path: string
+}
+
+/** A top-left-origin region normalized against the selected raster version. */
+export interface ScienceNormalizedRegionTarget {
+  readonly kind: 'normalized-region'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** One model-visible edit target selected in the Science artifact viewer. */
+export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget
+
+/** Browser request to edit one exact immutable Science artifact version. */
+export interface ScienceEditRequest {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly target: ScienceEditTarget
+  readonly instruction: string
+}
+
+/** Durable source attached to a viewer-originated Science edit message. */
+export interface ScienceEditMessageSource extends ScienceEditRequest {
+  readonly kind: 'science-edit'
+}
+
+/** Receipt returned after the edit message enters the addressed agent's inbox. */
+export interface ScienceEditReceipt {
+  readonly accepted: true
+}
+
+/** Stable rejection classes for Science edit-message admission. */
+export type ScienceEditErrorCode =
+  | 'SCIENCE_EDIT_INVALID_REQUEST'
+  | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
+  | 'SCIENCE_EDIT_STALE_VERSION'
+  | 'SCIENCE_EDIT_TARGET_MISMATCH'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** A user edit gesture over one exact Science artifact version. */
+    'science-edit': ScienceEditMessageSource
+  }
+}
+
 /**
  * Complete attachment metadata carried in one artifact presentation
  * reference (never bytes). Width/height present only for an image attachment.

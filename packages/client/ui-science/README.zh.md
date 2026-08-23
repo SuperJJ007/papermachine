@@ -26,11 +26,12 @@ artifact viewer 与会话记录行共享同一个本包私有的、按会话划�
 
 ## Artifact viewer（Details 条目）
 
-viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `science` 命名空间的已注册文案。它保持只读，渲染数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储：
+viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `science` 命名空间的已注册文案。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；唯一写路径把有类型的编辑请求提交给 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
 
 - **标签栏** — 每个已打开的 artifact（logical chart）一个标签页，各自可独立关闭；点击一条会话记录中的图表行会打开或激活该图表的标签页，并定位到该行所指的确切版本。没有任何标签页打开时，viewer 显示其落地视图，而非一条空标签栏。
 - **工具栏** — 面向活跃标签页的内容视图：artifact 的标题与逻辑名、一个版本步进器（‹ v*n* ›，在两侧相邻的持久化版本间切换），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化附件媒体类型分派：`ImageMediaType` 经由 `MessageImage` 渲染（大图、说明、来源运行与尺寸）；`TextMediaType` 通过 `loadText` 取得已解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
+- **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 目标；raster 暴露一个选择后才启用的拖拽层，并按渲染图像归一化矩形。用户填写要求后，浏览器通过 `remote.scienceEdits.submit` 发送 `{ artifactId, version, target, instruction }`。Host 解析被寻址的在线 Agent，拒绝缺失、媒体类型不匹配、格式错误或已经不是当前版本的选择，再排入一条 source 为 `{ kind: 'science-edit', ...request }` 的 `user/message`；raster 消息还携带被选中的确切图像附件。系统不会回退到最新版本。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **落地视图** — 在没有标签页打开时显示：每个 logical chart 最新版本组成的图库（打开其中一个即打开其标签页），以及带证据引用的最新 Outcome，展示在图库下方——保持可达但处于次要位置，因为它不像图表那样携带需要导览的版本历史或溯源信息。
 
@@ -63,11 +64,11 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 
 ## 模型体验
 
-无。会话记录行只渲染已经记录的工具结果，设置卡片编辑的是部署配置，header action 与 artifact viewer 只读取当前状态的 Session 投影与会话快照；均不改变模型请求。
+本包自身不组装 provider request，但 artifact 查看器的编辑面板会为每次提交的选择发起一条模型可见的 user message：Host 侧的 `scienceEdits` Remote（`@deepseek-ai/dsh-tool-science` 的 "Viewer edit message" 一节）校验该手势并入队模型读取的结构化精确版本编辑消息。
 
 #### KV Cache 影响
 
-无；本包既不组装也不发送 provider request。
+没有；本包既不组装也不发送 provider request。
 
 ## 已知限制与暂缓事项
 
@@ -79,6 +80,7 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 - **已打开的标签页不做持久化保存** — 选择状态存储只存在于框架按 (句柄, 会话) 划分的缓存里，而非 `localStorage`：在同一次页面加载内，已打开的标签页与当前视图能在 Details 列关闭再重新打开、或会话切换再切回之间保持不变，但无法跨越一次页面刷新。
 - **超过渲染上限的文本 artifact 无法在原地完整浏览** — `MAX_ARTIFACT_TABLE_ROWS`/`MAX_ARTIFACT_TEXT_CHARACTERS`（`format.ts`）会在整个内容进入 DOM 之前截断表格/文本渲染，因此表格排序与 JSON 解析都只作用于已显示的前缀，而被截断的 `.vl.json` 几乎必然无法重新解析，所以超限的 Vega-Lite artifact 显示为截断的原始文本而非图表；下载仍会取回完整的持久化字节。
 - **没有 PNG/PDF 图表导出** — Vega-Lite artifact 只在原地渲染为 SVG；确定性的位图/PDF 导出被推迟到某个没有浏览器渲染器的客户端确认支持 Science 图表之后再建（[决策记录](../../../.agents/notes/proposed/architecture/2026-08-22-science-spec-first-charts.zh.md)）。
+- **不暴露任何结构化目标的 spec 会让编辑面板无法发送** — 目标发现沿 `layer`、`hconcat`/`vconcat`/`concat` 成员以及 `facet`/`repeat` 的子 `spec` 遍历 `mark`/`encoding.*`；一份不含这些结构的文档（或截断后不再可解析的文本）渲染出的编辑面板没有可选目标，Send 保持禁用，只显示占位提示。
 - **渲染出的图表没有文本替代** — 嵌入的 SVG 只携带 Vega 自身生成的标记，没有伴随的摘要或数据表替代形式；spec 的 JSON 源文本仍可通过下载取得。
 - **Vega 运行时会请求 spec 里写明的外部 URL** — 当 spec 的 `data.url` 指向远程资源时，viewer 所在浏览器会在打开该 artifact 时发出该请求；embed 的 loader 尚未受限，因此模型撰写的 spec 能够让 viewer 发起对外请求。
 - **Vega 渲染器主导了客户端包体积** — 打包 `vega-embed` 使 `lib/client.js` 达到约 2.0 MB（gzip 约 475 KB），并且只要本插件挂载就会静态加载，无论会话里有没有图表；改为在首个 Vega-Lite artifact 出现时再加载属于暂缓事项。

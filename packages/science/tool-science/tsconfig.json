@@ -16,6 +16,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -26,6 +29,9 @@
     },
     {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../../typert/protocol"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

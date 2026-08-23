@@ -62,6 +62,10 @@ rl.on('line', (line) => {
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'source.vl.json'))) {
+    writeFileSync(join(artifactDir, 'selected-edit.vl.json'), '{"mark":"bar","encoding":{"y":{"scale":{"zero":true}}}}\n')
+  }
   writeFileSync(stdoutPath, 'science snapshot run output\n')
   writeFileSync(stderrPath, '')
   send(`DONE\t${runId}\tok\t\t`)

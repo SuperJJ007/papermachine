@@ -36,6 +36,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
+// Type-only: pulls the generated Science Remote namespace into ClientContext.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactRow } from './ScienceArtifactRow.tsx'
 import { ScienceRunRow } from './ScienceRunRow.tsx'
@@ -71,7 +73,7 @@ const SCIENCE_DETAILS_ID = 'science'
  * share carries nothing beyond the Details seam's own callbacks, per
  * `DetailsViewOwnerProps`).
  */
-export const inject = ['locale', 'slots', 'connection', 'remote', 'settingsScope', 'sessions']
+export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions']
 
 /**
  * Client plugin body: register dictionaries, the two keyed toolview rows,
@@ -136,6 +138,7 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): ScienceDetailsInjected => ({
       loadImage: createScienceImageLoader(ctx.sessions, sessionId),
       loadText: createScienceTextLoader(ctx.sessions, sessionId),
+      submitEdit: request => ctx.remote.scienceEdits.submit(sessionId, request),
     }),
   }, ScienceDetailsView))
 }

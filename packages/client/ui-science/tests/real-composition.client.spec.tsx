@@ -97,8 +97,15 @@ const LAYOUT_CHILDREN = {
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
-  runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
+  runtime.provide('connection', {
+    api: { settings: {} },
+    isLoopback: false,
+    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
+  })
   runtime.provide('remote', { $on: () => () => {} })
+  runtime.provide('remote.scienceEdits', {
+    submit: () => Promise.resolve({ ok: true, value: { accepted: true } }),
+  })
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
   runtime.provide('layout', layout)

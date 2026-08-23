@@ -923,6 +923,9 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
+      '@deepseek-ai/dsh-tool-science':
+        specifier: workspace:^
+        version: link:../../science/tool-science
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../typert/registry
@@ -1476,6 +1479,9 @@ importers:
       '@deepseek-ai/dsh-science-session':
         specifier: workspace:^
         version: link:../../science/science-session
+      '@deepseek-ai/dsh-tool-science':
+        specifier: workspace:^
+        version: link:../../science/tool-science
       '@deepseek-ai/dsh-session-attachment-index':
         specifier: workspace:^
         version: link:../../session/session-attachment-index
@@ -2588,6 +2594,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:^
+        version: link:../../api/remotes
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
@@ -6270,6 +6279,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -6322,6 +6334,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
 
   packages/sdk/client:
     devDependencies:

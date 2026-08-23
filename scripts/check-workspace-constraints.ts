@@ -161,6 +161,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The independently loadable read-only entry ships beside the root plugin
   // and invariant companion as its own bundle (see tool-fs's tsdown.config.ts).
   '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js'],
+  // Web mounts the Science viewer-edit Remote in the Host root independently
+  // from the preset-scoped model-facing Consumer.
+  '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js'],
   // The settings-bound Runtime entry ships beside the root plugin and
   // invariant companion. It subclasses the root entry, so the package builds
   // all three from one multi-entry tsdown config: independent bundles would

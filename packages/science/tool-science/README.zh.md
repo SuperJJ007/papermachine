@@ -6,6 +6,8 @@
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
+本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。`submit` 接受一个确切的 `{ artifactId, version }`、一个 Vega-Lite `spec-path` 或 raster `normalized-region`，以及非空修改要求。它严格 fold 被寻址在线 Agent 的完整 session，只接受该 artifact 当前已提交的版本，校验目标与附件媒体类型相符，再排入一条结构化用户消息。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝；绝不静默替换成最新版本。消息 source 在 `kind: 'science-edit'` 下保存完整请求，文本则要求模型同时在 `artifact_inputs` 与 `edit_of` 使用该确切版本；raster 消息还携带确切被选中的图像附件。
+
 `ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `annotate_artifact`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。`publish_outcome` 可对已经持久化的证据工作，不需要 Runtime access。
 
 ## 配置
@@ -86,6 +88,20 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 只要可见的工具定义与顺序未变化就是 prefix-stable 的。插件生命周期变化可能使复用从第一个变化的 schema token 起失效。
 
+### Viewer 编辑消息
+
+#### 模型看到的内容
+
+获准的 artifact viewer 编辑是一个普通用户轮次。其文本会写明逻辑 artifact、确切版本、所选 spec path 或归一化 raster 区域、用户要求，以及必须把该版本同时作为 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存相同字段；raster 选择还会提供确切被选中的图像附件。
+
+#### Token 影响
+
+上限由四行固定文本、已校验的用户要求，以及 raster 选择时的一份图像附件构成。消息会保留在请求历史中，直到上下文压缩（compaction）。
+
+#### KV Cache 影响
+
+仅追加；该消息与其他用户 follow-up 一样位于可复用请求前缀之后。
+
 ### Run 结果
 
 #### 模型看到的内容
@@ -144,5 +160,5 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 ## 已知限制与暂缓事项
 
-- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附 `apps/cli` 的内置 `science` agent preset（`apps/cli/config/agent-presets/science`）是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.zh.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md) Agent Note。
+- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附的内置 `science` agent preset 与 Web Host 的 `./edit-service` 行是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.zh.md) 与 [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md) Agent Note。
 - **没有 chart specification 或 Outcome editor** — 模型在 Python/R 中生成输出文件，并发布不可变、evidence-backed 的 Outcome revision；本包不提供 plotting grammar 或可变 report document。

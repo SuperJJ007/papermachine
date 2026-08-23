@@ -9,6 +9,7 @@ import {
   type GenerateOptions,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
+import type { ScienceEditMessageSource } from '@deepseek-ai/dsh-tool-science/types'
 
 const capturePath = join(process.cwd(), 'science-model-view.json')
 
@@ -36,6 +37,20 @@ function toolResultTexts(options: GenerateOptions): string[] {
     message.content.flatMap(block => block.type === 'tool-result'
       ? [block.content.flatMap(item => item.type === 'text' ? [item.text] : []).join('\n')]
       : []))
+}
+
+/** One deterministic call id per selection kind, doubling as the served-edit marker. */
+function editCallId(source: ScienceEditMessageSource): string {
+  return source.target.kind === 'spec-path' ? 'science-selected-edit-call' : 'science-region-edit-call'
+}
+
+/** The oldest structured edit message no earlier tool result has answered. */
+function pendingEditSource(options: GenerateOptions): ScienceEditMessageSource | undefined {
+  const served = new Set<string>(options.messages.flatMap(message =>
+    message.content.flatMap(block => block.type === 'tool-result' ? [block.toolCallId] : [])))
+  return options.messages
+    .flatMap(message => message.source.kind === 'science-edit' ? [message.source] : [])
+    .find(source => !served.has(editCallId(source)))
 }
 
 /**
@@ -73,11 +88,24 @@ function capturedPlotRef(options: GenerateOptions): { readonly artifactId: strin
 function writeCapture(options: GenerateOptions): void {
   const toolResults = options.messages.flatMap(message =>
     message.content.flatMap(block => block.type === 'tool-result' ? [block] : []))
+  const editMessages = options.messages.filter(message => message.source.kind === 'science-edit')
   writeFileSync(capturePath, `${JSON.stringify({
     guidance: scienceGuidance(options.system),
     tools: options.tools?.filter(tool => SCIENCE_TOOLS.includes(tool.name)),
     filesystemTools: options.tools?.filter(tool => ['read', 'write', 'edit'].includes(tool.name)).map(tool => tool.name),
     runtimeContext: runtimeContext(options),
+    // An image block reaches the provider as rendered image content, not as
+    // its durable handle; record the block's media type and dimensions and
+    // keep the internal attachment id out of the model-facing capture.
+    editMessages: editMessages.map(message => ({
+      source: message.source,
+      content: message.content.map(block => block.type === 'image'
+        ? {
+          type: block.type,
+          attachment: { mediaType: block.attachment.mediaType, width: block.attachment.width, height: block.attachment.height },
+        }
+        : block),
+    })),
     toolResults: toolResults.map(result => ({ toolCallId: result.toolCallId, content: result.content })),
   }, undefined, 2)}\n`)
 }
@@ -94,6 +122,21 @@ function * toolCall(id: string, name: string, args: unknown): Generator<StreamCh
 class ScienceMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     writeCapture(options)
+    const selectedEdit = pendingEditSource(options)
+    if (selectedEdit !== undefined) {
+      const [input, output] = selectedEdit.target.kind === 'spec-path'
+        ? ['source.vl.json', 'selected-edit.vl.json']
+        : ['region-source.png', 'region-edit.png']
+      const code = selectedEdit.target.kind === 'spec-path'
+        ? `from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "${output}").write_text(Path("inputs/${input}").read_text())`
+        : `from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "${output}").write_bytes(Path("inputs/${input}").read_bytes())`
+      yield * toolCall(editCallId(selectedEdit), 'run_python', {
+        code,
+        artifact_inputs: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: input }],
+        edit_of: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: output }],
+      })
+      return
+    }
     // One step per settled tool result: read state, run code that writes
     // csv/json/vl.json/md/png artifacts (auto-captured with no separate save step),
     // curate the file that best demonstrates the result, publish the cited

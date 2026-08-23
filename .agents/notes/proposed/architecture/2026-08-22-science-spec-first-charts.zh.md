@@ -55,11 +55,17 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 - **Host 侧确定性导出**:维持推迟,并定下具体触发条件——当某个具体的非 Web Client 承诺支持 Science 图表时才建设,此前不建。
 - **人工编辑归属**:不做比 `'human-edit'` origin 更细的粒度。部署本身是匿名单用户的([`dsh-anonymous-user-id`](../../../../packages/identity) 是部署级身份);按人归属的字段没有任何消费方。
 
-结构化编辑消息 `text` block 的确切渲染措辞(决策 4)仍然刻意不锁定——由 C2 连同它的 snapshot 一起决定。
+结构化编辑消息 `text` block 的确切渲染措辞（决策 4）由 C2 的 keyless snapshot 与下文 C2 实现评估锁定。
 
 ## C1 依赖评估(2026-08-23)
 
 C1 钉下 `vega-embed@7.1.0`(闭包:`vega@6.4.0`、`vega-lite@6.4.3`)作为 `dsh-client-ui-science` 唯一新增的运行时依赖;`THIRD_PARTY_NOTICES.md` 列出该直接依赖(BSD-3-Clause),闭包由 lockfile 承载。实测成本:`lib/client.js` 增至约 2.0 MB(gzip 约 475 KB),约为次大客户端插件的 4.5 倍,且只要插件挂载就静态加载。对照 maintained-dependency 标准接受进 v1——该渲染器替代的是一整个本要手写的图表面——按需加载记入 ui-science README 的已知限制而非投机性先建。一项风险保持开放并同样记录在那里:embed 的 loader 未受限,spec 的 `data.url` 会让 viewer 所在浏览器请求外部资源;限制 loader 还是接受该行为尚未决定,最迟必须在引入人工提交 spec 版本的 C3 之前定案。
+
+## C2 实现评估（2026-08-23）
+
+C2 在 `dsh-tool-science` 新增一个 `scienceEdits` Typert Remote；Web 在与 Typert Gateway 共享的 Host root 挂载其 `./edit-service` 入口，而 agent preset 只挂载面向模型的 Consumer。浏览器只能提交确切 artifact 引用、判别式 spec-path 或 normalized-region 目标与修改要求，Host 则在准入前解析在线 Agent 并 fold 其完整 session。所选版本必须是该 artifact 当前已提交版本：引用缺失、目标格式错误、媒体类型不匹配或版本陈旧都会以稳定的 `SCIENCE_EDIT_*` code 拒绝，没有任何分支替换成 latest。获准的 `user/message` 在 `source.kind: 'science-edit'` 下携带完整请求；其四行文本依次写明逻辑 artifact 与确切版本、所选目标、修改要求，以及必须把该版本同时作为 `artifact_inputs` source 与 `edit_of` parent。Raster 消息还附带确切被选中的图像。Keyless Science runnable snapshot 把这条结构化消息的两种目标类型都提交给组装后的 agent，mock model 随后以一致的 `artifact_inputs` 与 `edit_of` 发起 `run_python`；产出的 `selected-edit.vl.json` 与 `region-edit.png` 事件断言 `parent` 等于被选中的版本。真实 server/model 浏览器 GIF 仍是 C2 最后一项产品验收证据。
+
+C2 的真实 server 流程还暴露了 `dsh-science-runtime` 中一个相邻缺陷：`assertSession` 仍以 session 冻结的创建 header（`header.agentPreset === 'science'`）为准，拒绝所有通过 [per-session preset 设计](../../implemented/architecture/2026-08-03-per-session-agent-presets.zh.md)已交付的 `agent-preset/selected` 机制重组进 science preset 的 Web session。该守卫现在只以持久的 `science/mode-bound` 事实为准：这一事实只由 science preset 自己的 Consumer 追加，所以 Runtime 实际依赖的授权是 mode 绑定而非创建 header，重组后的 session 与原生 science session 在完全相同的条件下获准。记录在此是因为 C2 验收路径是它的第一个消费者；README 与一个 environment 回归测试承载该行为。
 
 ## Alternatives considered
 

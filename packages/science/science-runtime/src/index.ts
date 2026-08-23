@@ -706,7 +706,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       throw new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Runtime requires the exact live Session object')
     }
     const projection = replayScience(session.events)
-    if (session.header.agentPreset !== 'science' || projection === null) {
+    if (projection === null) {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science mode must be bound before Runtime operations')
     }
     return projection

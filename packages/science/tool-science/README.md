@@ -6,6 +6,8 @@ The **model-facing Science mode Consumer**: first-use mode/environment binding, 
 
 A composition stacks, in order: `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-system-prompt`, `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-science-session` plus its `/invariant`, a host-local subprocess and sandbox provider, `@deepseek-ai/dsh-science-runtime` (configured with `dshHome` and `profiles`) plus its `/invariant`, then this package (configured with `profileId`, `modeRevision`, and `stateHistoryLimit`) plus its own `/invariant`.
 
+The package also owns the `scienceEdits` Typert Remote used by the artifact viewer. Web Hosts mount its `./edit-service` entry in the Host root where the Typert Gateway resolves Remote services; the preset-scoped package root remains the model-facing Consumer and publishes no service. `submit` accepts one exact `{ artifactId, version }`, a Vega-Lite `spec-path` or raster `normalized-region`, and a non-empty instruction. It strictly folds the addressed live Agent's complete session, accepts only the artifact's current committed version, validates that the target matches the attachment media type, and queues one structured user message. A stale selection rejects as `SCIENCE_EDIT_STALE_VERSION`; it never silently substitutes the latest version. The message source preserves the complete request under `kind: 'science-edit'`, while its text requires the model to use that exact version in both `artifact_inputs` and `edit_of`; raster messages additionally carry the exact selected image attachment.
+
 `ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, each `run_python`/`run_r` call, and `annotate_artifact`). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading. `publish_outcome` remains usable over already-durable evidence without Runtime access.
 
 ## Config
@@ -86,6 +88,20 @@ Fixed schema cost on every request in this plugin's registration scope.
 
 Prefix-stable while the visible tool definitions and order are unchanged. Plugin lifecycle may invalidate reuse from the first changed schema token.
 
+### Viewer edit message
+
+#### What the model sees
+
+An admitted artifact-viewer edit is one ordinary user turn. Its text names the logical artifact and exact version, the selected spec path or normalized raster region, the instruction, and the requirement to use that version as both an `artifact_inputs` source and the `edit_of` parent. The durable `science-edit` source preserves the same fields; a raster selection also supplies the exact selected image attachment.
+
+#### Token effect
+
+Bounded by four fixed text lines, the validated instruction, and one image attachment for a raster selection. The message remains in request history until compaction.
+
+#### KV Cache effect
+
+Append-only; the message follows the reusable request prefix like any other user follow-up.
+
 ### Run result
 
 #### What the model sees
@@ -144,5 +160,5 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
-- **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset that ships with `apps/cli` (`apps/cli/config/agent-presets/science`) is a separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
+- **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset and Web Host's `./edit-service` row are separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](../../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
 - **No chart specification or Outcome editor** — the model produces output files in Python/R and publishes immutable evidence-backed Outcome revisions; this package does not provide a plotting grammar or mutable report document.

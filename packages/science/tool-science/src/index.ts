@@ -1,7 +1,6 @@
 /**
  * Model-facing Science mode Consumer: first-use mode/environment binding, the
- * `science:environment` dynamic context, and the `get_science_state`,
- * `run_python`, and `run_r` tools. It never spawns a process, writes run
+ * `science:environment` dynamic context, and five Science tools. It never spawns a process, writes run
  * source, classifies termination, manages Conda, or appends Runtime-owned
  * events — those remain owned by `@deepseek-ai/dsh-science-runtime`, called
  * through the optional `ctx.scienceRuntime` service.
@@ -18,6 +17,14 @@ import { applyRunTool } from './run.ts'
 import { applyScienceStateTool } from './state.ts'
 
 export { Config }
+export type * from './types.ts'
+export {
+  createScienceEditMessage,
+  resolveScienceEdit,
+  ScienceEditError,
+  ScienceEditService,
+  renderScienceEditMessage,
+} from './edit-message.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'tool-science'

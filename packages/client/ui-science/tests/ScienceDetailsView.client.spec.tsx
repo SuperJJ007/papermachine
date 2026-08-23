@@ -101,6 +101,7 @@ function props(
     agentPreset?: string
     loadImage?: Props['loadImage']
     loadText?: Props['loadText']
+    submitEdit?: Props['submitEdit']
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
   } = {},
@@ -134,6 +135,7 @@ function props(
     inspectCall: over.inspectCall ?? vi.fn(),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
+    submitEdit: over.submitEdit ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     t,
   } as unknown as Props
 }
@@ -460,6 +462,76 @@ describe('ScienceDetailsView: content dispatch', () => {
     )
     view.unmount()
     expect(finalizeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits the selected Vega-Lite structural path against the exact open version', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"x":{"field":"name"},"color":{"field":"group"}}}')
+    const submitEdit = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json', version: 3 })
+    store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
+    render(<ScienceDetailsView {...props(science, { store, loadText, submitEdit })} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'encoding.color' }))
+    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Use the blue scale' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
+
+    await waitFor(() => {
+      expect(submitEdit).toHaveBeenCalledWith({
+        artifactId: 'chart-1', version: 3,
+        target: { kind: 'spec-path', path: 'encoding.color' },
+        instruction: 'Use the blue scale',
+      })
+    })
+    expect((await screen.findByRole('status')).textContent).toBe('Edit request sent.')
+  })
+
+  it('offers structural targets inside concatenated and faceted compositions', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue(JSON.stringify({
+      vconcat: [
+        { mark: 'bar', encoding: { x: { field: 'name' } } },
+        { facet: { row: { field: 'group' } }, spec: { mark: 'line', encoding: { y: { field: 'value' } } } },
+      ],
+    }))
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    expect(await screen.findByRole('button', { name: 'vconcat.0.mark' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'vconcat.0.encoding.x' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'vconcat.1.spec.mark' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'vconcat.1.spec.encoding.y' })).toBeDefined()
+  })
+
+  it('normalizes a raster drag and renders a Host rejection without changing the selected version', async () => {
+    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const submitEdit = vi.fn<Props['submitEdit']>().mockResolvedValue({ ok: false, error: { message: 'selected version is stale' } })
+    render(<ScienceDetailsView {...props(science, { store, submitEdit })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    const gesture = screen.getByLabelText('Drag to select an edit region')
+    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
+      x: 10, y: 20, left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100,
+      toJSON: () => ({}),
+    })
+    fireEvent.mouseDown(gesture, { clientX: 30, clientY: 40 })
+    fireEvent.mouseMove(gesture, { clientX: 130, clientY: 90 })
+    fireEvent.mouseUp(gesture, { clientX: 130, clientY: 90 })
+    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Increase contrast' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
+
+    await waitFor(() => { expect(submitEdit).toHaveBeenCalledTimes(1) })
+    expect(submitEdit.mock.calls[0]?.[0]).toMatchObject({
+      artifactId: 'chart-1', version: 2,
+      target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.5 },
+      instruction: 'Increase contrast',
+    })
+    const submittedTarget = submitEdit.mock.calls[0]?.[0].target
+    if (submittedTarget?.kind !== 'normalized-region') throw new Error('expected one normalized-region request')
+    expect(submittedTarget.height).toBeCloseTo(0.5)
+    expect((await screen.findByRole('alert')).textContent).toContain('selected version is stale')
   })
 
   it('finalizes a Vega-Lite view that resolves after unmount', async () => {

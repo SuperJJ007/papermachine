@@ -63,6 +63,8 @@
                   pythonPrefix: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/fake-conda'"
           - id: science-runtime-invariant
             name: '@deepseek-ai/dsh-science-runtime/invariant'
+          - id: science-edit-service
+            name: '@deepseek-ai/dsh-tool-science/edit-service'
           - id: tool-science
             name: '@deepseek-ai/dsh-tool-science'
             config:

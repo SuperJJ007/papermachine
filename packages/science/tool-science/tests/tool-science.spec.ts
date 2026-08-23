@@ -14,6 +14,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
@@ -32,6 +33,7 @@ import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, Sci
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
+import { ScienceEditService } from '../src/edit-message.ts'
 import { closedKernelFacts, isScienceSession, renderScienceProjection } from '../src/context.ts'
 import { scienceArtifactPresentation } from '../src/presentation.ts'
 import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
@@ -148,6 +150,20 @@ async function seedAutoArtifact(
   }
   session.append('science/artifact-saved', { version: 1, artifact })
   return artifact
+}
+
+/** Bind, then run_python to a durable success, through the real tool registry. */
+async function runSuccessfully(ctx: Context, session: Session, id: string): Promise<RunProvenance> {
+  await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+  const toolCallId = authorizeToolCall(session, 1, 'run_python', id)
+  const result = await ctx.tools.execute({
+    signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
+    agent: fakeAgent(session),
+  })
+  expect(result.isError).toBe(false)
+  const started = session.events.find(event => event.type === 'science/run-started')
+  if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
+  return started.data.run
 }
 
 let root: string
@@ -1467,20 +1483,6 @@ describe('isMessageFact', () => {
 })
 
 describe('annotate_artifact', () => {
-  /** Bind, then run_python to a durable success, through the real tool registry. */
-  async function runSuccessfully(ctx: Context, session: Session, id: string): Promise<RunProvenance> {
-    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
-    const toolCallId = authorizeToolCall(session, 1, 'run_python', id)
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(false)
-    const started = session.events.find(event => event.type === 'science/run-started')
-    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
-    return started.data.run
-  }
-
   it('curates an already-captured artifact and returns a text receipt without file bytes or the internal attachment id', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-success')
@@ -1680,6 +1682,37 @@ describe('annotate_artifact', () => {
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no artifact named'))).toBe(true)
+  })
+})
+
+describe('scienceEdits submit', () => {
+  it('admits a viewer edit through ScienceEditService.submit and queues the structured message on the live agent', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-edit-submit')
+    const run = await runSuccessfully(ctx, session, 'science-edit-submit-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const followups: UserMessage[] = []
+    const agent = {
+      session,
+      followup: (message: UserMessage) => { followups.push(message) },
+    } as unknown as Agent
+    const service = new ScienceEditService(ctx)
+    expect(() => service.submit(agent, {
+      artifactId: ScienceArtifactId('absent'), version: 1,
+      target: { kind: 'spec-path', path: 'mark' }, instruction: 'change mark',
+    })).toThrow(/does not identify a committed artifact/)
+    expect(followups).toHaveLength(0)
+    const receipt = service.submit(agent, {
+      artifactId: artifact.artifactId, version: 1,
+      target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      instruction: 'brighten the selected region',
+    })
+    expect(receipt).toEqual({ accepted: true })
+    expect(followups).toHaveLength(1)
+    expect(followups[0]?.source).toMatchObject({
+      kind: 'science-edit', artifactId: artifact.artifactId, version: 1,
+      target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+    })
   })
 })
 

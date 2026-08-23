@@ -287,6 +287,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/science/tool-science": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/science/science-runtime": {
       "entry": [
         "tests/**/*.spec.ts",

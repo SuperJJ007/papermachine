@@ -57,6 +57,9 @@ function providePresentation(ctx: Context) {
   })
   ctx.provide('connection', {} as never)
   ctx.provide('remote', {} as never)
+  ctx.provide('remote.scienceEdits', {
+    submit: () => Promise.resolve({ ok: true, value: { accepted: true } }),
+  })
   ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
@@ -69,7 +72,7 @@ describe('apply', () => {
   })
 
   it('declares the services it binds — locale/slots for the toolview rows, connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller), and sessions for the Details entry\'s own attachment loader', () => {
-    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'settingsScope', 'sessions'])
+    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions'])
   })
 
   it('registers the science locale dictionaries and the run_python / run_r / annotate_artifact / publish_outcome toolview rows', async () => {
@@ -145,6 +148,7 @@ describe('apply', () => {
     const face = injectFn?.('any-session' as SessionId)
     expect(typeof face?.loadImage).toBe('function')
     expect(typeof face?.loadText).toBe('function')
+    expect(typeof face?.submitEdit).toBe('function')
   })
 
   it('shares one selection-store handle across the toolview and details-view registrations', async () => {

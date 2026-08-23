@@ -214,6 +214,104 @@
   height: auto;
 }
 
+.specTargets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.specTarget,
+.regionButton {
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.specTarget[aria-pressed='true'],
+.regionButton[aria-pressed='true'] {
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rasterSelector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.rasterCanvas {
+  position: relative;
+  max-width: 100%;
+}
+
+.regionGesture,
+.regionBox {
+  position: absolute;
+  z-index: 2;
+}
+
+.regionGesture {
+  inset: 0;
+  cursor: crosshair;
+}
+
+.regionBox {
+  box-sizing: border-box;
+  border: 2px solid var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
+  pointer-events: none;
+}
+
+.editPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.editLabel {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.editInstruction {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.editSubmit {
+  align-self: flex-end;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.editSubmit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* Landing view: gallery of latest chart versions, plus Outcome below it. */
 
 .landing {

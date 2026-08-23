@@ -198,6 +198,28 @@ class FailingPackagesProbeSubprocess extends ControlledSubprocess {
 }
 
 describe('ScienceRuntime.bindEnvironment', () => {
+  it('accepts a blank session recomposed from the default preset into Science', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-recomposed-session-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = harness.ctx.sessions.create(SessionId('science-recomposed-session'), {
+      meta: { agentPreset: 'standard' },
+    })
+    session.append('agent-preset/selected', { agentPreset: 'science' })
+    session.append('science/mode-bound', {
+      version: 1,
+      mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
+    })
+
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
+  })
+
   it.each(['error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'missing-output', 'version-both-streams', 'version-nul', 'version-stderr-only'] as const)('fails loudly when a probe provider is %s', async (mode) => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-broken-probe-'))
     roots.push(root)

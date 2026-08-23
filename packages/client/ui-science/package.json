@@ -32,6 +32,7 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-tool",
@@ -53,6 +54,7 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
+    "@deepseek-ai/dsh-api-remotes": "workspace:^",
     "@deepseek-ai/dsh-byte-size": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",
@@ -74,6 +76,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
+    "@deepseek-ai/dsh-api-remotes": "workspace:^",
     "@deepseek-ai/dsh-byte-size": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",

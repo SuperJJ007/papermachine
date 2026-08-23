@@ -115,6 +115,13 @@
     - id: science-session
       name: '@deepseek-ai/dsh-science-session'
 
+    # Process-global admission for artifact-viewer edit gestures. The Remote
+    # receives a session identity and resolves that exact live Science Agent;
+    # it must share the Host root with the Typert API gateway rather than live
+    # inside one agent-preset scope.
+    - id: science-edit-service
+      name: '@deepseek-ai/dsh-tool-science/edit-service'
+
     # The settings-bound Science Runtime: declares `settings` among its
     # Cordis injections, so this row is what makes the `science-runtime`
     # namespace present for the Plugins tab to dispatch a card into — Cordis,

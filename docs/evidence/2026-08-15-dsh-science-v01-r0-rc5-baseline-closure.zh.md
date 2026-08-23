@@ -2,7 +2,7 @@
 
 [English](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | 中文
 
-调查与收口日期为 2026-08-15。本记录负责 R0 accepted identity 与 closure 结果；[已归档的 R0 scope](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)是冻结的 procedure 与 decision snapshot。本记录只取代[初步 macOS 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline.md)的验收结论；后者仍负责其 macOS FAIL 与适配安装诊断。
+调查与收口日期为 2026-08-15。本记录负责 R0 accepted identity 与 closure 结果；[已归档的 R0 scope](../../.agents/notes/archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md)是冻结的 procedure 与 decision snapshot。本记录只取代[初步 macOS 记录](2026-08-15-dsh-science-v01-r0-rc5-baseline.zh.md)的验收结论；后者仍负责其 macOS FAIL 与适配安装诊断。
 
 ## 结论
 
@@ -54,6 +54,8 @@ R0A 在 `73c0e9c004157798682759e7d5b0280b9ec913c3` 验收。R0B 已检查的产�
 | 最终 Git scope | Accepted head；ancestry、sole parent、逻辑记录 allowlist、protected-state 对比与 clean status | PASS：官方 RC5 是 ancestor，sole parent 为 checked content，三个授权逻辑 triplet 恰好形成 12 个 physical paths，product/release inputs 不变，受保护输入一致，worktree clean |
 
 `/tmp` closure worktree 中的 `check:ci:artifacts` 曾在两个 built-bin lifecycle tests 上产生非验收 FAIL。同一 checked-content commit 在必需的非 `/tmp` R0B worktree 中运行同一命令后 PASS，因此验收只采用非临时 worktree 结果。
+
+<a id="complete-overlay-inventory"></a>
 
 ## 完整 overlay inventory
 
@@ -132,4 +134,4 @@ Implemented doc-tier 与 npm release-sequence notes 保持 active，因为它们
 
 ## 唯一下一步
 
-唯一的下一项实现由 [RC5 上的 R1 Science Session](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.md)约束：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中边界明确的 `GEN-SESSION-REGISTRY` 前置项与 `SCI-SESSION` mapping、port 并验收到 accepted R0B line。其余 inventory rows 均保持 deferred。
+唯一的下一项实现由 [RC5 上的 R1 Science Session](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.zh.md)约束：把 `omdsh-dev/dsh-science@e5e8b29b435f67e0a5dde5e2132580966e78b27b` 中边界明确的 `GEN-SESSION-REGISTRY` 前置项与 `SCI-SESSION` mapping、port 并验收到 accepted R0B line。其余 inventory rows 均保持 deferred。

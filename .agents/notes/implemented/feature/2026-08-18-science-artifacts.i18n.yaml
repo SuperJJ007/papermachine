@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-science-artifacts.md
 2026-08-18-science-artifacts.md: 2616ae5967e068ec80a3a5127e082797f5dcb980
-2026-08-18-science-artifacts.zh.md: 4cce2a96fc1f55579591f62565c5d4615ae187e4
+2026-08-18-science-artifacts.zh.md: cd34aaa67ef238c21a17c597036525c808695804

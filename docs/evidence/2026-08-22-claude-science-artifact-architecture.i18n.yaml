@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/evidence/2026-08-22-claude-science-artifact-architecture.md
 2026-08-22-claude-science-artifact-architecture.md: 87090fcd977ee31644550772d34223e8df552b02
-2026-08-22-claude-science-artifact-architecture.zh.md: 7a79424b4f65b6fb8b66a1948b5c272ac46e21a5
+2026-08-22-claude-science-artifact-architecture.zh.md: 58191e7d75b8d8f7d1deea9481a0a6eec543ad23

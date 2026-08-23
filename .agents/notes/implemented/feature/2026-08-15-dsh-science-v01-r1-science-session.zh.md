@@ -12,13 +12,13 @@ R1 需要一份可直接执行的 scope authority：既保留已接受的领域�
 
 ## 决策
 
-R1 把持久化的 Science Session 领域加入到 `packages/science/science-session`，再加上恢复该领域所必需的最小可选通用 projection 能力。本开发线此后已[迁移基线至 rc.7](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)；下文记录的 RC5 适配描述的是当时实际执行的移植过程，而非本开发线当前的上游基线。Session 日志仍是唯一的持久权威来源。该包不暴露任何公开的变更服务，不启动进程，不观测解释器，不注册任何模型工具或提示词，也不渲染任何客户端 UI。
+R1 把持久化的 Science Session 领域加入到 `packages/science/science-session`，再加上恢复该领域所必需的最小可选通用 projection 能力。本开发线此后已[迁移基线至 rc.7](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md)；下文记录的 RC5 适配描述的是当时实际执行的移植过程，而非本开发线当前的上游基线。Session 日志仍是唯一的持久权威来源。该包不暴露任何公开的变更服务，不启动进程，不观测解释器，不注册任何模型工具或提示词，也不渲染任何客户端 UI。
 
 `packages/science/science-session/src/*.ts`（17 个文件）与 `tests/*.ts`（11 个文件）中的每一个文件，都是 `omdsh-dev/dsh-science@e5e8b29` 的 `packages/science/science-session` 中对应文件的直接、未修改的副本，因为它们都不涉及下游 session-projection 重构中被排除的部分。有两个文件是经过适配而非直接复制的：`src/index.ts` 在其 `ctx.sessionProjections.register(...)` 调用中去掉了 `definitionToken` 字段，因为 RC5 的 `ProjectionDefinition` 并未声明该字段；`tsconfig.json` 的 TypeScript project `references` 是针对 RC5 实际的包布局重新推导而成（去掉了 `vendor/cosmokit`——RC5 的同级包并不依赖它）。`package.json` 与两份 README 都是从 RC5 同级包模板出发全新撰写——版本 `0.1.0-rc.5`、`publishConfig.access: public`、MIT、共用的 repository 字段——而非从下游的 `0.0.1-rc.2`／`restricted`／BSD-3-Clause 元数据复制而来。
 
 `packages/session/session-projection/src/index.ts`（RC5 现有的单文件 `SessionProjectionRegistry`）新增了三个可选的 `ProjectionDefinition` 成员——`checkpointStateSchema`、`checkpointStateSeq`、`viewChanged`——恰好应用在五个集成点：checkpoint 创建、零 I/O checkpoint 视图、restore-floor 选择、冷恢复，以及实时通知。一个三者皆省略的 definition 会保留 RC5 原有的无条件行为；每一个既有的 session-projection 测试都原样通过。`definitionToken`、owner-aware 的 HMR 接管、callback containment、prototype-key hardening、下游的文件拆分，以及其持久化/查询/生命周期相关改动均未被移植——它们仍归属其既有的通用 owner，且并非在 RC5 上服务 Science definition 所必需。
 
-[R0 closure 记录](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) 拥有本笔记所构建于其上的、已接受的基线身份。[通用 session-projection 提案](../../proposed/architecture/2026-07-27-session-projection-and-command-log.md)、[session log 版本决策](../architecture/2026-08-10-session-log-version-mechanism.md) 与 [session end-seed 决策](../architecture/2026-07-30-session-end-seed-log-boundary.md) 仍是本笔记所在包所消费的那些机制的通用 owner；本笔记只拥有 Science 消费方及其受限的 RC5 registry 前置条件。
+[R0 closure 记录](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md) 拥有本笔记所构建于其上的、已接受的基线身份。[通用 session-projection 提案](../../proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)、[session log 版本决策](../architecture/2026-08-10-session-log-version-mechanism.zh.md) 与 [session end-seed 决策](../architecture/2026-07-30-session-end-seed-log-boundary.zh.md) 仍是本笔记所在包所消费的那些机制的通用 owner；本笔记只拥有 Science 消费方及其受限的 RC5 registry 前置条件。
 
 ### Science Session 行为
 

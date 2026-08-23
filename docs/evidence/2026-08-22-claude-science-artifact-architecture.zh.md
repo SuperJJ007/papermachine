@@ -301,15 +301,15 @@ flowchart LR
 
 | DSH 组件 | 当前所有权和语义 |
 |---|---|
-| [`@deepseek-ai/dsh-attachment-local`](../../packages/attachment/attachment-local/README.md) | 不可变 SHA-256 对象、原子持久发布、跨媒体字节去重和校验读取。会话日志包含不透明引用，而非宿主路径。 |
-| [`@deepseek-ai/dsh-science-runtime`](../../packages/science/science-runtime/README.md) | 持久 Python／R 执行、逐运行产物目录，以及在终止运行事实后对允许图像／文本文件的有界自动捕获。捕获失败不会改变已提交的运行结果。 |
-| [`@deepseek-ai/dsh-science-session`](../../packages/science/science-session/README.md) | 必需的 `science/*` 事件、严格回放、品牌化 id、完整 Artifact Version 值、精确运行／环境／工具调用溯源、浏览器安全投影和附件授权。 |
+| [`@deepseek-ai/dsh-attachment-local`](../../packages/attachment/attachment-local/README.zh.md) | 不可变 SHA-256 对象、原子持久发布、跨媒体字节去重和校验读取。会话日志包含不透明引用，而非宿主路径。 |
+| [`@deepseek-ai/dsh-science-runtime`](../../packages/science/science-runtime/README.zh.md) | 持久 Python／R 执行、逐运行产物目录，以及在终止运行事实后对允许图像／文本文件的有界自动捕获。捕获失败不会改变已提交的运行结果。 |
+| [`@deepseek-ai/dsh-science-session`](../../packages/science/science-session/README.zh.md) | 必需的 `science/*` 事件、严格回放、品牌化 id、完整 Artifact Version 值、精确运行／环境／工具调用溯源、浏览器安全投影和附件授权。 |
 | `annotate_artifact` | 复用精确附件，并替换所指投影 Version 的标题／说明元数据；它不创建重复字节或读者可见的内容 Version。 |
 | `publish_outcome` | 追加连续 Outcome 修订，精确引用成功运行、Artifact Version 和／或先前消息。Outcome 是基于证据的发布，不是字节存储。 |
-| [`@deepseek-ai/dsh-client-ui-science`](../../packages/client/ui-science/README.md) | 为 transcript 条目、画廊、标签页、Version 导航、内容、下载和溯源读取一个 Science 投影。其逐会话存储只管理查看状态。 |
+| [`@deepseek-ai/dsh-client-ui-science`](../../packages/client/ui-science/README.zh.md) | 为 transcript 条目、画廊、标签页、Version 导航、内容、下载和溯源读取一个 Science 投影。其逐会话存储只管理查看状态。 |
 | Notebook 界面 | 已有持久 Python／R kernel 及其 `kernelEpoch` 身份，但没有实时 Session Notebook、直接人工 cell 通道或完整／裁剪 Notebook bundle 导出。Cell 输入和输出展示当前把 Science 运行事实连接到 transcript 工具出现记录，而不是读取独立 notebook 记录。 |
 
-DSH 根据 [按请求轮次定义 Artifact Version 的决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.md)，把 Artifact Version 定义为一个请求轮次产生的内容。自动捕获跳过字节相同的输出；同一工具调用轮次内重复写入的变化输出会替换投影 Version，而较晚轮次的变化输出会打开下一个连续 Version。每个保存事件仍保留在 Session 日志中。元数据策展保持 Version 号和字节不变。
+DSH 根据 [按请求轮次定义 Artifact Version 的决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.zh.md)，把 Artifact Version 定义为一个请求轮次产生的内容。自动捕获跳过字节相同的输出；同一工具调用轮次内重复写入的变化输出会替换投影 Version，而较晚轮次的变化输出会打开下一个连续 Version。每个保存事件仍保留在 Session 日志中。元数据策展保持 Version 号和字节不变。
 
 DSH Artifact 目前只在 Session 范围内存在。Science 领域尚无项目 Artifact 目录、文件夹／上传／复制／重命名生命周期、显式父 Version 链接、Version 依赖图、锚定人工批注、验证记录或项目范围的保留／垃圾回收策略。这些是产品缺口，而不是替换附件存储或 Session 投影的理由。
 

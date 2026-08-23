@@ -2,7 +2,7 @@
 
 [English](2026-08-16-dsh-science-v01-r3-science-tools.md) | 中文
 
-调查时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R3 model-facing Science tools on RC5](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md)。
+调查时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R3 model-facing Science tools on RC5](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.zh.md)。
 
 ## 结果
 
@@ -67,7 +67,7 @@ Review 拒绝了已记录的 candidate，因为 retry restoration 可能覆盖 a
 | `FS-READONLY-LOAD-FIX` | `deferred` | `verified` |
 | `SCI-TOOLS` | 在 Runtime Context 与 filesystem read-only 被验收之前 `deferred` | 在修复后 candidate `9a668331bd` 上 `verified` |
 | `SCI-SESSION` / `SCI-RUNTIME` / `GEN-SESSION-REGISTRY` / `GEN-SUBPROCESS-RUNTIME-FACTS` / `GEN-SANDBOX-CLASSIFICATION` / `SCI-R-PROBE` | 在 R1/R2 中 `verified` | 不变 |
-| 其余 overlay rows | 与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) 中记录的一致 | 不变：`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER` |
+| 其余 overlay rows | 与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md) 中记录的一致 | 不变：`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER` |
 
 ## Protected-state preservation
 

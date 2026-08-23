@@ -2,7 +2,7 @@
 
 [English](2026-08-15-dsh-science-v01-r2-science-runtime.md) | 中文
 
-调查时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R2 Science Runtime on RC5](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.md)。
+调查时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R2 Science Runtime on RC5](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.zh.md)。
 
 ## 结果
 
@@ -62,7 +62,7 @@ Runtime package 针对 RC5 从 `omdsh-dev/dsh-science@e5e8b29` 的 `packages/sci
 | `SCI-RUNTIME` | 在 `SCI-SESSION` 被接受之前为 `deferred` | 在 `4c3c814f7a51d7e48717afef91ba4369d05ab3e6` 处 `verified` |
 | `SCI-R-PROBE` | `deferred`；独立 evidence identity | 在同一候选的 `95669a4f6a` 处 `verified` |
 | `SCI-SESSION` / `GEN-SESSION-REGISTRY` | 在 R1 中 `verified` | 未变 |
-| 其余 overlay 行 | 与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) 和 [R1 evidence](2026-08-15-dsh-science-v01-r1-science-session.md) 中记录的状态一致 | 未变：`GEN-RUNTIME-CONTEXT`、`FS-READONLY`、`FS-READONLY-LOAD-FIX`、`SCI-TOOLS`、`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER` |
+| 其余 overlay 行 | 与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md) 和 [R1 evidence](2026-08-15-dsh-science-v01-r1-science-session.zh.md) 中记录的状态一致 | 未变：`GEN-RUNTIME-CONTEXT`、`FS-READONLY`、`FS-READONLY-LOAD-FIX`、`SCI-TOOLS`、`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER` |
 
 ## 受保护状态的保全
 

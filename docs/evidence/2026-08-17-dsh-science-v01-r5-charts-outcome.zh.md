@@ -2,7 +2,7 @@
 
 [English](2026-08-17-dsh-science-v01-r5-charts-outcome.md) | 中文
 
-调查时间为 2026-08-17，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R5 图表与 Outcome](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.md)。
+调查时间为 2026-08-17，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R5 图表与 Outcome](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md)。
 
 ## 结果
 
@@ -74,7 +74,7 @@ Windows 与 Linux 平台通道（由 CI 拥有矩阵）、带凭据的真实 pro
 | `SCI-CHARTS-OUTCOME` | `deferred`（自 R0 起开放） | 在产品 candidate `69045ba510` 上 `verified` |
 | `SCI-SETTINGS-SIDEBAR` | `deferred` | 不变：`deferred` |
 | `DESKTOP-CARRIER` | `deferred` | 不变：`deferred` |
-| 其余 overlay rows | 与 [R4 收口证据](2026-08-16-dsh-science-v01-r4-science-preset.md) 记录一致 | 不变 |
+| 其余 overlay rows | 与 [R4 收口证据](2026-08-16-dsh-science-v01-r4-science-preset.zh.md) 记录一致 | 不变 |
 
 ## Protected-state preservation
 

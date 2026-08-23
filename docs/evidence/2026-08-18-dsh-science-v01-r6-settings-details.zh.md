@@ -2,11 +2,11 @@
 
 [English](2026-08-18-dsh-science-v01-r6-settings-details.md) | 中文
 
-调查于 2026-08-18，平台 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。Scope authority：[DSH Science v0.1 R6 settings and Details](../../.agents/notes/implemented/feature/2026-08-17-dsh-science-v01-r6-settings-details.md)。
+调查于 2026-08-18，平台 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。Scope authority：[DSH Science v0.1 R6 settings and Details](../../.agents/notes/implemented/feature/2026-08-17-dsh-science-v01-r6-settings-details.zh.md)。
 
 ## Outcome
 
-R6 在分支 `codex/science-v01-rc7-rebaseline` 上关闭 `SCI-SETTINGS-SIDEBAR`。已验收的产品 candidate 与 final head 是 `ebd29f454a5b86445190f004cc5f51cbfb6c3f1a`（`fix(ui-science): judge settings-card save landing per field, not all-or-nothing`）；`e125ce00327e4ffce9cc01f371b9068fd142dfcc` 是链条中的一个中间 SHA，不是 final head。R6a 与 R6b 已在基线迁移前的树上验收；R6c 的基线是 [rc.7 基线迁移](2026-08-17-dsh-science-v01-rc7-rebaseline.md) head `66344a2774feaad7ebd27e80f11e6386d8255317`（其本身经由纯文档性质的 R6c 规划提交与 R6c-0，从已验收的迁移后 head `24971d5f14c8b9dc692658a0bb1cab599a4ed526` 派生而来）。在分支的真实祖先关系中，有四个提交把 R6c-0b 一路带到 `e125ce0032`：`6a994ef4cbca968e15b4ef3d63f0f8e1bb2613e1`（R6c-0b）、`ef645eff0e3a1ab7c416202fe0b023a308ab6f8f`（settings 卡片 + 默认 Web Runtime row + R4/R5 修订）、`57af4a3702956b15875769bf2f5c774e59d68a74`（header action + Details entry），以及 `e125ce00327e4ffce9cc01f371b9068fd142dfcc`（装配级 browser/snapshot coverage + goldens，外加基于共享 primitives 的卡片 chrome）。`8558a65d77ab44f522039bf2624af93f241b7efa` **不是** final head 的祖先：`git branch --all --contains 8558a65d77` 不返回任何分支，reflog 把它记录为 `commit (amend)`——`e125ce0032` 是就地修补（amend）了 `8558a65d77`，而不是在其上继续提交，因此两者共享同一个父提交 `57af4a3702`。该 SHA 不携带任何独有证据。对在 `e125ce0032` 收口的检查点的独立评审发现了 settings 卡片 controller 多字段保存记账逻辑中的一处正确性缺陷（见下文 Independent review follow-up）；修复落在 `ebd29f454a`，是一次 source 改动，因此它才是贯穿本记录的 final head。下文每一项有人值守与 lane 级检查都已直接在 `ebd29f454a` 上重跑，确保没有任何一行指向已被取代的 SHA。
+R6 在分支 `codex/science-v01-rc7-rebaseline` 上关闭 `SCI-SETTINGS-SIDEBAR`。已验收的产品 candidate 与 final head 是 `ebd29f454a5b86445190f004cc5f51cbfb6c3f1a`（`fix(ui-science): judge settings-card save landing per field, not all-or-nothing`）；`e125ce00327e4ffce9cc01f371b9068fd142dfcc` 是链条中的一个中间 SHA，不是 final head。R6a 与 R6b 已在基线迁移前的树上验收；R6c 的基线是 [rc.7 基线迁移](2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md) head `66344a2774feaad7ebd27e80f11e6386d8255317`（其本身经由纯文档性质的 R6c 规划提交与 R6c-0，从已验收的迁移后 head `24971d5f14c8b9dc692658a0bb1cab599a4ed526` 派生而来）。在分支的真实祖先关系中，有四个提交把 R6c-0b 一路带到 `e125ce0032`：`6a994ef4cbca968e15b4ef3d63f0f8e1bb2613e1`（R6c-0b）、`ef645eff0e3a1ab7c416202fe0b023a308ab6f8f`（settings 卡片 + 默认 Web Runtime row + R4/R5 修订）、`57af4a3702956b15875769bf2f5c774e59d68a74`（header action + Details entry），以及 `e125ce00327e4ffce9cc01f371b9068fd142dfcc`（装配级 browser/snapshot coverage + goldens，外加基于共享 primitives 的卡片 chrome）。`8558a65d77ab44f522039bf2624af93f241b7efa` **不是** final head 的祖先：`git branch --all --contains 8558a65d77` 不返回任何分支，reflog 把它记录为 `commit (amend)`——`e125ce0032` 是就地修补（amend）了 `8558a65d77`，而不是在其上继续提交，因此两者共享同一个父提交 `57af4a3702`。该 SHA 不携带任何独有证据。对在 `e125ce0032` 收口的检查点的独立评审发现了 settings 卡片 controller 多字段保存记账逻辑中的一处正确性缺陷（见下文 Independent review follow-up）；修复落在 `ebd29f454a`，是一次 source 改动，因此它才是贯穿本记录的 final head。下文每一项有人值守与 lane 级检查都已直接在 `ebd29f454a` 上重跑，确保没有任何一行指向已被取代的 SHA。
 
 ## Exact identities
 
@@ -87,7 +87,7 @@ R6 implemented Note 对 proposed note 计划所做的六处更正——写入路
 | `delta_id` | Prior status | R6 status |
 |---|---|---|
 | `SCI-SETTINGS-SIDEBAR` | `deferred` | `verified`，于 `ebd29f454a5b86445190f004cc5f51cbfb6c3f1a` |
-| Remaining overlay rows | 与 [rc.7 基线迁移证据](2026-08-17-dsh-science-v01-rc7-rebaseline.md) 中记录的一致 | 不变 |
+| Remaining overlay rows | 与 [rc.7 基线迁移证据](2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md) 中记录的一致 | 不变 |
 
 ## Protected-state preservation
 

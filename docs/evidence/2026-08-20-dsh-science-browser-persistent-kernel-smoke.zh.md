@@ -47,7 +47,7 @@ Python 持久化内核通过了跨轮次状态、普通执行异常、安全用�
 
 修复应解析旧产物与新 source run 各自所属的 `tool/call.turn`，再比较两个 turn。[`fold-state.ts`](../../packages/science/science-session/src/fold-state.ts) 已经以 `turn` 和 `step` 索引每个工具调用；Runtime allocator 与 [`transition.ts`](../../packages/science/science-session/src/transition.ts) 中的 supersede 校验必须使用同一规则。`requestHeaderSeq` 仍是有效溯源字段，但不能决定可见版本身份。
 
-修复需要一份新的 bug-fix Agent Note，因为已实现的[按请求划分产物版本决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.md)当前把 `requestHeaderSeq` 称为轮次锚点。修复应保留它的产品规则——同一轮次 supersede、后续轮次递增——同时纠正实现该规则所使用的持久化关系。
+修复需要一份新的 bug-fix Agent Note，因为已实现的[按请求划分产物版本决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.zh.md)当前把 `requestHeaderSeq` 称为轮次锚点。修复应保留它的产品规则——同一轮次 supersede、后续轮次递增——同时纠正实现该规则所使用的持久化关系。
 
 必需的回归证据：
 

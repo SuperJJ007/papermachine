@@ -6,8 +6,8 @@ Science 领域：required-on-read Session 事件、host-local Runtime 操作、�
 
 | 包 | 职责 | ctx 键 |
 |---|---|---|
-| [`science-session/`](science-session/README.md) | 拥有七个 Science Session 事件、严格 Host replay、pre-commit invariant、客户端安全 projection 与 artifact 附件提取。 | 组合时注册到 `ctx.sessionProjections` / `ctx.sessionAttachments` |
-| [`science-runtime/`](science-runtime/README.md) | Host-local Conda Runtime：environment binding、按 (session, language) 持久化的 Python/R kernel execution、私有 scratch、run 写出文件的自动捕获，以及纯元数据的 artifact 策展。 | `ctx.scienceRuntime` |
-| [`tool-science/`](tool-science/README.md) | 面向模型的 Consumer：首次使用 binding/context，以及 `get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`publish_outcome`。 | 注册到 `ctx.tools` / `ctx.systemPrompt` |
+| [`science-session/`](science-session/README.zh.md) | 拥有七个 Science Session 事件、严格 Host replay、pre-commit invariant、客户端安全 projection 与 artifact 附件提取。 | 组合时注册到 `ctx.sessionProjections` / `ctx.sessionAttachments` |
+| [`science-runtime/`](science-runtime/README.zh.md) | Host-local Conda Runtime：environment binding、按 (session, language) 持久化的 Python/R kernel execution、私有 scratch、run 写出文件的自动捕获，以及纯元数据的 artifact 策展。 | `ctx.scienceRuntime` |
+| [`tool-science/`](tool-science/README.zh.md) | 面向模型的 Consumer：首次使用 binding/context，以及 `get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`publish_outcome`。 | 注册到 `ctx.tools` / `ctx.systemPrompt` |
 
-子级 README 负责 event、replay、projection、Runtime 与 Consumer 约定。浏览器展示位于 [`client/ui-science`](../client/ui-science/README.md)。
+子级 README 负责 event、replay、projection、Runtime 与 Consumer 约定。浏览器展示位于 [`client/ui-science`](../client/ui-science/README.zh.md)。

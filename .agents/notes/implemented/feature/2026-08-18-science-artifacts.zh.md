@@ -62,11 +62,11 @@ Science 第一版早已把每张图存成不可变记录，并在图内维护连
 
 ### Artifact 面板 —— Details 栏
 
-`ScienceDetailsView` 实际上线为一个带页签的 artifact 查看器，而不是本节最初提议的"画廊加版本条"仪表盘。顶部页签条为每个已打开的逻辑图各持一个页签，每个页签在所派发内容之上带一条面板内工具条（标题、跨该图全部留存版本的版本步进器、溯源/下载/最大化/关闭页签控件）。没有任何页签打开时，面板显示一个着陆视图——每张逻辑图的最新版本（打开其一即打开其页签），外加下方的最新 Outcome。本节曾提议作为常驻面板区块的环境条与 Runs 列表，最终完全没有以常驻区块的形式上线；环境事实只存在于选中某个 artifact 后的溯源下钻视图（见下文）里，且仅限于该 artifact 那次运行的范围。选择状态是一个开放页签模型（`selection-store.ts`），而不是本节最初提议的 `{ chartId, version } | null`。上线设计、其 store 不变式与权衡过的替代方案见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md)。
+`ScienceDetailsView` 实际上线为一个带页签的 artifact 查看器，而不是本节最初提议的"画廊加版本条"仪表盘。顶部页签条为每个已打开的逻辑图各持一个页签，每个页签在所派发内容之上带一条面板内工具条（标题、跨该图全部留存版本的版本步进器、溯源/下载/最大化/关闭页签控件）。没有任何页签打开时，面板显示一个着陆视图——每张逻辑图的最新版本（打开其一即打开其页签），外加下方的最新 Outcome。本节曾提议作为常驻面板区块的环境条与 Runs 列表，最终完全没有以常驻区块的形式上线；环境事实只存在于选中某个 artifact 后的溯源下钻视图（见下文）里，且仅限于该 artifact 那次运行的范围。选择状态是一个开放页签模型（`selection-store.ts`），而不是本节最初提议的 `{ chartId, version } | null`。上线设计、其 store 不变式与权衡过的替代方案见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.zh.md)。
 
 ### 溯源视图 —— conversation 视图页签
 
-溯源最终没有以本节提议的、按会话动态注册的独立 `conversation.view` 页签（id 为 `science.provenance`）形式上线，而是变成了面板内下钻：artifact 工具条上的"溯源"控件把当前页签的视图切换为一个带面包屑的溯源视图，内含四个子页签——代码、执行日志、Messages（本提案里原称"对话"，现已改名）、环境——一次只显示一个部分。每个子页签解析的都是本节指定的同一个溯源部分：留存的代码摘要连同转录里的参数原文、执行日志正文加投影里留存的字节数与截断标志、一个跳转到对话记录的动作（现在经由 `DetailsViewOwnerProps.inspectCall`——`conversation.details.view` 条目的 owner share——而不是本节最初为 `conversation.view` 条目提议的 `ConvViewOwnerProps.inspectCall`；后者依然存在，依然服务于普通的 `conversation.view` 条目，只是 Science 已经不再是其中之一），以及以 JSON 展示的环境版本，其被取代版本的回退行为与本节所述一致。完整决策见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.md)。
+溯源最终没有以本节提议的、按会话动态注册的独立 `conversation.view` 页签（id 为 `science.provenance`）形式上线，而是变成了面板内下钻：artifact 工具条上的"溯源"控件把当前页签的视图切换为一个带面包屑的溯源视图，内含四个子页签——代码、执行日志、Messages（本提案里原称"对话"，现已改名）、环境——一次只显示一个部分。每个子页签解析的都是本节指定的同一个溯源部分：留存的代码摘要连同转录里的参数原文、执行日志正文加投影里留存的字节数与截断标志、一个跳转到对话记录的动作（现在经由 `DetailsViewOwnerProps.inspectCall`——`conversation.details.view` 条目的 owner share——而不是本节最初为 `conversation.view` 条目提议的 `ConvViewOwnerProps.inspectCall`；后者依然存在，依然服务于普通的 `conversation.view` 条目，只是 Science 已经不再是其中之一），以及以 JSON 展示的环境版本，其被取代版本的回退行为与本节所述一致。完整决策见 [Science artifact viewer panel](2026-08-18-science-artifact-viewer-panel.zh.md)。
 
 ### 转录行
 

@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-18-rescope-vendor-cordis-event-scope-exemption.md
 2026-08-18-rescope-vendor-cordis-event-scope-exemption.md: e4d3e9287803541510d6189e80c2041f2cb5bf4a
-2026-08-18-rescope-vendor-cordis-event-scope-exemption.zh.md: b521b9918f15a87b910ff180a41982ce7a99f627
+2026-08-18-rescope-vendor-cordis-event-scope-exemption.zh.md: 1b8fc6f87ca466eace78f53c05e6bb08453247cc

@@ -16,7 +16,7 @@ R2 在已验收 R1 谱系上增加 folded `@deepseek-ai/dsh-science-runtime` pac
 
 R2 首先只增加 Runtime 确实需要的 generic capabilities：显式 subprocess environment base、subprocess execution-world fact、retained-output UTF-8 validity，以及共享 sandbox runner/denial classification。既有 Consumers 显式声明其原有 RC5 选择并保持行为不变。只有这些前置项独立通过后，才落地 Runtime package。R version-probe correction 在 R2 内继续保持独立的 commit 与 evidence identity。
 
-[R0 closure record](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md)负责 overlay identities 与 evidence classes。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.md)负责 Runtime operations 追加的 durable event semantics。[dated R2 evidence record](../../../../docs/evidence/2026-08-15-dsh-science-v01-r2-science-runtime.md)负责 volatile candidate SHAs、command outputs、host prefixes 与 reproduced baseline exceptions。Generic subprocess、sandbox、Session、timeout、home-path 与 invariant packages 继续负责其现有职责；R2 扩展这些 owner，而不在 Science 内实现 private substitutes。
+[R0 closure record](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md)负责 overlay identities 与 evidence classes。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.zh.md)负责 Runtime operations 追加的 durable event semantics。[dated R2 evidence record](../../../../docs/evidence/2026-08-15-dsh-science-v01-r2-science-runtime.zh.md)负责 volatile candidate SHAs、command outputs、host prefixes 与 reproduced baseline exceptions。Generic subprocess、sandbox、Session、timeout、home-path 与 invariant packages 继续负责其现有职责；R2 扩展这些 owner，而不在 Science 内实现 private substitutes。
 
 ### 精确身份
 
@@ -67,7 +67,7 @@ config-catalog generator 会跟随同一 package 内导入的 `configSchema`，�
 
 Binding 与 run setup 共享非排队的 exact-Session reservation。同一 live Session 上的第二次 operation 返回 `RUNTIME_BUSY`。Detached lifecycle 会保留 same-ID quarantine，直到每一个 owned probe 与 process tree 都 quiescent，并且 cleanup 已经 settled。每次 append 都会再次检查 `ctx.sessions.get(session.id) === session`，因此旧对象不能写入 same-ID successor。
 
-Environment binding 在追加一个完整的 `science/environment-bound` value 之前观察并限制 interpreter。一次 run 的执行机制——每个 (session, language) 一个持久化 kernel process，而非每次 run 都重新 spawn——归 [persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.md) 所有，该决策还携带 kernel 生命周期 fact，以及 R2 当时尚不具备的 run→epoch identity。Detached Session 不会收到 terminal append；replay 从未匹配的 durable start 推导 `interrupted`。无法证明 quiescence 或无法提交 terminal fact 时，永不返回看起来已经 durably settled 的值。
+Environment binding 在追加一个完整的 `science/environment-bound` value 之前观察并限制 interpreter。一次 run 的执行机制——每个 (session, language) 一个持久化 kernel process，而非每次 run 都重新 spawn——归 [persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.zh.md) 所有，该决策还携带 kernel 生命周期 fact，以及 R2 当时尚不具备的 run→epoch identity。Detached Session 不会收到 terminal append；replay 从未匹配的 durable start 推导 `interrupted`。无法证明 quiescence 或无法提交 terminal fact 时，永不返回看起来已经 durably settled 的值。
 
 每一次 probe 都使用 direct argv、`environmentBase: 'empty'`、owned cwd、固定 locale/timezone，以及完整的 `workspace-write` confinement；Python probe 使用冻结的 isolated UTF-8 flags，R version discovery 使用 standalone `Rscript --version`，其 UTF-8 probe 使用 `--vanilla --encoding=UTF-8`。kernel process 以同样的方式被 confine，且贯穿其整个生命周期保持，而非每次 run 重新套用(参见上文链接的 persistent-kernel 决策)。Scratch 只位于已解析的 DSH home 之下，使用独占 owner markers 与 private modes，拒绝 symlinks 与 path overlap，并保留已接受的 run state，同时只删除当前 operation 所拥有的 unpublished setup。
 
@@ -105,14 +105,14 @@ Runtime package manifest 依据 RC5 同级 packages 重新推导：版本 `0.1.0
 
 ## 取代关系与生命周期
 
-本 Note 不 supersede Science Session、subprocess、sandbox、session-log、timeout、home-path、invariant 或 distribution decisions。它消费或窄幅扩展这些 decisions。它反向链接这些 owners，并且只陈述实际落地的 behavior。[persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.md) 部分取代了本 Note：它拥有 run 的执行机制，取代了上文"每次 run 都重新 spawn"的描述；而 R2 的其余结果——provenance、scope、通用能力新增，以及 confinement/quarantine 机制——仍然归本 Note 所有。
+本 Note 不 supersede Science Session、subprocess、sandbox、session-log、timeout、home-path、invariant 或 distribution decisions。它消费或窄幅扩展这些 decisions。它反向链接这些 owners，并且只陈述实际落地的 behavior。[persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.zh.md) 部分取代了本 Note：它拥有 run 的执行机制，取代了上文"每次 run 都重新 spawn"的描述；而 R2 的其余结果——provenance、scope、通用能力新增，以及 confinement/quarantine 机制——仍然归本 Note 所有。
 
 本 implemented triplet 保持 active，因为它的 alternatives、ownership boundary、negative guarantees 与 real-acceptance split 对后续 Science slices 仍然有用。Dated evidence record 负责 volatile candidate SHAs、command outputs、host details 与 reproduced baseline exceptions；本 Note 负责 stable scope、ordering、exclusions 与 acceptance meaning。
 
 ## 后果
 
-R2 为 Science 提供了 `science/environment-bound`、`science/run-started` 与 `science/run-finished` 的 host-local producer，同时不导入 downstream history、model-facing tools 或 shipped composition。代价是一次覆盖既有 Consumers 的 required-field subprocess migration，以及一个在 R2 阶段仍没有 model-visible Consumer 的 Runtime；[R3](2026-08-16-dsh-science-v01-r3-science-tools.md)补上了该 Consumer，而 preset 与 UI slices 仍为 OUT。
+R2 为 Science 提供了 `science/environment-bound`、`science/run-started` 与 `science/run-finished` 的 host-local producer，同时不导入 downstream history、model-facing tools 或 shipped composition。代价是一次覆盖既有 Consumers 的 required-field subprocess migration，以及一个在 R2 阶段仍没有 model-visible Consumer 的 Runtime；[R3](2026-08-16-dsh-science-v01-r3-science-tools.zh.md)补上了该 Consumer，而 preset 与 UI slices 仍为 OUT。
 
 Exact-Session reservation 与 same-ID quarantine 位于每一次 durable append 之前；tests 覆盖 cancellation、timeout、detachment、service disposal、terminal-commit rejection 与 late quiescence，因此 failure path 不能在 proof 之前释放，也不能在 proof 之后继续持有 lease。File-write confinement 比 confidentiality 更窄：documentation 与 results 不声称对 file reads、networking、syscalls 或 scientifically incorrect code 的防护。
 
-真实 Python 与 R acceptance 仍为 opt-in，并依赖 host。Environment 或 host failure 在 recorded candidate 上成功 rerun 之前都是字面的 FAIL/`NOT-RUN`；historical downstream PASS 不能关闭 R2。[R3](2026-08-16-dsh-science-v01-r3-science-tools.md)用 model-facing 的 `@deepseek-ai/dsh-tool-science` Consumer 补全了这个 Runtime，是在它同时新增的 generic runtime-context 与 filesystem read-only prerequisites 之后交付的；built-in Science preset 仍是下一项开放 slice。
+真实 Python 与 R acceptance 仍为 opt-in，并依赖 host。Environment 或 host failure 在 recorded candidate 上成功 rerun 之前都是字面的 FAIL/`NOT-RUN`；historical downstream PASS 不能关闭 R2。[R3](2026-08-16-dsh-science-v01-r3-science-tools.zh.md)用 model-facing 的 `@deepseek-ai/dsh-tool-science` Consumer 补全了这个 Runtime，是在它同时新增的 generic runtime-context 与 filesystem read-only prerequisites 之后交付的；built-in Science preset 仍是下一项开放 slice。

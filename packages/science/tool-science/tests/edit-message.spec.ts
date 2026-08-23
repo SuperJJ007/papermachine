@@ -1,11 +1,15 @@
 /** Exact-version admission and model-visible message tests for Science viewer edits. */
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceRunArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import {
   createScienceEditMessage,
   resolveScienceEdit,
@@ -14,7 +18,7 @@ import {
 } from '../src/edit-message.ts'
 import * as EditService from '../src/edit-service.ts'
 
-function image(over: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
+function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return {
     artifactId: ScienceArtifactId('chart-1'),
     logicalName: 'loss.png',
@@ -38,7 +42,7 @@ function image(over: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersi
   }
 }
 
-function vega(over: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
+function vega(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return image({
     logicalName: 'loss.vl.json',
     attachment: {
@@ -53,13 +57,16 @@ function vega(over: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersio
 describe('Science edit-message admission', () => {
   it('registers the Remote as an independent Host plugin and removes it on fiber disposal', async () => {
     const ctx = new Context()
+    const dshHome = await mkdtemp(join(tmpdir(), 'science-edit-service-'))
     try {
+      await ctx.plugin(LocalAttachmentStore, { dshHome })
       const fiber = await ctx.plugin(EditService)
       expect(ctx.get('scienceEdits')).toBeInstanceOf(ScienceEditService)
       await fiber.dispose()
       expect(ctx.get('scienceEdits')).toBeUndefined()
     } finally {
       await ctx.fiber.dispose()
+      await rm(dshHome, { recursive: true, force: true })
     }
   })
   it('emits the exact Vega-Lite path and immutable version in the durable message source and model text', () => {

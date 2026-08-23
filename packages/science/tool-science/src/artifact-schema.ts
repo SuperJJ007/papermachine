@@ -12,8 +12,15 @@ export const scienceArtifactSchemaProperties = {
   version: { type: 'integer', required: true },
   title: { type: 'string', required: true },
   caption: { type: 'string' },
-  origin: { type: 'string', enum: ['auto', 'model'], required: true },
-  runId: { type: 'string', required: true },
+  origin: { type: 'string', enum: ['auto', 'model', 'human-edit'], required: true },
+  parent: {
+    type: 'object', additionalProperties: false,
+    properties: {
+      artifactId: { type: 'string', required: true },
+      version: { type: 'integer', required: true },
+    },
+  },
+  runId: { type: 'string' },
   mediaType: { type: 'string', required: true },
   bytes: { type: 'integer', required: true },
   width: { type: 'integer' },
@@ -29,7 +36,8 @@ export interface ScienceArtifactValueFields {
   readonly title: string
   readonly caption?: string
   readonly origin: ScienceArtifactVersion['origin']
-  readonly runId: string
+  readonly parent?: { readonly artifactId: string; readonly version: number }
+  readonly runId?: string
   readonly mediaType: string
   readonly bytes: number
   readonly width?: number
@@ -57,7 +65,10 @@ export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): Sc
     title: artifact.title,
     ...artifact.caption === undefined ? {} : { caption: artifact.caption },
     origin: artifact.origin,
-    runId: String(artifact.runId),
+    ...artifact.parent === undefined ? {} : {
+      parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
+    },
+    ...artifact.origin === 'human-edit' ? {} : { runId: String(artifact.runId) },
     mediaType: attachment.mediaType,
     bytes: attachment.bytes,
     ...isImage ? { width: attachment.width, height: attachment.height } : {},

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ScienceClientArtifactVersion, ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceClientProjection, ScienceClientRunArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -122,8 +122,10 @@ describe('ScienceOutcomeRow', () => {
 
   it('renders a file-type tile (not the missing-visual report) when the cited artifact exists but is not an image', () => {
     const projection = projectionWithChart()
-    const textArtifact: ScienceClientArtifactVersion = {
-      ...projection.artifacts[0]!,
+    const source = projection.artifacts[0]
+    if (source?.origin === 'human-edit' || source === undefined) throw new Error('expected run-produced chart fixture')
+    const textArtifact: ScienceClientRunArtifactVersion = {
+      ...source,
       attachment: { attachmentId: 'sha256:def' as never, mediaType: 'text/csv', bytes: 40 },
     }
     const view = render(<ScienceOutcomeRow {...props(settled({ meta: validMeta }), { ...projection, artifacts: [textArtifact] })} />)
@@ -205,9 +207,11 @@ describe('ScienceOutcomeRow', () => {
   })
 
   it('renders a chart thumbnail with its display name when the projected attachment carries one', async () => {
+    const source = projectionWithChart().artifacts[0]
+    if (source?.origin === 'human-edit' || source === undefined) throw new Error('expected run-produced chart fixture')
     const named: ScienceClientProjection = {
       ...projectionWithChart(),
-      artifacts: [{ ...projectionWithChart().artifacts[0]!, attachment: { ...projectionWithChart().artifacts[0]!.attachment, name: 'loss.png' } }],
+      artifacts: [{ ...source, attachment: { ...source.attachment, name: 'loss.png' } }],
     }
     const load = vi.fn().mockResolvedValue('blob:fake-url')
     render(<ScienceOutcomeRow {...props(settled({ meta: validMeta }), named, load)} />)

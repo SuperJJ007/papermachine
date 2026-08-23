@@ -258,25 +258,25 @@ function validAttachment(value: unknown): boolean {
 function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
-  const keys = [
-    'artifactId', 'logicalName', 'version', 'title', 'origin', 'attachment', 'runId', 'toolCallId', 'requestHeaderSeq',
-    'environmentRevision', 'environmentFingerprintPreview', 'createdAt',
-  ]
+  const humanEdit = candidate['origin'] === 'human-edit'
+  const keys = ['artifactId', 'logicalName', 'version', 'title', 'origin', 'attachment',
+    'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
+  if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq')
   if (candidate['caption'] !== undefined) keys.push('caption')
   if (candidate['parent'] !== undefined) keys.push('parent')
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
-    && (candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
+    && (humanEdit ? validArtifactVersionRef(candidate['parent']) : candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
-    && (candidate['origin'] === 'auto' || candidate['origin'] === 'model')
+    && (humanEdit || candidate['origin'] === 'auto' || candidate['origin'] === 'model')
     && validAttachment(candidate['attachment'])
-    && typeof candidate['runId'] === 'string'
-    && typeof candidate['toolCallId'] === 'string'
-    && candidate['toolCallId'].length > 0
-    && safeInteger(candidate['requestHeaderSeq'])
+    && (!humanEdit || projectionRecord(candidate['attachment'])?.['mediaType'] === 'application/vnd.vega-lite+json')
+    && (humanEdit || typeof candidate['runId'] === 'string')
+    && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)
+    && (humanEdit || safeInteger(candidate['requestHeaderSeq']))
     && safeInteger(candidate['environmentRevision'], 1)
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])

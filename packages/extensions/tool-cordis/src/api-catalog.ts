@@ -1201,6 +1201,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'scienceEdits',
+    summary: 'Remote service admitting browser edit gestures into the addressed live agent.',
+    description: 'Remote service admitting browser edit gestures into the addressed live agent.',
+    methods: [
+      {
+        signature: '@Remote(\'submit\') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt',
+        description: 'Validate one exact current artifact selection and queue its structured edit message.',
+        parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected version, target, and user instruction.' }],
+        returns: 'durable-inbox admission receipt.',
+      },
+      {
+        signature: '@Remote(\'commitStyleEdit\') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>',
+        description: 'Validate and commit one complete Vega-Lite working copy as a direct human edit.',
+        parameters: [{ name: 'agent', description: 'exact live agent whose Session owns the artifact.' }, { name: 'request', description: 'exact current parent and complete edited JSON text.' }],
+        returns: 'identity and direct-edit provenance of the new contiguous version.',
+      },
+    ],
+  },
+  {
     key: 'scienceRuntime',
     summary: 'Folded local Science Runtime provider with public types free of Host paths.',
     description: 'Folded local Science Runtime provider with public types free of Host paths.',
@@ -2981,7 +3000,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnnotateScienceArtifactRequest',
-    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -4156,16 +4175,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceArtifactId = Branded<\'ScienceArtifactId\'>;',
   },
   {
-    name: 'ScienceArtifactOrigin',
-    declaration: 'export type ScienceArtifactOrigin = \'auto\' | \'model\';',
-  },
-  {
     name: 'ScienceArtifactVersion',
-    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef | TextAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+    declaration: 'export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion;',
   },
   {
     name: 'ScienceArtifactVersionRef',
     declaration: 'export interface ScienceArtifactVersionRef {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n}',
+  },
+  {
+    name: 'ScienceEditReceipt',
+    declaration: 'export interface ScienceEditReceipt {\n    readonly accepted: true;\n}',
+  },
+  {
+    name: 'ScienceEditRequest',
+    declaration: 'export interface ScienceEditRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly instruction: string;\n}',
+  },
+  {
+    name: 'ScienceEditTarget',
+    declaration: 'export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget;',
   },
   {
     name: 'ScienceEnvironmentBinding',
@@ -4178,6 +4205,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceEnvironmentStatus',
     declaration: 'export type ScienceEnvironmentStatus = \'applied\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceHumanEditArtifactVersion',
+    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly attachment: TextAttachmentRef & {\n        readonly mediaType: \'application/vnd.vega-lite+json\';\n    };\n}',
   },
   {
     name: 'ScienceInterpreterAvailableBinding',
@@ -4208,12 +4239,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
   },
   {
+    name: 'ScienceNormalizedRegionTarget',
+    declaration: 'export interface ScienceNormalizedRegionTarget {\n    readonly kind: \'normalized-region\';\n    readonly x: number;\n    readonly y: number;\n    readonly width: number;\n    readonly height: number;\n}',
+  },
+  {
     name: 'SciencePackage',
     declaration: 'export interface SciencePackage {\n    readonly name: string;\n    readonly version: string;\n}',
   },
   {
     name: 'ScienceRunArtifactInput',
     declaration: 'export interface ScienceRunArtifactInput extends ScienceArtifactVersionRef {\n    readonly path: string;\n}',
+  },
+  {
+    name: 'ScienceRunArtifactVersion',
+    declaration: 'export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly origin: \'auto\' | \'model\';\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n}',
   },
   {
     name: 'ScienceRunHandle',
@@ -4250,6 +4289,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceScratchKey',
     declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
+  },
+  {
+    name: 'ScienceSpecPathTarget',
+    declaration: 'export interface ScienceSpecPathTarget {\n    readonly kind: \'spec-path\';\n    readonly path: string;\n}',
+  },
+  {
+    name: 'ScienceStyleEditReceipt',
+    declaration: 'export interface ScienceStyleEditReceipt {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly origin: \'human-edit\';\n}',
+  },
+  {
+    name: 'ScienceStyleEditRequest',
+    declaration: 'export interface ScienceStyleEditRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly spec: string;\n}',
   },
   {
     name: 'Scoped',

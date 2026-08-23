@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import embed from 'vega-embed'
+import embed, { vega } from 'vega-embed'
 import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { formatBytes } from '@deepseek-ai/dsh-byte-size'
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
@@ -85,6 +85,21 @@ function parseJsonForTree(text: string): object | unknown[] | undefined {
 /** A parsed Vega-Lite document accepted at the file boundary before the renderer performs schema validation. */
 type VegaLiteDocument = Record<string, unknown>
 
+type StyleField = 'color' | 'font-size' | 'label'
+type StyleCommitResult = { readonly ok: true } | { readonly ok: false; readonly error: string }
+
+const EXTERNAL_VEGA_URL_BLOCKED = 'SCIENCE_VEGA_EXTERNAL_URL_BLOCKED'
+const defaultVegaLoader: ReturnType<typeof vega.loader> = vega.loader()
+export const restrictedVegaLoader: ReturnType<typeof vega.loader> = {
+  ...defaultVegaLoader,
+  load(uri, options) {
+    if (/^(?:https?:)?\/\//iu.test(uri)) {
+      return Promise.reject(new Error(`${EXTERNAL_VEGA_URL_BLOCKED}: external Vega-Lite data URLs are disabled`))
+    }
+    return defaultVegaLoader.load(uri, options)
+  },
+}
+
 /** Vega-Lite composition operators whose members are sub-specifications. */
 const SPEC_ARRAY_OPERATORS = ['layer', 'hconcat', 'vconcat', 'concat'] as const
 
@@ -114,6 +129,104 @@ export function selectableSpecPaths(document: VegaLiteDocument): string[] {
   return paths
 }
 
+function updateSpecPath(
+  value: unknown, segments: readonly string[], update: (target: unknown) => unknown,
+): unknown {
+  if (segments.length === 0) return update(value)
+  const [head, ...tail] = segments
+  /* v8 ignore next -- the zero-segment case returns above before destructuring. */
+  if (head === undefined) return value
+  if (typeof value !== 'object' || value === null) return value
+  if (Array.isArray(value)) {
+    const index = Number(head)
+    if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) return value
+    const copy = Array.from(value as unknown[])
+    copy[index] = updateSpecPath(copy[index], tail, update)
+    return copy
+  }
+  const record = value as Record<string, unknown>
+  return { ...record, [head]: updateSpecPath(record[head], tail, update) }
+}
+
+export function applyStyle(document: VegaLiteDocument, path: string, field: StyleField, value: string | number): VegaLiteDocument {
+  return updateSpecPath(document, path.split('.'), (target) => {
+    if (path.endsWith('mark')) {
+      const mark = typeof target === 'string' ? { type: target } : typeof target === 'object' && target !== null ? target : {}
+      return { ...mark, [field === 'font-size' ? 'fontSize' : field]: value }
+    }
+    const channel = typeof target === 'object' && target !== null && !Array.isArray(target)
+      ? target as Record<string, unknown> : {}
+    if (field === 'label') return { ...channel, title: value }
+    if (field === 'color') {
+      const scale = typeof channel['scale'] === 'object' && channel['scale'] !== null && !Array.isArray(channel['scale'])
+        ? channel['scale'] as Record<string, unknown> : {}
+      return { ...channel, scale: { ...scale, range: [value] } }
+    }
+    const guideKey = path.endsWith('encoding.color') ? 'legend' : 'axis'
+    const guide = typeof channel[guideKey] === 'object' && channel[guideKey] !== null && !Array.isArray(channel[guideKey])
+      ? channel[guideKey] as Record<string, unknown> : {}
+    return { ...channel, [guideKey]: { ...guide, labelFontSize: value } }
+  }) as VegaLiteDocument
+}
+
+function StyleEditor({ target, document, onChange, onCommit, t }: {
+  target: Extract<ScienceEditTarget, { kind: 'spec-path' }>
+  document: VegaLiteDocument
+  onChange: (document: VegaLiteDocument) => void
+  onCommit: (spec: string) => Promise<StyleCommitResult>
+  t: TranslateNS<'science'>
+}) {
+  const [state, setState] = useState<'idle' | 'pending' | { readonly error: string }>('idle')
+  const setStyle = (field: StyleField, value: string | number): void => {
+    onChange(applyStyle(document, target.path, field, value))
+    setState('idle')
+  }
+  const commit = (): void => {
+    /* v8 ignore next -- the pending state disables the only button that invokes this handler. */
+    if (state === 'pending') return
+    setState('pending')
+    void onCommit(JSON.stringify(document, null, 2))
+      .then((result) => { setState(result.ok ? 'idle' : { error: result.error }) })
+      .catch((error: unknown) => { setState({ error: error instanceof Error ? error.message : String(error) }) })
+  }
+  const encoding = target.path.includes('encoding.')
+  const color = target.path.endsWith('mark') || target.path.endsWith('encoding.color')
+  return (
+    <section className={css.stylePanel} aria-label={t('style.title')}>
+      <div className={css.styleHeader}>
+        <span>{t('style.title')}</span>
+        <code>{target.path}</code>
+      </div>
+      {color && (
+        <label className={css.styleControl}>
+          <span>{t('style.color')}</span>
+          <input type="color" defaultValue="#4c78a8" onChange={(event) => { setStyle('color', event.currentTarget.value) }} />
+        </label>
+      )}
+      <label className={css.styleControl}>
+        <span>{t('style.fontSize')}</span>
+        <input
+          type="number" min={6} max={96} defaultValue={12}
+          onChange={(event) => {
+            const size = Number(event.currentTarget.value)
+            setStyle('font-size', Math.min(96, Math.max(6, size)))
+          }}
+        />
+      </label>
+      {encoding && (
+        <label className={css.styleControl}>
+          <span>{t('style.label')}</span>
+          <input type="text" onChange={(event) => { setStyle('label', event.currentTarget.value) }} />
+        </label>
+      )}
+      <button type="button" className={css.editSubmit} disabled={state === 'pending'} onClick={commit}>
+        {state === 'pending' ? t('style.committing') : t('style.commit')}
+      </button>
+      {typeof state === 'object' && <p className={css.notice} role="alert">{t('style.failed', { message: state.error })}</p>}
+    </section>
+  )
+}
+
 /** Parse one Vega-Lite attachment as a JSON object; arrays and scalar JSON are not specifications. */
 function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
   const parsed = parseJsonForTree(text)
@@ -129,45 +242,54 @@ function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
  * container stays in the tree (hidden) while the fallback shows, so the
  * effect's element reference is never `null` across failure and re-render.
  */
-function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, t }: {
+function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, onCommitStyle, t }: {
   text: string
   logicalName: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
   const capped = useMemo(() => capTextForDisplay(text, MAX_ARTIFACT_TEXT_CHARACTERS), [text])
   const document = useMemo(() => parseVegaLiteDocument(capped.value), [capped.value])
-  const paths = useMemo(() => document === undefined ? [] : selectableSpecPaths(document), [document])
+  const [workingDocument, setWorkingDocument] = useState<VegaLiteDocument | undefined>(document)
+  useEffect(() => { setWorkingDocument(document) }, [document])
+  const renderedDocument = workingDocument ?? document
+  const paths = useMemo(() => renderedDocument === undefined ? [] : selectableSpecPaths(renderedDocument), [renderedDocument])
   const container = useRef<HTMLDivElement>(null)
-  const [failed, setFailed] = useState(false)
+  const [failure, setFailure] = useState<'render' | 'external-url' | undefined>(undefined)
 
   useEffect(() => {
     const element = container.current
-    if (document === undefined || element === null) return
+    if (renderedDocument === undefined || element === null) return
     let live = true
     let finalize: (() => void) | undefined
-    setFailed(false)
-    void embed(element, document, { actions: false, mode: 'vega-lite', renderer: 'svg' })
+    setFailure(undefined)
+    void embed(element, renderedDocument, {
+      actions: false, loader: restrictedVegaLoader, mode: 'vega-lite', renderer: 'svg',
+    })
       .then((result) => {
         if (!live) result.view.finalize()
         else finalize = () => { result.view.finalize() }
       })
-      .catch(() => { if (live) setFailed(true) })
+      .catch((error: unknown) => {
+        if (live) setFailure(String(error).includes(EXTERNAL_VEGA_URL_BLOCKED) ? 'external-url' : 'render')
+      })
     return () => {
       live = false
       finalize?.()
       element.replaceChildren()
     }
-  }, [document])
+  }, [renderedDocument])
 
   if (document === undefined) {
     return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
   }
   return (
     <>
-      <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failed} />
-      {failed && <JsonTree data={document} label={logicalName} />}
+      <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failure !== undefined} />
+      {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
+      {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
       {paths.length > 0 && (
         <div className={css.specTargets} aria-label={t('edit.specTargets')}>
           {paths.map(path => (
@@ -183,17 +305,28 @@ function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, 
           ))}
         </div>
       )}
+      {selectionTarget?.kind === 'spec-path' && renderedDocument !== undefined && (
+        <StyleEditor
+          key={selectionTarget.path}
+          target={selectionTarget}
+          document={renderedDocument}
+          onChange={setWorkingDocument}
+          onCommit={onCommitStyle}
+          t={t}
+        />
+      )}
     </>
   )
 }
 
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
-function TextArtifactBody({ logicalName, attachment, loadText, selectionTarget, onSelectTarget, t }: {
+function TextArtifactBody({ logicalName, attachment, loadText, selectionTarget, onSelectTarget, onCommitStyle, t }: {
   logicalName: string
   attachment: TextAttachmentRef
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
   const [retryToken, setRetryToken] = useState(0)
@@ -237,7 +370,7 @@ function TextArtifactBody({ logicalName, attachment, loadText, selectionTarget, 
       return (
         <VegaLiteArtifact
           text={state.text} logicalName={logicalName} selectionTarget={selectionTarget}
-          onSelectTarget={onSelectTarget} t={t}
+          onSelectTarget={onSelectTarget} onCommitStyle={onCommitStyle} t={t}
         />
       )
     case 'text/markdown':
@@ -351,12 +484,13 @@ function BoundedPreText({ text, truncated, total, t }: {
  * @param props - the artifact version to render and both durable-byte loaders.
  * @returns the dispatched content, plus the shared caption/source-run/size facts row.
  */
-export function ArtifactContent({ chart, loadImage, loadText, selectionTarget, onSelectTarget, t }: {
+export function ArtifactContent({ chart, loadImage, loadText, selectionTarget, onSelectTarget, onCommitStyle, t }: {
   chart: ScienceClientArtifactVersion
   loadImage: ImageLoader
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
   const { attachment } = chart
@@ -373,12 +507,14 @@ export function ArtifactContent({ chart, loadImage, loadText, selectionTarget, o
         : (
           <TextArtifactBody
             logicalName={chart.logicalName} attachment={attachment} loadText={loadText}
-            selectionTarget={selectionTarget} onSelectTarget={onSelectTarget} t={t}
+            selectionTarget={selectionTarget} onSelectTarget={onSelectTarget} onCommitStyle={onCommitStyle} t={t}
           />
         )}
       {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
       <div className={css.contentFacts}>
-        <span>{t('artifact.sourceRun', { runId: chart.runId })}</span>
+        <span>{chart.origin === 'human-edit'
+          ? t('artifact.humanEdit', { version: chart.parent.version })
+          : t('artifact.sourceRun', { runId: chart.runId })}</span>
         <span>
           {isImage
             ? t('artifact.dimensions', { width: attachment.width, height: attachment.height, size: formatBytes(attachment.bytes) })

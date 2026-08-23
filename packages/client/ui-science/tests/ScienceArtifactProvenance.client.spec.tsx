@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun, ScienceClientRunArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from '../src/client/selection-store.ts'
 import { ScienceArtifactProvenance, type ScienceArtifactProvenanceProps } from '../src/client/ScienceArtifactProvenance.tsx'
 import { en } from '../src/client/locales.ts'
@@ -26,7 +26,7 @@ const t: Props['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-function chart(over: Partial<ScienceClientArtifactVersion> = {}): ScienceClientArtifactVersion {
+function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClientRunArtifactVersion {
   return {
     artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve', origin: 'model',
     attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 10, width: 1, height: 1 },

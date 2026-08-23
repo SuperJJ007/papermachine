@@ -277,6 +277,40 @@
   border-radius: 8px;
 }
 
+.stylePanel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.styleHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl input {
+  box-sizing: border-box;
+  min-height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
 .editLabel {
   font-size: 12px;
   line-height: 18px;

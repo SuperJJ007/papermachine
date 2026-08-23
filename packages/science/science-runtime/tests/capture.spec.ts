@@ -337,7 +337,10 @@ describe('Science auto-capture', () => {
     expect(versions.map(v => v.version)).toEqual([1])
     // The surviving version is the turn's final content, and it carries the
     // run that actually produced it.
-    expect(versions.at(0)?.runId).toBe(handle.runId)
+    expect(versions.at(0)?.origin).not.toBe('human-edit')
+    const surviving = versions.at(0)
+    if (surviving?.origin === 'human-edit') throw new Error('run capture projected a human edit')
+    expect(surviving?.runId).toBe(handle.runId)
     expect(versions.at(0)?.attachment.attachmentId).not.toBe(first.result.capture?.captured[0]?.attachment.attachmentId)
     // Both saves stay in the log; only the projected version list collapses.
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
@@ -357,6 +360,93 @@ describe('Science auto-capture', () => {
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(1)
     const projection = replayScience(session.events)
     expect(projection?.artifacts.filter(candidate => candidate.logicalName === 'notes.md')).toHaveLength(1)
+  })
+
+  it('does not let an untouched run-produced file revert a later human edit', async () => {
+    const root = tmp('.science-capture-human-edit-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-human-edit')
+    const original = '{"mark":"bar"}'
+
+    const first = await runWithFiles(harness, root, session, { 'chart.vl.json': original })
+    const parent = first.result.capture?.captured[0]
+    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite parent')
+    const attachment = await harness.ctx.attachments.saveText({
+      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      mediaType: 'application/vnd.vega-lite+json',
+      name: 'chart.vl.json',
+    })
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: parent.artifactId,
+        logicalName: parent.logicalName,
+        version: 2,
+        parent: { artifactId: parent.artifactId, version: 1 },
+        title: parent.title,
+        origin: 'human-edit',
+        attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+        environmentRevision: parent.environmentRevision,
+        environmentFingerprint: parent.environmentFingerprint,
+        createdAt: Date.now(),
+      },
+    })
+
+    const untouched = await runWithFiles(harness, root, session, { 'chart.vl.json': original }, 'ok', true)
+    expect(untouched.result.capture?.captured).toEqual([])
+    expect(replayScience(session.events)?.artifacts.filter(artifact => artifact.logicalName === 'chart.vl.json'))
+      .toHaveLength(2)
+
+    const changed = await runWithFiles(
+      harness,
+      root,
+      session,
+      { 'chart.vl.json': '{"mark":{"type":"bar","color":"blue"}}' },
+      'ok',
+      true,
+    )
+    expect(changed.result.capture?.captured[0]).toMatchObject({
+      artifactId: parent.artifactId,
+      logicalName: 'chart.vl.json',
+      version: 3,
+      origin: 'auto',
+    })
+    const changedVersion = changed.result.capture?.captured[0]
+    if (changedVersion === undefined || changedVersion.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite version')
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: parent.artifactId,
+        logicalName: parent.logicalName,
+        version: 4,
+        parent: { artifactId: parent.artifactId, version: 3 },
+        title: parent.title,
+        origin: 'human-edit',
+        attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+        environmentRevision: parent.environmentRevision,
+        environmentFingerprint: parent.environmentFingerprint,
+        createdAt: Date.now(),
+      },
+    })
+
+    const intentional = await runWithFiles(
+      harness,
+      root,
+      session,
+      { 'chart.vl.json': original },
+      'ok',
+      true,
+      { editBaselines: { 'chart.vl.json': { artifactId: parent.artifactId, version: 4 } } },
+    )
+    expect(intentional.result.capture?.captured[0]).toMatchObject({
+      artifactId: parent.artifactId,
+      logicalName: 'chart.vl.json',
+      version: 5,
+      parent: { artifactId: parent.artifactId, version: 4 },
+      origin: 'auto',
+    })
   })
 
   it('skips and counts a file over captureMaxFileBytes without failing the run', async () => {

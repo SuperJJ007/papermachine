@@ -237,6 +237,28 @@ describe('strict Science fold', () => {
     expect(isScienceDomainEventType('science/future-event')).toBe(false)
   })
 
+  it('decodes the human-edit artifact branch without run provenance and rejects branch mixing', () => {
+    const source = artifact()
+    const { runId: _runId, toolCallId: _toolCallId, requestHeaderSeq: _requestHeaderSeq, ...base } = source
+    const human = {
+      ...base,
+      version: 2,
+      parent: { artifactId: source.artifactId, version: 1 },
+      origin: 'human-edit' as const,
+      attachment: {
+        attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`),
+        mediaType: 'application/vnd.vega-lite+json' as const,
+        bytes: 64,
+      },
+      createdAt: source.createdAt + 1,
+    }
+    expect(decodeScienceArtifact(human)).toEqual(human)
+    expect(() => decodeScienceArtifact({ ...human, parent: undefined })).toThrow()
+    expect(() => decodeScienceArtifact({ ...human, runId: RUN_ID })).toThrow()
+    expect(() => decodeScienceArtifact({ ...human, attachment: { ...human.attachment, mediaType: 'text/plain' } })).toThrow()
+    expect(() => decodeScienceArtifact({ ...source, origin: 'human-edit' })).toThrow()
+  })
+
   it('supersedes a version in place when a later model curation retains its attachment', () => {
     const events = legalEvents().slice(0, 9)
     events.push(
@@ -296,6 +318,25 @@ describe('strict Science fold', () => {
     })
     expect(() => foldScience([...events, event('science/artifact-saved', 11, 200, { version: 1, artifact: changed })]))
       .toThrow(/auto-captured Science artifact may supersede changed content only from its source run's tool-call turn/)
+  })
+
+  it('lets one run supersede its auto-captured version with the turn\'s final bytes', () => {
+    const first = autoArtifact({ createdAt: 160 })
+    const final = autoArtifact({
+      attachment: {
+        attachmentId: AttachmentId('attachment-final'),
+        mediaType: 'text/csv',
+        bytes: 48,
+        name: 'summary.csv',
+      },
+      createdAt: 170,
+    })
+    const state = foldScience([
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: final }),
+    ])
+    expect(state.artifacts).toEqual([final])
   })
 
   it('rejects a later model curation that changes the target attachment', () => {

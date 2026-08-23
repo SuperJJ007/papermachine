@@ -139,6 +139,7 @@ export function apply(ctx: ClientContext): void {
       loadImage: createScienceImageLoader(ctx.sessions, sessionId),
       loadText: createScienceTextLoader(ctx.sessions, sessionId),
       submitEdit: request => ctx.remote.scienceEdits.submit(sessionId, request),
+      commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))
 }

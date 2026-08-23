@@ -37,7 +37,9 @@ import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientOutcomePublication, ScienceClientProjection,
   ScienceEvidenceRef,
 } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceEditReceipt, ScienceEditRequest, ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
+import type {
+  ScienceEditReceipt, ScienceEditRequest, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
+} from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
@@ -54,6 +56,11 @@ export interface ScienceDetailsInjected {
   /** Admit one exact-version viewer edit through the Host Science service. */
   submitEdit: (request: ScienceEditRequest) => Promise<
     | { readonly ok: true; readonly value: ScienceEditReceipt }
+    | { readonly ok: false; readonly error: { readonly message: string } }
+  >
+  /** Commit a complete styled Vega-Lite working copy over one exact current version. */
+  commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
+    | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
     | { readonly ok: false; readonly error: { readonly message: string } }
   >
 }
@@ -426,7 +433,8 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText, submitEdit, useStore, actions, inspectCall, t,
+  science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText,
+  submitEdit, commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -437,6 +445,7 @@ function ArtifactTab({
   loadImage: ImageLoader
   loadText: TextLoader
   submitEdit: ScienceDetailsInjected['submitEdit']
+  commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -463,6 +472,7 @@ function ArtifactTab({
   }
 
   const submit = (): void => {
+    /* v8 ignore next -- ArtifactEditPanel disables its only submit control for each rejected condition. */
     if (target === undefined || instruction.trim() === '' || submitting.current) return
     submitting.current = true
     setSubmission('pending')
@@ -477,6 +487,23 @@ function ArtifactTab({
   }
 
   if (view === 'provenance') {
+    if (chart.origin === 'human-edit') {
+      return (
+        <div className={css.body}>
+          <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
+            <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
+              {chart.title}
+            </button>
+            <span className={css.breadcrumbSep} aria-hidden="true">›</span>
+            <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
+          </nav>
+          <section className={css.editPanel}>
+            <strong>{t('artifact.humanEdit', { version: chart.parent.version })}</strong>
+            <span>{chart.artifactId} v{String(chart.version)}</span>
+          </section>
+        </div>
+      )
+    }
     const run = science.runs.find(candidate => candidate.runId === chart.runId)
     if (run === undefined) return <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
     return (
@@ -513,6 +540,12 @@ function ArtifactTab({
         loadText={loadText}
         selectionTarget={target}
         onSelectTarget={selectTarget}
+        onCommitStyle={async (spec) => {
+          const result = await commitStyleEdit({ artifactId: chart.artifactId, version: chart.version, spec })
+          if (!result.ok) return { ok: false, error: result.error.message }
+          actions.setTabVersion({ artifactId: result.value.artifactId, version: result.value.version })
+          return { ok: true }
+        }}
         t={t}
       />
       {editable && (
@@ -538,12 +571,13 @@ function ArtifactTab({
   )
 }
 
-function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, useStore, actions, inspectCall, t }: {
+function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, commitStyleEdit, useStore, actions, inspectCall, t }: {
   science: ScienceClientProjection
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
   loadText: TextLoader
   submitEdit: ScienceDetailsInjected['submitEdit']
+  commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -605,6 +639,7 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, us
             loadImage={loadImage}
             loadText={loadText}
             submitEdit={submitEdit}
+            commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
             inspectCall={inspectCall}
@@ -623,7 +658,7 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, us
  * @returns the current-state Science surface for this session.
  */
 export function ScienceDetailsView({
-  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, loadText, submitEdit, t,
+  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, loadText, submitEdit, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
@@ -649,7 +684,8 @@ export function ScienceDetailsView({
   return (
     <ArtifactViewer
       science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
-      submitEdit={submitEdit} useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
+      submitEdit={submitEdit} commitStyleEdit={commitStyleEdit}
+      useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )
 }

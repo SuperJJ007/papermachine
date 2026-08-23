@@ -21,6 +21,7 @@ const artifactReceiptSchema = {
   additionalProperties: false,
   properties: {
     ...scienceArtifactSchemaProperties,
+    runId: { type: 'string', required: true },
     // Full attachment metadata for the canonical result; `render` deliberately
     // omits attachmentId from the model-visible text (it is an internal
     // storage handle, not a fact the model reasons about), while it remains
@@ -39,9 +40,13 @@ export type ScienceArtifactReceiptValue = InferValue<typeof artifactReceiptSchem
  * @returns the canonical structured value the tool returns.
  */
 export function artifactReceiptFromArtifact(artifact: ScienceArtifactVersion): ScienceArtifactReceiptValue {
+  if (artifact.origin === 'human-edit') {
+    throw new Error('tool-science: annotate_artifact cannot return a human-edited artifact')
+  }
   const { attachment } = artifact
   return {
     ...scienceArtifactValueFields(artifact),
+    runId: String(artifact.runId),
     attachmentId: String(attachment.attachmentId),
     ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
   }

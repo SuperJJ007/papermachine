@@ -325,6 +325,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns bound Conda environments, confined runs, chart commits, and the environment, run, and chart Session events consumed by Science tools.',
   },
   {
+    key: 'scienceEdits',
+    pkg: 'tool-science',
+    title: 'Exact-version Science artifact edits',
+    mode: 'core',
+    consumers: ['ui-science'],
+    note: 'The Host provider validates exact live-Agent artifact selections, commits bounded direct Vega-Lite style versions, or queues structured model edit messages; the browser consumer never mutates the projection itself.',
+  },
+  {
     key: 'sessionAttachments',
     pkg: 'session-attachment-index',
     title: 'Session attachment reference index',

@@ -56,10 +56,15 @@ function providePresentation(ctx: Context) {
     bind: () => (key: string) => key,
   })
   ctx.provide('connection', {} as never)
-  ctx.provide('remote', {} as never)
-  ctx.provide('remote.scienceEdits', {
+  const scienceEdits = {
     submit: () => Promise.resolve({ ok: true, value: { accepted: true } }),
-  })
+    commitStyleEdit: () => Promise.resolve({
+      ok: true,
+      value: { artifactId: 'artifact-2', version: 2, origin: 'human-edit' },
+    }),
+  }
+  ctx.provide('remote', { scienceEdits } as never)
+  ctx.provide('remote.scienceEdits', scienceEdits)
   ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
@@ -149,6 +154,11 @@ describe('apply', () => {
     expect(typeof face?.loadImage).toBe('function')
     expect(typeof face?.loadText).toBe('function')
     expect(typeof face?.submitEdit).toBe('function')
+    expect(typeof face?.commitStyleEdit).toBe('function')
+    await expect(face?.submitEdit({} as never)).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    await expect(face?.commitStyleEdit({} as never)).resolves.toMatchObject({
+      ok: true, value: { version: 2, origin: 'human-edit' },
+    })
   })
 
   it('shares one selection-store handle across the toolview and details-view registrations', async () => {

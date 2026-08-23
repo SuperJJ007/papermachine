@@ -10,11 +10,15 @@ import { prepareRunArtifacts } from '../src/inputs.ts'
 
 const TEXT_ID = ScienceArtifactId('text-artifact')
 const IMAGE_ID = ScienceArtifactId('image-artifact')
+const STYLE_ID = ScienceArtifactId('style-artifact')
 const textRef: TextAttachmentRef = {
   attachmentId: AttachmentId('sha256:text'), mediaType: 'text/plain', bytes: 2, name: 'text.txt',
 }
 const imageRef: ImageAttachmentRef = {
   attachmentId: AttachmentId('sha256:image'), mediaType: 'image/png', bytes: 3, width: 1, height: 1, name: 'image.png',
+}
+const styleRef: TextAttachmentRef = {
+  attachmentId: AttachmentId('sha256:style'), mediaType: 'application/vnd.vega-lite+json', bytes: 2, name: 'style.vl.json',
 }
 
 function artifact(
@@ -38,7 +42,23 @@ function artifact(
 }
 
 const projection = {
-  artifacts: [artifact(TEXT_ID, textRef), artifact(IMAGE_ID, imageRef)],
+  artifacts: [
+    artifact(TEXT_ID, textRef),
+    artifact(IMAGE_ID, imageRef),
+    artifact(STYLE_ID, styleRef),
+    {
+      artifactId: STYLE_ID,
+      logicalName: 'style.vl.json',
+      version: 2,
+      parent: { artifactId: STYLE_ID, version: 1 },
+      title: 'style.vl.json',
+      origin: 'human-edit',
+      attachment: styleRef,
+      environmentRevision: 1,
+      environmentFingerprint: 'fingerprint',
+      createdAt: 2,
+    },
+  ],
 } as unknown as ScienceProjection
 
 function attachmentHarness(options: { readonly text?: Uint8Array; readonly image?: Uint8Array } = {}) {
@@ -75,6 +95,17 @@ describe('prepareRunArtifacts', () => {
     })
     expect(readText).toHaveBeenCalledOnce()
     expect(readImage).toHaveBeenCalledOnce()
+  })
+
+  it('admits a human-edited version as both an artifact input and an edit baseline', async () => {
+    await expect(prepareRunArtifacts(projection, attachments(), [
+      { artifactId: STYLE_ID, version: 2, path: 'source.vl.json' },
+    ], {
+      'result.vl.json': { artifactId: STYLE_ID, version: 2 },
+    }, 1, 2, signal)).resolves.toMatchObject({
+      inputs: [{ artifactId: STYLE_ID, version: 2, path: 'source.vl.json' }],
+      editBaselines: new Map([['result.vl.json', { artifactId: STYLE_ID, version: 2 }]]),
+    })
   })
 
   it.each(['', 'a\\b', 'a\0b', '\ud800', 'a//b', '.', '..', 'a/./b', 'a/../b'])(

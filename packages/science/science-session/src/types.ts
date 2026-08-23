@@ -324,10 +324,10 @@ export type ScienceKernel = ScienceKernelState | ScienceKernelInterrupted
  * reader first. Curation supersedes the version it names, so the two values
  * describe one version's current metadata rather than two separate versions.
  */
-export type ScienceArtifactOrigin = 'auto' | 'model'
+export type ScienceArtifactOrigin = 'auto' | 'model' | 'human-edit'
 
-/** One version of a logical Science artifact: the content one request turn produced. */
-export interface ScienceArtifactVersion {
+/** Fields carried by every immutable Science artifact version. */
+interface ScienceArtifactVersionBase {
   /** Stable artifact identity shared by every version. */
   readonly artifactId: ScienceArtifactId
   /** Stable logical artifact name within the session. */
@@ -339,8 +339,6 @@ export interface ScienceArtifactVersion {
    * opening the next one.
    */
   readonly version: number
-  /** Exact baseline version this content descends from, when an operation named one. */
-  readonly parent?: ScienceArtifactVersionRef
   /**
    * Human-readable title: always populated, either model-supplied or the
    * captured file's basename.
@@ -348,16 +346,8 @@ export interface ScienceArtifactVersion {
   readonly title: string
   /** Optional human-readable caption; only ever model-supplied. */
   readonly caption?: string
-  /** Whether this version's current title and caption are capture-derived or model-curated. */
-  readonly origin: ScienceArtifactOrigin
   /** Immutable attachment metadata: an image, or admitted UTF-8 text. */
   readonly attachment: ImageAttachmentRef | TextAttachmentRef
-  /** Successful run that produced this artifact. */
-  readonly runId: ScienceRunId
-  /** Model-issued call that authorized saving this artifact version. */
-  readonly toolCallId: CallId
-  /** Prior `request/header` carrying the authorizing request facts. */
-  readonly requestHeaderSeq: number
   /** Environment revision inherited from the source run. */
   readonly environmentRevision: number
   /** Environment fingerprint inherited from the source run. */
@@ -365,6 +355,33 @@ export interface ScienceArtifactVersion {
   /** Epoch milliseconds when this version's current content and metadata were committed. */
   readonly createdAt: number
 }
+
+/** Artifact version produced by a model-issued run or metadata-curation call. */
+export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {
+  /** Exact baseline version this content descends from, when an operation named one. */
+  readonly parent?: ScienceArtifactVersionRef
+  /** Whether this version's current title and caption are capture-derived or model-curated. */
+  readonly origin: 'auto' | 'model'
+  /** Successful run that produced this artifact's content. */
+  readonly runId: ScienceRunId
+  /** Model-issued call that authorized saving this artifact version. */
+  readonly toolCallId: CallId
+  /** Prior `request/header` carrying the authorizing request facts. */
+  readonly requestHeaderSeq: number
+}
+
+/** Vega-Lite version committed directly by a person through the style editor. */
+export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {
+  /** Exact prior Vega-Lite version whose style was edited. */
+  readonly parent: ScienceArtifactVersionRef
+  /** Direct-editor provenance; no run, tool call, or model request authorized this version. */
+  readonly origin: 'human-edit'
+  /** Admitted Vega-Lite source saved by the direct editor. */
+  readonly attachment: TextAttachmentRef & { readonly mediaType: 'application/vnd.vega-lite+json' }
+}
+
+/** One immutable version of a logical Science artifact. */
+export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion
 
 /** One run cited by a published Science outcome. */
 export interface ScienceRunEvidenceRef {
@@ -561,22 +578,36 @@ export type ScienceClientKernel = ScienceClientKernelState | ScienceClientKernel
  * identities the browser already holds; they let an artifact version join
  * its authorizing transcript call for provenance.
  */
-export interface ScienceClientArtifactVersion {
+interface ScienceClientArtifactVersionBase {
   readonly artifactId: ScienceArtifactId
   readonly logicalName: string
   readonly version: number
-  readonly parent?: ScienceArtifactVersionRef
   readonly title: string
   readonly caption?: string
-  readonly origin: ScienceArtifactOrigin
   readonly attachment: ImageAttachmentRef | TextAttachmentRef
-  readonly runId: ScienceRunId
-  readonly toolCallId: CallId
-  readonly requestHeaderSeq: number
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly createdAt: number
 }
+
+/** Browser-safe run-produced artifact version with transcript provenance. */
+export interface ScienceClientRunArtifactVersion extends ScienceClientArtifactVersionBase {
+  readonly parent?: ScienceArtifactVersionRef
+  readonly origin: 'auto' | 'model'
+  readonly runId: ScienceRunId
+  readonly toolCallId: CallId
+  readonly requestHeaderSeq: number
+}
+
+/** Browser-safe direct style edit with exact ancestry and no synthetic run provenance. */
+export interface ScienceClientHumanEditArtifactVersion extends ScienceClientArtifactVersionBase {
+  readonly parent: ScienceArtifactVersionRef
+  readonly origin: 'human-edit'
+  readonly attachment: TextAttachmentRef & { readonly mediaType: 'application/vnd.vega-lite+json' }
+}
+
+/** Browser-safe Science artifact version. */
+export type ScienceClientArtifactVersion = ScienceClientRunArtifactVersion | ScienceClientHumanEditArtifactVersion
 
 /** Browser-safe Outcome publication without authorizing request facts. */
 export interface ScienceClientOutcomePublication {

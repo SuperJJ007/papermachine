@@ -49,12 +49,29 @@ export interface ScienceEditReceipt {
   readonly accepted: true
 }
 
+/** Browser request to commit a styled Vega-Lite document over one exact current version. */
+export interface ScienceStyleEditRequest {
+  readonly artifactId: ScienceArtifactId
+  /** Exact parent version being replaced by the edited working copy. */
+  readonly version: number
+  /** Complete edited Vega-Lite JSON text. */
+  readonly spec: string
+}
+
+/** Exact new version committed by a direct style edit. */
+export interface ScienceStyleEditReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly origin: 'human-edit'
+}
+
 /** Stable rejection classes for Science edit-message admission. */
 export type ScienceEditErrorCode =
   | 'SCIENCE_EDIT_INVALID_REQUEST'
   | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
   | 'SCIENCE_EDIT_STALE_VERSION'
   | 'SCIENCE_EDIT_TARGET_MISMATCH'
+  | 'SCIENCE_EDIT_SPEC_INVALID'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {

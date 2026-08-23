@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -9,7 +10,7 @@ import {
 import { foldScience } from '../src/fold.ts'
 import { emptyScienceFoldState } from '../src/fold-state.ts'
 import { applyScienceEvent } from '../src/transition.ts'
-import type { ScienceArtifactVersion } from '../src/index.ts'
+import type { ScienceArtifactVersion, ScienceRunArtifactVersion } from '../src/index.ts'
 import {
   ARTIFACT_CALL_ID,
   ARTIFACT_ID,
@@ -32,6 +33,125 @@ import {
 } from './fixtures.ts'
 
 describe('strict Science fold transitions', () => {
+  const vegaParent = (): ScienceArtifactVersion => artifact({
+    logicalName: 'trend.vl.json',
+    attachment: {
+      attachmentId: AttachmentId('attachment-vega-1'),
+      mediaType: 'application/vnd.vega-lite+json',
+      bytes: 128,
+      name: 'trend.vl.json',
+    },
+  })
+
+  const humanEdit = (
+    overrides: Partial<Extract<ScienceArtifactVersion, { origin: 'human-edit' }>> = {},
+  ): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> => ({
+    artifactId: ARTIFACT_ID,
+    logicalName: 'trend.vl.json',
+    version: 2,
+    parent: { artifactId: ARTIFACT_ID, version: 1 },
+    title: 'Trend',
+    origin: 'human-edit',
+    attachment: {
+      attachmentId: AttachmentId('attachment-vega-2'),
+      mediaType: 'application/vnd.vega-lite+json',
+      bytes: 144,
+      name: 'trend.vl.json',
+    },
+    environmentRevision: 1,
+    environmentFingerprint: 'b'.repeat(64),
+    createdAt: 179,
+    ...overrides,
+  })
+
+  const vegaHistory = (): SessionEvent[] => legalEvents().slice(0, 9).map((candidate, index) => index === 8
+    ? event('science/artifact-saved', 8, 170, { version: 1, artifact: vegaParent() })
+    : candidate)
+
+  it('admits a direct Vega-Lite edit without run provenance and retains exact ancestry', () => {
+    const state = foldScience([
+      ...vegaHistory(),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit() }),
+    ])
+    expect(state.artifacts[1]).toEqual(humanEdit())
+    expect(state.artifacts[1]).not.toHaveProperty('runId')
+    expect(state.artifacts[1]).not.toHaveProperty('toolCallId')
+    expect(state.artifacts[1]).not.toHaveProperty('requestHeaderSeq')
+  })
+
+  it('rejects every invalid direct-edit ancestry and media transition', () => {
+    const invalidCases: Array<readonly [ScienceArtifactVersion, RegExp]> = [
+      [humanEdit({ parent: { artifactId: ARTIFACT_ID, version: 99 } }), /does not identify a committed artifact version/],
+      [humanEdit({ artifactId: ScienceArtifactId('other') }), /parent must be the current committed version/],
+      [humanEdit({ logicalName: 'other.vl.json' }), /retain its parent logical name/],
+      [humanEdit({ environmentRevision: 2 }), /copy its parent environment provenance/],
+      [humanEdit({ createdAt: 169 }), /parent-to-commit event interval/],
+      [humanEdit({ createdAt: 181 }), /parent-to-commit event interval/],
+      [humanEdit({ version: 1 }), /parent cannot name the version being committed/],
+    ]
+    for (const [candidate, expected] of invalidCases) {
+      expect(() => foldScience([
+        ...vegaHistory(),
+        event('science/artifact-saved', 9, 180, { version: 1, artifact: candidate }),
+      ])).toThrow(expected)
+    }
+
+    expect(() => foldScience([
+      ...legalEvents().slice(0, 9),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ logicalName: 'trend' }) }),
+    ])).toThrow(/parent must be Vega-Lite/)
+  })
+
+  it('requires each direct edit to name the current version and open the next version', () => {
+    const v2 = humanEdit()
+    const history = [
+      ...vegaHistory(),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
+    ]
+    expect(() => foldScience([
+      ...history,
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: humanEdit({
+          version: 3,
+          parent: { artifactId: ARTIFACT_ID, version: 1 },
+          attachment: {
+            attachmentId: AttachmentId('attachment-vega-3'),
+            mediaType: 'application/vnd.vega-lite+json',
+            bytes: 144,
+            name: 'trend.vl.json',
+          },
+          createdAt: 189,
+        }),
+      }),
+    ])).toThrow(/parent must be the current committed version/)
+    expect(() => foldScience([
+      ...vegaHistory(),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ version: 3 }) }),
+    ])).toThrow(/advance contiguously/)
+  })
+
+  it('rejects model curation of a direct-edit version', () => {
+    const v2 = humanEdit()
+    const annotationCall = CallId('call-annotate-human-edit')
+    expect(() => foldScience([
+      ...vegaHistory(),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
+      toolCall(10, 185, annotationCall, 'annotate_artifact'),
+      event('science/artifact-saved', 11, 190, {
+        version: 1,
+        artifact: artifact({
+          logicalName: v2.logicalName,
+          version: 2,
+          parent: v2.parent,
+          toolCallId: annotationCall,
+          attachment: v2.attachment,
+          createdAt: 189,
+        }),
+      }),
+    ])).toThrow(/cannot curate a human-edited Science artifact version/)
+  })
+
   it('rejects every strict transition discontinuity without mutating the contract', () => {
     const secondCall = CallId('call-second')
     const secondRunId = ScienceRunId('run-2')
@@ -88,7 +208,7 @@ describe('strict Science fold transitions', () => {
         run: runStarted({ requestHeaderSeq: 4, startedAt: 139, environmentRevision: 2 }),
       }),
     ]
-    const secondChart = (overrides: Partial<ScienceArtifactVersion>): SessionEvent[] => [
+    const secondChart = (overrides: Partial<ScienceRunArtifactVersion>): SessionEvent[] => [
       ...legalEvents().slice(0, 9),
       toolCall(9, 180, secondCall, 'annotate_artifact'),
       event('science/artifact-saved', 10, 190, {

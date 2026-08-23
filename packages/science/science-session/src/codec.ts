@@ -307,22 +307,32 @@ const textAttachmentSchema = z.object({
 /** Every media type an artifact version's `attachment` may carry: an image, or admitted UTF-8 text. */
 const artifactAttachmentSchema = z.union([imageAttachmentSchema, textAttachmentSchema])
 
-const artifactSchema = z.object({
+const artifactBaseSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
   logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
-  parent: artifactVersionRefSchema.optional(),
   title: text(MAX_LABEL_LENGTH),
   caption: text(MAX_REASON_LENGTH).optional(),
-  origin: z.enum(['auto', 'model']),
-  attachment: artifactAttachmentSchema,
-  runId: SAFE_ID.transform(value => ScienceRunId(value)),
-  toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
-  requestHeaderSeq: SAFE_INTEGER,
   environmentRevision: POSITIVE_INTEGER,
   environmentFingerprint: SHA256,
   createdAt: SAFE_INTEGER,
-}).strict()
+})
+
+const artifactSchema = z.discriminatedUnion('origin', [
+  artifactBaseSchema.extend({
+    parent: artifactVersionRefSchema.optional(),
+    origin: z.enum(['auto', 'model']),
+    attachment: artifactAttachmentSchema,
+    runId: SAFE_ID.transform(value => ScienceRunId(value)),
+    toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
+    requestHeaderSeq: SAFE_INTEGER,
+  }).strict(),
+  artifactBaseSchema.extend({
+    parent: artifactVersionRefSchema,
+    origin: z.literal('human-edit'),
+    attachment: textAttachmentSchema.extend({ mediaType: z.literal('application/vnd.vega-lite+json') }).strict(),
+  }).strict(),
+])
 
 const evidenceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('run'), runId: SAFE_ID.transform(value => ScienceRunId(value)) }).strict(),

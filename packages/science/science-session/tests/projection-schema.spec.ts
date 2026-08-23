@@ -31,6 +31,25 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     if (currentRun.status !== 'success') throw new Error('fixture run is not successful')
     const currentChart = state.artifacts[0]!
+    if (currentChart.origin === 'human-edit') throw new Error('fixture chart must be run-produced')
+    const {
+      runId: _chartRunId,
+      toolCallId: _chartToolCallId,
+      requestHeaderSeq: _chartRequestHeaderSeq,
+      ...humanChartBase
+    } = currentChart
+    const humanChart = {
+      ...humanChartBase,
+      version: 2,
+      parent: { artifactId: currentChart.artifactId, version: 1 },
+      origin: 'human-edit' as const,
+      attachment: {
+        attachmentId: currentChart.attachment.attachmentId,
+        mediaType: 'application/vnd.vega-lite+json' as const,
+        bytes: 64,
+      },
+      createdAt: currentChart.createdAt + 1,
+    }
     const { name: _attachmentName, ...attachmentWithoutName } = currentChart.attachment
     const rRunningState = {
       ...runningState,
@@ -91,6 +110,11 @@ describe('Science projection wire schema', () => {
       {
         ...state,
         artifacts: [state.artifacts[0], secondChart],
+        metrics: { ...state.metrics, artifactVersionCount: 2 },
+      },
+      {
+        ...state,
+        artifacts: [state.artifacts[0], humanChart],
         metrics: { ...state.metrics, artifactVersionCount: 2 },
       },
       {
@@ -164,6 +188,25 @@ describe('Science projection wire schema', () => {
     const { python: _python, ...environmentWithoutPython } = currentEnvironment
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
+    if (currentChart.origin === 'human-edit') throw new Error('fixture chart must be run-produced')
+    const {
+      runId: _chartRunId,
+      toolCallId: _chartToolCallId,
+      requestHeaderSeq: _chartRequestHeaderSeq,
+      ...humanChartBase
+    } = currentChart
+    const humanChart = {
+      ...humanChartBase,
+      version: 2,
+      parent: { artifactId: currentChart.artifactId, version: 1 },
+      origin: 'human-edit',
+      attachment: {
+        attachmentId: currentChart.attachment.attachmentId,
+        mediaType: 'application/vnd.vega-lite+json',
+        bytes: 64,
+      },
+      createdAt: currentChart.createdAt + 1,
+    }
     const interruptedRun = interruptedState.runs[0]!
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
     // (open): exit it, then start a fresh epoch 2, whose still-open record
@@ -245,6 +288,9 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
       { ...state, artifacts: [{ ...currentChart, attachment: null }] },
       { ...state, artifacts: [{ ...state.artifacts[0], attachment: { mediaType: 'text/plain' } }] },
+      { ...state, artifacts: [{ ...humanChart, parent: undefined }] },
+      { ...state, artifacts: [{ ...humanChart, runId: currentRun.runId }] },
+      { ...state, artifacts: [{ ...humanChart, attachment: { ...humanChart.attachment, mediaType: 'text/plain' } }] },
       { ...kernelState, kernels: {} },
       { ...kernelState, kernels: [null] },
       { ...kernelState, kernels: [{}] },

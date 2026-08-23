@@ -16,6 +16,7 @@ import type {
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type { CaptureRunArtifactsResult } from './capture.ts'
+import type { CallId } from '@deepseek-ai/dsh-llm'
 
 export type { CaptureRunArtifactsResult } from './capture.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -137,7 +138,7 @@ export interface AnnotateScienceArtifactRequest {
   /** Optional human-readable artifact caption. */
   readonly caption?: string
   /** Model-issued call already recorded in the Session log. */
-  readonly toolCallId: ScienceArtifactVersion['toolCallId']
+  readonly toolCallId: CallId
   /** Latest Science-era `request/header` event already recorded in the log. */
   readonly requestHeaderSeq: number
   /** Caller-owned cancellation signal. */

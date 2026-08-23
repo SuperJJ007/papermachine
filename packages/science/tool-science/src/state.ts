@@ -167,7 +167,7 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
  * between `runId` and `mediaType`, which a trailing spread cannot produce.
  */
 function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stateArtifactSchema> {
-  const { artifactId, logicalName, version, title, caption, origin, runId, mediaType, bytes, width, height, createdAt } =
+  const { artifactId, logicalName, version, title, caption, origin, parent, runId, mediaType, bytes, width, height, createdAt } =
     scienceArtifactValueFields(artifact)
   return {
     artifactId,
@@ -176,7 +176,8 @@ function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stat
     title,
     ...caption === undefined ? {} : { caption },
     origin,
-    runId,
+    ...parent === undefined ? {} : { parent },
+    ...runId === undefined ? {} : { runId },
     environmentRevision: artifact.environmentRevision,
     environmentFingerprintPreview: scienceFingerprintPreview(artifact.environmentFingerprint),
     mediaType,

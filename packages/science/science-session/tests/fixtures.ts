@@ -8,7 +8,7 @@ import {
   ScienceScratchKey,
 } from '../src/index.ts'
 import type {
-  ScienceArtifactVersion,
+  ScienceRunArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterAvailableBinding,
   ScienceInterpreterUnavailableBinding,
@@ -140,8 +140,8 @@ export const kernelExited = (
 })
 
 export const artifact = (
-  overrides: Partial<ScienceArtifactVersion> = {},
-): ScienceArtifactVersion => ({
+  overrides: Partial<ScienceRunArtifactVersion> = {},
+): ScienceRunArtifactVersion => ({
   artifactId: ARTIFACT_ID,
   logicalName: 'trend',
   version: 1,
@@ -166,8 +166,8 @@ export const artifact = (
 
 /** A durable auto-captured artifact version: carries its source run's own toolCallId/requestHeaderSeq, never a curation call's. */
 export const autoArtifact = (
-  overrides: Partial<ScienceArtifactVersion> = {},
-): ScienceArtifactVersion => artifact({
+  overrides: Partial<ScienceRunArtifactVersion> = {},
+): ScienceRunArtifactVersion => artifact({
   logicalName: 'summary.csv',
   title: 'summary.csv',
   origin: 'auto',

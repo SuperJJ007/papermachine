@@ -1479,9 +1479,6 @@ importers:
       '@deepseek-ai/dsh-science-session':
         specifier: workspace:^
         version: link:../../science/science-session
-      '@deepseek-ai/dsh-tool-science':
-        specifier: workspace:^
-        version: link:../../science/tool-science
       '@deepseek-ai/dsh-session-attachment-index':
         specifier: workspace:^
         version: link:../../session/session-attachment-index
@@ -1509,6 +1506,9 @@ importers:
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-tool-science':
+        specifier: workspace:^
+        version: link:../../science/tool-science
       '@deepseek-ai/dsh-web-frontend':
         specifier: workspace:^
         version: link:../../../apps/web
@@ -6301,6 +6301,9 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-attachment-local':
         specifier: workspace:^
         version: link:../../attachment/attachment-local

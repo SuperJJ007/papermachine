@@ -47,9 +47,14 @@ try {
     }
   })
   try {
-    ctx.scienceEdits.submit(agent, {
+    const styled = await ctx.scienceEdits.commitStyleEdit(agent, {
       artifactId: chart.artifactId,
       version: chart.version,
+      spec: '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":{"type":"bar","color":"#2455a4","fontSize":16},"encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}',
+    })
+    ctx.scienceEdits.submit(agent, {
+      artifactId: styled.artifactId,
+      version: styled.version,
       target: { kind: 'spec-path', path: 'encoding.y' },
       instruction: 'Use a zero-based quantitative scale.',
     })

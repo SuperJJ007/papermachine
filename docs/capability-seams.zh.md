@@ -101,6 +101,8 @@ flowchart LR
   pkg_science_runtime["science-runtime"]
   svc_scienceRuntime["ctx.scienceRuntime<br/>Host-local Science Runtime"]
   pkg_tool_science["tool-science"]
+  svc_scienceEdits["ctx.scienceEdits<br/>Exact-version Science artifact edits"]
+  pkg_ui_science["ui-science"]
   pkg_session_attachment_index["session-attachment-index"]
   svc_sessionAttachments["ctx.sessionAttachments<br/>Session attachment reference index"]
   pkg_science_session["science-session"]
@@ -304,6 +306,7 @@ flowchart LR
   pkg_terminal --> svc_terminals
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
+  pkg_tool_science --> svc_scienceEdits
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
@@ -357,6 +360,7 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_scienceEdits --> pkg_ui_science
   svc_scienceRuntime --> pkg_tool_science
   svc_sessionAttachments --> pkg_apiproxy
   svc_sessionAttachments --> pkg_science_session
@@ -466,6 +470,7 @@ flowchart LR
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | 在受信任根目录与用户创作根目录上发现 preset 目录，并在创建期把一份 preset cordis.yml 挂载到 agent 作用域之下，拒绝始终未激活或向根服务 realm 发布服务的行。 |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | 插件注册直接面向人的命令，而不会把调用发送给模型。 |
 | `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | 拥有已绑定的 Conda 环境、受限运行、图表提交，以及由 Science 工具消费的环境、运行与图表 Session 事件。 |
+| `ctx.scienceEdits` | `core` | [`tool-science`](../packages/science/tool-science) | - | `ui-science` | - | Host provider 校验在线 Agent 的精确 artifact 选择、提交有界的直接 Vega-Lite 样式版本，或排入结构化模型编辑消息；浏览器 consumer 本身绝不修改 projection。 |
 | `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | `apiproxy`, [`science-session`](../packages/science/science-session) | - | 从持久 Session 事件提取完整附件引用，供 Host 读取与导出使用；领域包为自己的事件类型注册受生命周期约束的提取器。 |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title), [`host-apiproxy`](../packages/host/apiproxy) | - | 各领域注册由状态驱动的折叠单元；主动驱动过程维护每个会话的水位状态，api-proxy 提供基线并推送发生变化的值。 |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | 按会话持久保存投影单元状态的检查点（节流检查点，以及轮次／结束／分离时的必选检查点），并提供冷读取阶梯：缓存行加持久化尾部回放，因此列表读取永远不需要加载完整日志。 |

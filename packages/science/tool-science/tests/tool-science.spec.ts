@@ -29,7 +29,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -67,7 +67,7 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
 }
 
 /** Minimal valid `ScienceArtifactVersion` fixture (image attachment); callers override only what they test. */
-function artifactVersionFixture(overrides: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
+function artifactVersionFixture(overrides: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return {
     artifactId: ScienceArtifactId('artifact-1'),
     logicalName: 'file',
@@ -81,6 +81,29 @@ function artifactVersionFixture(overrides: Partial<ScienceArtifactVersion> = {})
     environmentRevision: 1,
     environmentFingerprint: 'a'.repeat(64),
     createdAt: 1000,
+    ...overrides,
+  }
+}
+
+/** Minimal direct-edit artifact fixture with exact ancestry and no run provenance. */
+function humanArtifactFixture(
+  overrides: Partial<Extract<ScienceArtifactVersion, { origin: 'human-edit' }>> = {},
+): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> {
+  return {
+    artifactId: ScienceArtifactId('artifact-1'),
+    logicalName: 'chart.vl.json',
+    version: 2,
+    parent: { artifactId: ScienceArtifactId('artifact-1'), version: 1 },
+    title: 'Chart',
+    origin: 'human-edit',
+    attachment: {
+      attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+      mediaType: 'application/vnd.vega-lite+json',
+      bytes: 64,
+    },
+    environmentRevision: 1,
+    environmentFingerprint: 'a'.repeat(64),
+    createdAt: 1001,
     ...overrides,
   }
 }
@@ -1389,6 +1412,10 @@ describe('run_python', () => {
 })
 
 describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
+  it('rejects a human-edited artifact because annotate_artifact cannot produce one', () => {
+    expect(() => artifactReceiptFromArtifact(humanArtifactFixture())).toThrow(/cannot return a human-edited artifact/)
+  })
+
   it('omits caption and the attachment name when both are absent from the durable artifact', () => {
     const value = artifactReceiptFromArtifact({
       artifactId: ScienceArtifactId('artifact-1'),
@@ -1714,6 +1741,122 @@ describe('scienceEdits submit', () => {
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
     })
   })
+
+  it('commits one complete Vega-Lite working copy as a contiguous human-edit version', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-style-commit')
+    const run = await runSuccessfully(ctx, session, 'science-style-commit-run')
+    const parent = await seedAutoArtifact(
+      ctx,
+      session,
+      run,
+      'plot.vl.json',
+      new TextEncoder().encode('{"mark":{"type":"bar","color":"#336699"}}'),
+      'application/vnd.vega-lite+json',
+    )
+    const spec = '{"mark":{"type":"bar","color":"#cc3300"}}'
+    const service = new ScienceEditService(ctx)
+    const receipt = await service.commitStyleEdit(fakeAgent(session), {
+      artifactId: parent.artifactId,
+      version: parent.version,
+      spec,
+    })
+
+    expect(receipt).toEqual({ artifactId: parent.artifactId, version: 2, origin: 'human-edit' })
+    const committed = replayScience(session.events)?.artifacts.at(-1)
+    expect(committed).toMatchObject({
+      artifactId: parent.artifactId,
+      logicalName: parent.logicalName,
+      version: 2,
+      parent: { artifactId: parent.artifactId, version: 1 },
+      origin: 'human-edit',
+      environmentRevision: parent.environmentRevision,
+      environmentFingerprint: parent.environmentFingerprint,
+      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+    })
+    expect(committed !== undefined && 'runId' in committed).toBe(false)
+    expect(committed !== undefined && 'toolCallId' in committed).toBe(false)
+    expect(committed !== undefined && 'requestHeaderSeq' in committed).toBe(false)
+    if (committed === undefined || committed.origin !== 'human-edit') throw new Error('expected committed human edit')
+    const stored = await ctx.attachments.readText(committed.attachment)
+    expect(new TextDecoder().decode(stored.data)).toBe(spec)
+  })
+
+  it('preserves a parent caption when its attachment has no display name', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-style-optional-fields')
+    const run = await runSuccessfully(ctx, session, 'science-style-optional-fields-run')
+    const captured = await seedAutoArtifact(
+      ctx,
+      session,
+      run,
+      'optional.vl.json',
+      new TextEncoder().encode('{"mark":"bar"}'),
+      'application/vnd.vega-lite+json',
+    )
+    if (captured.origin === 'human-edit') throw new Error('expected run-produced parent')
+    const annotateCall = authorizeToolCall(session, 2, 'annotate_artifact', 'science-style-optional-fields-annotate')
+    const { name: _name, ...unnamedAttachment } = captured.attachment
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        ...captured,
+        caption: 'Preserved caption',
+        origin: 'model',
+        attachment: unnamedAttachment,
+        toolCallId: annotateCall,
+        requestHeaderSeq: session.events.findLast(event => event.type === 'request/header')!.seq,
+        createdAt: Date.now(),
+      },
+    })
+    const service = new ScienceEditService(ctx)
+    await service.commitStyleEdit(fakeAgent(session), {
+      artifactId: captured.artifactId,
+      version: 1,
+      spec: '{"mark":{"type":"bar","color":"green"}}',
+    })
+    expect(replayScience(session.events)?.artifacts.at(-1)).toMatchObject({
+      caption: 'Preserved caption',
+      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+    })
+    expect(replayScience(session.events)?.artifacts.at(-1)?.attachment).not.toHaveProperty('name')
+  })
+
+  it('rejects malformed, stale, and non-Vega-Lite style commits', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-style-rejections')
+    const run = await runSuccessfully(ctx, session, 'science-style-rejections-run')
+    const chart = await seedAutoArtifact(
+      ctx,
+      session,
+      run,
+      'plot.vl.json',
+      new TextEncoder().encode('{"mark":"bar"}'),
+      'application/vnd.vega-lite+json',
+    )
+    const imageArtifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const service = new ScienceEditService(ctx)
+
+    await expect(service.commitStyleEdit(fakeAgent(session), {
+      artifactId: ScienceArtifactId('missing-style-target'), version: 1, spec: '{"mark":"bar"}',
+    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' })
+
+    for (const spec of ['', '[]', 'null', '{', '{"title":"\u0000"}']) {
+      await expect(service.commitStyleEdit(fakeAgent(session), {
+        artifactId: chart.artifactId, version: 1, spec,
+      })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_SPEC_INVALID' })
+    }
+    await expect(service.commitStyleEdit(fakeAgent(session), {
+      artifactId: imageArtifact.artifactId, version: 1, spec: '{"mark":"bar"}',
+    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' })
+
+    await service.commitStyleEdit(fakeAgent(session), {
+      artifactId: chart.artifactId, version: 1, spec: '{"mark":{"type":"bar","color":"red"}}',
+    })
+    await expect(service.commitStyleEdit(fakeAgent(session), {
+      artifactId: chart.artifactId, version: 1, spec: '{"mark":"line"}',
+    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_STALE_VERSION' })
+  })
 })
 
 describe('publish_outcome', () => {
@@ -1940,6 +2083,15 @@ describe('publish_outcome', () => {
 })
 
 describe('get_science_state artifact sanitization', () => {
+  it('keeps direct-edit ancestry and omits run provenance', () => {
+    const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture()] }), 20)
+    expect(value.artifacts).toEqual([expect.objectContaining({
+      origin: 'human-edit',
+      parent: { artifactId: 'artifact-1', version: 1 },
+    })])
+    expect(value.artifacts[0]).not.toHaveProperty('runId')
+  })
+
   it('omits the internal attachment id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-artifact')

@@ -152,22 +152,27 @@ function clientRun(run: ScienceRun): ScienceClientRun {
  * artifact version to its authorizing transcript call for provenance.
  */
 function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
-  return {
+  const common = {
     artifactId: artifact.artifactId,
     logicalName: artifact.logicalName,
     version: artifact.version,
-    ...artifact.parent === undefined ? {} : { parent: artifact.parent },
     title: artifact.title,
     ...artifact.caption === undefined ? {} : { caption: artifact.caption },
-    origin: artifact.origin,
     attachment: artifact.attachment,
-    runId: artifact.runId,
-    toolCallId: artifact.toolCallId,
-    requestHeaderSeq: artifact.requestHeaderSeq,
     environmentRevision: artifact.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(artifact.environmentFingerprint),
     createdAt: artifact.createdAt,
   }
+  return artifact.origin === 'human-edit'
+    ? { ...common, parent: artifact.parent, origin: artifact.origin, attachment: artifact.attachment }
+    : {
+      ...common,
+      ...artifact.parent === undefined ? {} : { parent: artifact.parent },
+      origin: artifact.origin,
+      runId: artifact.runId,
+      toolCallId: artifact.toolCallId,
+      requestHeaderSeq: artifact.requestHeaderSeq,
+    }
 }
 
 /** Remove authorizing request facts from one Outcome publication. */

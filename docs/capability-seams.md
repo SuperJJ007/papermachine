@@ -99,6 +99,8 @@ flowchart LR
   pkg_science_runtime["science-runtime"]
   svc_scienceRuntime["ctx.scienceRuntime<br/>Host-local Science Runtime"]
   pkg_tool_science["tool-science"]
+  svc_scienceEdits["ctx.scienceEdits<br/>Exact-version Science artifact edits"]
+  pkg_ui_science["ui-science"]
   pkg_session_attachment_index["session-attachment-index"]
   svc_sessionAttachments["ctx.sessionAttachments<br/>Session attachment reference index"]
   pkg_science_session["science-session"]
@@ -302,6 +304,7 @@ flowchart LR
   pkg_terminal --> svc_terminals
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
+  pkg_tool_science --> svc_scienceEdits
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
@@ -355,6 +358,7 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_scienceEdits --> pkg_ui_science
   svc_scienceRuntime --> pkg_tool_science
   svc_sessionAttachments --> pkg_apiproxy
   svc_sessionAttachments --> pkg_science_session
@@ -464,6 +468,7 @@ flowchart LR
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm. |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
 | `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | Owns bound Conda environments, confined runs, chart commits, and the environment, run, and chart Session events consumed by Science tools. |
+| `ctx.scienceEdits` | `core` | [`tool-science`](../packages/science/tool-science) | - | `ui-science` | - | The Host provider validates exact live-Agent artifact selections, commits bounded direct Vega-Lite style versions, or queues structured model edit messages; the browser consumer never mutates the projection itself. |
 | `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | `apiproxy`, [`science-session`](../packages/science/science-session) | - | Extracts complete attachment references from durable Session events for Host reads and exports; domain packages register lifecycle-owned extractors for their event types. |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title), [`host-apiproxy`](../packages/host/apiproxy) | - | Domains register state-driven fold units; the eager drive keeps per-session watermark states and api-proxy serves baselines and pushes changed values. |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs. |

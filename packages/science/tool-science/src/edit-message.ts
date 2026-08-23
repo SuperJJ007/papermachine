@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-attachment'
 import { assertNever, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
@@ -13,6 +14,8 @@ import type {
   ScienceEditReceipt,
   ScienceEditRequest,
   ScienceEditTarget,
+  ScienceStyleEditReceipt,
+  ScienceStyleEditRequest,
 } from './types.ts'
 
 const SPEC_PATH = /^(?:[A-Za-z_$][A-Za-z0-9_$-]*|[0-9]+)(?:\.(?:[A-Za-z_$][A-Za-z0-9_$-]*|[0-9]+))*$/
@@ -96,6 +99,45 @@ export function resolveScienceEdit(
   return { artifact: latest, target, instruction }
 }
 
+function resolveCurrentArtifact(
+  artifacts: readonly ScienceArtifactVersion[], artifactId: ScienceStyleEditRequest['artifactId'], version: number,
+): ScienceArtifactVersion {
+  const versions = artifacts.filter(artifact => artifact.artifactId === artifactId)
+  const latest = versions.at(-1)
+  if (latest === undefined) {
+    throw new ScienceEditError(
+      `Science edit target ${JSON.stringify(artifactId)}@${String(version)} does not identify a committed artifact`,
+      'SCIENCE_EDIT_TARGET_NOT_FOUND',
+    )
+  }
+  if (version !== latest.version) {
+    throw new ScienceEditError(
+      `Science edit target ${JSON.stringify(artifactId)}@${String(version)} does not match the current committed version ${String(latest.version)}`,
+      'SCIENCE_EDIT_STALE_VERSION',
+    )
+  }
+  if (latest.attachment.mediaType !== 'application/vnd.vega-lite+json') {
+    throw new ScienceEditError('Science style edits require a Vega-Lite artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
+  }
+  return latest
+}
+
+function parseStyleSpec(spec: string): Record<string, unknown> {
+  if (!spec.isWellFormed() || spec.includes('\u0000')) {
+    throw new ScienceEditError('Science style edit spec must be well-formed JSON text without U+0000', 'SCIENCE_EDIT_SPEC_INVALID')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(spec)
+  } catch {
+    throw new ScienceEditError('Science style edit spec must be valid JSON', 'SCIENCE_EDIT_SPEC_INVALID')
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new ScienceEditError('Science style edit spec must be a JSON object', 'SCIENCE_EDIT_SPEC_INVALID')
+  }
+  return parsed as Record<string, unknown>
+}
+
 function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEditTarget): void {
   const image = 'width' in artifact.attachment
   if (target.kind === 'spec-path' && artifact.attachment.mediaType !== 'application/vnd.vega-lite+json') {
@@ -177,5 +219,38 @@ export class ScienceEditService extends TypertRemoteService {
     const state = foldScience(agent.session.events)
     agent.followup(createScienceEditMessage(resolveScienceEdit(state.artifacts, request)))
     return { accepted: true }
+  }
+
+  /**
+   * Validate and commit one complete Vega-Lite working copy as a direct human edit.
+   * @param agent - exact live agent whose Session owns the artifact.
+   * @param request - exact current parent and complete edited JSON text.
+   * @returns identity and direct-edit provenance of the new contiguous version.
+   */
+  @Remote('commitStyleEdit')
+  async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt> {
+    const state = foldScience(agent.session.events)
+    const parent = resolveCurrentArtifact(state.artifacts, request.artifactId, request.version)
+    parseStyleSpec(request.spec)
+    const attachment = await this.ctx.attachments.saveText({
+      data: new TextEncoder().encode(request.spec),
+      mediaType: 'application/vnd.vega-lite+json',
+      ...parent.attachment.name === undefined ? {} : { name: parent.attachment.name },
+    })
+    const artifact: ScienceArtifactVersion = {
+      artifactId: parent.artifactId,
+      logicalName: parent.logicalName,
+      version: parent.version + 1,
+      parent: { artifactId: parent.artifactId, version: parent.version },
+      title: parent.title,
+      ...parent.caption === undefined ? {} : { caption: parent.caption },
+      origin: 'human-edit',
+      attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+      environmentRevision: parent.environmentRevision,
+      environmentFingerprint: parent.environmentFingerprint,
+      createdAt: Date.now(),
+    }
+    agent.session.append('science/artifact-saved', { version: 1, artifact })
+    return { artifactId: artifact.artifactId, version: artifact.version, origin: artifact.origin }
   }
 }

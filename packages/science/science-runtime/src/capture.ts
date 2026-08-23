@@ -94,7 +94,11 @@ export interface CaptureRunArtifactsResult {
  * directory. Content-addressed storage makes admission idempotent: an
  * unchanged file's freshly admitted reference compares equal to the latest
  * committed version's own opaque reference, so this walk skips it rather
- * than appending a redundant version. Never throws for an oversized file,
+ * than appending a redundant version. After a direct human edit, a file that
+ * still matches the latest run-produced ancestor is also skipped unless this
+ * run explicitly names that path in `editBaselines`; this prevents an untouched
+ * stale workspace file from reverting the human edit while preserving an
+ * intentional model edit or revert. Never throws for an oversized file,
  * a per-run/per-session cap, or a Session that detaches mid-walk — each
  * stops capture early (accounted in the returned result) rather than
  * failing the run that already committed its terminal fact.
@@ -182,14 +186,22 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === relativePath)
     const latest = logical.at(-1)
     if (latest !== undefined && latest.attachment.attachmentId === attachment.attachmentId) continue
+    if (latest?.origin === 'human-edit' && request.editBaselines?.has(relativePath) !== true) {
+      const latestRunProduced = logical.findLast(candidate => candidate.origin !== 'human-edit')
+      if (latestRunProduced?.attachment.attachmentId === attachment.attachmentId) continue
+    }
     let version = 1
     if (latest !== undefined) {
-      const latestSource = state.runs.find(candidate => candidate.runId === latest.runId)
-      /* v8 ignore next -- strict fold admits only artifacts with source runs. */
-      if (latestSource === undefined) {
-        throw new Error('science-runtime: latest artifact source run is missing from its strict fold')
+      if (latest.origin === 'human-edit') {
+        version = latest.version + 1
+      } else {
+        const latestSource = state.runs.find(candidate => candidate.runId === latest.runId)
+        /* v8 ignore next -- strict fold admits every run-produced artifact only after its source run. */
+        if (latestSource === undefined) {
+          throw new Error('science-runtime: latest artifact source run is missing from its strict fold')
+        }
+        version = scienceRunsShareTurn(state, sourceRun, latestSource) ? latest.version : latest.version + 1
       }
-      version = scienceRunsShareTurn(state, sourceRun, latestSource) ? latest.version : latest.version + 1
     }
 
     const parent = request.editBaselines?.get(relativePath)

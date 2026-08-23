@@ -641,6 +641,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         `artifact ${JSON.stringify(request.logicalName)} has no version ${JSON.stringify(request.version)}. Available: ${available}.`,
       )
     }
+    if (source.origin === 'human-edit') {
+      throw new ScienceRuntimeError(
+        'ARTIFACT_NOT_FOUND',
+        `artifact ${JSON.stringify(request.logicalName)} version ${String(source.version)} is a direct style edit and cannot be curated`,
+      )
+    }
     return {
       artifactId: latest.artifactId,
       logicalName: request.logicalName,

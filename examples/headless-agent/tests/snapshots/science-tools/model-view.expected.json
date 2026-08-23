@@ -275,7 +275,7 @@
       "source": {
         "kind": "science-edit",
         "artifactId": "{{scienceChartId}}",
-        "version": 1,
+        "version": 2,
         "target": {
           "kind": "spec-path",
           "path": "encoding.y"
@@ -285,7 +285,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Edit Science artifact \"chart.vl.json\" ({{scienceChartId}} v1).\nSpec path: encoding.y\nInstruction: Use a zero-based quantitative scale.\nUse exactly {{scienceChartId}} v1 as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version."
+          "text": "Edit Science artifact \"chart.vl.json\" ({{scienceChartId}} v2).\nSpec path: encoding.y\nInstruction: Use a zero-based quantitative scale.\nUse exactly {{scienceChartId}} v2 as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version."
         }
       ]
     },
@@ -379,7 +379,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `selected-edit.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 56 B, edited from {{scienceChartId}} v1)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `selected-edit.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 56 B, edited from {{scienceChartId}} v2)."
         }
       ]
     },

@@ -22,6 +22,34 @@ Every probe and run uses direct argv, `environmentBase: 'empty'`, a fixed allowl
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxscienceedits--scienceeditservice"></a>
+
+### `ctx.scienceEdits` — `ScienceEditService`
+
+Remote service admitting browser edit gestures into the addressed live agent.
+
+```ts cordis-catalog
+/**
+ * Validate one exact current artifact selection and queue its structured edit message.
+ * @param agent - exact live agent resolved by the Remote lookup policy.
+ * @param request - selected version, target, and user instruction.
+ * @returns durable-inbox admission receipt.
+ */
+@Remote('submit') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt
+
+/**
+ * Validate and commit one complete Vega-Lite working copy as a direct human edit.
+ * @param agent - exact live agent whose Session owns the artifact.
+ * @param request - exact current parent and complete edited JSON text.
+ * @returns identity and direct-edit provenance of the new contiguous version.
+ */
+@Remote('commitStyleEdit') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/science/tool-science/src/edit-message.ts`](../../packages/science/tool-science/src/edit-message.ts)
+
 <a id="ctxscienceruntime--scienceruntime"></a>
 
 ### `ctx.scienceRuntime` — `ScienceRuntime`

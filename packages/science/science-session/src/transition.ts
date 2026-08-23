@@ -6,6 +6,7 @@ import type { DecodedScienceDomainEvent } from './codec.ts'
 import { scienceRunsShareTurn } from './fold-state.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
 import type {
+  ScienceArtifactVersion,
   ScienceArtifactVersionRef,
   ScienceEnvironmentBinding,
   ScienceKernel,
@@ -13,6 +14,8 @@ import type {
   ScienceLanguage,
   ScienceRun,
   ScienceRunIdentity,
+  ScienceRunInterrupted,
+  ScienceRunStarted,
 } from './types.ts'
 
 function sameArtifactVersionRef(
@@ -24,11 +27,13 @@ function sameArtifactVersionRef(
     : right !== undefined && left.artifactId === right.artifactId && left.version === right.version
 }
 
-function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): void {
-  if (!state.artifacts.some(candidate =>
-    candidate.artifactId === ref.artifactId && candidate.version === ref.version)) {
+function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): ScienceArtifactVersion {
+  const artifact = state.artifacts.find(candidate =>
+    candidate.artifactId === ref.artifactId && candidate.version === ref.version)
+  if (artifact === undefined) {
     throw new Error(`${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`)
   }
+  return artifact
 }
 
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
@@ -219,47 +224,74 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
 function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/artifact-saved' }>): void {
   if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
   const artifact = event.data.artifact
+  let parent: ScienceArtifactVersion | undefined
   if (artifact.parent !== undefined) {
     if (artifact.parent.artifactId === artifact.artifactId && artifact.parent.version === artifact.version) {
       throw new Error('Science artifact parent cannot name the version being committed')
     }
-    requireArtifactVersion(state, artifact.parent, 'Science artifact parent')
+    parent = requireArtifactVersion(state, artifact.parent, 'Science artifact parent')
   }
-  const source = state.runs.find(candidate => candidate.runId === artifact.runId)
-  if (source === undefined || source.status === 'running' || source.status === 'interrupted') {
-    throw new Error('Science artifact must reference a run that reached a terminal status')
-  }
-  const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
-  // An auto-captured save (origin 'auto') is not a distinct model-issued
-  // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
-  // already proven and consumed by that run's science/run-started fact, so it
-  // never re-consumes a tool call — many captured files share one run's call.
-  // A curating save (origin 'model', today only annotate_artifact) consumes a
-  // fresh tool call exactly once, whether it opens a version or supersedes one.
-  let toolCallTime: number | undefined
+  let source: Exclude<ScienceRun, ScienceRunStarted | ScienceRunInterrupted> | undefined
   let consumedToolCallSeq: number | undefined
-  if (artifact.origin === 'auto') {
-    if (artifact.toolCallId !== source.toolCallId || artifact.requestHeaderSeq !== source.requestHeaderSeq) {
-      throw new Error('an auto-captured Science artifact must carry its source run\'s own toolCallId and requestHeaderSeq')
+  if (artifact.origin === 'human-edit') {
+    /* v8 ignore next -- the discriminated codec and type require this parent */
+    if (parent === undefined) throw new Error('a human-edited Science artifact requires a committed parent')
+    const latest = state.artifacts.filter(candidate => candidate.artifactId === artifact.artifactId).at(-1)
+    if (latest !== parent) throw new Error('a human-edited Science artifact parent must be the current committed version')
+    if (parent.logicalName !== artifact.logicalName) {
+      throw new Error('a human-edited Science artifact must retain its parent logical name')
+    }
+    if (parent.attachment.mediaType !== 'application/vnd.vega-lite+json') {
+      throw new Error('a human-edited Science artifact parent must be Vega-Lite')
+    }
+    if (artifact.environmentRevision !== parent.environmentRevision
+      || artifact.environmentFingerprint !== parent.environmentFingerprint) {
+      throw new Error('a human-edited Science artifact must copy its parent environment provenance')
+    }
+    const parentFact = state.artifactFacts.find(candidate =>
+      candidate.artifactId === parent.artifactId && candidate.version === parent.version)
+    /* v8 ignore next -- every accepted version appends the matching fact */
+    if (parentFact === undefined) throw new Error('Science artifact parent event facts are missing')
+    if (artifact.createdAt < parent.createdAt || artifact.createdAt < parentFact.time || artifact.createdAt > event.time) {
+      throw new Error('human-edited Science artifact creation time is outside its parent-to-commit event interval')
     }
   } else {
-    const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['annotate_artifact'])
-    toolCallTime = toolCall.time
-    consumedToolCallSeq = toolCall.seq
-  }
-  if (artifact.environmentRevision !== source.environmentRevision
-    || artifact.environmentFingerprint !== source.environmentFingerprint) {
-    throw new Error('Science artifact environment provenance must match its source run')
-  }
-  const sourceFact = state.runFacts.find(candidate => candidate.runId === artifact.runId)
-  /* v8 ignore next -- a terminal run always has its terminal fact */
-  if (sourceFact?.terminalEventTime === undefined) throw new Error('Science artifact source-run event facts are missing')
-  if (artifact.createdAt < source.finishedAt
-    || artifact.createdAt < sourceFact.terminalEventTime
-    || artifact.createdAt < requestHeader.time
-    || (toolCallTime !== undefined && artifact.createdAt < toolCallTime)
-    || artifact.createdAt > event.time) {
-    throw new Error('Science artifact creation time is outside its supporting-fact event interval')
+    const candidate = state.runs.find(run => run.runId === artifact.runId)
+    if (candidate === undefined || candidate.status === 'running' || candidate.status === 'interrupted') {
+      throw new Error('Science artifact must reference a run that reached a terminal status')
+    }
+    source = candidate
+    const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
+    // An auto-captured save (origin 'auto') is not a distinct model-issued
+    // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
+    // already proven and consumed by that run's science/run-started fact, so it
+    // never re-consumes a tool call — many captured files share one run's call.
+    // A curating save (origin 'model', today only annotate_artifact) consumes a
+    // fresh tool call exactly once, whether it opens a version or supersedes one.
+    let toolCallTime: number | undefined
+    if (artifact.origin === 'auto') {
+      if (artifact.toolCallId !== source.toolCallId || artifact.requestHeaderSeq !== source.requestHeaderSeq) {
+        throw new Error('an auto-captured Science artifact must carry its source run\'s own toolCallId and requestHeaderSeq')
+      }
+    } else {
+      const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['annotate_artifact'])
+      toolCallTime = toolCall.time
+      consumedToolCallSeq = toolCall.seq
+    }
+    if (artifact.environmentRevision !== source.environmentRevision
+      || artifact.environmentFingerprint !== source.environmentFingerprint) {
+      throw new Error('Science artifact environment provenance must match its source run')
+    }
+    const sourceFact = state.runFacts.find(candidateFact => candidateFact.runId === artifact.runId)
+    /* v8 ignore next -- a terminal run always has its terminal fact */
+    if (sourceFact?.terminalEventTime === undefined) throw new Error('Science artifact source-run event facts are missing')
+    if (artifact.createdAt < source.finishedAt
+      || artifact.createdAt < sourceFact.terminalEventTime
+      || artifact.createdAt < requestHeader.time
+      || (toolCallTime !== undefined && artifact.createdAt < toolCallTime)
+      || artifact.createdAt > event.time) {
+      throw new Error('Science artifact creation time is outside its supporting-fact event interval')
+    }
   }
   // A version is what one request turn produced, so a re-save either opens the
   // next version or supersedes an existing one in place. An auto-capture may
@@ -288,6 +320,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (!sameArtifactVersionRef(artifact.parent, target.parent)) {
       throw new Error('a superseding Science artifact cannot rewrite its parent')
     }
+    if (target.origin === 'human-edit') throw new Error('annotate_artifact cannot curate a human-edited Science artifact version')
     const targetSource = state.runs.find(candidate => candidate.runId === target.runId)
     /* v8 ignore next -- strict replay admits every projected artifact only after its source run, and target came from this exact fold */
     if (targetSource === undefined) throw new Error('Science artifact target source run is missing')
@@ -295,8 +328,12 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (artifact.origin === 'model' && !attachmentUnchanged) {
       throw new Error('a model-curated Science artifact may supersede only with an unchanged attachment')
     }
-    if (artifact.origin === 'auto' && !attachmentUnchanged && !scienceRunsShareTurn(state, source, targetSource)) {
-      throw new Error('an auto-captured Science artifact may supersede changed content only from its source run\'s tool-call turn')
+    if (artifact.origin === 'auto' && !attachmentUnchanged) {
+      /* v8 ignore next -- the run-produced branch resolves source before version admission */
+      if (source === undefined) throw new Error('Science artifact source run is missing')
+      if (!scienceRunsShareTurn(state, source, targetSource)) {
+        throw new Error('an auto-captured Science artifact may supersede changed content only from its source run\'s tool-call turn')
+      }
     }
     state.artifacts[state.artifacts.indexOf(target)] = artifact
     const factIndex = state.artifactFacts.findIndex(candidate =>

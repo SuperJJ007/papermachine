@@ -205,6 +205,17 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     }
 
     const parent = request.editBaselines?.get(relativePath)
+    // An edit result opens a new version descending from its named baseline;
+    // superseding the baseline itself would self-parent the committed
+    // version (its own `parent` naming its own `{artifactId, version}`),
+    // which the strict fold's C3 self-parent check rejects on every later
+    // replay. This collides only when the baseline names the very version
+    // the same-turn supersede rule above just computed — an ordinary
+    // same-turn rewrite with no baseline, or a baseline older than the
+    // version being superseded, both still supersede unchanged.
+    if (latest !== undefined && parent !== undefined && parent.artifactId === latest.artifactId && parent.version === version) {
+      version = latest.version + 1
+    }
     const artifact: ScienceArtifactVersion = {
       artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
       logicalName: relativePath,

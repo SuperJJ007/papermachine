@@ -346,6 +346,90 @@ describe('Science auto-capture', () => {
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
   })
 
+  it('opens the next version instead of superseding when a same-turn baseline names the version the supersede rule would overwrite', async () => {
+    const root = tmp('.science-capture-same-turn-baseline-self-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-same-turn-baseline-self')
+
+    const first = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const baseline = first.result.capture?.captured[0]
+    if (baseline === undefined) throw new Error('baseline test: expected one captured version')
+    expect(baseline).toMatchObject({ logicalName: 'summary.csv', version: 1 })
+    const parent = { artifactId: baseline.artifactId, version: baseline.version }
+
+    // A second run in the SAME turn names the latest version — the one the
+    // ordinary same-turn supersede rule (above) would otherwise overwrite —
+    // as its own edit baseline. Superseding it would make the committed
+    // version its own parent; this must open version 2 instead.
+    const handle = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
+      editBaselines: { 'summary.csv': parent },
+      ...authorizeRunInTurn(session, 'capture-same-turn-self-parent', 1),
+      signal: new AbortController().signal,
+    })
+    await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')
+    const second = await handle.done
+    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, parent })
+
+    // The strict fold's self-parent check (transition.ts) throws loudly on
+    // an artifact whose parent names the version being committed; a clean
+    // replay proves the appended version never collided with its own parent.
+    const projection = replayScience(session.events)
+    const versions = projection?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
+    expect(versions.map(v => v.version)).toEqual([1, 2])
+    expect(versions.at(1)?.parent).toEqual(parent)
+  })
+
+  it('still supersedes a same-turn re-run of the same edit: latest v2 parent v1, computed version 2, parent 1', async () => {
+    const root = tmp('.science-capture-same-turn-baseline-rerun-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-same-turn-baseline-rerun')
+
+    const first = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const v1 = first.result.capture?.captured[0]
+    if (v1 === undefined) throw new Error('baseline test: expected one captured version')
+    const parent = { artifactId: v1.artifactId, version: v1.version }
+
+    // A later turn's edit opens version 2 with v1 as its baseline: different
+    // turn from v1's own, and the version being opened (2) does not name
+    // itself as its own baseline, so no self-parent collision applies here.
+    const secondHandle = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
+      editBaselines: { 'summary.csv': parent },
+      ...authorizeRunInTurn(session, 'capture-baseline-rerun-edit', 2),
+      signal: new AbortController().signal,
+    })
+    await writeArtifact(root, session, secondHandle.runId, 'summary.csv', 'a,b\n3,4\n')
+    const second = await secondHandle.done
+    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, parent })
+
+    // A third run sharing turn 2 with the run that produced v2 re-runs the
+    // same edit (e.g. fixing a bug in the same edit's code), naming the same
+    // v1 baseline again. The self-parent guard does not fire — parent (1)
+    // never equals the computed version (2) — so the ordinary same-turn
+    // supersede rule still collapses this into version 2, and the parent it
+    // repeats is identical to the one already on that version.
+    const thirdHandle = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
+      editBaselines: { 'summary.csv': parent },
+      ...authorizeRunInTurn(session, 'capture-baseline-rerun-edit-2', 2),
+      signal: new AbortController().signal,
+    })
+    await writeArtifact(root, session, thirdHandle.runId, 'summary.csv', 'a,b\n5,6\n')
+    const third = await thirdHandle.done
+    expect(third.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, parent })
+
+    const projection = replayScience(session.events)
+    const versions = projection?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
+    expect(versions.map(v => v.version)).toEqual([1, 2])
+    expect(versions.at(1)?.parent).toEqual(parent)
+    expect(versions.at(1)?.attachment.attachmentId).not.toBe(second.capture?.captured[0]?.attachment.attachmentId)
+  })
+
   it('skips an identical rerun of the same file: no new version, no new event', async () => {
     const root = tmp('.science-capture-identical-')
     const prefix = createFakePythonPrefix(root)

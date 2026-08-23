@@ -268,6 +268,21 @@ describe('ScienceArtifactProvenance: messages', () => {
     expect(openTrace).toHaveBeenCalledWith(1)
   })
 
+  it('keeps the complete turn request and conclusion in the provenance summary', () => {
+    const suffix = 'FULL_TEXT_SUFFIX'
+    const longText = `${'detail '.repeat(40)}${suffix}`
+    const snapshot = {
+      ...snapshotWith(undefined),
+      nodes: [
+        { kind: 'user', seq: 1, content: [{ type: 'text', text: longText }] },
+        { kind: 'assistant', seq: 2, turn: 1, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+        { kind: 'assistant', seq: 3, turn: 1, blocks: [{ kind: 'text', text: longText }] },
+      ],
+    } as unknown as ConversationSnapshot
+    const view = render(<ScienceArtifactProvenance {...props({ snapshot })} />)
+    expect(view.container.textContent?.match(new RegExp(suffix, 'gu'))).toHaveLength(2)
+  })
+
   it('summarizes steering text and tolerates non-text blocks or a missing conclusion', () => {
     const snapshot = {
       ...snapshotWith(undefined),

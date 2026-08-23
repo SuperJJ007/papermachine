@@ -37,15 +37,19 @@ interface PresentationCapture {
   dictionaries: Array<{ namespace: string; dictionaries: unknown }>
   localeDisposed: boolean
   submissionHandlers: ComposerSubmissionHandler[]
+  viewVisibilitySources: Array<{
+    visible: (sessionId: SessionId) => boolean
+    subscribe: (callback: () => void) => () => void
+  }>
 }
 
 /**
  * Provide the presentation, locale, connection/remote, settings-scope, and
  * sessions registries and capture the plugin's registrations. `sessions`
  * (a minimal `binding` stub) resolves the Details entry's own attachment
- * loader factory; nothing here reads `ctx.sessions.list` any more (the
- * artifact viewer is one plain `conversation.details.view` entry with no
- * session-preset-gated dynamic registration).
+ * loader factory and Trace visibility source. The artifact viewer remains
+ * one plain `conversation.details.view` entry; only the Trace view reacts to
+ * Session-list and projection invalidation.
  */
 function providePresentation(ctx: Context, sciencePreset = false) {
   const slots = new SlotRegistry(ctx)
@@ -65,7 +69,9 @@ function providePresentation(ctx: Context, sciencePreset = false) {
       'details.files': { kind: 'single', scope: 'root' },
     },
   } as never, () => null)
-  const capture: PresentationCapture = { slots, dictionaries: [], localeDisposed: false, submissionHandlers: [] }
+  const capture: PresentationCapture = {
+    slots, dictionaries: [], localeDisposed: false, submissionHandlers: [], viewVisibilitySources: [],
+  }
   ctx.provide('locale', {
     register(namespace: string, dictionaries: unknown) {
       capture.dictionaries.push({ namespace, dictionaries })
@@ -84,14 +90,30 @@ function providePresentation(ctx: Context, sciencePreset = false) {
   }
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
+  let sessionIds = sciencePreset ? ['session-1', 'unbound'] : []
+  const listSubscribers = new Set<() => void>()
+  const faceSubscribers = new Set<() => void>()
+  let faceDisposeCount = 0
+  const scienceFace = {
+    getSnapshot: () => null,
+    subscribe: (callback: () => void) => {
+      faceSubscribers.add(callback)
+      return () => { faceSubscribers.delete(callback); faceDisposeCount += 1 }
+    },
+  }
   ctx.provide('sessions', {
-    binding: () => undefined,
+    binding: (sessionId: SessionId) => sessionId === 'session-1'
+      ? { session: { projections: { faceOf: () => scienceFace } } }
+      : undefined,
     list: {
       getSnapshot: () => ({
-        ids: sciencePreset ? ['session-1'] : [],
+        ids: sessionIds,
         byId: sciencePreset ? { 'session-1': { agentPreset: 'science' } } : {},
       }),
-      subscribe: () => () => {},
+      subscribe: (callback: () => void) => {
+        listSubscribers.add(callback)
+        return () => { listSubscribers.delete(callback) }
+      },
     },
   } as unknown as ISessions)
   const openDetailsView = vi.fn()
@@ -112,12 +134,21 @@ function providePresentation(ctx: Context, sciencePreset = false) {
       subscribe: (callback: () => void) => () => void
     }) => {
       viewVisibility.push(source.visible)
+      capture.viewVisibilitySources.push(source)
       return () => { viewVisibility.splice(viewVisibility.indexOf(source.visible), 1) }
     },
   } as never)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
-  return { capture, submit, openDetailsView, openView, viewVisibility }
+  return {
+    capture, submit, openDetailsView, openView, viewVisibility,
+    visibilityHarness: {
+      setIds: (ids: string[]) => { sessionIds = ids },
+      emitList: () => { for (const callback of listSubscribers) callback() },
+      emitFace: () => { for (const callback of faceSubscribers) callback() },
+      faceDisposeCount: () => faceDisposeCount,
+    },
+  }
 }
 
 describe('apply', () => {
@@ -264,6 +295,26 @@ describe('apply', () => {
     expect(openView).toHaveBeenCalledWith('session-1', 'trace')
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
+  })
+
+  it('rebinds Trace visibility invalidation as sessions enter and leave the list', async () => {
+    const ctx = new Context()
+    const { capture, visibilityHarness } = providePresentation(ctx, true)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const source = capture.viewVisibilitySources[0]
+    if (source === undefined) throw new Error('expected Trace visibility source')
+    const callback = vi.fn()
+    const dispose = source.subscribe(callback)
+    visibilityHarness.emitFace()
+    visibilityHarness.emitList()
+    expect(callback).toHaveBeenCalledTimes(2)
+    visibilityHarness.setIds([])
+    visibilityHarness.emitList()
+    expect(visibilityHarness.faceDisposeCount()).toBe(1)
+    visibilityHarness.setIds(['session-1'])
+    visibilityHarness.emitList()
+    dispose()
+    expect(visibilityHarness.faceDisposeCount()).toBe(2)
   })
 
   it('submits staged targets, rejects ordinary images, reports Remote errors, and clears only after success', async () => {

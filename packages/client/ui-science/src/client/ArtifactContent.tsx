@@ -141,7 +141,12 @@ export function selectableSpecPaths(document: VegaLiteDocument): string[] {
   return paths
 }
 
-/** Human-readable label for a structural Vega-Lite target. */
+/**
+ * Return the localized display label for a structural Vega-Lite target.
+ * @param path - exact Vega-Lite target path.
+ * @param t - the `science` namespace translator.
+ * @returns the known localized label, or the original path when no label is defined.
+ */
 export function specPathLabel(path: string, t: TranslateNS<'science'>): string {
   if (path === 'title') return t('edit.specPath.title')
   if (path === 'encoding.y') return t('edit.specPath.y')

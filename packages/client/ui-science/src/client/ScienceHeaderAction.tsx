@@ -17,7 +17,11 @@ export type ScienceHeaderActionProps =
 /** Details entry id this action opens (matches the entry's own registration). */
 export const SCIENCE_DETAILS_ID = 'science'
 
-/** Shared compact Files control used by the root utility placement. */
+/**
+ * Render the shared compact Files control used by the root utility placement.
+ * @param props - click handler, active state, and Science translator.
+ * @returns the localized Files button.
+ */
 export function ScienceFilesButton({ onClick, expanded = false, t }: {
   onClick: () => void
   expanded?: boolean

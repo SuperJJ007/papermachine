@@ -1,6 +1,7 @@
 .root {
-  height: 100%; min-height: 0; overflow: auto;
-  padding: 18px 22px 96px; background: var(--dsw-alias-bg-layer-1);
+  box-sizing: border-box; height: 100%; min-height: 0; overflow: auto;
+  padding: 18px 22px calc(var(--dsh-composer-height, 152px) + 32px); background: var(--dsw-alias-bg-layer-1);
+  scroll-padding-bottom: calc(var(--dsh-composer-height, 152px) + 32px);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -32,6 +33,7 @@
 .group summary::-webkit-details-marker { display: none; }
 .group summary span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .group summary small { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); }
+.conclusion { overflow: hidden; margin: 1px 0 0; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); text-overflow: ellipsis; white-space: nowrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 13px 10px; }
 .chips button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
 .details { display: flex; flex-direction: column; gap: 6px; padding: 9px 13px 13px; border-top: 1px solid var(--dsw-alias-border-l1); }

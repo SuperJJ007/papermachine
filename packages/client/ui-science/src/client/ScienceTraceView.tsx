@@ -91,6 +91,7 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
         )}
         {model.turns.map((turn) => {
           const dialogues = model.dialogues.filter(item => item.turn === turn)
+          const conclusion = dialogues.find(item => item.actor === 'agent')
           const group = model.groups.find(item => item.turn === turn)
           const humanEdits = model.humanEdits.filter(item => item.turn === turn)
           return (
@@ -114,7 +115,11 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
                       : t('trace.groupStatusFailed', {
                         attempts: group.runs.length, failures: group.failedCount,
                         duration: formatScienceTraceDuration(group.durationMs, t),
-                      })}</small></span>
+                      })}</small>
+                    {conclusion !== undefined && (
+                      <span className={css.conclusion}>{compact(conclusion.text)}</span>
+                    )}
+                    </span>
                   </summary>
                   {group.artifacts.length > 0 && <div className={css.chips}>{group.artifacts.map(artifact => (
                     <button type="button" data-anchor={artifact.anchor}
@@ -159,7 +164,7 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
                   }}>{t('trace.openArtifact')}</button></div>
                 </article>
               ))}
-              {dialogues.filter(item => item.actor === 'agent').map(item => (
+              {group === undefined && dialogues.filter(item => item.actor === 'agent').map(item => (
                 <article className={css.node} data-actor="agent" data-kind="dialogue" data-anchor={item.anchor} key={item.anchor}>
                   <span className={css.icon}><IconThinkOutline16 /></span>
                   <div><b>{t('trace.agentConclusion')}</b><p>{compact(item.text)}</p></div>

@@ -131,6 +131,7 @@ export function buildScienceTraceModel(
   const callTurns = new Map<string, number>()
   const calls = new Map<string, { readonly name: string; readonly turn: number }>()
   const dialogues: ScienceTraceDialogue[] = []
+  const conclusions = new Map<number, ScienceTraceDialogue>()
   let inferredTurn = 0
   for (const node of nodes) {
     if (node.kind === 'user') {
@@ -156,9 +157,12 @@ export function buildScienceTraceModel(
       }
     }
     const answer = [...node.blocks].reverse().find(block => block.kind === 'text' && block.text.trim() !== '')
-    if (answer?.kind === 'text') dialogues.push({ actor: 'agent', turn: node.turn, text: answer.text.trim(), seq: node.seq,
-      selection: false, anchor: `seq:${node.seq}` })
+    if (answer?.kind === 'text') conclusions.set(node.turn, {
+      actor: 'agent', turn: node.turn, text: answer.text.trim(), seq: node.seq,
+      selection: false, anchor: `seq:${node.seq}`,
+    })
   }
+  dialogues.push(...conclusions.values())
 
   const lastTurn = Math.max(1, inferredTurn)
   const artifactsByTurn = new Map<number, ScienceClientArtifactVersion[]>()

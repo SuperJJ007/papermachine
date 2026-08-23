@@ -339,9 +339,11 @@ function ArtifactMetaRail({ chart, snapshot, t }: {
     <dl className={css.metaRail}>
       <div><dt>{t('details.artifact.format')}</dt><dd>{artifactType(chart, t)}</dd></div>
       <div><dt>{t('details.artifact.versionLabel')}</dt><dd>{t('artifact.version', { version: chart.version })}</dd></div>
-      <div><dt>{t('details.artifact.source')}</dt><dd>{turn === undefined
+      <div><dt>{t('details.artifact.source')}</dt><dd>{chart.origin === 'human-edit'
         ? t('details.artifact.humanSource')
-        : t('artifact.generation', { turn, version: chart.version }).split(' · ')[0]}</dd></div>
+        : turn === undefined
+          ? t('details.artifact.sourcePending')
+          : t('details.artifact.generationSource', { turn })}</dd></div>
       <div><dt>{t('details.artifact.status')}</dt><dd>{chart.attachment.mediaType === 'application/vnd.vega-lite+json'
         ? t('details.artifact.editable') : t('details.artifact.readOnly')}</dd></div>
     </dl>
@@ -594,6 +596,7 @@ function ArtifactTab({
         }]) }}
         onRemoveTarget={(next) => {
           const selection = selectionFor(next)
+          /* v8 ignore next -- ArtifactContent only offers Remove for a target that is already staged. */
           if (selection !== undefined) removeFromConversation(selection)
         }}
         onCommitStyle={async (spec) => {

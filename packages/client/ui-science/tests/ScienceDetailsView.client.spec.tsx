@@ -22,7 +22,7 @@ import {
   ScienceDetailsView,
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
-import { applyStyle, restrictedVegaLoader, selectableSpecPaths } from '../src/client/ArtifactContent.tsx'
+import { applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel } from '../src/client/ArtifactContent.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
@@ -77,11 +77,17 @@ describe('Vega-Lite style helpers', () => {
 
   it('enumerates every supported composition operator and ignores non-spec members', () => {
     expect(selectableSpecPaths({
+      title: 'Chart title',
       layer: [{ mark: 'bar' }, null],
       hconcat: [{ encoding: { x: { field: 'x' } } }],
       concat: [{ mark: 'point' }],
       spec: [],
-    })).toEqual(['layer.0.mark', 'hconcat.0.encoding.x', 'concat.0.mark'])
+    })).toEqual(['title', 'layer.0.mark', 'hconcat.0.encoding.x', 'concat.0.mark'])
+  })
+
+  it('localizes the bounded target labels and preserves an unknown nested path', () => {
+    expect(['title', 'encoding.y', 'encoding.x', 'mark', 'encoding.color', 'layer.0.mark'].map(path => specPathLabel(path, t)))
+      .toEqual(['Title', 'Y axis', 'X axis', 'Mark style', 'Color / legend', 'layer.0.mark'])
   })
 
   it('immutably applies every bounded style field and leaves invalid structural paths unchanged', () => {
@@ -96,6 +102,14 @@ describe('Vega-Lite style helpers', () => {
       },
     }
     expect(applyStyle(source, 'mark', 'font-size', 14)).toMatchObject({ mark: { type: 'text', fontSize: 14 } })
+    expect(applyStyle({ title: 'Before' }, 'title', 'label', 'After')).toEqual({ title: 'After' })
+    expect(applyStyle({ title: { text: 'Before' } }, 'title', 'label', 'After')).toEqual({ title: { text: 'After' } })
+    expect(applyStyle({ title: 'Before' }, 'title', 'font-size', 18)).toEqual({ title: { text: 'Before', fontSize: 18 } })
+    expect(applyStyle({ title: { text: 'Before' } }, 'title', 'color', '#fff')).toEqual({ title: { text: 'Before', color: '#fff' } })
+    expect(applyStyle({ title: 7 }, 'title', 'color', '#fff')).toEqual({ title: { color: '#fff' } })
+    expect(applyStyle({ title: [] }, 'title', 'label', 'After')).toEqual({ title: { text: 'After' } })
+    expect(applyStyle({ title: null }, 'title', 'font-size', 18)).toEqual({ title: { fontSize: 18 } })
+    expect(applyStyle({ title: [] }, 'title', 'color', '#fff')).toEqual({ title: { color: '#fff' } })
     expect(applyStyle({ mark: 7 }, 'mark', 'color', '#fff')).toEqual({ mark: { color: '#fff' } })
     expect(applyStyle(source, 'encoding.x', 'label', 'Axis')).toMatchObject({ encoding: { x: { title: 'Axis' } } })
     expect(applyStyle(source, 'encoding.color', 'color', '#f00')).toMatchObject({ encoding: { color: { scale: { domain: ['a'], range: ['#f00'] } } } })
@@ -289,6 +303,16 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByText('Other')).toBeTruthy()
   })
 
+  it('formats kilobyte and megabyte artifact sizes', () => {
+    const science = baseProjection({ artifacts: [
+      chart({ artifactId: 'chart-kb' as never, title: 'Kilobytes', attachment: { attachmentId: 'sha256:kb' as never, mediaType: 'image/png', bytes: 2_048, width: 10, height: 10 } }),
+      chart({ artifactId: 'chart-mb' as never, title: 'Megabytes', attachment: { attachmentId: 'sha256:mb' as never, mediaType: 'image/png', bytes: 2_097_152, width: 10, height: 10 } }),
+    ] })
+    render(<ScienceDetailsView {...props(science)} />)
+    expect(screen.getByText(/2.0 KB/)).toBeTruthy()
+    expect(screen.getByText(/2.0 MB/)).toBeTruthy()
+  })
+
   it('labels a generated artifact with its turn, version, and parent version', () => {
     const science = baseProjection({
       artifacts: [chart({
@@ -390,6 +414,26 @@ describe('ScienceDetailsView: opening a tab', () => {
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
     expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'File library' }))
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
+    expect(screen.getByText('v2 title')).toBeTruthy()
+  })
+
+  it('shows the generating turn in the viewer source rail after skipping unrelated nodes and calls', () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const snapshot = {
+      ...emptySnapshot(),
+      nodes: [
+        { kind: 'user', seq: 1, content: [{ type: 'text', text: 'Create it' }] },
+        { kind: 'assistant', seq: 2, turn: 1, blocks: [{ kind: 'text', text: 'Working' }] },
+        { kind: 'assistant', seq: 3, turn: 2, blocks: [{ kind: 'tool-call', callId: 'other-call', name: 'run_python' }] },
+        { kind: 'assistant', seq: 4, turn: 3, blocks: [{ kind: 'tool-call', callId: 'call-chart-1', name: 'annotate_artifact' }] },
+      ],
+    } as unknown as ConversationSnapshot
+    render(<ScienceDetailsView {...props(science, { snapshot })} />)
+    fireEvent.click(screen.getByText('Loss curve'))
+    expect(screen.getByText('Generated in turn 3')).toBeTruthy()
+    expect(screen.getByText('Read-only')).toBeTruthy()
   })
 })
 
@@ -887,10 +931,11 @@ describe('ScienceDetailsView: content dispatch', () => {
 
     fireEvent.change(screen.getByLabelText('Edit note for region 25%,25%'), { target: { value: 'brighten this' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add region 25%,25% to the conversation' }))
+    fireEvent.change(screen.getByLabelText('Edit note for region 25%,25%'), { target: { value: 'brighten this more' } })
     expect(selections.store(SESSION).getSnapshot()).toEqual([{
       artifactId: 'chart-1', version: 2,
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
-      comment: 'brighten this',
+      comment: 'brighten this more',
     }])
     // The control now offers Remove; un-staging clears it back out.
     expect(screen.queryByRole('button', { name: 'Add region 25%,25% to the conversation' })).toBeNull()

@@ -42,8 +42,8 @@ export interface ScienceArtifactProvenanceProps {
   t: TranslateNS<'science'>
 }
 
-function compactSummary(text: string): string {
-  return text.replace(/\s+/gu, ' ').trim().slice(0, 180)
+function normalizedSummary(text: string): string {
+  return text.replace(/\s+/gu, ' ').trim()
 }
 
 function userText(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>): string {
@@ -69,8 +69,8 @@ function generationSummary(snapshot: ConversationSnapshot, callId: string): {
     : undefined
   return {
     turn: assistant.turn,
-    user: priorUser?.kind === 'user' || priorUser?.kind === 'steering' ? compactSummary(userText(priorUser)) : '',
-    agent: agent?.kind === 'text' ? compactSummary(agent.text) : '',
+    user: priorUser?.kind === 'user' || priorUser?.kind === 'steering' ? normalizedSummary(userText(priorUser)) : '',
+    agent: agent?.kind === 'text' ? normalizedSummary(agent.text) : '',
   }
 }
 

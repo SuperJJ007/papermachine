@@ -1175,7 +1175,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
+      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /** Selected Details entry id, or `null` while the column is closed. */\n  detailsView: string | null\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
     ],
     ownerPropsReferences: [
       'ChatNodeOwnerProps',
@@ -1196,7 +1196,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-agent-preset AgentPresetLabel id \'agent-preset\'',
       'client-ui-jobs JobListAction id \'job-list\'',
-      'client-ui-science ScienceHeaderAction',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.actions\', () => ctx.slots.register(\n      { name: \'conversation.session.header.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1262,7 +1261,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
+      '/** Header actions derive their state from the standard session/global kit. */\nexport interface ConversationHeaderActionOwnerProps {\n  /** Selected Details entry id, or `null` while the column is closed. */\n  detailsView: string | null\n  /**\n   * Toggle a registered `conversation.details.view` entry from the session\n   * header: the panel opens on `id` when it is closed or showing another\n   * entry, and closes when it is already showing `id` — one header control\n   * owns both directions of the panel it opened. The chat-node path keeps\n   * open-only semantics ({@link ChatNodeOwnerProps.openDetailsView}): a click\n   * on a transcript row inspects that row, and must never close the panel.\n   */\n  toggleDetailsView: (id: string) => void\n}',
     ],
     ownerPropsReferences: [
       'ChatNodeOwnerProps',
@@ -1281,6 +1280,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-science ScienceHeaderAction',
       'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
     ],
     replaceRisk: 'none',

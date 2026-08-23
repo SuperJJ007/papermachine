@@ -55,6 +55,7 @@ function fixture() {
   const calls = Array.from({ length: 8 }, (_, index) => `attempt-${String(index + 1)}`)
   const nodes: ConversationNode[] = [
     { kind: 'user', seq: 1, time: 1_000, source: { kind: 'user' }, content: [{ type: 'text', text: 'Build the chart' }] },
+    assistant(1, 9, [], 'Intermediate narration that must not become a conclusion card.'),
     assistant(1, 10, calls, 'The chart is ready.'),
     { kind: 'user', seq: 11, time: 11_000, source: { kind: 'science-edit' },
       content: [{ type: 'text', text: 'Change the selected axis' }] },
@@ -121,6 +122,8 @@ describe('Science semantic trace', () => {
     expect(model.turns).toEqual([1, 2])
     expect(model.groups).toHaveLength(2)
     expect(model.groups[0]?.runs).toHaveLength(8)
+    expect(model.dialogues.filter(item => item.actor === 'agent' && item.turn === 1))
+      .toMatchObject([{ seq: 10, text: 'The chart is ready.' }])
     expect(model.groups[0]?.title).toEqual({ kind: 'generate', name: 'chart.vl.json', count: 2 })
     expect(model.groups[0]?.artifacts.map(item => item.action)).toEqual(['created', 'curated'])
     expect(model.groups[1]?.failedCount).toBe(1)
@@ -220,6 +223,8 @@ describe('Science semantic trace', () => {
 
     expect(document.querySelector('[data-kind="selection"]')?.getAttribute('data-actor')).toBe('user')
     expect(document.querySelector('details[data-actor="agent"]')).toBeTruthy()
+    expect(screen.queryByText(/Intermediate narration/)).toBeNull()
+    expect(screen.getByText('The chart is ready.')).toBeTruthy()
     expect(document.querySelectorAll('details[open]')).toHaveLength(1)
     const failed = screen.getByRole('button', { name: /python · 500 ms · failed/ })
     expect(failed.getAttribute('data-anchor')).toBe('call:repair-1')
@@ -243,5 +248,19 @@ describe('Science semantic trace', () => {
       useProjection: () => null, t,
     } as unknown as ScienceTraceViewProps)} />)
     expect(screen.getByText(/Intent groups will appear/)).toBeTruthy()
+  })
+
+  it('renders the final assistant text as a standalone conclusion when a turn has no intent group', () => {
+    const nodes = [
+      { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'Answer directly' }] },
+      assistant(1, 2, [], 'Direct conclusion'),
+    ] as ConversationNode[]
+    const snapshot = { nodes, turnTimings: new Map() } as unknown as ConversationSnapshot
+    render(<ScienceTraceView {...({
+      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
+      useProjection: () => ({ ...fixture().science, runs: [], artifacts: [] }), t,
+    } as unknown as ScienceTraceViewProps)} />)
+    expect(screen.getByText('Direct conclusion')).toBeTruthy()
+    expect(document.querySelector('[data-kind="dialogue"]')).toBeTruthy()
   })
 })

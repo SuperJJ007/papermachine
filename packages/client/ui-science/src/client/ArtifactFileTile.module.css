@@ -16,6 +16,20 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.tile svg {
+  width: 56px;
+  height: 40px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.tile[data-kind='chart'] rect {
+  fill: var(--dsw-alias-state-business-primary);
+  stroke: none;
+}
+
 .ext {
   font-size: 10px;
   line-height: 12px;

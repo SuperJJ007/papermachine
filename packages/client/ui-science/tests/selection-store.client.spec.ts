@@ -45,6 +45,19 @@ describe('selection-store: openTab', () => {
   })
 })
 
+describe('selection-store: showLibrary', () => {
+  it('keeps open tabs while returning the active body to the library', () => {
+    const s = store()
+    s.actions.openTab({ artifactId: A, version: 1 })
+    s.actions.setView('provenance')
+    s.actions.setLightboxOpen(true)
+    s.actions.showLibrary()
+    expect(s.getSnapshot()).toMatchObject({
+      openArtifacts: [{ artifactId: A, version: 1 }], activeArtifactId: null, view: 'content', lightboxOpen: false,
+    })
+  })
+})
+
 describe('selection-store: activateTab', () => {
   it('activates an already-open tab and returns its view to content', () => {
     const s = store()

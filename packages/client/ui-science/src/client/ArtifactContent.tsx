@@ -125,6 +125,7 @@ export function selectableSpecPaths(document: VegaLiteDocument): string[] {
     if (typeof node !== 'object' || node === null || Array.isArray(node)) return
     const at = (segment: string): string => prefix === '' ? segment : `${prefix}.${segment}`
     const record = node as Record<string, unknown>
+    if (record['title'] !== undefined) paths.push(at('title'))
     if (record['mark'] !== undefined) paths.push(at('mark'))
     const encoding = record['encoding']
     if (typeof encoding === 'object' && encoding !== null && !Array.isArray(encoding)) {
@@ -138,6 +139,16 @@ export function selectableSpecPaths(document: VegaLiteDocument): string[] {
   }
   visit(document, '')
   return paths
+}
+
+/** Human-readable label for a structural Vega-Lite target. */
+export function specPathLabel(path: string, t: TranslateNS<'science'>): string {
+  if (path === 'title') return t('edit.specPath.title')
+  if (path === 'encoding.y') return t('edit.specPath.y')
+  if (path === 'encoding.x') return t('edit.specPath.x')
+  if (path === 'mark') return t('edit.specPath.mark')
+  if (path === 'encoding.color') return t('edit.specPath.color')
+  return path
 }
 
 function updateSpecPath(
@@ -161,6 +172,17 @@ function updateSpecPath(
 
 export function applyStyle(document: VegaLiteDocument, path: string, field: StyleField, value: string | number): VegaLiteDocument {
   return updateSpecPath(document, path.split('.'), (target) => {
+    if (path.endsWith('title')) {
+      if (field === 'label') {
+        if (typeof target === 'string') return value
+        const title = typeof target === 'object' && target !== null && !Array.isArray(target) ? target : {}
+        return { ...title, text: value }
+      }
+      const title = typeof target === 'string'
+        ? { text: target }
+        : typeof target === 'object' && target !== null && !Array.isArray(target) ? target : {}
+      return { ...title, [field === 'font-size' ? 'fontSize' : field]: value }
+    }
     if (path.endsWith('mark')) {
       const mark = typeof target === 'string' ? { type: target } : typeof target === 'object' && target !== null ? target : {}
       return { ...mark, [field === 'font-size' ? 'fontSize' : field]: value }
@@ -201,7 +223,8 @@ function StyleEditor({ target, document, onChange, onCommit, t }: {
       .catch((error: unknown) => { setState({ error: error instanceof Error ? error.message : String(error) }) })
   }
   const encoding = target.path.includes('encoding.')
-  const color = target.path.endsWith('mark') || target.path.endsWith('encoding.color')
+  const title = target.path.endsWith('title')
+  const color = title || target.path.endsWith('mark') || target.path.endsWith('encoding.color')
   return (
     <section className={css.stylePanel} aria-label={t('style.title')}>
       <div className={css.styleHeader}>
@@ -224,7 +247,7 @@ function StyleEditor({ target, document, onChange, onCommit, t }: {
           }}
         />
       </label>
-      {encoding && (
+      {(encoding || title) && (
         <label className={css.styleControl}>
           <span>{t('style.label')}</span>
           <input type="text" onChange={(event) => { setStyle('label', event.currentTarget.value) }} />
@@ -323,48 +346,49 @@ function VegaLiteArtifact({
       {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
       {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
       {paths.length > 0 && (
-        <div className={css.specTargets} aria-label={t('edit.specTargets')}>
-          {paths.map((path) => {
-            const target = { kind: 'spec-path' as const, path }
-            const added = isTargetAdded(target)
-            const comment = comments[path] ?? targetComment(target)
-            return (
-              <div className={css.specTargetRow} key={path}>
-                <button
-                  type="button"
-                  className={css.specTarget}
-                  aria-pressed={selectionTarget?.kind === 'spec-path' && selectionTarget.path === path}
-                  onClick={() => { onSelectTarget(target) }}
-                >
-                  {path}
-                </button>
-                <input
-                  className={css.specComment}
-                  value={comment}
-                  aria-label={t('edit.targetComment', { target: path })}
-                  placeholder={t('edit.targetCommentPlaceholder')}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    setComments(current => ({ ...current, [path]: value }))
-                    // Already staged: an edit must not silently diverge from
-                    // the chip and the outgoing science-edit message, so it
-                    // updates the staged selection immediately rather than
-                    // waiting for another Add click.
-                    if (added) onAddTarget(target, value)
-                  }}
-                />
-                <button
-                  type="button"
-                  className={css.specAdd}
-                  aria-label={added ? t('edit.removeTarget', { target: path }) : t('edit.addTarget', { target: path })}
-                  onClick={() => { if (added) onRemoveTarget(target); else onAddTarget(target, comment) }}
-                >
-                  {added ? '−' : '+'}
-                </button>
-              </div>
-            )
-          })}
-        </div>
+        <section className={css.elementPanel} aria-label={t('edit.specTargets')}>
+          <h3>{t('edit.elements')}</h3>
+          <div className={css.specTargets}>
+            {paths.map((path) => {
+              const target = { kind: 'spec-path' as const, path }
+              const added = isTargetAdded(target)
+              const comment = comments[path] ?? targetComment(target)
+              return (
+                <div className={css.specTargetRow} key={path}>
+                  <button
+                    type="button"
+                    className={css.specTarget}
+                    aria-pressed={selectionTarget?.kind === 'spec-path' && selectionTarget.path === path}
+                    onClick={() => { onSelectTarget(target) }}
+                  >
+                    {specPathLabel(path, t)}
+                  </button>
+                  <input
+                    className={css.specComment}
+                    value={comment}
+                    aria-label={t('edit.targetComment', { target: specPathLabel(path, t) })}
+                    placeholder={t('edit.targetCommentPlaceholder')}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setComments(current => ({ ...current, [path]: value }))
+                      if (added) onAddTarget(target, value)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={css.specAdd}
+                    aria-label={added
+                      ? t('edit.removeTarget', { target: specPathLabel(path, t) })
+                      : t('edit.addTarget', { target: specPathLabel(path, t) })}
+                    onClick={() => { if (added) onRemoveTarget(target); else onAddTarget(target, comment) }}
+                  >
+                    {added ? '−' : '+'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
       {selectionTarget?.kind === 'spec-path' && renderedDocument !== undefined && (
         <StyleEditor

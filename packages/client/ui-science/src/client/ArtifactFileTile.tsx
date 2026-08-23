@@ -9,7 +9,6 @@
  * the tile itself is `aria-hidden`.
  */
 
-import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './ArtifactFileTile.module.css'
 
 /**
@@ -35,9 +34,22 @@ export function artifactExtensionLabel(mediaType: string): string {
  * @returns a fixed 64px icon-plus-extension tile, hidden from the accessibility tree.
  */
 export function ArtifactFileTile({ mediaType }: { mediaType: string }) {
+  const kind = mediaType === 'application/vnd.vega-lite+json'
+    ? 'chart'
+    : mediaType === 'text/csv'
+      ? 'table'
+      : mediaType === 'application/json'
+        ? 'json'
+        : 'document'
   return (
-    <div className={css.tile} aria-hidden="true">
-      <IconDataOutline16 size={20} />
+    <div className={css.tile} data-kind={kind} aria-hidden="true">
+      {kind === 'chart'
+        ? <svg viewBox="0 0 72 52"><path d="M12 44h52M12 44V8" /><rect x="19" y="36" width="10" height="8" /><rect x="35" y="26" width="10" height="18" /><rect x="51" y="14" width="10" height="30" /></svg>
+        : kind === 'table'
+          ? <svg viewBox="0 0 72 52"><rect x="6" y="6" width="60" height="40" rx="4" /><path d="M6 17h60M6 28h60M6 39h60M26 6v40M46 6v40" /></svg>
+          : kind === 'json'
+            ? <svg viewBox="0 0 72 52"><path d="M28 10c-5 0-4 6-4 9s-4 4-6 4c2 0 6 1 6 4s-1 9 4 9M44 10c5 0 4 6 4 9s4 4 6 4c-2 0-6 1-6 4s1 9-4 9" /></svg>
+            : <svg viewBox="0 0 72 52"><path d="M26 6h14l8 8v32H26a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM40 6v8h8M30 22h12M30 29h12M30 36h8" /></svg>}
       <span className={css.ext}>{artifactExtensionLabel(mediaType)}</span>
     </div>
   )

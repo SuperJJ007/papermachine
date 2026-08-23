@@ -180,9 +180,10 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   )
 }
 
-function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t }: {
+function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t }: {
   chart: ScienceClientArtifactVersion
   versions: readonly ScienceClientArtifactVersion[]
+  onBack: () => void
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
   onMaximize: () => void
@@ -202,12 +203,10 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
   return (
     <div className={css.toolbar}>
       <div className={css.toolbarTitle}>
-        <span className={css.chartTitle}>{chart.title}</span>
-        {/* An auto-captured file's title is exactly its logical name's
-            basename (capture.ts); when the logical name has no directory
-            component the two are identical, so the second line is dropped
-            rather than repeating the same text. */}
-        {chart.title !== chart.logicalName && <span className={css.chartLogicalName}>{chart.logicalName}</span>}
+        <button type="button" className={css.libraryBack} onClick={onBack}>
+          <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
+        </button>
+        <span className={css.viewerTitle}>{chart.title}</span>
       </div>
       <div className={css.toolbarControls}>
         <div className={css.stepper}>
@@ -306,61 +305,105 @@ function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): numbe
   return node?.kind === 'assistant' ? node.turn : undefined
 }
 
-function ArtifactGallery({ artifacts, snapshot, loadImage, onOpen, t }: {
-  artifacts: readonly ScienceClientArtifactVersion[]
+function artifactType(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
+  switch (chart.attachment.mediaType) {
+    case 'application/vnd.vega-lite+json': return t('details.artifact.typeChart')
+    case 'text/csv': return t('details.artifact.typeDataset')
+    case 'application/json': return t('details.artifact.typeJson')
+    case 'image/png': case 'image/jpeg': case 'image/webp': case 'image/gif': return t('details.artifact.typeImage')
+    case 'text/markdown': case 'text/plain': return t('details.artifact.typeDocument')
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) return `${String(bytes)} B`
+  if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`
+  return `${(bytes / 1_048_576).toFixed(1)} MB`
+}
+
+function artifactFacts(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
+  const dimensions = 'width' in chart.attachment
+    ? t('details.artifact.dimensions', { width: chart.attachment.width, height: chart.attachment.height })
+    : undefined
+  return [artifactType(chart, t), t('artifact.version', { version: chart.version }), dimensions, formatBytes(chart.attachment.bytes)]
+    .filter((value): value is string => value !== undefined).join(' · ')
+}
+
+function ArtifactMetaRail({ chart, snapshot, t }: {
+  chart: ScienceClientArtifactVersion
   snapshot: ConversationSnapshot
+  t: TranslateNS<'science'>
+}) {
+  const turn = chart.origin === 'human-edit' ? undefined : artifactTurn(snapshot, chart.toolCallId)
+  return (
+    <dl className={css.metaRail}>
+      <div><dt>{t('details.artifact.format')}</dt><dd>{artifactType(chart, t)}</dd></div>
+      <div><dt>{t('details.artifact.versionLabel')}</dt><dd>{t('artifact.version', { version: chart.version })}</dd></div>
+      <div><dt>{t('details.artifact.source')}</dt><dd>{turn === undefined
+        ? t('details.artifact.humanSource')
+        : t('artifact.generation', { turn, version: chart.version }).split(' · ')[0]}</dd></div>
+      <div><dt>{t('details.artifact.status')}</dt><dd>{chart.attachment.mediaType === 'application/vnd.vega-lite+json'
+        ? t('details.artifact.editable') : t('details.artifact.readOnly')}</dd></div>
+    </dl>
+  )
+}
+
+function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
+  artifacts: readonly ScienceClientArtifactVersion[]
   loadImage: ImageLoader
   onOpen: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
   const latest = latestArtifacts(artifacts)
-  if (latest.length === 0) return <p className={css.notice} role="status">{t('details.artifacts.empty')}</p>
   return (
-    <ul className={css.chartList}>
-      {latest.map((artifact) => {
-        const { attachment } = artifact
-        const turn = artifact.origin === 'human-edit' ? undefined : artifactTurn(snapshot, artifact.toolCallId)
-        return (
-          <li key={artifact.artifactId} className={css.chartItem}>
-            {/* A real <button> wrapping MessageImage's own thumbnail <button>
+    <div className={css.library}>
+      <section className={css.librarySection}>
+        <div className={css.librarySectionHead}><h3>{t('details.artifacts.uploaded')}</h3><span>0</span></div>
+        <p className={css.libraryEmpty}>{t('details.artifacts.uploadedEmpty')}</p>
+      </section>
+      <section className={css.librarySection}>
+        <div className={css.librarySectionHead}><h3>{t('details.artifacts.generated')}</h3><span>{latest.length}</span></div>
+        {latest.length === 0
+          ? <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>
+          : <ul className={css.chartList}>{latest.map((artifact) => {
+            const { attachment } = artifact
+            return (
+              <li key={artifact.artifactId} className={css.chartItem}>
+                {/* A real <button> wrapping MessageImage's own thumbnail <button>
                 is invalid HTML that also breaks click delivery (a nested
                 button swallows clicks meant for its ancestor, even from a
                 sibling outside the inner button — proven by this exact
                 structure in this package's own tests); a div with a button
                 role is the same pattern ScienceArtifactRow's row uses. */}
-            {/* An explicit label: without it this role="button" wrapper's
+                {/* An explicit label: without it this role="button" wrapper's
                 accessible name is computed from its contents, which include
                 MessageImage's own button — so the wrapper would announce (and
                 match by role+name as) whatever state that thumbnail is in. */}
-            <div
-              className={css.galleryButton}
-              role="button"
-              aria-label={t('details.artifact.select', { title: artifact.title, version: artifact.version })}
-              tabIndex={0}
-              onClick={() => { onOpen({ artifactId: artifact.artifactId, version: artifact.version }) }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                onOpen({ artifactId: artifact.artifactId, version: artifact.version })
-              }}
-            >
-              {'width' in attachment
-                ? <MessageImageTile attachment={attachment} loadImage={loadImage} t={t} />
-                : <ArtifactFileTile mediaType={attachment.mediaType} />}
-              <div className={css.chartMeta}>
-                <span className={css.chartTitle}>{artifact.title}</span>
-                <span className={css.chartLogicalName}>{artifact.logicalName}</span>
-                <span className={css.badge}>{turn === undefined
-                  ? t('artifact.version', { version: artifact.version })
-                  : artifact.parent === undefined
-                    ? t('artifact.generation', { turn, version: artifact.version })
-                    : t('artifact.generationParent', { turn, version: artifact.version, parent: artifact.parent.version })}</span>
-              </div>
-            </div>
-          </li>
-        )
-      })}
-    </ul>
+                <div
+                  className={css.galleryButton}
+                  role="button"
+                  aria-label={t('details.artifact.select', { title: artifact.title, version: artifact.version })}
+                  tabIndex={0}
+                  onClick={() => { onOpen({ artifactId: artifact.artifactId, version: artifact.version }) }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    onOpen({ artifactId: artifact.artifactId, version: artifact.version })
+                  }}
+                >
+                  {'width' in attachment
+                    ? <MessageImageTile attachment={attachment} loadImage={loadImage} t={t} />
+                    : <ArtifactFileTile mediaType={attachment.mediaType} />}
+                  <div className={css.chartMeta}>
+                    <span className={css.chartTitle}>{artifact.title}</span>
+                    <span className={css.libraryFacts}>{artifactFacts(artifact, t)}</span>
+                  </div>
+                </div>
+              </li>
+            )
+          })}</ul>}
+      </section>
+    </div>
   )
 }
 
@@ -408,10 +451,9 @@ function OutcomeSection({ outcome, t }: {
 }
 
 /** No open tabs: a gallery of latest artifact versions (opening one opens its tab), plus the Outcome kept reachable below it. */
-function LandingView({ artifacts, outcome, snapshot, loadImage, onOpenTab, t }: {
+function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
   outcome: ScienceClientOutcomePublication | null
-  snapshot: ConversationSnapshot
   loadImage: ImageLoader
   onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
@@ -420,7 +462,7 @@ function LandingView({ artifacts, outcome, snapshot, loadImage, onOpenTab, t }: 
     <div className={css.landing}>
       <section className={css.section}>
         <div className={css.sectionLabel}>{t('details.artifacts.title')}</div>
-        <ArtifactGallery artifacts={artifacts} snapshot={snapshot} loadImage={loadImage} onOpen={onOpenTab} t={t} />
+        <ArtifactGallery artifacts={artifacts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
       </section>
       <OutcomeSection outcome={outcome} t={t} />
     </div>
@@ -520,6 +562,7 @@ function ArtifactTab({
       <ArtifactToolbar
         chart={chart}
         versions={versions}
+        onBack={() => { actions.showLibrary() }}
         onStepVersion={(version) => { actions.setTabVersion({ artifactId: chart.artifactId, version }) }}
         onOpenProvenance={() => { actions.setView('provenance') }}
         onMaximize={() => { actions.setLightboxOpen(true) }}
@@ -528,6 +571,7 @@ function ArtifactTab({
         loadText={loadText}
         t={t}
       />
+      <ArtifactMetaRail chart={chart} snapshot={snapshot} t={t} />
       <ArtifactContent
         // Keyed by exact artifact identity: forces a full remount (comment
         // drafts, the Vega-Lite working document, an in-progress raster
@@ -599,12 +643,8 @@ function ArtifactViewer({
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
 
-  // Every selection-store action maintains one invariant
-  // (selection-store.client.spec.ts): activeArtifactId is null iff
-  // openArtifacts is empty, otherwise it names an entry in openArtifacts —
-  // so `activeTab === undefined` here means exactly "no open tabs", the
-  // landing view's gate, without a second, separately-tracked emptiness
-  // check on `openArtifacts.length`.
+  // `showLibrary` deliberately leaves open tabs intact while clearing the
+  // active id; every non-null active id still names one open tab.
   const activeTab = openArtifacts.find(tab => tab.artifactId === activeArtifactId)
   if (activeTab === undefined) {
     return (
@@ -612,7 +652,6 @@ function ArtifactViewer({
         <LandingView
           artifacts={artifacts}
           outcome={science.outcome}
-          snapshot={snapshot}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
           t={t}

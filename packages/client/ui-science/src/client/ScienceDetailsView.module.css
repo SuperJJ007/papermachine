@@ -7,6 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .preset {
@@ -94,7 +95,7 @@
 
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
@@ -105,6 +106,45 @@
   gap: 2px;
   min-width: 0;
 }
+
+.libraryBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.viewerTitle {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaRail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.metaRail div { min-width: 0; }
+.metaRail dt { color: var(--dsw-alias-label-caption); font-size: 10px; line-height: 15px; }
+.metaRail dd { overflow: hidden; margin: 1px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 
 .toolbarControls {
   display: flex;
@@ -228,7 +268,7 @@
 
 .vegaLite {
   width: 100%;
-  min-height: 240px;
+  min-height: 360px;
   overflow: auto;
 }
 
@@ -241,6 +281,23 @@
 .specTargets {
   display: grid;
   gap: 6px;
+}
+
+.elementPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.elementPanel h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
 }
 
 .specTargetRow {
@@ -399,9 +456,53 @@
   flex-direction: column;
 }
 
-.chartList {
+.library,
+.librarySection {
   display: flex;
   flex-direction: column;
+}
+
+.library { gap: 18px; }
+.librarySection { gap: 8px; }
+
+.librarySectionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.librarySectionHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.librarySectionHead span {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.libraryEmpty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chartList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -414,19 +515,26 @@
 
 .galleryButton {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   width: 100%;
-  padding: 4px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
   text-align: left;
   cursor: pointer;
 }
 
 .galleryButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-label-caption);
+  background: var(--dsw-alias-bg-base);
+}
+
+.galleryButton > :first-child {
+  align-self: center;
 }
 
 .chartMeta {
@@ -443,6 +551,19 @@
   font-size: 13px;
   line-height: 18px;
   color: var(--dsw-alias-label-primary);
+}
+
+.libraryFacts {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .metaRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .chartLogicalName {

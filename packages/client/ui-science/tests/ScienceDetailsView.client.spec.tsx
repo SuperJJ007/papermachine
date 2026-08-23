@@ -284,10 +284,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getAllByText(/^v\d$/)).toHaveLength(2)
-    expect(screen.getByText('v2')).toBeTruthy()
+    expect(screen.getByText('Image · v2 · 10 × 10 · 100 B')).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
-    expect(screen.getAllByText('loss-curve.png')).toHaveLength(2)
     expect(screen.getByText('Other')).toBeTruthy()
   })
 
@@ -306,7 +304,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    expect(screen.getByText('Generated in turn 3 · v5 · from v4')).toBeTruthy()
+    expect(screen.getByText('Image · v5 · 10 × 10 · 100 B')).toBeTruthy()
   })
 
   it('labels first-generation and human-edited artifacts without internal generation facts', () => {
@@ -320,8 +318,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
-    expect(screen.getByText('Generated in turn 2 · v1')).toBeTruthy()
-    expect(screen.getByText('v2')).toBeTruthy()
+    expect(screen.getByText('Image · v1 · 10 × 10 · 100 B')).toBeTruthy()
+    expect(screen.getByText('Chart · v2 · 40 B')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -389,7 +387,8 @@ describe('ScienceDetailsView: opening a tab', () => {
     fireEvent.click(screen.getByText('v2 title'))
 
     expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
-    expect(screen.getByText('loss-curve.png')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
+    expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
   })
 })
@@ -488,18 +487,16 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
   })
 })
 
-describe('ScienceDetailsView: toolbar title/logicalName', () => {
-  it('shows both lines when an artifact\'s title differs from its logical name', () => {
+describe('ScienceDetailsView: viewer title', () => {
+  it('shows the human title without repeating the logical filename', () => {
     const science = baseProjection({
       artifacts: [chart({ title: 'Loss curve', logicalName: 'loss-curve.png' })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    // The title shows twice (tab label + toolbar title); the logical name
-    // shows once more, only in the toolbar's second line.
     expect(screen.getAllByText('Loss curve')).toHaveLength(2)
-    expect(screen.getByText('loss-curve.png')).toBeTruthy()
+    expect(screen.queryByText('loss-curve.png')).toBeNull()
   })
 
   it('shows the name once when an auto-captured artifact\'s title equals its logical name', () => {
@@ -609,9 +606,9 @@ describe('ScienceDetailsView: content dispatch', () => {
     store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
     render(<ScienceDetailsView {...props(science, { store, loadText, addToConversation })} />)
 
-    const comment = await screen.findByRole('textbox', { name: 'Edit note for encoding.color' })
+    const comment = await screen.findByRole('textbox', { name: 'Edit note for Color / legend' })
     fireEvent.change(comment, { target: { value: 'make it blue' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add encoding.color to the conversation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Color / legend to the conversation' }))
 
     await waitFor(() => {
       expect(addToConversation).toHaveBeenCalledWith([{
@@ -657,7 +654,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     render(<ScienceDetailsView {...props(science, {
       store, loadText, composerSelections, removeFromConversation,
     })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove mark' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Mark style' }))
     expect(removeFromConversation).toHaveBeenCalledWith(selection)
   })
 
@@ -673,11 +670,11 @@ describe('ScienceDetailsView: content dispatch', () => {
       store, loadText, composerSelections, addToConversation, removeFromConversation,
     })} />)
 
-    const add = await screen.findByRole('button', { name: 'Add encoding.y to the conversation' })
+    const add = await screen.findByRole('button', { name: 'Add Y axis to the conversation' })
     fireEvent.click(add)
-    expect(await screen.findByRole('button', { name: 'Remove encoding.y' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Remove Y axis' })).toBeTruthy()
     act(() => { composerSelections.set([]) })
-    expect(await screen.findByRole('button', { name: 'Add encoding.y to the conversation' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Add Y axis to the conversation' })).toBeTruthy()
   })
 
   it('never pre-fills one artifact\'s typed comment from another artifact sharing the same spec path (scenario A)', async () => {
@@ -701,16 +698,16 @@ describe('ScienceDetailsView: content dispatch', () => {
     act(() => { store.actions.activateTab('chart-1' as never) })
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
-    const commentA = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    const commentA = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     fireEvent.change(commentA, { target: { value: 'artifact A note' } })
     expect(commentA.value).toBe('artifact A note')
 
     act(() => { store.actions.activateTab('chart-2' as never) })
-    const commentB = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    const commentB = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     expect(commentB.value).toBe('')
 
     act(() => { store.actions.activateTab('chart-1' as never) })
-    const commentAAgain = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    const commentAAgain = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     expect(commentAAgain.value).toBe('')
   })
 
@@ -722,9 +719,9 @@ describe('ScienceDetailsView: content dispatch', () => {
     const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'chart.vl.json' })
     render(<ScienceDetailsView {...props(science, { store, loadText, composerSelections, addToConversation })} />)
 
-    const comment = await screen.findByRole('textbox', { name: 'Edit note for mark' })
+    const comment = await screen.findByRole('textbox', { name: 'Edit note for Mark style' })
     fireEvent.change(comment, { target: { value: 'first note' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add mark to the conversation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Mark style to the conversation' }))
     expect(composerSelections.getSnapshot()).toEqual([{
       artifactId: 'chart-1', version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: 'first note',
     }])
@@ -747,7 +744,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
     render(<ScienceDetailsView {...props(science, { store, loadText, commitStyleEdit })} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'encoding.color' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Color / legend' }))
     fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#ff0000' } })
     fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '200' } })
     fireEvent.change(screen.getByLabelText('Title text'), { target: { value: 'Group' } })
@@ -781,7 +778,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store, loadText, commitStyleEdit })} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'mark' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
     await waitFor(() => { expect(screen.getByText('Human-edited version committed.')).toBeTruthy() })
@@ -796,7 +793,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     const failedView = render(<ScienceDetailsView {...props(first.science, {
       store: first.store, loadText, commitStyleEdit: failedCommit,
     })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'mark' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect((await screen.findByRole('alert')).textContent).toContain('style version is stale')
     expect(first.store.instance.getSnapshot().openArtifacts[0]?.version).toBe(1)
@@ -807,7 +804,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     const rejectedView = render(<ScienceDetailsView {...props(second.science, {
       store: second.store, loadText, commitStyleEdit: rejectedCommit,
     })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'mark' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect((await screen.findByRole('alert')).textContent).toContain('offline')
     expect(second.store.instance.getSnapshot().openArtifacts[0]?.version).toBe(1)
@@ -818,7 +815,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     render(<ScienceDetailsView {...props(third.science, {
       store: third.store, loadText, commitStyleEdit: errorCommit,
     })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'mark' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect((await screen.findByRole('alert')).textContent).toContain('commit transport failed')
   })

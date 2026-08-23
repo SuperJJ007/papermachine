@@ -456,6 +456,13 @@ function ArtifactTab({
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
   const [instruction, setInstruction] = useState('')
   const [submission, setSubmission] = useState<EditSubmissionState>('idle')
+  // The version a style commit just produced, not reset by the
+  // artifactId/version effect below: a successful commit itself changes
+  // `chart.version` to this same value, and the effect would otherwise wipe
+  // the flag in the same render pass that is supposed to show it. Equality
+  // with the current `chart.version` is what stops showing it once the
+  // reader steps to a different version instead.
+  const [committedVersion, setCommittedVersion] = useState<number | undefined>(undefined)
   const submitting = useRef(false)
   const editable = 'width' in chart.attachment || chart.attachment.mediaType === 'application/vnd.vega-lite+json'
 
@@ -469,6 +476,7 @@ function ArtifactTab({
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
     setSubmission('idle')
+    setCommittedVersion(undefined)
   }
 
   const submit = (): void => {
@@ -544,10 +552,12 @@ function ArtifactTab({
           const result = await commitStyleEdit({ artifactId: chart.artifactId, version: chart.version, spec })
           if (!result.ok) return { ok: false, error: result.error.message }
           actions.setTabVersion({ artifactId: result.value.artifactId, version: result.value.version })
+          setCommittedVersion(result.value.version)
           return { ok: true }
         }}
         t={t}
       />
+      {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
       {editable && (
         <ArtifactEditPanel
           target={target}

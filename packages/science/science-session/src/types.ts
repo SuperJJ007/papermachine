@@ -315,17 +315,6 @@ export interface ScienceKernelInterrupted {
  */
 export type ScienceKernel = ScienceKernelState | ScienceKernelInterrupted
 
-/**
- * Whether one artifact version's current title and caption came from
- * unattended capture or from a model-directed curation call. `auto` names a
- * run-written file the Runtime captured and titled from its own basename;
- * `model` names a version the model deliberately titled through
- * `annotate_artifact`, which is what marks it as the result worth showing a
- * reader first. Curation supersedes the version it names, so the two values
- * describe one version's current metadata rather than two separate versions.
- */
-export type ScienceArtifactOrigin = 'auto' | 'model' | 'human-edit'
-
 /** Fields carried by every immutable Science artifact version. */
 interface ScienceArtifactVersionBase {
   /** Stable artifact identity shared by every version. */

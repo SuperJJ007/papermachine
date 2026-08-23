@@ -38,6 +38,16 @@ export type ScienceRuntimeErrorCode =
   | 'TERMINAL_COMMIT_FAILED'
   /** `annotate_artifact` named a `logical_name` (or an exact `version` of it) that does not exist in this session. */
   | 'ARTIFACT_NOT_FOUND'
+  /**
+   * `annotate_artifact` named an existing version whose `origin` is
+   * `'human-edit'`: curation would either erase the direct-edit
+   * discriminator (by rewriting it onto the `'model'` branch) or claim a
+   * model tool authorization that a direct style edit never carried, so the
+   * version stays uncurated. Editing that chart's content requires a new
+   * run (`run_python`/`run_r` against it as an `edit_of` baseline) or the
+   * viewer's own style editor.
+   */
+  | 'ARTIFACT_NOT_CURATABLE'
   /** A requested run input does not identify a committed artifact version. */
   | 'INPUT_NOT_FOUND'
   /** A requested run input path is unsafe or collides with another input path. */

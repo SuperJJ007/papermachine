@@ -14,7 +14,8 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ConversationSnapshot, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceClientRunArtifactVersion,
+  ScienceClientArtifactVersion, ScienceClientHumanEditArtifactVersion, ScienceClientProjection,
+  ScienceClientRun, ScienceClientRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceStyleEditReceipt, ScienceStyleEditRequest } from '@deepseek-ai/dsh-tool-science/types'
 import {
@@ -25,15 +26,15 @@ import { applyStyle, restrictedVegaLoader, selectableSpecPaths } from '../src/cl
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
-const { embedMock, finalizeMock, loaderLoadMock } = vi.hoisted(() => ({
-  embedMock: vi.fn(), finalizeMock: vi.fn(), loaderLoadMock: vi.fn(),
+const { embedMock, finalizeMock, loaderLoadMock, loaderSanitizeMock } = vi.hoisted(() => ({
+  embedMock: vi.fn(), finalizeMock: vi.fn(), loaderLoadMock: vi.fn(), loaderSanitizeMock: vi.fn(),
 }))
 vi.mock('vega-embed', () => ({
   default: embedMock,
   vega: {
     loader: () => ({
       load: loaderLoadMock,
-      sanitize: vi.fn(),
+      sanitize: loaderSanitizeMock,
       http: vi.fn(),
       file: vi.fn(),
     }),
@@ -54,14 +55,23 @@ afterEach(() => {
   embedMock.mockReset()
   finalizeMock.mockReset()
   loaderLoadMock.mockReset()
+  loaderSanitizeMock.mockReset()
 })
 
 describe('Vega-Lite style helpers', () => {
-  it('delegates local loader requests and blocks protocol-relative requests', async () => {
-    loaderLoadMock.mockResolvedValue('local data')
-    await expect(restrictedVegaLoader.load('data/values.csv')).resolves.toBe('local data')
-    expect(loaderLoadMock).toHaveBeenCalledWith('data/values.csv', undefined)
-    await expect(restrictedVegaLoader.load('//data.example/values.csv')).rejects.toThrow(/external Vega-Lite data URLs are disabled/)
+  it('delegates local sanitize requests to the underlying loader and blocks protocol-relative/HTTP(S) URIs before they reach it', async () => {
+    loaderSanitizeMock.mockResolvedValue({ href: 'local data' })
+    await expect(restrictedVegaLoader.sanitize('data/values.csv', { context: 'href' })).resolves.toEqual({ href: 'local data' })
+    expect(loaderSanitizeMock).toHaveBeenCalledWith('data/values.csv', { context: 'href' })
+    await expect(restrictedVegaLoader.sanitize('//data.example/values.csv', { context: 'href' }))
+      .rejects.toThrow(/external Vega-Lite resource URLs are disabled/)
+    // `context: 'image'` is exactly how vega-scenegraph's ResourceLoader
+    // sanitizes an image mark's `href`/`url` before setting `img.src` — this
+    // proves the restriction reaches that path, not only `load()`'s own data
+    // fetches.
+    await expect(restrictedVegaLoader.sanitize('https://data.example/logo.png', { context: 'image' }))
+      .rejects.toThrow(/external Vega-Lite resource URLs are disabled/)
+    expect(loaderSanitizeMock).toHaveBeenCalledTimes(1)
   })
 
   it('enumerates every supported composition operator and ignores non-spec members', () => {
@@ -128,6 +138,22 @@ function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClie
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     createdAt: 500,
+    ...over,
+  }
+}
+
+function humanEditChart(over: Partial<ScienceClientHumanEditArtifactVersion> = {}): ScienceClientHumanEditArtifactVersion {
+  return {
+    artifactId: 'chart-1' as never,
+    logicalName: 'summary.vl.json',
+    version: 2,
+    title: 'summary.vl.json',
+    origin: 'human-edit',
+    parent: { artifactId: 'chart-1' as never, version: 1 },
+    attachment: { attachmentId: 'sha256:human' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 40 },
+    environmentRevision: 1,
+    environmentFingerprintPreview: 'f'.repeat(12),
+    createdAt: 700,
     ...over,
   }
 }
@@ -582,6 +608,32 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(store.instance.getSnapshot().openArtifacts[0]?.version).toBe(4)
   })
 
+  it('shows the style commit success status once the committed version is live', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const commitStyleEdit = vi.fn<CommitStyleEdit>().mockResolvedValue({
+      ok: true, value: { artifactId: 'chart-1' as never, version: 2, origin: 'human-edit' },
+    })
+    const science = baseProjection({
+      artifacts: [
+        chart({
+          logicalName: 'summary.vl.json', version: 1,
+          attachment: { attachmentId: 'sha256:v1' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 30 },
+        }),
+        humanEditChart({ version: 2 }),
+      ],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, loadText, commitStyleEdit })} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'mark' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+
+    await waitFor(() => { expect(screen.getByText('Human-edited version committed.')).toBeTruthy() })
+    expect(store.instance.getSnapshot().openArtifacts[0]?.version).toBe(2)
+  })
+
   it('renders Host style-commit failures and rejected calls without changing versions', async () => {
     embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
     const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
@@ -760,20 +812,55 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(view.container.textContent).toContain('not-a-mark')
   })
 
-  it('blocks external Vega-Lite data URLs through the embed loader and explains the JSON fallback', async () => {
+  it('blocks external Vega-Lite data URLs through the embed loader\'s sanitize seam and explains the JSON fallback', async () => {
+    // `load()`'s real implementation (unmocked in production) calls
+    // `this.sanitize` before fetching a `data.url`'s bytes; this models that
+    // call directly since `vega-embed`/`vega.loader` are fully mocked here.
     embedMock.mockImplementation(async (_element: HTMLElement, _document: object, options: {
-      loader: { load: (uri: string) => Promise<string> }
+      loader: { sanitize: (uri: string, opts: { context: string }) => Promise<{ href: string }> }
     }) => {
-      await options.loader.load('https://data.example/values.csv')
+      await options.loader.sanitize('https://data.example/values.csv', { context: 'href' })
       return { view: { finalize: finalizeMock } }
     })
     const loadText = vi.fn().mockResolvedValue('{"mark":"bar","data":{"url":"https://data.example/values.csv"}}')
     const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'external.vl.json' })
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
-    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external data URL') })
+    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
     expect(screen.getByRole('tree')).toBeTruthy()
     expect(loaderLoadMock).not.toHaveBeenCalled()
+    expect(loaderSanitizeMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an external Vega-Lite image mark through the embed loader\'s sanitize seam (never reaching `load`, which image marks never call)', async () => {
+    // vega-scenegraph's `ResourceLoader.loadImage` calls
+    // `sanitize(uri, {context: 'image'})` directly and never calls `load()`
+    // at all — an image mark is exactly the bypass this restriction closes.
+    // Driving that rejection out through `embed()` here (as production's
+    // `ResourceLoader.loadImage` does not: it catches the rejection and
+    // resolves to an empty placeholder image instead of rejecting) is a
+    // testing simplification that isolates the one property this test
+    // exists to prove — `sanitize` itself rejects a `context: 'image'`
+    // request for a blocked URI — without reproducing that catch. The
+    // JSON-tree fallback this produces below is this test's own artifact,
+    // not what a real image mark renders: in production the image mark
+    // simply fails to load and the rest of the chart renders normally.
+    embedMock.mockImplementation(async (_element: HTMLElement, _document: object, options: {
+      loader: { sanitize: (uri: string, opts: { context: string }) => Promise<{ href: string }> }
+    }) => {
+      await options.loader.sanitize('https://data.example/logo.png', { context: 'image' })
+      return { view: { finalize: finalizeMock } }
+    })
+    const loadText = vi.fn().mockResolvedValue(
+      '{"mark":"image","encoding":{"url":{"value":"https://data.example/logo.png"}}}',
+    )
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'image-mark.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
+    expect(screen.getByRole('tree')).toBeTruthy()
+    expect(loaderLoadMock).not.toHaveBeenCalled()
+    expect(loaderSanitizeMock).not.toHaveBeenCalled()
   })
 
   it('falls back to raw text without loading Vega for malformed .vl.json bytes', async () => {

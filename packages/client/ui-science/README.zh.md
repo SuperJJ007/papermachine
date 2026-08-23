@@ -83,5 +83,5 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 - **没有 PNG/PDF 图表导出** — Vega-Lite artifact 只在原地渲染为 SVG；确定性的位图/PDF 导出被推迟到某个没有浏览器渲染器的客户端确认支持 Science 图表之后再建（[决策记录](../../../.agents/notes/proposed/architecture/2026-08-22-science-spec-first-charts.zh.md)）。
 - **不暴露任何结构化目标的 spec 会让编辑面板无法发送** — 目标发现沿 `layer`、`hconcat`/`vconcat`/`concat` 成员以及 `facet`/`repeat` 的子 `spec` 遍历 `mark`/`encoding.*`；一份不含这些结构的文档（或截断后不再可解析的文本）渲染出的编辑面板没有可选目标，Send 保持禁用，只显示占位提示。
 - **渲染出的图表没有文本替代** — 嵌入的 SVG 只携带 Vega 自身生成的标记，没有伴随的摘要或数据表替代形式；spec 的 JSON 源文本仍可通过下载取得。
-- **外部 Vega-Lite 数据 URL 不会渲染** — viewer 向 `vega-embed` 传入受限 loader，拒绝 HTTP(S) 与协议相对地址。依赖远程 `data.url` 内容的 spec 会降级为 JSON tree 并显示说明；内联 `data.values` 仍可渲染。
+- **外部 Vega-Lite 资源不会被解析** — viewer 向 `vega-embed` 传入受限 loader，其 `sanitize` 拒绝一切 HTTP(S) 与协议相对 URI；由于 `sanitize` 是 Vega 所有资源解析都会经过的唯一入口（`load` 自身的默认实现在发起请求前会先调用它，而图片标记的 `href`/`url` 则直接经它清理，根本不会调用 `load`），该限制同时覆盖远程 `data.url` 内容、图片标记与链接。依赖远程 `data.url` 的 spec 会降级为 JSON tree 并显示说明；引用远程 URI 的图片标记或链接则只是不会被解析，图表照常渲染，只是缺少那一部分。内联 `data.values` 仍可渲染。
 - **Vega 渲染器主导了客户端包体积** — 打包 `vega-embed` 使 `lib/client.js` 达到约 2.0 MB（gzip 约 475 KB），并且只要本插件挂载就会静态加载，无论会话里有没有图表；改为在首个 Vega-Lite artifact 出现时再加载属于暂缓事项。

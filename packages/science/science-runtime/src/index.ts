@@ -620,6 +620,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns the complete curated version to commit.
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
    *   (or its named `version`) does not exist in this session.
+   * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_CURATABLE`) when the
+   *   resolved version's `origin` is `'human-edit'`.
    */
   private curatedVersion(
     projection: ScienceProjection,
@@ -643,8 +645,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
     if (source.origin === 'human-edit') {
       throw new ScienceRuntimeError(
-        'ARTIFACT_NOT_FOUND',
-        `artifact ${JSON.stringify(request.logicalName)} version ${String(source.version)} is a direct style edit and cannot be curated`,
+        'ARTIFACT_NOT_CURATABLE',
+        `artifact ${JSON.stringify(request.logicalName)} version ${String(source.version)} exists but is a direct human style edit and cannot be curated; `
+          + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
       )
     }
     return {

@@ -153,7 +153,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       title: 'Forbidden curation',
       ...authorizeAnnotateArtifact(session),
       signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_CURATABLE' })
   })
 
   it('curates a non-image artifact identically: no width/height required', async () => {

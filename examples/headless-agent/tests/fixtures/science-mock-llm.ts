@@ -44,14 +44,21 @@ function editCallId(source: ScienceEditMessageSource): string {
   return source.target.kind === 'spec-path' ? 'science-selected-edit-call' : 'science-region-edit-call'
 }
 
-/** The oldest structured edit message no earlier tool result has answered. */
-function pendingEditSource(options: GenerateOptions): ScienceEditMessageSource | undefined {
-  const served = new Set<string>(options.messages.flatMap(message =>
+/** Call ids every earlier tool result in `options` has already answered. */
+function servedCallIds(options: GenerateOptions): Set<string> {
+  return new Set<string>(options.messages.flatMap(message =>
     message.content.flatMap(block => block.type === 'tool-result' ? [block.toolCallId] : [])))
+}
+
+/** The oldest structured edit message no earlier tool result has answered. */
+function pendingEditSource(options: GenerateOptions, served: Set<string>): ScienceEditMessageSource | undefined {
   return options.messages
     .flatMap(message => message.source.kind === 'science-edit' ? [message.source] : [])
     .find(source => !served.has(editCallId(source)))
 }
+
+/** The deterministic id of the state read pinned right after the direct style-edit branch commits. */
+const POST_STYLE_EDIT_STATE_CALL_ID = 'science-style-edit-state-call'
 
 /**
  * The run the Science runtime context reports as the latest successful one.
@@ -122,7 +129,8 @@ function * toolCall(id: string, name: string, args: unknown): Generator<StreamCh
 class ScienceMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     writeCapture(options)
-    const selectedEdit = pendingEditSource(options)
+    const served = servedCallIds(options)
+    const selectedEdit = pendingEditSource(options, served)
     if (selectedEdit !== undefined) {
       const [input, output] = selectedEdit.target.kind === 'spec-path'
         ? ['source.vl.json', 'selected-edit.vl.json']
@@ -135,6 +143,15 @@ class ScienceMockAdapter extends LlmAdapter {
         artifact_inputs: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: input }],
         edit_of: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: output }],
       })
+      return
+    }
+    // The spec-path branch above materializes the direct style edit's own
+    // artifact_inputs/edit_of ancestry once. Immediately after that call
+    // settles — and before the ordinary final reply below — read state once
+    // more so the pinned model view captures how a human-edit artifact
+    // renders (`parent`, no `runId`) once it already exists.
+    if (served.has('science-selected-edit-call') && !served.has(POST_STYLE_EDIT_STATE_CALL_ID)) {
+      yield * toolCall(POST_STYLE_EDIT_STATE_CALL_ID, 'get_science_state', {})
       return
     }
     // One step per settled tool result: read state, run code that writes

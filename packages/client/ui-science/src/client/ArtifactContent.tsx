@@ -90,13 +90,25 @@ type StyleCommitResult = { readonly ok: true } | { readonly ok: false; readonly 
 
 const EXTERNAL_VEGA_URL_BLOCKED = 'SCIENCE_VEGA_EXTERNAL_URL_BLOCKED'
 const defaultVegaLoader: ReturnType<typeof vega.loader> = vega.loader()
+/**
+ * Rejects every HTTP(S)/protocol-relative resource before Vega resolves it.
+ * `sanitize` is the one seam every Vega resource path funnels through —
+ * `load()`'s own default implementation calls `this.sanitize` before
+ * dispatching to `http`/`file`, and vega-scenegraph's `ResourceLoader` calls
+ * `sanitize(uri, {context: 'image'})` directly for an image mark and
+ * `sanitize(uri, {context: 'href'})` directly for a link, neither of which
+ * ever calls `load()`. Overriding only `load` (as an earlier version of this
+ * loader did) leaves image marks and hrefs unrestricted; overriding
+ * `sanitize` alone covers every path, including `load`'s own inherited
+ * implementation below.
+ */
 export const restrictedVegaLoader: ReturnType<typeof vega.loader> = {
   ...defaultVegaLoader,
-  load(uri, options) {
+  sanitize(uri, options) {
     if (/^(?:https?:)?\/\//iu.test(uri)) {
-      return Promise.reject(new Error(`${EXTERNAL_VEGA_URL_BLOCKED}: external Vega-Lite data URLs are disabled`))
+      return Promise.reject(new Error(`${EXTERNAL_VEGA_URL_BLOCKED}: external Vega-Lite resource URLs are disabled`))
     }
-    return defaultVegaLoader.load(uri, options)
+    return defaultVegaLoader.sanitize(uri, options)
   },
 }
 

@@ -59,7 +59,7 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 
 ## C1 依赖评估(2026-08-23)
 
-C1 钉下 `vega-embed@7.1.0`(闭包:`vega@6.4.0`、`vega-lite@6.4.3`)作为 `dsh-client-ui-science` 唯一新增的运行时依赖;`THIRD_PARTY_NOTICES.md` 列出该直接依赖(BSD-3-Clause),闭包由 lockfile 承载。实测成本:`lib/client.js` 增至约 2.0 MB(gzip 约 475 KB),约为次大客户端插件的 4.5 倍,且只要插件挂载就静态加载。对照 maintained-dependency 标准接受进 v1——该渲染器替代的是一整个本要手写的图表面——按需加载记入 ui-science README 的已知限制而非投机性先建。C3 关闭外部加载风险:ui-science 向 `vega-embed` 传入自定义 loader,拒绝 HTTP(S) 与协议相对地址;远程 `data.url` 会降级为带说明的 JSON tree,内联值仍可渲染。
+C1 钉下 `vega-embed@7.1.0`(闭包:`vega@6.4.0`、`vega-lite@6.4.3`)作为 `dsh-client-ui-science` 唯一新增的运行时依赖;`THIRD_PARTY_NOTICES.md` 列出该直接依赖(BSD-3-Clause),闭包由 lockfile 承载。实测成本:`lib/client.js` 增至约 2.0 MB(gzip 约 475 KB),约为次大客户端插件的 4.5 倍,且只要插件挂载就静态加载。对照 maintained-dependency 标准接受进 v1——该渲染器替代的是一整个本要手写的图表面——按需加载记入 ui-science README 的已知限制而非投机性先建。C3 关闭外部加载风险:ui-science 向 `vega-embed` 传入自定义 loader,其 `sanitize` 拒绝 HTTP(S) 与协议相对 URI。`sanitize` 是 Vega 所有资源解析都会经过的入口——`load` 自身的默认实现在发起请求前会先调用它,而图片标记的 `href`/`url` 则直接经它清理,根本不会调用 `load`——因此该限制同时覆盖远程 `data.url`、图片标记与链接。只有数据加载路径的拒绝会从 `embed()` 冒出;远程 `data.url` 会降级为带说明的 JSON tree。图片标记或链接的 `sanitize` 拒绝则由 vega-scenegraph 的 `ResourceLoader` 在内部捕获(`loadImage` 会 resolve 成一张空占位图,`sanitizeURL` 会 resolve 成 `null`)而不是拒绝该 Promise,因此那处引用只是不会被解析,图表照常渲染,只是缺少那一部分。内联值仍可渲染。
 
 ## C2 实现评估（2026-08-23）
 

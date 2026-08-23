@@ -20,7 +20,7 @@ function targetLabel(selection: ScienceEditSelection, t: TranslateNS<'science'>)
     : t('edit.regionTarget', {
       x: Math.round(selection.target.x * 100), y: Math.round(selection.target.y * 100),
     })
-  return `${selection.artifactId} v${String(selection.version)} · ${target}`
+  return `${selection.artifactId} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${JSON.stringify(selection.comment)}`}`
 }
 
 /** Render removable targets; an empty selection contributes no chrome. */

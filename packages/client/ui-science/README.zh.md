@@ -10,7 +10,7 @@
 
 ## Artifact 行
 
-带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题——不包含说明、来源运行或字节数，这些都在 artifact viewer 内容工具栏中。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。一份组装 Web 回归通过真实控件停止 live persistent-kernel run，并将这一已中止展示与其持久化 cancelled run 对照。
+带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题。面向用户的 artifact 卡片不显示内部运行 id 与附件字节数。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。一份组装 Web 回归通过真实控件停止 live persistent-kernel run，并将这一已中止展示与其持久化 cancelled run 对照。
 
 ## Run 行
 
@@ -34,8 +34,8 @@ viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `sc
 
 - **标签栏** — 每个已打开的 artifact（logical chart）一个标签页，各自可独立关闭；点击一条会话记录中的图表行会打开或激活该图表的标签页，并定位到该行所指的确切版本。没有任何标签页打开时，viewer 显示其落地视图，而非一条空标签栏。
 - **工具栏** — 面向活跃标签页的内容视图：artifact 的标题与逻辑名、一个版本步进器（‹ v*n* ›，在两侧相邻的持久化版本间切换），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
-- **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化附件媒体类型分派：`ImageMediaType` 经由 `MessageImage` 渲染（大图、说明、来源运行与尺寸）；`TextMediaType` 通过 `loadText` 取得已解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
-- **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 目标；raster 暴露一个选择后才启用的拖拽层，并按渲染图像归一化矩形。**添加到对话** 把选中目标移入主 composer 上方的可移除 chip，并允许来自多个 artifact 的选择。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。每个 raster target 会附加其确切图像附件。artifact viewer 不含第二个指令输入框或发送操作。
+- **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化附件媒体类型分派：`ImageMediaType` 经由 `MessageImage` 渲染；`TextMediaType` 通过 `loadText` 取得已解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
+- **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层仍只形成一个人工样式区域，不会隐含模型请求。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **直接样式编辑** — 选择 Vega-Lite `mark` 或 `encoding.*` target 还会打开基于不可变工作副本的样式面板。面板只暴露颜色、字号与 encoding axis/legend 标题文本；每次修改都会重新渲染实时 SVG 预览，数据变换仍由 agent 完成。定稿时通过 `remote.scienceEdits.commitStyleEdit` 发送完整 JSON spec；成功后选择返回的下一个 version，其详情明确标记直接编辑并指名确切 parent。Host 的 stale/media/JSON/admission 拒绝会保持可见，且不改变所选 version。UI 子集用于塑造工作流，并不声称能对任意 Vega-Lite JSON 建立安全不变量。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **落地视图** — 在没有标签页打开时显示：每个 logical chart 最新版本组成的图库（打开其中一个即打开其标签页），以及带证据引用的最新 Outcome，展示在图库下方——保持可达但处于次要位置，因为它不像图表那样携带需要导览的版本历史或溯源信息。
@@ -58,7 +58,7 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 
 1. **代码** — 来源运行的 `code` 参数，通过该运行的 `toolCallId` 从会话快照中解析得到，并展示持久化的 `codeSha256` 作为锚点（与环境指纹不同，这里展示完整值——它是对同一次调用已经逐字复述过的源代码文本求的摘要，而不是 Host 基础设施事实）。
 2. **执行日志** — 来自同一调用已完成结果的 stdout/stderr 文本，并在旁展示投影中持久化的字节数与截断标记，作为权威度量——即使会话记录尚未加载也可见。
-3. **消息** — 请求序号与开始时间，附带一个跳转到会话记录的动作，复用 Details 座位的 `inspectCall` 宿主回调（写入一次性 inspect 目标，切换到 trajectory 视图）——是一段摘要加一次跳转，而非消息重放。
+3. **消息** — 请求序号与开始时间，附带一个跳转到会话记录的动作，复用 Details 座位的 `inspectCall` 宿主回调（写入一次性 inspect 目标，切换到 trajectory 视图）——是一段摘要加一次跳转，而非消息重放。下钻开头还会展示生成轮次中紧凑的用户请求与 agent 结论，随后提供显式的 `call:` Trajectory 与 `turn:` 语义 Trace 操作。
 4. **环境** — 当投影仍保留该确切版本时，以 JSON 形式展示该环境版本（配置档案、版本号、状态、时间戳，以及逐语言的 capability/版本/指纹预览与包清单）；若该版本已被取代（投影只保留最新版本），则单独报告这一状态，并展示该运行自身的指纹预览作为仍然保留的事实。
 
 解析 chart/run 组合（并在其中任一方不再可解析时报告不可用）是 artifact viewer 的职责，不属于本下钻组件——它总是针对一个已经解析好的组合渲染。
@@ -84,7 +84,7 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 - **环境历史仅保留单一版本** — `science` 投影只保留最新的一次环境绑定，因此一旦绑定发生变化，溯源下钻"环境"子标签页就无法展示某个较旧图表运行时的确切版本；它会转而报告仍然保留的版本号与指纹预览。
 - **已打开的标签页不做持久化保存** — 选择状态存储只存在于框架按 (句柄, 会话) 划分的缓存里，而非 `localStorage`：在同一次页面加载内，已打开的标签页与当前视图能在 Details 列关闭再重新打开、或会话切换再切回之间保持不变，但无法跨越一次页面刷新。
 - **超过渲染上限的文本 artifact 无法在原地完整浏览** — `MAX_ARTIFACT_TABLE_ROWS`/`MAX_ARTIFACT_TEXT_CHARACTERS`（`format.ts`）会在整个内容进入 DOM 之前截断表格/文本渲染，因此表格排序与 JSON 解析都只作用于已显示的前缀，而被截断的 `.vl.json` 几乎必然无法重新解析，所以超限的 Vega-Lite artifact 显示为截断的原始文本而非图表；下载仍会取回完整的持久化字节。
-- **没有 PNG/PDF 图表导出** — Vega-Lite artifact 只在原地渲染为 SVG；确定性的位图/PDF 导出被推迟到某个没有浏览器渲染器的客户端确认支持 Science 图表之后再建（[决策记录](../../../.agents/notes/proposed/architecture/2026-08-22-science-spec-first-charts.zh.md)）。
+- **没有 PNG/PDF 图表导出** — 一个已禁用的本地化 Export 控件明确呈现 C4 暂缓状态；Vega-Lite artifact 只在原地渲染为 SVG，确定性的位图/PDF 导出被推迟到某个没有浏览器渲染器的客户端确认支持 Science 图表之后再建（[决策记录](../../../.agents/notes/proposed/architecture/2026-08-22-science-spec-first-charts.zh.md)）。
 - **不暴露任何结构化目标的 spec 无法添加 composer chip** — 目标发现沿 `layer`、`hconcat`/`vconcat`/`concat` 成员以及 `facet`/`repeat` 的子 `spec` 遍历 `mark`/`encoding.*`；一份不含这些结构的文档（或截断后不再可解析的文本）不提供结构选择，但只读渲染与下载仍然可用。
 - **渲染出的图表没有文本替代** — 嵌入的 SVG 只携带 Vega 自身生成的标记，没有伴随的摘要或数据表替代形式；spec 的 JSON 源文本仍可通过下载取得。
 - **外部 Vega-Lite 资源不会被解析** — viewer 向 `vega-embed` 传入受限 loader，其 `sanitize` 拒绝一切 HTTP(S) 与协议相对 URI；由于 `sanitize` 是 Vega 所有资源解析都会经过的唯一入口（`load` 自身的默认实现在发起请求前会先调用它，而图片标记的 `href`/`url` 则直接经它清理，根本不会调用 `load`），该限制同时覆盖远程 `data.url` 内容、图片标记与链接。依赖远程 `data.url` 的 spec 会降级为 JSON tree 并显示说明；引用远程 URI 的图片标记或链接则只是不会被解析，图表照常渲染，只是缺少那一部分。内联 `data.values` 仍可渲染。

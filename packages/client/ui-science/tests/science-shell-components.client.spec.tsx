@@ -14,6 +14,7 @@ import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
+import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
 import { en } from '../src/client/locales.ts'
 
 const SESSION = 'session-1' as SessionId
@@ -25,7 +26,7 @@ function sessionState(current: SessionId | undefined): SessionListState {
   return {
     ids: current === undefined ? [] : [current],
     byId: current === undefined ? {} : {
-      [current]: { id: current, displayTitle: 'Session', running: false, blank: false, updatedAt: 1 },
+      [current]: { id: current, displayTitle: 'Session', running: false, blank: false, updatedAt: 1, agentPreset: 'science' },
     },
     current,
     phase: 'ready',
@@ -44,14 +45,14 @@ describe('ScienceDestinations', () => {
       openScience,
       t,
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.getByRole('button', { name: 'Sessions' }).textContent).toContain('Sessions')
+    expect(screen.queryByRole('button', { name: 'Sessions' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Files' }))
     fireEvent.click(screen.getByRole('button', { name: 'Outcomes' }))
-    expect(openScience).toHaveBeenNthCalledWith(1, SESSION)
-    expect(openScience).toHaveBeenNthCalledWith(2, SESSION)
+    expect(openScience).toHaveBeenNthCalledWith(1, SESSION, 'files')
+    expect(openScience).toHaveBeenNthCalledWith(2, SESSION, 'outcomes')
   })
 
-  it('renders rail titles and leaves destinations inert without a current Session', () => {
+  it('renders no Science destinations without a current Science Session', () => {
     const openScience = vi.fn()
     render(<ScienceDestinations {...({
       wide: false,
@@ -59,10 +60,42 @@ describe('ScienceDestinations', () => {
       openScience,
       t,
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    const files = screen.getByRole('button', { name: 'Files' })
-    expect(files.getAttribute('title')).toBe('Files')
-    fireEvent.click(files)
+    expect(screen.queryByRole('button', { name: 'Files' })).toBeNull()
     expect(openScience).not.toHaveBeenCalled()
+  })
+
+  it('renders compact rail destinations with localized titles', () => {
+    render(<ScienceDestinations {...({
+      wide: false,
+      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(SESSION))),
+      openScience: vi.fn(),
+      t,
+    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
+    expect(screen.getByRole('button', { name: 'Files' }).getAttribute('title')).toBe('Files')
+    expect(screen.queryByText('Files')).toBeNull()
+  })
+})
+
+describe('ScienceOutcomeDetails', () => {
+  it('renders an empty state for unsupported and unpublished projections', () => {
+    const empty = (projection: ScienceClientProjection | null | undefined) => render(<ScienceOutcomeDetails {...({
+      useProjection: () => projection, t,
+    } as unknown as Parameters<typeof ScienceOutcomeDetails>[0])} />)
+    expect(empty(undefined).getByText('No outcome published yet.')).toBeTruthy()
+    cleanup()
+    expect(empty({ outcome: null } as ScienceClientProjection).getByText('No outcome published yet.')).toBeTruthy()
+  })
+
+  it('renders only the published Outcome', () => {
+    render(<ScienceOutcomeDetails {...({
+      useProjection: () => ({ outcome: {
+        revision: 2, title: 'Stable result', summaryMarkdown: 'The **result** holds.',
+      } } as ScienceClientProjection),
+      t,
+    } as unknown as Parameters<typeof ScienceOutcomeDetails>[0])} />)
+    expect(screen.getByText('Stable result')).toBeTruthy()
+    expect(screen.getByText('revision 2')).toBeTruthy()
+    expect(document.querySelector('strong')?.textContent).toBe('result')
   })
 })
 
@@ -112,6 +145,7 @@ describe('Science composer targets', () => {
     artifactId: ScienceArtifactId('chart-1'), version: 1,
     target: { kind: 'spec-path', path: 'encoding.y' },
   }
+  const commented: ScienceEditSelection = { ...spec, comment: 'make it blue' }
   const region: ScienceEditSelection = {
     artifactId: ScienceArtifactId('image-1'), version: 2,
     target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
@@ -122,10 +156,10 @@ describe('Science composer targets', () => {
     const remove = vi.fn()
     const view = render(<ScienceComposerChips selections={selections} remove={remove} t={t} />)
     expect(view.container.firstChild).toBeNull()
-    act(() => { selections.set([spec, region]) })
-    expect(screen.getByText('chart-1 v1 · encoding.y')).toBeTruthy()
+    act(() => { selections.set([commented, region]) })
+    expect(screen.getByText('chart-1 v1 · encoding.y: "make it blue"')).toBeTruthy()
     expect(screen.getByText('image-1 v2 · region 10%,20%')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · encoding.y' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · encoding.y: "make it blue"' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove image-1 v2 · region 10%,20%' }))
     expect(remove.mock.calls).toEqual([[0], [1]])
   })
@@ -140,8 +174,10 @@ describe('Science composer targets', () => {
       { ...spec, target: { kind: 'spec-path', path: 'mark' } },
     ])
     expect(selections.store(SESSION).getSnapshot()).toHaveLength(4)
-    selections.remove(SESSION, 1)
+    selections.removeSelection(SESSION, { ...spec, target: { kind: 'spec-path', path: 'mark' } })
     expect(selections.store(SESSION).getSnapshot()).toHaveLength(3)
+    selections.remove(SESSION, 1)
+    expect(selections.store(SESSION).getSnapshot()).toHaveLength(2)
     selections.clear(SESSION)
     expect(selections.store(SESSION).getSnapshot()).toEqual([])
   })

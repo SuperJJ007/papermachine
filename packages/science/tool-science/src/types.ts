@@ -36,6 +36,8 @@ export interface ScienceEditSelection {
   readonly artifactId: ScienceArtifactId
   readonly version: number
   readonly target: ScienceEditTarget
+  /** Optional instruction scoped to this exact element. */
+  readonly comment?: string
 }
 
 /** Browser request to edit one or more exact immutable Science artifact versions. */

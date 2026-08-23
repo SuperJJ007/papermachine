@@ -6,7 +6,7 @@
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
-本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。`submit` 接受一个非空有序的确切 artifact target 数组和一条指令。它严格 fold 被寻址在线 Agent 的完整 session，在排入一条结构化用户消息前校验每个 target 的当前已提交版本与附件媒体类型；任一失败会标明 target 位置，并阻止部分准入。`commitStyleEdit` 接受一个确切的当前 Vega-Lite parent 与完整 JSON object spec，经 `ctx.attachments.saveText` 准入后追加下一个连续的 `origin: 'human-edit'` version，携带确切谱系与复制的 environment 溯源，但不含 run 字段。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝，媒体类型不匹配以 `SCIENCE_EDIT_TARGET_MISMATCH` 拒绝，无效 JSON 值以 `SCIENCE_EDIT_SPEC_INVALID` 拒绝；spec 过大时 `commitStyleEdit` 会原样放行附件存储自身在 `saveText` 准入阶段抛出的 `TEXT_TOO_LARGE`，而非某个 `SCIENCE_EDIT_*` 代码。两种方法都绝不静默替换成最新版本。消息 source 保存 `{ kind: 'science-edit', targets, instruction }`，文本要求模型在相应 `artifact_inputs` 与 `edit_of` 中使用每个确切版本；每个 raster target 都按 target 顺序附加其确切图像附件。
+本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。`submit` 接受一个非空有序的确切 artifact target 数组和一条指令。每个 target 可以携带一条元素备注，并使用与指令相同的文本规则校验和去除首尾空白。它严格 fold 被寻址在线 Agent 的完整 session，在排入一条结构化用户消息前校验每个 target 的当前已提交版本与附件媒体类型；任一失败会标明 target 位置，并阻止部分准入。`commitStyleEdit` 接受一个确切的当前 Vega-Lite parent 与完整 JSON object spec，经 `ctx.attachments.saveText` 准入后追加下一个连续的 `origin: 'human-edit'` version，携带确切谱系与复制的 environment 溯源，但不含 run 字段。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝，媒体类型不匹配以 `SCIENCE_EDIT_TARGET_MISMATCH` 拒绝，无效 JSON 值以 `SCIENCE_EDIT_SPEC_INVALID` 拒绝；spec 过大时 `commitStyleEdit` 会原样放行附件存储自身在 `saveText` 准入阶段抛出的 `TEXT_TOO_LARGE`，而非某个 `SCIENCE_EDIT_*` 代码。两种方法都绝不静默替换成最新版本。消息 source 保存 `{ kind: 'science-edit', targets, instruction }`，文本要求模型在相应 `artifact_inputs` 与 `edit_of` 中使用每个确切版本；每个 raster target 都按 target 顺序附加其确切图像附件。
 
 `ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `annotate_artifact`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。`publish_outcome` 可对已经持久化的证据工作，不需要 Runtime access。
 
@@ -92,7 +92,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-获准的 artifact viewer 编辑是一个普通用户轮次。其文本会列出一个非空有序 target 集合、每个 target 的逻辑 artifact 与确切版本、一条指令，以及必须把每个版本作为相应 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存 `{ targets, instruction }`；每个 raster target 都按 target 顺序提供确切被选中的图像附件。
+获准的 artifact viewer 编辑是一个普通用户轮次。其文本会列出一个非空有序 target 集合、每个 target 的逻辑 artifact 与确切版本及其可选元素备注、一条指令，以及必须把每个版本作为相应 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存 `{ targets, instruction }`；每个 raster target 都按 target 顺序提供确切被选中的图像附件。
 
 #### Token 影响
 

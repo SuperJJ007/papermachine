@@ -69,6 +69,7 @@ export interface ResolvedScienceEdit {
   readonly targets: readonly {
     readonly artifact: ScienceArtifactVersion
     readonly target: ScienceEditTarget
+    readonly comment?: string
   }[]
   readonly instruction: string
 }
@@ -91,8 +92,9 @@ function resolveSelection(
     )
   }
   const target = resolveTarget(request.target)
+  const comment = request.comment === undefined ? undefined : resolveInstruction(request.comment)
   assertTargetMatches(latest, target)
-  return { artifact: latest, target }
+  return { artifact: latest, target, ...comment === undefined ? {} : { comment } }
 }
 
 /**
@@ -192,14 +194,16 @@ export function renderScienceEditMessage(
   targets: readonly {
     readonly artifact: Pick<ScienceArtifactVersion, 'artifactId' | 'version' | 'logicalName'>
     readonly target: ScienceEditTarget
+    readonly comment?: string
   }[],
   instruction: string,
 ): string {
-  const selections = targets.map(({ artifact, target }, index) => {
+  const selections = targets.map(({ artifact, target, comment }) => {
     const selected = target.kind === 'spec-path'
-      ? `Spec path ${target.path}`
-      : `Normalized region x=${String(target.x)}, y=${String(target.y)}, width=${String(target.width)}, height=${String(target.height)}`
-    return `${String(index + 1)}. ${JSON.stringify(artifact.logicalName)} (${artifact.artifactId} v${String(artifact.version)}): ${selected}`
+      ? target.path
+      : `region(${String(target.x)},${String(target.y)},${String(target.width)},${String(target.height)})`
+    const note = comment === undefined ? '' : `:${JSON.stringify(comment)}`
+    return `- ${artifact.logicalName} v${String(artifact.version)} · ${selected}${note}`
   })
   const versions = [...new Map(targets.map(({ artifact }) => [artifact.artifactId, artifact])).values()]
     .map(artifact => `- ${artifact.artifactId} v${String(artifact.version)}`)
@@ -221,10 +225,11 @@ export function createScienceEditMessage(resolved: ResolvedScienceEdit): UserMes
   const { targets, instruction } = resolved
   const source: ScienceEditMessageSource = {
     kind: 'science-edit',
-    targets: targets.map(({ artifact, target }) => ({
+    targets: targets.map(({ artifact, target, comment }) => ({
       artifactId: artifact.artifactId,
       version: artifact.version,
       target,
+      ...comment === undefined ? {} : { comment },
     })),
     instruction,
   }

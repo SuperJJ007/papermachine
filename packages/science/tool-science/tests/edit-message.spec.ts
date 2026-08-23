@@ -83,7 +83,7 @@ describe('Science edit-message admission', () => {
     })
     expect(message.content).toEqual([{ type: 'text', text: [
       'Edit these Science artifact targets:',
-      '1. "loss.vl.json" (chart-1 v1): Spec path encoding.color',
+      '- loss.vl.json v1 · encoding.color',
       'Instruction: make it blue',
       'Use exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:',
       '- chart-1 v1',
@@ -149,6 +149,21 @@ describe('Science edit-message admission', () => {
     }], instruction: 'change it' })).toThrow(/science edit target/)
   })
 
+  it('validates an element comment like the shared instruction and preserves it in model-visible text', () => {
+    const resolved = resolveScienceEdit([vega({ version: 5, logicalName: 'chart.vl.json' })], {
+      targets: [{ artifactId: 'chart-1' as never, version: 5, target: { kind: 'spec-path', path: 'encoding.y' }, comment: ' 改成蓝色 ' }],
+      instruction: 'apply the selected edits',
+    })
+    const content = createScienceEditMessage(resolved).content[0]
+    expect(content?.type).toBe('text')
+    if (content?.type !== 'text') throw new Error('expected text content')
+    expect(content.text).toContain('- chart.vl.json v5 · encoding.y:"改成蓝色"')
+    expect(() => resolveScienceEdit([vega()], {
+      targets: [{ artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: '  ' }],
+      instruction: 'change it',
+    })).toThrow(/instruction must be non-empty/)
+  })
+
   it('admits multiple exact targets atomically and attaches every raster in target order', () => {
     const chart = vega()
     const raster = image({ artifactId: ScienceArtifactId('chart-2'), logicalName: 'residuals.png' })
@@ -209,7 +224,7 @@ describe('Science edit-message admission', () => {
     const text = message.content[0]
     if (text?.type !== 'text') throw new Error('expected text content')
     expect(text.text.match(/^- chart-1 v1$/gm)).toHaveLength(1)
-    expect(text.text).toContain('1. "loss.vl.json" (chart-1 v1): Spec path encoding.x')
-    expect(text.text).toContain('2. "loss.vl.json" (chart-1 v1): Spec path encoding.y')
+    expect(text.text).toContain('- loss.vl.json v1 · encoding.x')
+    expect(text.text).toContain('- loss.vl.json v1 · encoding.y')
   })
 })

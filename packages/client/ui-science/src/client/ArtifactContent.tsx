@@ -13,7 +13,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import embed, { vega } from 'vega-embed'
 import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { formatBytes } from '@deepseek-ai/dsh-byte-size'
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import type { ImageLoader, MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -254,11 +253,18 @@ function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
  * container stays in the tree (hidden) while the fallback shows, so the
  * effect's element reference is never `null` across failure and re-render.
  */
-function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, onCommitStyle, t }: {
+function VegaLiteArtifact({
+  text, logicalName, selectionTarget, onSelectTarget, isTargetAdded,
+  targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
+}: {
   text: string
   logicalName: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  targetComment: (target: ScienceEditTarget) => string
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
@@ -270,6 +276,7 @@ function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, 
   const paths = useMemo(() => renderedDocument === undefined ? [] : selectableSpecPaths(renderedDocument), [renderedDocument])
   const container = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<'render' | 'external-url' | undefined>(undefined)
+  const [comments, setComments] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const element = container.current
@@ -297,24 +304,58 @@ function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, 
   if (document === undefined) {
     return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
   }
+  const chartTarget = paths[0]
   return (
     <>
-      <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failure !== undefined} />
+      <div
+        ref={container}
+        className={css.vegaLite}
+        data-testid="vega-lite-view"
+        hidden={failure !== undefined}
+        role={paths.length === 0 ? undefined : 'button'}
+        tabIndex={paths.length === 0 ? undefined : 0}
+        aria-label={paths.length === 0 ? undefined : t('edit.chartStyle')}
+        onClick={chartTarget === undefined ? undefined : () => { onSelectTarget({ kind: 'spec-path', path: chartTarget }) }}
+        onKeyDown={chartTarget === undefined ? undefined : (event) => {
+          if (event.key === 'Enter' || event.key === ' ') onSelectTarget({ kind: 'spec-path', path: chartTarget })
+        }}
+      />
       {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
       {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
       {paths.length > 0 && (
         <div className={css.specTargets} aria-label={t('edit.specTargets')}>
-          {paths.map(path => (
-            <button
-              key={path}
-              type="button"
-              className={css.specTarget}
-              aria-pressed={selectionTarget?.kind === 'spec-path' && selectionTarget.path === path}
-              onClick={() => { onSelectTarget({ kind: 'spec-path', path }) }}
-            >
-              {path}
-            </button>
-          ))}
+          {paths.map((path) => {
+            const target = { kind: 'spec-path' as const, path }
+            const added = isTargetAdded(target)
+            const comment = comments[path] ?? targetComment(target)
+            return (
+              <div className={css.specTargetRow} key={path}>
+                <button
+                  type="button"
+                  className={css.specTarget}
+                  aria-pressed={selectionTarget?.kind === 'spec-path' && selectionTarget.path === path}
+                  onClick={() => { onSelectTarget(target) }}
+                >
+                  {path}
+                </button>
+                <input
+                  className={css.specComment}
+                  value={comment}
+                  aria-label={t('edit.targetComment', { target: path })}
+                  placeholder={t('edit.targetCommentPlaceholder')}
+                  onChange={(event) => { setComments(current => ({ ...current, [path]: event.target.value })) }}
+                />
+                <button
+                  type="button"
+                  className={css.specAdd}
+                  aria-label={added ? t('edit.removeTarget', { target: path }) : t('edit.addTarget', { target: path })}
+                  onClick={() => { if (added) onRemoveTarget(target); else onAddTarget(target, comment) }}
+                >
+                  {added ? '−' : '+'}
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
       {selectionTarget?.kind === 'spec-path' && renderedDocument !== undefined && (
@@ -332,12 +373,19 @@ function VegaLiteArtifact({ text, logicalName, selectionTarget, onSelectTarget, 
 }
 
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
-function TextArtifactBody({ logicalName, attachment, loadText, selectionTarget, onSelectTarget, onCommitStyle, t }: {
+function TextArtifactBody({
+  logicalName, attachment, loadText, selectionTarget, onSelectTarget, isTargetAdded,
+  targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
+}: {
   logicalName: string
   attachment: TextAttachmentRef
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  targetComment: (target: ScienceEditTarget) => string
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
@@ -382,7 +430,8 @@ function TextArtifactBody({ logicalName, attachment, loadText, selectionTarget, 
       return (
         <VegaLiteArtifact
           text={state.text} logicalName={logicalName} selectionTarget={selectionTarget}
-          onSelectTarget={onSelectTarget} onCommitStyle={onCommitStyle} t={t}
+          onSelectTarget={onSelectTarget} isTargetAdded={isTargetAdded} targetComment={targetComment}
+          onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget} onCommitStyle={onCommitStyle} t={t}
         />
       )
     case 'text/markdown':
@@ -494,14 +543,21 @@ function BoundedPreText({ text, truncated, total, t }: {
  * Render one artifact version's content: an image through `MessageImage`, or
  * a text attachment fetched through `loadText` and dispatched by media type.
  * @param props - the artifact version to render and both durable-byte loaders.
- * @returns the dispatched content, plus the shared caption/source-run/size facts row.
+ * @returns the dispatched content and optional human-edit ancestry.
  */
-export function ArtifactContent({ chart, loadImage, loadText, selectionTarget, onSelectTarget, onCommitStyle, t }: {
+export function ArtifactContent({
+  chart, loadImage, loadText, selectionTarget, onSelectTarget, isTargetAdded,
+  targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
+}: {
   chart: ScienceClientArtifactVersion
   loadImage: ImageLoader
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  targetComment: (target: ScienceEditTarget) => string
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
@@ -519,20 +575,13 @@ export function ArtifactContent({ chart, loadImage, loadText, selectionTarget, o
         : (
           <TextArtifactBody
             logicalName={chart.logicalName} attachment={attachment} loadText={loadText}
-            selectionTarget={selectionTarget} onSelectTarget={onSelectTarget} onCommitStyle={onCommitStyle} t={t}
+            selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
+            isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+            onCommitStyle={onCommitStyle} t={t}
           />
         )}
       {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
-      <div className={css.contentFacts}>
-        <span>{chart.origin === 'human-edit'
-          ? t('artifact.humanEdit', { version: chart.parent.version })
-          : t('artifact.sourceRun', { runId: chart.runId })}</span>
-        <span>
-          {isImage
-            ? t('artifact.dimensions', { width: attachment.width, height: attachment.height, size: formatBytes(attachment.bytes) })
-            : t('artifact.size', { size: formatBytes(attachment.bytes) })}
-        </span>
-      </div>
+      {chart.origin === 'human-edit' && <div className={css.contentFacts}><span>{t('artifact.humanEdit', { version: chart.parent.version })}</span></div>}
     </div>
   )
 }

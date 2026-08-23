@@ -28,6 +28,7 @@ import { ScienceHeroAction } from '../src/client/ScienceHeroAction.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
 import { ScienceTraceView } from '../src/client/ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
+import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
 import { SCIENCE_RUNTIME_NS } from '../src/client/settings-card-controller.ts'
 import type { ComposerSubmissionHandler } from '@deepseek-ai/dsh-client-ui-conversation/src/client/service.ts'
 
@@ -46,7 +47,7 @@ interface PresentationCapture {
  * artifact viewer is one plain `conversation.details.view` entry with no
  * session-preset-gated dynamic registration).
  */
-function providePresentation(ctx: Context) {
+function providePresentation(ctx: Context, sciencePreset = false) {
   const slots = new SlotRegistry(ctx)
   slots.register({
     name: 'root',
@@ -82,8 +83,15 @@ function providePresentation(ctx: Context) {
   }
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
-  ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
+  ctx.provide('sessions', {
+    binding: () => undefined,
+    list: { getSnapshot: () => ({
+      byId: sciencePreset ? { 'session-1': { agentPreset: 'science' } } : {},
+    }) },
+  } as unknown as ISessions)
   const openDetailsView = vi.fn()
+  const openView = vi.fn()
+  const viewVisibility: Array<(sessionId: SessionId) => boolean> = []
   ctx.provide('conversation', {
     registerSubmissionHandler: (handler: ComposerSubmissionHandler) => {
       capture.submissionHandlers.push(handler)
@@ -93,10 +101,15 @@ function providePresentation(ctx: Context) {
       }
     },
     openDetailsView,
+    openView,
+    registerViewVisibility: (_id: string, visible: (sessionId: SessionId) => boolean) => {
+      viewVisibility.push(visible)
+      return () => { viewVisibility.splice(viewVisibility.indexOf(visible), 1) }
+    },
   } as never)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
-  return { capture, submit, openDetailsView }
+  return { capture, submit, openDetailsView, openView, viewVisibility }
 }
 
 describe('apply', () => {
@@ -166,18 +179,21 @@ describe('apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const entries = presentation.slots.entries('conversation.details.view')
-    expect(entries).toHaveLength(1)
-    const options = entries[0]?.options as { id?: string; order?: number; label?: () => string } | undefined
+    expect(entries).toHaveLength(2)
+    const entry = entries.find(candidate => (candidate.options as { id?: string }).id === 'science')
+    const options = entry?.options as { id?: string; order?: number; label?: () => string } | undefined
     expect(options?.id).toBe('science')
     expect(options?.order).toBe(10)
     expect(options?.label?.()).toBe('details.label')
-    expect(entries[0]?.component).toBe(ScienceDetailsView)
-    expect(entries[0]?.locale).toBe('science')
+    expect(entry?.component).toBe(ScienceDetailsView)
+    expect(entry?.locale).toBe('science')
+    expect(entries.find(candidate => (candidate.options as { id?: string }).id === 'science-outcomes')?.component)
+      .toBe(ScienceOutcomeDetails)
 
     // The registration's inject factory hands the rendered entry its own
     // session-scoped attachment loader — never an owner-supplied one, since
     // the Details seam's owner share carries only its own inspectCall callback.
-    const injectFn = entries[0]?.inject as unknown as ((sessionId: SessionId) => ScienceDetailsInjected) | undefined
+    const injectFn = entry?.inject as unknown as ((sessionId: SessionId) => ScienceDetailsInjected) | undefined
     const face = injectFn?.('any-session' as SessionId)
     expect(typeof face?.loadImage).toBe('function')
     expect(typeof face?.loadText).toBe('function')
@@ -191,14 +207,18 @@ describe('apply', () => {
 
   it('registers every Science shell slot contribution', async () => {
     const ctx = new Context()
-    const { capture, openDetailsView } = providePresentation(ctx)
+    const { capture, openDetailsView, openView, viewVisibility } = providePresentation(ctx, true)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const destinations = capture.slots.entries('sidebar.destinations')[0]
     expect(destinations?.component).toBe(ScienceDestinations)
-    const openScience = destinations?.inject?.() as { openScience: (sessionId: SessionId) => void }
-    expect(() => { openScience.openScience('unmounted' as SessionId) }).not.toThrow()
+    const openScience = destinations?.inject?.() as {
+      openScience: (sessionId: SessionId, destination: 'files' | 'outcomes') => void
+    }
+    expect(() => { openScience.openScience('unmounted' as SessionId, 'files') }).not.toThrow()
     expect(openDetailsView).toHaveBeenCalledWith('unmounted', 'science')
+    openScience.openScience('unmounted' as SessionId, 'outcomes')
+    expect(openDetailsView).toHaveBeenLastCalledWith('unmounted', 'science-outcomes')
     expect(capture.slots.entries('conversation.page.utilities')[0]?.component).toBe(ScienceHeroAction)
     expect(capture.slots.entries('details.files')[0]?.component).toBe(ScienceEmptyDetails)
     const accessory = capture.slots.entries('conversation.input.accessory')[0]
@@ -206,8 +226,12 @@ describe('apply', () => {
     const Accessory = accessory?.component as (props: { sessionId: SessionId; t: (key: string) => string }) => {
       props: { remove: (index: number) => void }
     }
-    const rendered = Accessory({ sessionId: 'session-1' as SessionId, t: key => key })
+    const rendered = Accessory({
+      sessionId: 'session-1' as SessionId, t: (key: string) => key, useProjection: () => ({}),
+    } as never)
     rendered.props.remove(0)
+    expect(Accessory({ sessionId: 'session-1' as SessionId, t: (key: string) => key, useProjection: () => null } as never)).toBeNull()
+    expect(Accessory({ sessionId: 'session-1' as SessionId, t: (key: string) => key, useProjection: () => undefined } as never)).toBeNull()
     expect(capture.slots.entries('conversation.composer.dock')[0]?.component).toBe(ScienceKernelStatus)
     const trace = capture.slots.entries('conversation.view')[0]
     expect(trace?.component).toBe(ScienceTraceView)
@@ -216,6 +240,22 @@ describe('apply', () => {
     const traceFace = injectTrace('session-1' as SessionId)
     traceFace.openArtifact()
     expect(openDetailsView).toHaveBeenCalledWith('session-1', 'science')
+    expect(viewVisibility).toHaveLength(1)
+    expect(viewVisibility[0]?.('session-1' as SessionId)).toBe(true)
+    expect(viewVisibility[0]?.('unmounted' as SessionId)).toBe(false)
+
+    const details = capture.slots.entries('conversation.details.view')[0]
+    const detailsFace = (details?.inject as unknown as (sessionId: SessionId) => ScienceDetailsInjected)('session-1' as SessionId)
+    detailsFace.removeFromConversation({
+      artifactId: ScienceArtifactId('missing'), version: 1, target: { kind: 'spec-path', path: 'mark' },
+    })
+    const scrollIntoView = vi.fn()
+    vi.stubGlobal('document', { getElementById: vi.fn(() => ({ scrollIntoView })) })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
+    detailsFace.openTrace(4)
+    expect(openView).toHaveBeenCalledWith('session-1', 'trace')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
   })
 
   it('submits staged targets, rejects ordinary images, reports Remote errors, and clears only after success', async () => {
@@ -280,7 +320,7 @@ describe('apply', () => {
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(4)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(1)
-    expect(presentation.slots.entries('conversation.details.view')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.details.view')).toHaveLength(2)
     expect(presentation.slots.entries('sidebar.destinations')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(1)
     expect(presentation.slots.entries('details.files')).toHaveLength(1)

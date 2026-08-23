@@ -151,11 +151,12 @@ export function apply(ctx: Context): void {
   // persisted: a fresh page load keeps the open-jump-to-bottom default.
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
 
-  const viewTabs = (): ViewTab[] => {
+  const viewTabs = (sessionId: SessionId): ViewTab[] => {
     const tabs: ViewTab[] = []
     for (const entry of slots.entries('conversation.view')) {
       /* v8 ignore next -- unreachable: list registration validates id at load. */
       if (entry.options.id === undefined) continue
+      if (!concreteConversation(ctx).viewVisible(sessionId, entry.options.id)) continue
       tabs.push({ id: entry.options.id, label: resolveSlotLabel(entry.options.label) ?? entry.options.id })
     }
     return tabs
@@ -291,6 +292,10 @@ export function apply(ctx: Context): void {
       ctx.effect(
         () => concreteConversation(ctx).bindDetailsOpener(sessionId, openDetailsView),
         `ui-conversation: Details opener for ${sessionId}`,
+      )
+      ctx.effect(
+        () => concreteConversation(ctx).bindViewOpener(sessionId, (id) => { actions.setView(id) }),
+        `ui-conversation: view opener for ${sessionId}`,
       )
       return {
         views,

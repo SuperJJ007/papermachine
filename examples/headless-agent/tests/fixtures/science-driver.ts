@@ -57,6 +57,7 @@ try {
         artifactId: styled.artifactId,
         version: styled.version,
         target: { kind: 'spec-path', path: 'encoding.y' },
+        comment: 'Keep the scale readable at small sizes.',
       }],
       instruction: 'Use a zero-based quantitative scale.',
     })

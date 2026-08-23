@@ -37,7 +37,9 @@ export class ScienceComposerSelections {
     const store = this.store(sessionId)
     const next = [...store.getSnapshot()]
     for (const selection of selections) {
-      if (!next.some(candidate => sameSelection(candidate, selection))) next.push(selection)
+      const index = next.findIndex(candidate => sameSelection(candidate, selection))
+      if (index === -1) next.push(selection)
+      else next[index] = selection
     }
     store.set(next)
   }
@@ -50,6 +52,16 @@ export class ScienceComposerSelections {
   remove(sessionId: SessionId, index: number): void {
     const store = this.store(sessionId)
     store.set(store.getSnapshot().filter((_, candidate) => candidate !== index))
+  }
+
+  /**
+   * Remove one exact target regardless of its current list position.
+   * @param sessionId - addressed Session.
+   * @param selection - exact target to remove.
+   */
+  removeSelection(sessionId: SessionId, selection: ScienceEditSelection): void {
+    const store = this.store(sessionId)
+    store.set(store.getSnapshot().filter(candidate => !sameSelection(candidate, selection)))
   }
 
   /**

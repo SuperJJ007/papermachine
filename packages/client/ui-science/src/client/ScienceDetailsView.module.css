@@ -128,6 +128,11 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.toolbarAction:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .stepper {
   display: flex;
   align-items: center;
@@ -215,9 +220,31 @@
 }
 
 .specTargets {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 6px;
+}
+
+.specTargetRow {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(120px, 1fr) 30px;
+  gap: 6px;
+}
+
+.specComment {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.specAdd {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
 }
 
 .specTarget,

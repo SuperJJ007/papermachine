@@ -2600,9 +2600,6 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-byte-size':
-        specifier: workspace:^
-        version: link:../../util/byte-size
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale

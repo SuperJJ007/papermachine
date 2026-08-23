@@ -68,7 +68,7 @@ export function ConversationSessionHeader({
   renderSlot, views, open, openDetailsView, toggleDetails, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list()
+  const tabs = views.list(sessionId)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   // The panel's selected entry is the header's own store read, so header
@@ -184,7 +184,7 @@ export function ConversationSession({
   renderSlot, views, bindDraftMirror, releaseSessionImages,
 }: ConversationSessionProps) {
   useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list()
+  const tabs = views.list(sessionId)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   const composerPhase = useSession(s => s.composerPhase)

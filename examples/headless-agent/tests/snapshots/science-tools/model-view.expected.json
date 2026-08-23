@@ -281,7 +281,8 @@
             "target": {
               "kind": "spec-path",
               "path": "encoding.y"
-            }
+            },
+            "comment": "Keep the scale readable at small sizes."
           }
         ],
         "instruction": "Use a zero-based quantitative scale."
@@ -289,7 +290,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Edit these Science artifact targets:\n1. \"chart.vl.json\" ({{scienceChartId}} v2): Spec path encoding.y\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2"
+          "text": "Edit these Science artifact targets:\n- chart.vl.json v2 · encoding.y:\"Keep the scale readable at small sizes.\"\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2"
         }
       ]
     },
@@ -322,7 +323,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Edit these Science artifact targets:\n1. \"plot.png\" ({{scienceChartId}} v1): Normalized region x=0.25, y=0.25, width=0.5, height=0.5\n2. \"chart.vl.json\" ({{scienceChartId}} v2): Spec path encoding.x\nInstruction: Brighten the selected region and align the chart encoding.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1\n- {{scienceChartId}} v2"
+          "text": "Edit these Science artifact targets:\n- plot.png v1 · region(0.25,0.25,0.5,0.5)\n- chart.vl.json v2 · encoding.x\nInstruction: Brighten the selected region and align the chart encoding.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1\n- {{scienceChartId}} v2"
         },
         {
           "type": "image",

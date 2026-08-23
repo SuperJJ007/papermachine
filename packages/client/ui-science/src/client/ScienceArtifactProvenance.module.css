@@ -45,6 +45,40 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.summaryCard p {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 6px;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.summaryActions {
+  display: flex;
+  gap: 6px;
+}
+
+.summaryActions button {
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
 .subTab {
   padding: 4px 8px;
   border: none;

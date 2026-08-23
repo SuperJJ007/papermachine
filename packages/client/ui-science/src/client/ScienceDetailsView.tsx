@@ -22,14 +22,14 @@
 // "not applied" notice replaces them). The top-level missing-support/unbound
 // states below are unrelated to that strip and are unchanged.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
-  IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText,
+  IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -55,6 +55,12 @@ export interface ScienceDetailsInjected {
   loadText: TextLoader
   /** Add selected artifact elements to the main conversation composer. */
   addToConversation: (targets: readonly ScienceEditSelection[]) => void
+  /** Remove one exact target from the main conversation composer. */
+  removeFromConversation: (target: ScienceEditSelection) => void
+  /** Observable exact targets currently staged in the main composer. */
+  composerSelections: SnapshotStore<readonly ScienceEditSelection[]>
+  /** Open the semantic trace at one generation turn. */
+  openTrace: (turn: number) => void
   /** Commit a complete styled Vega-Lite working copy over one exact current version. */
   commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
     | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
@@ -232,6 +238,11 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
         >
           <IconDownloadOutline16 size={14} />
         </button>
+        <Tooltip label={t('toolbar.exportUnavailable')} side="bottom" delayMs={300}>
+          <button type="button" className={css.toolbarAction} disabled aria-label={t('toolbar.export')}>
+            {t('toolbar.export')}
+          </button>
+        </Tooltip>
         {/* Maximize opens the shared image lightbox; a text attachment has no
             raster to maximize, so this control is image-only. */}
         {isImage && (
@@ -279,8 +290,15 @@ function TabStrip({ tabs, artifacts, activeArtifactId, onActivate, onClose, t }:
   )
 }
 
-function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
+function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): number | undefined {
+  const node = snapshot.nodes.find(candidate => candidate.kind === 'assistant'
+    && candidate.blocks.some(block => block.kind === 'tool-call' && block.callId === toolCallId))
+  return node?.kind === 'assistant' ? node.turn : undefined
+}
+
+function ArtifactGallery({ artifacts, snapshot, loadImage, onOpen, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
+  snapshot: ConversationSnapshot
   loadImage: ImageLoader
   onOpen: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
@@ -291,6 +309,7 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
     <ul className={css.chartList}>
       {latest.map((artifact) => {
         const { attachment } = artifact
+        const turn = artifact.origin === 'human-edit' ? undefined : artifactTurn(snapshot, artifact.toolCallId)
         return (
           <li key={artifact.artifactId} className={css.chartItem}>
             {/* A real <button> wrapping MessageImage's own thumbnail <button>
@@ -321,7 +340,11 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
               <div className={css.chartMeta}>
                 <span className={css.chartTitle}>{artifact.title}</span>
                 <span className={css.chartLogicalName}>{artifact.logicalName}</span>
-                <span className={css.badge}>{t('artifact.version', { version: artifact.version })}</span>
+                <span className={css.badge}>{turn === undefined
+                  ? t('artifact.version', { version: artifact.version })
+                  : artifact.parent === undefined
+                    ? t('artifact.generation', { turn, version: artifact.version })
+                    : t('artifact.generationParent', { turn, version: artifact.version, parent: artifact.parent.version })}</span>
               </div>
             </div>
           </li>
@@ -375,9 +398,10 @@ function OutcomeSection({ outcome, t }: {
 }
 
 /** No open tabs: a gallery of latest artifact versions (opening one opens its tab), plus the Outcome kept reachable below it. */
-function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
+function LandingView({ artifacts, outcome, snapshot, loadImage, onOpenTab, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
   outcome: ScienceClientOutcomePublication | null
+  snapshot: ConversationSnapshot
   loadImage: ImageLoader
   onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
@@ -386,7 +410,7 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
     <div className={css.landing}>
       <section className={css.section}>
         <div className={css.sectionLabel}>{t('details.artifacts.title')}</div>
-        <ArtifactGallery artifacts={artifacts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
+        <ArtifactGallery artifacts={artifacts} snapshot={snapshot} loadImage={loadImage} onOpen={onOpenTab} t={t} />
       </section>
       <OutcomeSection outcome={outcome} t={t} />
     </div>
@@ -396,7 +420,7 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
   science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText,
-  addToConversation, commitStyleEdit, useStore, actions, inspectCall, t,
+  addToConversation, removeFromConversation, composerSelections, openTrace, commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -407,6 +431,9 @@ function ArtifactTab({
   loadImage: ImageLoader
   loadText: TextLoader
   addToConversation: ScienceDetailsInjected['addToConversation']
+  removeFromConversation: ScienceDetailsInjected['removeFromConversation']
+  composerSelections: ScienceDetailsInjected['composerSelections']
+  openTrace: ScienceDetailsInjected['openTrace']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -416,7 +443,12 @@ function ArtifactTab({
   const lightboxOpen = useStore(s => s.lightboxOpen)
   const versions = versionsOf(artifacts, chart.artifactId)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
-  const [selectedTargets, setSelectedTargets] = useState<ScienceEditTarget[]>([])
+  const staged = useSyncExternalStore(
+    notify => composerSelections.subscribe(notify),
+    () => composerSelections.getSnapshot(),
+    /* v8 ignore next -- the browser-only Science viewer has no server render path. */
+    () => composerSelections.getSnapshot(),
+  )
   // The version a style commit just produced, not reset by the
   // artifactId/version effect below: a successful commit itself changes
   // `chart.version` to this same value, and the effect would otherwise wipe
@@ -427,16 +459,15 @@ function ArtifactTab({
 
   useEffect(() => {
     setTarget(undefined)
-    setSelectedTargets([])
   }, [chart.artifactId, chart.version])
 
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
-    setSelectedTargets(current => current.some(candidate => JSON.stringify(candidate) === JSON.stringify(next))
-      ? current.filter(candidate => JSON.stringify(candidate) !== JSON.stringify(next))
-      : [...current, next])
     setCommittedVersion(undefined)
   }
+  const selectionFor = (next: ScienceEditTarget): ScienceEditSelection | undefined => staged.find(selection =>
+    selection.artifactId === chart.artifactId && selection.version === chart.version
+    && JSON.stringify(selection.target) === JSON.stringify(next))
 
   if (view === 'provenance') {
     if (chart.origin === 'human-edit') {
@@ -468,6 +499,7 @@ function ArtifactTab({
         onSubTabChange={(subTab) => { actions.setProvenanceSubTab(subTab) }}
         onBack={() => { actions.setView('content') }}
         inspectCall={inspectCall}
+        openTrace={openTrace}
         t={t}
       />
     )
@@ -492,6 +524,15 @@ function ArtifactTab({
         loadText={loadText}
         selectionTarget={target}
         onSelectTarget={selectTarget}
+        isTargetAdded={next => selectionFor(next) !== undefined}
+        targetComment={next => selectionFor(next)?.comment ?? ''}
+        onAddTarget={(next, comment) => { addToConversation([{
+          artifactId: chart.artifactId,
+          version: chart.version,
+          target: next,
+          ...(comment.trim() === '' ? {} : { comment: comment.trim() }),
+        }]) }}
+        onRemoveTarget={(next) => { removeFromConversation(selectionFor(next) as ScienceEditSelection) }}
         onCommitStyle={async (spec) => {
           const result = await commitStyleEdit({ artifactId: chart.artifactId, version: chart.version, spec })
           if (!result.ok) return { ok: false, error: result.error.message }
@@ -501,36 +542,6 @@ function ArtifactTab({
         }}
         t={t}
       />
-      {selectedTargets.length > 0 && (
-        <section className={css.selectedPanel} aria-label={t('edit.selectedTargets')}>
-          <div className={css.selectedChips}>
-            {selectedTargets.map((selected, index) => {
-              const label = selected.kind === 'spec-path'
-                ? selected.path
-                : t('edit.regionTarget', {
-                  x: Math.round(selected.x * 100), y: Math.round(selected.y * 100),
-                })
-              return (
-                <button
-                  type="button" className={css.selectedChip} key={`${label}:${String(index)}`}
-                  onClick={() => { setSelectedTargets(current => current.filter((_, candidate) => candidate !== index)) }}
-                >
-                  {label} ×
-                </button>
-              )
-            })}
-          </div>
-          <button type="button" className={css.addToConversation} onClick={() => {
-            addToConversation(selectedTargets.map(selected => ({
-              artifactId: chart.artifactId, version: chart.version, target: selected,
-            })))
-            setSelectedTargets([])
-            setTarget(undefined)
-          }}>
-            {t('edit.addToConversation')}
-          </button>
-        </section>
-      )}
       {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
       {'width' in chart.attachment && (
         <ArtifactLightbox
@@ -545,12 +556,18 @@ function ArtifactTab({
   )
 }
 
-function ArtifactViewer({ science, snapshot, loadImage, loadText, addToConversation, commitStyleEdit, useStore, actions, inspectCall, t }: {
+function ArtifactViewer({
+  science, snapshot, loadImage, loadText, addToConversation, removeFromConversation,
+  composerSelections, openTrace, commitStyleEdit, useStore, actions, inspectCall, t,
+}: {
   science: ScienceClientProjection
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
   loadText: TextLoader
   addToConversation: ScienceDetailsInjected['addToConversation']
+  removeFromConversation: ScienceDetailsInjected['removeFromConversation']
+  composerSelections: ScienceDetailsInjected['composerSelections']
+  openTrace: ScienceDetailsInjected['openTrace']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -576,6 +593,7 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, addToConversat
         <LandingView
           artifacts={artifacts}
           outcome={science.outcome}
+          snapshot={snapshot}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
           t={t}
@@ -613,6 +631,9 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, addToConversat
             loadImage={loadImage}
             loadText={loadText}
             addToConversation={addToConversation}
+            removeFromConversation={removeFromConversation}
+            composerSelections={composerSelections}
+            openTrace={openTrace}
             commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
@@ -633,7 +654,7 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, addToConversat
  */
 export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
-  inspectCall, loadImage, loadText, addToConversation, commitStyleEdit, t,
+  inspectCall, loadImage, loadText, addToConversation, removeFromConversation, composerSelections, openTrace, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
@@ -660,6 +681,7 @@ export function ScienceDetailsView({
     <ArtifactViewer
       science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
+      removeFromConversation={removeFromConversation} composerSelections={composerSelections} openTrace={openTrace}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

@@ -82,6 +82,28 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('routes main-view openings and disposes exact Session visibility predicates', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = b.root.bindViewOpener(sessionId, first)
+    const disposeSecond = b.root.bindViewOpener(sessionId, second)
+    disposeFirst()
+    b.root.openView(sessionId, 'trace')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith('trace')
+    const disposeVisibility = b.root.registerViewVisibility('trace', id => id === sessionId)
+    expect(b.root.viewVisible(sessionId, 'trace')).toBe(true)
+    expect(b.root.viewVisible('other' as never, 'trace')).toBe(false)
+    expect(() => { b.root.registerViewVisibility('trace', () => true) }).toThrow(/already registered/)
+    disposeVisibility()
+    expect(b.root.viewVisible('other' as never, 'trace')).toBe(true)
+    disposeSecond()
+    expect(() => { b.root.openView(sessionId, 'trace') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

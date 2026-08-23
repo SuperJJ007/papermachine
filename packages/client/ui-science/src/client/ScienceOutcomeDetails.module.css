@@ -1,0 +1,28 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.root header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.root h3,
+.notice {
+  margin: 0;
+}
+
+.root header span,
+.notice {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.notice {
+  padding: 12px;
+}

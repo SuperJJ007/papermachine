@@ -12,7 +12,8 @@
  * over opened artifacts, an in-panel toolbar, per-media-type dispatched
  * content, and — one toolbar click away — the provenance drill-in, entirely
  * inside this one Details entry (no separate `conversation.view` tab or
- * `conversation.details.header.actions` registration). The toolview rows
+ * `conversation.details.header.actions` registration). A Science-only Trace
+ * tab and distinct Files/Outcomes Details routes complete the workbench. The toolview rows
  * are pure functions of the frozen call/result slice, the loaded durable
  * image/text bytes, and (for the Outcome row) the live `science` session
  * projection; the settings card owns its own staging over the bound
@@ -55,6 +56,7 @@ import { ScienceDestinations } from './ScienceDestinations.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
 import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
+import { ScienceOutcomeDetails } from './ScienceOutcomeDetails.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
 import type { ScienceRuntimeSettingsSection } from './settings-card-controller.ts'
@@ -69,6 +71,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Details entry id this package registers (matches the header action's `openDetailsView` argument). */
 const SCIENCE_DETAILS_ID = 'science'
+const SCIENCE_OUTCOMES_ID = 'science-outcomes'
 
 /**
  * Required services: the locale, slot, and session registries, plus
@@ -101,17 +104,22 @@ export function apply(ctx: ClientContext): void {
   // — the framework resolves one live instance per (this handle, session) pair.
   const scienceSelectionStore = createScienceSelectionStore()
   const composerSelections = new ScienceComposerSelections()
-  const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) =>
-    createElement(ScienceComposerChips, {
+  const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) => {
+    const science = props.useProjection('science')
+    if (science === null || science === undefined) return null
+    return createElement(ScienceComposerChips, {
       selections: composerSelections.store(props.sessionId),
       remove: (index) => { composerSelections.remove(props.sessionId, index) },
       t: props.t,
     })
+  }
 
   ctx.slots.inject('sidebar.destinations', () => ctx.slots.register({
     name: 'sidebar.destinations', id: 'science', order: 0, locale: NS,
     inject: () => ({
-      openScience: (sessionId: SessionId) => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+      openScience: (sessionId: SessionId, destination: 'files' | 'outcomes') => {
+        ctx.conversation.openDetailsView(sessionId, destination === 'files' ? SCIENCE_DETAILS_ID : SCIENCE_OUTCOMES_ID)
+      },
     }),
   }, ScienceDestinations))
 
@@ -184,6 +192,10 @@ export function apply(ctx: ClientContext): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
+  ctx.effect(() => ctx.conversation.registerViewVisibility('trace', sessionId =>
+    ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset === 'science'
+    || (ctx.sessions.binding(sessionId)?.session.projections.faceOf('science').getSnapshot() ?? null) !== null),
+  'ui-science: trace visibility')
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view', id: 'trace', order: 20, label: () => t('trace.view'), locale: NS,
     store: scienceSelectionStore,
@@ -202,7 +214,17 @@ export function apply(ctx: ClientContext): void {
       loadImage: createScienceImageLoader(ctx.sessions, sessionId),
       loadText: createScienceTextLoader(ctx.sessions, sessionId),
       addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
+      removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
+      composerSelections: composerSelections.store(sessionId),
+      openTrace: (turn) => {
+        ctx.conversation.openView(sessionId, 'trace')
+        requestAnimationFrame(() => { document.getElementById(`trace-turn-${String(turn)}`)?.scrollIntoView() })
+      },
       commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))
+  ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
+    name: 'conversation.details.view', id: SCIENCE_OUTCOMES_ID, order: 11,
+    label: () => t('outcome.title'), locale: NS,
+  }, ScienceOutcomeDetails))
 }

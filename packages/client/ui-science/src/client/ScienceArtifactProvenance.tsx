@@ -9,7 +9,7 @@
 
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode, ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: ChatNode narrows the generic view-node store's value for the
 // 'tool-call' target the same way ui-conversation's own tool-node reader does.
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -38,7 +38,40 @@ export interface ScienceArtifactProvenanceProps {
   onSubTabChange: (subTab: ScienceProvenanceSubTab) => void
   onBack: () => void
   inspectCall: (callId: string) => void
+  openTrace: (turn: number) => void
   t: TranslateNS<'science'>
+}
+
+function compactSummary(text: string): string {
+  return text.replace(/\s+/gu, ' ').trim().slice(0, 180)
+}
+
+function userText(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>): string {
+  return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ')
+}
+
+/** Resolve the generating turn plus nearby dialogue without parsing model prose. */
+function generationSummary(snapshot: ConversationSnapshot, callId: string): {
+  readonly turn: number
+  readonly user: string
+  readonly agent: string
+} | undefined {
+  const nodes = snapshot.nodes
+  const assistant = nodes.find(node => node.kind === 'assistant'
+    && node.blocks.some(block => block.kind === 'tool-call' && block.callId === callId))
+  if (assistant?.kind !== 'assistant') return undefined
+  const priorUser = [...nodes].reverse().find(node =>
+    (node.kind === 'user' || node.kind === 'steering') && node.seq < assistant.seq)
+  const conclusion = [...nodes].reverse().find(node => node.kind === 'assistant' && node.turn === assistant.turn
+    && node.blocks.some(block => block.kind === 'text' && block.text.trim() !== ''))
+  const agent = conclusion?.kind === 'assistant'
+    ? [...conclusion.blocks].reverse().find(block => block.kind === 'text' && block.text.trim() !== '')
+    : undefined
+  return {
+    turn: assistant.turn,
+    user: priorUser?.kind === 'user' || priorUser?.kind === 'steering' ? compactSummary(userText(priorUser)) : '',
+    agent: agent?.kind === 'text' ? compactSummary(agent.text) : '',
+  }
 }
 
 /** Resolve one root run_python/run_r call through the internal Chat Node index (direct-dispatch calls are always root). */
@@ -185,9 +218,10 @@ function EnvironmentSection({ run, environment, t }: {
  * @returns the drill-in body.
  */
 export function ScienceArtifactProvenance({
-  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, t,
+  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, openTrace, t,
 }: ScienceArtifactProvenanceProps) {
   const block = resolveRunCall(snapshot, run.toolCallId)
+  const summary = generationSummary(snapshot, run.toolCallId)
 
   return (
     <div className={css.body}>
@@ -196,6 +230,21 @@ export function ScienceArtifactProvenance({
         <span className={css.breadcrumbSep} aria-hidden="true">›</span>
         <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
       </nav>
+      {summary !== undefined && (
+        <section className={css.summaryCard}>
+          <strong>{t('provenance.summary.title', { turn: summary.turn })}</strong>
+          {summary.user !== '' && <p><b>{t('provenance.summary.user')}</b>{summary.user}</p>}
+          {summary.agent !== '' && <p><b>{t('provenance.summary.agent')}</b>{summary.agent}</p>}
+          <div className={css.summaryActions}>
+            <button type="button" data-anchor={`call:${run.toolCallId}`} onClick={() => { inspectCall(run.toolCallId) }}>
+              {t('provenance.summary.trajectory')}
+            </button>
+            <button type="button" data-anchor={`turn:${String(summary.turn)}`} onClick={() => { openTrace(summary.turn) }}>
+              {t('provenance.summary.trace')}
+            </button>
+          </div>
+        </section>
+      )}
       <div className={css.subTabs} role="tablist" aria-label={t('provenance.label')}>
         {SUB_TABS.map(({ id, labelKey }) => (
           <button

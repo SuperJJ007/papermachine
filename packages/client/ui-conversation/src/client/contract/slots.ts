@@ -576,7 +576,7 @@ export interface ConversationPageUtilitiesOwnerProps {
 export interface ConversationSessionInjected {
   /** Views projected from the `conversation.view` slot ledger. */
   views: {
-    list: () => readonly ViewTab[]
+    list: (sessionId: SessionId) => readonly ViewTab[]
     subscribe: (fn: () => void) => () => void
     version: () => number
   }
@@ -590,7 +590,7 @@ export interface ConversationSessionInjected {
 export interface ConversationSessionHeaderInjected {
   /** Views projected from the `conversation.view` slot ledger. */
   views: {
-    list: () => readonly ViewTab[]
+    list: (sessionId: SessionId) => readonly ViewTab[]
     subscribe: (fn: () => void) => () => void
     version: () => number
   }

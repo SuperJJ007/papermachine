@@ -50,6 +50,10 @@ export interface IConversation {
   registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
   /** Select and reveal one Details entry for an already-mounted Session. */
   openDetailsView(sessionId: SessionId, id: string): void
+  /** Select one main conversation view for an already-mounted Session. */
+  openView(sessionId: SessionId, id: string): void
+  /** Register a predicate that limits one main view to matching Sessions. */
+  registerViewVisibility(id: string, visible: (sessionId: SessionId) => boolean): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -116,6 +120,8 @@ export class ConversationController extends Service implements IConversation {
   private readonly createdImageUrls = new Set<string>()
   private readonly submissionHandlers: ComposerSubmissionHandler[] = []
   private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly viewVisibility = new Map<string, (sessionId: SessionId) => boolean>()
   private disposed = false
 
   /**
@@ -137,6 +143,8 @@ export class ConversationController extends Service implements IConversation {
       this.imageUrls.clear()
       this.imageGenerations.clear()
       this.detailsOpeners.clear()
+      this.viewOpeners.clear()
+      this.viewVisibility.clear()
     }, 'conversation attachment URL cache')
   }
 
@@ -213,6 +221,43 @@ export class ConversationController extends Service implements IConversation {
   openDetailsView(sessionId: SessionId, id: string): void {
     const open = this.detailsOpeners.get(sessionId)
     open?.(id)
+  }
+
+  /**
+   * Bind the current main-view router action for one mounted Session.
+   * @param sessionId - mounted Session.
+   * @param opener - current main-view route action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindViewOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
+    this.viewOpeners.set(sessionId, opener)
+    return () => {
+      if (this.viewOpeners.get(sessionId) === opener) this.viewOpeners.delete(sessionId)
+    }
+  }
+
+  /** Select one main conversation view. */
+  openView(sessionId: SessionId, id: string): void {
+    this.viewOpeners.get(sessionId)?.(id)
+  }
+
+  /** Register one main-view Session predicate. */
+  registerViewVisibility(id: string, visible: (sessionId: SessionId) => boolean): () => void {
+    if (this.viewVisibility.has(id)) throw new Error(`conversation view visibility already registered: ${id}`)
+    this.viewVisibility.set(id, visible)
+    return () => {
+      if (this.viewVisibility.get(id) === visible) this.viewVisibility.delete(id)
+    }
+  }
+
+  /**
+   * Resolve whether one registered main view is available to an addressed Session.
+   * @param sessionId - addressed Session.
+   * @param id - main-view id.
+   * @returns `true` when no predicate rejects the view for this Session.
+   */
+  viewVisible(sessionId: SessionId, id: string): boolean {
+    return this.viewVisibility.get(id)?.(sessionId) ?? true
   }
 
   /**

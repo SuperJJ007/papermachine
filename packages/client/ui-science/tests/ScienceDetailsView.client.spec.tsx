@@ -12,12 +12,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
-import type { ConversationSnapshot, SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type ConversationSnapshot, type SessionId, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ScienceClientArtifactVersion, ScienceClientHumanEditArtifactVersion, ScienceClientProjection,
   ScienceClientRun, ScienceClientRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceStyleEditReceipt, ScienceStyleEditRequest } from '@deepseek-ai/dsh-tool-science/types'
+import type { ScienceEditSelection, ScienceStyleEditReceipt, ScienceStyleEditRequest } from '@deepseek-ai/dsh-tool-science/types'
 import {
   ScienceDetailsView,
   type ScienceDetailsViewProps,
@@ -184,7 +184,7 @@ function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
 }
 
 function emptySnapshot(): ConversationSnapshot {
-  return { chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
+  return { nodes: [], chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
 }
 
 function props(
@@ -194,9 +194,12 @@ function props(
     loadImage?: Props['loadImage']
     loadText?: Props['loadText']
     addToConversation?: Props['addToConversation']
+    removeFromConversation?: Props['removeFromConversation']
+    composerSelections?: Props['composerSelections']
     commitStyleEdit?: CommitStyleEdit
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
+    snapshot?: ConversationSnapshot
   } = {},
 ): Props {
   const state = {
@@ -216,7 +219,7 @@ function props(
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
-  const snapshot = emptySnapshot()
+  const snapshot = over.snapshot ?? emptySnapshot()
   const store = over.store ?? testScienceSelectionStore()
   return {
     sessionId: SESSION,
@@ -229,6 +232,9 @@ function props(
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
     addToConversation: over.addToConversation ?? vi.fn(),
+    removeFromConversation: over.removeFromConversation ?? vi.fn(),
+    composerSelections: over.composerSelections ?? createSnapshotStore([]),
+    openTrace: vi.fn(),
     commitStyleEdit: over.commitStyleEdit ?? vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit' },
     }),
@@ -282,6 +288,39 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByText('Loss curve')).toBeTruthy()
     expect(screen.getAllByText('loss-curve.png')).toHaveLength(2)
     expect(screen.getByText('Other')).toBeTruthy()
+  })
+
+  it('labels a generated artifact with its turn, version, and parent version', () => {
+    const science = baseProjection({
+      artifacts: [chart({
+        version: 5,
+        parent: { artifactId: 'chart-1' as never, version: 4 },
+      })],
+    })
+    const snapshot = {
+      ...emptySnapshot(),
+      nodes: [{
+        kind: 'assistant', seq: 8, time: 8_000, turn: 3, step: 1,
+        blocks: [{ kind: 'tool-call', callId: 'call-chart-1', name: 'annotate_artifact', argsRaw: '{}' }],
+      }],
+    } as ConversationSnapshot
+    render(<ScienceDetailsView {...props(science, { snapshot })} />)
+    expect(screen.getByText('Generated in turn 3 · v5 · from v4')).toBeTruthy()
+  })
+
+  it('labels first-generation and human-edited artifacts without internal generation facts', () => {
+    const generated = chart({ artifactId: 'chart-generated' as never, version: 1, title: 'Generated' })
+    const edited = humanEditChart({ artifactId: 'chart-edited' as never, version: 2, title: 'Edited' })
+    const snapshot = {
+      ...emptySnapshot(),
+      nodes: [{
+        kind: 'assistant', seq: 3, time: 3_000, turn: 2, step: 1,
+        blocks: [{ kind: 'tool-call', callId: 'call-chart-1', name: 'annotate_artifact', argsRaw: '{}' }],
+      }],
+    } as ConversationSnapshot
+    render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
+    expect(screen.getByText('Generated in turn 2 · v1')).toBeTruthy()
+    expect(screen.getByText('v2')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -428,14 +467,14 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     // The stepped-to title shows twice: once as the tab label, once in the toolbar.
     expect(screen.getAllByText('v3 title')).toHaveLength(2)
-    expect(screen.getByText(/5\.0 MB/)).toBeTruthy()
+    expect(screen.queryByText(/5\.0 MB/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
     expect(screen.getAllByText('v1 title')).toHaveLength(2)
     expect(screen.getByText('First pass')).toBeTruthy()
-    expect(screen.getByText(/512 B/)).toBeTruthy()
+    expect(screen.queryByText(/512 B/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
   })
 
@@ -487,13 +526,13 @@ describe('ScienceDetailsView: content dispatch', () => {
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
   })
 
-  it('renders the source run and dimensions in the content facts', () => {
+  it('does not expose source run ids or attachment dimensions in artifact content', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    expect(screen.getByText('from run run-1')).toBeTruthy()
-    expect(screen.getByText(/10×10/)).toBeTruthy()
+    expect(screen.queryByText('from run run-1')).toBeNull()
+    expect(screen.queryByText(/10×10/)).toBeNull()
   })
 
   function textArtifact(
@@ -569,15 +608,75 @@ describe('ScienceDetailsView: content dispatch', () => {
     store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
     render(<ScienceDetailsView {...props(science, { store, loadText, addToConversation })} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'encoding.color' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add to conversation' }))
+    const comment = await screen.findByRole('textbox', { name: 'Edit note for encoding.color' })
+    fireEvent.change(comment, { target: { value: 'make it blue' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add encoding.color to the conversation' }))
 
     await waitFor(() => {
       expect(addToConversation).toHaveBeenCalledWith([{
         artifactId: 'chart-1', version: 3,
         target: { kind: 'spec-path', path: 'encoding.color' },
+        comment: 'make it blue',
       }])
     })
+  })
+
+  it('opens the human style panel when the rendered chart is activated', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"y":{"field":"value"}}}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    const chartButton = await screen.findByRole('button', { name: 'Open chart style editor' })
+    fireEvent.keyDown(chartButton, { key: 'a' })
+    expect(screen.queryByRole('region', { name: 'Style' })).toBeNull()
+    fireEvent.keyDown(chartButton, { key: ' ' })
+    expect(screen.getByRole('region', { name: 'Style' })).toBeTruthy()
+    fireEvent.click(chartButton)
+  })
+
+  it('does not expose chart-selection handlers when a spec has no structural targets', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"data":{"values":[]}}')
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
+    expect(screen.queryByRole('button', { name: 'Open chart style editor' })).toBeNull()
+  })
+
+  it('removes an element from the composer through the row minus control', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const selection: ScienceEditSelection = {
+      artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: 'mark' },
+    }
+    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([selection])
+    const removeFromConversation = vi.fn<Props['removeFromConversation']>()
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    render(<ScienceDetailsView {...props(science, {
+      store, loadText, composerSelections, removeFromConversation,
+    })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove mark' }))
+    expect(removeFromConversation).toHaveBeenCalledWith(selection)
+  })
+
+  it('keeps each element row synchronized with removals from the main composer', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"y":{"field":"value"}}}')
+    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([])
+    const addToConversation: Props['addToConversation'] = (targets) => { composerSelections.set(targets) }
+    const removeFromConversation: Props['removeFromConversation'] = () => { composerSelections.set([]) }
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'chart.vl.json', version: 5 })
+    store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 5 })
+    render(<ScienceDetailsView {...props(science, {
+      store, loadText, composerSelections, addToConversation, removeFromConversation,
+    })} />)
+
+    const add = await screen.findByRole('button', { name: 'Add encoding.y to the conversation' })
+    fireEvent.click(add)
+    expect(await screen.findByRole('button', { name: 'Remove encoding.y' })).toBeTruthy()
+    act(() => { composerSelections.set([]) })
+    expect(await screen.findByRole('button', { name: 'Add encoding.y to the conversation' })).toBeTruthy()
   })
 
   it('previews safe style controls and commits a human-edited next version', async () => {
@@ -683,7 +782,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(screen.getByRole('button', { name: 'vconcat.1.spec.encoding.y' })).toBeDefined()
   })
 
-  it('normalizes a raster drag before adding it to the main composer', async () => {
+  it('normalizes a raster drag as a human style-area selection without staging an AI edit', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 2 })] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
@@ -699,16 +798,8 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.mouseDown(gesture, { clientX: 30, clientY: 40 })
     fireEvent.mouseMove(gesture, { clientX: 130, clientY: 90 })
     fireEvent.mouseUp(gesture, { clientX: 130, clientY: 90 })
-    fireEvent.click(screen.getByRole('button', { name: 'Add to conversation' }))
-
-    expect(addToConversation).toHaveBeenCalledTimes(1)
-    expect(addToConversation.mock.calls[0]?.[0]?.[0]).toMatchObject({
-      artifactId: 'chart-1', version: 2,
-      target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.5 },
-    })
-    const submittedTarget = addToConversation.mock.calls[0]?.[0]?.[0]?.target
-    if (submittedTarget?.kind !== 'normalized-region') throw new Error('expected one normalized-region request')
-    expect(submittedTarget.height).toBeCloseTo(0.5)
+    expect(addToConversation).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Select region to edit' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('ignores incomplete raster gestures and clears a draft when the pointer leaves', () => {

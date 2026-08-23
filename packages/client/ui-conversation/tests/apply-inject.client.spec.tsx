@@ -25,6 +25,7 @@ import type {
   ConversationSessionInjected, DetailsInjected,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { createChatStore } from '../src/client/stores.ts'
+import type { ConversationController } from '../src/client/service.ts'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -135,7 +136,7 @@ describe('conversation slot inject API', () => {
     // Assembly has no session side effects: opening the event window belongs
     // to the runtime watch path, not the inject factory.
     expect(b.sessionFake.open).not.toHaveBeenCalled()
-    expect(injected.views.list().map(v => v.id)).toEqual(['chat'])
+    expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat'])
 
     const chatView = b.chatViewApi(ROOT)
     chatView.injected.loadOlder()
@@ -348,11 +349,15 @@ describe('conversation slot inject API', () => {
     await Promise.resolve() // ledger notifications batch per microtask
     expect(listener).toHaveBeenCalled()
     expect(injected.views.version()).toBeGreaterThan(before)
-    expect(injected.views.list().map(v => v.id)).toEqual(['chat', 'chat2'])
+    expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat', 'chat2'])
     // Label falls back to the id when a rider declares none.
     const off2 = b.slots.register(
       { name: 'conversation.view', id: 'bare', order: 6 } as never, (() => null) as never)
-    expect(injected.views.list().map(v => v.label)).toEqual(['对话', 'X', 'bare'])
+    expect(injected.views.list(ROOT).map(v => v.label)).toEqual(['对话', 'X', 'bare'])
+    const conversation = b.runtime.ctx.get('conversation') as ConversationController
+    const hide = conversation.registerViewVisibility('chat2', () => false)
+    expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat', 'bare'])
+    hide()
     off()
     off2()
     unsub()

@@ -34,6 +34,26 @@ export interface ComposerSubmission {
 export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
 
 /**
+ * A main-view Session predicate with its own invalidation signal. `visible`
+ * is read fresh on every `viewVisible` query (never cached), and `subscribe`
+ * fires whenever a FUTURE `visible` call could answer differently for any
+ * Session — the source's own state changed, not necessarily the addressed
+ * one — so the tab strip re-lists rather than staying stuck on a stale
+ * answer. A registrant whose predicate depends only on immutable Session
+ * facts already fixed at registration time may return a no-op disposer.
+ */
+export interface ViewVisibilitySource {
+  /** Whether the view is currently available to this Session. */
+  visible(sessionId: SessionId): boolean
+  /**
+   * Subscribe to a change in what `visible` might answer.
+   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
+   * @returns disposer removing this subscription.
+   */
+  subscribe(callback: () => void): () => void
+}
+
+/**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
  * verbs and the input registry other plugins may reach — and exactly what a
  * test fake must supply.
@@ -53,7 +73,7 @@ export interface IConversation {
   /** Select one main conversation view for an already-mounted Session. */
   openView(sessionId: SessionId, id: string): void
   /** Register a predicate that limits one main view to matching Sessions. */
-  registerViewVisibility(id: string, visible: (sessionId: SessionId) => boolean): () => void
+  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -121,7 +141,11 @@ export class ConversationController extends Service implements IConversation {
   private readonly submissionHandlers: ComposerSubmissionHandler[] = []
   private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
   private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
-  private readonly viewVisibility = new Map<string, (sessionId: SessionId) => boolean>()
+  private readonly viewVisibility = new Map<string, ViewVisibilitySource>()
+  private readonly viewVisibilityDisposers = new Map<string, () => void>()
+  /** Bumped whenever any registered {@link ViewVisibilitySource} invalidates; the `views` snapshot in apply.ts. */
+  private viewVisibilityVersionCounter = 0
+  private readonly viewVisibilitySubscribers = new Set<() => void>()
   private disposed = false
 
   /**
@@ -145,6 +169,9 @@ export class ConversationController extends Service implements IConversation {
       this.detailsOpeners.clear()
       this.viewOpeners.clear()
       this.viewVisibility.clear()
+      for (const dispose of this.viewVisibilityDisposers.values()) dispose()
+      this.viewVisibilityDisposers.clear()
+      this.viewVisibilitySubscribers.clear()
     }, 'conversation attachment URL cache')
   }
 
@@ -242,11 +269,18 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /** Register one main-view Session predicate. */
-  registerViewVisibility(id: string, visible: (sessionId: SessionId) => boolean): () => void {
+  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void {
     if (this.viewVisibility.has(id)) throw new Error(`conversation view visibility already registered: ${id}`)
-    this.viewVisibility.set(id, visible)
+    this.viewVisibility.set(id, source)
+    this.viewVisibilityDisposers.set(id, source.subscribe(() => {
+      this.viewVisibilityVersionCounter += 1
+      for (const callback of this.viewVisibilitySubscribers) callback()
+    }))
     return () => {
-      if (this.viewVisibility.get(id) === visible) this.viewVisibility.delete(id)
+      if (this.viewVisibility.get(id) !== source) return
+      this.viewVisibility.delete(id)
+      this.viewVisibilityDisposers.get(id)?.()
+      this.viewVisibilityDisposers.delete(id)
     }
   }
 
@@ -257,7 +291,29 @@ export class ConversationController extends Service implements IConversation {
    * @returns `true` when no predicate rejects the view for this Session.
    */
   viewVisible(sessionId: SessionId, id: string): boolean {
-    return this.viewVisibility.get(id)?.(sessionId) ?? true
+    return this.viewVisibility.get(id)?.visible(sessionId) ?? true
+  }
+
+  /**
+   * Subscribe to every registered {@link ViewVisibilitySource}'s invalidation,
+   * present and future — apply.ts's `views.subscribe` folds this in beside the
+   * `conversation.view` slot ledger, so a tab strip re-lists when a source's
+   * answer changes for reasons the slot ledger itself never sees (a session
+   * list update, a projection update).
+   * @param callback - invoked with no arguments on any source's invalidation.
+   * @returns disposer removing this subscription.
+   */
+  subscribeViewVisibility(callback: () => void): () => void {
+    this.viewVisibilitySubscribers.add(callback)
+    return () => { this.viewVisibilitySubscribers.delete(callback) }
+  }
+
+  /**
+   * Monotonic counter bumped on every registered source's invalidation; part of the `views` snapshot.
+   * @returns the current counter value.
+   */
+  viewVisibilityVersion(): number {
+    return this.viewVisibilityVersionCounter
   }
 
   /**

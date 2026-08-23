@@ -163,8 +163,22 @@ export function apply(ctx: Context): void {
   }
   const views = {
     list: viewTabs,
-    subscribe: (fn: () => void) => slots.subscribe('conversation.view', fn),
-    version: () => slots.getVersion('conversation.view'),
+    // Two independent invalidation sources: the slot ledger (a view entry
+    // registers or disposes) and every registered ViewVisibilitySource (a
+    // source's own answer changes for reasons the ledger never sees — a
+    // session list update, a projection update). Either firing must re-list
+    // the tabs, so both feed the same subscription and both terms sit in the
+    // version string useSyncExternalStore compares.
+    subscribe: (fn: () => void) => {
+      const unsubscribeSlots = slots.subscribe('conversation.view', fn)
+      const unsubscribeVisibility = concreteConversation(ctx).subscribeViewVisibility(fn)
+      return () => { unsubscribeSlots(); unsubscribeVisibility() }
+    },
+    // A plain sum, not a pair: both counters only ever increase, so the sum
+    // strictly increases whenever either does — the one property
+    // useSyncExternalStore's snapshot comparison needs, while keeping
+    // `version` a plain number (ConversationSessionInjected's declared type).
+    version: () => slots.getVersion('conversation.view') + concreteConversation(ctx).viewVisibilityVersion(),
   }
 
   const detailsViewEntries = (): DetailsViewEntry[] => {

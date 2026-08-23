@@ -209,10 +209,22 @@ describe('AppFrame', () => {
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 820])
 
+    // Genuinely no Session (the true welcome page) closes immediately, unlike
+    // the blank-session detour above.
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 820])
+    expect(tracks(frame)).toEqual([280, 0])
     selectedSession.current = 's-test' as SessionId
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('closes details the moment the welcome page has no Session at all', () => {
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 820])
+
+    selectedSession.current = undefined
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
   })

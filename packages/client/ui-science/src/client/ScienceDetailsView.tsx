@@ -22,7 +22,7 @@
 // "not applied" notice replaces them). The top-level missing-support/unbound
 // states below are unrelated to that strip and are unchanged.
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
@@ -197,6 +197,7 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
   const prev = index > 0 ? versions[index - 1] : undefined
   const next = index < versions.length - 1 ? versions[index + 1] : undefined
   const isImage = 'width' in chart.attachment
+  const exportUnavailableId = useId()
 
   return (
     <div className={css.toolbar}>
@@ -239,10 +240,19 @@ function ArtifactToolbar({ chart, versions, onStepVersion, onOpenProvenance, onM
           <IconDownloadOutline16 size={14} />
         </button>
         <Tooltip label={t('toolbar.exportUnavailable')} side="bottom" delayMs={300}>
-          <button type="button" className={css.toolbarAction} disabled aria-label={t('toolbar.export')}>
+          {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+          <button
+            type="button"
+            className={css.toolbarAction}
+            aria-label={t('toolbar.export')}
+            aria-disabled
+            aria-describedby={exportUnavailableId}
+            data-unavailable
+          >
             {t('toolbar.export')}
           </button>
         </Tooltip>
+        <span id={exportUnavailableId} className={css.visuallyHidden}>{t('toolbar.exportUnavailable')}</span>
         {/* Maximize opens the shared image lightbox; a text attachment has no
             raster to maximize, so this control is image-only. */}
         {isImage && (
@@ -519,6 +529,12 @@ function ArtifactTab({
         t={t}
       />
       <ArtifactContent
+        // Keyed by exact artifact identity: forces a full remount (comment
+        // drafts, the Vega-Lite working document, an in-progress raster
+        // drag) on every tab switch or version step, so a typed-but-unstaged
+        // comment for one artifact/version never pre-fills another's field
+        // that happens to share the same spec path or region coordinates.
+        key={`${chart.artifactId}:${String(chart.version)}`}
         chart={chart}
         loadImage={loadImage}
         loadText={loadText}
@@ -532,7 +548,10 @@ function ArtifactTab({
           target: next,
           ...(comment.trim() === '' ? {} : { comment: comment.trim() }),
         }]) }}
-        onRemoveTarget={(next) => { removeFromConversation(selectionFor(next) as ScienceEditSelection) }}
+        onRemoveTarget={(next) => {
+          const selection = selectionFor(next)
+          if (selection !== undefined) removeFromConversation(selection)
+        }}
         onCommitStyle={async (spec) => {
           const result = await commitStyleEdit({ artifactId: chart.artifactId, version: chart.version, spec })
           if (!result.ok) return { ok: false, error: result.error.message }

@@ -13,13 +13,27 @@
  * content, and — one toolbar click away — the provenance drill-in, entirely
  * inside this one Details entry (no separate `conversation.view` tab or
  * `conversation.details.header.actions` registration). A Science-only Trace
- * tab and distinct Files/Outcomes Details routes complete the workbench. The toolview rows
+ * tab and distinct Files/Outcomes Details routes complete the workbench,
+ * alongside sidebar destinations, a welcome-page Files action, staged-target
+ * composer chips (`conversation.input.accessory`), and a composer-dock kernel
+ * status line — every one of these gated the same way the header action is,
+ * so no Science surface reaches another preset or a Session-less page. The
+ * Trace tab's own visibility is a `registerViewVisibility` source
+ * (`createTraceVisibilitySource`) that re-subscribes to the sessions list and
+ * every listed Session's `science` projection, so the tab strip reacts to a
+ * preset assignment or a projection resolving on its own. The toolview rows
  * are pure functions of the frozen call/result slice, the loaded durable
  * image/text bytes, and (for the Outcome row) the live `science` session
  * projection; the settings card owns its own staging over the bound
  * settings scope; the artifact viewer and the transcript rows share one
  * package-local per-session selection store (selection-store.ts) — Science
- * viewing state ui-conversation's `ChatStoreState` has no reason to carry.
+ * viewing state ui-conversation's `ChatStoreState` has no reason to carry. A
+ * raster region drawn in the artifact viewer stages into the same composer
+ * selections store as a Vega-Lite structural target, through the same
+ * comment-plus-add control; every comment draft is scoped to its exact
+ * artifact identity so switching tabs or versions never bleeds one draft into
+ * another, and editing a comment after staging updates the staged selection
+ * immediately.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -36,7 +50,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: the conversation.session.header.actions and
 // conversation.details.view slots' declarations, and the Details seam's
 // inspectCall owner callback (same cross-plugin rule).
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
@@ -72,6 +86,51 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Details entry id this package registers (matches the header action's `openDetailsView` argument). */
 const SCIENCE_DETAILS_ID = 'science'
 const SCIENCE_OUTCOMES_ID = 'science-outcomes'
+
+/**
+ * The `trace` view's visibility source: a Session qualifies once it names
+ * the `science` preset OR its `science` projection has resolved (a
+ * subagent, or a preset switch after creation, may bind one without the
+ * preset field itself ever being `science`). `subscribe` re-derives its
+ * per-Session projection subscriptions every time the sessions list
+ * changes, so a preset assignment (the list itself), a Session appearing or
+ * leaving, or that Session's science projection binding/updating each reach
+ * the callback — the tab strip's `views.subscribe` folds this in beside the
+ * `conversation.view` slot ledger (ui-conversation's `apply.ts`), so a
+ * flip here re-lists the tabs on its own, without waiting for an unrelated
+ * ledger mutation.
+ * @param ctx - client root context (reads `ctx.sessions`).
+ * @returns the registrable {@link ViewVisibilitySource}.
+ */
+function createTraceVisibilitySource(ctx: ClientContext): ViewVisibilitySource {
+  return {
+    visible: sessionId =>
+      ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset === 'science'
+      || (ctx.sessions.binding(sessionId)?.session.projections.faceOf('science').getSnapshot() ?? null) !== null,
+    subscribe: (callback) => {
+      const bindingDisposers = new Map<SessionId, () => void>()
+      const syncBindings = (): void => {
+        const ids = new Set(ctx.sessions.list.getSnapshot().ids)
+        for (const [id, dispose] of bindingDisposers) {
+          if (!ids.has(id)) { dispose(); bindingDisposers.delete(id) }
+        }
+        for (const id of ids) {
+          if (bindingDisposers.has(id)) continue
+          const face = ctx.sessions.binding(id)?.session.projections.faceOf('science')
+          if (face === undefined) continue
+          bindingDisposers.set(id, face.subscribe(callback))
+        }
+      }
+      syncBindings()
+      const disposeList = ctx.sessions.list.subscribe(() => { callback(); syncBindings() })
+      return () => {
+        disposeList()
+        for (const dispose of bindingDisposers.values()) dispose()
+        bindingDisposers.clear()
+      }
+    },
+  }
+}
 
 /**
  * Required services: the locale, slot, and session registries, plus
@@ -192,10 +251,8 @@ export function apply(ctx: ClientContext): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.conversation.registerViewVisibility('trace', sessionId =>
-    ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset === 'science'
-    || (ctx.sessions.binding(sessionId)?.session.projections.faceOf('science').getSnapshot() ?? null) !== null),
-  'ui-science: trace visibility')
+  ctx.effect(() => ctx.conversation.registerViewVisibility('trace', createTraceVisibilitySource(ctx)),
+    'ui-science: trace visibility')
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view', id: 'trace', order: 20, label: () => t('trace.view'), locale: NS,
     store: scienceSelectionStore,

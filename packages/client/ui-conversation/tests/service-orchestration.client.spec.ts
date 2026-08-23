@@ -93,10 +93,25 @@ describe('ConversationController', () => {
     b.root.openView(sessionId, 'trace')
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledWith('trace')
-    const disposeVisibility = b.root.registerViewVisibility('trace', id => id === sessionId)
+    const visibilitySubscribers: (() => void)[] = []
+    const disposeVisibility = b.root.registerViewVisibility('trace', {
+      visible: id => id === sessionId,
+      subscribe: (callback) => { visibilitySubscribers.push(callback); return () => {} },
+    })
     expect(b.root.viewVisible(sessionId, 'trace')).toBe(true)
     expect(b.root.viewVisible('other' as never, 'trace')).toBe(false)
-    expect(() => { b.root.registerViewVisibility('trace', () => true) }).toThrow(/already registered/)
+    expect(() => {
+      b.root.registerViewVisibility('trace', { visible: () => true, subscribe: () => () => {} })
+    }).toThrow(/already registered/)
+    // The source's own invalidation reaches subscribeViewVisibility and bumps
+    // the version, independent of anything the slot ledger tracks.
+    const listener = vi.fn()
+    const unsubscribe = b.root.subscribeViewVisibility(listener)
+    const before = b.root.viewVisibilityVersion()
+    visibilitySubscribers[0]?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(b.root.viewVisibilityVersion()).toBeGreaterThan(before)
+    unsubscribe()
     disposeVisibility()
     expect(b.root.viewVisible('other' as never, 'trace')).toBe(true)
     disposeSecond()

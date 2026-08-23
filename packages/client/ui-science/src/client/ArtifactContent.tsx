@@ -343,7 +343,15 @@ function VegaLiteArtifact({
                   value={comment}
                   aria-label={t('edit.targetComment', { target: path })}
                   placeholder={t('edit.targetCommentPlaceholder')}
-                  onChange={(event) => { setComments(current => ({ ...current, [path]: event.target.value })) }}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setComments(current => ({ ...current, [path]: value }))
+                    // Already staged: an edit must not silently diverge from
+                    // the chip and the outgoing science-edit message, so it
+                    // updates the staged selection immediately rather than
+                    // waiting for another Add click.
+                    if (added) onAddTarget(target, value)
+                  }}
                 />
                 <button
                   type="button"
@@ -454,17 +462,28 @@ function normalizedPoint(event: ReactMouseEvent<HTMLDivElement>): { x: number; y
 }
 
 /** Raster display with an opt-in drag layer that emits normalized coordinates. */
-function RasterArtifact({ chart, loadImage, selectionTarget, onSelectTarget, t }: {
+function RasterArtifact({
+  chart, loadImage, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
+}: {
   chart: ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }
   loadImage: ImageLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  targetComment: (target: ScienceEditTarget) => string
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
   t: TranslateNS<'science'>
 }) {
   const [selecting, setSelecting] = useState(false)
   const start = useRef<{ x: number; y: number } | undefined>(undefined)
   const [draft, setDraft] = useState<Extract<ScienceEditTarget, { kind: 'normalized-region' }> | undefined>(undefined)
   const region = draft ?? (selectionTarget?.kind === 'normalized-region' ? selectionTarget : undefined)
+  // Keyed by the region's own normalized coordinates, mirroring
+  // VegaLiteArtifact's per-path comments: a fresh drag is a distinct key, so
+  // its input starts from the staged comment (or empty) rather than whatever
+  // was typed for a previous region on this same artifact version.
+  const [comments, setComments] = useState<Record<string, string>>({})
 
   const update = (event: ReactMouseEvent<HTMLDivElement>): void => {
     if (start.current === undefined) return
@@ -496,6 +515,14 @@ function RasterArtifact({ chart, loadImage, selectionTarget, onSelectTarget, t }
     setSelecting(false)
   }
 
+  const regionKey = region === undefined ? undefined
+    : `${String(region.x)}:${String(region.y)}:${String(region.width)}:${String(region.height)}`
+  const regionLabel = region === undefined ? undefined
+    : t('edit.regionTarget', { x: Math.round(region.x * 100), y: Math.round(region.y * 100) })
+  const added = region !== undefined && isTargetAdded(region)
+  const comment = region === undefined || regionKey === undefined ? ''
+    : comments[regionKey] ?? targetComment(region)
+
   return (
     <div className={css.rasterSelector}>
       <div className={css.rasterCanvas}>
@@ -520,6 +547,39 @@ function RasterArtifact({ chart, loadImage, selectionTarget, onSelectTarget, t }
       <button type="button" className={css.regionButton} aria-pressed={selecting} onClick={() => { setSelecting(value => !value) }}>
         {selecting ? t('edit.regionCancel') : t('edit.regionSelect')}
       </button>
+      {/* Staging row for the current drawn region — same shape as the
+          Vega-Lite spec-path rows below: a comment field and one add/remove
+          control that push the exact region target into the composer
+          selections store (ScienceDetailsView's addToConversation/
+          removeFromConversation), producing the edit.regionTarget chip. */}
+      {region !== undefined && regionKey !== undefined && regionLabel !== undefined && (
+        <div className={css.specTargetRow}>
+          <span className={css.specTarget}>{regionLabel}</span>
+          <input
+            className={css.specComment}
+            value={comment}
+            aria-label={t('edit.targetComment', { target: regionLabel })}
+            placeholder={t('edit.targetCommentPlaceholder')}
+            onChange={(event) => {
+              const value = event.target.value
+              setComments(current => ({ ...current, [regionKey]: value }))
+              // Already staged: an edit must not silently diverge from the
+              // chip and the outgoing science-edit message, so it updates the
+              // staged selection immediately rather than waiting for another
+              // Add click.
+              if (added) onAddTarget(region, value)
+            }}
+          />
+          <button
+            type="button"
+            className={css.specAdd}
+            aria-label={added ? t('edit.removeTarget', { target: regionLabel }) : t('edit.addTarget', { target: regionLabel })}
+            onClick={() => { if (added) onRemoveTarget(region); else onAddTarget(region, comment) }}
+          >
+            {added ? '−' : '+'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -569,7 +629,9 @@ export function ArtifactContent({
         ? (
           <RasterArtifact
             chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
-            loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget} t={t}
+            loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
+            isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+            t={t}
           />
         )
         : (

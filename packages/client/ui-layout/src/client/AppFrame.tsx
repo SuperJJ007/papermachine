@@ -91,23 +91,35 @@ export function AppFrame({
   renderSlot,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  const current = useSessions(s => s.current)
   const detailsSession = useSessions((s) => {
-    const current = s.current
-    return current !== undefined && s.byId[current]?.blank === false ? current : undefined
+    const c = s.current
+    return c !== undefined && s.byId[c]?.blank === false ? c : undefined
   })
   const scienceSession = useSessions((s) => {
-    const current = s.current
-    return current !== undefined && s.byId[current]?.agentPreset === 'science'
+    const c = s.current
+    return c !== undefined && s.byId[c]?.agentPreset === 'science'
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
 
+  // Session identity for the auto-close, tracked separately from
+  // `detailsSession`: a blank Session (mid-creation, e.g. switching through
+  // the new-session flow) still HAS an id, and the panel deliberately stays
+  // open through that detour — closing belongs to an actual session change
+  // or to no Session at all (the true welcome page), never to the transient
+  // blank state along the way.
   const lastSession = useRef(detailsSession)
   useLayoutEffect(() => {
-    if (detailsSession === undefined) return
+    if (current === undefined) {
+      if (lastSession.current !== undefined) actions.closeDetails()
+      lastSession.current = undefined
+      return
+    }
+    if (detailsSession === undefined) return // blank-session detour: leave the panel as-is
     if (lastSession.current !== undefined && lastSession.current !== detailsSession) actions.closeDetails()
     lastSession.current = detailsSession
-  }, [actions, detailsSession])
+  }, [actions, current, detailsSession])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {

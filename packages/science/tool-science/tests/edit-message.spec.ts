@@ -161,7 +161,7 @@ describe('Science edit-message admission', () => {
     expect(() => resolveScienceEdit([vega()], {
       targets: [{ artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: '  ' }],
       instruction: 'change it',
-    })).toThrow(/instruction must be non-empty/)
+    })).toThrow(/target comment must be non-empty/)
   })
 
   it('admits multiple exact targets atomically and attaches every raster in target order', () => {

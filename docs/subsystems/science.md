@@ -30,9 +30,9 @@ Remote service admitting browser edit gestures into the addressed live agent.
 
 ```ts cordis-catalog
 /**
- * Validate one exact current artifact selection and queue its structured edit message.
+ * Validate exact current artifact selections and queue one structured edit message.
  * @param agent - exact live agent resolved by the Remote lookup policy.
- * @param request - selected version, target, and user instruction.
+ * @param request - selected versions, targets, and shared user instruction.
  * @returns durable-inbox admission receipt.
  */
 @Remote('submit') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt

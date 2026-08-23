@@ -355,12 +355,45 @@ describe('conversation slot inject API', () => {
       { name: 'conversation.view', id: 'bare', order: 6 } as never, (() => null) as never)
     expect(injected.views.list(ROOT).map(v => v.label)).toEqual(['对话', 'X', 'bare'])
     const conversation = b.runtime.ctx.get('conversation') as ConversationController
-    const hide = conversation.registerViewVisibility('chat2', () => false)
+    const hide = conversation.registerViewVisibility('chat2', { visible: () => false, subscribe: () => () => {} })
     expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat', 'bare'])
     hide()
     off()
     off2()
     unsub()
+    await b.runtime.dispose()
+  })
+
+  it('reacts to a registered ViewVisibilitySource invalidating on its own, independent of the slot ledger', async () => {
+    const b = await bench()
+    const { injected } = b.conversationApi(ROOT)
+    const conversation = b.runtime.ctx.get('conversation') as ConversationController
+    let flip = false
+    let notify: (() => void) | undefined
+    const dispose = conversation.registerViewVisibility('chat2', {
+      visible: () => flip,
+      subscribe: (callback) => { notify = callback; return () => { notify = undefined } },
+    })
+    const off = b.slots.register(
+      { name: 'conversation.view', id: 'chat2', order: 5, label: 'X' } as never, (() => null) as never)
+    await Promise.resolve() // ledger notifications batch per microtask
+    expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat'])
+
+    const before = injected.views.version()
+    const listener = vi.fn()
+    const unsub = injected.views.subscribe(listener)
+    expect(listener).not.toHaveBeenCalled()
+    // The slot ledger never changes here — only the source's own answer
+    // does (e.g. ui-science's sessions-list/projection subscription firing).
+    flip = true
+    notify?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(injected.views.version()).toBeGreaterThan(before)
+    expect(injected.views.list(ROOT).map(v => v.id)).toEqual(['chat', 'chat2'])
+
+    unsub()
+    off()
+    dispose()
     await b.runtime.dispose()
   })
 

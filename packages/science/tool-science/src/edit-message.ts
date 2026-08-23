@@ -56,12 +56,20 @@ function resolveTarget(target: ScienceEditTarget): ScienceEditTarget {
   }
 }
 
-function resolveInstruction(value: string): string {
-  const instruction = value.trim()
-  if (instruction.length === 0 || instruction.includes('\u0000') || !instruction.isWellFormed()) {
-    invalid('Science edit instruction must be non-empty, well-formed Unicode without U+0000')
+/**
+ * Validate one free-text field shared by the top-level instruction and a
+ * per-target comment. `subject` names which field failed, so a rejected
+ * empty comment does not read as a rejected empty instruction.
+ * @param value - raw text from the viewer.
+ * @param subject - the field name to quote in the rejection.
+ * @returns the trimmed, validated text.
+ */
+function resolveFreeText(value: string, subject: string): string {
+  const text = value.trim()
+  if (text.length === 0 || text.includes('\u0000') || !text.isWellFormed()) {
+    invalid(`Science edit ${subject} must be non-empty, well-formed Unicode without U+0000`)
   }
-  return instruction
+  return text
 }
 
 /** Validated material needed to construct one Science edit message. */
@@ -92,7 +100,7 @@ function resolveSelection(
     )
   }
   const target = resolveTarget(request.target)
-  const comment = request.comment === undefined ? undefined : resolveInstruction(request.comment)
+  const comment = request.comment === undefined ? undefined : resolveFreeText(request.comment, 'target comment')
   assertTargetMatches(latest, target)
   return { artifact: latest, target, ...comment === undefined ? {} : { comment } }
 }
@@ -106,7 +114,7 @@ function resolveSelection(
 export function resolveScienceEdit(
   artifacts: readonly ScienceArtifactVersion[], request: ScienceEditRequest,
 ): ResolvedScienceEdit {
-  const instruction = resolveInstruction(request.instruction)
+  const instruction = resolveFreeText(request.instruction, 'instruction')
   if (request.targets.length === 0) invalid('Science edit request must select at least one target')
   const selections = new Map<string, { version: number; targets: Set<string> }>()
   for (const [index, selection] of request.targets.entries()) {

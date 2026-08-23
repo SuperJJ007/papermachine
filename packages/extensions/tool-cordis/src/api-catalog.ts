@@ -1207,8 +1207,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'submit\') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt',
-        description: 'Validate one exact current artifact selection and queue its structured edit message.',
-        parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected version, target, and user instruction.' }],
+        description: 'Validate exact current artifact selections and queue one structured edit message.',
+        parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
         returns: 'durable-inbox admission receipt.',
       },
       {
@@ -4188,7 +4188,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceEditRequest',
-    declaration: 'export interface ScienceEditRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly instruction: string;\n}',
+    declaration: 'export interface ScienceEditRequest {\n    readonly targets: readonly ScienceEditSelection[];\n    readonly instruction: string;\n}',
+  },
+  {
+    name: 'ScienceEditSelection',
+    declaration: 'export interface ScienceEditSelection {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly comment?: string;\n}',
   },
   {
     name: 'ScienceEditTarget',

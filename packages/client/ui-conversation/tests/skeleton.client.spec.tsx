@@ -103,6 +103,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Override what `conversation.page.utilities` renders (default: a non-empty stub). */
+    pageUtilities?: ReactNode
   } = {},
 ) {
   const root = sid('root')
@@ -160,6 +162,7 @@ function mount(
   let headerActionOwner: { toggleDetailsView: (id: string) => void } | undefined
   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
     slotCalls.push(key)
+    if (key === 'conversation.page.utilities' && options.pageUtilities !== undefined) return options.pageUtilities
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
     }
@@ -304,6 +307,20 @@ describe('Hero chrome', () => {
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+  })
+})
+
+describe('ConversationRoot page-utilities clearance', () => {
+  it('marks the root once conversation.page.utilities renders content, and clears it when the slot is empty', async () => {
+    const withContent = mount(conversationSnapshot())
+    const root = withContent.view.container.firstElementChild as HTMLElement
+    await act(async () => {})
+    expect(root.getAttribute('data-page-utilities')).toBe('true')
+
+    const empty = mount(conversationSnapshot(), undefined, undefined, { pageUtilities: null })
+    const emptyRoot = empty.view.container.firstElementChild as HTMLElement
+    await act(async () => {})
+    expect(emptyRoot.hasAttribute('data-page-utilities')).toBe(false)
   })
 })
 

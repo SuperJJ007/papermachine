@@ -85,9 +85,13 @@ function providePresentation(ctx: Context, sciencePreset = false) {
   ctx.provide('remote.scienceEdits', scienceEdits)
   ctx.provide('sessions', {
     binding: () => undefined,
-    list: { getSnapshot: () => ({
-      byId: sciencePreset ? { 'session-1': { agentPreset: 'science' } } : {},
-    }) },
+    list: {
+      getSnapshot: () => ({
+        ids: sciencePreset ? ['session-1'] : [],
+        byId: sciencePreset ? { 'session-1': { agentPreset: 'science' } } : {},
+      }),
+      subscribe: () => () => {},
+    },
   } as unknown as ISessions)
   const openDetailsView = vi.fn()
   const openView = vi.fn()
@@ -102,9 +106,12 @@ function providePresentation(ctx: Context, sciencePreset = false) {
     },
     openDetailsView,
     openView,
-    registerViewVisibility: (_id: string, visible: (sessionId: SessionId) => boolean) => {
-      viewVisibility.push(visible)
-      return () => { viewVisibility.splice(viewVisibility.indexOf(visible), 1) }
+    registerViewVisibility: (_id: string, source: {
+      visible: (sessionId: SessionId) => boolean
+      subscribe: (callback: () => void) => () => void
+    }) => {
+      viewVisibility.push(source.visible)
+      return () => { viewVisibility.splice(viewVisibility.indexOf(source.visible), 1) }
     },
   } as never)
   const { scope } = stubSettingsScope()

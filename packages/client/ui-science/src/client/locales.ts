@@ -5,7 +5,6 @@ export const NS = 'science'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'nav.sessions': '会话',
   'nav.files': '文件',
   'nav.outcomes': '结论',
   'kernel.status': 'Science 内核状态',
@@ -57,10 +56,7 @@ export const zh = {
   'artifact.version': 'v{version}',
   'artifact.generation': '第 {turn} 轮生成 · v{version}',
   'artifact.generationParent': '第 {turn} 轮生成 · v{version} · 基于 v{parent}',
-  'artifact.sourceRun': '来自运行 {runId}',
   'artifact.humanEdit': '人工样式编辑，基于 v{version}',
-  'artifact.dimensions': '{width}×{height}，{size}',
-  'artifact.size': '{size}',
   'artifact.open': '查看原图',
   'artifact.openNamed': '查看原图：{label}',
   'artifact.loading': '加载中…',
@@ -138,8 +134,6 @@ export const zh = {
   'edit.regionCancel': '取消框选',
   'edit.regionGesture': '拖动以框选编辑区域',
   'edit.regionTarget': '区域 {x}%,{y}%',
-  'edit.addToConversation': '添加到对话',
-  'edit.selectedTargets': '已选择的元素',
   'edit.composerTargets': '添加到对话的图表元素',
   'edit.removeTarget': '移除 {target}',
   'edit.imagesUnsupported': '发送结构化图表修改时，请先移除普通图片附件。',
@@ -179,7 +173,6 @@ export type ScienceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'nav.sessions': 'Sessions',
   'nav.files': 'Files',
   'nav.outcomes': 'Outcomes',
   'kernel.status': 'Science kernel status',
@@ -231,10 +224,7 @@ export const en = {
   'artifact.version': 'v{version}',
   'artifact.generation': 'Generated in turn {turn} · v{version}',
   'artifact.generationParent': 'Generated in turn {turn} · v{version} · from v{parent}',
-  'artifact.sourceRun': 'from run {runId}',
   'artifact.humanEdit': 'Human style edit based on v{version}',
-  'artifact.dimensions': '{width}×{height}, {size}',
-  'artifact.size': '{size}',
   'artifact.open': 'View original',
   'artifact.openNamed': 'View original: {label}',
   'artifact.loading': 'Loading…',
@@ -312,8 +302,6 @@ export const en = {
   'edit.regionCancel': 'Cancel region selection',
   'edit.regionGesture': 'Drag to select an edit region',
   'edit.regionTarget': 'region {x}%,{y}%',
-  'edit.addToConversation': 'Add to conversation',
-  'edit.selectedTargets': 'Selected elements',
   'edit.composerTargets': 'Chart elements added to the conversation',
   'edit.removeTarget': 'Remove {target}',
   'edit.imagesUnsupported': 'Remove ordinary image attachments before sending a structured chart edit.',

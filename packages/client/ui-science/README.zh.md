@@ -8,6 +8,8 @@
 
 `trace` 对话视图按权威 turn 聚合 Science 活动，而不是为每条事件各画一张卡。每个意图组汇总运行尝试次数、失败数、运行耗时、artifact 增量、委派调用与杂项工具；标题只由结构化运行和 artifact 字段决定。失败组默认展开，成功组默认收起。用户提问、结构化 Science 选择与直接人工编辑位于中轴的用户侧，agent 任务组和结语位于另一侧。显式按钮携带共享的 `turn:`、`call:`、`run:`、`artifact:` 与 `seq:` 锚点词汇，跳向 Trajectory 账本或确切 artifact 版本。steering 保留在当前 turn，绝不增加 turn 计数。
 
+该标签页的可见性是一次 `ctx.conversation.registerViewVisibility('trace', source)` 注册，其 `ViewVisibilitySource` 在某个 Session 指名 `science` preset、或其 `science` 投影已经落定后回答 `true`。每当会话列表变化，`source.subscribe` 都会为列表中每个 Session 重新建立一次投影订阅，因此 preset 指派、Session 出现，或该 Session 的投影绑定，都能各自触达标签栏自身的响应式机制——标签页会自行出现或消失，而不必等待一次无关的 `conversation.view` 注册。
+
 ## Artifact 行
 
 带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题。面向用户的 artifact 卡片不显示内部运行 id 与附件字节数。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。一份组装 Web 回归通过真实控件停止 live persistent-kernel run，并将这一已中止展示与其持久化 cancelled run 对照。
@@ -35,7 +37,7 @@ viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `sc
 - **标签栏** — 每个已打开的 artifact（logical chart）一个标签页，各自可独立关闭；点击一条会话记录中的图表行会打开或激活该图表的标签页，并定位到该行所指的确切版本。没有任何标签页打开时，viewer 显示其落地视图，而非一条空标签栏。
 - **工具栏** — 面向活跃标签页的内容视图：artifact 的标题与逻辑名、一个版本步进器（‹ v*n* ›，在两侧相邻的持久化版本间切换），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化附件媒体类型分派：`ImageMediaType` 经由 `MessageImage` 渲染；`TextMediaType` 通过 `loadText` 取得已解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
-- **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层仍只形成一个人工样式区域，不会隐含模型请求。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
+- **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层会画出一个人工样式区域，一旦区域画出，就提供同样的备注加 `+`/`−` 控件——单纯画出区域不会暂存任何东西，只有这个显式控件才会——因此区域 target 与结构化 target 经由同一条路径抵达 composer，产出同样的 `edit.regionTarget` chip。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id 加版本）：切换标签页或步进版本都会重新挂载内容子树，因此某个 artifact/版本上还未暂存的备注草稿绝不会预填进另一个共享同一 spec path 或区域坐标的字段。在某个 target 已经暂存之后再编辑其备注，会立即更新已暂存的选择（而不必等到下一次点击 `+`），因此 composer chip 与最终面向模型的指令始终携带最新文本。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注，并在拒绝前指明是哪个字段出了问题——共享指令本身，还是某个 target 自己的备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **直接样式编辑** — 选择 Vega-Lite `mark` 或 `encoding.*` target 还会打开基于不可变工作副本的样式面板。面板只暴露颜色、字号与 encoding axis/legend 标题文本；每次修改都会重新渲染实时 SVG 预览，数据变换仍由 agent 完成。定稿时通过 `remote.scienceEdits.commitStyleEdit` 发送完整 JSON spec；成功后选择返回的下一个 version，其详情明确标记直接编辑并指名确切 parent。Host 的 stale/media/JSON/admission 拒绝会保持可见，且不改变所选 version。UI 子集用于塑造工作流，并不声称能对任意 Vega-Lite JSON 建立安全不变量。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **落地视图** — 在没有标签页打开时显示：每个 logical chart 最新版本组成的图库（打开其中一个即打开其标签页），以及带证据引用的最新 Outcome，展示在图库下方——保持可达但处于次要位置，因为它不像图表那样携带需要导览的版本历史或溯源信息。
@@ -62,6 +64,17 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 4. **环境** — 当投影仍保留该确切版本时，以 JSON 形式展示该环境版本（配置档案、版本号、状态、时间戳，以及逐语言的 capability/版本/指纹预览与包清单）；若该版本已被取代（投影只保留最新版本），则单独报告这一状态，并展示该运行自身的指纹预览作为仍然保留的事实。
 
 解析 chart/run 组合（并在其中任一方不再可解析时报告不可用）是 artifact viewer 的职责，不属于本下钻组件——它总是针对一个已经解析好的组合渲染。
+
+## 工作台外壳
+
+除了上面的 header action 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都以 header action 同样的方式，按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
+
+- **`sidebar.destinations`**（`ScienceDestinations`） — 当前 Science Session 旁边的文件与结论行，出现在侧边栏其余目的地旁；分别打开对应的 Details 条目（`science` 或 `science-outcomes`）。没有当前 Science Session 时不渲染任何内容。
+- **`conversation.page.utilities`**（`ScienceHeroAction`） — 与 session header 相同的文件 action，只是改在欢迎页展示——条件是当前 Session 为空白且已被指派为 `science` preset（该 Session 一旦开始，header 就会接管这个 action）。
+- **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
+- **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
+- **`details.files`**（`ScienceEmptyDetails`） — 没有当前 Session 时 Details 列的占位内容，说明选择一个 Session 后这里会显示其文件，并通过宿主提供的 `closeDetails` 关闭该列。
+- **`science-outcomes`**（`ScienceOutcomeDetails`，第二个 `conversation.details.view` 条目） — 单独展示最新的 Outcome，从侧边栏的结论目的地进入，无需打开完整的 artifact viewer；空态与无法解析引用的展示状态与 artifact viewer 自身的 Outcome 小节相同。
 
 ## 组装
 

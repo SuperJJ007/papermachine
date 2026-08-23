@@ -133,6 +133,25 @@
   cursor: not-allowed;
 }
 
+.toolbarAction[data-unavailable] {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.toolbarAction[data-unavailable]:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .stepper {
   display: flex;
   align-items: center;
@@ -302,50 +321,6 @@
   padding: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-}
-
-.selectedPanel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-2);
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.selectedChips {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-.selectedChip {
-  padding: 3px 7px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.addToConversation {
-  flex: none;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 7px;
-  background: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-bg-base);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
 }
 
 .stylePanel {

@@ -32,6 +32,21 @@ export function ConversationRoot({
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
+  // `conversation.page.utilities` is an additive list slot that is often
+  // empty (no registrant, or one that renders null for the current Session);
+  // the header only needs its right-clearance while the slot actually
+  // occupies that corner. `renderSlot` on an empty list slot still returns a
+  // Fragment (never `null`), so presence is read off the rendered DOM rather
+  // than the slot's own return value — the same measured-DOM approach the
+  // composer seat's own ResizeObserver below already uses. The effect has no
+  // dependency array: it is a cheap DOM read that must follow every render
+  // (a Session change, or a registrant's own visibility flipping).
+  const pageUtilitiesRef = useRef<HTMLDivElement>(null)
+  const [hasPageUtilities, setHasPageUtilities] = useState(false)
+  useEffect(() => {
+    setHasPageUtilities((pageUtilitiesRef.current?.childElementCount ?? 0) > 0)
+  })
+
   // Publishes the seat's live height as --dsh-composer-height on the scroll
   // body so floating controls (ChatView back-to-bottom) clear the composer as
   // it grows. Callback ref, not an effect; stable identity prevents observer
@@ -185,9 +200,9 @@ export function ConversationRoot({
   )
 
   return (
-    <div className={css.root} data-phase={phase}>
+    <div className={css.root} data-phase={phase} data-page-utilities={hasPageUtilities || undefined}>
       {renderSlot('conversation.session.header', {})}
-      <div className={css.pageUtilities}>
+      <div className={css.pageUtilities} ref={pageUtilitiesRef}>
         {renderSlot('conversation.page.utilities', { toggleDetails })}
       </div>
       <div className={css.scrollBody} data-conversation-scroll="">

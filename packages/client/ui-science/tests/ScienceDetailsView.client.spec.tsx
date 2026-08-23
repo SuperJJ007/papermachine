@@ -23,6 +23,7 @@ import {
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
 import { applyStyle, restrictedVegaLoader, selectableSpecPaths } from '../src/client/ArtifactContent.tsx'
+import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
@@ -679,6 +680,63 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(await screen.findByRole('button', { name: 'Add encoding.y to the conversation' })).toBeTruthy()
   })
 
+  it('never pre-fills one artifact\'s typed comment from another artifact sharing the same spec path (scenario A)', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const science = baseProjection({
+      artifacts: [
+        chart({
+          artifactId: 'chart-1' as never, logicalName: 'a.vl.json', version: 1,
+          attachment: { attachmentId: 'sha256:a' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
+        }),
+        chart({
+          artifactId: 'chart-2' as never, logicalName: 'b.vl.json', version: 1,
+          attachment: { attachmentId: 'sha256:b' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
+        }),
+      ],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 })
+    act(() => { store.actions.activateTab('chart-1' as never) })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    const commentA = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    fireEvent.change(commentA, { target: { value: 'artifact A note' } })
+    expect(commentA.value).toBe('artifact A note')
+
+    act(() => { store.actions.activateTab('chart-2' as never) })
+    const commentB = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    expect(commentB.value).toBe('')
+
+    act(() => { store.actions.activateTab('chart-1' as never) })
+    const commentAAgain = await screen.findByRole('textbox', { name: 'Edit note for mark' }) as HTMLInputElement
+    expect(commentAAgain.value).toBe('')
+  })
+
+  it('updates the already-staged selection as the comment is edited further, keeping the store in sync (scenario B)', async () => {
+    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
+    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
+    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([])
+    const addToConversation: Props['addToConversation'] = (targets) => { composerSelections.set(targets) }
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'chart.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText, composerSelections, addToConversation })} />)
+
+    const comment = await screen.findByRole('textbox', { name: 'Edit note for mark' })
+    fireEvent.change(comment, { target: { value: 'first note' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add mark to the conversation' }))
+    expect(composerSelections.getSnapshot()).toEqual([{
+      artifactId: 'chart-1', version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: 'first note',
+    }])
+
+    // No further Add click: editing while staged must still reach the store,
+    // or the chip and the outgoing science-edit message keep the stale text.
+    fireEvent.change(comment, { target: { value: 'revised note' } })
+    expect(composerSelections.getSnapshot()).toEqual([{
+      artifactId: 'chart-1', version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: 'revised note',
+    }])
+  })
+
   it('previews safe style controls and commits a human-edited next version', async () => {
     embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
     const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"color":{"field":"group"}}}')
@@ -782,7 +840,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(screen.getByRole('button', { name: 'vconcat.1.spec.encoding.y' })).toBeDefined()
   })
 
-  it('normalizes a raster drag as a human style-area selection without staging an AI edit', async () => {
+  it('normalizes a raster drag into a drawn region, without auto-staging an AI edit', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 2 })] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
@@ -800,6 +858,47 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.mouseUp(gesture, { clientX: 130, clientY: 90 })
     expect(addToConversation).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Select region to edit' }).getAttribute('aria-pressed')).toBe('false')
+    // The drawn region now offers its own staging control — a comment field
+    // and an explicit Add button — rather than the dead end this drag used
+    // to be with no way to reach the composer at all.
+    expect(screen.getByRole('button', { name: 'Add region 10%,20% to the conversation' })).toBeTruthy()
+  })
+
+  it('stages a drawn region with its typed comment, and un-stages it through the same control', () => {
+    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const selections = new ScienceComposerSelections()
+    render(<ScienceDetailsView {...props(science, {
+      store,
+      addToConversation: (targets) => { selections.add(SESSION, targets) },
+      removeFromConversation: (target) => { selections.removeSelection(SESSION, target) },
+      composerSelections: selections.store(SESSION),
+    })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    const gesture = screen.getByLabelText('Drag to select an edit region')
+    // Corners chosen as exact binary fractions (0.25/0.75) so the derived
+    // width/height compare exactly, with no float-rounding slack.
+    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100,
+      toJSON: () => ({}),
+    })
+    fireEvent.mouseDown(gesture, { clientX: 25, clientY: 25 })
+    fireEvent.mouseMove(gesture, { clientX: 75, clientY: 75 })
+    fireEvent.mouseUp(gesture, { clientX: 75, clientY: 75 })
+
+    fireEvent.change(screen.getByLabelText('Edit note for region 25%,25%'), { target: { value: 'brighten this' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add region 25%,25% to the conversation' }))
+    expect(selections.store(SESSION).getSnapshot()).toEqual([{
+      artifactId: 'chart-1', version: 2,
+      target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      comment: 'brighten this',
+    }])
+    // The control now offers Remove; un-staging clears it back out.
+    expect(screen.queryByRole('button', { name: 'Add region 25%,25% to the conversation' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove region 25%,25%' }))
+    expect(selections.store(SESSION).getSnapshot()).toEqual([])
   })
 
   it('ignores incomplete raster gestures and clears a draft when the pointer leaves', () => {
@@ -1205,6 +1304,22 @@ describe('ScienceDetailsView: download', () => {
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(2) })
     expect(clickSpy).not.toHaveBeenCalled()
     clickSpy.mockRestore()
+  })
+})
+
+describe('ScienceDetailsView: export placeholder', () => {
+  it('stays reachable in the tab order and names the reason through aria-describedby, instead of a native disabled', () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    const exportButton = screen.getByRole('button', { name: 'Export' })
+    expect(exportButton.hasAttribute('disabled')).toBe(false)
+    expect(exportButton.getAttribute('aria-disabled')).toBe('true')
+    expect(exportButton.getAttribute('data-unavailable')).toBe('true')
+    const reasonId = exportButton.getAttribute('aria-describedby')
+    expect(reasonId).toBeTruthy()
+    expect(document.getElementById(reasonId!)?.textContent).toBe('Export will be available in C4')
   })
 })
 

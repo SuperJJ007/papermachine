@@ -2,7 +2,11 @@
 
 [English](README.md) | 中文
 
-浏览器端的持久化 `run_python`/`run_r`、`annotate_artifact` 与 `publish_outcome` 会话记录行展示、Science 设置卡片、artifact viewer（带按媒体类型分派内容与每版本溯源下钻的标签式查看器），以及打开它的 session-header action。会话记录行注册按键分派的 `tool.call.toolview` 条目，只消费冻结的工具调用/结果数据、客户端安全的 `science` 会话投影，以及（对图像而言）会话界面拥有的会话附件加载器；它们既不创建 Science 事实，也不通过独立路由加载附件字节。设置卡片注册按键分派的 `settings.plugin.item` 条目，通过绑定的 settings scope 读写固定 `science` 配置档案的 Conda 前缀。header action 与 artifact viewer 注册进 `@deepseek-ai/dsh-client-ui-conversation` 的 `conversation.session.header.actions` 与 `conversation.details.view` 座位；两者都只是同一客户端安全投影加一个本包内部选择状态存储的纯读取方，都不构建第二套投影读取器、artifact 历史或 Outcome 编辑器。
+浏览器端的持久化 `run_python`/`run_r`、`annotate_artifact` 与 `publish_outcome` 会话记录行展示、Science 设置卡片、语义泳道、artifact viewer（带按媒体类型分派内容与每版本溯源下钻的标签式查看器），以及打开它的 session-header action。会话记录行注册按键分派的 `tool.call.toolview` 条目，只消费冻结的工具调用/结果数据、客户端安全的 `science` 会话投影，以及（对图像而言）会话界面拥有的会话附件加载器；它们既不创建 Science 事实，也不通过独立路由加载附件字节。设置卡片注册按键分派的 `settings.plugin.item` 条目，通过绑定的 settings scope 读写固定 `science` 配置档案的 Conda 前缀。语义泳道与 artifact viewer 读取同一客户端安全投影加一个本包内部选择状态存储，都不构建第二套投影读取器、artifact 历史或 Outcome 编辑器。
+
+## 语义泳道
+
+`trace` 对话视图按权威 turn 聚合 Science 活动，而不是为每条事件各画一张卡。每个意图组汇总运行尝试次数、失败数、运行耗时、artifact 增量、委派调用与杂项工具；标题只由结构化运行和 artifact 字段决定。失败组默认展开，成功组默认收起。用户提问、结构化 Science 选择与直接人工编辑位于中轴的用户侧，agent 任务组和结语位于另一侧。显式按钮携带共享的 `turn:`、`call:`、`run:`、`artifact:` 与 `seq:` 锚点词汇，跳向 Trajectory 账本或确切 artifact 版本。steering 保留在当前 turn，绝不增加 turn 计数。
 
 ## Artifact 行
 

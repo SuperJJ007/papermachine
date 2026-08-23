@@ -53,6 +53,7 @@ import { ScienceComposerChips } from './ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from './composer-selections.ts'
 import { ScienceDestinations } from './ScienceDestinations.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
+import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
@@ -183,6 +184,13 @@ export function apply(ctx: ClientContext): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view', id: 'trace', order: 20, label: () => t('trace.view'), locale: NS,
+    store: scienceSelectionStore,
+    inject: (sessionId: SessionId): ScienceTraceInjected => ({
+      openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+    }),
+  }, ScienceTraceView))
   ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
     name: 'conversation.details.view',
     id: SCIENCE_DETAILS_ID,

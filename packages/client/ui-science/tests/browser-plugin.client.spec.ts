@@ -26,6 +26,7 @@ import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
 import { ScienceHeroAction } from '../src/client/ScienceHeroAction.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
+import { ScienceTraceView } from '../src/client/ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { SCIENCE_RUNTIME_NS } from '../src/client/settings-card-controller.ts'
 import type { ComposerSubmissionHandler } from '@deepseek-ai/dsh-client-ui-conversation/src/client/service.ts'
@@ -57,6 +58,7 @@ function providePresentation(ctx: Context) {
       'conversation.page.utilities': { kind: 'list', scope: 'root' },
       'conversation.input.accessory': { kind: 'list', scope: 'session' },
       'conversation.composer.dock': { kind: 'list', scope: 'session' },
+      'conversation.view': { kind: 'list', scope: 'session' },
       'sidebar.destinations': { kind: 'list', scope: 'root' },
       'details.files': { kind: 'single', scope: 'root' },
     },
@@ -81,6 +83,7 @@ function providePresentation(ctx: Context) {
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
   ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
+  const openDetailsView = vi.fn()
   ctx.provide('conversation', {
     registerSubmissionHandler: (handler: ComposerSubmissionHandler) => {
       capture.submissionHandlers.push(handler)
@@ -89,11 +92,11 @@ function providePresentation(ctx: Context) {
         if (index >= 0) capture.submissionHandlers.splice(index, 1)
       }
     },
-    openDetailsView: () => {},
+    openDetailsView,
   } as never)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
-  return { capture, submit }
+  return { capture, submit, openDetailsView }
 }
 
 describe('apply', () => {
@@ -188,13 +191,14 @@ describe('apply', () => {
 
   it('registers every Science shell slot contribution', async () => {
     const ctx = new Context()
-    const { capture } = providePresentation(ctx)
+    const { capture, openDetailsView } = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const destinations = capture.slots.entries('sidebar.destinations')[0]
     expect(destinations?.component).toBe(ScienceDestinations)
     const openScience = destinations?.inject?.() as { openScience: (sessionId: SessionId) => void }
     expect(() => { openScience.openScience('unmounted' as SessionId) }).not.toThrow()
+    expect(openDetailsView).toHaveBeenCalledWith('unmounted', 'science')
     expect(capture.slots.entries('conversation.page.utilities')[0]?.component).toBe(ScienceHeroAction)
     expect(capture.slots.entries('details.files')[0]?.component).toBe(ScienceEmptyDetails)
     const accessory = capture.slots.entries('conversation.input.accessory')[0]
@@ -205,6 +209,13 @@ describe('apply', () => {
     const rendered = Accessory({ sessionId: 'session-1' as SessionId, t: key => key })
     rendered.props.remove(0)
     expect(capture.slots.entries('conversation.composer.dock')[0]?.component).toBe(ScienceKernelStatus)
+    const trace = capture.slots.entries('conversation.view')[0]
+    expect(trace?.component).toBe(ScienceTraceView)
+    expect((trace?.options as { label?: () => string }).label?.()).toBe('trace.view')
+    const injectTrace = trace?.inject as unknown as (sessionId: SessionId) => { openArtifact: () => void }
+    const traceFace = injectTrace('session-1' as SessionId)
+    traceFace.openArtifact()
+    expect(openDetailsView).toHaveBeenCalledWith('session-1', 'science')
   })
 
   it('submits staged targets, rejects ordinary images, reports Remote errors, and clears only after success', async () => {
@@ -249,9 +260,12 @@ describe('apply', () => {
       .find(entry => (entry.options as { key?: string }).key === 'run_python')
     const detailsEntry = presentation.slots.entries('conversation.details.view')
       .find(entry => entry.options.id === 'science')
+    const traceEntry = presentation.slots.entries('conversation.view')
+      .find(entry => entry.options.id === 'trace')
     expect(artifactEntry?.store).toBeDefined()
     expect(artifactEntry?.store).toBe(detailsEntry?.store)
     expect(runEntry?.store).toBe(detailsEntry?.store)
+    expect(traceEntry?.store).toBe(detailsEntry?.store)
     // publish_outcome carries no selection concern and declares no store.
     const outcomeEntry = presentation.slots.entries('tool.call.toolview')
       .find(entry => (entry.options as { key?: string }).key === 'publish_outcome')
@@ -272,6 +286,7 @@ describe('apply', () => {
     expect(presentation.slots.entries('details.files')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.view')).toHaveLength(1)
     expect(presentation.submissionHandlers).toHaveLength(1)
     await fiber.dispose()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
@@ -283,6 +298,7 @@ describe('apply', () => {
     expect(presentation.slots.entries('details.files')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.view')).toHaveLength(0)
     expect(presentation.submissionHandlers).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
   })

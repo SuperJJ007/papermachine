@@ -16,7 +16,7 @@ Science Details 条目继续作为 [Science artifact viewer panel](2026-08-18-sc
 
 Vega-Lite 直接样式控件保留在舞台中，并在不请求模型的情况下提交一个 human-edit 版本。artifact 内嵌的指令输入框和发送操作不存在，因此模型辅助 artifact 修改只有一个 composer 和一条可见请求路径。
 
-对话标签环包含一个只从已加载真实 Session node 投影的用户 Trace 视图。它按轮次组织意图、推理、动作与证据泳道，并把工具检查交给既有 Trajectory 工程账本。持久内核的语言、epoch 和生命周期状态只在主 composer 下方的一个固定读数中出现。
+对话标签环包含一个从已加载真实 Session node 与客户端安全 Science 投影生成的用户 Trace 视图。每一轮是一个意图组，汇总运行尝试、失败、运行耗时、artifact 增量、委派与杂项工具；标题只由结构化运行和 artifact 字段决定。用户消息、结构化选择与直接人工编辑位于中轴的用户侧，agent 任务组与结语位于另一侧。显式 `call:` 与 `artifact:` 操作把检查交给 Trajectory 工程账本或确切 artifact 舞台。持久内核的语言、epoch 和生命周期状态也在主 composer 下方的一个固定读数中出现。
 
 首版组合在所有对话中注册 Trace 与 Science 外壳席位，因为这些注册点还没有 Science 会话判定。target chip（包括归一化区域标签）通过 Science locale 取文案，不内嵌英文。导出实现不属于本决策；C4 提供实际操作前，artifact 工具栏必须保留一个已禁用的本地化占位按钮。
 
@@ -32,6 +32,6 @@ Vega-Lite 直接样式控件保留在舞台中，并在不请求模型的情况�
 
 ## Consequences
 
-在首个单项目版本中，文件与结论共享 Science 舞台；结论仍是落地视图中的一个小节，不获得伪 artifact 标签页。跨 artifact 选择在用户编写一条指令时保留，但只存在于浏览器本地，并且只在准入成功后清空。多目标消息扩大了持久 `science-edit` source 和模型可见文本，而每个 target 的确切版本准入与 `edit_of` 祖先规则不变。Trace 有意保持为线性语义投影：DAG、subagent 泳道与 kernel epoch 分隔线留在工程检查中，而不进入用户视图。
+在首个单项目版本中，文件与结论共享 Science 舞台；结论仍是落地视图中的一个小节，不获得伪 artifact 标签页。跨 artifact 选择在用户编写一条指令时保留，但只存在于浏览器本地，并且只在准入成功后清空。多目标消息扩大了持久 `science-edit` source 和模型可见文本，而每个 target 的确切版本准入与 `edit_of` 祖先规则不变。Trace 有意保持为线性语义投影：DAG 与 kernel epoch 分隔线留在工程检查中，委派只作为意图组内的一条折叠行，而不是独立泳道。
 
 聚焦后端测试固定有序多目标文本、raster block 顺序和全有或全无校验。客户端组合测试固定目的地、accessory、kernel 与 Trace 注册；keyless Science 场景通过真实可运行配置固定组装后的多目标消息。

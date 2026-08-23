@@ -341,6 +341,8 @@ export interface ConversationSessionOwnerProps {
 
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {
+  /** Selected Details entry id, or `null` while the column is closed. */
+  detailsView: string | null
   /**
    * Toggle a registered `conversation.details.view` entry from the session
    * header: the panel opens on `id` when it is closed or showing another

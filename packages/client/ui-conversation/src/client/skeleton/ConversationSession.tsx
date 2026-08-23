@@ -144,11 +144,11 @@ export function ConversationSessionHeader({
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
               <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', { toggleDetailsView })}
+                {renderSlot('conversation.session.header.actions', { detailsView, toggleDetailsView })}
               </div>
             </div>
             <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', { toggleDetailsView })}
+              {renderSlot('conversation.session.header.utilities', { detailsView, toggleDetailsView })}
             </div>
           </div>
           {tabs.length > 1 && (

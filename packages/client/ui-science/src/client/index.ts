@@ -5,7 +5,7 @@
  * `run_r` (`ScienceRunRow`, run text plus a clickable reference per captured
  * file), `annotate_artifact` (`ScienceArtifactRow`, the one curated
  * reference), and `publish_outcome` — the Science settings card keyed on the
- * `science-runtime` namespace, the `conversation.session.header.actions`
+ * `science-runtime` namespace, the right-aligned `conversation.session.header.utilities`
  * entry that opens the routed Details column, and the
  * `conversation.details.view` entry (id `science`, the artifact viewer) that
  * renders current Science state from the same projection: a top tab strip
@@ -47,7 +47,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // collaboration goes through cordis services; a value import fails the
 // client bundle purity gate.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-// Type-only: the conversation.session.header.actions and
+// Type-only: the conversation.session.header.utilities and
 // conversation.details.view slots' declarations, and the Details seam's
 // inspectCall owner callback (same cross-plugin rule).
 import type { ViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -208,10 +208,10 @@ export function apply(ctx: ClientContext): void {
     inject: () => settingsCard.inject(),
   }, ScienceSettingsCard))
 
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions',
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
     id: SCIENCE_DETAILS_ID,
-    order: 0,
+    order: 10,
     locale: NS,
   }, ScienceHeaderAction))
 

@@ -229,14 +229,14 @@ describe('ui-science on the real machinery stack', () => {
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
       .toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
-    expect(b.slots.entries('conversation.session.header.actions').map(e => e.options.id)).toContain('science')
+    expect(b.slots.entries('conversation.session.header.utilities').map(e => e.options.id)).toContain('science')
 
     await b.scienceHandle.dispose()
 
     expect(b.slots.entries('tool.call.toolview').map(e => (e.options as { key?: string }).key))
       .not.toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).not.toContain('science')
-    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     // ui-tool's own bash sample (mounted by applyTool, not applyScience)
     // survives the ui-science fiber's disposal.
     expect(b.slots.entries('conversation.chat.node').map(e => (e.options as { key?: string }).key)).toContain('tool-call')

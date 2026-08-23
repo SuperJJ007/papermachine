@@ -55,6 +55,7 @@ function providePresentation(ctx: Context, sciencePreset = false) {
       'tool.call.toolview': { kind: 'keyed', scope: 'session' },
       'settings.plugin.item': { kind: 'keyed', scope: 'root' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'conversation.details.view': { kind: 'list', scope: 'session' },
       'conversation.page.utilities': { kind: 'list', scope: 'root' },
       'conversation.input.accessory': { kind: 'list', scope: 'session' },
@@ -173,7 +174,7 @@ describe('apply', () => {
     const { capture: presentation } = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const entries = presentation.slots.entries('conversation.session.header.actions')
+    const entries = presentation.slots.entries('conversation.session.header.utilities')
     expect(entries).toHaveLength(1)
     expect(entries[0]?.options).toMatchObject({ id: 'science' })
     expect(entries[0]?.component).toBe(ScienceHeaderAction)
@@ -326,7 +327,7 @@ describe('apply', () => {
     await fiber.await()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(4)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(1)
-    expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.details.view')).toHaveLength(2)
     expect(presentation.slots.entries('sidebar.destinations')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(1)
@@ -338,7 +339,7 @@ describe('apply', () => {
     await fiber.dispose()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(0)
-    expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.details.view')).toHaveLength(0)
     expect(presentation.slots.entries('sidebar.destinations')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(0)

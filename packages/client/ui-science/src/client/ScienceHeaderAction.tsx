@@ -18,10 +18,17 @@ export type ScienceHeaderActionProps =
 export const SCIENCE_DETAILS_ID = 'science'
 
 /** Shared compact Files control used by the root utility placement. */
-export function ScienceFilesButton({ onClick, t }: { onClick: () => void; t: ScienceHeaderActionProps['t'] }) {
+export function ScienceFilesButton({ onClick, expanded = false, t }: {
+  onClick: () => void
+  expanded?: boolean
+  t: ScienceHeaderActionProps['t']
+}) {
   return (
-    <button type="button" className={css.iconAction} aria-label={t('details.action')} onClick={onClick}>
-      <IconPanelLeftOutline16 size={16} />
+    <button
+      type="button" className={css.iconAction} aria-label={t('details.action')}
+      aria-pressed={expanded} onClick={onClick}
+    >
+      <IconPanelLeftOutline16 className={expanded ? css.panelOpen : css.panelClosed} size={16} />
     </button>
   )
 }
@@ -34,9 +41,10 @@ export function ScienceFilesButton({ onClick, t }: { onClick: () => void; t: Sci
  * @param props - runtime slot currency plus the science namespace translator.
  * @returns the action button, or null when the session names another preset.
  */
-export function ScienceHeaderAction({ sessionId, useSessions, toggleDetailsView, t }: ScienceHeaderActionProps) {
+export function ScienceHeaderAction({ sessionId, useSessions, detailsView, toggleDetailsView, t }: ScienceHeaderActionProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
+  const expanded = detailsView === SCIENCE_DETAILS_ID
   if (preset !== 'science') return null
 
-  return <ScienceFilesButton onClick={() => { toggleDetailsView(SCIENCE_DETAILS_ID) }} t={t} />
+  return <ScienceFilesButton expanded={expanded} onClick={() => { toggleDetailsView(SCIENCE_DETAILS_ID) }} t={t} />
 }

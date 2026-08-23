@@ -19,3 +19,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
+
+.panelClosed { transform: scaleX(-1); }
+.panelOpen { transform: none; }

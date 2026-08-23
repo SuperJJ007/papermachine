@@ -225,9 +225,12 @@ export function apply(ctx: Context): void {
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
+      'conversation.page.utilities': { kind: 'list', scope: 'root' },
+      'conversation.input.accessory': { kind: 'list', scope: 'session' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+      toggleDetails: () => { layout.toggleDetails() },
       selectWorkspace: async (workspaceId) => {
         const nextId = await workspaces.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {
@@ -280,15 +283,22 @@ export function apply(ctx: Context): void {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
-    inject: (_sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionHeaderInjected => ({
-      views,
-      open: (id) => { sessions.open(id) },
-      openDetailsView: (id) => {
+    inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionHeaderInjected => {
+      const openDetailsView = (id: string): void => {
         actions.setDetailsView(id)
         layout.openDetails()
-      },
-      toggleDetails: () => { layout.toggleDetails() },
-    }),
+      }
+      ctx.effect(
+        () => concreteConversation(ctx).bindDetailsOpener(sessionId, openDetailsView),
+        `ui-conversation: Details opener for ${sessionId}`,
+      )
+      return {
+        views,
+        open: (id) => { sessions.open(id) },
+        openDetailsView,
+        toggleDetails: () => { layout.toggleDetails() },
+      }
+    },
   }, ConversationSessionHeader)
 
   // The default composer body: its own single slot inside the composer

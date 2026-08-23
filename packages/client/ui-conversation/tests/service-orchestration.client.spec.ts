@@ -51,6 +51,37 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('lets submission handlers claim an empty draft and otherwise keeps it a no-op', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const handler = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
+    const dispose = b.root.registerSubmissionHandler(handler)
+    await expect(b.root.sendSession(sessionId, {} as SessionFace, '', [], 'queue'))
+      .resolves.toEqual({ kind: 'success' })
+    expect(handler).toHaveBeenCalledOnce()
+    dispose()
+    await expect(b.root.sendSession(sessionId, {} as SessionFace, '', [], 'queue'))
+      .resolves.toEqual({ kind: 'success' })
+    expect(b.prompt).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('disposes exact Details opener bindings and ignores unmounted Sessions', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = b.root.bindDetailsOpener(sessionId, first)
+    const disposeSecond = b.root.bindDetailsOpener(sessionId, second)
+    disposeFirst()
+    b.root.openDetailsView(sessionId, 'science')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith('science')
+    disposeSecond()
+    expect(() => { b.root.openDetailsView(sessionId, 'science') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

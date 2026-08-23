@@ -276,6 +276,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    toggleDetails,
     t,
   }
   const view = render(<ConversationRoot {...props} />)

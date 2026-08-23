@@ -53,19 +53,30 @@ try {
       spec: '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":{"type":"bar","color":"#2455a4","fontSize":16},"encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}',
     })
     ctx.scienceEdits.submit(agent, {
-      artifactId: styled.artifactId,
-      version: styled.version,
-      target: { kind: 'spec-path', path: 'encoding.y' },
+      targets: [{
+        artifactId: styled.artifactId,
+        version: styled.version,
+        target: { kind: 'spec-path', path: 'encoding.y' },
+      }],
       instruction: 'Use a zero-based quantitative scale.',
     })
     await agent.whenIdle()
     const plot = foldScience(agent.session.events).artifacts.findLast(artifact => artifact.logicalName === 'plot.png')
     if (plot === undefined) throw new Error(`${NAME}: the run produced no plot.png artifact`)
     ctx.scienceEdits.submit(agent, {
-      artifactId: plot.artifactId,
-      version: plot.version,
-      target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
-      instruction: 'Brighten the selected region.',
+      targets: [
+        {
+          artifactId: plot.artifactId,
+          version: plot.version,
+          target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+        },
+        {
+          artifactId: styled.artifactId,
+          version: styled.version,
+          target: { kind: 'spec-path', path: 'encoding.x' },
+        },
+      ],
+      instruction: 'Brighten the selected region and align the chart encoding.',
     })
     await agent.whenIdle()
   } finally {

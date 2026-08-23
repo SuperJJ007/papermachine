@@ -18,6 +18,7 @@ import { registerTrajectoryRequestHeaderDefinition } from './trajectory-request-
 import { registerTrajectoryConversationView } from './trajectory-snapshot-builder.ts'
 import { registerTrajectoryToolDefinition } from './trajectory-tool-definition.ts'
 import { TrajectoryView, type TrajectoryViewInjected } from './TrajectoryView.tsx'
+import { ScienceTraceView } from './ScienceTraceView.tsx'
 
 /** Required services: the conversation slot, registries, ordinary Session paging, and the locale service. */
 export const inject = ['slots', 'conversationEvents', 'conversationViews', 'sessions', 'locale']
@@ -62,4 +63,11 @@ export function apply(ctx: Context): void {
       }
     },
   }, TrajectoryView))
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view',
+    id: 'trace',
+    order: 20,
+    locale: NS,
+    label: () => t('view.trace'),
+  }, ScienceTraceView))
 }

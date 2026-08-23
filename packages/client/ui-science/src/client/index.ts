@@ -21,6 +21,8 @@
  * viewing state ui-conversation's `ChatStoreState` has no reason to carry.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { createElement } from 'react'
 // Type-only: resolves ctx.locale and ctx.slots on ClientContext.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -34,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // conversation.details.view slots' declarations, and the Details seam's
 // inspectCall owner callback (same cross-plugin rule).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
 // Type-only: pulls the generated Science Remote namespace into ClientContext.
@@ -44,6 +47,12 @@ import { ScienceRunRow } from './ScienceRunRow.tsx'
 import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
+import { ScienceHeroAction } from './ScienceHeroAction.tsx'
+import { ScienceEmptyDetails } from './ScienceEmptyDetails.tsx'
+import { ScienceComposerChips } from './ScienceComposerChips.tsx'
+import { ScienceComposerSelections } from './composer-selections.ts'
+import { ScienceDestinations } from './ScienceDestinations.tsx'
+import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
@@ -73,7 +82,7 @@ const SCIENCE_DETAILS_ID = 'science'
  * share carries nothing beyond the Details seam's own callbacks, per
  * `DetailsViewOwnerProps`).
  */
-export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions']
+export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation']
 
 /**
  * Client plugin body: register dictionaries, the two keyed toolview rows,
@@ -90,6 +99,20 @@ export function apply(ctx: ClientContext): void {
   // reference across every registration below that declares it as `store:`
   // — the framework resolves one live instance per (this handle, session) pair.
   const scienceSelectionStore = createScienceSelectionStore()
+  const composerSelections = new ScienceComposerSelections()
+  const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) =>
+    createElement(ScienceComposerChips, {
+      selections: composerSelections.store(props.sessionId),
+      remove: (index) => { composerSelections.remove(props.sessionId, index) },
+      t: props.t,
+    })
+
+  ctx.slots.inject('sidebar.destinations', () => ctx.slots.register({
+    name: 'sidebar.destinations', id: 'science', order: 0, locale: NS,
+    inject: () => ({
+      openScience: (sessionId: SessionId) => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+    }),
+  }, ScienceDestinations))
 
   ctx.slots.inject('tool.call.toolview', function* () {
     yield ctx.slots.register(
@@ -124,6 +147,38 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
   }, ScienceHeaderAction))
 
+  ctx.slots.inject('conversation.page.utilities', () => ctx.slots.register({
+    name: 'conversation.page.utilities', id: SCIENCE_DETAILS_ID, order: 0, locale: NS,
+  }, ScienceHeroAction))
+
+  ctx.slots.inject('details.files', () => ctx.slots.register({
+    name: 'details.files', locale: NS,
+  }, ScienceEmptyDetails))
+
+  ctx.slots.inject('conversation.input.accessory', () => ctx.slots.register({
+    name: 'conversation.input.accessory', id: 'science-targets', order: 0, locale: NS,
+  }, ComposerChipsEntry))
+
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock', id: 'science-kernels', order: 10, locale: NS,
+  }, ScienceKernelStatus))
+
+  ctx.effect(() => ctx.conversation.registerSubmissionHandler((submission) => {
+    const targets = composerSelections.store(submission.sessionId).getSnapshot()
+    if (targets.length === 0) return undefined
+    if (submission.imageIds.length > 0) {
+      return Promise.resolve({ kind: 'error', text: ctx.locale.bind(NS)('edit.imagesUnsupported') })
+    }
+    return ctx.remote.scienceEdits.submit(submission.sessionId, {
+      targets,
+      instruction: submission.text,
+    }).then((result) => {
+      if (!result.ok) return { kind: 'error' as const, text: result.error.message }
+      composerSelections.clear(submission.sessionId)
+      return { kind: 'success' as const }
+    })
+  }), 'ui-science: composer edit submission')
+
   // Registration-time text (the entry's tab label) reads through the bound
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
@@ -138,7 +193,7 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): ScienceDetailsInjected => ({
       loadImage: createScienceImageLoader(ctx.sessions, sessionId),
       loadText: createScienceTextLoader(ctx.sessions, sessionId),
-      submitEdit: request => ctx.remote.scienceEdits.submit(sessionId, request),
+      addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
       commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))

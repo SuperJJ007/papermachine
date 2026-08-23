@@ -274,39 +274,55 @@
     {
       "source": {
         "kind": "science-edit",
-        "artifactId": "{{scienceChartId}}",
-        "version": 2,
-        "target": {
-          "kind": "spec-path",
-          "path": "encoding.y"
-        },
+        "targets": [
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 2,
+            "target": {
+              "kind": "spec-path",
+              "path": "encoding.y"
+            }
+          }
+        ],
         "instruction": "Use a zero-based quantitative scale."
       },
       "content": [
         {
           "type": "text",
-          "text": "Edit Science artifact \"chart.vl.json\" ({{scienceChartId}} v2).\nSpec path: encoding.y\nInstruction: Use a zero-based quantitative scale.\nUse exactly {{scienceChartId}} v2 as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version."
+          "text": "Edit these Science artifact targets:\n1. \"chart.vl.json\" ({{scienceChartId}} v2): Spec path encoding.y\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2"
         }
       ]
     },
     {
       "source": {
         "kind": "science-edit",
-        "artifactId": "{{scienceChartId}}",
-        "version": 1,
-        "target": {
-          "kind": "normalized-region",
-          "x": 0.25,
-          "y": 0.25,
-          "width": 0.5,
-          "height": 0.5
-        },
-        "instruction": "Brighten the selected region."
+        "targets": [
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 1,
+            "target": {
+              "kind": "normalized-region",
+              "x": 0.25,
+              "y": 0.25,
+              "width": 0.5,
+              "height": 0.5
+            }
+          },
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 2,
+            "target": {
+              "kind": "spec-path",
+              "path": "encoding.x"
+            }
+          }
+        ],
+        "instruction": "Brighten the selected region and align the chart encoding."
       },
       "content": [
         {
           "type": "text",
-          "text": "Edit Science artifact \"plot.png\" ({{scienceChartId}} v1).\nNormalized region: x=0.25, y=0.25, width=0.5, height=0.5\nInstruction: Brighten the selected region.\nUse exactly {{scienceChartId}} v1 as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version."
+          "text": "Edit these Science artifact targets:\n1. \"plot.png\" ({{scienceChartId}} v1): Normalized region x=0.25, y=0.25, width=0.5, height=0.5\n2. \"chart.vl.json\" ({{scienceChartId}} v2): Spec path encoding.x\nInstruction: Brighten the selected region and align the chart encoding.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1\n- {{scienceChartId}} v2"
         },
         {
           "type": "image",
@@ -397,7 +413,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `region-edit.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B, edited from {{scienceChartId}} v1)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B, edited from {{scienceChartId}} v1), `selected-edit-2.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 58 B, edited from {{scienceChartId}} v2)."
         }
       ]
     }

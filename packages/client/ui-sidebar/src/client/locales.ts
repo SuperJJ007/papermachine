@@ -2,6 +2,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'destinations.label': '项目导航',
   'session.new': '新会话',
   'session.new.label': '新建会话',
   'toggle.open': '打开侧边栏',
@@ -13,6 +14,7 @@ export type SidebarKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'destinations.label': 'Project navigation',
   'session.new': 'New Session',
   'session.new.label': 'New session',
   'toggle.open': 'Open sidebar',

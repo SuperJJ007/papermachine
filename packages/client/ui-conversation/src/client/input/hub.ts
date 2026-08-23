@@ -25,6 +25,7 @@ interface CommandFace {
 /** Attachment-send face resolved lazily to keep hub/service construction acyclic. */
 interface ConversationAttachmentFace {
   sendSession(
+    sessionId: SessionId,
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
@@ -77,7 +78,7 @@ export class InputHub implements SessionInputResolver {
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       queue: queueReadFaceOf(session),
-      defaultSink: (text, imageIds, mode, signal) => this.sink(session, text, imageIds, mode, signal),
+      defaultSink: (text, imageIds, mode, signal) => this.sink(id, session, text, imageIds, mode, signal),
       steerQueue: () => { void this.steerQueue(session, shell) },
       commandImages: {
         serialize: ids => this.conversation().serializeDraftImages(ids),
@@ -163,14 +164,14 @@ export class InputHub implements SessionInputResolver {
    * (banner via promptError, draft restored only while untouched).
    */
   private sink(
+    sessionId: SessionId,
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal: AbortSignal,
   ): Promise<SubmitOutcome> {
-    if (text === '' && imageIds.length === 0) return Promise.resolve({ kind: 'success' })
-    return this.conversation().sendSession(session, text, imageIds, mode, signal)
+    return this.conversation().sendSession(sessionId, session, text, imageIds, mode, signal)
   }
 
   /**

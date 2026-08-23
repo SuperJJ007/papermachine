@@ -41,7 +41,7 @@ function toolResultTexts(options: GenerateOptions): string[] {
 
 /** One deterministic call id per selection kind, doubling as the served-edit marker. */
 function editCallId(source: ScienceEditMessageSource): string {
-  return source.target.kind === 'spec-path' ? 'science-selected-edit-call' : 'science-region-edit-call'
+  return source.targets[0]?.target.kind === 'spec-path' ? 'science-selected-edit-call' : 'science-region-edit-call'
 }
 
 /** Call ids every earlier tool result in `options` has already answered. */
@@ -132,16 +132,24 @@ class ScienceMockAdapter extends LlmAdapter {
     const served = servedCallIds(options)
     const selectedEdit = pendingEditSource(options, served)
     if (selectedEdit !== undefined) {
-      const [input, output] = selectedEdit.target.kind === 'spec-path'
-        ? ['source.vl.json', 'selected-edit.vl.json']
-        : ['region-source.png', 'region-edit.png']
-      const code = selectedEdit.target.kind === 'spec-path'
-        ? `from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "${output}").write_text(Path("inputs/${input}").read_text())`
-        : `from pathlib import Path\nPath(SCIENCE_ARTIFACT_DIR, "${output}").write_bytes(Path("inputs/${input}").read_bytes())`
+      if (selectedEdit.targets.length === 0) throw new Error('science-mock-llm: edit source has no targets')
+      const transfers = selectedEdit.targets.map((target, index) => {
+        const suffix = selectedEdit.targets.length === 1 ? '' : `-${String(index + 1)}`
+        return target.target.kind === 'spec-path'
+          ? { target, input: `source${suffix}.vl.json`, output: `selected-edit${suffix}.vl.json`, method: 'write_text' }
+          : { target, input: `region-source${suffix}.png`, output: `region-edit${suffix}.png`, method: 'write_bytes' }
+      })
+      const code = ['from pathlib import Path', ...transfers.map(({ input, output, method }) =>
+        `Path(SCIENCE_ARTIFACT_DIR, "${output}").${method}(Path("inputs/${input}").read_${method === 'write_text' ? 'text' : 'bytes'}())`),
+      ].join('\n')
       yield * toolCall(editCallId(selectedEdit), 'run_python', {
         code,
-        artifact_inputs: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: input }],
-        edit_of: [{ artifactId: selectedEdit.artifactId, version: selectedEdit.version, path: output }],
+        artifact_inputs: transfers.map(({ target, input }) => ({
+          artifactId: target.artifactId, version: target.version, path: input,
+        })),
+        edit_of: transfers.map(({ target, output }) => ({
+          artifactId: target.artifactId, version: target.version, path: output,
+        })),
       })
       return
     }

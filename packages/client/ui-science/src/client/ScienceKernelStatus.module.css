@@ -1,0 +1,26 @@
+.root {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.kernel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.live {
+  background: var(--dsw-alias-state-success-primary);
+}

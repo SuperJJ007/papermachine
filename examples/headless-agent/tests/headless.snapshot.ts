@@ -408,9 +408,9 @@ describe('headless stream-json snapshots', () => {
       expect(stream).not.toContain(PNG_BASE64)
       // Five initial auto-captures, one curated re-save reusing the PNG id,
       // one ordinary edited branch, one direct style edit reusing the spec id,
-      // and the two structured-selection branches (spec-path and normalized-region).
-      expect(ids.chartIds).toHaveLength(10)
-      expect(new Set(ids.chartIds).size).toBe(8)
+      // one single-target edit and two outputs from the multi-target edit.
+      expect(ids.chartIds).toHaveLength(11)
+      expect(new Set(ids.chartIds).size).toBe(9)
       // Both the plot's own id and the edited branch's own id normalize to the
       // same {{scienceChartId}} placeholder, so a renderer that echoed its own
       // id as its parent would still pass the normalized stream comparison
@@ -474,15 +474,27 @@ describe('headless stream-json snapshots', () => {
         const event = record.event as JsonObject
         const data = event.data as JsonObject | undefined
         const artifact = data?.artifact as JsonObject | undefined
-        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'region-edit.png'
+        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'region-edit-1.png'
       })
-      if (regionSaved === undefined) throw new Error(`science snapshot stream carries no region-edit.png event; stdout:\n${result.stdout}`)
+      if (regionSaved === undefined) throw new Error(`science snapshot stream carries no region-edit-1.png event; stdout:\n${result.stdout}`)
       const regionArtifact = ((regionSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
       const regionParent = regionArtifact.parent as JsonObject | undefined
       if (regionParent === undefined) throw new Error('region-edit.png carries no parent reference')
       expect(regionParent.artifactId).toBe(ids.chartIds[3])
       expect(regionParent.version).toBe(1)
       expect(regionParent.artifactId).not.toBe(regionArtifact.artifactId)
+      const multiSpecSaved = parseJsonl(result.stdout).find((record) => {
+        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
+        const event = record.event as JsonObject
+        const data = event.data as JsonObject | undefined
+        const artifact = data?.artifact as JsonObject | undefined
+        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'selected-edit-2.vl.json'
+      })
+      if (multiSpecSaved === undefined) {
+        throw new Error(`science snapshot stream carries no selected-edit-2.vl.json event; stdout:\n${result.stdout}`)
+      }
+      const multiSpecArtifact = ((multiSpecSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
+      expect(multiSpecArtifact.parent).toEqual({ artifactId: ids.chartIds[0], version: 2 })
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })

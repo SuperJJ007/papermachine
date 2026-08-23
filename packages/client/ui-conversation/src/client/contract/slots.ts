@@ -210,6 +210,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the next one rather than applied to a current one.
      */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    /** Page-level utilities that remain available with or without a Session. */
+    'conversation.page.utilities': { kind: 'list'; scope: 'root'; owner: ConversationPageUtilitiesOwnerProps }
+    /** Structured context chips rendered above the main composer textarea. */
+    'conversation.input.accessory': { kind: 'list'; scope: 'session'; owner: InputZone }
     // 'conversation.input.overlay' merges in ui-input-trigger (the dependency
     // direction is the hard constraint — ui-input-trigger cannot import
     // this package, while this package's input contract already imports
@@ -558,6 +562,14 @@ export interface ConversationInjected {
    * the root renders as the inert composer's placeholder.
    */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  /** Toggle the shared Details column from a root-scoped utility. */
+  toggleDetails: () => void
+}
+
+/** Owner share for root-scoped conversation utilities. */
+export interface ConversationPageUtilitiesOwnerProps {
+  /** Toggle the shared Details column. */
+  toggleDetails: () => void
 }
 
 /** Business callbacks injected into the strict Session body seat. */
@@ -733,6 +745,8 @@ export type ConversationSlotProps =
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
+    | 'conversation.page.utilities'
+    | 'conversation.input.accessory'
   >
   & InjectFace<ConversationInjected>
   & PropsLocale<'conversation'>

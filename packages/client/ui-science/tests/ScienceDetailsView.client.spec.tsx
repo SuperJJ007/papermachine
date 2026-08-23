@@ -193,7 +193,7 @@ function props(
     agentPreset?: string
     loadImage?: Props['loadImage']
     loadText?: Props['loadText']
-    submitEdit?: Props['submitEdit']
+    addToConversation?: Props['addToConversation']
     commitStyleEdit?: CommitStyleEdit
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
@@ -228,7 +228,7 @@ function props(
     inspectCall: over.inspectCall ?? vi.fn(),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
-    submitEdit: over.submitEdit ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    addToConversation: over.addToConversation ?? vi.fn(),
     commitStyleEdit: over.commitStyleEdit ?? vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit' },
     }),
@@ -561,26 +561,23 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(finalizeMock).toHaveBeenCalledTimes(1)
   })
 
-  it('submits the selected Vega-Lite structural path against the exact open version', async () => {
+  it('adds the selected Vega-Lite structural path and exact open version to the main composer', async () => {
     embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
     const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"x":{"field":"name"},"color":{"field":"group"}}}')
-    const submitEdit = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
+    const addToConversation = vi.fn<Props['addToConversation']>()
     const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json', version: 3 })
     store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
-    render(<ScienceDetailsView {...props(science, { store, loadText, submitEdit })} />)
+    render(<ScienceDetailsView {...props(science, { store, loadText, addToConversation })} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'encoding.color' }))
-    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Use the blue scale' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to conversation' }))
 
     await waitFor(() => {
-      expect(submitEdit).toHaveBeenCalledWith({
+      expect(addToConversation).toHaveBeenCalledWith([{
         artifactId: 'chart-1', version: 3,
         target: { kind: 'spec-path', path: 'encoding.color' },
-        instruction: 'Use the blue scale',
-      })
+      }])
     })
-    expect((await screen.findByRole('status')).textContent).toBe('Edit request sent.')
   })
 
   it('previews safe style controls and commits a human-edited next version', async () => {
@@ -686,12 +683,12 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(screen.getByRole('button', { name: 'vconcat.1.spec.encoding.y' })).toBeDefined()
   })
 
-  it('normalizes a raster drag and renders a Host rejection without changing the selected version', async () => {
+  it('normalizes a raster drag before adding it to the main composer', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 2 })] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
-    const submitEdit = vi.fn<Props['submitEdit']>().mockResolvedValue({ ok: false, error: { message: 'selected version is stale' } })
-    render(<ScienceDetailsView {...props(science, { store, submitEdit })} />)
+    const addToConversation = vi.fn<Props['addToConversation']>()
+    render(<ScienceDetailsView {...props(science, { store, addToConversation })} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
     const gesture = screen.getByLabelText('Drag to select an edit region')
@@ -702,19 +699,16 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.mouseDown(gesture, { clientX: 30, clientY: 40 })
     fireEvent.mouseMove(gesture, { clientX: 130, clientY: 90 })
     fireEvent.mouseUp(gesture, { clientX: 130, clientY: 90 })
-    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Increase contrast' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add to conversation' }))
 
-    await waitFor(() => { expect(submitEdit).toHaveBeenCalledTimes(1) })
-    expect(submitEdit.mock.calls[0]?.[0]).toMatchObject({
+    expect(addToConversation).toHaveBeenCalledTimes(1)
+    expect(addToConversation.mock.calls[0]?.[0]?.[0]).toMatchObject({
       artifactId: 'chart-1', version: 2,
       target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.5 },
-      instruction: 'Increase contrast',
     })
-    const submittedTarget = submitEdit.mock.calls[0]?.[0].target
+    const submittedTarget = addToConversation.mock.calls[0]?.[0]?.[0]?.target
     if (submittedTarget?.kind !== 'normalized-region') throw new Error('expected one normalized-region request')
     expect(submittedTarget.height).toBeCloseTo(0.5)
-    expect((await screen.findByRole('alert')).textContent).toContain('selected version is stale')
   })
 
   it('ignores incomplete raster gestures and clears a draft when the pointer leaves', () => {
@@ -736,44 +730,6 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.mouseMove(gesture, { clientX: 40, clientY: 40 })
     fireEvent.mouseLeave(gesture)
     expect(screen.getByRole('button', { name: 'Cancel region selection' }).getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('renders a rejected model-edit request', async () => {
-    const science = baseProjection({ artifacts: [chart()] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    const submitEdit = vi.fn<Props['submitEdit']>().mockRejectedValue('model queue offline')
-    render(<ScienceDetailsView {...props(science, { store, submitEdit })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
-    const gesture = screen.getByLabelText('Drag to select an edit region')
-    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
-      x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100,
-      toJSON: () => ({}),
-    })
-    fireEvent.mouseDown(gesture, { clientX: 10, clientY: 10 })
-    fireEvent.mouseUp(gesture, { clientX: 60, clientY: 60 })
-    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Increase contrast' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('model queue offline')
-  })
-
-  it('renders an Error rejected by the model-edit request transport', async () => {
-    const science = baseProjection({ artifacts: [chart()] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    const submitEdit = vi.fn<Props['submitEdit']>().mockRejectedValue(new Error('request transport failed'))
-    render(<ScienceDetailsView {...props(science, { store, submitEdit })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
-    const gesture = screen.getByLabelText('Drag to select an edit region')
-    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
-      x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100,
-      toJSON: () => ({}),
-    })
-    fireEvent.mouseDown(gesture, { clientX: 10, clientY: 10 })
-    fireEvent.mouseUp(gesture, { clientX: 60, clientY: 60 })
-    fireEvent.change(screen.getByLabelText('Edit instruction'), { target: { value: 'Increase contrast' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send edit request' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('request transport failed')
   })
 
   it('finalizes a Vega-Lite view that resolves after unmount', async () => {

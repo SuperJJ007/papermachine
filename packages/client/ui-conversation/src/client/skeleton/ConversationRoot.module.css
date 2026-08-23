@@ -4,6 +4,7 @@
    a 2px active bar. */
 
 .root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -25,6 +26,16 @@
   --dsh-composer-dock-inset: 8px;
 }
 
+.pageUtilities {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .header {
   position: relative;
   flex: none;
@@ -32,7 +43,7 @@
   /* Natural two-row height equals the shared token; stating it as min-height
      keeps the divider on the token line if a row ever renders short. */
   min-height: var(--dsh-column-header-height);
-  padding: 12px 28px 0 20px;
+  padding: 12px 64px 0 20px;
   border-bottom: 1px solid transparent;
 }
 

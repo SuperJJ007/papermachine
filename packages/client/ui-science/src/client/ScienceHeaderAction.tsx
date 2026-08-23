@@ -3,7 +3,7 @@
 // affordance toggles the routed `science` Details entry through the
 // owner-supplied callback — it never opens a panel of its own.
 
-import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDataOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ui-conversation SlotMap merge (the header actions
 // seat and its ConversationHeaderActionOwnerProps.openDetailsView callback).
@@ -15,7 +15,16 @@ export type ScienceHeaderActionProps =
   PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'science'>
 
 /** Details entry id this action opens (matches the entry's own registration). */
-const SCIENCE_DETAILS_ID = 'science'
+export const SCIENCE_DETAILS_ID = 'science'
+
+/** Shared compact Files control used by the root utility placement. */
+export function ScienceFilesButton({ onClick, t }: { onClick: () => void; t: ScienceHeaderActionProps['t'] }) {
+  return (
+    <button type="button" className={css.iconAction} aria-label={t('details.action')} onClick={onClick}>
+      <IconPanelLeftOutline16 size={16} />
+    </button>
+  )
+}
 
 /**
  * Render this session's Science details action, which both opens and closes

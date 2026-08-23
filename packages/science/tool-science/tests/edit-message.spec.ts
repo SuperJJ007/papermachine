@@ -70,80 +70,146 @@ describe('Science edit-message admission', () => {
     }
   })
   it('emits the exact Vega-Lite path and immutable version in the durable message source and model text', () => {
-    const resolved = resolveScienceEdit([vega()], {
+    const resolved = resolveScienceEdit([vega()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'),
       version: 1,
       target: { kind: 'spec-path', path: ' encoding.color ' },
-      instruction: ' make it blue ',
+    }], instruction: ' make it blue ',
     })
     const message = createScienceEditMessage(resolved)
     expect(message.source).toEqual({
-      kind: 'science-edit', artifactId: 'chart-1', version: 1,
-      target: { kind: 'spec-path', path: 'encoding.color' }, instruction: 'make it blue',
+      kind: 'science-edit', targets: [{ artifactId: 'chart-1', version: 1,
+        target: { kind: 'spec-path', path: 'encoding.color' } }], instruction: 'make it blue',
     })
     expect(message.content).toEqual([{ type: 'text', text: [
-      'Edit Science artifact "loss.vl.json" (chart-1 v1).',
-      'Spec path: encoding.color',
+      'Edit these Science artifact targets:',
+      '1. "loss.vl.json" (chart-1 v1): Spec path encoding.color',
       'Instruction: make it blue',
-      'Use exactly chart-1 v1 as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version.',
+      'Use exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:',
+      '- chart-1 v1',
     ].join('\n') }])
   })
 
   it('attaches the exact raster version after normalizing the selected region', () => {
     const artifact = image()
-    const message = createScienceEditMessage(resolveScienceEdit([artifact], {
+    const message = createScienceEditMessage(resolveScienceEdit([artifact], { targets: [{
       artifactId: artifact.artifactId,
       version: 1,
       target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
-      instruction: 'increase contrast',
-    }))
+    }], instruction: 'increase contrast' }))
     expect(message.source).toMatchObject({
-      kind: 'science-edit', artifactId: 'chart-1', version: 1,
-      target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      kind: 'science-edit', targets: [{ artifactId: 'chart-1', version: 1,
+        target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 } }],
     })
     expect(message.content[1]).toEqual({ type: 'image', attachment: artifact.attachment })
   })
 
   it('rejects an older selected version instead of substituting the current version', () => {
     const versions = [image(), image({ version: 2, createdAt: 2 })]
-    expect(() => resolveScienceEdit(versions, {
+    expect(() => resolveScienceEdit(versions, { targets: [{
       artifactId: ScienceArtifactId('chart-1'), version: 1,
       target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 },
-      instruction: 'edit selected version',
-    })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_STALE_VERSION' }))
+    }], instruction: 'edit selected version' })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_STALE_VERSION' }))
   })
 
   it('rejects missing artifacts, malformed regions, and targets that do not match the media type', () => {
-    expect(() => resolveScienceEdit([], {
+    expect(() => resolveScienceEdit([], { targets: [{
       artifactId: ScienceArtifactId('missing'), version: 1,
-      target: { kind: 'spec-path', path: 'mark' }, instruction: 'change mark',
+      target: { kind: 'spec-path', path: 'mark' } }], instruction: 'change mark',
     })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' }))
-    expect(() => resolveScienceEdit([image()], {
+    expect(() => resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), version: 1,
-      target: { kind: 'normalized-region', x: 0.8, y: 0, width: 0.3, height: 1 }, instruction: 'crop',
+      target: { kind: 'normalized-region', x: 0.8, y: 0, width: 0.3, height: 1 } }], instruction: 'crop',
     })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
-    expect(() => resolveScienceEdit([image()], {
+    expect(() => resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), version: 1,
-      target: { kind: 'spec-path', path: 'mark' }, instruction: 'change mark',
+      target: { kind: 'spec-path', path: 'mark' } }], instruction: 'change mark',
     })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
-    expect(() => resolveScienceEdit([vega()], {
+    expect(() => resolveScienceEdit([vega()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), version: 1,
-      target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 }, instruction: 'crop',
+      target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 } }], instruction: 'crop',
     })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
   })
 
   it('rejects malformed spec paths and ill-formed instructions', () => {
     for (const path of ['', ' ', 'encoding..color', '.mark', 'mark.', 'encoding.color!']) {
-      expect(() => resolveScienceEdit([vega()], {
+      expect(() => resolveScienceEdit([vega()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), version: 1,
-        target: { kind: 'spec-path', path }, instruction: 'change it',
+        target: { kind: 'spec-path', path } }], instruction: 'change it',
       })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
     }
     for (const instruction of ['', '   ', 'has\u0000null', '\uD800 lone surrogate']) {
-      expect(() => resolveScienceEdit([vega()], {
+      expect(() => resolveScienceEdit([vega()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), version: 1,
-        target: { kind: 'spec-path', path: 'mark' }, instruction,
+        target: { kind: 'spec-path', path: 'mark' } }], instruction,
       })).toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
     }
+    expect(() => resolveScienceEdit([vega()], { targets: [{
+      artifactId: ScienceArtifactId('chart-1'), version: 1, target: { kind: 'unsupported' } as never,
+    }], instruction: 'change it' })).toThrow(/science edit target/)
+  })
+
+  it('admits multiple exact targets atomically and attaches every raster in target order', () => {
+    const chart = vega()
+    const raster = image({ artifactId: ScienceArtifactId('chart-2'), logicalName: 'residuals.png' })
+    const message = createScienceEditMessage(resolveScienceEdit([chart, raster], {
+      targets: [
+        { artifactId: chart.artifactId, version: 1, target: { kind: 'spec-path', path: 'encoding.y' } },
+        { artifactId: raster.artifactId, version: 1, target: { kind: 'normalized-region', x: 0, y: 0, width: 0.5, height: 1 } },
+      ],
+      instruction: 'use one blue palette',
+    }))
+    if (message.source.kind !== 'science-edit') throw new Error('expected a science-edit source')
+    expect(message.source.targets).toHaveLength(2)
+    expect(message.content).toHaveLength(2)
+    expect(message.content[1]).toEqual({ type: 'image', attachment: raster.attachment })
+  })
+
+  it('identifies the failing selection without admitting any part of a multi-target request', () => {
+    let caught: unknown
+    try {
+      resolveScienceEdit([vega()], {
+        targets: [
+          { artifactId: ScienceArtifactId('chart-1'), version: 1, target: { kind: 'spec-path', path: 'mark' } },
+          { artifactId: ScienceArtifactId('missing'), version: 1, target: { kind: 'spec-path', path: 'mark' } },
+        ],
+        instruction: 'make both blue',
+      })
+    } catch (error: unknown) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(ScienceEditError)
+    if (!(caught instanceof ScienceEditError)) throw new Error('expected ScienceEditError')
+    expect(caught.code).toBe('SCIENCE_EDIT_TARGET_NOT_FOUND')
+    expect(caught.message).toContain('target 2')
+  })
+
+  it('rejects empty, duplicate, and cross-version target sets before admission', () => {
+    expect(() => resolveScienceEdit([vega()], { targets: [], instruction: 'change it' }))
+      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
+    const duplicate = { artifactId: ScienceArtifactId('chart-1'), version: 1,
+      target: { kind: 'spec-path' as const, path: 'mark' } }
+    expect(() => resolveScienceEdit([vega()], { targets: [duplicate, duplicate], instruction: 'change it' }))
+      .toThrow(/target 2 duplicates/)
+    expect(() => resolveScienceEdit([vega(), vega({ version: 2 })], {
+      targets: [duplicate, { ...duplicate, version: 2, target: { kind: 'spec-path', path: 'encoding.x' } }],
+      instruction: 'change it',
+    })).toThrow(/target 2 selects a second version/)
+  })
+
+  it('lists one exact parent line per artifact while retaining each distinct target', () => {
+    const chart = vega()
+    const message = createScienceEditMessage(resolveScienceEdit([chart], {
+      targets: [
+        { artifactId: chart.artifactId, version: 1, target: { kind: 'spec-path', path: 'encoding.x' } },
+        { artifactId: chart.artifactId, version: 1, target: { kind: 'spec-path', path: 'encoding.y' } },
+      ],
+      instruction: 'align axes',
+    }))
+    const text = message.content[0]
+    if (text?.type !== 'text') throw new Error('expected text content')
+    expect(text.text.match(/^- chart-1 v1$/gm)).toHaveLength(1)
+    expect(text.text).toContain('1. "loss.vl.json" (chart-1 v1): Spec path encoding.x')
+    expect(text.text).toContain('2. "loss.vl.json" (chart-1 v1): Spec path encoding.y')
   })
 })

@@ -13,6 +13,7 @@ import type {
   ScienceEditMessageSource,
   ScienceEditReceipt,
   ScienceEditRequest,
+  ScienceEditSelection,
   ScienceEditTarget,
   ScienceStyleEditReceipt,
   ScienceStyleEditRequest,
@@ -65,20 +66,16 @@ function resolveInstruction(value: string): string {
 
 /** Validated material needed to construct one Science edit message. */
 export interface ResolvedScienceEdit {
-  readonly artifact: ScienceArtifactVersion
-  readonly target: ScienceEditTarget
+  readonly targets: readonly {
+    readonly artifact: ScienceArtifactVersion
+    readonly target: ScienceEditTarget
+  }[]
   readonly instruction: string
 }
 
-/**
- * Resolve one request against the authoritative committed artifact history.
- * @param artifacts - strictly folded committed versions for the addressed session.
- * @param request - exact version, selected target, and instruction from the viewer.
- * @returns detached target and instruction beside the authoritative artifact version.
- */
-export function resolveScienceEdit(
-  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditRequest,
-): ResolvedScienceEdit {
+function resolveSelection(
+  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditSelection,
+): ResolvedScienceEdit['targets'][number] {
   const versions = artifacts.filter(artifact => artifact.artifactId === request.artifactId)
   const latest = versions.at(-1)
   if (latest === undefined) {
@@ -94,9 +91,46 @@ export function resolveScienceEdit(
     )
   }
   const target = resolveTarget(request.target)
-  const instruction = resolveInstruction(request.instruction)
   assertTargetMatches(latest, target)
-  return { artifact: latest, target, instruction }
+  return { artifact: latest, target }
+}
+
+/**
+ * Resolve one multi-target request against the authoritative committed artifact history.
+ * @param artifacts - strictly folded committed versions for the addressed session.
+ * @param request - exact version, selected target, and instruction from the viewer.
+ * @returns detached targets and instruction beside the authoritative artifact versions.
+ */
+export function resolveScienceEdit(
+  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditRequest,
+): ResolvedScienceEdit {
+  const instruction = resolveInstruction(request.instruction)
+  if (request.targets.length === 0) invalid('Science edit request must select at least one target')
+  const selections = new Map<string, { version: number; targets: Set<string> }>()
+  for (const [index, selection] of request.targets.entries()) {
+    const existing = selections.get(selection.artifactId)
+    if (existing !== undefined && existing.version !== selection.version) {
+      invalid(`Science edit target ${String(index + 1)} selects a second version of artifact ${JSON.stringify(selection.artifactId)}`)
+    }
+    const targetKey = JSON.stringify(selection.target)
+    if (existing?.targets.has(targetKey) === true) {
+      invalid(`Science edit target ${String(index + 1)} duplicates an earlier target`)
+    }
+    if (existing === undefined) {
+      selections.set(selection.artifactId, { version: selection.version, targets: new Set([targetKey]) })
+    } else {
+      existing.targets.add(targetKey)
+    }
+  }
+  const targets = request.targets.map((selection, index) => {
+    try {
+      return resolveSelection(artifacts, selection)
+    } catch (error: unknown) {
+      if (!(error instanceof ScienceEditError)) throw error
+      throw new ScienceEditError(`Science edit target ${String(index + 1)}: ${error.message}`, error.code as ScienceEditErrorCode)
+    }
+  })
+  return { targets, instruction }
 }
 
 function resolveCurrentArtifact(
@@ -150,24 +184,31 @@ function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEd
 
 /**
  * Render the exact-version edit instruction sent to the model.
- * @param artifact - authoritative immutable version and display name.
- * @param target - validated selection within that version.
+ * @param targets - authoritative immutable versions and validated selections.
  * @param instruction - validated user instruction.
  * @returns model-visible exact-version edit text.
  */
 export function renderScienceEditMessage(
-  artifact: Pick<ScienceArtifactVersion, 'artifactId' | 'version' | 'logicalName'>,
-  target: ScienceEditTarget,
+  targets: readonly {
+    readonly artifact: Pick<ScienceArtifactVersion, 'artifactId' | 'version' | 'logicalName'>
+    readonly target: ScienceEditTarget
+  }[],
   instruction: string,
 ): string {
-  const selected = target.kind === 'spec-path'
-    ? `Spec path: ${target.path}`
-    : `Normalized region: x=${String(target.x)}, y=${String(target.y)}, width=${String(target.width)}, height=${String(target.height)}`
+  const selections = targets.map(({ artifact, target }, index) => {
+    const selected = target.kind === 'spec-path'
+      ? `Spec path ${target.path}`
+      : `Normalized region x=${String(target.x)}, y=${String(target.y)}, width=${String(target.width)}, height=${String(target.height)}`
+    return `${String(index + 1)}. ${JSON.stringify(artifact.logicalName)} (${artifact.artifactId} v${String(artifact.version)}): ${selected}`
+  })
+  const versions = [...new Map(targets.map(({ artifact }) => [artifact.artifactId, artifact])).values()]
+    .map(artifact => `- ${artifact.artifactId} v${String(artifact.version)}`)
   return [
-    `Edit Science artifact ${JSON.stringify(artifact.logicalName)} (${artifact.artifactId} v${String(artifact.version)}).`,
-    selected,
+    'Edit these Science artifact targets:',
+    ...selections,
     `Instruction: ${instruction}`,
-    `Use exactly ${artifact.artifactId} v${String(artifact.version)} as an artifact_inputs source and as the edit_of parent for the edited output. Do not substitute a newer version.`,
+    'Use exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:',
+    ...versions,
   ].join('\n')
 }
 
@@ -177,19 +218,21 @@ export function renderScienceEditMessage(
  * @returns user message carrying both the readable instruction and structured source.
  */
 export function createScienceEditMessage(resolved: ResolvedScienceEdit): UserMessage {
-  const { artifact, target, instruction } = resolved
+  const { targets, instruction } = resolved
   const source: ScienceEditMessageSource = {
     kind: 'science-edit',
-    artifactId: artifact.artifactId,
-    version: artifact.version,
-    target,
+    targets: targets.map(({ artifact, target }) => ({
+      artifactId: artifact.artifactId,
+      version: artifact.version,
+      target,
+    })),
     instruction,
   }
   return createUserMessage({
     source,
     content: [
-      { type: 'text', text: renderScienceEditMessage(artifact, target, instruction) },
-      ...(target.kind === 'normalized-region'
+      { type: 'text', text: renderScienceEditMessage(targets, instruction) },
+      ...targets.flatMap(({ artifact, target }) => target.kind === 'normalized-region'
         ? [{ type: 'image' as const, attachment: artifact.attachment as Extract<ScienceArtifactVersion['attachment'], { width: number }> }]
         : []),
     ],
@@ -209,9 +252,9 @@ export class ScienceEditService extends TypertRemoteService {
   }
 
   /**
-   * Validate one exact current artifact selection and queue its structured edit message.
+   * Validate exact current artifact selections and queue one structured edit message.
    * @param agent - exact live agent resolved by the Remote lookup policy.
-   * @param request - selected version, target, and user instruction.
+   * @param request - selected versions, targets, and shared user instruction.
    * @returns durable-inbox admission receipt.
    */
   @Remote('submit')

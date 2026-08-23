@@ -22,7 +22,7 @@
 // "not applied" notice replaces them). The top-level missing-support/unbound
 // states below are unrelated to that strip and are unchanged.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
@@ -38,7 +38,7 @@ import type {
   ScienceEvidenceRef,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
-  ScienceEditReceipt, ScienceEditRequest, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
+  ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
@@ -53,11 +53,8 @@ export interface ScienceDetailsInjected {
   loadImage: ImageLoader
   /** Session-scoped text artifact loader (science-attachment-loader.ts). */
   loadText: TextLoader
-  /** Admit one exact-version viewer edit through the Host Science service. */
-  submitEdit: (request: ScienceEditRequest) => Promise<
-    | { readonly ok: true; readonly value: ScienceEditReceipt }
-    | { readonly ok: false; readonly error: { readonly message: string } }
-  >
+  /** Add selected artifact elements to the main conversation composer. */
+  addToConversation: (targets: readonly ScienceEditSelection[]) => void
   /** Commit a complete styled Vega-Lite working copy over one exact current version. */
   commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
     | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
@@ -377,41 +374,6 @@ function OutcomeSection({ outcome, t }: {
   )
 }
 
-type EditSubmissionState = 'idle' | 'pending' | 'accepted' | { readonly error: string }
-
-function ArtifactEditPanel({ target, instruction, state, onInstruction, onSubmit, t }: {
-  target: ScienceEditTarget | undefined
-  instruction: string
-  state: EditSubmissionState
-  onInstruction: (instruction: string) => void
-  onSubmit: () => void
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <section className={css.editPanel}>
-      <label className={css.editLabel} htmlFor="science-edit-instruction">{t('edit.instruction')}</label>
-      {target === undefined && <p className={css.notice}>{t('edit.targetRequired')}</p>}
-      <textarea
-        id="science-edit-instruction"
-        className={css.editInstruction}
-        value={instruction}
-        placeholder={t('edit.instructionPlaceholder')}
-        onChange={(event) => { onInstruction(event.currentTarget.value) }}
-      />
-      <button
-        type="button"
-        className={css.editSubmit}
-        disabled={target === undefined || instruction.trim() === '' || state === 'pending'}
-        onClick={onSubmit}
-      >
-        {state === 'pending' ? t('edit.submitting') : t('edit.submit')}
-      </button>
-      {state === 'accepted' && <p className={css.notice} role="status">{t('edit.accepted')}</p>}
-      {typeof state === 'object' && <p className={css.notice} role="alert">{t('edit.failed', { message: state.error })}</p>}
-    </section>
-  )
-}
-
 /** No open tabs: a gallery of latest artifact versions (opening one opens its tab), plus the Outcome kept reachable below it. */
 function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -434,7 +396,7 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
   science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText,
-  submitEdit, commitStyleEdit, useStore, actions, inspectCall, t,
+  addToConversation, commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -444,7 +406,7 @@ function ArtifactTab({
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
   loadText: TextLoader
-  submitEdit: ScienceDetailsInjected['submitEdit']
+  addToConversation: ScienceDetailsInjected['addToConversation']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -454,8 +416,7 @@ function ArtifactTab({
   const lightboxOpen = useStore(s => s.lightboxOpen)
   const versions = versionsOf(artifacts, chart.artifactId)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
-  const [instruction, setInstruction] = useState('')
-  const [submission, setSubmission] = useState<EditSubmissionState>('idle')
+  const [selectedTargets, setSelectedTargets] = useState<ScienceEditTarget[]>([])
   // The version a style commit just produced, not reset by the
   // artifactId/version effect below: a successful commit itself changes
   // `chart.version` to this same value, and the effect would otherwise wipe
@@ -463,35 +424,18 @@ function ArtifactTab({
   // with the current `chart.version` is what stops showing it once the
   // reader steps to a different version instead.
   const [committedVersion, setCommittedVersion] = useState<number | undefined>(undefined)
-  const submitting = useRef(false)
-  const editable = 'width' in chart.attachment || chart.attachment.mediaType === 'application/vnd.vega-lite+json'
 
   useEffect(() => {
     setTarget(undefined)
-    setInstruction('')
-    setSubmission('idle')
-    submitting.current = false
+    setSelectedTargets([])
   }, [chart.artifactId, chart.version])
 
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
-    setSubmission('idle')
+    setSelectedTargets(current => current.some(candidate => JSON.stringify(candidate) === JSON.stringify(next))
+      ? current.filter(candidate => JSON.stringify(candidate) !== JSON.stringify(next))
+      : [...current, next])
     setCommittedVersion(undefined)
-  }
-
-  const submit = (): void => {
-    /* v8 ignore next -- ArtifactEditPanel disables its only submit control for each rejected condition. */
-    if (target === undefined || instruction.trim() === '' || submitting.current) return
-    submitting.current = true
-    setSubmission('pending')
-    void submitEdit({ artifactId: chart.artifactId, version: chart.version, target, instruction })
-      .then((result) => {
-        setSubmission(result.ok ? 'accepted' : { error: result.error.message })
-      })
-      .catch((error: unknown) => {
-        setSubmission({ error: error instanceof Error ? error.message : String(error) })
-      })
-      .finally(() => { submitting.current = false })
   }
 
   if (view === 'provenance') {
@@ -557,17 +501,37 @@ function ArtifactTab({
         }}
         t={t}
       />
-      {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
-      {editable && (
-        <ArtifactEditPanel
-          target={target}
-          instruction={instruction}
-          state={submission}
-          onInstruction={(value) => { setInstruction(value); setSubmission('idle') }}
-          onSubmit={submit}
-          t={t}
-        />
+      {selectedTargets.length > 0 && (
+        <section className={css.selectedPanel} aria-label={t('edit.selectedTargets')}>
+          <div className={css.selectedChips}>
+            {selectedTargets.map((selected, index) => {
+              const label = selected.kind === 'spec-path'
+                ? selected.path
+                : t('edit.regionTarget', {
+                  x: Math.round(selected.x * 100), y: Math.round(selected.y * 100),
+                })
+              return (
+                <button
+                  type="button" className={css.selectedChip} key={`${label}:${String(index)}`}
+                  onClick={() => { setSelectedTargets(current => current.filter((_, candidate) => candidate !== index)) }}
+                >
+                  {label} ×
+                </button>
+              )
+            })}
+          </div>
+          <button type="button" className={css.addToConversation} onClick={() => {
+            addToConversation(selectedTargets.map(selected => ({
+              artifactId: chart.artifactId, version: chart.version, target: selected,
+            })))
+            setSelectedTargets([])
+            setTarget(undefined)
+          }}>
+            {t('edit.addToConversation')}
+          </button>
+        </section>
       )}
+      {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
       {'width' in chart.attachment && (
         <ArtifactLightbox
           chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
@@ -581,12 +545,12 @@ function ArtifactTab({
   )
 }
 
-function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, commitStyleEdit, useStore, actions, inspectCall, t }: {
+function ArtifactViewer({ science, snapshot, loadImage, loadText, addToConversation, commitStyleEdit, useStore, actions, inspectCall, t }: {
   science: ScienceClientProjection
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
   loadText: TextLoader
-  submitEdit: ScienceDetailsInjected['submitEdit']
+  addToConversation: ScienceDetailsInjected['addToConversation']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -648,7 +612,7 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, co
             snapshot={snapshot}
             loadImage={loadImage}
             loadText={loadText}
-            submitEdit={submitEdit}
+            addToConversation={addToConversation}
             commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
@@ -668,7 +632,8 @@ function ArtifactViewer({ science, snapshot, loadImage, loadText, submitEdit, co
  * @returns the current-state Science surface for this session.
  */
 export function ScienceDetailsView({
-  sessionId, useSessions, useSession, useProjection, useStore, actions, inspectCall, loadImage, loadText, submitEdit, commitStyleEdit, t,
+  sessionId, useSessions, useSession, useProjection, useStore, actions,
+  inspectCall, loadImage, loadText, addToConversation, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
@@ -694,7 +659,7 @@ export function ScienceDetailsView({
   return (
     <ArtifactViewer
       science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
-      submitEdit={submitEdit} commitStyleEdit={commitStyleEdit}
+      addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

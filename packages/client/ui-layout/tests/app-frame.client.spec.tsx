@@ -177,7 +177,7 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 0])
 
     act(() => { instance.actions.openDetails() })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
 
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
@@ -187,17 +187,17 @@ describe('AppFrame', () => {
     selectedSession.current = 's-blank' as SessionId
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().details).toBe(420)
+    expect(tracks(frame)).toEqual([280, 820])
+    expect(instance.getSnapshot().details).toBe('default')
 
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
 
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0])
+    expect(tracks(frame)).toEqual([280, 820])
     selectedSession.current = 's-test' as SessionId
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
@@ -231,7 +231,7 @@ describe('AppFrame', () => {
     act(() => { instance.actions.openDetails() })
     const handles = frame.querySelectorAll('[class*="handle"]')
     drag(handles[1]!, 1560, 1500)
-    expect(tracks(frame)[1]).toBe(480)
+    expect(tracks(frame)[1]).toBe(880)
   })
 
   it('drag base is the rendered (concession-clamped) width, not the preference', () => {
@@ -269,7 +269,7 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 380])
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
   })
 
   it('drag handles disappear for collapsed columns', () => {

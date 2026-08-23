@@ -1,0 +1,108 @@
+.root {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px var(--dsh-trajectory-bottom-clearance);
+  background: var(--dsw-alias-bg-layer-1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.header h2 { margin: 3px 0 0; font: var(--dsw-font-lg-18); }
+.eyebrow { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); letter-spacing: .08em; text-transform: uppercase; }
+.summary { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); }
+
+.flow {
+  position: relative;
+  display: flex;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 34px;
+  margin: 0 auto;
+  padding-top: 34px;
+}
+
+.flow::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--dsw-alias-border-l3); content: ''; }
+
+.turn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 22px 22px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.turnLabel {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-xxs-12);
+  white-space: nowrap;
+}
+
+.steps { position: relative; display: flex; flex-direction: column; gap: 14px; }
+.steps::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--dsw-alias-border-l2); content: ''; }
+.slot { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: start; }
+.slot::before { position: absolute; top: 20px; left: calc(50% - 22px); width: 44px; height: 1px; background: var(--dsw-alias-border-l2); content: ''; }
+.slot::after { position: absolute; top: 16px; left: calc(50% - 4px); width: 7px; height: 7px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 50%; background: var(--dsw-alias-bg-layer-1); content: ''; }
+.slot[data-side='left'] .card { grid-column: 1; justify-self: end; }
+.slot[data-side='right'] .card { grid-column: 3; justify-self: start; }
+
+.card {
+  display: flex;
+  width: 300px;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-left-color: var(--lane-color);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.card[data-lane='intent'] { --lane-color: var(--dsw-alias-state-business-primary); }
+.card[data-lane='reasoning'] { --lane-color: #8b5cf6; }
+.card[data-lane='tools'] { --lane-color: var(--dsw-alias-state-warn-primary); }
+.card[data-lane='evidence'] { --lane-color: var(--dsw-alias-state-success-primary); }
+
+.head { display: flex; align-items: center; gap: 6px; }
+.head b { font: var(--dsw-font-xs-13); font-weight: 500; }
+.lane { color: var(--lane-color); font: var(--dsw-font-xxs-12); }
+.detail { width: 100%; margin-top: 5px; padding-top: 7px; border-top: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.empty { margin: 36px auto; color: var(--dsw-alias-label-tertiary); text-align: center; }
+
+@media (max-width: 760px) {
+  .flow::before { left: 8px; }
+  .turn { padding-right: 12px; padding-left: 28px; }
+  .turnLabel { left: 20px; transform: none; }
+  .steps::before { left: -20px; }
+  .slot { display: block; }
+  .slot::before { left: -20px; width: 20px; }
+  .slot::after { left: -24px; }
+  .card { width: 100%; }
+}

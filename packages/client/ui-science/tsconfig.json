@@ -45,6 +45,9 @@
       "path": "../ui-settings-plugins"
     },
     {
+      "path": "../ui-sidebar"
+    },
+    {
       "path": "../ui-slots"
     },
     {

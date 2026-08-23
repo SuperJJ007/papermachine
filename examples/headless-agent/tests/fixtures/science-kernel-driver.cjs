@@ -63,8 +63,12 @@ rl.on('line', (line) => {
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'region-source-1.png'))) writeFileSync(join(artifactDir, 'region-edit-1.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'source.vl.json'))) {
     writeFileSync(join(artifactDir, 'selected-edit.vl.json'), '{"mark":"bar","encoding":{"y":{"scale":{"zero":true}}}}\n')
+  }
+  if (existsSync(join(cwd, 'inputs', 'source-2.vl.json'))) {
+    writeFileSync(join(artifactDir, 'selected-edit-2.vl.json'), '{"mark":"bar","encoding":{"x":{"axis":{"labelAngle":0}}}}\n')
   }
   writeFileSync(stdoutPath, 'science snapshot run output\n')
   writeFileSync(stderrPath, '')

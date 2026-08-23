@@ -1724,21 +1724,20 @@ describe('scienceEdits submit', () => {
       followup: (message: UserMessage) => { followups.push(message) },
     } as unknown as Agent
     const service = new ScienceEditService(ctx)
-    expect(() => service.submit(agent, {
+    expect(() => service.submit(agent, { targets: [{
       artifactId: ScienceArtifactId('absent'), version: 1,
-      target: { kind: 'spec-path', path: 'mark' }, instruction: 'change mark',
+      target: { kind: 'spec-path', path: 'mark' } }], instruction: 'change mark',
     })).toThrow(/does not identify a committed artifact/)
     expect(followups).toHaveLength(0)
-    const receipt = service.submit(agent, {
+    const receipt = service.submit(agent, { targets: [{
       artifactId: artifact.artifactId, version: 1,
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
-      instruction: 'brighten the selected region',
-    })
+    }], instruction: 'brighten the selected region' })
     expect(receipt).toEqual({ accepted: true })
     expect(followups).toHaveLength(1)
     expect(followups[0]?.source).toMatchObject({
-      kind: 'science-edit', artifactId: artifact.artifactId, version: 1,
-      target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      kind: 'science-edit', targets: [{ artifactId: artifact.artifactId, version: 1,
+        target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 } }],
     })
   })
 

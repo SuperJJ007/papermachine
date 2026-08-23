@@ -21,6 +21,18 @@ import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
+/** One composer submission before the default prompt transport claims it. */
+export interface ComposerSubmission {
+  readonly sessionId: SessionId
+  readonly text: string
+  readonly imageIds: readonly DraftAttachmentId[]
+  readonly mode: InputSubmitMode
+  readonly signal: AbortSignal | undefined
+}
+
+/** A domain handler claims a submission by returning its settlement promise. */
+export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
+
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
  * verbs and the input registry other plugins may reach — and exactly what a
@@ -34,6 +46,10 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /** Register a domain submission handler ahead of the ordinary prompt sink. */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
+  /** Select and reveal one Details entry for an already-mounted Session. */
+  openDetailsView(sessionId: SessionId, id: string): void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -98,6 +114,8 @@ export class ConversationController extends Service implements IConversation {
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
   private readonly createdImageUrls = new Set<string>()
+  private readonly submissionHandlers: ComposerSubmissionHandler[] = []
+  private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
   private disposed = false
 
   /**
@@ -118,6 +136,7 @@ export class ConversationController extends Service implements IConversation {
       this.draftAttachments.clear()
       this.imageUrls.clear()
       this.imageGenerations.clear()
+      this.detailsOpeners.clear()
     }, 'conversation attachment URL cache')
   }
 
@@ -135,6 +154,7 @@ export class ConversationController extends Service implements IConversation {
 
   /**
    * Submit ordered draft images with text through one host admission.
+   * @param sessionId - target Session id.
    * @param session - target session.
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
@@ -143,12 +163,18 @@ export class ConversationController extends Service implements IConversation {
    * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
+    sessionId: SessionId,
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
   ): Promise<SubmitOutcome> {
+    for (const handler of this.submissionHandlers) {
+      const claimed = handler({ sessionId, text, imageIds, mode, signal })
+      if (claimed !== undefined) return claimed
+    }
+    if (text === '' && imageIds.length === 0) return { kind: 'success' }
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
@@ -159,6 +185,34 @@ export class ConversationController extends Service implements IConversation {
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
     return { kind: 'success' }
+  }
+
+  /** Register one ordered composer submission claimant. */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void {
+    this.submissionHandlers.push(handler)
+    return () => {
+      const index = this.submissionHandlers.indexOf(handler)
+      if (index >= 0) this.submissionHandlers.splice(index, 1)
+    }
+  }
+
+  /**
+   * Bind the current Details router actions for one mounted Session.
+   * @param sessionId - mounted Session.
+   * @param opener - current Details route action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindDetailsOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
+    this.detailsOpeners.set(sessionId, opener)
+    return () => {
+      if (this.detailsOpeners.get(sessionId) === opener) this.detailsOpeners.delete(sessionId)
+    }
+  }
+
+  /** Select one Details route and reveal the column. */
+  openDetailsView(sessionId: SessionId, id: string): void {
+    const open = this.detailsOpeners.get(sessionId)
+    open?.(id)
   }
 
   /**

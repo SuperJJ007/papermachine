@@ -31,11 +31,16 @@ export interface ScienceNormalizedRegionTarget {
 /** One model-visible edit target selected in the Science artifact viewer. */
 export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget
 
-/** Browser request to edit one exact immutable Science artifact version. */
-export interface ScienceEditRequest {
+/** One selected target tied to its exact immutable artifact version. */
+export interface ScienceEditSelection {
   readonly artifactId: ScienceArtifactId
   readonly version: number
   readonly target: ScienceEditTarget
+}
+
+/** Browser request to edit one or more exact immutable Science artifact versions. */
+export interface ScienceEditRequest {
+  readonly targets: readonly ScienceEditSelection[]
   readonly instruction: string
 }
 

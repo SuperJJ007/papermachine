@@ -16,6 +16,9 @@
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
 export interface Columns { sidebar: number; center: number; details: number }
 
+/** Open Details preference; `default` requests the available half-width. */
+export type DetailsPreference = typeof DETAILS_DEFAULT | number
+
 // Contract-frozen geometry: the three-column concession chain's fixed points.
 /**
  * Center column floor; only the final fallback may go below it. Set so the
@@ -47,8 +50,8 @@ export const DETAILS_MIN = 300
  * below caps what any given viewport actually grants.
  */
 export const DETAILS_MAX = 960
-/** Details width before any user drag. */
-export const DETAILS_DEFAULT = 420
+/** Details preference before any user drag: split the available workspace evenly. */
+export const DETAILS_DEFAULT = 'default' as const
 
 /**
  * Clamp a panel width into its contract range.
@@ -71,10 +74,13 @@ export function clampWidth(px: number, min: number, max: number): number {
  * @param details - details width preference in px (0 = closed).
  * @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
  */
-export function computeColumns(viewport: number, sidebar: number, details: number): Columns {
+export function computeColumns(viewport: number, sidebar: number, details: DetailsPreference): Columns {
   // The sidebar is fixed at its preference (or the rail) — it never concedes.
   const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
-  const d0 = details === 0 ? 0 : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
+  const equalSplit = clampWidth((viewport - s) / 2, DETAILS_MIN, DETAILS_MAX)
+  const d0 = details === 0
+    ? 0
+    : details === DETAILS_DEFAULT ? equalSplit : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
 
   // Step 1: everything fits at preferred widths.
   if (s + d0 + CENTER_MIN <= viewport) return { sidebar: s, center: viewport - s - d0, details: d0 }

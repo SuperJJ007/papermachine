@@ -8,9 +8,11 @@
  * fiber-teardown removal (HMR safety).
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyHost } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -19,13 +21,20 @@ import { ScienceRunRow } from '../src/client/ScienceRunRow.tsx'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from '../src/client/ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from '../src/client/ScienceHeaderAction.tsx'
+import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
+import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
+import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
+import { ScienceHeroAction } from '../src/client/ScienceHeroAction.tsx'
+import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { SCIENCE_RUNTIME_NS } from '../src/client/settings-card-controller.ts'
+import type { ComposerSubmissionHandler } from '@deepseek-ai/dsh-client-ui-conversation/src/client/service.ts'
 
 interface PresentationCapture {
   slots: SlotRegistry
   dictionaries: Array<{ namespace: string; dictionaries: unknown }>
   localeDisposed: boolean
+  submissionHandlers: ComposerSubmissionHandler[]
 }
 
 /**
@@ -45,9 +54,14 @@ function providePresentation(ctx: Context) {
       'settings.plugin.item': { kind: 'keyed', scope: 'root' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'conversation.details.view': { kind: 'list', scope: 'session' },
+      'conversation.page.utilities': { kind: 'list', scope: 'root' },
+      'conversation.input.accessory': { kind: 'list', scope: 'session' },
+      'conversation.composer.dock': { kind: 'list', scope: 'session' },
+      'sidebar.destinations': { kind: 'list', scope: 'root' },
+      'details.files': { kind: 'single', scope: 'root' },
     },
   } as never, () => null)
-  const capture: PresentationCapture = { slots, dictionaries: [], localeDisposed: false }
+  const capture: PresentationCapture = { slots, dictionaries: [], localeDisposed: false, submissionHandlers: [] }
   ctx.provide('locale', {
     register(namespace: string, dictionaries: unknown) {
       capture.dictionaries.push({ namespace, dictionaries })
@@ -56,8 +70,9 @@ function providePresentation(ctx: Context) {
     bind: () => (key: string) => key,
   })
   ctx.provide('connection', {} as never)
+  const submit = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const scienceEdits = {
-    submit: () => Promise.resolve({ ok: true, value: { accepted: true } }),
+    submit,
     commitStyleEdit: () => Promise.resolve({
       ok: true,
       value: { artifactId: 'artifact-2', version: 2, origin: 'human-edit' },
@@ -66,9 +81,19 @@ function providePresentation(ctx: Context) {
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
   ctx.provide('sessions', { binding: () => undefined } as unknown as ISessions)
+  ctx.provide('conversation', {
+    registerSubmissionHandler: (handler: ComposerSubmissionHandler) => {
+      capture.submissionHandlers.push(handler)
+      return () => {
+        const index = capture.submissionHandlers.indexOf(handler)
+        if (index >= 0) capture.submissionHandlers.splice(index, 1)
+      }
+    },
+    openDetailsView: () => {},
+  } as never)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
-  return { capture }
+  return { capture, submit }
 }
 
 describe('apply', () => {
@@ -77,7 +102,7 @@ describe('apply', () => {
   })
 
   it('declares the services it binds — locale/slots for the toolview rows, connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller), and sessions for the Details entry\'s own attachment loader', () => {
-    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions'])
+    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation'])
   })
 
   it('registers the science locale dictionaries and the run_python / run_r / annotate_artifact / publish_outcome toolview rows', async () => {
@@ -153,12 +178,64 @@ describe('apply', () => {
     const face = injectFn?.('any-session' as SessionId)
     expect(typeof face?.loadImage).toBe('function')
     expect(typeof face?.loadText).toBe('function')
-    expect(typeof face?.submitEdit).toBe('function')
+    expect(typeof face?.addToConversation).toBe('function')
     expect(typeof face?.commitStyleEdit).toBe('function')
-    await expect(face?.submitEdit({} as never)).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    expect(() => { face?.addToConversation([]) }).not.toThrow()
     await expect(face?.commitStyleEdit({} as never)).resolves.toMatchObject({
       ok: true, value: { version: 2, origin: 'human-edit' },
     })
+  })
+
+  it('registers every Science shell slot contribution', async () => {
+    const ctx = new Context()
+    const { capture } = providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const destinations = capture.slots.entries('sidebar.destinations')[0]
+    expect(destinations?.component).toBe(ScienceDestinations)
+    const openScience = destinations?.inject?.() as { openScience: (sessionId: SessionId) => void }
+    expect(() => { openScience.openScience('unmounted' as SessionId) }).not.toThrow()
+    expect(capture.slots.entries('conversation.page.utilities')[0]?.component).toBe(ScienceHeroAction)
+    expect(capture.slots.entries('details.files')[0]?.component).toBe(ScienceEmptyDetails)
+    const accessory = capture.slots.entries('conversation.input.accessory')[0]
+    expect(accessory?.component).not.toBe(ScienceComposerChips)
+    const Accessory = accessory?.component as (props: { sessionId: SessionId; t: (key: string) => string }) => {
+      props: { remove: (index: number) => void }
+    }
+    const rendered = Accessory({ sessionId: 'session-1' as SessionId, t: key => key })
+    rendered.props.remove(0)
+    expect(capture.slots.entries('conversation.composer.dock')[0]?.component).toBe(ScienceKernelStatus)
+  })
+
+  it('submits staged targets, rejects ordinary images, reports Remote errors, and clears only after success', async () => {
+    const ctx = new Context()
+    const { capture, submit } = providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const details = capture.slots.entries('conversation.details.view')[0]
+    const injectDetails = details?.inject as unknown as ((sessionId: SessionId) => ScienceDetailsInjected)
+    const handler = capture.submissionHandlers[0]
+    if (handler === undefined) throw new Error('expected submission handler')
+    const target: ScienceEditSelection = {
+      artifactId: ScienceArtifactId('chart-1'), version: 1,
+      target: { kind: 'spec-path', path: 'encoding.y' },
+    }
+    const submission = { sessionId: 'session-1' as SessionId, text: '', imageIds: [], mode: 'queue' as const,
+      signal: new AbortController().signal }
+
+    injectDetails('session-1' as SessionId).addToConversation([target])
+    await expect(handler({
+      ...submission, imageIds: ['image-1' as never],
+    })).resolves.toEqual({ kind: 'error', text: 'edit.imagesUnsupported' })
+    expect(submit).not.toHaveBeenCalled()
+
+    submit.mockResolvedValueOnce({ ok: false, error: { code: 'rejected', message: 'no edit' } } as never)
+    await expect(handler({
+      ...submission, text: 'change it',
+    })).resolves.toEqual({ kind: 'error', text: 'no edit' })
+
+    await expect(handler(submission)).resolves.toEqual({ kind: 'success' })
+    expect(submit).toHaveBeenLastCalledWith('session-1', { targets: [target], instruction: '' })
+    expect(handler(submission)).toBeUndefined()
   })
 
   it('shares one selection-store handle across the toolview and details-view registrations', async () => {
@@ -190,11 +267,23 @@ describe('apply', () => {
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.details.view')).toHaveLength(1)
+    expect(presentation.slots.entries('sidebar.destinations')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(1)
+    expect(presentation.slots.entries('details.files')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(1)
+    expect(presentation.submissionHandlers).toHaveLength(1)
     await fiber.dispose()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.slots.entries('settings.plugin.item')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.details.view')).toHaveLength(0)
+    expect(presentation.slots.entries('sidebar.destinations')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(0)
+    expect(presentation.slots.entries('details.files')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(0)
+    expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(0)
+    expect(presentation.submissionHandlers).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
   })
 })

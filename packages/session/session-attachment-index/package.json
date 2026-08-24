@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-attachment-index",
   "description": "Generic Session attachment-reference registry: the merge-extensible extractor type table, the built-in model-visible-content scanner, and the ctx.sessionAttachments registry that authorizes attachment reads and Session export media collection",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

@@ -32,10 +32,15 @@ export interface ProcessRequest {
 
 export type ProcessRunner = (request: ProcessRequest) => Promise<void>
 
-// Milliseconds a cancelled or timed-out provisioning child is given to exit
-// cooperatively after SIGTERM before this module escalates to SIGKILL,
-// symmetric with HostProcessSupervisor.stop's own escalation.
+// Milliseconds a cancelled or timed-out provisioning child's process group is
+// given to exit cooperatively after SIGTERM before this module escalates to
+// a group SIGKILL, symmetric with HostProcessSupervisor.stop's own
+// escalation.
 const KILL_GRACE_MS = 5000
+
+// Interval this module polls the child's process group for liveness during
+// stopProcessGroup's grace period.
+const STOP_POLL_MS = 100
 
 /** Signal the process group on POSIX and the direct child on Windows, tolerating a group that is already gone. */
 function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -47,22 +52,47 @@ function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
-/** Stop the child's process group, escalating to SIGKILL after {@link KILL_GRACE_MS} if it has not exited. */
+/** Whether the direct child or, on POSIX, any other member of its process group is still alive. */
+function isProcessGroupAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined) return false
+  try {
+    if (process.platform === 'win32') process.kill(child.pid, 0)
+    else process.kill(-child.pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Stop the child's process group, escalating to a group SIGKILL if anything
+ * in it is still alive after {@link KILL_GRACE_MS}, mirroring
+ * HostProcessSupervisor.stop's group-aware escalation. The direct child
+ * exiting is not sufficient: a solve or health-check process that disposes
+ * itself on SIGTERM while a spawned grandchild ignores it would otherwise
+ * leave that grandchild alive forever, so the grace period polls the whole
+ * process group's liveness rather than only the direct child's own exit.
+ */
 function stopProcessGroup(child: ChildProcess): void {
   signalProcessGroup(child, 'SIGTERM')
-  const escalate = setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) signalProcessGroup(child, 'SIGKILL')
-  }, KILL_GRACE_MS)
-  child.once('exit', () => { clearTimeout(escalate) })
+  void (async () => {
+    const deadline = Date.now() + KILL_GRACE_MS
+    while (isProcessGroupAlive(child) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
+    }
+    if (isProcessGroupAlive(child)) signalProcessGroup(child, 'SIGKILL')
+  })()
 }
 
 /**
  * Run one cancellable child and reject on timeout, signal, or non-zero exit.
- * The promise settles only on the child's own `exit` event — cancellation and
- * timeout request termination but never report completion before the process
- * (and, on POSIX, the rest of its signalled group) has actually quit, so a
- * caller that awaits rejection before quitting Electron never races an
- * orphaned download group past the signal it just sent.
+ * The returned promise settles on the direct child's own `exit` event.
+ * Cancellation and a timeout both request termination through
+ * {@link stopProcessGroup}, which signals the whole process group (SIGTERM,
+ * then a group SIGKILL if anything in it survives the grace period) rather
+ * than only the direct child, so a caller that awaits rejection before
+ * quitting Electron never leaves a group member unsignalled — though the
+ * group's own exit can still be settling after this promise already has.
  */
 export const runProvisioningProcess: ProcessRunner = async (request) => {
   await new Promise<void>((resolve, reject) => {
@@ -181,7 +211,13 @@ export class DesktopEnvironmentProvisioner {
    * `applied.json`: a prefix directory that exists without a matching
    * `applied.json` entry is not ready, so provisioning always starts by
    * clearing it, whether it is a stale partial install from an interrupted
-   * run or leftover from a prior failed health check.
+   * run or leftover from a prior failed health check. Re-provisioning the
+   * exact revision `applied.json` already names (the "Change Discipline…"
+   * repair path) clears that pointer before touching the prefix: creating
+   * over a live prefix in place would otherwise leave a destroyed
+   * environment advertised as `current` if the recreate fails partway
+   * through, and clearing the pointer first turns that failure into an
+   * honest not-ready status that routes back to onboarding instead.
    */
   async provision(
     declaration: EnvironmentDeclaration,
@@ -202,7 +238,8 @@ export class DesktopEnvironmentProvisioner {
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
-    if (!alreadyPublished) await rm(prefix, { recursive: true, force: true })
+    if (alreadyPublished) await rm(join(this.options.root, 'applied.json'), { force: true })
+    await rm(prefix, { recursive: true, force: true })
     onProgress({ phase: 'solving', message: `Resolving ${declaration.name} packages` })
     await this.#run({
       executable: this.options.micromambaPath,

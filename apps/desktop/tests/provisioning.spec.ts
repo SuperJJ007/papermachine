@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 import { buildProvisioningEnv, DesktopEnvironmentProvisioner, runProvisioningProcess, type ProcessRequest } from '../src/provisioning.ts'
+import { resolveDisciplineStatus } from '../src/discipline-status.ts'
 
 const declaration = parseEnvironmentDeclaration({
   schemaVersion: 1,
@@ -21,6 +22,14 @@ const declaration = parseEnvironmentDeclaration({
     { language: 'r', executable: 'Rscript', args: ['-e', 'TRUE'] },
   ],
 })
+
+/** Fakes a successful `create` step by populating the prefix's `bin` directory; skips the health-check steps. */
+const createOnly: (request: ProcessRequest) => Promise<void> = async (request) => {
+  if (request.args[0] === 'create') {
+    const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+    await mkdir(join(prefix, 'bin'), { recursive: true })
+  }
+}
 
 describe('DesktopEnvironmentProvisioner', () => {
   it('publishes only after create and both health checks pass, at the same path throughout', async () => {
@@ -162,6 +171,41 @@ describe('DesktopEnvironmentProvisioner', () => {
     expect(await retry.applied()).toEqual(applied)
   })
 
+  it('a same-revision re-provision that fails mid-create clears the pointer instead of leaving a destroyed prefix marked current', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-reprovision-fail-'))
+    const first = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 1, freeBytes: async () => 1_000, run: createOnly,
+    })
+    await first.provision(declaration, new AbortController().signal)
+
+    const retry = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 2, freeBytes: async () => 1_000,
+      run: async (request) => {
+        if (request.args[0] === 'create') throw new Error('create failed mid-run')
+      },
+    })
+    await expect(retry.provision(declaration, new AbortController().signal)).rejects.toThrow('create failed mid-run')
+    expect(await retry.applied()).toBeUndefined()
+    expect(resolveDisciplineStatus(await retry.applied(), [declaration]).kind).not.toBe('current')
+  })
+
+  it('a successful same-revision re-provision restores the pointer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-reprovision-ok-'))
+    const first = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 1, freeBytes: async () => 1_000, run: createOnly,
+    })
+    const original = await first.provision(declaration, new AbortController().signal)
+
+    const retry = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 2, freeBytes: async () => 1_000, run: createOnly,
+    })
+    const republished = await retry.provision(declaration, new AbortController().signal)
+    expect(republished.prefix).toBe(original.prefix)
+    expect(republished.appliedAt).toBe(2)
+    expect(await retry.applied()).toEqual(republished)
+    expect(resolveDisciplineStatus(await retry.applied(), [declaration]).kind).toBe('current')
+  })
+
   it('rejects before solving when capacity is insufficient', async () => {
     let called = false
     const provisioner = new DesktopEnvironmentProvisioner({
@@ -269,4 +313,33 @@ describe('runProvisioningProcess', () => {
     const grandchildPid = Number(lines.find(line => line.startsWith('grandchild-pid '))!.slice('grandchild-pid '.length))
     await vi.waitFor(() => { expect(() => process.kill(grandchildPid, 0)).toThrow() })
   })
+
+  it.runIf(process.platform !== 'win32')('escalates to a group SIGKILL when a grandchild ignores SIGTERM after the direct child exits', async () => {
+    // The direct child exits cleanly on SIGTERM (mirroring a solve process
+    // that disposes itself) while its grandchild ignores it: only a
+    // group-aware escalation collects the grandchild, mirroring
+    // host-process.spec.ts's own escalation test.
+    const lines: string[] = []
+    const source = `
+      const { spawn } = require('node:child_process')
+      const grandchild = spawn(process.execPath, ['--eval', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' })
+      console.log('grandchild-pid ' + grandchild.pid)
+      process.on('SIGTERM', () => process.exit(0))
+      setInterval(() => {}, 1000)
+    `
+    const run = runProvisioningProcess({
+      executable: process.execPath,
+      args: ['--eval', source],
+      env: { ...process.env },
+      signal: new AbortController().signal,
+      timeoutMs: 300,
+      onLine: (line) => { lines.push(line) },
+    })
+    await expect(run).rejects.toThrow('timed out')
+    const grandchildPid = Number(lines.find(line => line.startsWith('grandchild-pid '))!.slice('grandchild-pid '.length))
+    // The grandchild survives past the direct child's own exit; only the
+    // grace-period escalation to a group SIGKILL collects it.
+    expect(() => process.kill(grandchildPid, 0)).not.toThrow()
+    await vi.waitFor(() => { expect(() => process.kill(grandchildPid, 0)).toThrow() }, { timeout: 8_000 })
+  }, 10_000)
 })

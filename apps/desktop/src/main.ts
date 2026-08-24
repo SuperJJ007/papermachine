@@ -4,12 +4,13 @@ import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
 import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
+import { resolveDisciplineStatus } from './discipline-status.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -236,7 +237,8 @@ async function openOnboarding(): Promise<void> {
 async function openInitialSurface(): Promise<void> {
   const dshHome = app.getPath('userData')
   await mkdir(dshHome, { recursive: true, mode: 0o700 })
-  if (await provisioner(dshHome).applied() !== undefined) {
+  const status = resolveDisciplineStatus(await provisioner(dshHome).applied(), await declarations())
+  if (status.kind === 'current') {
     await openWorkspace()
     return
   }
@@ -272,8 +274,31 @@ function reportProvisioningProgress(update: ProvisioningProgress): void {
   }
 }
 
+function buildApplicationMenu(): Menu {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        {
+          label: 'Change Discipline…',
+          // Re-provisioning targets a revision-scoped prefix path (see
+          // provisioning.ts), so the currently applied environment stays
+          // untouched and usable until the newly chosen one is applied.
+          click: () => { void openOnboarding() },
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]
+  return Menu.buildFromTemplate(template)
+}
+
 app.setName('DeepSeek Science')
 await app.whenReady()
+Menu.setApplicationMenu(buildApplicationMenu())
 ipcMain.handle('desktop:environments', async () => (await declarations()).map(item => ({
   id: item.id,
   name: item.name,

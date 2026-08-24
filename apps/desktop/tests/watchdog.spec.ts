@@ -70,10 +70,16 @@ describe.runIf(process.platform !== 'win32')('watchParent', () => {
       stdio: 'ignore',
     })
     if (host.pid === undefined) throw new Error('fixture process missing pid')
-    await Promise.race([
-      watchParent(process.ppid, host.pid, { pollMs: 10 }),
-      new Promise(resolve => setTimeout(resolve, 100)),
-    ])
+    // process.ppid is this real test worker's own OS parent and cannot
+    // itself be made to change during the test, so watchParent's poll (see
+    // its own JSDoc: unbounded by design while the parent is alive) needs an
+    // explicit way to end — the `signal` option — rather than an abandoned
+    // race that leaves the poll loop running past this test.
+    const control = new AbortController()
+    const watch = watchParent(process.ppid, host.pid, { pollMs: 10, signal: control.signal })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    control.abort()
+    await watch
     expect(() => process.kill(host.pid as number, 0)).not.toThrow()
     host.kill('SIGKILL')
   })

@@ -310,6 +310,18 @@ function reportProvisioningProgress(update: ProvisioningProgress): void {
   }
 }
 
+/**
+ * Run a fire-and-forget async action from a synchronous event handler (a
+ * menu `click`, for instance, has no way to return a promise Electron would
+ * await), logging a failure instead of letting it escape as an unhandled
+ * rejection.
+ * @param action - the async action to run.
+ * @param context - short label identifying the action in the logged error.
+ */
+function runDetached(action: () => Promise<void>, context: string): void {
+  action().catch((error: unknown) => { console.error(`desktop: ${context} failed`, error) })
+}
+
 function buildApplicationMenu(): Menu {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -328,7 +340,7 @@ function buildApplicationMenu(): Menu {
           // hitting "another operation is running" until it does, and a
           // second click while the first is still unwinding coalesces
           // rather than queuing another open.
-          click: () => { void coordinator.changeDiscipline() },
+          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change discipline') },
         },
         { type: 'separator' },
         { role: 'quit' },
@@ -355,6 +367,12 @@ ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
   if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const declaration = (await declarations()).find(item => item.id === id)
+  // Re-checked after the `declarations()` await: two concurrent
+  // `desktop:provision` invocations can both pass the check above before
+  // either has set `provisioning`, and a concurrent invocation's own
+  // assignment below can land during this one's await.
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a concurrent invocation can set `provisioning` while this one awaits.
+  if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
   const control = new AbortController()
   provisioning = control

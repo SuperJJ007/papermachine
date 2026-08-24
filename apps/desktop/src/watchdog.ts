@@ -8,6 +8,15 @@ export interface WatchdogOptions {
   readonly pollMs?: number
   /** Grace period after SIGTERM to the Host group before escalating to SIGKILL. */
   readonly graceMs?: number
+  /**
+   * Ends the parent-liveness poll early, without signalling the Host group,
+   * once aborted. `watchParent`'s poll is otherwise unbounded by design (see
+   * below); this is the only way to end it deterministically while the
+   * parent it watches is still alive, for a caller — a test, or a future
+   * caller that itself gains a shutdown path — that needs to stop watching
+   * rather than wait for a real parent exit.
+   */
+  readonly signal?: AbortSignal
 }
 
 /** Whether the POSIX process group led by `pid` still has a live member. */
@@ -53,6 +62,7 @@ export async function watchParent(parentPid: number, hostPid: number, options: W
   const pollMs = options.pollMs ?? POLL_MS
   const graceMs = options.graceMs ?? GRACE_MS
   while (process.ppid === parentPid) {
+    if (options.signal?.aborted === true) return
     await sleep(pollMs)
   }
   signalGroup(hostPid, 'SIGTERM')

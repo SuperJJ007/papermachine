@@ -58,6 +58,9 @@ allowBuilds:
   # only a win32 electron-builder target would use. The desktop package
   # builds macOS DMGs only (`package:mac` never selects a win32 target).
   electron-winstaller: false
+  # apps/desktop's Electron runtime dependency: its postinstall downloads the
+  # matching prebuilt Electron binary, required for both `dev` and packaging.
+  electron: true
 
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole

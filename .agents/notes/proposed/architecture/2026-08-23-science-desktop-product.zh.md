@@ -48,6 +48,10 @@ macOS 应用使用 plain Node 语义下的 built `lib/` 与 Web artifacts 构建
 
 更新 metadata 发布到带 artifact checksums 的 static feed。更新可以替换 application code 与内嵌 micromamba executable，但绝不替换 Harness home 或 applied environments。Windows 不属于首发范围，并需要独立的 distribution 与 process-tree acceptance 决定。
 
+## Electron 主进程启动顺序
+
+在 Electron 43.4.1 / macOS 26.5.2 arm64 上，ESM 主进程入口里若有一个 top-level `await`，其恢复依赖 Electron native signal——`await app.whenReady()`，或是等待由 `app.once('ready', …)` listener resolve 的 promise——就永远不会恢复；该进程不会 spawn 任何 renderer，也永远不会打开 window。同一个 promise 上非 top-level 的 `.then()` continuation 可以正常恢复，由 Node timer 或 microtask 驱动的 top-level await 也能正常恢复。`main.ts` 把 post-ready 的启动逻辑（application menu、IPC handlers、初始 window，以及 `activate`/`before-quit`/`window-all-closed` listeners）移入一个 `boot()` function，由 `app.whenReady().then(boot)` 调用，并附带一个 `.catch`，在启动失败时记录日志并调用 `app.exit(1)`，让启动失败大声退出而不是悄无声息地挂起。该入口的防御规则：绝不在依赖 Electron native signal 的 promise 上放置 top-level `await`；改用 `.then()` 驱动该 continuation。
+
 ## 交付切片
 
 D1 至 D5 均已在 `apps/desktop` 中落地。D1 交付了 Electron carrier、独立 Host lifecycle、应用持有的 Harness home、development launch、crash restart 与 residual-process tests。D2 交付了内嵌 micromamba asset pipeline、declaration schema、社会科学 provisioning service、progress 与 retry UI，以及 Python/R health acceptance。D3 交付了 onboarding（学科选择与 provisioning）、上文「环境配备」所述的启动 revision 比对与用于重新配备或更换学科的应用菜单操作，以及上文「产品组合」所述的 settings-default Science composition。桌面 onboarding 内的 credential-provider key 录入仍是待办工作，期间由现有 Web Client model-configuration UI 继续担任唯一的 `DEEPSEEK_API_KEY` writer。D4 交付了 DMG packaging 与 update metadata。D5 交付了生物学声明及其更大的 timeout、capacity、cancellation 与 recovery behavior。

@@ -353,41 +353,60 @@ function buildApplicationMenu(): Menu {
 }
 
 app.setName('DeepSeek Science')
-await app.whenReady()
-Menu.setApplicationMenu(buildApplicationMenu())
-ipcMain.handle('desktop:environments', async () => (await declarations()).map(item => ({
-  id: item.id,
-  name: item.name,
-  revision: item.revision,
-  estimatedDownloadBytes: item.estimatedDownloadBytes,
-  requiredFreeBytes: item.requiredFreeBytes,
-})))
-ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
-ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
-  if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
-  if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
-  const declaration = (await declarations()).find(item => item.id === id)
-  // Re-checked after the `declarations()` await: two concurrent
-  // `desktop:provision` invocations can both pass the check above before
-  // either has set `provisioning`, and a concurrent invocation's own
-  // assignment below can land during this one's await.
-  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a concurrent invocation can set `provisioning` while this one awaits.
-  if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
-  if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
-  const control = new AbortController()
-  provisioning = control
-  const run = (async () => {
-    await provisioner(app.getPath('userData')).provision(declaration, control.signal, reportProvisioningProgress)
-    await openWorkspace()
-  })().finally(() => { provisioning = undefined })
-  await coordinator.trackRun(run)
-})
-await openInitialSurface().catch(async (error: unknown) => {
-  window ??= createWindow()
-  await window.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
-})
 
-app.on('activate', () => { void handleActivate() })
+/**
+ * Everything that depends on Electron's app-ready signal: the application
+ * menu, IPC handlers, the initial window, and the lifecycle listeners that
+ * react to later activation and quit. Run from `app.whenReady().then`
+ * rather than a top-level `await app.whenReady()`: on Electron 43.4.1 /
+ * macOS 26.5.2 arm64, a top-level await whose continuation is driven by an
+ * Electron native signal never resumes (see
+ * `.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.md`).
+ */
+async function boot(): Promise<void> {
+  Menu.setApplicationMenu(buildApplicationMenu())
+  ipcMain.handle('desktop:environments', async () => (await declarations()).map(item => ({
+    id: item.id,
+    name: item.name,
+    revision: item.revision,
+    estimatedDownloadBytes: item.estimatedDownloadBytes,
+    requiredFreeBytes: item.requiredFreeBytes,
+  })))
+  ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
+  ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
+    if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
+    const declaration = (await declarations()).find(item => item.id === id)
+    // Re-checked after the `declarations()` await: two concurrent
+    // `desktop:provision` invocations can both pass the check above before
+    // either has set `provisioning`, and a concurrent invocation's own
+    // assignment below can land during this one's await.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a concurrent invocation can set `provisioning` while this one awaits.
+    if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
+    if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
+    const control = new AbortController()
+    provisioning = control
+    const run = (async () => {
+      await provisioner(app.getPath('userData')).provision(declaration, control.signal, reportProvisioningProgress)
+      await openWorkspace()
+    })().finally(() => { provisioning = undefined })
+    await coordinator.trackRun(run)
+  })
+  await openInitialSurface().catch(async (error: unknown) => {
+    window ??= createWindow()
+    await window.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+  })
+
+  app.on('activate', () => { void handleActivate() })
+  app.on('before-quit', (event) => {
+    if (coordinator.quitting) return
+    event.preventDefault()
+    void coordinator.beforeQuit().finally(() => { app.quit() })
+  })
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}
 
 /**
  * Reopen the initial surface, but only once any in-flight provisioning run
@@ -401,11 +420,7 @@ async function handleActivate(): Promise<void> {
   })
 }
 
-app.on('before-quit', (event) => {
-  if (coordinator.quitting) return
-  event.preventDefault()
-  void coordinator.beforeQuit().finally(() => { app.quit() })
-})
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+app.whenReady().then(boot).catch((error: unknown) => {
+  console.error('desktop: boot failed', error)
+  app.exit(1)
 })

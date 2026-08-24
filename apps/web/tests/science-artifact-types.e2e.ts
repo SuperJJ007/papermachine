@@ -47,7 +47,16 @@ function scienceFixture(
   csv: TextAttachmentRef, json: TextAttachmentRef, markdown: TextAttachmentRef, png: ImageAttachmentRef,
 ): string {
   const session = Session.create(SessionId('science-browser-types-source'))
-  const origin = new Date().setHours(12, 0, 0, 0)
+  // `seedSession` materializes each event's envelope time as this fixture's
+  // own creation-time anchor plus that event's delta from the fixture's
+  // first event (see scaffold.ts) — a wall-clock noon origin lands after
+  // that anchor whenever the suite runs before local noon, failing
+  // Science's payload-precedes-event.time invariants (validatedAt,
+  // startedAt, createdAt). Anchoring to `Date.now()` half a second before
+  // `seedSession`'s own anchor keeps every payload timestamp ordered
+  // correctly against both the event it belongs to and the prior fact it
+  // depends on, regardless of time of day.
+  const origin = Date.now() - 60_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
 
   session.append('turn/start', { turn: 1 })

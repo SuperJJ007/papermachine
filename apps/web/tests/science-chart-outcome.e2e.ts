@@ -94,7 +94,16 @@ function appendToolResult(
 /** Build one valid closed Science session around stored and missing attachments. */
 function scienceFixture(stored: ImageAttachmentRef): string {
   const session = Session.create(SessionId('science-browser-source'))
-  const origin = new Date().setHours(12, 0, 0, 0)
+  // `seedSession` materializes each event's envelope time as this fixture's
+  // own creation-time anchor plus that event's delta from the fixture's
+  // first event (see scaffold.ts) — a wall-clock noon origin lands after
+  // that anchor whenever the suite runs before local noon, failing
+  // Science's payload-precedes-event.time invariants (validatedAt,
+  // startedAt, createdAt, publishedAt). Anchoring to `Date.now()` half a
+  // second before `seedSession`'s own anchor keeps every payload timestamp
+  // ordered correctly against both the event it belongs to and the prior
+  // fact it depends on, regardless of time of day.
+  const origin = Date.now() - 60_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
   const missing: ImageAttachmentRef = {
     ...stored,
@@ -614,10 +623,13 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const secondRun = runRows.nth(1)
     expect(await firstRun.innerText()).toContain('run complete')
     expect(await secondRun.innerText()).toContain('revised run complete')
+    // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
+    // "Version" definition, which renders the identical "v1"/"v2" text.
+    const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
     await firstRun.getByRole('button', { name: /observed-series.*v1/ }).click()
-    await detailsPanel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
+    await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
     await secondRun.getByRole('button', { name: /observed-series.*v2/ }).click()
-    await detailsPanel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
+    await stepperLabel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
 
     // The v2 run chip opens its exact version directly in the content view —
     // no intermediate gallery click.

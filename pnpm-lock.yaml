@@ -2612,6 +2612,9 @@ importers:
 
   packages/client/ui-science:
     dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
       vega-embed:
         specifier: ^7.1.0
         version: 7.1.0(vega-lite@6.4.3(vega@6.4.0))(vega@6.4.0)
@@ -2661,6 +2664,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-tool':
         specifier: workspace:^
         version: link:../ui-tool
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants

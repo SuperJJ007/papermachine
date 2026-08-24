@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-浏览器端的持久化 `run_python`/`run_r`、`annotate_artifact` 与 `publish_outcome` 会话记录行展示、Science 设置卡片、语义泳道、artifact viewer（带按媒体类型分派内容与每版本溯源下钻的标签式查看器），以及打开它的 session-header action。会话记录行注册按键分派的 `tool.call.toolview` 条目，只消费冻结的工具调用/结果数据、客户端安全的 `science` 会话投影，以及（对图像而言）会话界面拥有的会话附件加载器；它们既不创建 Science 事实，也不通过独立路由加载附件字节。设置卡片注册按键分派的 `settings.plugin.item` 条目，通过绑定的 settings scope 读写固定 `science` 配置档案的 Conda 前缀。语义泳道与 artifact viewer 读取同一客户端安全投影加一个本包内部选择状态存储，都不构建第二套投影读取器、artifact 历史或 Outcome 编辑器。
+浏览器端的持久化 `run_python`/`run_r`、`annotate_artifact` 与 `publish_outcome` 会话记录行展示、Science 设置卡片、语义泳道、artifact viewer（带按媒体类型分派内容与每版本溯源下钻的标签式查看器），以及打开它的文件 toggle。会话记录行注册按键分派的 `tool.call.toolview` 条目，只消费冻结的工具调用/结果数据、客户端安全的 `science` 会话投影，以及（对图像而言）会话界面拥有的会话附件加载器；它们既不创建 Science 事实，也不通过独立路由加载附件字节。设置卡片注册按键分派的 `settings.plugin.item` 条目，通过绑定的 settings scope 读写固定 `science` 配置档案的 Conda 前缀。语义泳道与 artifact viewer 读取同一客户端安全投影加一个本包内部选择状态存储，都不构建第二套投影读取器、artifact 历史或 Outcome 编辑器。
 
 ## 语义泳道
 
@@ -50,9 +50,12 @@ Artifact 缩略图与内容通过本包自己的会话作用域加载器（`scie
 
 **CSV 表格（`ArtifactTable.tsx`）是本包内部组件，而非 `dsh-client-ui-primitives` 的导出。** 设计阶段对 `packages/client` 的一次全仓库搜索没有发现任何表格组件，也没有会需要它的第二个消费方；`JsonTree`/`MarkdownText` 之所以原样复用 `ui-primitives` 里的实现，是因为它们已经为其他消费方存在于那里。解析逻辑（`csv.ts`）是手写的、类 RFC4180 解析器（带引号字段、字段内嵌逗号/换行、双引号转义），而非一个依赖：这是对自动捕获或模型标注文件的只读预览，从不涉及任意不受信任的上传，"可配置性不能作为提供不受支持……公开操作集的理由"（`packages/AGENTS.md`）对一个投机性共享基础组件同样适用。未来出现真正的第二个消费方，才是把两者提升进 `ui-primitives` 的触发条件，而不是这一个。
 
-## Session-header action
+## 文件 toggle
+<a id="files-toggle"></a>
 
-header action 注册进 `conversation.session.header.actions`，除非当前 Session summary 的 `agentPreset` 指向内置 `science` preset，否则什么都不渲染——Standard 或自定义的非 Science Session 不会显示该 action，也没有任何 Session 会自动打开 Details 列。激活它只会调用宿主提供的 `toggleDetailsView('science')`，因此同一个控件既打开面板也关闭面板；它不会打开自己的面板，也不持有任何面板状态——一次点击意味着哪个方向由页头决定。
+toggle 渲染在何处由本包 Host `Config` 中的 `toggleScope` 决定：`session`（默认）或 `global`，经 `z.union(['session', 'global'])` 校验。`session` 对应通用 Web 的呈现门控：该 action 注册进 `conversation.session.header.utilities`，除非当前 Session summary 的 `agentPreset` 指向内置 `science` preset，否则什么都不渲染——Standard 或自定义的非 Science Session 不会显示该 action——并额外注册一个 `conversation.page.utilities` 条目（`ScienceHeroAction`），在当前 Session 为空白且已被指派为 `science` preset 时覆盖欢迎页（该 Session 一旦开始，header 就会接管这个 action）。`global` 则改为注册唯一一个无条件的 `conversation.page.utilities` action（`ScienceGlobalToggle`），完全跳过 session-header 的注册，因此该 toggle 在应用全局可见——在选中任何工作区之前、在任何 Session 存在之前都可见，并在此后每一种 Session 状态下都保持是它唯一的所有者；没有任何 Session 状态会门控它。激活其中任意一个注册都会调用宿主提供的 toggle 回调（`session` 模式下是 `toggleDetailsView('science')`，`global` 模式下是 `toggleDetails`），因此同一个控件既打开 Details 列也关闭它；它不会打开自己的面板，也不持有任何面板状态。
+
+Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的启动值注入方式）把解析出的 `toggleScope` 发布为一个 `globalThis` 启动值——浏览器半侧在自己的 `apply()` 中同步读取一次；缺失或格式不正确的值会回退为 `session`。
 
 ## 溯源下钻
 
@@ -67,10 +70,10 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 
 ## 工作台外壳
 
-除了上面的 header action 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都以 header action 同样的方式，按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
+除了上面的文件 toggle 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——除 `global` 模式下的文件 toggle 之外，没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
 
 - **`sidebar.destinations`**（`ScienceDestinations`） — 当前 Science Session 旁边的文件与结论行，出现在侧边栏其余目的地旁；分别打开对应的 Details 条目（`science` 或 `science-outcomes`）。没有当前 Science Session 时不渲染任何内容。
-- **`conversation.page.utilities`**（`ScienceHeroAction`） — 与 session header 相同的文件 action，只是改在欢迎页展示——条件是当前 Session 为空白且已被指派为 `science` preset（该 Session 一旦开始，header 就会接管这个 action）。
+- **`conversation.page.utilities`** — 文件 toggle 在 `session` 模式下的欢迎页交接注册（`ScienceHeroAction`），或在 `global` 模式下的唯一注册（`ScienceGlobalToggle`）；见[文件 toggle](#files-toggle)。
 - **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
 - **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
 - **`details.files`**（`ScienceEmptyDetails`） — 没有当前 Session 时 Details 列的占位内容，说明选择一个 Session 后这里会显示其文件，并通过宿主提供的 `closeDetails` 关闭该列。
@@ -78,7 +81,7 @@ header action 注册进 `conversation.session.header.actions`，除非当前 Ses
 
 ## 组装
 
-请在 `@deepseek-ai/dsh-client-ui-tool`、`@deepseek-ai/dsh-client-ui-attachment`、`@deepseek-ai/dsh-client-ui-conversation`（header action 与 Details 条目所在的座位，以及 artifact viewer 溯源下钻复用的 Details 座位 `inspectCall` 宿主回调）、客户端 locale/runtime 包、`@deepseek-ai/dsh-client-ui-settings`（`ctx.settingsScope`），以及会暴露 `science` 会话投影的 Host 组合之后加载本浏览器插件。已发布的 Web bundle 会以有意留空的配置档案映射挂载 `@deepseek-ai/dsh-science-runtime/with-settings`，因此在有人填写 Python/R Conda 前缀并重启 Host 之前，卡片会以未配置的 `science` 配置档案出现；CLI 与 headless bundle 保留各自显式的 Runtime 组合，不显示该卡片。
+请在 `@deepseek-ai/dsh-client-ui-tool`、`@deepseek-ai/dsh-client-ui-attachment`、`@deepseek-ai/dsh-client-ui-conversation`（header action 与 Details 条目所在的座位，以及 artifact viewer 溯源下钻复用的 Details 座位 `inspectCall` 宿主回调）、客户端 locale/runtime 包、`@deepseek-ai/dsh-client-ui-settings`（`ctx.settingsScope`），以及会暴露 `science` 会话投影的 Host 组合之后加载本浏览器插件。已发布的 Web bundle 会以有意留空的配置档案映射挂载 `@deepseek-ai/dsh-science-runtime/with-settings`，因此在有人填写 Python/R Conda 前缀并重启 Host 之前，卡片会以未配置的 `science` 配置档案出现；CLI 与 headless bundle 保留各自显式的 Runtime 组合，不显示该卡片。本包的 Host 行（`main` 入口）订阅 `webserver/index-inject` 时并未声明 `webServer` 注入（仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的 Host 半侧）；没有 webserver 行的组合只是永远不会收集到这次订阅。桌面应用的 overlay（`apps/desktop/src/runtime-overlay.ts`）会为这一行设置 `toggleScope: global`，因为它自己的 overlay 已经把 Science 强制设为产品默认值。
 
 ## 模型体验
 

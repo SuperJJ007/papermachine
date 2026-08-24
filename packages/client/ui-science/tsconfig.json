@@ -15,6 +15,12 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {

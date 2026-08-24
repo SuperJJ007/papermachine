@@ -5,20 +5,30 @@
  * `run_r` (`ScienceRunRow`, run text plus a clickable reference per captured
  * file), `annotate_artifact` (`ScienceArtifactRow`, the one curated
  * reference), and `publish_outcome` — the Science settings card keyed on the
- * `science-runtime` namespace, the right-aligned `conversation.session.header.utilities`
- * entry that opens the routed Details column, and the
+ * `science-runtime` namespace, the Files toggle, and the
  * `conversation.details.view` entry (id `science`, the artifact viewer) that
  * renders current Science state from the same projection: a top tab strip
  * over opened artifacts, an in-panel toolbar, per-media-type dispatched
  * content, and — one toolbar click away — the provenance drill-in, entirely
  * inside this one Details entry (no separate `conversation.view` tab or
- * `conversation.details.header.actions` registration). A Science-only Trace
+ * `conversation.details.header.actions` registration). The Files toggle's
+ * own placement is `../toggle-scope.ts`'s resolved `ToggleScope`: the
+ * generic Web default (`session`) registers the right-aligned
+ * `conversation.session.header.utilities` entry (`ScienceHeaderAction`,
+ * gated to a non-blank Science Session) alongside a `conversation.page.utilities`
+ * hand-off for a blank one (`ScienceHeroAction`); the desktop composition's
+ * `global` placement instead registers one unconditional
+ * `conversation.page.utilities` owner (`ScienceGlobalToggle`) and skips the
+ * session-header registration, so the toggle is visible app-wide — before
+ * any workspace is selected, before any Session exists, and through every
+ * later Session state — with exactly one owner. A Science-only Trace
  * tab and distinct Files/Outcomes Details routes complete the workbench,
- * alongside sidebar destinations, a welcome-page Files action, staged-target
- * composer chips (`conversation.input.accessory`), and a composer-dock kernel
- * status line — every one of these gated the same way the header action is,
- * so no Science surface reaches another preset or a Session-less page. The
- * Trace tab's own visibility is a `registerViewVisibility` source
+ * alongside sidebar destinations, staged-target composer chips
+ * (`conversation.input.accessory`), and a composer-dock kernel status
+ * line — every one of these (other than the Files toggle) gated the same way
+ * `ScienceHeaderAction` is, so no other Science surface reaches another
+ * preset or a Session-less page. The Trace tab's own visibility is a
+ * `registerViewVisibility` source
  * (`createTraceVisibilitySource`) that re-subscribes to the sessions list and
  * every listed Session's `science` projection, so the tab strip reacts to a
  * preset assignment or a projection resolving on its own. The toolview rows
@@ -63,6 +73,7 @@ import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
 import { ScienceHeroAction } from './ScienceHeroAction.tsx'
+import { ScienceGlobalToggle } from './ScienceGlobalToggle.tsx'
 import { ScienceEmptyDetails } from './ScienceEmptyDetails.tsx'
 import { ScienceComposerChips } from './ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from './composer-selections.ts'
@@ -72,6 +83,7 @@ import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import { ScienceOutcomeDetails } from './ScienceOutcomeDetails.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
+import { readToggleScope } from './toggle-scope.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
 import type { ScienceRuntimeSettingsSection } from './settings-card-controller.ts'
 import { en, NS, zh, type ScienceKey } from './locales.ts'
@@ -208,16 +220,30 @@ export function apply(ctx: ClientContext): void {
     inject: () => settingsCard.inject(),
   }, ScienceSettingsCard))
 
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
-    id: SCIENCE_DETAILS_ID,
-    order: 10,
-    locale: NS,
-  }, ScienceHeaderAction))
+  // Files-toggle placement (../toggle-scope.ts): `global` mounts the one
+  // unconditional `conversation.page.utilities` owner and skips the
+  // session-header registration entirely, so the desktop composition's
+  // toggle has exactly one owner from before any workspace is selected
+  // through every later Session state. `session` (the generic Web default)
+  // keeps the existing hand-off — the session header owns a non-blank
+  // Session, the page-level action covers only a blank Science Session.
+  const toggleScope = readToggleScope()
+  if (toggleScope === 'global') {
+    ctx.slots.inject('conversation.page.utilities', () => ctx.slots.register({
+      name: 'conversation.page.utilities', id: SCIENCE_DETAILS_ID, order: 0, locale: NS,
+    }, ScienceGlobalToggle))
+  } else {
+    ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+      name: 'conversation.session.header.utilities',
+      id: SCIENCE_DETAILS_ID,
+      order: 10,
+      locale: NS,
+    }, ScienceHeaderAction))
 
-  ctx.slots.inject('conversation.page.utilities', () => ctx.slots.register({
-    name: 'conversation.page.utilities', id: SCIENCE_DETAILS_ID, order: 0, locale: NS,
-  }, ScienceHeroAction))
+    ctx.slots.inject('conversation.page.utilities', () => ctx.slots.register({
+      name: 'conversation.page.utilities', id: SCIENCE_DETAILS_ID, order: 0, locale: NS,
+    }, ScienceHeroAction))
+  }
 
   ctx.slots.inject('details.files', () => ctx.slots.register({
     name: 'details.files', locale: NS,

@@ -56,6 +56,7 @@ describe('desktop Runtime overlay', () => {
     })
     expect(byId.get('agent-presets')?.config).toEqual({ default: 'science' })
     expect(byId.get('ui-agent-preset')?.disabled).toBe(true)
+    expect(byId.get('ui-science')?.config).toEqual({ toggleScope: 'global' })
     expect(byId.get('hmr')?.disabled).toBe(true)
   })
 

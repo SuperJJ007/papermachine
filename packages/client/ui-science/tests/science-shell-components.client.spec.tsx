@@ -13,6 +13,7 @@ import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
+import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
 import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
 import { en } from '../src/client/locales.ts'
@@ -106,6 +107,15 @@ describe('ScienceEmptyDetails', () => {
     expect(screen.getByText(en['details.artifacts.chooseSession'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
     expect(closeDetails).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ScienceGlobalToggle', () => {
+  it('renders the Files button unconditionally and toggles the shared Details column', () => {
+    const toggleDetails = vi.fn()
+    render(<ScienceGlobalToggle {...({ toggleDetails, t } as unknown as Parameters<typeof ScienceGlobalToggle>[0])} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Science details' }))
+    expect(toggleDetails).toHaveBeenCalledTimes(1)
   })
 })
 

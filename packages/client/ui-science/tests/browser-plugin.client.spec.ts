@@ -2,19 +2,20 @@
  * ui-science browser half: locale dictionary registration, the four keyed
  * toolview registrations (`run_python`, `run_r`, `annotate_artifact`,
  * `publish_outcome`), the keyed Science settings card registration under the
- * `science-runtime` namespace, the session-header action and artifact-viewer
- * (Details) entry registrations (both id `science`), the one selection-store
- * handle shared across the toolview/details-view registrations, plus
- * fiber-teardown removal (HMR safety).
+ * `science-runtime` namespace, the Files-toggle registrations gated on the
+ * boot-global `../src/toggle-scope.ts` reads (session-scoped default and the
+ * `global` placement), the artifact-viewer (Details) entry registration (id
+ * `science`), the one selection-store handle shared across the
+ * toolview/details-view registrations, plus fiber-teardown removal (HMR
+ * safety).
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply as applyHost } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { ScienceArtifactRow } from '../src/client/ScienceArtifactRow.tsx'
 import { ScienceRunRow } from '../src/client/ScienceRunRow.tsx'
@@ -25,7 +26,9 @@ import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
 import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
 import { ScienceHeroAction } from '../src/client/ScienceHeroAction.tsx'
+import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
+import { TOGGLE_SCOPE_GLOBAL } from '../src/toggle-scope.ts'
 import { ScienceTraceView } from '../src/client/ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
@@ -152,10 +155,6 @@ function providePresentation(ctx: Context, sciencePreset = false) {
 }
 
 describe('apply', () => {
-  it('keeps the package Host entry free of Host-side behavior', () => {
-    expect(() => { applyHost() }).not.toThrow()
-  })
-
   it('declares the services it binds — locale/slots for the toolview rows, connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller), and sessions for the Details entry\'s own attachment loader', () => {
     expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation'])
   })
@@ -400,5 +399,39 @@ describe('apply', () => {
     expect(presentation.slots.entries('conversation.view')).toHaveLength(0)
     expect(presentation.submissionHandlers).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
+  })
+})
+
+describe('apply — Files-toggle placement', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('registers only the app-global page-utilities toggle when the Host boot global reads "global", and disposes it with the fiber', async () => {
+    vi.stubGlobal(TOGGLE_SCOPE_GLOBAL, 'global')
+    const ctx = new Context()
+    const { capture: presentation } = providePresentation(ctx)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+
+    expect(presentation.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    const pageEntries = presentation.slots.entries('conversation.page.utilities')
+    expect(pageEntries).toHaveLength(1)
+    expect(pageEntries[0]?.options).toMatchObject({ id: 'science' })
+    expect(pageEntries[0]?.component).toBe(ScienceGlobalToggle)
+    expect(pageEntries[0]?.locale).toBe('science')
+
+    await fiber.dispose()
+    expect(presentation.slots.entries('conversation.page.utilities')).toHaveLength(0)
+  })
+
+  it('falls back to the session-scoped registrations for a malformed boot global', async () => {
+    vi.stubGlobal(TOGGLE_SCOPE_GLOBAL, 'nonsense')
+    const ctx = new Context()
+    const { capture: presentation } = providePresentation(ctx)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    expect(presentation.slots.entries('conversation.session.header.utilities')).toHaveLength(1)
+    const pageEntries = presentation.slots.entries('conversation.page.utilities')
+    expect(pageEntries).toHaveLength(1)
+    expect(pageEntries[0]?.component).toBe(ScienceHeroAction)
   })
 })

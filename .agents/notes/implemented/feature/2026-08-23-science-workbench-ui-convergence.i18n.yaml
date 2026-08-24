@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-23-science-workbench-ui-convergence.md
-2026-08-23-science-workbench-ui-convergence.md: d56e92badd5f1e8d40518730b4d0b9230d9c9608
-2026-08-23-science-workbench-ui-convergence.zh.md: d1e7a70a62d3b6002e941378f4861b25c37e3f33
+2026-08-23-science-workbench-ui-convergence.md: d869abfaf1fc371b15198d18258480da029ae105
+2026-08-23-science-workbench-ui-convergence.zh.md: 4cca4b5bd95ee8554aa713064276792861078cc5

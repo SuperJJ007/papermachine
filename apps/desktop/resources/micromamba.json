@@ -1,0 +1,11 @@
+{
+  "version": "2.9.0-0",
+  "darwin-arm64": {
+    "url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.9.0-0/micromamba-osx-arm64",
+    "sha256": "ec2a072f028e1a7cf20f3e2e74d5a8127cf5a5f27636375b5359811565f4e5be"
+  },
+  "darwin-x64": {
+    "url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.9.0-0/micromamba-osx-64",
+    "sha256": "1e71054bb3ac9a076e21f7ec48acfef536f9b3f1408f371a942784bf5ef83d8a"
+  }
+}

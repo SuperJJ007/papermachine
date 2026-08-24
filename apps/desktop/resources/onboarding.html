@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set up DeepSeek Science</title>
+<style>
+  :root{font:16px system-ui;color:#17212b;background:#f4f7fa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(680px,calc(100vw - 40px));background:white;border:1px solid #dce3ea;border-radius:18px;padding:36px;box-shadow:0 18px 60px #1d344515}h1{margin:0 0 8px;font-size:28px}p{color:#596875;line-height:1.5}.choices{display:grid;gap:12px;margin:28px 0}.choice{display:flex;gap:14px;padding:18px;border:1px solid #d8e0e8;border-radius:12px;cursor:pointer}.choice:has(input:checked){border-color:#1769aa;background:#f2f8fd}.choice input{margin-top:4px}.choice span{display:grid;gap:5px}.choice small{color:#687783}.actions{display:flex;gap:10px;align-items:center}button{border:0;border-radius:9px;padding:11px 18px;font:inherit;cursor:pointer}#start{background:#1769aa;color:white}#start:disabled{opacity:.45;cursor:default}#cancel{background:#e8edf2;color:#273542}progress{width:100%;margin-top:22px;height:8px}
+</style>
+<main>
+  <h1>Set up your Science workspace</h1>
+  <p>Choose a discipline package. DeepSeek Science manages Python and R for you; no terminal or Conda setup is required.</p>
+  <div id="choices" class="choices"></div>
+  <div class="actions"><button id="start" disabled>Download and continue</button><button id="cancel" hidden>Cancel</button></div>
+  <progress id="progress" hidden></progress>
+  <p id="status" role="status" aria-live="polite"></p>
+</main>
+<script type="module">{{ONBOARDING_SCRIPT}}</script>
+</html>

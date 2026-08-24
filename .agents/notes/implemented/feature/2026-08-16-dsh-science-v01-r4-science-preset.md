@@ -91,6 +91,8 @@ Real Python and R Consumer acceptance against explicitly authorized existing Con
 
 R4 does not supersede the R1 Science Session, R2 Science Runtime, or R3 Science tools decisions. It consumes their public responsibilities and completes the accepted Science line with the first shipped application composition. The generic `copyable` preset-metadata mechanism extends the current preset authoring contract; the [copy-only authoring decision](../simplification/2026-08-08-copy-only-preset-authoring.md) remains independently useful and active.
 
+The [Science desktop product note](../../proposed/architecture/2026-08-23-science-desktop-product.md) partially supersedes this note's claim that Science is strictly an opt-in preset: the desktop product composition sets `science` as the `agent-presets` default so a fresh desktop session mounts it without a visible selector. This note remains authoritative for generic Web preset selection, the exact roster, and durable Science identity in every deployment, desktop included.
+
 The downstream Phase 3 preset commit is provenance from the excluded lineage and was not copied into the active tree. Project documentation must not call Science Mode release-ready until the settings/sidebar, chart/Outcome, Desktop, artifact, and release layers pass their own decisions and evidence; a deployment must still mount `@deepseek-ai/dsh-science-runtime` with a `science` profile before a Science session can complete a real request.
 
 ## Alternatives considered

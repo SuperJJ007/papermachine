@@ -93,6 +93,8 @@ Loader、随附 preset registry/mount、agent loop、Session store、system-prom
 
 R4 不 supersede R1 Science Session、R2 Science Runtime 或 R3 Science 工具决策。它消费三者的公开职责，并用第一个随产品交付的应用组装完成已验收的 Science 产品线。通用 `copyable` preset 元信息机制扩展当前 preset 创作约定；[仅复制创作决策](../simplification/2026-08-08-copy-only-preset-authoring.zh.md)继续独立有效。
 
+[Science 桌面产品笔记](../../proposed/architecture/2026-08-23-science-desktop-product.zh.md)部分 supersede 了本笔记「Science 严格是 opt-in preset」这一结论：桌面产品组合把 `agent-presets` 的 default 设为 `science`，使全新桌面 session 无需可见选择器即可挂载该 preset。本笔记继续负责通用 Web preset 选择、精确 roster 与 durable Science identity，桌面场景同样适用。
+
 下游 Phase 3 preset commit 是被排除谱系的 provenance，未被复制到 active tree。在 settings/sidebar、chart/Outcome、Desktop、artifact 与 release 层各自通过自己的决策与证据之前，项目文档不得宣称 Science Mode 已 release-ready；部署仍必须挂载带 `science` profile 的 `@deepseek-ai/dsh-science-runtime`，Science session 才能完成一次真实请求。
 
 ## 考虑过的替代方案

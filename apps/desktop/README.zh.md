@@ -34,7 +34,7 @@ Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTER
 
 社会科学声明包含 pandas、statsmodels、matplotlib、Altair、tidyverse、broom 与 modelr。更大的生物学声明加入 Scanpy、Biobase、DESeq2 与 GenomicRanges，并自行携带更长 timeout 与更高磁盘要求。
 
-选择学科并非一次性永久决定。启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对；不一致就路由回 onboarding 重新配备，revision-scoped 的 prefix 路径意味着当前 applied 的环境在新 revision 被应用之前始终保持不变、可用。应用菜单还提供“Change Discipline…”操作，可按需重新打开 onboarding。
+选择学科并非一次性永久决定。启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对；不一致就路由回 onboarding 重新配备。为不同 revision 配备时，当前 applied 的环境在新 revision 本身被应用之前始终保持不变、可用。重新配备当前已 applied 的那个确切 revision 则是原地修复：先清空 applied pointer，再删除并重建 prefix，因此失败会留下如实的 not-ready 状态，而不是一个仍被标记为 current 的已损坏环境。应用菜单还提供“Change Discipline…”操作，会先停止活跃的 Host，再按需重新打开 onboarding。
 
 ## DMG
 

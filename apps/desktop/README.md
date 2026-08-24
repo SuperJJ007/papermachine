@@ -34,7 +34,7 @@ The Host owns its own POSIX process group. Normal Electron shutdown sends `SIGTE
 
 The social-science declaration includes pandas, statsmodels, matplotlib, Altair, tidyverse, broom, and modelr. The larger biology declaration adds Scanpy, Biobase, DESeq2, and GenomicRanges and carries its own larger timeout and disk requirement.
 
-Choosing a discipline is not permanent. At startup, the applied revision is compared against the shipped declaration for the same discipline id; a mismatch routes back to onboarding to re-provision, and the revision-scoped prefix path means the currently applied environment stays untouched and usable until the new revision is itself applied. The application menu also offers a "Change Discipline…" action that reopens onboarding on request.
+Choosing a discipline is not permanent. At startup, the applied revision is compared against the shipped declaration for the same discipline id; a mismatch routes back to onboarding to re-provision. Provisioning a different revision leaves the currently applied environment untouched and usable until the new revision is itself applied. Re-provisioning the exact revision already applied instead repairs it in place, clearing the applied pointer before deleting and recreating the prefix so a failure leaves an honest not-ready status rather than a destroyed environment still marked current. The application menu also offers a "Change Discipline…" action that stops the active Host, then reopens onboarding on request.
 
 ## DMG
 

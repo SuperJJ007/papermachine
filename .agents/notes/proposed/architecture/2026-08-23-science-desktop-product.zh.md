@@ -34,13 +34,13 @@ provisioning 在声明的 environment revision 上可恢复且具备事务性。
 
 学科一旦应用并非永久固定：启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对，不一致就路由回 onboarding 重新配备更新的 revision。因为每个 revision 都有各自的 prefix，重新配备在新 revision 被应用之前绝不会触碰当前 applied 的 prefix。应用菜单提供一个操作，可按需重新打开 onboarding，让用户配备另一个学科包或重新配备同一个。
 
-Runtime 继续持有 interpreter execution 与 revision rebinding。Provisioning 只创建并验证 prefixes，随后调用 Runtime 持有的 binding operation。[persistent-kernel 决定](../../implemented/architecture/2026-08-20-science-persistent-kernel.zh.md)继续负责在新的 applied environment revision 出现后结束 stale kernel。
+Runtime 继续持有 interpreter execution 与 revision rebinding。Provisioning 只创建并验证 prefixes；rebinding 通过写入的 `science-runtime` Cordis patch overlay（`apps/desktop/src/runtime-overlay.ts`）完成，该 overlay 命名新 applied 的 prefix，并在随后的 Host 重启时生效。[persistent-kernel 决定](../../implemented/architecture/2026-08-20-science-persistent-kernel.zh.md)继续负责在新的 applied environment revision 出现后结束 stale kernel。
 
 ## 首启向导与凭据
 
 全新的 Harness home 在 session workspace 前打开 onboarding。用户选择学科包、查看所需下载大小并开始 provisioning，期间可以 cancel 与 retry。桌面 onboarding 不采集 DeepSeek API key：在桌面 onboarding 内录入凭据仍是待办工作。workspace 已经加载的现有 Web Client model-configuration UI 仍是唯一的 writer，通过 credentials provider 以 `DEEPSEEK_API_KEY` 写入；它绝不进入 desktop settings、logs、renderer persistence、command arguments 或 crash diagnostics。跳过 key 配置后应用仍可使用，并在 session 需要 inference 时展示同一份引导。
 
-Readiness 完全由 `applied.json` 决定；桌面 onboarding 不保留单独的 state file。当某学科声明的 revision 与该学科 id 的 applied pointer 一致时（见上文「环境配备」），才算完成 onboarding，而不是仅仅关闭 window。失败步骤展示失败对象、安全修复方式、retry 以及经过 secrets redaction 的 diagnostics。重新安装或升级应用会复用 Harness home；如果声明 revision 与 health checks 仍匹配，就不会重复 provisioning。
+Readiness 完全由 `applied.json` 决定；桌面 onboarding 不保留单独的 state file。当某学科声明的 revision 与该学科 id 的 applied pointer 一致时（见上文「环境配备」），才算完成 onboarding，而不是仅仅关闭 window。失败的步骤会把进度状态替换为失败操作的错误信息，并把开始操作变为 retry；带 secrets redaction 的 diagnostics 入口仍是待办工作。重新安装或升级应用会复用 Harness home；如果声明 revision 与 health checks 仍匹配，就不会重复 provisioning。
 
 ## 分发
 

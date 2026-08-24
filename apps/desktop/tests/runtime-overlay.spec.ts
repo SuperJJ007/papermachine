@@ -40,7 +40,10 @@ function collectIds(entries: readonly CordisEntry[]): Set<string> {
 
 describe('desktop Runtime overlay', () => {
   it('binds both interpreters and removes product-mode selection', () => {
-    const parsed = yaml.load(renderDesktopRuntimeOverlay('/Applications Support/Science/env')) as CordisEntry[]
+    const parsed = yaml.load(renderDesktopRuntimeOverlay({
+      pythonPrefix: '/Applications Support/Science/env',
+      rPrefix: '/Applications Support/Science/env',
+    })) as CordisEntry[]
     const byId = new Map(parsed.map(entry => [entry.id, entry]))
 
     expect(byId.get('science-runtime')?.config).toMatchObject({
@@ -55,10 +58,23 @@ describe('desktop Runtime overlay', () => {
     expect(byId.get('ui-agent-preset')?.disabled).toBe(true)
   })
 
+  it('renders only the fields present when the prefixes come from different environments', () => {
+    const parsed = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/py/prefix' })) as CordisEntry[]
+    const byId = new Map(parsed.map(entry => [entry.id, entry]))
+
+    expect(byId.get('science-runtime')?.config).toEqual({
+      profiles: { science: { pythonPrefix: '/py/prefix' } },
+    })
+  })
+
+  it('rejects a call with neither prefix', () => {
+    expect(() => renderDesktopRuntimeOverlay({})).toThrow(/requires pythonPrefix or rPrefix/)
+  })
+
   it('patches ids the base web-app bundle actually declares', async () => {
     const base = yaml.load(await readFile(basePatchPath, 'utf8'), { schema: cordisSchema }) as CordisEntry[]
     const baseIds = collectIds(base)
-    const overlay = yaml.load(renderDesktopRuntimeOverlay('/prefix')) as CordisEntry[]
+    const overlay = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/prefix', rPrefix: '/prefix' })) as CordisEntry[]
 
     for (const entry of overlay) {
       expect(baseIds.has(entry.id ?? ''), `overlay entry ${JSON.stringify(entry.id)} has no matching base row`).toBe(true)

@@ -10,8 +10,9 @@ import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
 import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
-import { resolveDisciplineStatus } from './discipline-status.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
+import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
+import { resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -25,6 +26,12 @@ let activeOrigin: string | undefined
 // through this, while the run's lifetime for `activate`/quit/change-discipline
 // coordination is tracked separately by `coordinator.trackRun`.
 let provisioning: AbortController | undefined
+// Set immediately before an `openOnboarding` call that must surface a loud
+// status (an invalid/corrupt binding at launch); consumed once by the
+// `desktop:onboarding-status` handler so the freshly loaded onboarding
+// document can display it. `undefined` for an ordinary first-run or
+// user-requested ("Change Discipline…") open.
+let onboardingStatus: string | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
@@ -58,6 +65,13 @@ function desktopPlatform(): DesktopPlatform {
   return `darwin-${process.arch}`
 }
 
+// declarations() and provisioner() below back the `desktop:environments`,
+// `desktop:provision`, and `desktop:cancel-provisioning` IPC handlers in
+// `boot`, which stay registered but are unreachable from the onboarding UI:
+// v1 onboarding detects and binds an existing conda-family environment
+// (detection.ts, environment-binding.ts) instead of downloading one through
+// micromamba. The declaration/provisioning code and its tests are retained
+// so this path can return as a fallback in a later version.
 async function declarations(): Promise<readonly EnvironmentDeclaration[]> {
   return Promise.all(['social-science', 'biology'].map(async id => parseEnvironmentDeclaration(
     JSON.parse(await readFile(join(resourceRoot(), 'environments', `${id}.json`), 'utf8')),
@@ -73,9 +87,9 @@ function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
   })
 }
 
-async function writeRuntimeOverlay(dshHome: string, prefix: string): Promise<string> {
+async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
   const overlay = join(dshHome, 'desktop-science.cordis.patch.yml')
-  await writeFile(overlay, renderDesktopRuntimeOverlay(prefix), { mode: 0o600 })
+  await writeFile(overlay, renderDesktopRuntimeOverlay(binding), { mode: 0o600 })
   return overlay
 }
 
@@ -206,9 +220,9 @@ function onUnexpectedHostExit(exit: HostExit): void {
 async function launchHost(): Promise<void> {
   const dshHome = app.getPath('userData')
   await mkdir(dshHome, { recursive: true, mode: 0o700 })
-  const applied = await provisioner(dshHome).applied()
-  if (applied === undefined) throw new Error('desktop host: no verified Science environment')
-  const overlay = await writeRuntimeOverlay(dshHome, applied.prefix)
+  const status = await resolveEnvironmentBindingStatus(dshHome)
+  if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
+  const overlay = await writeRuntimeOverlay(dshHome, status.binding)
   const url = await hostLifecycle.launch(hostCommand(dshHome, overlay), onUnexpectedHostExit)
   activeOrigin = url.origin
   await window?.loadURL(url.href)
@@ -262,8 +276,11 @@ async function openOnboarding(): Promise<void> {
 }
 
 /**
- * Open the workspace when the applied environment matches its declaration,
- * otherwise onboarding. Both branches are guarded by
+ * Open the workspace when a valid environment binding exists, otherwise
+ * onboarding. A binding that fails to parse or names a prefix that has
+ * since disappeared routes to onboarding with a loud status message via
+ * {@link onboardingStatus} rather than being treated as an ordinary
+ * first run. Both branches are guarded by
  * {@link ProvisioningCoordinator.openWorkspaceUnlessQuitting} /
  * {@link ProvisioningCoordinator.openOnboardingUnlessQuitting}: startup calls
  * this directly, and `activate` calls it only after `coordinator.activate`
@@ -273,11 +290,12 @@ async function openOnboarding(): Promise<void> {
 async function openInitialSurface(): Promise<void> {
   const dshHome = app.getPath('userData')
   await mkdir(dshHome, { recursive: true, mode: 0o700 })
-  const status = resolveDisciplineStatus(await provisioner(dshHome).applied(), await declarations())
-  if (status.kind === 'current') {
+  const status = await resolveEnvironmentBindingStatus(dshHome)
+  if (status.kind === 'bound') {
     await openWorkspace()
     return
   }
+  onboardingStatus = status.kind === 'invalid' ? status.reason : undefined
   await coordinator.openOnboardingUnlessQuitting(() => openOnboarding())
 }
 
@@ -372,6 +390,30 @@ async function boot(): Promise<void> {
     estimatedDownloadBytes: item.estimatedDownloadBytes,
     requiredFreeBytes: item.requiredFreeBytes,
   })))
+  ipcMain.handle('desktop:onboarding-status', () => {
+    const value = onboardingStatus
+    onboardingStatus = undefined
+    return value
+  })
+  ipcMain.handle('desktop:detect', async () => detectCondaEnvironments())
+  ipcMain.handle('desktop:bind', async (_event, prefix: unknown) => {
+    if (typeof prefix !== 'string') throw new Error('desktop bind: prefix must be a string')
+    // TOCTOU re-check: the candidate list the renderer is acting on was
+    // built from an earlier `desktop:detect` call, and the filesystem can
+    // have changed underneath it (the environment removed, `conda-meta`
+    // corrupted) by the time the user clicks bind.
+    const presence = await qualifyingInterpreters(prefix)
+    if (presence === undefined) throw new Error(`desktop bind: ${prefix} no longer qualifies as a Science environment`)
+    const dshHome = app.getPath('userData')
+    await mkdir(dshHome, { recursive: true, mode: 0o700 })
+    const binding: EnvironmentBinding = {
+      ...(presence.python ? { pythonPrefix: prefix } : {}),
+      ...(presence.r ? { rPrefix: prefix } : {}),
+      boundAt: Date.now(),
+    }
+    await writeEnvironmentBinding(dshHome, binding)
+    await openWorkspace()
+  })
   ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
   ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')

@@ -1,32 +1,21 @@
 /** Narrow first-run bridge; it is exposed only to the packaged onboarding page. */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ProvisioningProgress } from './provisioning.ts'
-
-export interface DesktopEnvironmentChoice {
-  readonly id: string
-  readonly name: string
-  readonly revision: string
-  readonly estimatedDownloadBytes: number
-  readonly requiredFreeBytes: number
-}
+import type { CondaCandidate } from './detection.ts'
 
 export interface DesktopOnboardingBridge {
-  environments(): Promise<readonly DesktopEnvironmentChoice[]>
-  provision(id: string): Promise<void>
-  cancel(): Promise<void>
-  onProgress(listener: (progress: ProvisioningProgress) => void): () => void
+  /** Read the loud status message queued for the next onboarding load, if any (an invalid binding found at launch), consuming it. */
+  onboardingStatus(): Promise<string | undefined>
+  /** Enumerate qualifying conda-family environments found on disk. */
+  detect(): Promise<readonly CondaCandidate[]>
+  /** Bind `prefix` (re-validated for the current TOCTOU) and open the workspace. */
+  bind(prefix: string): Promise<void>
 }
 
 const bridge: DesktopOnboardingBridge = {
-  environments: async () => ipcRenderer.invoke('desktop:environments') as Promise<readonly DesktopEnvironmentChoice[]>,
-  provision: async id => ipcRenderer.invoke('desktop:provision', id) as Promise<void>,
-  cancel: async () => ipcRenderer.invoke('desktop:cancel-provisioning') as Promise<void>,
-  onProgress: (listener) => {
-    const handle = (_event: Electron.IpcRendererEvent, progress: ProvisioningProgress): void => { listener(progress) }
-    ipcRenderer.on('desktop:provisioning-progress', handle)
-    return () => { ipcRenderer.removeListener('desktop:provisioning-progress', handle) }
-  },
+  onboardingStatus: async () => ipcRenderer.invoke('desktop:onboarding-status') as Promise<string | undefined>,
+  detect: async () => ipcRenderer.invoke('desktop:detect') as Promise<readonly CondaCandidate[]>,
+  bind: async prefix => ipcRenderer.invoke('desktop:bind', prefix) as Promise<void>,
 }
 
 contextBridge.exposeInMainWorld('desktopOnboarding', bridge)

@@ -28,6 +28,8 @@ desktop bundle 的 Runtime overlay（`apps/desktop/src/runtime-overlay.ts`）把
 
 ## 环境配备
 
+v1 onboarding 不再经过本节：它改为检测并绑定机器上已有的 conda-family 环境（见下文「首启向导与凭据」）。本节所述的 declaration schema、事务性 prefix 安装、health checks、可恢复性，以及 `desktop:provision`/`desktop:cancel-provisioning` 这两个 IPC handlers，在本版本中仍然完整实现并保留测试，只是没有可从 UI 触达的入口；这条路径被保留为未来版本中面向没有可用 conda-family 环境的用户的安装 fallback。
+
 每个学科包携带 versioned environment declaration，其中命名支持的平台、micromamba environment lock 或明确的 channels 与 packages、磁盘空间提示以及 health checks。声明不含 executable hooks。桌面 provisioning service 校验声明，使用应用内嵌的 micromamba executable 安装到应用持有的 environment directory，把结构化进度流送到 onboarding UI，并且只在两个 interpreter health checks 都通过后发布 applied Science environment revision。
 
 provisioning 在声明的 environment revision 上可恢复且具备事务性。每个 revision 发布到自己的 prefix 路径（`environments/<discipline>/<revision>`），每个 health check 都针对这一确切路径运行——Conda/micromamba 安装会把 install-time 的 prefix 写死进 shebang 与 interpreter home 变量，因此在一个路径上通过的 check 无法证明另一个发布路径的任何事情。失败或取消的 solve，在全新配备或不同 revision 的配备下继续以此前 applied revision 为权威；下文所述的同一 revision 原地修复路径会在触碰 prefix 之前先清空该 pointer，因此那里发生的失败会导致完全没有 applied revision。重试会复用 micromamba package cache，并在重新创建前清空未 ready 的 prefix 目录，因为没有匹配 `applied.json` 条目的 prefix 目录永远不算 ready。网络 channels 与可选 mirrors 属于已校验配置，因为不同 deployment 的可达性不同。社会科学声明提供包含 pandas、statsmodels、matplotlib 与 Altair 的 Python，以及 base R 与首批 tidyverse 统计 packages。生物学声明提供后续 Bioconductor 验证集，并通过声明字段提高 provisioning timeout 与磁盘提示，而不是使用 plugin constants。
@@ -38,9 +40,9 @@ Runtime 继续持有 interpreter execution 与 revision rebinding。Provisioning
 
 ## 首启向导与凭据
 
-全新的 Harness home 在 session workspace 前打开 onboarding。用户选择学科包、查看所需下载大小并开始 provisioning，期间可以 cancel 与 retry。桌面 onboarding 不采集 DeepSeek API key：在桌面 onboarding 内录入凭据仍是待办工作。workspace 已经加载的现有 Web Client model-configuration UI 仍是唯一的 writer，通过 credentials provider 以 `DEEPSEEK_API_KEY` 写入；它绝不进入 desktop settings、logs、renderer persistence、command arguments 或 crash diagnostics。跳过 key 配置后应用仍可使用，并在 session 需要 inference 时展示同一份引导。
+全新的 Harness home 在 session workspace 前打开 onboarding。onboarding 会检测机器上已有的 conda-family 环境并让用户绑定其中一个，而不是通过 micromamba 下载并安装环境（该 fallback 见上文「环境配备」，已保留但没有入口）。检测（`apps/desktop/src/detection.ts`）扫描传统安装根目录——Anaconda、Miniconda、Miniforge、Mambaforge 与 Micromamba 各自的 per-user 默认 prefix，加上两个常见的系统级 Miniconda/Anaconda 位置与 Homebrew Cask miniconda prefix，每个根目录连同其 `envs/*` 子目录——并解析 `~/.conda/environments.txt`，全程不调用终端或任何 conda 命令；一个 prefix 只要拥有一份 regular 的 `conda-meta/history` 文件，以及 `bin/python`、`bin/Rscript` 中至少一个，就算合格，这与 `staticInterpreter`（science-runtime）要求的 POSIX 目录结构一致，合格的候选项会附带一次经过环境变量过滤、带超时限制的 `--version` 探测得到的 best-effort 解释器版本。用户在候选项中选择一个——同时具备两种解释器的第一项会被预选中——并绑定它；绑定时会重新校验该候选项是否仍然合格（文件系统可能在检测与点击之间发生变化），之后才写入 `<dshHome>/environment-binding.json`（`pythonPrefix` 与/或 `rPrefix`，原子写入，权限 0600）并打开 workspace。当检测未发现任何合格环境时，onboarding 会展示安装引导（前往 anaconda.com 安装 Anaconda）与一个重新检测操作，取代原先的学科选择。桌面 onboarding 不采集 DeepSeek API key：在桌面 onboarding 内录入凭据仍是待办工作。workspace 已经加载的现有 Web Client model-configuration UI 仍是唯一的 writer，通过 credentials provider 以 `DEEPSEEK_API_KEY` 写入；它绝不进入 desktop settings、logs、renderer persistence、command arguments 或 crash diagnostics。跳过 key 配置后应用仍可使用，并在 session 需要 inference 时展示同一份引导。
 
-Readiness 完全由 `applied.json` 决定；桌面 onboarding 不保留单独的 state file。当某学科声明的 revision 与该学科 id 的 applied pointer 一致时（见上文「环境配备」），才算完成 onboarding，而不是仅仅关闭 window。失败的步骤会把进度状态替换为失败操作的错误信息，并把开始操作变为 retry；带 secrets redaction 的 diagnostics 入口仍是待办工作。重新安装或升级应用会复用 Harness home；如果声明 revision 与 health checks 仍匹配，就不会重复 provisioning。
+Readiness 完全由 `environment-binding.json` 决定；桌面 onboarding 不保留其他 state file，上文「环境配备」所述学科包的 `applied.json` pointer 在这条路由判断中不起任何作用。启动时会解析该 binding 文件，并确认其中列出的每个 prefix 在磁盘上仍然存在；文件不存在属于普通首次运行，而无法解析或指向已消失 prefix 的文件，则会带着醒目的状态信息路由回 onboarding，而不是被悄悄当作首次运行处理。检测或绑定失败时，状态栏会替换为失败操作的错误信息；带 secrets redaction 的 diagnostics 入口仍是待办工作。重新安装或升级应用会复用 Harness home；如果 `environment-binding.json` 已经指向一个仍然有效的 prefix，就不会重复检测或绑定。
 
 ## 分发
 
@@ -56,7 +58,7 @@ macOS 应用使用 plain Node 语义下的 built `lib/` 与 Web artifacts 构建
 
 D1 至 D5 均已在 `apps/desktop` 中落地。D1 交付了 Electron carrier、独立 Host lifecycle、应用持有的 Harness home、development launch、crash restart 与 residual-process tests。D2 交付了内嵌 micromamba asset pipeline、declaration schema、社会科学 provisioning service、progress 与 retry UI，以及 Python/R health acceptance。D3 交付了 onboarding（学科选择与 provisioning）、上文「环境配备」所述的启动 revision 比对与用于重新配备或更换学科的应用菜单操作，以及上文「产品组合」所述的 settings-default Science composition。桌面 onboarding 内的 credential-provider key 录入仍是待办工作，期间由现有 Web Client model-configuration UI 继续担任唯一的 `DEEPSEEK_API_KEY` writer。D4 交付了 DMG packaging 与 update metadata。D5 交付了生物学声明及其更大的 timeout、capacity、cancellation 与 recovery behavior。
 
-每个 slice 都从限定该 slice 范围的 implementation brief 开始，只有通过 package tests、在 model 或 product output 改变时提供 assembled keyless snapshot，并同步 docs 与 Agent Note 之后才算落地。还有四项属于 outstanding attended evidence——需要有人在真实硬件上运行并记录的验证，而非尚未实现的 slice：一次针对真实网络 package 源的 micromamba provisioning 实跑、一次在全新 macOS 账户上的真实 DMG 安装与首启 onboarding、一次验证 preload 能在 built、已签名应用的 `sandbox: true` 下加载的 packaged-preload smoke test，以及确认 packaged watchdog 在 Electron 内嵌 Node 下 `import.meta.main` 确实为真——没有自动化测试覆盖这条生产环境的入口判断，若其值为 undefined，watchdog 会悄无声息地什么也不做。Downloads 与 real-provider checks 始终作为显式 evidence rows，绝不从 source tests 推断。
+每个 slice 都从限定该 slice 范围的 implementation brief 开始，只有通过 package tests、在 model 或 product output 改变时提供 assembled keyless snapshot，并同步 docs 与 Agent Note 之后才算落地。onboarding 之后被重做：从「学科选择 + micromamba provisioning」改为「检测并绑定已有的 conda-family 环境」（见上文「首启向导与凭据」）；保留下来的 micromamba 路径在本版本中不再需要单独的 attended evidence，因为它没有可从 UI 触达的入口。还有四项属于 outstanding attended evidence——需要有人在真实硬件上运行并记录的验证，而非尚未实现的 slice：一次在全新 macOS 账户上、针对已有 Anaconda（或等价物）安装的真实检测并绑定首次运行、一次在全新 macOS 账户上的真实 DMG 安装与首启 onboarding、一次验证 preload 能在 built、已签名应用的 `sandbox: true` 下加载的 packaged-preload smoke test，以及确认 packaged watchdog 在 Electron 内嵌 Node 下 `import.meta.main` 确实为真——没有自动化测试覆盖这条生产环境的入口判断，若其值为 undefined，watchdog 会悄无声息地什么也不做。Downloads 与 real-provider checks 始终作为显式 evidence rows，绝不从 source tests 推断。
 
 ## 考虑过的替代方案
 
@@ -68,13 +70,13 @@ D1 至 D5 均已在 `apps/desktop` 中落地。D1 交付了 Electron carrier、�
 
 **使用 Tauri。** 对于已经用 Node 与 Web technologies 实现 Host 与 UI 的产品，更小的壳不足以抵消第二套 Rust/WebView toolchain 与 compatibility matrix。
 
-**通过用户管理的 Conda 安装 Python 与 R。** 这保留当前 Runtime input，却无法满足零终端、零 Conda 的产品验收，也让环境可复现性依赖 host machine。
+**每次 onboarding 都通过内嵌 micromamba 配备 Python 与 R。** 这是最初的 v1 方案，且仍完整实现并保留测试（见上文「环境配备」），但一次全新的多 GB 下载与安装，会与目标科研者大多已经通过 Anaconda 或实验室统一管理的 Conda 安装重复；v1 改为检测并绑定已有安装，这条路径被保留为未来版本中面向没有可用 conda-family 环境的用户的 fallback。绑定用户自行管理的环境，也让环境可复现性依赖 host machine 自身的 Conda 安装，而不是一份 pinned declaration——这是当前 v1 方案的已知取舍，而非被否决的替代方案。
 
 **把 API key 存在 desktop preferences。** 这会复制 credentials provider，并形成一条具有不同 redaction 与 permission behavior 的 secret persistence path。
 
 ## 验收标准
 
-- 在全新的受支持 Mac 上，用户安装 DMG、完成 onboarding、使用社会科学包分析本地 dataset、创建 Python 与 R charts 并导出 artifact，全程无需终端、Conda 知识或 browser URL。
+- 在已经装有 conda-family 环境（Anaconda、Miniconda 或等价物）的受支持 Mac 上，用户安装 DMG、通过检测并绑定该环境完成 onboarding、分析本地 dataset、创建 Python 与 R charts 并导出 artifact，全程无需终端或 browser URL。在完全没有 conda-family 安装的受支持 Mac 上，onboarding 的安装引导面板会指引用户安装 Anaconda 并重新检测；原提案中的零安装验收被推迟到上文「环境配备」所述的 micromamba fallback。
 - 每个 desktop session 都有 Science product composition，而所选学科可独立替换。
 - Host crash 可以在不丢失 sessions 的情况下重启；正常退出与 forced-quit acceptance 均不留下 Host、kernel 或 tool descendants。
 - provisioning 在 network、disk、cancellation 与 health-check failures 后可以恢复或重试，且不会发布 partial environment revision。

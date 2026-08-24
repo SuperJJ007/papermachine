@@ -306,12 +306,19 @@ function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): numbe
 }
 
 function artifactType(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
-  switch (chart.attachment.mediaType) {
+  // Captured so the switch narrows this single literal-union binding rather
+  // than the `chart.attachment.mediaType` member expression, which does not
+  // narrow to `never` in the default case because `attachment`'s type
+  // itself varies across ScienceClientArtifactVersion's union members.
+  const mediaType = chart.attachment.mediaType
+  switch (mediaType) {
     case 'application/vnd.vega-lite+json': return t('details.artifact.typeChart')
     case 'text/csv': return t('details.artifact.typeDataset')
     case 'application/json': return t('details.artifact.typeJson')
     case 'image/png': case 'image/jpeg': case 'image/webp': case 'image/gif': return t('details.artifact.typeImage')
     case 'text/markdown': case 'text/plain': return t('details.artifact.typeDocument')
+    /* v8 ignore next -- closed media-type union */
+    default: return assertNever(mediaType)
   }
 }
 
@@ -359,10 +366,6 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
   const latest = latestArtifacts(artifacts)
   return (
     <div className={css.library}>
-      <section className={css.librarySection}>
-        <div className={css.librarySectionHead}><h3>{t('details.artifacts.uploaded')}</h3><span>0</span></div>
-        <p className={css.libraryEmpty}>{t('details.artifacts.uploadedEmpty')}</p>
-      </section>
       <section className={css.librarySection}>
         <div className={css.librarySectionHead}><h3>{t('details.artifacts.generated')}</h3><span>{latest.length}</span></div>
         {latest.length === 0

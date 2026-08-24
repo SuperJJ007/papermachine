@@ -85,6 +85,12 @@ export interface ScienceTraceEnvironment {
 export interface ScienceTraceModel {
   readonly environment?: ScienceTraceEnvironment
   readonly turns: readonly number[]
+  /**
+   * User/steering entries in sequence order, followed by one agent
+   * conclusion per turn in turn order. Agent conclusions are appended after
+   * all dialogue entries; the array is not seq-interleaved with
+   * conclusions.
+   */
   readonly dialogues: readonly ScienceTraceDialogue[]
   readonly groups: readonly ScienceTraceGroup[]
   readonly humanEdits: readonly ScienceTraceHumanEdit[]

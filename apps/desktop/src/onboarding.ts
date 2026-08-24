@@ -14,6 +14,7 @@ const pythonChoicesElement = document.querySelector('#python-choices')
 const rSectionElement = document.querySelector('#r-section')
 const rChoicesElement = document.querySelector('#r-choices')
 const guidanceElement = document.querySelector('#guidance')
+const guidanceMessageElement = document.querySelector('#guidance-message')
 const bindElement = document.querySelector('#bind')
 const redetectElement = document.querySelector('#redetect')
 const statusElement = document.querySelector('#status')
@@ -22,6 +23,7 @@ if (!(pythonSectionElement instanceof HTMLElement)
   || !(rSectionElement instanceof HTMLElement)
   || !(rChoicesElement instanceof HTMLDivElement)
   || !(guidanceElement instanceof HTMLDivElement)
+  || !(guidanceMessageElement instanceof HTMLParagraphElement)
   || !(bindElement instanceof HTMLButtonElement)
   || !(redetectElement instanceof HTMLButtonElement)
   || !(statusElement instanceof HTMLParagraphElement)) {
@@ -32,9 +34,13 @@ const pythonChoices = pythonChoicesElement
 const rSection = rSectionElement
 const rChoices = rChoicesElement
 const guidance = guidanceElement
+const guidanceMessage = guidanceMessageElement
 const bind = bindElement
 const redetect = redetectElement
 const statusNode = statusElement
+
+const NOTHING_DETECTED_MESSAGE = '未检测到可用环境 · No usable environment was detected.'
+const DETECTION_FAILED_MESSAGE = '检测失败 · Detection failed.'
 
 // The prefix chosen in each group, or `undefined` when that group's "不绑定
 // / None" option is selected (or nothing has rendered yet). `desktop:bind`
@@ -48,20 +54,31 @@ function updateBindEnabled(): void {
   bind.disabled = pythonSelected === undefined && rSelected === undefined
 }
 
+/** Best-effort `--version` text for a candidate's interpreter, or a copy fallback when the probe failed. */
+const VERSION_UNAVAILABLE = '解释器版本未知 · interpreter version unavailable'
+
 /**
  * Render one interpreter group's single-select radio choices: an explicit
- * "不绑定 / None" option first, then every candidate exposing that
- * interpreter (a candidate with both interpreters appears in both groups).
- * The group section itself is shown whenever detection found any
- * candidate at all, even one with zero matches for this interpreter, so a
- * Python-only machine still shows an R group offering only None. Preselects
- * the first matching candidate in detection's root-scan order, or None if
- * there is no match.
+ * "不绑定 / None" option first, then every candidate whose {@link
+ * CondaCandidate.presence} has this interpreter — presence, not a
+ * successful `--version` probe, is the qualification authority, so a
+ * candidate whose probe failed (or timed out) still appears here with
+ * {@link VERSION_UNAVAILABLE} in place of its version. A candidate with
+ * both interpreters appears in both groups. The group section itself is
+ * shown whenever detection found any candidate at all, even one with zero
+ * matches for this interpreter, so a Python-only machine still shows an R
+ * group offering only None.
+ *
+ * Preselects `previousSelection` when it still names a candidate in this
+ * render (preserving the user's choice across a re-detect that still finds
+ * it), otherwise the first matching candidate in detection's root-scan
+ * order, or None if there is no match.
  * @param section - the group's `<section>`, hidden when detection found nothing at all.
  * @param container - the group's choice-list container.
  * @param name - the radio input group name (must not collide with the other group's).
- * @param candidates - every candidate detection found, filtered here to this interpreter.
+ * @param candidates - every candidate detection found, filtered here to this interpreter's presence.
  * @param interpreter - which interpreter this group selects for.
+ * @param previousSelection - the prefix selected in this group before this render, if any.
  * @param onSelect - called with the chosen prefix (`undefined` for None) on
  *   every selection change, including once during render for the preselection.
  */
@@ -71,6 +88,7 @@ function renderGroup(
   name: string,
   candidates: readonly CondaCandidate[],
   interpreter: 'python' | 'r',
+  previousSelection: string | undefined,
   onSelect: (prefix: string | undefined) => void,
 ): void {
   container.replaceChildren()
@@ -90,10 +108,13 @@ function renderGroup(
   noneLabel.append(noneInput, noneCopy)
   container.append(noneLabel)
 
-  let preselected = false
-  for (const candidate of candidates) {
-    const version = interpreter === 'python' ? candidate.pythonVersion : candidate.rVersion
-    if (version === undefined) continue
+  const matching = candidates.filter(candidate => (interpreter === 'python' ? candidate.presence.python : candidate.presence.r))
+  const preselectPrefix = previousSelection !== undefined && matching.some(candidate => candidate.prefix === previousSelection)
+    ? previousSelection
+    : matching[0]?.prefix
+
+  for (const candidate of matching) {
+    const version = (interpreter === 'python' ? candidate.pythonVersion : candidate.rVersion) ?? VERSION_UNAVAILABLE
     const label = document.createElement('label')
     label.className = 'choice'
     const input = document.createElement('input')
@@ -109,16 +130,10 @@ function renderGroup(
     copy.append(strong, small)
     label.append(input, copy)
     container.append(label)
-    if (!preselected) {
-      input.checked = true
-      preselected = true
-      onSelect(candidate.prefix)
-    }
+    if (candidate.prefix === preselectPrefix) input.checked = true
   }
-  if (!preselected) {
-    noneInput.checked = true
-    onSelect(undefined)
-  }
+  if (preselectPrefix === undefined) noneInput.checked = true
+  onSelect(preselectPrefix)
 }
 
 /** Reset both groups and Bind to their pre-detection state: hidden, unselected, disabled. */
@@ -133,12 +148,13 @@ function resetSelectionState(): void {
 }
 
 function renderCandidates(candidates: readonly CondaCandidate[]): void {
+  guidanceMessage.textContent = NOTHING_DETECTED_MESSAGE
   guidance.hidden = candidates.length > 0
-  renderGroup(pythonSection, pythonChoices, 'python-environment', candidates, 'python', (prefix) => {
+  renderGroup(pythonSection, pythonChoices, 'python-environment', candidates, 'python', pythonSelected, (prefix) => {
     pythonSelected = prefix
     updateBindEnabled()
   })
-  renderGroup(rSection, rChoices, 'r-environment', candidates, 'r', (prefix) => {
+  renderGroup(rSection, rChoices, 'r-environment', candidates, 'r', rSelected, (prefix) => {
     rSelected = prefix
     updateBindEnabled()
   })
@@ -153,6 +169,7 @@ async function runDetection(): Promise<void> {
   } catch (error) {
     statusNode.textContent = error instanceof Error ? error.message : String(error)
     resetSelectionState()
+    guidanceMessage.textContent = DETECTION_FAILED_MESSAGE
     guidance.hidden = false
   } finally {
     redetect.disabled = false

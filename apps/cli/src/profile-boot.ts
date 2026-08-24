@@ -16,7 +16,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { EntryOptions, ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
   composeEntries,
@@ -209,7 +209,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @param internal - the booted Loader's own `internal` field.
  * @returns whether mounting config-only HMR is safe to attempt.
  */
-export function canMountConfigHmr(internal: unknown): boolean {
+export function canMountConfigHmr(internal: ModuleLoader | undefined): boolean {
   return internal !== undefined
 }
 

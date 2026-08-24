@@ -29,15 +29,18 @@ export interface BindRequest {
  * built from comes from an earlier detection call, and the filesystem can
  * change underneath it before the user clicks Bind (the environment
  * removed, `conda-meta` corrupted, an interpreter binary deleted), so this
- * is a TOCTOU re-check, not redundant validation. A prefix chosen in both
- * groups is re-checked once per group since each check targets a different
- * interpreter. Rejects the whole request — never binds a partial result —
- * when either chosen prefix no longer qualifies for the interpreter it was
- * chosen for.
+ * is a TOCTOU re-check, not redundant validation. Each given prefix is
+ * checked structurally (an absolute path) before this probe runs, so a
+ * malformed prefix is rejected without touching the filesystem. A prefix
+ * chosen in both groups is re-checked once per group since each check
+ * targets a different interpreter. Rejects the whole request — never binds
+ * a partial result — when either chosen prefix is not an absolute path or
+ * no longer qualifies for the interpreter it was chosen for.
  * @param request - the prefixes selected in the Python and R groups.
  * @param qualify - re-checks a prefix's current interpreter presence (production: {@link qualifyingInterpreters} from `./detection.ts`).
  * @returns the binding to persist.
- * @throws when neither prefix is given, or a given prefix no longer has the interpreter its group selected it for.
+ * @throws when neither prefix is given, a given prefix is not an absolute
+ *   path, or a given prefix no longer has the interpreter its group selected it for.
  */
 export async function resolveBindRequest(
   request: BindRequest,
@@ -47,10 +50,16 @@ export async function resolveBindRequest(
     throw new Error('desktop bind: request must include pythonPrefix or rPrefix')
   }
   if (request.pythonPrefix !== undefined) {
+    if (!isAbsolute(request.pythonPrefix)) {
+      throw new Error(`desktop bind: pythonPrefix must be an absolute path (${request.pythonPrefix})`)
+    }
     const presence = await qualify(request.pythonPrefix)
     if (presence?.python !== true) throw new Error(`desktop bind: ${request.pythonPrefix} no longer has a Python interpreter`)
   }
   if (request.rPrefix !== undefined) {
+    if (!isAbsolute(request.rPrefix)) {
+      throw new Error(`desktop bind: rPrefix must be an absolute path (${request.rPrefix})`)
+    }
     const presence = await qualify(request.rPrefix)
     if (presence?.r !== true) throw new Error(`desktop bind: ${request.rPrefix} no longer has an R interpreter`)
   }
@@ -144,7 +153,8 @@ export async function resolveEnvironmentBindingStatus(dshHome: string): Promise<
     raw = await readFile(bindingPath(dshHome), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'unbound' }
-    return { kind: 'invalid', reason: `desktop environment binding: cannot read binding file (${String((error as NodeJS.ErrnoException).code ?? error)})` }
+    const code = (error as NodeJS.ErrnoException).code ?? error
+    return { kind: 'invalid', reason: `desktop environment binding: cannot read binding file (${String(code)})` }
   }
   let binding: EnvironmentBinding
   try {

@@ -111,6 +111,20 @@ describe('resolveBindRequest', () => {
       .rejects.toThrow(/requires pythonPrefix or rPrefix|must include pythonPrefix or rPrefix/)
   })
 
+  it('rejects a relative pythonPrefix without invoking the filesystem probe', async () => {
+    const qualify = vi.fn(fakeQualify({}))
+
+    await expect(resolveBindRequest({ pythonPrefix: 'relative/py' }, qualify)).rejects.toThrow(/pythonPrefix must be an absolute path/)
+    expect(qualify).not.toHaveBeenCalled()
+  })
+
+  it('rejects a relative rPrefix without invoking the filesystem probe', async () => {
+    const qualify = vi.fn(fakeQualify({}))
+
+    await expect(resolveBindRequest({ rPrefix: 'relative/r' }, qualify)).rejects.toThrow(/rPrefix must be an absolute path/)
+    expect(qualify).not.toHaveBeenCalled()
+  })
+
   it('rejects when the python prefix no longer has a python interpreter', async () => {
     const qualify = fakeQualify({ '/env/py': { python: false, r: false } })
 

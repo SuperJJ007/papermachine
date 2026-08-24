@@ -93,7 +93,12 @@ describe('detectCondaEnvironments', () => {
 
     const candidates = await detectCondaEnvironments({ home, roots: [prefix] })
     const expectedPrefix = await realpath(prefix)
-    expect(candidates).toEqual([{ prefix: expectedPrefix, pythonVersion: 'Python 3.11.9', rVersion: 'R version 4.5.3 (2026-03-11)' }])
+    expect(candidates).toEqual([{
+      prefix: expectedPrefix,
+      presence: { python: true, r: true },
+      pythonVersion: 'Python 3.11.9',
+      rVersion: 'R version 4.5.3 (2026-03-11)',
+    }])
   })
 
   it('finds environments under a conventional root\'s envs/ directory', async () => {
@@ -146,7 +151,7 @@ describe('detectCondaEnvironments', () => {
     await writeFile(join(prefix, 'bin', 'python'), 'not a real interpreter')
 
     const candidates = await detectCondaEnvironments({ home, roots: [prefix] })
-    expect(candidates).toEqual([{ prefix: await realpath(prefix) }])
+    expect(candidates).toEqual([{ prefix: await realpath(prefix), presence: { python: true, r: false } }])
   })
 
   it('parses ~/.conda/environments.txt for prefixes outside any conventional root', async () => {
@@ -159,7 +164,7 @@ describe('detectCondaEnvironments', () => {
     await writeFile(join(home, '.conda', 'environments.txt'), `${custom}\n`)
 
     const candidates = await detectCondaEnvironments({ home, roots: [] })
-    expect(candidates).toEqual([{ prefix: await realpath(custom), pythonVersion: 'Python 3.13.0' }])
+    expect(candidates).toEqual([{ prefix: await realpath(custom), presence: { python: true, r: false }, pythonVersion: 'Python 3.13.0' }])
   })
 
   it('ignores a missing ~/.conda/environments.txt', async () => {
@@ -219,7 +224,7 @@ describe('detectCondaEnvironments', () => {
     await writeExecutable(join(good, 'bin', 'python'), 'Python 3.11.0')
     try {
       const candidates = await detectCondaEnvironments({ home, roots: [unreadable, good] })
-      expect(candidates).toEqual([{ prefix: await realpath(good), pythonVersion: 'Python 3.11.0' }])
+      expect(candidates).toEqual([{ prefix: await realpath(good), presence: { python: true, r: false }, pythonVersion: 'Python 3.11.0' }])
     } finally {
       await chmod(unreadable, 0o755)
     }

@@ -200,9 +200,18 @@ async function probeVersion(executable: string): Promise<string | undefined> {
   return text.length > 0 ? text : undefined
 }
 
-/** One qualifying conda-family environment found on disk, with best-effort interpreter versions. */
+/**
+ * One qualifying conda-family environment found on disk: which interpreters
+ * it has (the qualification authority, {@link qualifyingInterpreters}) plus
+ * their best-effort `--version` output. `pythonVersion`/`rVersion` is absent
+ * whenever the corresponding `presence` flag is `false` (no such interpreter)
+ * or the probe itself failed (present but unavailable) — the two cases are
+ * only distinguishable through `presence`, never through version absence
+ * alone.
+ */
 export interface CondaCandidate {
   readonly prefix: string
+  readonly presence: InterpreterPresence
   readonly pythonVersion?: string
   readonly rVersion?: string
 }
@@ -247,6 +256,7 @@ export async function detectCondaEnvironments(options: DetectionOptions = {}): P
     const rVersion = presence.r ? await probeVersion(join(prefix, 'bin', 'Rscript')) : undefined
     return {
       prefix,
+      presence,
       ...(pythonVersion === undefined ? {} : { pythonVersion }),
       ...(rVersion === undefined ? {} : { rVersion }),
     }

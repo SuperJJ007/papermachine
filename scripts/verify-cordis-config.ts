@@ -311,6 +311,21 @@ export function bundlePluginDependencyErrors(
 }
 
 /**
+ * Record that `key` was found at `file`, accumulating every location a key
+ * appears at across a scan. Shared by {@link validateSourcePlaneResolution}
+ * and {@link missingPluginDependencies}, whose per-key location tallies are
+ * otherwise identical.
+ * @param locations Map from key to the set of files it was found at; mutated in place.
+ * @param key The specifier or package name found.
+ * @param file The repository-relative file the reference was read from.
+ */
+function addLocation(locations: Map<string, Set<string>>, key: string, file: string): void {
+  const set = locations.get(key) ?? new Set<string>()
+  set.add(file)
+  locations.set(key, set)
+}
+
+/**
  * Every configured specifier of a local workspace package must resolve through
  * the tsconfig `paths` facade to a `.ts`/`.tsx` source file. The `dsh` source
  * launch (tsx) and vitest resolve in the source plane; without a `paths` match
@@ -346,11 +361,6 @@ function validateSourcePlaneResolution(): string[] {
   const sourceExtensions = new Set<string>([ts.Extension.Ts, ts.Extension.Tsx])
   const containingFile = resolve(root, 'scripts/verify-cordis-config.ts')
   const locationsBySpecifier = new Map<string, Set<string>>()
-  const require = (specifier: string, file: string): void => {
-    const locations = locationsBySpecifier.get(specifier) ?? new Set<string>()
-    locations.add(file)
-    locationsBySpecifier.set(specifier, locations)
-  }
   for (const reference of pluginReferences) {
     const packageName = packageNameFromSpecifier(reference.name)
     if (packageName === undefined) continue
@@ -359,10 +369,10 @@ function validateSourcePlaneResolution(): string[] {
     // stands in for them here too.
     if (packageName === CHOOSER_PACKAGE) {
       for (const backend of CHOOSER_BACKEND_PACKAGES) {
-        if (localPackages.has(backend)) require(backend, reference.file)
+        if (localPackages.has(backend)) addLocation(locationsBySpecifier, backend, reference.file)
       }
     }
-    if (localPackages.has(packageName)) require(reference.name, reference.file)
+    if (localPackages.has(packageName)) addLocation(locationsBySpecifier, reference.name, reference.file)
   }
   for (const [specifier, locations] of locationsBySpecifier) {
     const resolved = ts.resolveModuleName(specifier, containingFile, options, host).resolvedModule
@@ -378,17 +388,12 @@ function missingPluginDependencies(
   manifestPath: string,
 ): string[] {
   const requiredPackages = new Map<string, Set<string>>()
-  const require = (packageName: string, file: string): void => {
-    const locations = requiredPackages.get(packageName) ?? new Set<string>()
-    locations.add(file)
-    requiredPackages.set(packageName, locations)
-  }
   for (const reference of references) {
     const packageName = packageNameFromSpecifier(reference.name)
     if (packageName === undefined) continue
-    require(packageName, reference.file)
+    addLocation(requiredPackages, packageName, reference.file)
     if (packageName === CHOOSER_PACKAGE) {
-      for (const backend of CHOOSER_BACKEND_PACKAGES) require(backend, reference.file)
+      for (const backend of CHOOSER_BACKEND_PACKAGES) addLocation(requiredPackages, backend, reference.file)
     }
   }
   return [...requiredPackages].flatMap(([packageName, locations]) => packageName in dependencies

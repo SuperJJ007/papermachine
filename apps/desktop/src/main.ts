@@ -18,6 +18,11 @@ const RESTART_URL = 'dsh-desktop://restart'
 // (SIGTERM) before escalating to SIGKILL.
 const HOST_STOP_GRACE_MS = 5000
 let window: BrowserWindow | undefined
+// Set once before-quit begins tearing the app down. openWorkspace checks
+// this before launching a Host: before-quit stops the active Host
+// concurrently with any still-running provisioningRun, so a run that
+// reaches its own openWorkspace call after quitting starts must not launch
+// a fresh Host behind hostLifecycle.stop()'s back.
 let quitting = false
 let activeOrigin: string | undefined
 let provisioning: AbortController | undefined
@@ -206,13 +211,30 @@ async function launchHost(): Promise<void> {
   await window?.loadURL(url.href)
 }
 
+/**
+ * Open the workspace window and launch the Host. If `launchHost` throws, the
+ * newly created window has never loaded anything and never fires
+ * `ready-to-show`, so it loads the same error page the startup path uses and
+ * is shown explicitly rather than staying hidden and indistinguishable from
+ * a running app to `activate`'s window-count check.
+ */
 async function openWorkspace(): Promise<void> {
+  // A provisioning run's completion can race app quit (before-quit sets this
+  // before awaiting hostLifecycle.stop() and the run itself): without this
+  // check, a run that reaches here after stop() has already run would start
+  // a fresh Host post-shutdown.
+  if (quitting) return
   const previous = window
   const created = createWindow()
   window = created
   created.once('closed', () => { if (window === created) window = undefined })
   previous?.destroy()
-  await launchHost()
+  try {
+    await launchHost()
+  } catch (error) {
+    await created.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+    created.show()
+  }
 }
 
 /**
@@ -284,7 +306,14 @@ function buildApplicationMenu(): Menu {
           // Re-provisioning targets a revision-scoped prefix path (see
           // provisioning.ts), so the currently applied environment stays
           // untouched and usable until the newly chosen one is applied.
-          click: () => { void openOnboarding() },
+          // Awaiting any in-flight run first (see awaitPendingProvisioning)
+          // means clicking mid-download opens onboarding once that run has
+          // actually unwound instead of hitting "another operation is
+          // running" until it does.
+          click: () => { void (async () => {
+            await awaitPendingProvisioning()
+            await openOnboarding()
+          })() },
         },
         { type: 'separator' },
         { role: 'quit' },
@@ -332,16 +361,25 @@ await openInitialSurface().catch(async (error: unknown) => {
 app.on('activate', () => { void handleActivate() })
 
 /**
- * Reopen the initial surface, but only once any provisioning run this
- * session just aborted (see openOnboarding's abort-on-close) has actually
- * unwound. Without this wait, a fast enough activate on windowless darwin
- * could reopen onboarding while `provisioning` is still set, so a fresh
- * provisioning attempt would immediately hit "another operation is
- * running" — blocking reopen until the abort completes is simpler than
- * teaching the reopened window to surface someone else's in-flight run.
+ * Await any provisioning run this session just aborted (see
+ * openOnboarding's abort-on-close) so it has actually unwound before a
+ * caller opens a new onboarding or workspace window. Without this wait, a
+ * caller racing a just-cancelled run could act while `provisioning` is
+ * still set, so a fresh provisioning attempt would immediately hit
+ * "another operation is running".
+ */
+async function awaitPendingProvisioning(): Promise<void> {
+  if (provisioningRun !== undefined) await provisioningRun.catch(() => {})
+}
+
+/**
+ * Reopen the initial surface, but only once any in-flight provisioning run
+ * has unwound (see {@link awaitPendingProvisioning}) — blocking reopen until
+ * then is simpler than teaching the reopened window to surface someone
+ * else's in-flight run.
  */
 async function handleActivate(): Promise<void> {
-  if (provisioningRun !== undefined) await provisioningRun.catch(() => {})
+  await awaitPendingProvisioning()
   if (BrowserWindow.getAllWindows().length !== 0) return
   await openInitialSurface()
 }

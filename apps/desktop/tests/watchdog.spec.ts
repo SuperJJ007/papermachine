@@ -63,4 +63,18 @@ describe.runIf(process.platform !== 'win32')('watchParent', () => {
     await watchParent(alreadyGoneParentPid, host.pid, { pollMs: 20, graceMs: 2_000 })
     await vi.waitFor(() => { expect(() => process.kill(host.pid as number, 0)).toThrow() })
   })
+
+  it('leaves the Host group alone while its ppid still matches the given parent', async () => {
+    const host = spawn(process.execPath, ['--eval', 'setInterval(() => {}, 1000)'], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    if (host.pid === undefined) throw new Error('fixture process missing pid')
+    await Promise.race([
+      watchParent(process.ppid, host.pid, { pollMs: 10 }),
+      new Promise(resolve => setTimeout(resolve, 100)),
+    ])
+    expect(() => process.kill(host.pid as number, 0)).not.toThrow()
+    host.kill('SIGKILL')
+  })
 })

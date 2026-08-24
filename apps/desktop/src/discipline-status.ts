@@ -22,9 +22,9 @@ export type DisciplineStatus =
  * forever: when the shipped declaration for the applied discipline advances
  * to a new revision, this reports `stale` so the caller can route back to
  * provisioning instead of opening the workspace against an outdated
- * environment. F1's revision-scoped prefix path means re-provisioning a new
- * revision never touches the prefix this function found stale until the new
- * revision is itself applied.
+ * environment. Revision-scoped prefix paths mean a new revision installs
+ * beside the applied one, so re-provisioning it never touches the prefix
+ * this function found stale until the new revision is itself applied.
  * @param applied - the current `applied.json` pointer, or `undefined` before any environment is applied.
  * @param declarations - every discipline declaration the running build ships.
  * @returns the discipline status driving whether the workspace or onboarding opens.

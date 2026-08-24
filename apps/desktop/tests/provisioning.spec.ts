@@ -314,7 +314,7 @@ describe('runProvisioningProcess', () => {
     await vi.waitFor(() => { expect(() => process.kill(grandchildPid, 0)).toThrow() })
   })
 
-  it.runIf(process.platform !== 'win32')('escalates to a group SIGKILL when a grandchild ignores SIGTERM after the direct child exits', async () => {
+  it.runIf(process.platform !== 'win32')('escalates to a group SIGKILL when a grandchild ignores SIGTERM after the direct child exits, and does not settle rejection before the grandchild is confirmed dead', async () => {
     // The direct child exits cleanly on SIGTERM (mirroring a solve process
     // that disposes itself) while its grandchild ignores it: only a
     // group-aware escalation collects the grandchild, mirroring
@@ -337,9 +337,11 @@ describe('runProvisioningProcess', () => {
     })
     await expect(run).rejects.toThrow('timed out')
     const grandchildPid = Number(lines.find(line => line.startsWith('grandchild-pid '))!.slice('grandchild-pid '.length))
-    // The grandchild survives past the direct child's own exit; only the
-    // grace-period escalation to a group SIGKILL collects it.
-    expect(() => process.kill(grandchildPid, 0)).not.toThrow()
-    await vi.waitFor(() => { expect(() => process.kill(grandchildPid, 0)).toThrow() }, { timeout: 8_000 })
+    // The rejection contract is that an awaited rejection means the whole
+    // group is gone: the grandchild outlived the direct child's own exit
+    // (only the grace-period escalation to a group SIGKILL collects it), so
+    // it must already be dead by the time `run` rejects, with no further
+    // wait needed.
+    expect(() => process.kill(grandchildPid, 0)).toThrow()
   }, 10_000)
 })

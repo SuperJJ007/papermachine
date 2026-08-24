@@ -72,27 +72,33 @@ function isProcessGroupAlive(child: ChildProcess): boolean {
  * itself on SIGTERM while a spawned grandchild ignores it would otherwise
  * leave that grandchild alive forever, so the grace period polls the whole
  * process group's liveness rather than only the direct child's own exit.
+ * The returned promise resolves only once the group is confirmed gone (or a
+ * SIGKILL has been sent and the group is confirmed gone), so a caller that
+ * awaits it before quitting Electron never leaves this escalation's SIGKILL
+ * timer orphaned by process exit.
  */
-function stopProcessGroup(child: ChildProcess): void {
+async function stopProcessGroup(child: ChildProcess): Promise<void> {
   signalProcessGroup(child, 'SIGTERM')
-  void (async () => {
-    const deadline = Date.now() + KILL_GRACE_MS
-    while (isProcessGroupAlive(child) && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
-    }
-    if (isProcessGroupAlive(child)) signalProcessGroup(child, 'SIGKILL')
-  })()
+  const deadline = Date.now() + KILL_GRACE_MS
+  while (isProcessGroupAlive(child) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
+  }
+  if (isProcessGroupAlive(child)) signalProcessGroup(child, 'SIGKILL')
+  while (isProcessGroupAlive(child)) {
+    await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
+  }
 }
 
 /**
  * Run one cancellable child and reject on timeout, signal, or non-zero exit.
- * The returned promise settles on the direct child's own `exit` event.
- * Cancellation and a timeout both request termination through
- * {@link stopProcessGroup}, which signals the whole process group (SIGTERM,
- * then a group SIGKILL if anything in it survives the grace period) rather
- * than only the direct child, so a caller that awaits rejection before
- * quitting Electron never leaves a group member unsignalled — though the
- * group's own exit can still be settling after this promise already has.
+ * An ordinary exit settles the returned promise directly on the direct
+ * child's own `exit` event. Cancellation and a timeout instead settle only
+ * once {@link stopProcessGroup} resolves — confirming the whole process
+ * group (not just the direct child) is gone, escalating to a group SIGKILL
+ * if anything in it survives the grace period — so an awaited rejection
+ * means the group is gone: a caller that awaits rejection before quitting
+ * Electron never leaves a group member unsignalled or this escalation's
+ * SIGKILL timer running past the caller's own teardown.
  */
 export const runProvisioningProcess: ProcessRunner = async (request) => {
   await new Promise<void>((resolve, reject) => {
@@ -113,11 +119,11 @@ export const runProvisioningProcess: ProcessRunner = async (request) => {
     }
     const abort = (): void => {
       outcome = 'cancelled'
-      stopProcessGroup(child)
+      void stopProcessGroup(child).then(() => { finish(new Error('desktop provisioning: cancelled')) })
     }
     const timer = setTimeout(() => {
       outcome = 'timed-out'
-      stopProcessGroup(child)
+      void stopProcessGroup(child).then(() => { finish(new Error('desktop provisioning: timed out')) })
     }, request.timeoutMs)
     for (const stream of [child.stdout, child.stderr]) {
       let pending = ''
@@ -131,8 +137,10 @@ export const runProvisioningProcess: ProcessRunner = async (request) => {
     }
     child.once('error', (error) => { finish(error) })
     child.once('exit', (code, signal) => {
-      if (outcome === 'cancelled') { finish(new Error('desktop provisioning: cancelled')); return }
-      if (outcome === 'timed-out') { finish(new Error('desktop provisioning: timed out')); return }
+      // A cancelled or timed-out run settles only from stopProcessGroup's
+      // own resolution above, once the whole group is confirmed gone; the
+      // direct child's exit alone does not prove that.
+      if (outcome === 'cancelled' || outcome === 'timed-out') return
       if (code === 0) finish()
       else finish(new Error(`desktop provisioning: process stopped (${String(code ?? signal)})`))
     })

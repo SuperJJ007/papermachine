@@ -26,6 +26,10 @@ desktop bundle 的 Runtime overlay（`apps/desktop/src/runtime-overlay.ts`）把
 
 通用 CLI 与 Web profiles 保留当前组合与 Science fence。已有 shipped `science` preset 在那里继续可用，直至学科包替代其余 prompt 与 tool contribution。在迁移期间，desktop bundle 通过其 settings default 引导同一个 preset，而不是挂载重复 registrations。本笔记部分 supersede 了 [Science preset note](../../implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md) 中「Science 严格是 opt-in preset」的结论：该笔记继续负责通用 Web preset 选择、roster 与 durable Science identity，而桌面组合通过上述 settings-default 机制，把 `science` 设为其自身产品表层的 default。
 
+## Electron 下的 config-only HMR
+
+桌面 Runtime overlay 除了沿用 web bundle 自身对 `hmr` 行（`id: hmr`）的禁用之外，也显式禁用它，这样即便日后 web bundle 重新启用该行，桌面组合依然保持正确。该行并不是一次已复现的 dev Host 崩溃的成因——该崩溃里 readiness 行先打印出来，随后进程在 `@deepseek-ai/cordis-plugin-hmr` 上死掉：真正失败的 entry 是 launcher 自身的 config-only HMR fallback（`apps/cli/src/profile-boot.ts`），只要组合中没有 `hmr` service 就会自动挂载它，以保持 `cordis.patch.yml` 可热重载。这个 fallback 需要与 HMR 自身 constructor 相同的 Node internals 访问能力——`--expose-internals` 或可用的 `node-addon-require-builtin`——而 Electron 的 forked Node 完全不具备，因为其内嵌的 V8 build 缺少 `node-addon-require-builtin` 所需的 symbol。`profile-boot.ts` 的 `canMountConfigHmr` 现在用同一项能力检查来判断是否挂载该 fallback，在不可用时只写一条 stderr 提示并跳过，而不是让 Host 崩溃；这种情况下该次运行不再具备 `cordis.patch.yml` 的实时热重载。复现的崩溃退出码是 1：一次 readiness 之后的 fatal loader-entry failure，本就会经由 Node 的 top-level-await module-evaluation 路径以非零码退出，因此无需再为退出码单独修复。
+
 ## 环境配备
 
 v1 onboarding 不再经过本节：它改为检测并绑定机器上已有的 conda-family 环境（见下文「首启向导与凭据」）。本节所述的 declaration schema、事务性 prefix 安装、health checks、可恢复性，以及 `desktop:provision`/`desktop:cancel-provisioning` 这两个 IPC handlers，在本版本中仍然完整实现并保留测试，只是没有可从 UI 触达的入口；这条路径被保留为未来版本中面向没有可用 conda-family 环境的用户的安装 fallback。

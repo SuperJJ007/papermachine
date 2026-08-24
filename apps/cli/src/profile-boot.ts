@@ -199,6 +199,21 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
 }
 
 /**
+ * Whether config-only HMR (the launcher's own live-reload fallback for
+ * `cordis.patch.yml`, mounted below when the profile's composition leaves no
+ * `hmr` service) can run in this process. It needs the same Node internals
+ * access `Hmr`'s own constructor requires: `--expose-internals` or a working
+ * `node-addon-require-builtin`. Electron's forked Node exposes neither — its
+ * embedded V8 build lacks the symbol `node-addon-require-builtin` needs — so
+ * an Electron-hosted Host process never has this capability.
+ * @param internal - the booted Loader's own `internal` field.
+ * @returns whether mounting config-only HMR is safe to attempt.
+ */
+export function canMountConfigHmr(internal: unknown): boolean {
+  return internal !== undefined
+}
+
+/**
  * Boot one profile invocation end to end and leave process lifetime to the
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
@@ -273,25 +288,38 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       // disables the shared module-reload `hmr` row (its reload lifecycle is
       // untested), so when the composition leaves no HMR service, mount a
       // watch-only instance with no module roots — cordis.patch.yml edits stay
-      // live on every long-lived surface. A silent skip would break the
-      // documented hot-reload contract. HMR injects the timer service, which a
-      // bare custom profile may not mount either.
-      if (ctx.get('hmr') === undefined) {
-        if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+      // live on every long-lived surface. HMR injects the timer service, which
+      // a bare custom profile may not mount either. Mounting it needs the same
+      // Node internals access HMR's own constructor requires
+      // (canMountConfigHmr); a process that structurally lacks that access —
+      // every Electron-hosted Host, whose forked Node exposes neither
+      // `--expose-internals` nor a working `node-addon-require-builtin` — gets
+      // a loud stderr notice and no live cordis.patch.yml reload for this run
+      // instead of a fatal loader-entry failure over an optional dev
+      // convenience.
+      if (ctx.get('hmr') === undefined && !canMountConfigHmr(ctx.loader.internal)) {
+        process.stderr.write(
+          `${NAME}: config hot-reload unavailable in this process (no --expose-internals or working `
+          + 'node-addon-require-builtin); cordis.patch.yml edits require a restart\n',
+        )
+      } else {
+        if (ctx.get('hmr') === undefined) {
+          if (ctx.get('timer') === undefined) {
+            await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+          }
+          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
         }
-        await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        await watchUserPatches(ctx, {
+          binName: NAME,
+          filename: composed.profile.patchPath,
+          compose: composeLive,
+        })
+        await watchUserPatches(ctx, {
+          binName: NAME,
+          filename: homePatchPath(),
+          compose: composeLive,
+        })
       }
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: composed.profile.patchPath,
-        compose: composeLive,
-      })
-      await watchUserPatches(ctx, {
-        binName: NAME,
-        filename: homePatchPath(),
-        compose: composeLive,
-      })
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }

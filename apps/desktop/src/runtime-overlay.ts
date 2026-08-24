@@ -7,7 +7,17 @@ export interface RuntimeOverlayPrefixes {
 }
 
 /**
- * Render the immutable Science product and bound Runtime overlay.
+ * Render the immutable Science product and bound Runtime overlay. Also
+ * disables the shared module-reload `hmr` row: the web bundle already
+ * disables it (its reload lifecycle is untested there), and this overlay
+ * restates the disable so the row stays off for the desktop Host even if a
+ * later web-bundle change re-enables it. Module-reload HMR cannot run under
+ * Electron's forked Node in any case — it lacks the Node internals access
+ * (`--expose-internals` or a working `node-addon-require-builtin`) the
+ * plugin's constructor requires — so an enabled row would crash the Host at
+ * apply time; `apps/cli/src/profile-boot.ts`'s `canMountConfigHmr` separately
+ * covers the launcher's own config-only HMR fallback, which does not go
+ * through this row.
  * @param prefixes - the Python and/or R prefix to bind; at least one is required.
  * @throws when neither prefix is present.
  */
@@ -19,5 +29,5 @@ export function renderDesktopRuntimeOverlay(prefixes: RuntimeOverlayPrefixes): s
     ...(prefixes.pythonPrefix === undefined ? [] : [`        pythonPrefix: ${JSON.stringify(prefixes.pythonPrefix)}`]),
     ...(prefixes.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(prefixes.rPrefix)}`]),
   ].join('\n')
-  return `- id: science-runtime\n  config:\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n`
+  return `- id: science-runtime\n  config:\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: hmr\n  disabled: true\n`
 }

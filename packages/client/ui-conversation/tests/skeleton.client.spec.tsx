@@ -103,7 +103,13 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
-    /** Override what `conversation.page.utilities` renders (default: a non-empty stub). */
+    /**
+     * Override the content wrapped by `conversation.page.utilities`'s outlet
+     * anchor (default: a non-empty stub). `null` models a registered
+     * entry that renders nothing, matching the real outlet: the
+     * `[data-slot]` anchor div is always present, so the clearance check
+     * must read the anchor's OWN children, not merely the anchor's presence.
+     */
     pageUtilities?: ReactNode
   } = {},
 ) {
@@ -162,7 +168,16 @@ function mount(
   let headerActionOwner: { toggleDetailsView: (id: string) => void } | undefined
   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
     slotCalls.push(key)
-    if (key === 'conversation.page.utilities' && options.pageUtilities !== undefined) return options.pageUtilities
+    if (key === 'conversation.page.utilities') {
+      // Real outlets always emit the `[data-slot]` anchor div regardless of
+      // registrant content (ui-renderer's outlet contract); this stub
+      // reproduces that wrapper so the clearance check under test exercises
+      // the real DOM shape instead of a flattened stand-in.
+      const content = options.pageUtilities === undefined
+        ? <button type="button">stub</button>
+        : options.pageUtilities
+      return <div data-slot={key} style={{ display: 'contents' }}>{content}</div>
+    }
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
     }

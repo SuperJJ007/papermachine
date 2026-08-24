@@ -35,16 +35,19 @@ export function ConversationRoot({
   // `conversation.page.utilities` is an additive list slot that is often
   // empty (no registrant, or one that renders null for the current Session);
   // the header only needs its right-clearance while the slot actually
-  // occupies that corner. `renderSlot` on an empty list slot still returns a
-  // Fragment (never `null`), so presence is read off the rendered DOM rather
-  // than the slot's own return value — the same measured-DOM approach the
-  // composer seat's own ResizeObserver below already uses. The effect has no
-  // dependency array: it is a cheap DOM read that must follow every render
-  // (a Session change, or a registrant's own visibility flipping).
+  // occupies that corner. `renderSlot` always wraps the slot's dispatch
+  // outcome in one constant `[data-slot]` anchor div (the ui-renderer outlet
+  // contract), so the anchor itself is present even when every registrant
+  // renders nothing — presence must be read off the ANCHOR's own children,
+  // not off `pageUtilitiesRef` directly, or an always-present empty anchor
+  // reads as "occupied" forever. The measured-DOM approach mirrors the
+  // composer seat's own ResizeObserver below. The effect has no dependency
+  // array: it is a cheap DOM read that must follow every render (a Session
+  // change, or a registrant's own visibility flipping).
   const pageUtilitiesRef = useRef<HTMLDivElement>(null)
   const [hasPageUtilities, setHasPageUtilities] = useState(false)
   useEffect(() => {
-    setHasPageUtilities((pageUtilitiesRef.current?.childElementCount ?? 0) > 0)
+    setHasPageUtilities((pageUtilitiesRef.current?.firstElementChild?.childElementCount ?? 0) > 0)
   })
 
   // Publishes the seat's live height as --dsh-composer-height on the scroll

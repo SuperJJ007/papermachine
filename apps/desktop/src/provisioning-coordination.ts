@@ -36,7 +36,7 @@ export class ProvisioningCoordinator {
 
   constructor(private readonly effects: ProvisioningCoordinatorEffects) {}
 
-  /** Set once {@link beforeQuit} begins; checked by {@link openWorkspaceUnlessQuitting}. */
+  /** Set once {@link beforeQuit} begins; checked by every "unless quitting" guard and by {@link changeDiscipline}. */
   get quitting(): boolean {
     return this.#quitting
   }
@@ -67,7 +67,11 @@ export class ProvisioningCoordinator {
    * for it to actually unwind, stop the Host, then open onboarding. A second
    * call while the first is still unwinding is a no-op — onboarding opens
    * once, driven by the first call's own completion, rather than queuing a
-   * second `openOnboarding`.
+   * second `openOnboarding`. Quit can begin at any of the two awaits below
+   * (`awaitRun`'s wait is the same up-to-several-second unwind `beforeQuit`
+   * itself awaits); this method re-checks {@link quitting} after each one
+   * and bails silently rather than stopping an already-stopped Host or
+   * opening a window during or after teardown.
    */
   async changeDiscipline(): Promise<void> {
     if (this.#changingDiscipline) return
@@ -75,8 +79,9 @@ export class ProvisioningCoordinator {
     try {
       this.effects.abort()
       await this.awaitRun()
+      if (this.#quitting) return
       await this.effects.stopHost()
-      await this.effects.openOnboarding()
+      await this.openOnboardingUnlessQuitting(this.effects.openOnboarding)
     } finally {
       this.#changingDiscipline = false
     }
@@ -106,6 +111,16 @@ export class ProvisioningCoordinator {
   }
 
   /**
+   * Bail silently once quit has begun instead of running `open`; shared by
+   * every public "unless quitting" guard below so the one check lives in
+   * one place.
+   */
+  async #unlessQuitting(open: () => Promise<void>): Promise<void> {
+    if (this.#quitting) return
+    await open()
+  }
+
+  /**
    * Run `open` unless quit has already begun. Guards the one race
    * `beforeQuit` cannot itself prevent: a provisioning run reaching its own
    * `openWorkspace` call after `beforeQuit`'s `hostLifecycle.stop()` has
@@ -113,7 +128,18 @@ export class ProvisioningCoordinator {
    * @param open - opens the workspace window and launches its Host.
    */
   async openWorkspaceUnlessQuitting(open: () => Promise<void>): Promise<void> {
-    if (this.#quitting) return
-    await open()
+    await this.#unlessQuitting(open)
+  }
+
+  /**
+   * Run `open` unless quit has already begun. Guards the onboarding surface
+   * the same way {@link openWorkspaceUnlessQuitting} guards the workspace
+   * surface: `openInitialSurface` (reached from startup or `activate`) and
+   * `changeDiscipline`'s own onboarding open both race `beforeQuit`, and
+   * neither may create a window once teardown has started.
+   * @param open - opens the onboarding window.
+   */
+  async openOnboardingUnlessQuitting(open: () => Promise<void>): Promise<void> {
+    await this.#unlessQuitting(open)
   }
 }

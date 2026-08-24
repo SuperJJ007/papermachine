@@ -106,4 +106,31 @@ describe('HostLifecycle', () => {
     await expect(lifecycle.launch(fakeCommand(), () => {})).rejects.toThrow('desktop host: child has no process id')
     expect(spawnWatchdog).not.toHaveBeenCalled()
   })
+
+  it('memoizes concurrent stop() calls: a second concurrent call resolves only once the underlying Host process is actually confirmed gone', async () => {
+    // A real HostProcessSupervisor over a real child, rather than the
+    // fakeSupervisor stub above: the defect this test pins is in the timing
+    // between two concurrent stop() callers and the real supervisor.stop()
+    // completion, which a stub that resolves on a microtask cannot exercise
+    // (mirrors the real-process pattern in host-process.spec.ts).
+    const lifecycle = new HostLifecycle({ graceMs: 1000, spawnWatchdog: fakeWatchdog })
+    await lifecycle.launch({
+      executable: process.execPath,
+      // The 50ms delay before exit gives an unmemoized second stop() call —
+      // which would see #supervisor already cleared by the first and resolve
+      // on a bare microtask — a wide, non-flaky window to be observably
+      // wrong in.
+      args: ['--eval', "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 50)); console.log('dsh web: http://127.0.0.1:43123'); setInterval(() => {}, 1000)"],
+      cwd: process.cwd(),
+      env: { ...process.env },
+    }, () => {})
+    const pid = lifecycle.supervisor?.pid
+    if (pid === undefined) throw new Error('fixture host missing pid')
+
+    const first = lifecycle.stop()
+    const second = lifecycle.stop()
+    await second
+    expect(() => process.kill(pid, 0)).toThrow()
+    await first
+  })
 })

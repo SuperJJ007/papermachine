@@ -28,6 +28,7 @@ export interface HostLifecycleOptions {
 export class HostLifecycle {
   #supervisor: HostProcessSupervisor | undefined
   #watchdog: ChildProcess | undefined
+  #stopping: Promise<void> | undefined
   readonly #graceMs: number
   readonly #spawnWatchdog: WatchdogSpawn
   readonly #createSupervisor: SupervisorFactory
@@ -49,12 +50,30 @@ export class HostLifecycle {
     this.#watchdog = undefined
   }
 
-  /** Stop the currently active Host and its watchdog, if any. */
+  /**
+   * Stop the currently active Host and its watchdog, if any. A concurrent
+   * call while a stop is already in flight — `changeDiscipline`'s and
+   * `before-quit`'s effects can both call this within the same teardown —
+   * awaits that same in-flight stop rather than seeing `#supervisor` already
+   * cleared and resolving instantly: an instant resolution would let a
+   * caller like `app.quit()` fire while the Host's supervisor is still
+   * inside its grace-period escalation, orphaning the group nothing then
+   * collects.
+   */
   async stop(): Promise<void> {
-    this.#stopWatchdog()
-    const supervisor = this.#supervisor
-    this.#supervisor = undefined
-    await supervisor?.stop()
+    if (this.#stopping !== undefined) return this.#stopping
+    const stopping = (async () => {
+      this.#stopWatchdog()
+      const supervisor = this.#supervisor
+      this.#supervisor = undefined
+      await supervisor?.stop()
+    })()
+    this.#stopping = stopping
+    try {
+      await stopping
+    } finally {
+      if (this.#stopping === stopping) this.#stopping = undefined
+    }
   }
 
   /**

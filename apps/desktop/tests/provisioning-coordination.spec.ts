@@ -104,4 +104,81 @@ describe('ProvisioningCoordinator', () => {
 
     await expect(coordinator.awaitRun()).resolves.toBeUndefined()
   })
+
+  it('resets #changingDiscipline after completion, so a second change-discipline request works normally', async () => {
+    const effects = fakeEffects()
+    const coordinator = new ProvisioningCoordinator(effects)
+
+    await coordinator.changeDiscipline()
+    expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.openOnboarding).toHaveBeenCalledTimes(1)
+
+    await coordinator.changeDiscipline()
+    expect(effects.stopHost).toHaveBeenCalledTimes(2)
+    expect(effects.openOnboarding).toHaveBeenCalledTimes(2)
+  })
+
+  it('orders effects abort, then stopHost, then openOnboarding — abort observably precedes the run unwinding, and invocationCallOrder pins the rest', async () => {
+    const run = deferred()
+    const abort = vi.fn()
+    const stopHost = vi.fn(async () => {})
+    const openOnboarding = vi.fn(async () => {})
+    const coordinator = new ProvisioningCoordinator({ abort, stopHost, openOnboarding })
+    void coordinator.trackRun(run.promise)
+
+    const changeDiscipline = coordinator.changeDiscipline()
+    await Promise.resolve()
+    // Asserted while `run` is still pending: this is what proves abort ran
+    // before the run's own resolution, not merely before openOnboarding.
+    expect(abort).toHaveBeenCalledTimes(1)
+    expect(stopHost).not.toHaveBeenCalled()
+
+    run.resolve()
+    await changeDiscipline
+
+    const abortOrder = abort.mock.invocationCallOrder[0]!
+    const stopHostOrder = stopHost.mock.invocationCallOrder[0]!
+    const openOnboardingOrder = openOnboarding.mock.invocationCallOrder[0]!
+    expect(abortOrder).toBeLessThan(stopHostOrder)
+    expect(stopHostOrder).toBeLessThan(openOnboardingOrder)
+  })
+
+  it('onboarding open is blocked once quitting has begun', async () => {
+    const coordinator = new ProvisioningCoordinator(fakeEffects())
+    await coordinator.beforeQuit()
+
+    const open = vi.fn(async () => {})
+    await coordinator.openOnboardingUnlessQuitting(open)
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('runs the onboarding open when quit has not begun', async () => {
+    const coordinator = new ProvisioningCoordinator(fakeEffects())
+    const open = vi.fn(async () => {})
+    await coordinator.openOnboardingUnlessQuitting(open)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('a beforeQuit that begins during changeDiscipline\'s awaitRun wait cancels the rest of change-discipline: no openOnboarding, and stopHost runs exactly once', async () => {
+    const run = deferred()
+    const effects = fakeEffects()
+    const coordinator = new ProvisioningCoordinator(effects)
+    void coordinator.trackRun(run.promise)
+
+    const changeDiscipline = coordinator.changeDiscipline()
+    await Promise.resolve()
+    expect(effects.abort).toHaveBeenCalledTimes(1)
+
+    const beforeQuit = coordinator.beforeQuit()
+    expect(coordinator.quitting).toBe(true)
+
+    run.resolve()
+    await Promise.all([changeDiscipline, beforeQuit])
+
+    // beforeQuit's own effects.stopHost() call is the only one: once
+    // changeDiscipline resumes past awaitRun and observes #quitting, it
+    // bails before calling stopHost itself and before opening onboarding.
+    expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.openOnboarding).not.toHaveBeenCalled()
+  })
 })

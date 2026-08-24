@@ -261,6 +261,15 @@ async function openOnboarding(): Promise<void> {
   await created.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(await onboardingDocument())}`)
 }
 
+/**
+ * Open the workspace when the applied environment matches its declaration,
+ * otherwise onboarding. Both branches are guarded by
+ * {@link ProvisioningCoordinator.openWorkspaceUnlessQuitting} /
+ * {@link ProvisioningCoordinator.openOnboardingUnlessQuitting}: startup calls
+ * this directly, and `activate` calls it only after `coordinator.activate`
+ * has waited out any in-flight provisioning run — a wait long enough for
+ * quit to have begun in the meantime.
+ */
 async function openInitialSurface(): Promise<void> {
   const dshHome = app.getPath('userData')
   await mkdir(dshHome, { recursive: true, mode: 0o700 })
@@ -269,7 +278,7 @@ async function openInitialSurface(): Promise<void> {
     await openWorkspace()
     return
   }
-  await openOnboarding()
+  await coordinator.openOnboardingUnlessQuitting(() => openOnboarding())
 }
 
 async function restartHost(): Promise<void> {

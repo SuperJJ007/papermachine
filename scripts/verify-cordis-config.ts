@@ -346,12 +346,23 @@ function validateSourcePlaneResolution(): string[] {
   const sourceExtensions = new Set<string>([ts.Extension.Ts, ts.Extension.Tsx])
   const containingFile = resolve(root, 'scripts/verify-cordis-config.ts')
   const locationsBySpecifier = new Map<string, Set<string>>()
+  const require = (specifier: string, file: string): void => {
+    const locations = locationsBySpecifier.get(specifier) ?? new Set<string>()
+    locations.add(file)
+    locationsBySpecifier.set(specifier, locations)
+  }
   for (const reference of pluginReferences) {
     const packageName = packageNameFromSpecifier(reference.name)
-    if (packageName === undefined || !localPackages.has(packageName)) continue
-    const locations = locationsBySpecifier.get(reference.name) ?? new Set<string>()
-    locations.add(reference.file)
-    locationsBySpecifier.set(reference.name, locations)
+    if (packageName === undefined) continue
+    // The chooser's backends are mounted by runtime string, invisible to this
+    // yml-row scan (see CHOOSER_BACKEND_PACKAGES), so a row naming the chooser
+    // stands in for them here too.
+    if (packageName === CHOOSER_PACKAGE) {
+      for (const backend of CHOOSER_BACKEND_PACKAGES) {
+        if (localPackages.has(backend)) require(backend, reference.file)
+      }
+    }
+    if (localPackages.has(packageName)) require(reference.name, reference.file)
   }
   for (const [specifier, locations] of locationsBySpecifier) {
     const resolved = ts.resolveModuleName(specifier, containingFile, options, host).resolvedModule

@@ -30,9 +30,11 @@ The Host owns its own POSIX process group. Normal Electron shutdown sends `SIGTE
 
 ## Environment declarations
 
-`resources/environments/*.json` is a closed, data-only format: schema version, discipline id and revision, supported macOS architectures, channels and packages, honest capacity fields, an operation timeout, and exactly one Python plus one R health check. It admits no executable installation hook. A failed solve, cancellation, or health check leaves the previous `applied.json` pointer unchanged; retry reuses the package cache and partial prefix.
+`resources/environments/*.json` is a closed, data-only format: schema version, discipline id and revision, supported macOS architectures, channels and packages, honest capacity fields, an operation timeout, and exactly one Python plus one R health check. It admits no executable installation hook. Each revision installs directly at the prefix path it publishes under (`environments/<discipline>/<revision>`), so every health check runs against the exact path `applied.json` will point to — Conda/micromamba installs are not relocatable, so verifying one path and publishing another would prove nothing about what ships. A failed solve, cancellation, or health check leaves the previous `applied.json` pointer unchanged; retry reuses micromamba's package cache and clears the unready prefix directory before recreating it, since a prefix with no matching `applied.json` entry is never ready.
 
 The social-science declaration includes pandas, statsmodels, matplotlib, Altair, tidyverse, broom, and modelr. The larger biology declaration adds Scanpy, Biobase, DESeq2, and GenomicRanges and carries its own larger timeout and disk requirement.
+
+Choosing a discipline is not permanent. At startup, the applied revision is compared against the shipped declaration for the same discipline id; a mismatch routes back to onboarding to re-provision, and the revision-scoped prefix path means the currently applied environment stays untouched and usable until the new revision is itself applied. The application menu also offers a "Change Discipline…" action that reopens onboarding on request.
 
 ## DMG
 

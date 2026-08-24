@@ -30,15 +30,17 @@ desktop bundle 的 Runtime overlay（`apps/desktop/src/runtime-overlay.ts`）把
 
 每个学科包携带 versioned environment declaration，其中命名支持的平台、micromamba environment lock 或明确的 channels 与 packages、磁盘空间提示以及 health checks。声明不含 executable hooks。桌面 provisioning service 校验声明，使用应用内嵌的 micromamba executable 安装到应用持有的 environment directory，把结构化进度流送到 onboarding UI，并且只在两个 interpreter health checks 都通过后发布 applied Science environment revision。
 
-provisioning 在声明的 environment revision 上可恢复且具备事务性。失败或取消的 solve 继续以此前 applied revision 为权威；重试可以复用 micromamba package cache，但绝不把 partial prefix 标为 ready。网络 channels 与可选 mirrors 属于已校验配置，因为不同 deployment 的可达性不同。社会科学声明提供包含 pandas、statsmodels、matplotlib 与 Altair 的 Python，以及 base R 与首批 tidyverse 统计 packages。生物学声明提供后续 Bioconductor 验证集，并通过声明字段提高 provisioning timeout 与磁盘提示，而不是使用 plugin constants。
+provisioning 在声明的 environment revision 上可恢复且具备事务性。每个 revision 发布到自己的 prefix 路径（`environments/<discipline>/<revision>`），每个 health check 都针对这一确切路径运行——Conda/micromamba 安装会把 install-time 的 prefix 写死进 shebang 与 interpreter home 变量，因此在一个路径上通过的 check 无法证明另一个发布路径的任何事情。失败或取消的 solve 继续以此前 applied revision 为权威；重试会复用 micromamba package cache，并在重新创建前清空未 ready 的 prefix 目录，因为没有匹配 `applied.json` 条目的 prefix 目录永远不算 ready。网络 channels 与可选 mirrors 属于已校验配置，因为不同 deployment 的可达性不同。社会科学声明提供包含 pandas、statsmodels、matplotlib 与 Altair 的 Python，以及 base R 与首批 tidyverse 统计 packages。生物学声明提供后续 Bioconductor 验证集，并通过声明字段提高 provisioning timeout 与磁盘提示，而不是使用 plugin constants。
+
+学科一旦应用并非永久固定：启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对，不一致就路由回 onboarding 重新配备更新的 revision。因为每个 revision 都有各自的 prefix，重新配备在新 revision 被应用之前绝不会触碰当前 applied 的 prefix。应用菜单提供一个操作，可按需重新打开 onboarding，让用户配备另一个学科包或重新配备同一个。
 
 Runtime 继续持有 interpreter execution 与 revision rebinding。Provisioning 只创建并验证 prefixes，随后调用 Runtime 持有的 binding operation。[persistent-kernel 决定](../../implemented/architecture/2026-08-20-science-persistent-kernel.zh.md)继续负责在新的 applied environment revision 出现后结束 stale kernel。
 
 ## 首启向导与凭据
 
-全新的 Harness home 在 session workspace 前打开 onboarding。用户选择学科包、输入或跳过 DeepSeek API key、查看所需下载大小并开始 provisioning。key 通过现有 writable credentials provider 以 `DEEPSEEK_API_KEY` 写入；它绝不进入 desktop settings、logs、renderer persistence、command arguments 或 crash diagnostics。跳过 key 后应用仍可使用，并在 session 需要 inference 时展示现有 model-configuration 引导。
+全新的 Harness home 在 session workspace 前打开 onboarding。用户选择学科包、查看所需下载大小并开始 provisioning，期间可以 cancel 与 retry。桌面 onboarding 不采集 DeepSeek API key：在桌面 onboarding 内录入凭据仍是待办工作。workspace 已经加载的现有 Web Client model-configuration UI 仍是唯一的 writer，通过 credentials provider 以 `DEEPSEEK_API_KEY` 写入；它绝不进入 desktop settings、logs、renderer persistence、command arguments 或 crash diagnostics。跳过 key 配置后应用仍可使用，并在 session 需要 inference 时展示同一份引导。
 
-Onboarding state 只在 Harness home 下记录非机密进度与所选学科。完成条件是已验证的 environment revision，而不是仅仅关闭 window。失败步骤展示失败对象、安全修复方式、retry 以及经过 secrets redaction 的 diagnostics。重新安装或升级应用会复用 Harness home；如果声明 revision 与 health checks 仍匹配，就不会重复 provisioning。
+Readiness 完全由 `applied.json` 决定；桌面 onboarding 不保留单独的 state file。当某学科声明的 revision 与该学科 id 的 applied pointer 一致时（见上文「环境配备」），才算完成 onboarding，而不是仅仅关闭 window。失败步骤展示失败对象、安全修复方式、retry 以及经过 secrets redaction 的 diagnostics。重新安装或升级应用会复用 Harness home；如果声明 revision 与 health checks 仍匹配，就不会重复 provisioning。
 
 ## 分发
 
@@ -48,7 +50,7 @@ macOS 应用使用 plain Node 语义下的 built `lib/` 与 Web artifacts 构建
 
 ## 交付切片
 
-D1 至 D5 均已在 `apps/desktop` 中落地。D1 交付了 Electron carrier、独立 Host lifecycle、应用持有的 Harness home、development launch、crash restart 与 residual-process tests。D2 交付了内嵌 micromamba asset pipeline、declaration schema、社会科学 provisioning service、progress 与 retry UI，以及 Python/R health acceptance。D3 交付了 onboarding、credential-provider writes、学科选择，以及上文「产品组合」所述的 settings-default Science composition。D4 交付了 DMG packaging 与 update metadata。D5 交付了生物学声明及其更大的 timeout、capacity、cancellation 与 recovery behavior。
+D1 至 D5 均已在 `apps/desktop` 中落地。D1 交付了 Electron carrier、独立 Host lifecycle、应用持有的 Harness home、development launch、crash restart 与 residual-process tests。D2 交付了内嵌 micromamba asset pipeline、declaration schema、社会科学 provisioning service、progress 与 retry UI，以及 Python/R health acceptance。D3 交付了 onboarding（学科选择与 provisioning）、上文「环境配备」所述的启动 revision 比对与用于重新配备或更换学科的应用菜单操作，以及上文「产品组合」所述的 settings-default Science composition。桌面 onboarding 内的 credential-provider key 录入仍是待办工作，期间由现有 Web Client model-configuration UI 继续担任唯一的 `DEEPSEEK_API_KEY` writer。D4 交付了 DMG packaging 与 update metadata。D5 交付了生物学声明及其更大的 timeout、capacity、cancellation 与 recovery behavior。
 
 每个 slice 都从限定该 slice 范围的 implementation brief 开始，只有通过 package tests、在 model 或 product output 改变时提供 assembled keyless snapshot，并同步 docs 与 Agent Note 之后才算落地。还有三项属于 outstanding attended evidence——需要有人在真实硬件上运行并记录的验证，而非尚未实现的 slice：一次针对真实网络 package 源的 micromamba provisioning 实跑、一次在全新 macOS 账户上的真实 DMG 安装与首启 onboarding，以及一次验证 preload 能在 built、已签名应用的 `sandbox: true` 下加载的 packaged-preload smoke test。Downloads 与 real-provider checks 始终作为显式 evidence rows，绝不从 source tests 推断。
 

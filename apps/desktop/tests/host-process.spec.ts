@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { HostProcessSupervisor, parseHostReadyLine } from '../src/host-process.ts'
@@ -45,6 +48,34 @@ describe('desktop Host supervision', () => {
     expect(pid).toBeTypeOf('number')
     await host.stop()
     expect(() => process.kill(pid as number, 0)).toThrow()
+  })
+
+  it.runIf(process.platform !== 'win32')('escalates to the process group when a grandchild ignores SIGTERM after the Host itself exits', async () => {
+    // A real grandchild that ignores SIGTERM, in the same POSIX process
+    // group as the Host: the direct child (the "Host") exits cleanly on
+    // SIGTERM while the grandchild survives, so only a group-level SIGKILL
+    // after the grace period collects it.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-stop-'))
+    const pidFile = join(dir, 'grandchild.pid')
+    const source = `
+      const { spawn } = require('node:child_process')
+      const fs = require('node:fs')
+      const grandchild = spawn(process.execPath, ['--eval', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' })
+      fs.writeFileSync(${JSON.stringify(pidFile)}, String(grandchild.pid))
+      console.log('dsh web: http://127.0.0.1:43123')
+      process.on('SIGTERM', () => process.exit(0))
+      setInterval(() => {}, 1000)
+    `
+    const host = new HostProcessSupervisor({
+      executable: process.execPath,
+      args: ['--eval', source],
+      cwd: process.cwd(),
+      env: { ...process.env },
+    }, { graceMs: 300 })
+    await host.start()
+    const grandchildPid = Number(await readFile(pidFile, 'utf8'))
+    await host.stop()
+    await vi.waitFor(() => { expect(() => process.kill(grandchildPid, 0)).toThrow() })
   })
 
   it.runIf(process.platform !== 'win32')('watchdog collects the Host group after its parent disappears', async () => {

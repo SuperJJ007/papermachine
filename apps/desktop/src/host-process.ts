@@ -120,23 +120,33 @@ export class HostProcessSupervisor {
     })
   }
 
-  /** Stop the Host process group, escalating to SIGKILL after {@link HostProcessSupervisorOptions.graceMs}. */
+  /**
+   * Stop the Host process group, escalating to SIGKILL after
+   * {@link HostProcessSupervisorOptions.graceMs} if anything in the group
+   * survives. The direct child exiting cleanly is not sufficient: a Host
+   * that disposes itself on SIGTERM while a kernel grandchild ignores it
+   * would otherwise leave that grandchild alive forever, so the grace
+   * period polls the whole process group rather than only the direct
+   * child's own exit.
+   */
   async stop(): Promise<void> {
     const child = this.child
     if (child?.pid === undefined) return
     this.stopping = true
     const exit = new Promise<void>(resolve => child.once('exit', () => { resolve() }))
     signalProcessTree(child, 'SIGTERM')
-    const exited = await Promise.race([
-      exit.then(() => true as const),
-      new Promise<false>(resolve => setTimeout(() => { resolve(false) }, this.options.graceMs)),
-    ])
-    if (!exited && child.exitCode === null && child.signalCode === null) {
-      signalProcessTree(child, 'SIGKILL')
-      await exit
+    const deadline = Date.now() + this.options.graceMs
+    while (isProcessTreeAlive(child) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
     }
+    if (isProcessTreeAlive(child)) signalProcessTree(child, 'SIGKILL')
+    await exit
   }
 }
+
+// Interval this module polls the Host's process group for liveness during
+// HostProcessSupervisor.stop's grace period.
+const STOP_POLL_MS = 100
 
 /** Signal the process group on POSIX and the direct child on Windows. */
 function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -146,5 +156,17 @@ function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
     else process.kill(-child.pid, signal)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+/** Whether the direct child or, on POSIX, any other member of its process group is still alive. */
+function isProcessTreeAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined) return false
+  try {
+    if (process.platform === 'win32') process.kill(child.pid, 0)
+    else process.kill(-child.pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
   }
 }

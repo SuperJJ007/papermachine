@@ -8,7 +8,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
-import { DesktopEnvironmentProvisioner } from './provisioning.ts'
+import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
@@ -20,13 +20,21 @@ let window: BrowserWindow | undefined
 let quitting = false
 let activeOrigin: string | undefined
 let provisioning: AbortController | undefined
+// The in-flight `desktop:provision` IPC handler body, if any: `activate` and
+// `before-quit` await this rather than only the AbortController, so a
+// reopened onboarding window or app quit never races the still-unwinding
+// abort of a just-cancelled run.
+let provisioningRun: Promise<void> | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
+  // detached so Electron's own process-group termination (e.g. a forced
+  // quit that signals the whole group) cannot take the watchdog down with
+  // it before it has collected the Host.
   spawnWatchdog: hostPid => spawn(
     process.execPath,
     [join(import.meta.dirname, 'watchdog.js'), String(process.pid), String(hostPid)],
-    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'ignore' },
+    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'ignore', detached: true },
   ),
 })
 
@@ -77,6 +85,15 @@ function hostCommand(dshHome: string, overlay: string): HostCommand {
       '--no-open',
     ],
     cwd: app.isPackaged ? packagedHost : REPOSITORY_ROOT,
+    // Unlike the provisioning children (see buildProvisioningEnv in
+    // provisioning.ts), the Host is not untrusted output: the local
+    // credentials provider reads DEEPSEEK_API_KEY (and related variables)
+    // from its own inherited process environment as its highest-priority
+    // source, and the Host's own kernel and tool subprocesses need locale,
+    // HOME, and other ambient variables an allowlist would have to
+    // rediscover one at a time. Scrubbing this environment would silently
+    // break credential passthrough and unrelated subprocess needs for a
+    // trusted process this application itself owns, so it is left ambient.
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
@@ -197,6 +214,25 @@ async function openWorkspace(): Promise<void> {
   await launchHost()
 }
 
+/**
+ * Open the discipline-selection window, replacing whatever window is active.
+ * Closing this window (Cmd-Q, the red button, or a completed run destroying
+ * it programmatically) aborts any in-flight provisioning so Cmd-Q mid-solve
+ * never orphans the micromamba download group; aborting an already-settled
+ * or absent run is a no-op.
+ */
+async function openOnboarding(): Promise<void> {
+  const previous = window
+  const created = createOnboardingWindow()
+  window = created
+  created.once('closed', () => {
+    if (window === created) window = undefined
+    provisioning?.abort()
+  })
+  previous?.destroy()
+  await created.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(await onboardingDocument())}`)
+}
+
 async function openInitialSurface(): Promise<void> {
   const dshHome = app.getPath('userData')
   await mkdir(dshHome, { recursive: true, mode: 0o700 })
@@ -204,10 +240,7 @@ async function openInitialSurface(): Promise<void> {
     await openWorkspace()
     return
   }
-  window = createOnboardingWindow()
-  const onboarding = window
-  window.once('closed', () => { if (window === onboarding) window = undefined })
-  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(await onboardingDocument())}`)
+  await openOnboarding()
 }
 
 async function restartHost(): Promise<void> {
@@ -218,6 +251,24 @@ async function restartHost(): Promise<void> {
     await launchHost()
   } catch (error) {
     await window?.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+  }
+}
+
+/**
+ * Send one progress update to the active window's renderer. The window may
+ * already be destroyed by the time a queued micromamba stdout line reaches
+ * this callback (the setup window can close mid-run), and `send` throws on a
+ * destroyed `webContents`; an uncaught throw here would escape micromamba's
+ * stdout `data` listener as an unhandled main-process exception, so both the
+ * destroyed check and the send itself are guarded.
+ * @param update - the progress update to relay.
+ */
+function reportProvisioningProgress(update: ProvisioningProgress): void {
+  if (window === undefined || window.isDestroyed()) return
+  try {
+    window.webContents.send('desktop:provisioning-progress', update)
+  } catch (error) {
+    console.error('desktop provisioning: failed to report progress', error)
   }
 }
 
@@ -238,29 +289,44 @@ ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
   if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
   const control = new AbortController()
   provisioning = control
-  try {
-    await provisioner(app.getPath('userData')).provision(declaration, control.signal, (update) => {
-      window?.webContents.send('desktop:provisioning-progress', update)
-    })
+  const run = (async () => {
+    await provisioner(app.getPath('userData')).provision(declaration, control.signal, reportProvisioningProgress)
     await openWorkspace()
-  } finally {
+  })()
+  provisioningRun = run.finally(() => {
     provisioning = undefined
-  }
+    provisioningRun = undefined
+  })
+  await provisioningRun
 })
 await openInitialSurface().catch(async (error: unknown) => {
   window ??= createWindow()
   await window.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
 })
 
-app.on('activate', () => {
+app.on('activate', () => { void handleActivate() })
+
+/**
+ * Reopen the initial surface, but only once any provisioning run this
+ * session just aborted (see openOnboarding's abort-on-close) has actually
+ * unwound. Without this wait, a fast enough activate on windowless darwin
+ * could reopen onboarding while `provisioning` is still set, so a fresh
+ * provisioning attempt would immediately hit "another operation is
+ * running" — blocking reopen until the abort completes is simpler than
+ * teaching the reopened window to surface someone else's in-flight run.
+ */
+async function handleActivate(): Promise<void> {
+  if (provisioningRun !== undefined) await provisioningRun.catch(() => {})
   if (BrowserWindow.getAllWindows().length !== 0) return
-  void openInitialSurface()
-})
+  await openInitialSurface()
+}
+
 app.on('before-quit', (event) => {
   if (quitting) return
   event.preventDefault()
   quitting = true
-  void hostLifecycle.stop().finally(() => { app.quit() })
+  provisioning?.abort()
+  void Promise.allSettled([hostLifecycle.stop(), provisioningRun ?? Promise.resolve()]).finally(() => { app.quit() })
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { InterpreterPresence } from '../src/detection.ts'
 import {
   parseEnvironmentBinding,
+  resolveBindRequest,
   resolveEnvironmentBindingStatus,
   writeEnvironmentBinding,
+  type EnvironmentBinding,
 } from '../src/environment-binding.ts'
 
 async function makeDshHome(): Promise<string> {
@@ -46,6 +49,108 @@ describe('parseEnvironmentBinding', () => {
 
   it('rejects a non-record value', () => {
     expect(() => parseEnvironmentBinding('nope')).toThrow(/must be a record/)
+  })
+})
+
+describe('resolveBindRequest', () => {
+  type Presence = Record<string, InterpreterPresence | undefined>
+  function fakeQualify(presence: Presence): (prefix: string) => Promise<InterpreterPresence | undefined> {
+    return async prefix => presence[prefix]
+  }
+
+  /**
+   * Asserts `binding` matches `expected` field-by-field, with `boundAt`
+   * checked only for being a number (its exact value is a timestamp
+   * `resolveBindRequest` assigns internally).
+   */
+  function expectBinding(binding: EnvironmentBinding, expected: { readonly pythonPrefix?: string; readonly rPrefix?: string }): void {
+    expect(binding.pythonPrefix).toBe(expected.pythonPrefix)
+    expect(binding.rPrefix).toBe(expected.rPrefix)
+    expect(typeof binding.boundAt).toBe('number')
+  }
+
+  it('resolves both prefixes when both still qualify for their interpreter', async () => {
+    const qualify = fakeQualify({
+      '/env/py': { python: true, r: false },
+      '/env/r': { python: false, r: true },
+    })
+
+    const binding = await resolveBindRequest({ pythonPrefix: '/env/py', rPrefix: '/env/r' }, qualify)
+
+    expectBinding(binding, { pythonPrefix: '/env/py', rPrefix: '/env/r' })
+  })
+
+  it('resolves a python-only request without re-checking an r prefix', async () => {
+    const qualify = vi.fn(fakeQualify({ '/env/py': { python: true, r: false } }))
+
+    const binding = await resolveBindRequest({ pythonPrefix: '/env/py' }, qualify)
+
+    expectBinding(binding, { pythonPrefix: '/env/py' })
+    expect(qualify).toHaveBeenCalledExactlyOnceWith('/env/py')
+  })
+
+  it('resolves an r-only request without re-checking a python prefix', async () => {
+    const qualify = vi.fn(fakeQualify({ '/env/r': { python: false, r: true } }))
+
+    const binding = await resolveBindRequest({ rPrefix: '/env/r' }, qualify)
+
+    expectBinding(binding, { rPrefix: '/env/r' })
+    expect(qualify).toHaveBeenCalledExactlyOnceWith('/env/r')
+  })
+
+  it('resolves the same prefix chosen in both groups, checking it once per interpreter', async () => {
+    const qualify = fakeQualify({ '/env/both': { python: true, r: true } })
+
+    const binding = await resolveBindRequest({ pythonPrefix: '/env/both', rPrefix: '/env/both' }, qualify)
+
+    expectBinding(binding, { pythonPrefix: '/env/both', rPrefix: '/env/both' })
+  })
+
+  it('rejects a request naming neither prefix', async () => {
+    await expect(resolveBindRequest({}, fakeQualify({})))
+      .rejects.toThrow(/requires pythonPrefix or rPrefix|must include pythonPrefix or rPrefix/)
+  })
+
+  it('rejects when the python prefix no longer has a python interpreter', async () => {
+    const qualify = fakeQualify({ '/env/py': { python: false, r: false } })
+
+    await expect(resolveBindRequest({ pythonPrefix: '/env/py' }, qualify)).rejects.toThrow(/no longer has a Python interpreter/)
+  })
+
+  it('rejects when the r prefix no longer has an r interpreter', async () => {
+    const qualify = fakeQualify({ '/env/r': { python: false, r: false } })
+
+    await expect(resolveBindRequest({ rPrefix: '/env/r' }, qualify)).rejects.toThrow(/no longer has an R interpreter/)
+  })
+
+  it('rejects when a chosen prefix no longer qualifies as an environment at all', async () => {
+    const qualify = fakeQualify({})
+
+    await expect(resolveBindRequest({ pythonPrefix: '/env/gone' }, qualify)).rejects.toThrow(/no longer has a Python interpreter/)
+  })
+
+  it('rejects a both-groups request when only the r prefix fails its TOCTOU re-check, without resolving a partial binding', async () => {
+    const qualify = fakeQualify({ '/env/py': { python: true, r: false } })
+
+    await expect(resolveBindRequest({ pythonPrefix: '/env/py', rPrefix: '/env/r-gone' }, qualify)).rejects.toThrow(/no longer has an R interpreter/)
+  })
+
+  it('rejects a both-groups request when only the python prefix fails its TOCTOU re-check, without resolving a partial binding', async () => {
+    const qualify = fakeQualify({ '/env/r': { python: false, r: true } })
+
+    await expect(resolveBindRequest({ pythonPrefix: '/env/py-gone', rPrefix: '/env/r' }, qualify)).rejects.toThrow(/no longer has a Python interpreter/)
+  })
+
+  it('leaves no binding file on disk when a TOCTOU re-check fails, matching desktop:bind\'s sequential resolve-then-write', async () => {
+    const dshHome = await makeDshHome()
+    const qualify = fakeQualify({ '/env/py': { python: true, r: false } })
+
+    await expect((async () => {
+      const binding = await resolveBindRequest({ pythonPrefix: '/env/py', rPrefix: '/env/r-gone' }, qualify)
+      await writeEnvironmentBinding(dshHome, binding)
+    })()).rejects.toThrow(/no longer has an R interpreter/)
+
+    expect(await readdir(dshHome)).toEqual([])
   })
 })
 

@@ -1,4 +1,4 @@
-/** Renderer controller for detecting and binding an existing conda-family environment. */
+/** Renderer controller for detecting and independently binding a Python and an R conda-family environment. */
 
 import type { DesktopOnboardingBridge } from './preload.ts'
 import type { CondaCandidate } from './detection.ts'
@@ -9,65 +9,139 @@ declare global {
   }
 }
 
-const choicesElement = document.querySelector('#choices')
+const pythonSectionElement = document.querySelector('#python-section')
+const pythonChoicesElement = document.querySelector('#python-choices')
+const rSectionElement = document.querySelector('#r-section')
+const rChoicesElement = document.querySelector('#r-choices')
 const guidanceElement = document.querySelector('#guidance')
 const bindElement = document.querySelector('#bind')
 const redetectElement = document.querySelector('#redetect')
 const statusElement = document.querySelector('#status')
-if (!(choicesElement instanceof HTMLDivElement)
+if (!(pythonSectionElement instanceof HTMLElement)
+  || !(pythonChoicesElement instanceof HTMLDivElement)
+  || !(rSectionElement instanceof HTMLElement)
+  || !(rChoicesElement instanceof HTMLDivElement)
   || !(guidanceElement instanceof HTMLDivElement)
   || !(bindElement instanceof HTMLButtonElement)
   || !(redetectElement instanceof HTMLButtonElement)
   || !(statusElement instanceof HTMLParagraphElement)) {
   throw new Error('desktop onboarding: required controls are missing')
 }
-const choices = choicesElement
+const pythonSection = pythonSectionElement
+const pythonChoices = pythonChoicesElement
+const rSection = rSectionElement
+const rChoices = rChoicesElement
 const guidance = guidanceElement
 const bind = bindElement
 const redetect = redetectElement
 const statusNode = statusElement
-let selected: string | undefined
 
-function describe(candidate: CondaCandidate): string {
-  const parts = [
-    ...(candidate.pythonVersion === undefined ? [] : [candidate.pythonVersion]),
-    ...(candidate.rVersion === undefined ? [] : [candidate.rVersion]),
-  ]
-  return parts.length > 0 ? parts.join(' · ') : '解释器版本未知 · interpreter version unavailable'
+// The prefix chosen in each group, or `undefined` when that group's "不绑定
+// / None" option is selected (or nothing has rendered yet). `desktop:bind`
+// takes both independently — a Python-only, R-only, or both-interpreters
+// binding are all valid, matching environment-binding.ts's own
+// pythonPrefix/rPrefix independence.
+let pythonSelected: string | undefined
+let rSelected: string | undefined
+
+function updateBindEnabled(): void {
+  bind.disabled = pythonSelected === undefined && rSelected === undefined
 }
 
-function renderCandidates(candidates: readonly CondaCandidate[]): void {
-  choices.replaceChildren()
-  selected = undefined
-  bind.disabled = true
-  guidance.hidden = candidates.length > 0
-  choices.hidden = candidates.length === 0
-  const preselect = candidates.find(candidate => candidate.pythonVersion !== undefined && candidate.rVersion !== undefined)
+/**
+ * Render one interpreter group's single-select radio choices: an explicit
+ * "不绑定 / None" option first, then every candidate exposing that
+ * interpreter (a candidate with both interpreters appears in both groups).
+ * The group section itself is shown whenever detection found any
+ * candidate at all, even one with zero matches for this interpreter, so a
+ * Python-only machine still shows an R group offering only None. Preselects
+ * the first matching candidate in detection's root-scan order, or None if
+ * there is no match.
+ * @param section - the group's `<section>`, hidden when detection found nothing at all.
+ * @param container - the group's choice-list container.
+ * @param name - the radio input group name (must not collide with the other group's).
+ * @param candidates - every candidate detection found, filtered here to this interpreter.
+ * @param interpreter - which interpreter this group selects for.
+ * @param onSelect - called with the chosen prefix (`undefined` for None) on
+ *   every selection change, including once during render for the preselection.
+ */
+function renderGroup(
+  section: HTMLElement,
+  container: HTMLDivElement,
+  name: string,
+  candidates: readonly CondaCandidate[],
+  interpreter: 'python' | 'r',
+  onSelect: (prefix: string | undefined) => void,
+): void {
+  container.replaceChildren()
+  section.hidden = candidates.length === 0
+
+  const noneInput = document.createElement('input')
+  noneInput.type = 'radio'
+  noneInput.name = name
+  noneInput.value = ''
+  noneInput.addEventListener('change', () => { onSelect(undefined) })
+  const noneStrong = document.createElement('strong')
+  noneStrong.textContent = '不绑定 · None'
+  const noneCopy = document.createElement('span')
+  noneCopy.append(noneStrong)
+  const noneLabel = document.createElement('label')
+  noneLabel.className = 'choice'
+  noneLabel.append(noneInput, noneCopy)
+  container.append(noneLabel)
+
+  let preselected = false
   for (const candidate of candidates) {
+    const version = interpreter === 'python' ? candidate.pythonVersion : candidate.rVersion
+    if (version === undefined) continue
     const label = document.createElement('label')
     label.className = 'choice'
     const input = document.createElement('input')
     input.type = 'radio'
-    input.name = 'environment'
+    input.name = name
     input.value = candidate.prefix
-    input.addEventListener('change', () => {
-      selected = candidate.prefix
-      bind.disabled = false
-    })
+    input.addEventListener('change', () => { onSelect(candidate.prefix) })
     const copy = document.createElement('span')
-    const name = document.createElement('strong')
-    name.textContent = candidate.prefix
-    const detail = document.createElement('small')
-    detail.textContent = describe(candidate)
-    copy.append(name, detail)
+    const strong = document.createElement('strong')
+    strong.textContent = candidate.prefix
+    const small = document.createElement('small')
+    small.textContent = version
+    copy.append(strong, small)
     label.append(input, copy)
-    choices.append(label)
-    if (preselect === candidate) {
+    container.append(label)
+    if (!preselected) {
       input.checked = true
-      selected = candidate.prefix
-      bind.disabled = false
+      preselected = true
+      onSelect(candidate.prefix)
     }
   }
+  if (!preselected) {
+    noneInput.checked = true
+    onSelect(undefined)
+  }
+}
+
+/** Reset both groups and Bind to their pre-detection state: hidden, unselected, disabled. */
+function resetSelectionState(): void {
+  pythonSelected = undefined
+  rSelected = undefined
+  updateBindEnabled()
+  pythonSection.hidden = true
+  rSection.hidden = true
+  pythonChoices.replaceChildren()
+  rChoices.replaceChildren()
+}
+
+function renderCandidates(candidates: readonly CondaCandidate[]): void {
+  guidance.hidden = candidates.length > 0
+  renderGroup(pythonSection, pythonChoices, 'python-environment', candidates, 'python', (prefix) => {
+    pythonSelected = prefix
+    updateBindEnabled()
+  })
+  renderGroup(rSection, rChoices, 'r-environment', candidates, 'r', (prefix) => {
+    rSelected = prefix
+    updateBindEnabled()
+  })
 }
 
 async function runDetection(): Promise<void> {
@@ -78,7 +152,7 @@ async function runDetection(): Promise<void> {
     statusNode.textContent = entryStatus ?? ''
   } catch (error) {
     statusNode.textContent = error instanceof Error ? error.message : String(error)
-    choices.hidden = true
+    resetSelectionState()
     guidance.hidden = false
   } finally {
     redetect.disabled = false
@@ -86,12 +160,15 @@ async function runDetection(): Promise<void> {
 }
 
 async function bindSelected(): Promise<void> {
-  if (selected === undefined) return
+  if (pythonSelected === undefined && rSelected === undefined) return
   bind.disabled = true
   redetect.disabled = true
   statusNode.textContent = '绑定中… Binding…'
   try {
-    await window.desktopOnboarding.bind(selected)
+    await window.desktopOnboarding.bind({
+      ...(pythonSelected === undefined ? {} : { pythonPrefix: pythonSelected }),
+      ...(rSelected === undefined ? {} : { rPrefix: rSelected }),
+    })
   } catch (error) {
     statusNode.textContent = error instanceof Error ? error.message : String(error)
     bind.disabled = false

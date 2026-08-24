@@ -12,7 +12,7 @@ import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './prov
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
-import { parseEnvironmentBinding, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
+import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -404,25 +404,27 @@ async function boot(): Promise<void> {
     return value
   })
   ipcMain.handle('desktop:detect', async () => detectCondaEnvironments())
-  ipcMain.handle('desktop:bind', async (_event, prefix: unknown) => {
-    if (typeof prefix !== 'string') throw new Error('desktop bind: prefix must be a string')
-    // TOCTOU re-check: the candidate list the renderer is acting on was
-    // built from an earlier `desktop:detect` call, and the filesystem can
-    // have changed underneath it (the environment removed, `conda-meta`
-    // corrupted) by the time the user clicks bind.
-    const presence = await qualifyingInterpreters(prefix)
-    if (presence === undefined) throw new Error(`desktop bind: ${prefix} no longer qualifies as a Science environment`)
-    const dshHome = app.getPath('userData')
-    await mkdir(dshHome, { recursive: true, mode: 0o700 })
-    // Routed through the same parser resolveEnvironmentBindingStatus reads
-    // with, so this IPC boundary enforces exactly the invariants
+  ipcMain.handle('desktop:bind', async (_event, request: unknown) => {
+    if (request === null || typeof request !== 'object' || Array.isArray(request)) {
+      throw new Error('desktop bind: request must be an object')
+    }
+    const { pythonPrefix, rPrefix } = request as Record<string, unknown>
+    if (pythonPrefix !== undefined && typeof pythonPrefix !== 'string') throw new Error('desktop bind: pythonPrefix must be a string')
+    if (rPrefix !== undefined && typeof rPrefix !== 'string') throw new Error('desktop bind: rPrefix must be a string')
+    // resolveBindRequest re-validates each chosen prefix for its own
+    // interpreter (TOCTOU: the candidate lists the renderer is acting on
+    // were built from an earlier `desktop:detect` call, and the filesystem
+    // can have changed underneath them by the time the user clicks bind)
+    // and is routed through the same parser resolveEnvironmentBindingStatus
+    // reads with, so this IPC boundary enforces exactly the invariants
     // (isAbsolute among them) the reader relies on rather than a second,
     // potentially divergent copy of them.
-    const binding: EnvironmentBinding = parseEnvironmentBinding({
-      ...(presence.python ? { pythonPrefix: prefix } : {}),
-      ...(presence.r ? { rPrefix: prefix } : {}),
-      boundAt: Date.now(),
-    })
+    const binding: EnvironmentBinding = await resolveBindRequest({
+      ...(pythonPrefix === undefined ? {} : { pythonPrefix }),
+      ...(rPrefix === undefined ? {} : { rPrefix }),
+    }, qualifyingInterpreters)
+    const dshHome = app.getPath('userData')
+    await mkdir(dshHome, { recursive: true, mode: 0o700 })
     await writeEnvironmentBinding(dshHome, binding)
     await openWorkspace()
   })

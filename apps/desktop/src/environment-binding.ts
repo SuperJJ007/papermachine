@@ -3,12 +3,58 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
+import type { InterpreterPresence } from './detection.ts'
 
 /** The persisted binding: at least one prefix, both if the same environment carries Python and R. */
 export interface EnvironmentBinding {
   readonly pythonPrefix?: string
   readonly rPrefix?: string
   readonly boundAt: number
+}
+
+/**
+ * A bind request from onboarding's independent Python and R selection
+ * groups: each names a prefix chosen from that group's candidates, or is
+ * absent when the group's "不绑定 / None" option was chosen.
+ */
+export interface BindRequest {
+  readonly pythonPrefix?: string
+  readonly rPrefix?: string
+}
+
+/**
+ * Resolve a {@link BindRequest} into the {@link EnvironmentBinding} to
+ * persist, re-validating each chosen prefix against the specific
+ * interpreter its group selected it for. The candidate list a request is
+ * built from comes from an earlier detection call, and the filesystem can
+ * change underneath it before the user clicks Bind (the environment
+ * removed, `conda-meta` corrupted, an interpreter binary deleted), so this
+ * is a TOCTOU re-check, not redundant validation. A prefix chosen in both
+ * groups is re-checked once per group since each check targets a different
+ * interpreter. Rejects the whole request — never binds a partial result —
+ * when either chosen prefix no longer qualifies for the interpreter it was
+ * chosen for.
+ * @param request - the prefixes selected in the Python and R groups.
+ * @param qualify - re-checks a prefix's current interpreter presence (production: {@link qualifyingInterpreters} from `./detection.ts`).
+ * @returns the binding to persist.
+ * @throws when neither prefix is given, or a given prefix no longer has the interpreter its group selected it for.
+ */
+export async function resolveBindRequest(
+  request: BindRequest,
+  qualify: (prefix: string) => Promise<InterpreterPresence | undefined>,
+): Promise<EnvironmentBinding> {
+  if (request.pythonPrefix === undefined && request.rPrefix === undefined) {
+    throw new Error('desktop bind: request must include pythonPrefix or rPrefix')
+  }
+  if (request.pythonPrefix !== undefined) {
+    const presence = await qualify(request.pythonPrefix)
+    if (presence?.python !== true) throw new Error(`desktop bind: ${request.pythonPrefix} no longer has a Python interpreter`)
+  }
+  if (request.rPrefix !== undefined) {
+    const presence = await qualify(request.rPrefix)
+    if (presence?.r !== true) throw new Error(`desktop bind: ${request.rPrefix} no longer has an R interpreter`)
+  }
+  return parseEnvironmentBinding({ ...request, boundAt: Date.now() })
 }
 
 const FIELDS = ['pythonPrefix', 'rPrefix', 'boundAt'] as const

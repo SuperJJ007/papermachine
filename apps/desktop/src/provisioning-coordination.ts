@@ -1,0 +1,119 @@
+/**
+ * Coordinates decisions that race one in-flight `desktop:provision` run:
+ * a "Change Discipline…" request, `activate`, and app quit all need to wait
+ * for the same run to unwind rather than acting while it is still resolving.
+ */
+
+/** Effects the coordinator drives; injected so its decisions are testable without Electron. */
+export interface ProvisioningCoordinatorEffects {
+  /** Abort the in-flight provisioning run, if any; a no-op when none is running. */
+  readonly abort: () => void
+  /**
+   * Stop the active Host. Called before onboarding opens for a "Change
+   * Discipline…" request: re-provisioning the exact revision `applied.json`
+   * already names deletes and recreates its prefix, and a live Host (with
+   * its persistent kernel) can still be running against that same prefix.
+   * Stopping the Host here is safe unconditionally — the run this precedes
+   * either publishes a new revision and relaunches the Host through
+   * `openWorkspace`, or fails and leaves onboarding showing the error, with
+   * no Host expected to be running either way.
+   */
+  readonly stopHost: () => Promise<void>
+  /** Open the onboarding window. */
+  readonly openOnboarding: () => Promise<void>
+}
+
+/**
+ * Serializes the decisions around one in-flight provisioning run. A run is
+ * tracked by reference: only the caller (the `desktop:provision` IPC
+ * handler) knows when one starts, but every other caller here only needs to
+ * know when it has unwound.
+ */
+export class ProvisioningCoordinator {
+  #run: Promise<void> | undefined
+  #changingDiscipline = false
+  #quitting = false
+
+  constructor(private readonly effects: ProvisioningCoordinatorEffects) {}
+
+  /** Set once {@link beforeQuit} begins; checked by {@link openWorkspaceUnlessQuitting}. */
+  get quitting(): boolean {
+    return this.#quitting
+  }
+
+  /**
+   * Track one provisioning run's lifetime for {@link awaitRun}. Returns
+   * `run` unchanged so the caller still observes its real resolution or
+   * rejection; only the internally held reference is a never-rejecting
+   * shadow, so a failed run does not turn every waiter's `awaitRun` into an
+   * unhandled rejection.
+   * @param run - the promise driving one `desktop:provision` call.
+   * @returns `run`, unchanged.
+   */
+  trackRun(run: Promise<void>): Promise<void> {
+    const tracked = run.then(() => undefined, () => undefined)
+    this.#run = tracked
+    void tracked.finally(() => { if (this.#run === tracked) this.#run = undefined })
+    return run
+  }
+
+  /** Wait for any run this coordinator is tracking to unwind; resolves immediately when none is in flight. */
+  async awaitRun(): Promise<void> {
+    await this.#run
+  }
+
+  /**
+   * Handle a "Change Discipline…" request: abort any in-flight run, wait
+   * for it to actually unwind, stop the Host, then open onboarding. A second
+   * call while the first is still unwinding is a no-op — onboarding opens
+   * once, driven by the first call's own completion, rather than queuing a
+   * second `openOnboarding`.
+   */
+  async changeDiscipline(): Promise<void> {
+    if (this.#changingDiscipline) return
+    this.#changingDiscipline = true
+    try {
+      this.effects.abort()
+      await this.awaitRun()
+      await this.effects.stopHost()
+      await this.effects.openOnboarding()
+    } finally {
+      this.#changingDiscipline = false
+    }
+  }
+
+  /**
+   * Wait for any in-flight run to unwind, then run `reopen`. Without this
+   * wait, a caller racing a just-cancelled run could act while a fresh
+   * provisioning attempt would immediately collide with the old one.
+   * @param reopen - decides whether and how to reopen the initial surface; not this coordinator's concern.
+   */
+  async activate(reopen: () => Promise<void>): Promise<void> {
+    await this.awaitRun()
+    await reopen()
+  }
+
+  /**
+   * Begin app shutdown: mark quitting, abort provisioning, then stop the
+   * Host and wait for the run to unwind concurrently — the whole call is a
+   * single wait for two independent teardowns, so a slow one does not
+   * postpone the other's request.
+   */
+  async beforeQuit(): Promise<void> {
+    this.#quitting = true
+    this.effects.abort()
+    await Promise.allSettled([this.effects.stopHost(), this.awaitRun()])
+  }
+
+  /**
+   * Run `open` unless quit has already begun. Guards the one race
+   * `beforeQuit` cannot itself prevent: a provisioning run reaching its own
+   * `openWorkspace` call after `beforeQuit`'s `hostLifecycle.stop()` has
+   * already run, which would otherwise start a fresh Host behind it.
+   * @param open - opens the workspace window and launches its Host.
+   */
+  async openWorkspaceUnlessQuitting(open: () => Promise<void>): Promise<void> {
+    if (this.#quitting) return
+    await open()
+  }
+}

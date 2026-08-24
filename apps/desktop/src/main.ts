@@ -11,6 +11,7 @@ import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDecl
 import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
+import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -18,19 +19,12 @@ const RESTART_URL = 'dsh-desktop://restart'
 // (SIGTERM) before escalating to SIGKILL.
 const HOST_STOP_GRACE_MS = 5000
 let window: BrowserWindow | undefined
-// Set once before-quit begins tearing the app down. openWorkspace checks
-// this before launching a Host: before-quit stops the active Host
-// concurrently with any still-running provisioningRun, so a run that
-// reaches its own openWorkspace call after quitting starts must not launch
-// a fresh Host behind hostLifecycle.stop()'s back.
-let quitting = false
 let activeOrigin: string | undefined
+// The in-flight `desktop:provision` IPC handler's own AbortController, if
+// any: `desktop:cancel-provisioning` and `coordinator`'s abort effect signal
+// through this, while the run's lifetime for `activate`/quit/change-discipline
+// coordination is tracked separately by `coordinator.trackRun`.
 let provisioning: AbortController | undefined
-// The in-flight `desktop:provision` IPC handler body, if any: `activate` and
-// `before-quit` await this rather than only the AbortController, so a
-// reopened onboarding window or app quit never races the still-unwinding
-// abort of a just-cancelled run.
-let provisioningRun: Promise<void> | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
@@ -42,6 +36,15 @@ const hostLifecycle = new HostLifecycle({
     [join(import.meta.dirname, 'watchdog.js'), String(process.pid), String(hostPid)],
     { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'ignore', detached: true },
   ),
+})
+
+// Owns the decisions that race one in-flight provisioning run: aborting and
+// waiting for it before "Change Discipline…" opens onboarding, `activate`
+// waiting for it, and `before-quit` waiting for it alongside the Host stop.
+const coordinator = new ProvisioningCoordinator({
+  abort: () => { provisioning?.abort() },
+  stopHost: () => hostLifecycle.stop(),
+  openOnboarding: () => openOnboarding(),
 })
 
 function resourceRoot(): string {
@@ -197,7 +200,7 @@ async function onboardingDocument(): Promise<string> {
 
 function onUnexpectedHostExit(exit: HostExit): void {
   activeOrigin = undefined
-  if (!quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(exit))
+  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(exit))
 }
 
 async function launchHost(): Promise<void> {
@@ -216,25 +219,27 @@ async function launchHost(): Promise<void> {
  * newly created window has never loaded anything and never fires
  * `ready-to-show`, so it loads the same error page the startup path uses and
  * is shown explicitly rather than staying hidden and indistinguishable from
- * a running app to `activate`'s window-count check.
+ * a running app to `activate`'s window-count check. Guarded by
+ * {@link ProvisioningCoordinator.openWorkspaceUnlessQuitting}: a
+ * provisioning run's completion can race app quit (`before-quit` stops the
+ * Host concurrently with awaiting the run), and a run that reaches here
+ * after that stop has already run must not launch a fresh Host post-shutdown.
  */
 async function openWorkspace(): Promise<void> {
-  // A provisioning run's completion can race app quit (before-quit sets this
-  // before awaiting hostLifecycle.stop() and the run itself): without this
-  // check, a run that reaches here after stop() has already run would start
-  // a fresh Host post-shutdown.
-  if (quitting) return
-  const previous = window
-  const created = createWindow()
-  window = created
-  created.once('closed', () => { if (window === created) window = undefined })
-  previous?.destroy()
-  try {
-    await launchHost()
-  } catch (error) {
-    await created.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
-    created.show()
-  }
+  await coordinator.openWorkspaceUnlessQuitting(async () => {
+    const previous = window
+    const created = createWindow()
+    window = created
+    created.once('closed', () => { if (window === created) window = undefined })
+    previous?.destroy()
+    try {
+      await launchHost()
+    } catch (error) {
+      if (created.isDestroyed()) return
+      await created.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+      created.show()
+    }
+  })
 }
 
 /**
@@ -303,17 +308,18 @@ function buildApplicationMenu(): Menu {
       submenu: [
         {
           label: 'Change Discipline…',
-          // Re-provisioning targets a revision-scoped prefix path (see
-          // provisioning.ts), so the currently applied environment stays
-          // untouched and usable until the newly chosen one is applied.
-          // Awaiting any in-flight run first (see awaitPendingProvisioning)
-          // means clicking mid-download opens onboarding once that run has
-          // actually unwound instead of hitting "another operation is
-          // running" until it does.
-          click: () => { void (async () => {
-            await awaitPendingProvisioning()
-            await openOnboarding()
-          })() },
+          // Re-provisioning a different revision targets its own
+          // revision-scoped prefix path (see provisioning.ts), leaving the
+          // currently applied environment untouched and usable until the
+          // new revision is itself applied. Re-provisioning the applied
+          // revision instead repairs it in place, so ProvisioningCoordinator
+          // stops the Host before onboarding opens. It also aborts and
+          // awaits any in-flight run first, so clicking mid-download opens
+          // onboarding once that run has actually unwound instead of
+          // hitting "another operation is running" until it does, and a
+          // second click while the first is still unwinding coalesces
+          // rather than queuing another open.
+          click: () => { void coordinator.changeDiscipline() },
         },
         { type: 'separator' },
         { role: 'quit' },
@@ -346,12 +352,8 @@ ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
   const run = (async () => {
     await provisioner(app.getPath('userData')).provision(declaration, control.signal, reportProvisioningProgress)
     await openWorkspace()
-  })()
-  provisioningRun = run.finally(() => {
-    provisioning = undefined
-    provisioningRun = undefined
-  })
-  await provisioningRun
+  })().finally(() => { provisioning = undefined })
+  await coordinator.trackRun(run)
 })
 await openInitialSurface().catch(async (error: unknown) => {
   window ??= createWindow()
@@ -361,35 +363,21 @@ await openInitialSurface().catch(async (error: unknown) => {
 app.on('activate', () => { void handleActivate() })
 
 /**
- * Await any provisioning run this session just aborted (see
- * openOnboarding's abort-on-close) so it has actually unwound before a
- * caller opens a new onboarding or workspace window. Without this wait, a
- * caller racing a just-cancelled run could act while `provisioning` is
- * still set, so a fresh provisioning attempt would immediately hit
- * "another operation is running".
- */
-async function awaitPendingProvisioning(): Promise<void> {
-  if (provisioningRun !== undefined) await provisioningRun.catch(() => {})
-}
-
-/**
  * Reopen the initial surface, but only once any in-flight provisioning run
- * has unwound (see {@link awaitPendingProvisioning}) — blocking reopen until
- * then is simpler than teaching the reopened window to surface someone
- * else's in-flight run.
+ * has unwound (see {@link ProvisioningCoordinator.activate}) — blocking
+ * reopen until then is simpler than teaching the reopened window to surface
+ * someone else's in-flight run.
  */
 async function handleActivate(): Promise<void> {
-  await awaitPendingProvisioning()
-  if (BrowserWindow.getAllWindows().length !== 0) return
-  await openInitialSurface()
+  await coordinator.activate(async () => {
+    if (BrowserWindow.getAllWindows().length === 0) await openInitialSurface()
+  })
 }
 
 app.on('before-quit', (event) => {
-  if (quitting) return
+  if (coordinator.quitting) return
   event.preventDefault()
-  quitting = true
-  provisioning?.abort()
-  void Promise.allSettled([hostLifecycle.stop(), provisioningRun ?? Promise.resolve()]).finally(() => { app.quit() })
+  void coordinator.beforeQuit().finally(() => { app.quit() })
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

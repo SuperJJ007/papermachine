@@ -78,6 +78,8 @@ async function runDetection(): Promise<void> {
     statusNode.textContent = entryStatus ?? ''
   } catch (error) {
     statusNode.textContent = error instanceof Error ? error.message : String(error)
+    choices.hidden = true
+    guidance.hidden = false
   } finally {
     redetect.disabled = false
   }

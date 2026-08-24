@@ -12,7 +12,7 @@ import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './prov
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
-import { resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
+import { parseEnvironmentBinding, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -30,7 +30,7 @@ let provisioning: AbortController | undefined
 // status (an invalid/corrupt binding at launch); consumed once by the
 // `desktop:onboarding-status` handler so the freshly loaded onboarding
 // document can display it. `undefined` for an ordinary first-run or
-// user-requested ("Change Discipline…") open.
+// user-requested ("Rebind Environment…") open.
 let onboardingStatus: string | undefined
 
 const hostLifecycle = new HostLifecycle({
@@ -46,7 +46,7 @@ const hostLifecycle = new HostLifecycle({
 })
 
 // Owns the decisions that race one in-flight provisioning run: aborting and
-// waiting for it before "Change Discipline…" opens onboarding, `activate`
+// waiting for it before "Rebind Environment…" opens onboarding, `activate`
 // waiting for it, and `before-quit` waiting for it alongside the Host stop.
 const coordinator = new ProvisioningCoordinator({
   abort: () => { provisioning?.abort() },
@@ -72,6 +72,9 @@ function desktopPlatform(): DesktopPlatform {
 // (detection.ts, environment-binding.ts) instead of downloading one through
 // micromamba. The declaration/provisioning code and its tests are retained
 // so this path can return as a fallback in a later version.
+// discipline-status.ts's resolveDisciplineStatus, which compares the
+// applied revision against the shipped declarations, is retained the same
+// way: implemented and tested but with no caller in this version.
 async function declarations(): Promise<readonly EnvironmentDeclaration[]> {
   return Promise.all(['social-science', 'biology'].map(async id => parseEnvironmentDeclaration(
     JSON.parse(await readFile(join(resourceRoot(), 'environments', `${id}.json`), 'utf8')),
@@ -257,11 +260,13 @@ async function openWorkspace(): Promise<void> {
 }
 
 /**
- * Open the discipline-selection window, replacing whatever window is active.
- * Closing this window (Cmd-Q, the red button, or a completed run destroying
- * it programmatically) aborts any in-flight provisioning so Cmd-Q mid-solve
- * never orphans the micromamba download group; aborting an already-settled
- * or absent run is a no-op.
+ * Open the onboarding window (conda-family environment detection and
+ * binding), replacing whatever window is active. Closing this window
+ * (Cmd-Q, the red button, or a completed run destroying it programmatically)
+ * aborts any in-flight provisioning — the retained, entry-less micromamba
+ * path's `desktop:provision` handler stays registered — so Cmd-Q mid-run
+ * never orphans a download process group; aborting an already-settled or
+ * absent run is a no-op.
  */
 async function openOnboarding(): Promise<void> {
   const previous = window
@@ -295,8 +300,10 @@ async function openInitialSurface(): Promise<void> {
     await openWorkspace()
     return
   }
-  onboardingStatus = status.kind === 'invalid' ? status.reason : undefined
-  await coordinator.openOnboardingUnlessQuitting(() => openOnboarding())
+  await coordinator.openOnboardingUnlessQuitting(async () => {
+    onboardingStatus = status.kind === 'invalid' ? status.reason : undefined
+    await openOnboarding()
+  })
 }
 
 async function restartHost(): Promise<void> {
@@ -346,19 +353,19 @@ function buildApplicationMenu(): Menu {
       label: app.name,
       submenu: [
         {
-          label: 'Change Discipline…',
-          // Re-provisioning a different revision targets its own
-          // revision-scoped prefix path (see provisioning.ts), leaving the
-          // currently applied environment untouched and usable until the
-          // new revision is itself applied. Re-provisioning the applied
-          // revision instead repairs it in place, so ProvisioningCoordinator
+          label: 'Rebind Environment…',
+          // Opens onboarding so the user can detect and bind a different
+          // conda-family environment, or rebind the same one after a
+          // repair. A live Host would otherwise keep running against the
+          // prefix onboarding is about to replace, so ProvisioningCoordinator
           // stops the Host before onboarding opens. It also aborts and
-          // awaits any in-flight run first, so clicking mid-download opens
+          // awaits any in-flight run first (the retained, entry-less
+          // micromamba provisioning path), so clicking mid-run opens
           // onboarding once that run has actually unwound instead of
           // hitting "another operation is running" until it does, and a
           // second click while the first is still unwinding coalesces
           // rather than queuing another open.
-          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change discipline') },
+          click: () => { runDetached(() => coordinator.changeDiscipline(), 'rebind environment') },
         },
         { type: 'separator' },
         { role: 'quit' },
@@ -378,8 +385,9 @@ app.setName('DeepSeek Science')
  * react to later activation and quit. Run from `app.whenReady().then`
  * rather than a top-level `await app.whenReady()`: on Electron 43.4.1 /
  * macOS 26.5.2 arm64, a top-level await whose continuation is driven by an
- * Electron native signal never resumes (see
- * `.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.md`).
+ * Electron native signal never resumes (see the "Electron main-process boot
+ * order" section of the "Science desktop product composition and
+ * provisioning" Agent Note, 2026-08-23).
  */
 async function boot(): Promise<void> {
   Menu.setApplicationMenu(buildApplicationMenu())
@@ -406,11 +414,15 @@ async function boot(): Promise<void> {
     if (presence === undefined) throw new Error(`desktop bind: ${prefix} no longer qualifies as a Science environment`)
     const dshHome = app.getPath('userData')
     await mkdir(dshHome, { recursive: true, mode: 0o700 })
-    const binding: EnvironmentBinding = {
+    // Routed through the same parser resolveEnvironmentBindingStatus reads
+    // with, so this IPC boundary enforces exactly the invariants
+    // (isAbsolute among them) the reader relies on rather than a second,
+    // potentially divergent copy of them.
+    const binding: EnvironmentBinding = parseEnvironmentBinding({
       ...(presence.python ? { pythonPrefix: prefix } : {}),
       ...(presence.r ? { rPrefix: prefix } : {}),
       boundAt: Date.now(),
-    }
+    })
     await writeEnvironmentBinding(dshHome, binding)
     await openWorkspace()
   })

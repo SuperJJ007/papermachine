@@ -1,7 +1,8 @@
 /**
  * Coordinates decisions that race one in-flight `desktop:provision` run:
- * a "Change Discipline…" request, `activate`, and app quit all need to wait
- * for the same run to unwind rather than acting while it is still resolving.
+ * a "Rebind Environment…" request, `activate`, and app quit all need to
+ * wait for the same run to unwind rather than acting while it is still
+ * resolving.
  */
 
 /** Effects the coordinator drives; injected so its decisions are testable without Electron. */
@@ -9,20 +10,18 @@ export interface ProvisioningCoordinatorEffects {
   /** Abort the in-flight provisioning run, if any; a no-op when none is running. */
   readonly abort: () => void
   /**
-   * Stop the active Host. Called before onboarding opens for a "Change
-   * Discipline…" request: re-provisioning the exact revision `applied.json`
-   * already names deletes and recreates its prefix, and a live Host (with
-   * its persistent kernel) can still be running against that same prefix.
-   * Stopping the Host here is safe unconditionally, even for a
-   * different-revision change where the repair-in-place hazard above does
-   * not apply — the run this precedes has exactly three outcomes, and no
-   * Host is expected to be running for any of them: it publishes a new
-   * revision and relaunches the Host through `openWorkspace`; it fails and
-   * leaves onboarding showing the error; or the user closes the onboarding
-   * window without provisioning anything, leaving no Host and no window
-   * open at all (recovered later by `activate`, e.g. a dock click). Always
-   * stopping keeps this one shape rather than branching on which kind of
-   * change is requested.
+   * Stop the active Host. Called before onboarding opens for a "Rebind
+   * Environment…" request: a live Host (with its persistent kernel) runs
+   * against the environment the current binding names, and it must not go
+   * on serving that prefix once the user is choosing a new one. The run
+   * this precedes typically has one of three outcomes, and no Host is
+   * expected to be running for any of them: `desktop:bind` writes the new
+   * binding and relaunches the Host through `openWorkspace`; the user
+   * closes onboarding without binding anything, leaving no Host and no
+   * window open at all (recovered later by `activate`, e.g. a dock click);
+   * or, on the retained, entry-less micromamba provisioning path, a run
+   * fails and leaves onboarding showing the error. Always stopping keeps
+   * this one shape rather than branching on which outcome is expected.
    */
   readonly stopHost: () => Promise<void>
   /** Open the onboarding window. */
@@ -69,7 +68,7 @@ export class ProvisioningCoordinator {
   }
 
   /**
-   * Handle a "Change Discipline…" request: abort any in-flight run, wait
+   * Handle a "Rebind Environment…" request: abort any in-flight run, wait
    * for it to actually unwind, stop the Host, then open onboarding. A second
    * call while the first is still unwinding is a no-op — onboarding opens
    * once, driven by the first call's own completion, rather than queuing a

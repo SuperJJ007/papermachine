@@ -4,7 +4,7 @@
 
 `@deepseek-ai/dsh-desktop` 是 Science 桌面产品的 macOS-first Electron carrier。它把现有 Web profile 作为独立 Host process 启动，把 Electron `userData` directory 指定为 `DSH_HOME`，并在受限 BrowserWindow 内加载 Host 通过 OS 分配的 loopback URL。
 
-全新的 home 会先打开 desktop 持有的设置页面，再进入 workspace。用户选择社会科学或生物学 package，查看声明的下载量与磁盘需求，并可在 micromamba 流送进度时取消或重试。provisioner 只有在 Python 与 R 都验证通过后才以原子方式发布 prefix。生成的 Host overlay 把该 prefix 绑定到固定的 `science` Runtime profile，以 Science 作为 session default，并移除通用 product-mode picker。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。
+全新的 home 会先打开 desktop onboarding，再进入 workspace。onboarding 扫描本机常规的 Anaconda/Miniconda/Miniforge/Mambaforge/Micromamba 安装位置与 `~/.conda/environments.txt`，寻找符合条件的 conda-family environment，全程不调用 terminal 或任何 conda 命令，并让用户绑定其中一个——不会发生任何下载。绑定会重新校验所选 environment，写入 `<dshHome>/environment-binding.json`，再打开 workspace；生成的 Host overlay 把所命名的 prefix 绑定到固定的 `science` Runtime profile，以 Science 作为 session default，并移除通用 product-mode picker。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。详见下文“Onboarding 与 environment binding”。
 
 ## 开发
 
@@ -28,13 +28,19 @@ carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，�
 
 Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTERM`，使 Host 得以 dispose（资源释放）Cordis 及其子进程树，随后在限定宽限期后升级为 `SIGKILL`。一个同级的纯 Node 看门狗进程观察 Electron，并在 Electron 被强制终止时停止该 Host 进程组。
 
+## Onboarding 与 environment binding
+
+启动时的路由完全依据 `<dshHome>/environment-binding.json`（`src/environment-binding.ts`）：文件不存在是普通的首次运行，会打开 onboarding；文件解析失败或所命名的 prefix 已不存在，同样路由到 onboarding，但会带上醒目的状态提示；binding 有效则直接打开 workspace。下文“环境声明”中描述的学科包 `applied.json` pointer 在这条路由中不起任何作用。
+
+Detection（`src/detection.ts`）以一个正规、非 symlink 的 `conda-meta/history` 文件外加至少一个 `bin/python` 或 `bin/Rscript` ——与 Science Runtime 自身的 interpreter 检查所要求的 POSIX 布局相同——作为 prefix 合格与否的依据，并为合格的候选项展示来自受限、有超时的 `--version` probe 的 best-effort interpreter 版本。扫描某个 root 或校验某个候选项时发生的失败（不可读目录、symlink loop、结果是普通文件的 root）只会丢弃那一个 root 或候选项；detection 本身不会因文件系统状况而失败。用户选择一个候选项——两种 interpreter 都具备的第一项会被预选——并绑定它；绑定会重新校验该候选项是否仍然合格，因为文件系统可能在 detection 与点击之间发生变化，校验通过后才写入 binding 文件并打开 workspace。当没有候选项合格时，onboarding 会展示安装引导（安装 Anaconda，然后重新检测），取代候选列表。应用菜单的“重新绑定环境…”操作会先停止活跃的 Host，再重新打开 onboarding，供用户绑定另一个 environment。
+
 ## 环境声明
 
 `resources/environments/*.json` 是闭合且只含数据的格式：schema version、学科 id 与 revision、支持的 macOS architectures、channels 与 packages、如实的容量字段、operation timeout，以及分别一个 Python 与 R health check。它不接纳 executable installation hook。每个 revision 直接安装在它发布所用的 prefix 路径下（`environments/<discipline>/<revision>`），因此每个 health check 都针对 `applied.json` 最终指向的那个确切路径运行——Conda/micromamba 安装不可重定位，在一个路径上验证却发布另一个路径无法证明任何事情。solve 失败、取消或 health check 失败，在全新配备或不同 revision 的配备下都不会改变此前的 `applied.json` pointer；而同一 revision 的原地修复路径会在触碰 prefix 之前先清空该 pointer（见下文），因此那里发生的失败会导致完全没有 applied revision。retry 会复用 micromamba 的 package cache，并在重新创建前清空未 ready 的 prefix 目录，因为没有匹配 `applied.json` 条目的 prefix 永远不算 ready。
 
 社会科学声明包含 pandas、statsmodels、matplotlib、Altair、tidyverse、broom 与 modelr。更大的生物学声明加入 Scanpy、Biobase、DESeq2 与 GenomicRanges，并自行携带更长 timeout 与更高磁盘要求。
 
-选择学科并非一次性永久决定。启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对；不一致就路由回 onboarding 重新配备。为不同 revision 配备时，当前 applied 的环境在新 revision 本身被应用之前始终保持不变、可用。重新配备当前已 applied 的那个确切 revision 则是原地修复：先清空 applied pointer，再删除并重建 prefix，因此失败会留下如实的 not-ready 状态，而不是一个仍被标记为 current 的已损坏环境。应用菜单还提供“Change Discipline…”操作，会先停止活跃的 Host，再按需重新打开 onboarding。
+这一声明 schema、上述 transactional prefix 安装、其 health check，以及可恢复的同一 revision 原地修复路径（重新配备已 applied 的那个确切 revision 会先清空 applied pointer，再删除并重建 prefix，因此失败会留下如实的 not-ready 状态，而不是一个仍被标记为 current 的已损坏环境）均完整实现并测试覆盖，但在本版本中没有 onboarding 入口——onboarding 转而检测并绑定一个已有的 environment（见上文 Onboarding 与 environment binding）。此路径被保留，作为没有可用 conda-family environment 的机器的既定安装 fallback。
 
 ## DMG
 

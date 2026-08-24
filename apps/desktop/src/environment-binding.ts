@@ -1,7 +1,8 @@
 /** Desktop-owned pointer to the conda-family prefix(es) the user bound during onboarding. */
 
-import { readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
+import { writeFileAtomic } from './atomic-write.ts'
 
 /** The persisted binding: at least one prefix, both if the same environment carries Python and R. */
 export interface EnvironmentBinding {
@@ -49,7 +50,7 @@ export function parseEnvironmentBinding(value: unknown): EnvironmentBinding {
 }
 
 /**
- * Write the binding atomically (temp file then rename) so a crash or
+ * Write the binding atomically ({@link writeFileAtomic}) so a crash or
  * concurrent read never observes a partially written file, owner-only
  * (mode 0600) since the file names filesystem paths this process trusts
  * without re-validation on every read.
@@ -57,9 +58,7 @@ export function parseEnvironmentBinding(value: unknown): EnvironmentBinding {
  * @param binding - the binding to persist.
  */
 export async function writeEnvironmentBinding(dshHome: string, binding: EnvironmentBinding): Promise<void> {
-  const path = bindingPath(dshHome)
-  await writeFile(`${path}.next`, `${JSON.stringify(binding)}\n`, { mode: 0o600 })
-  await rename(`${path}.next`, path)
+  await writeFileAtomic(bindingPath(dshHome), `${JSON.stringify(binding)}\n`, { mode: 0o600 })
 }
 
 /**

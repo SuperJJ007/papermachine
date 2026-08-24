@@ -1,8 +1,9 @@
 /** Transactional micromamba provisioning for desktop discipline environments. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, readFile, rename, rm, statfs, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
 import { join } from 'node:path'
+import { writeFileAtomic } from './atomic-write.ts'
 import type { DesktopPlatform, EnvironmentDeclaration } from './environment-declaration.ts'
 
 type ProvisioningPhase = 'checking' | 'solving' | 'installing' | 'verifying' | 'publishing' | 'ready'
@@ -253,8 +254,8 @@ export class DesktopEnvironmentProvisioner {
    * `applied.json` entry is not ready, so provisioning always starts by
    * clearing it, whether it is a stale partial install from an interrupted
    * run or leftover from a prior failed health check. Re-provisioning the
-   * exact revision `applied.json` already names (the "Change Discipline…"
-   * repair path) clears that pointer before touching the prefix: creating
+   * exact revision `applied.json` already names (the same-revision repair
+   * path) clears that pointer before touching the prefix: creating
    * over a live prefix in place would otherwise leave a destroyed
    * environment advertised as `current` if the recreate fails partway
    * through, and clearing the pointer first turns that failure into an
@@ -311,9 +312,7 @@ export class DesktopEnvironmentProvisioner {
       prefix,
       appliedAt: this.#now(),
     }
-    const pointer = join(this.options.root, 'applied.json')
-    await writeFile(`${pointer}.next`, `${JSON.stringify(published)}\n`, { mode: 0o600 })
-    await rename(`${pointer}.next`, pointer)
+    await writeFileAtomic(join(this.options.root, 'applied.json'), `${JSON.stringify(published)}\n`, { mode: 0o600 })
     onProgress({ phase: 'ready', message: `${declaration.name} is ready` })
     return published
   }

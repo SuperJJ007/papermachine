@@ -163,7 +163,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // The independently loadable read-only entry ships beside the root plugin
   // and invariant companion as its own bundle (see tool-fs's tsdown.config.ts).
-  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js'],
+  // index.js and read-only.js share image-reading code, which tsdown emits as
+  // a hashed chunk both entries import.
+  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js', 'lib/read-image-*.js'],
   // Web mounts the Science viewer-edit Remote in the Host root independently
   // from the preset-scoped model-facing Consumer.
   '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js'],

@@ -1,9 +1,10 @@
+import type { ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
-import { buildProvisioningEnv, DesktopEnvironmentProvisioner, runProvisioningProcess, type ProcessRequest } from '../src/provisioning.ts'
+import { buildProvisioningEnv, DesktopEnvironmentProvisioner, runProvisioningProcess, stopProcessGroup, type ProcessRequest } from '../src/provisioning.ts'
 import { resolveDisciplineStatus } from '../src/discipline-status.ts'
 
 const declaration = parseEnvironmentDeclaration({
@@ -344,4 +345,27 @@ describe('runProvisioningProcess', () => {
     // wait needed.
     expect(() => process.kill(grandchildPid, 0)).toThrow()
   }, 10_000)
+})
+
+describe('stopProcessGroup', () => {
+  it('settles by rejecting, naming the pid, instead of waiting forever when the group can never be confirmed dead', async () => {
+    // A fake ChildProcess with a pid nothing real ever runs at: process.kill
+    // is stubbed to never throw for it, so isProcessGroupAlive reports it
+    // alive across every poll (the same observable outcome an EPERM check
+    // would produce), forcing stopProcessGroup through both bounded waits to
+    // their deadlines with nothing real ever signalled or leaked.
+    const fakeChild = { pid: 999_999 } as unknown as ChildProcess
+    vi.useFakeTimers()
+    try {
+      const killSpy = vi.spyOn(process, 'kill').mockReturnValue(true)
+      const settled = expect(stopProcessGroup(fakeChild)).rejects.toThrow(
+        'desktop provisioning: process group 999999 may still be alive after SIGKILL',
+      )
+      await vi.runAllTimersAsync()
+      await settled
+      expect(killSpy).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

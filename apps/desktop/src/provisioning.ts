@@ -42,6 +42,15 @@ const KILL_GRACE_MS = 5000
 // stopProcessGroup's grace period.
 const STOP_POLL_MS = 100
 
+// Milliseconds stopProcessGroup keeps polling after sending the group
+// SIGKILL before giving up on confirming the group is actually gone.
+// isProcessGroupAlive reports EPERM (for example, a pid reused across a
+// privilege boundary) as alive with no way to distinguish that from a
+// genuine survivor, so an unconfirmable group must not block its caller
+// forever; this bound is the honest limit on how long that confirmation is
+// worth waiting for.
+const POST_SIGKILL_CONFIRM_MS = 5000
+
 /** Signal the process group on POSIX and the direct child on Windows, tolerating a group that is already gone. */
 function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   try {
@@ -66,26 +75,39 @@ function isProcessGroupAlive(child: ChildProcess): boolean {
 
 /**
  * Stop the child's process group, escalating to a group SIGKILL if anything
- * in it is still alive after {@link KILL_GRACE_MS}, mirroring
- * HostProcessSupervisor.stop's group-aware escalation. The direct child
- * exiting is not sufficient: a solve or health-check process that disposes
- * itself on SIGTERM while a spawned grandchild ignores it would otherwise
- * leave that grandchild alive forever, so the grace period polls the whole
- * process group's liveness rather than only the direct child's own exit.
- * The returned promise resolves only once the group is confirmed gone (or a
- * SIGKILL has been sent and the group is confirmed gone), so a caller that
- * awaits it before quitting Electron never leaves this escalation's SIGKILL
- * timer orphaned by process exit.
+ * in it is still alive after {@link KILL_GRACE_MS}. The direct child exiting
+ * is not sufficient: a solve or health-check process that disposes itself on
+ * SIGTERM while a spawned grandchild ignores it would otherwise leave that
+ * grandchild alive forever, so the grace period polls the whole process
+ * group's liveness rather than only the direct child's own exit — unlike
+ * `HostProcessSupervisor.stop`, which awaits only the direct child's own
+ * `exit` event once SIGKILL has been sent (bounded there because SIGKILL
+ * cannot be ignored by the direct child itself), this does not mirror that
+ * method's escalation. The returned promise settles once the group is
+ * confirmed gone, or, after SIGKILL has been sent, rejects naming the pid
+ * that may still be alive once {@link POST_SIGKILL_CONFIRM_MS} of continued
+ * polling still cannot confirm the group is gone — an awaited caller that
+ * would otherwise quit Electron must never hang on a group this module
+ * cannot prove is dead.
+ * @param child - the process whose group to stop.
+ * @throws when SIGTERM/SIGKILL delivery fails for a reason other than the
+ * group already being gone, or when the group cannot be confirmed dead
+ * within {@link POST_SIGKILL_CONFIRM_MS} of the SIGKILL.
  */
-async function stopProcessGroup(child: ChildProcess): Promise<void> {
+export async function stopProcessGroup(child: ChildProcess): Promise<void> {
   signalProcessGroup(child, 'SIGTERM')
-  const deadline = Date.now() + KILL_GRACE_MS
-  while (isProcessGroupAlive(child) && Date.now() < deadline) {
+  const graceDeadline = Date.now() + KILL_GRACE_MS
+  while (isProcessGroupAlive(child) && Date.now() < graceDeadline) {
     await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
   }
-  if (isProcessGroupAlive(child)) signalProcessGroup(child, 'SIGKILL')
-  while (isProcessGroupAlive(child)) {
+  if (!isProcessGroupAlive(child)) return
+  signalProcessGroup(child, 'SIGKILL')
+  const confirmDeadline = Date.now() + POST_SIGKILL_CONFIRM_MS
+  while (isProcessGroupAlive(child) && Date.now() < confirmDeadline) {
     await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
+  }
+  if (isProcessGroupAlive(child)) {
+    throw new Error(`desktop provisioning: process group ${String(child.pid)} may still be alive after SIGKILL`)
   }
 }
 
@@ -93,12 +115,13 @@ async function stopProcessGroup(child: ChildProcess): Promise<void> {
  * Run one cancellable child and reject on timeout, signal, or non-zero exit.
  * An ordinary exit settles the returned promise directly on the direct
  * child's own `exit` event. Cancellation and a timeout instead settle only
- * once {@link stopProcessGroup} resolves — confirming the whole process
- * group (not just the direct child) is gone, escalating to a group SIGKILL
- * if anything in it survives the grace period — so an awaited rejection
- * means the group is gone: a caller that awaits rejection before quitting
- * Electron never leaves a group member unsignalled or this escalation's
- * SIGKILL timer running past the caller's own teardown.
+ * once {@link stopProcessGroup} settles — whether it resolves, having
+ * confirmed the whole process group (not just the direct child) is gone, or
+ * rejects because delivery failed or the group could not be confirmed dead —
+ * so the returned promise always settles rather than hanging on
+ * {@link stopProcessGroup}'s own bounded confirmation wait, and a caller
+ * awaiting rejection before quitting Electron never leaves this escalation's
+ * SIGKILL timer running past its own teardown.
  */
 export const runProvisioningProcess: ProcessRunner = async (request) => {
   await new Promise<void>((resolve, reject) => {
@@ -117,13 +140,23 @@ export const runProvisioningProcess: ProcessRunner = async (request) => {
       if (error === undefined) resolve()
       else reject(error)
     }
+    // Both handlers settle `finish` from either branch of stopProcessGroup's
+    // outcome, so a signal-delivery failure or an unconfirmable group (see
+    // stopProcessGroup's JSDoc) still settles this run instead of leaving it
+    // pending forever behind an unhandled rejection.
     const abort = (): void => {
       outcome = 'cancelled'
-      void stopProcessGroup(child).then(() => { finish(new Error('desktop provisioning: cancelled')) })
+      void stopProcessGroup(child).then(
+        () => { finish(new Error('desktop provisioning: cancelled')) },
+        (error: unknown) => { finish(error instanceof Error ? error : new Error(String(error))) },
+      )
     }
     const timer = setTimeout(() => {
       outcome = 'timed-out'
-      void stopProcessGroup(child).then(() => { finish(new Error('desktop provisioning: timed out')) })
+      void stopProcessGroup(child).then(
+        () => { finish(new Error('desktop provisioning: timed out')) },
+        (error: unknown) => { finish(error instanceof Error ? error : new Error(String(error))) },
+      )
     }, request.timeoutMs)
     for (const stream of [child.stdout, child.stderr]) {
       let pending = ''

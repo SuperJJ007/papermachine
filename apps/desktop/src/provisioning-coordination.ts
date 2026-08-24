@@ -13,10 +13,16 @@ export interface ProvisioningCoordinatorEffects {
    * Discipline…" request: re-provisioning the exact revision `applied.json`
    * already names deletes and recreates its prefix, and a live Host (with
    * its persistent kernel) can still be running against that same prefix.
-   * Stopping the Host here is safe unconditionally — the run this precedes
-   * either publishes a new revision and relaunches the Host through
-   * `openWorkspace`, or fails and leaves onboarding showing the error, with
-   * no Host expected to be running either way.
+   * Stopping the Host here is safe unconditionally, even for a
+   * different-revision change where the repair-in-place hazard above does
+   * not apply — the run this precedes has exactly three outcomes, and no
+   * Host is expected to be running for any of them: it publishes a new
+   * revision and relaunches the Host through `openWorkspace`; it fails and
+   * leaves onboarding showing the error; or the user closes the onboarding
+   * window without provisioning anything, leaving no Host and no window
+   * open at all (recovered later by `activate`, e.g. a dock click). Always
+   * stopping keeps this one shape rather than branching on which kind of
+   * change is requested.
    */
   readonly stopHost: () => Promise<void>
   /** Open the onboarding window. */

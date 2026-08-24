@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`@deepseek-ai/dsh-desktop` is the macOS-first Electron carrier for the Science desktop product. It starts the existing Web profile as a separate Host process, assigns the Electron `userData` directory as `DSH_HOME`, and loads the Host's OS-assigned loopback URL inside a locked-down BrowserWindow.
+`@deepseek-ai/dsh-desktop` is the macOS-first Electron carrier for the Science desktop product. It starts the existing Web profile as a separate Host process, assigns `~/.papermachine` as the Harness home (`DSH_HOME`), and loads the Host's OS-assigned loopback URL inside a locked-down BrowserWindow. The Harness home is resolved by `src/harness-home.ts` under the OS user home directory, deliberately independent of Electron's own `userData` directory (which keeps holding only Electron's cookies, caches, and similar state): R refuses to run with an ASCII space anywhere in its scratch `TMPDIR`, and macOS's `userData` path (`~/Library/Application Support/PaperMachine`) contains one, so resolution fails loud instead if the OS user home itself has a space in its path.
 
 A fresh home opens desktop onboarding before the workspace. Onboarding scans this machine's conventional Anaconda/Miniconda/Miniforge/Mambaforge/Micromamba install locations and `~/.conda/environments.txt` for qualifying conda-family environments, without invoking a terminal or any conda command, and lets the user bind a Python and an R environment independently — no download runs. Binding re-validates each chosen prefix for its own interpreter, writes `<dshHome>/environment-binding.json`, and opens the workspace; the generated Host overlay binds the named prefix(es) to the fixed `science` Runtime profile, makes Science the session default, removes the generic product-mode picker, and disables the shared module-reload `hmr` row. The following existing Models onboarding remains the only API-key writer, through the credentials service. See "Onboarding and environment binding" below.
 
@@ -44,7 +44,7 @@ This declaration schema, the transactional prefix installation above, its health
 
 ## DMG
 
-`pnpm --filter @deepseek-ai/dsh-desktop package:mac` builds the repository, downloads both pinned micromamba architectures, stages a symlink-free production Host closure, and asks Electron Builder for arm64 and x64 DMGs. The generated app owns its Host, environment declarations, and micromamba executable; the Harness home and applied environments stay in Electron `userData` outside the application payload.
+`pnpm --filter @deepseek-ai/dsh-desktop package:mac` builds the repository, downloads both pinned micromamba architectures, stages a symlink-free production Host closure, and asks Electron Builder for arm64 and x64 DMGs. The generated app owns its Host, environment declarations, and micromamba executable; the Harness home and applied environments stay under `~/.papermachine`, outside the application payload and outside Electron `userData`.
 
 ## Limitations
 

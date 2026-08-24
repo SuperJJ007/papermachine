@@ -1,7 +1,7 @@
 /** Electron development shell for the Science desktop product. */
 
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
@@ -13,6 +13,7 @@ import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
+import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -56,6 +57,11 @@ const coordinator = new ProvisioningCoordinator({
 
 function resourceRoot(): string {
   return app.isPackaged ? process.resourcesPath : join(REPOSITORY_ROOT, 'apps/desktop/resources')
+}
+
+/** Resolves and creates this launch's Harness home; see {@link resolveHarnessHome}. */
+async function harnessHome(): Promise<string> {
+  return resolveHarnessHome(app.getPath('home'))
 }
 
 function desktopPlatform(): DesktopPlatform {
@@ -128,14 +134,53 @@ function hostCommand(dshHome: string, overlay: string): HostCommand {
   }
 }
 
+/**
+ * Render one of the app's data-URL error pages.
+ * @param heading - the page's `<h1>`.
+ * @param detail - the page's `<p>` body.
+ * @param restart - whether to show the "Restart Host" action; omitted for a
+ *   startup configuration failure a Host restart cannot fix.
+ */
+function errorSurface(heading: string, detail: string, restart: boolean): string {
+  const action = restart ? `<a href="${RESTART_URL}">Restart Host</a>` : ''
+  const html = `<!doctype html><html><meta charset="utf-8"><title>PaperMachine</title>
+    <style>body{font:16px system-ui;margin:0;display:grid;place-items:center;min-height:100vh;background:#f5f7fa;color:#16202a}main{max-width:34rem;padding:2rem;text-align:center}a{display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:.5rem;background:#1769aa;color:white;text-decoration:none}</style>
+    <main><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(detail)}</p>${action}</main></html>`
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+}
+
 function errorPage(exit?: HostExit, reason?: string): string {
   const detail = reason ?? (exit === undefined
     ? 'Host unavailable'
     : `Host stopped (${String(exit.code ?? exit.signal)})`)
-  const html = `<!doctype html><html><meta charset="utf-8"><title>Science</title>
-    <style>body{font:16px system-ui;margin:0;display:grid;place-items:center;min-height:100vh;background:#f5f7fa;color:#16202a}main{max-width:34rem;padding:2rem;text-align:center}a{display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:.5rem;background:#1769aa;color:white;text-decoration:none}</style>
-    <main><h1>Science Host needs attention</h1><p>${escapeHtml(detail)}</p><a href="${RESTART_URL}">Restart Host</a></main></html>`
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+  return errorSurface('Science Host needs attention', detail, true)
+}
+
+/**
+ * The dedicated error page for a space-containing Harness home: a startup
+ * configuration failure, not a Host crash, so the ordinary Restart Host
+ * action — which would relaunch the Host against the same unusable path —
+ * is omitted.
+ * @param error - the resolved space-containing path this launch could not use.
+ */
+function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError): string {
+  return errorSurface(
+    'PaperMachine cannot start',
+    `Your user home directory's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory, so PaperMachine cannot run science kernels from this location.`,
+    false,
+  )
+}
+
+/**
+ * The error page to show for a caught startup/launch failure: the dedicated
+ * space-in-home page for {@link HarnessHomeSpaceError}, otherwise the
+ * general Host error page.
+ * @param error - the caught error.
+ */
+function launchErrorPage(error: unknown): string {
+  return error instanceof HarnessHomeSpaceError
+    ? harnessHomeSpaceErrorPage(error)
+    : errorPage(undefined, error instanceof Error ? error.message : String(error))
 }
 
 function escapeHtml(value: string): string {
@@ -187,7 +232,7 @@ function createWindow(): BrowserWindow {
 
 function createOnboardingWindow(): BrowserWindow {
   const created = new BrowserWindow({
-    title: 'Set up DeepSeek Science',
+    title: 'Set up PaperMachine',
     width: 820,
     height: 720,
     minWidth: 680,
@@ -221,8 +266,7 @@ function onUnexpectedHostExit(exit: HostExit): void {
 }
 
 async function launchHost(): Promise<void> {
-  const dshHome = app.getPath('userData')
-  await mkdir(dshHome, { recursive: true, mode: 0o700 })
+  const dshHome = await harnessHome()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
   const overlay = await writeRuntimeOverlay(dshHome, status.binding)
@@ -253,7 +297,7 @@ async function openWorkspace(): Promise<void> {
       await launchHost()
     } catch (error) {
       if (created.isDestroyed()) return
-      await created.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+      await created.loadURL(launchErrorPage(error))
       created.show()
     }
   })
@@ -293,8 +337,7 @@ async function openOnboarding(): Promise<void> {
  * quit to have begun in the meantime.
  */
 async function openInitialSurface(): Promise<void> {
-  const dshHome = app.getPath('userData')
-  await mkdir(dshHome, { recursive: true, mode: 0o700 })
+  const dshHome = await harnessHome()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind === 'bound') {
     await openWorkspace()
@@ -313,7 +356,7 @@ async function restartHost(): Promise<void> {
     // watchdog before starting the replacement.
     await launchHost()
   } catch (error) {
-    await window?.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+    await window?.loadURL(launchErrorPage(error))
   }
 }
 
@@ -377,7 +420,7 @@ function buildApplicationMenu(): Menu {
   return Menu.buildFromTemplate(template)
 }
 
-app.setName('DeepSeek Science')
+app.setName('PaperMachine')
 
 /**
  * Everything that depends on Electron's app-ready signal: the application
@@ -423,8 +466,7 @@ async function boot(): Promise<void> {
       ...(pythonPrefix === undefined ? {} : { pythonPrefix }),
       ...(rPrefix === undefined ? {} : { rPrefix }),
     }, qualifyingInterpreters)
-    const dshHome = app.getPath('userData')
-    await mkdir(dshHome, { recursive: true, mode: 0o700 })
+    const dshHome = await harnessHome()
     await writeEnvironmentBinding(dshHome, binding)
     await openWorkspace()
   })
@@ -443,14 +485,14 @@ async function boot(): Promise<void> {
     const control = new AbortController()
     provisioning = control
     const run = (async () => {
-      await provisioner(app.getPath('userData')).provision(declaration, control.signal, reportProvisioningProgress)
+      await provisioner(await harnessHome()).provision(declaration, control.signal, reportProvisioningProgress)
       await openWorkspace()
     })().finally(() => { provisioning = undefined })
     await coordinator.trackRun(run)
   })
   await openInitialSurface().catch(async (error: unknown) => {
     window ??= createWindow()
-    await window.loadURL(errorPage(undefined, error instanceof Error ? error.message : String(error)))
+    await window.loadURL(launchErrorPage(error))
   })
 
   app.on('activate', () => { void handleActivate() })

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-desktop` 是 Science 桌面产品的 macOS-first Electron carrier。它把现有 Web profile 作为独立 Host process 启动，把 Electron `userData` directory 指定为 `DSH_HOME`，并在受限 BrowserWindow 内加载 Host 通过 OS 分配的 loopback URL。
+`@deepseek-ai/dsh-desktop` 是 Science 桌面产品的 macOS-first Electron carrier。它把现有 Web profile 作为独立 Host process 启动，把 `~/.papermachine` 指定为 Harness home（`DSH_HOME`），并在受限 BrowserWindow 内加载 Host 通过 OS 分配的 loopback URL。Harness home 由 `src/harness-home.ts` 解析，位于 OS user home directory 之下，刻意与 Electron 自身的 `userData` directory 相互独立（后者继续只保存 Electron 的 cookies、caches 等状态）：R 拒绝在其 scratch `TMPDIR` 中出现任何 ASCII space，而 macOS 的 `userData` 路径（`~/Library/Application Support/PaperMachine`）恰好含有一个空格，因此若 OS user home 本身的路径含有空格，解析会转而 fail loud。
 
 全新的 home 会先打开 desktop onboarding，再进入 workspace。onboarding 扫描本机常规的 Anaconda/Miniconda/Miniforge/Mambaforge/Micromamba 安装位置与 `~/.conda/environments.txt`，寻找符合条件的 conda-family environment，全程不调用 terminal 或任何 conda 命令，并让用户分别绑定一个 Python environment 与一个 R environment——不会发生任何下载。绑定会针对每个所选 prefix 各自的 interpreter 重新校验，写入 `<dshHome>/environment-binding.json`，再打开 workspace；生成的 Host overlay 把所命名的 prefix 绑定到固定的 `science` Runtime profile，以 Science 作为 session default，移除通用 product-mode picker，并禁用共享的 module-reload `hmr` 行。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。详见下文“Onboarding 与 environment binding”。
 
@@ -44,7 +44,7 @@ Detection（`src/detection.ts`）以一个正规、非 symlink 的 `conda-meta/h
 
 ## DMG
 
-`pnpm --filter @deepseek-ai/dsh-desktop package:mac` 会构建仓库、下载两个 pinned micromamba architectures、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成 arm64 与 x64 DMG。生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 application payload 外的 Electron `userData` 中。
+`pnpm --filter @deepseek-ai/dsh-desktop package:mac` 会构建仓库、下载两个 pinned micromamba architectures、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成 arm64 与 x64 DMG。生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 `~/.papermachine` 下，既在 application payload 之外，也在 Electron `userData` 之外。
 
 ## 限制
 

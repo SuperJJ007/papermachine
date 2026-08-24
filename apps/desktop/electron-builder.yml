@@ -1,5 +1,5 @@
-appId: ai.deepseek.science
-productName: DeepSeek Science
+appId: com.papermachine.desktop
+productName: PaperMachine
 asar: true
 directories:
   output: release
@@ -24,4 +24,4 @@ mac:
         - arm64
         - x64
 dmg:
-  artifactName: DeepSeek-Science-${version}-${arch}.${ext}
+  artifactName: PaperMachine-${version}-${arch}.${ext}

@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
-import { DesktopEnvironmentProvisioner, runProvisioningProcess, type ProcessRequest } from '../src/provisioning.ts'
+import { buildProvisioningEnv, DesktopEnvironmentProvisioner, runProvisioningProcess, type ProcessRequest } from '../src/provisioning.ts'
 
 const declaration = parseEnvironmentDeclaration({
   schemaVersion: 1,
@@ -23,7 +23,7 @@ const declaration = parseEnvironmentDeclaration({
 })
 
 describe('DesktopEnvironmentProvisioner', () => {
-  it('publishes only after create and both health checks pass', async () => {
+  it('publishes only after create and both health checks pass, at the same path throughout', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-'))
     const calls: ProcessRequest[] = []
     const provisioner = new DesktopEnvironmentProvisioner({
@@ -47,18 +47,60 @@ describe('DesktopEnvironmentProvisioner', () => {
       phases.push(update.phase)
     })
 
+    const publishedPrefix = join(root, 'environments/test-science/2026.08.1')
+    expect(applied.prefix).toBe(publishedPrefix)
+    // Health checks (and create) all run against the exact path applied.json
+    // ends up pointing at — there is no separate partial or renamed path.
     expect(calls.map(call => call.executable)).toEqual([
       '/bundled/micromamba',
-      join(root, 'environments/test-science/2026.08.1.partial/bin/python'),
-      join(root, 'environments/test-science/2026.08.1.partial/bin/Rscript'),
+      join(publishedPrefix, 'bin/python'),
+      join(publishedPrefix, 'bin/Rscript'),
     ])
-    expect(applied.prefix).toBe(join(root, 'environments/test-science/2026.08.1-42'))
+    expect(calls[0]!.args).toContain('--no-rc')
+    expect(calls[0]!.args).toContain('--override-channels')
     expect(JSON.parse(await readFile(join(root, 'applied.json'), 'utf8'))).toEqual(applied)
     expect(phases).toEqual(['checking', 'solving', 'installing', 'verifying', 'publishing', 'ready'])
   })
 
-  it('preserves the prior pointer when a health check fails', async () => {
+  it('never hands a provisioning child a credential-shaped ambient variable, but keeps PATH and proxy vars', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-env-'))
+    const originalSecret = process.env.DSH_TEST_PROVISION_SECRET_KEY
+    const originalProxy = process.env.HTTPS_PROXY
+    process.env.DSH_TEST_PROVISION_SECRET_KEY = 'do-not-leak'
+    process.env.HTTPS_PROXY = 'http://proxy.example:8080'
+    try {
+      const seenEnvs: NodeJS.ProcessEnv[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root,
+        micromambaPath: '/m',
+        platform: 'darwin-arm64',
+        freeBytes: async () => 1_000,
+        run: async (request) => {
+          seenEnvs.push(request.env)
+          if (request.args[0] === 'create') {
+            const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+            await mkdir(join(prefix, 'bin'), { recursive: true })
+          }
+        },
+      })
+      await provisioner.provision(declaration, new AbortController().signal)
+      expect(seenEnvs.length).toBeGreaterThan(0)
+      for (const env of seenEnvs) {
+        expect(env.DSH_TEST_PROVISION_SECRET_KEY).toBeUndefined()
+        expect(env.PATH).toBe(process.env.PATH)
+        expect(env.HTTPS_PROXY).toBe('http://proxy.example:8080')
+      }
+    } finally {
+      if (originalSecret === undefined) delete process.env.DSH_TEST_PROVISION_SECRET_KEY
+      else process.env.DSH_TEST_PROVISION_SECRET_KEY = originalSecret
+      if (originalProxy === undefined) delete process.env.HTTPS_PROXY
+      else process.env.HTTPS_PROXY = originalProxy
+    }
+  })
+
+  it('preserves the prior pointer when a different revision fails its health check', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-fail-'))
+    const other = parseEnvironmentDeclaration({ ...declaration, revision: '2026.08.2' })
     const first = new DesktopEnvironmentProvisioner({
       root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 1, freeBytes: async () => 1_000,
       run: async (request) => {
@@ -72,12 +114,52 @@ describe('DesktopEnvironmentProvisioner', () => {
     const retry = new DesktopEnvironmentProvisioner({
       root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 2, freeBytes: async () => 1_000,
       run: async (request) => {
-        if (request.args[0] === 'create') return
+        if (request.args[0] === 'create') {
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+          return
+        }
         throw new Error('health failed')
       },
     })
-    await expect(retry.provision(declaration, new AbortController().signal)).rejects.toThrow('health failed')
+    await expect(retry.provision(other, new AbortController().signal)).rejects.toThrow('health failed')
     expect(await retry.applied()).toEqual(original)
+  })
+
+  it('cleans a stale, unready prefix before retrying the same revision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-stale-'))
+    const prefix = join(root, 'environments/test-science/2026.08.1')
+    const staleFile = join(prefix, 'stale-marker')
+    const failing = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 1, freeBytes: async () => 1_000,
+      run: async (request) => {
+        if (request.args[0] === 'create') {
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+          await writeFile(staleFile, 'leftover')
+          return
+        }
+        throw new Error('health failed')
+      },
+    })
+    await expect(failing.provision(declaration, new AbortController().signal)).rejects.toThrow('health failed')
+    expect(await failing.applied()).toBeUndefined()
+    await expect(readFile(staleFile, 'utf8')).resolves.toBe('leftover')
+
+    const retry = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', now: () => 2, freeBytes: async () => 1_000,
+      run: async (request) => {
+        if (request.args[0] === 'create') {
+          // A prefix directory with no matching applied.json entry is not
+          // ready: this retry must see a clean prefix, not the marker a
+          // previous failed attempt left behind.
+          await expect(readFile(staleFile, 'utf8')).rejects.toThrow()
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+        }
+      },
+    })
+    const applied = await retry.provision(declaration, new AbortController().signal)
+    expect(applied.prefix).toBe(prefix)
+    expect(await retry.applied()).toEqual(applied)
   })
 
   it('rejects before solving when capacity is insufficient', async () => {
@@ -109,6 +191,33 @@ describe('DesktopEnvironmentProvisioner', () => {
     })
     await expect(provisioner.provision(declaration, control.signal)).rejects.toThrow('cancelled')
     expect(await provisioner.applied()).toBeUndefined()
+  })
+})
+
+describe('buildProvisioningEnv', () => {
+  it('keeps the allowlist and drops everything credential-shaped', () => {
+    const env = buildProvisioningEnv({
+      PATH: '/usr/bin',
+      HOME: '/Users/test',
+      TMPDIR: '/tmp',
+      LANG: 'en_US.UTF-8',
+      LC_ALL: 'en_US.UTF-8',
+      HTTPS_PROXY: 'http://proxy:8080',
+      no_proxy: 'localhost',
+      DEEPSEEK_API_KEY: 'sk-secret',
+      GITHUB_TOKEN: 'ghp-secret',
+      SOME_PASSWORD: 'hunter2',
+      RANDOM_UNRELATED_VAR: 'noise',
+    })
+    expect(env).toEqual({
+      PATH: '/usr/bin',
+      HOME: '/Users/test',
+      TMPDIR: '/tmp',
+      LANG: 'en_US.UTF-8',
+      LC_ALL: 'en_US.UTF-8',
+      HTTPS_PROXY: 'http://proxy:8080',
+      no_proxy: 'localhost',
+    })
   })
 })
 

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -79,16 +79,32 @@ describe('desktop Host supervision', () => {
   })
 
   it.runIf(process.platform !== 'win32')('watchdog collects the Host group after its parent disappears', async () => {
-    const parent = spawn(process.execPath, ['--input-type=module', '--eval', 'setInterval(() => {}, 1000)'])
     const host = spawn(process.execPath, ['--input-type=module', '--eval', 'setInterval(() => {}, 1000)'], {
       detached: true,
     })
-    if (parent.pid === undefined || host.pid === undefined) throw new Error('fixture process missing pid')
+    if (host.pid === undefined) throw new Error('fixture process missing pid')
     const watchdogEntry = fileURLToPath(new URL('../src/watchdog.ts', import.meta.url))
-    const watchdog = spawn(process.execPath, ['--import', 'tsx/esm', watchdogEntry, String(parent.pid), String(host.pid)])
+    // The watchdog detects Electron's death by its own OS ppid changing away
+    // from the original parent, so it must be spawned as a genuine child of
+    // "parent" (mirroring main.ts spawning it directly from Electron) rather
+    // than by this test process, or killing "parent" would never reparent
+    // it. "parent" is only killed once it has actually reached the spawn
+    // call, so a slow process start cannot get SIGKILLed before the
+    // watchdog exists at all.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-watchdog-'))
+    const spawnedMarker = join(dir, 'watchdog-spawned')
+    const parentSource = `
+      const { spawn } = require('node:child_process')
+      const fs = require('node:fs')
+      spawn(${JSON.stringify(process.execPath)}, ['--import', 'tsx/esm', ${JSON.stringify(watchdogEntry)}, String(process.pid), ${JSON.stringify(String(host.pid))}], { detached: true, stdio: 'ignore' })
+      fs.writeFileSync(${JSON.stringify(spawnedMarker)}, 'spawned')
+      setInterval(() => {}, 1000)
+    `
+    const parent = spawn(process.execPath, ['--eval', parentSource])
+    if (parent.pid === undefined) throw new Error('fixture process missing pid')
+    await vi.waitFor(async () => { await access(spawnedMarker) })
     parent.kill('SIGKILL')
     await once(parent, 'exit')
-    await once(watchdog, 'exit')
-    expect(() => process.kill(host.pid as number, 0)).toThrow()
+    await vi.waitFor(() => { expect(() => process.kill(host.pid as number, 0)).toThrow() }, { timeout: 5_000 })
   })
 })

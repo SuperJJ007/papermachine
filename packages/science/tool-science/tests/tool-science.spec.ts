@@ -1713,6 +1713,71 @@ describe('annotate_artifact', () => {
 })
 
 describe('scienceEdits submit', () => {
+  it('adds and removes ignorable user-only notes without queuing model input', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-artifact-notes')
+    const run = await runSuccessfully(ctx, session, 'science-artifact-notes-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const followup = vi.fn()
+    const agent = { session, followup } as unknown as Agent
+    const service = new ScienceEditService(ctx)
+
+    expect(service.addArtifactNote(agent, {
+      artifactId: artifact.artifactId, version: artifact.version, text: '  Inspect axis label  ',
+    })).toEqual({ accepted: true })
+    const added = session.events.at(-1)
+    expect(added).toMatchObject({
+      type: 'science/artifact-note-added', ignorable: true,
+      data: { artifactId: artifact.artifactId, artifactVersion: artifact.version, text: 'Inspect axis label' },
+    })
+    expect(followup).not.toHaveBeenCalled()
+    if (added?.type !== 'science/artifact-note-added') throw new Error('expected note-add event')
+
+    expect(service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
+      .toEqual({ accepted: true })
+    expect(session.events.at(-1)).toMatchObject({
+      type: 'science/artifact-note-removed', ignorable: true,
+      data: { artifactId: artifact.artifactId, noteSeq: added.seq },
+    })
+    expect(() => service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
+      .toThrow(/does not identify an active note/)
+  })
+
+  it('rejects note writes for absent versions and invalid plain text', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-artifact-note-rejections')
+    const run = await runSuccessfully(ctx, session, 'science-artifact-note-rejections-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const service = new ScienceEditService(ctx)
+    const agent = fakeAgent(session)
+
+    expect(() => service.addArtifactNote(agent, {
+      artifactId: artifact.artifactId, version: artifact.version + 1, text: 'missing version',
+    })).toThrow(/does not identify a committed version/)
+    for (const text of ['', '  ', 'has\u0000null', '\uD800 lone surrogate']) {
+      expect(() => service.addArtifactNote(agent, {
+        artifactId: artifact.artifactId, version: artifact.version, text,
+      })).toThrow(/artifact note/)
+    }
+  })
+
+  it('enforces the artifact note length cap at the RPC boundary independent of any UI-side maxLength', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-artifact-note-length')
+    const run = await runSuccessfully(ctx, session, 'science-artifact-note-length-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const service = new ScienceEditService(ctx)
+    const agent = fakeAgent(session)
+
+    expect(service.addArtifactNote(agent, {
+      artifactId: artifact.artifactId, version: artifact.version, text: 'x'.repeat(8_192),
+    })).toEqual({ accepted: true })
+
+    expect(() => service.addArtifactNote(agent, {
+      artifactId: artifact.artifactId, version: artifact.version, text: 'x'.repeat(8_193),
+    })).toThrow(/artifact note must be at most 8192 characters/)
+  })
+
   it('admits a viewer edit through ScienceEditService.submit and queues the structured message on the live agent', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-edit-submit')

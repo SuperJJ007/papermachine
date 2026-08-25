@@ -1,0 +1,24 @@
+.root { min-width: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
+.toggle { width: 100%; padding: 7px 10px; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); text-align: left; cursor: pointer; }
+.card { display: grid; min-width: 0; gap: 3px; padding: 0 10px 9px; }
+/* Design budget: exactly three semantic rows. The two free-text rows
+   line-clamp to one visible line, wrapping mid-token so a long unbroken run
+   still truncates inside the row rather than overflowing it. */
+.request, .facts {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.request { color: var(--dsw-alias-label-primary); }
+.facts { color: var(--dsw-alias-label-caption); }
+/* The links row holds discrete buttons, not wrapped text, so it stays a flex
+   row with only an overflow safety net instead of the line-clamp above. */
+.links { display: flex; min-width: 0; margin: 0; gap: 6px; overflow: hidden; overflow-wrap: anywhere; }
+.links button { min-width: 0; overflow: hidden; padding: 2px 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-state-business-primary); text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.runDetails { min-width: 0; max-height: 320px; overflow: auto; border-top: 1px solid var(--dsw-alias-border-l2); padding: 8px 10px; }
+.inspect { margin: 0 10px 9px; }
+@media (max-width: 420px) { .links { overflow: hidden; } .links button { max-width: 45%; } }

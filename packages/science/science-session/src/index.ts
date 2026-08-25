@@ -18,6 +18,7 @@ import { decodeScienceDomainEvent } from './codec.ts'
 // (the `export type *` re-export below does not have that effect).
 import type {} from './domain.ts'
 import { SCIENCE_PROJECTION_STATE_VERSION } from './ids.ts'
+import { applyScienceArtifactNotes, scienceArtifactNotesSchema } from './artifact-notes.ts'
 import {
   applyScienceProjectionState,
   emptyScienceProjectionState,
@@ -28,6 +29,7 @@ import {
   viewScienceProjectionState,
 } from './projection.ts'
 import type { ScienceProjectionState } from './projection-private.ts'
+import type { ScienceArtifactNotesProjection } from './types.ts'
 import { toClientScienceProjection } from './projection-value.ts'
 
 // Type-only re-exports keep event and projection declaration merging visible
@@ -58,6 +60,7 @@ export {
 } from './fold.ts'
 export type { ScienceFoldState } from './fold.ts'
 export { toClientScienceProjection }
+export { MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from './artifact-notes.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'science-session'
@@ -82,6 +85,14 @@ export function apply(ctx: Context): void {
       wire: { viewSchema: scienceProjectionSchema, view: viewScienceProjectionState },
       viewChanged: scienceProjectionChanged,
       stateVersion: SCIENCE_PROJECTION_STATE_VERSION,
+    })
+    projectionCtx.sessionProjections.register<'scienceArtifactNotes', ScienceArtifactNotesProjection>({
+      key: 'scienceArtifactNotes',
+      stateSchema: scienceArtifactNotesSchema,
+      init: () => [],
+      apply: applyScienceArtifactNotes,
+      wire: { viewSchema: scienceArtifactNotesSchema, view: state => state },
+      stateVersion: 1,
     })
   })
   ctx.inject(['sessionAttachments'], (attachmentCtx) => {

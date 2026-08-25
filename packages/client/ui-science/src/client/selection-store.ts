@@ -1,9 +1,7 @@
 /**
  * ui-science's own package-local per-session store: the open-tabs model
  * behind the artifact viewer. Which logical charts are open, which one is
- * active, whether the active tab shows its content or the provenance
- * drill-in, which provenance sub-tab is showing, and whether the shared
- * lightbox is open. This is Science viewing state, so ui-science owns it
+ * active, and whether the shared lightbox is open. This is Science viewing state, so ui-science owns it
  * directly — it does not belong on `ChatStoreState`, which ui-conversation
  * owns for state its own skeleton dispatches.
  */
@@ -18,12 +16,6 @@ export interface ScienceOpenArtifact {
   version: number
 }
 
-/** Which body the active tab shows: its rendered content, or the provenance drill-in. */
-export type ScienceArtifactView = 'content' | 'provenance'
-
-/** One provenance drill-in sub-tab. */
-export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment'
-
 /**
  * Selection-store state shared by the artifact viewer and the transcript
  * row. Fields are mutable (not `readonly`): actions receive this type
@@ -32,22 +24,13 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
  *
  * The active version is deliberately not its own field: it is
  * `openArtifacts.find(tab => tab.artifactId === activeArtifactId)?.version`,
- * so there is exactly one place a tab's shown version is recorded. `view`
- * and `provenanceSubTab` are single fields, not per-tab — switching the
- * active tab always returns to `'content'` (see
- * `activateTab`/`closeTab`/`openTab` below), and the last-chosen provenance
- * sub-tab is a sticky preference carried across tabs rather than reset per
- * artifact.
+ * so there is exactly one place a tab's shown version is recorded.
  */
 export interface ScienceSelectionState {
   /** Ordered open tabs — one entry per logical chart, never per version. */
   openArtifacts: ScienceOpenArtifact[]
   /** The active tab's artifact id, or `null` while the library is showing. */
   activeArtifactId: ScienceArtifactId | null
-  /** content|provenance for the active tab. */
-  view: ScienceArtifactView
-  /** The last-selected provenance sub-tab. */
-  provenanceSubTab: ScienceProvenanceSubTab
   /** Whether the shared lightbox is open for the active tab's current version. */
   lightboxOpen: boolean
 }
@@ -63,10 +46,6 @@ type ScienceSelectionActions = {
   closeTab: (draft: ScienceSelectionState, artifactId: ScienceArtifactId) => void
   /** Step an already-open tab to a different durable version of the same artifact. */
   setTabVersion: (draft: ScienceSelectionState, next: { artifactId: ScienceArtifactId; version: number }) => void
-  /** Switch the active tab's body between content and the provenance drill-in. */
-  setView: (draft: ScienceSelectionState, view: ScienceArtifactView) => void
-  /** Switch the provenance drill-in's active sub-tab. */
-  setProvenanceSubTab: (draft: ScienceSelectionState, subTab: ScienceProvenanceSubTab) => void
   setLightboxOpen: (draft: ScienceSelectionState, open: boolean) => void
 }
 
@@ -85,12 +64,11 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      openArtifacts: [], activeArtifactId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      openArtifacts: [], activeArtifactId: null, lightboxOpen: false,
     }),
     actions: {
       showLibrary: (draft) => {
         draft.activeArtifactId = null
-        draft.view = 'content'
         draft.lightboxOpen = false
       },
       openTab: (draft, selection) => {
@@ -98,13 +76,11 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
         if (existing === undefined) draft.openArtifacts.push({ artifactId: selection.artifactId, version: selection.version })
         else existing.version = selection.version
         draft.activeArtifactId = selection.artifactId
-        draft.view = 'content'
         draft.lightboxOpen = false
       },
       activateTab: (draft, artifactId) => {
         if (!draft.openArtifacts.some(tab => tab.artifactId === artifactId)) return
         draft.activeArtifactId = artifactId
-        draft.view = 'content'
         draft.lightboxOpen = false
       },
       closeTab: (draft, artifactId) => {
@@ -117,7 +93,6 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
         // was last; an empty ledger falls back to the landing view.
         const fallback = draft.openArtifacts[index] ?? draft.openArtifacts[index - 1]
         draft.activeArtifactId = fallback?.artifactId ?? null
-        draft.view = 'content'
         draft.lightboxOpen = false
       },
       setTabVersion: (draft, next) => {
@@ -126,13 +101,6 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
         tab.version = next.version
         draft.lightboxOpen = false
       },
-      setView: (draft, view) => {
-        draft.view = view
-        // Entering the drill-in closes a stray lightbox left open over the
-        // content view instead of leaving it floating above unrelated body.
-        if (view === 'provenance') draft.lightboxOpen = false
-      },
-      setProvenanceSubTab: (draft, subTab) => { draft.provenanceSubTab = subTab },
       setLightboxOpen: (draft, open) => { draft.lightboxOpen = open },
     },
   })

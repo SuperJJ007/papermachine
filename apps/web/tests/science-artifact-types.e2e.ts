@@ -203,6 +203,38 @@ function scienceFixture(
   ].join('\n')
 }
 
+/** Build a Science-bound session whose Files projection is intentionally empty. */
+function emptyScienceFixture(): string {
+  const session = Session.create(SessionId('science-browser-empty-source'))
+  const origin = Date.now() - 10_000
+  const eventTime = (seq: number): number => origin + seq * 100
+
+  session.append('turn/start', { turn: 1 })
+  session.append('science/mode-bound', {
+    version: 1,
+    mode: { modeId: 'science', presetId: 'science', modeRevision: 'science-empty-sidebar-browser' },
+  })
+  const user = session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'Open Files before any artifact is generated.' }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('session/title', {
+    title: 'Science empty Files',
+    messageSeqs: [user.seq],
+    source: { kind: 'fallback' },
+  })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  const header = {
+    type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: 0, cwd: '{{cwd}}', agentPreset: 'science',
+  }
+  return [
+    JSON.stringify(header),
+    ...session.events.map(event => JSON.stringify({ ...event, time: eventTime(event.seq) })),
+    '',
+  ].join('\n')
+}
+
 describe('web e2e: Science artifact per-media-type rendering', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -242,6 +274,9 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
 
     await centerCol.getByText('Captured 4 artifacts', { exact: false }).waitFor({ timeout: 15_000 })
 
+    await page.getByRole('button', { name: 'Science details' }).click()
+    await detailsPanel.getByText('Files', { exact: true }).waitFor({ timeout: 10_000 })
+
     // Each reference chip opens its artifact's tab directly in the content view.
     await centerCol.getByRole('button', { name: /summary\.csv/ }).click()
     const table = detailsPanel.getByRole('table', { name: 'summary.csv' })
@@ -268,7 +303,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
     // All four tabs stayed open across the chip clicks above.
-    expect(await detailsPanel.getByRole('tab').count()).toBe(4)
+    expect(await detailsPanel.getByRole('tablist', { name: 'Open artifacts' }).getByRole('tab').count()).toBe(4)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')
@@ -285,4 +320,37 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
+})
+
+describe('web e2e: Science Files empty state', () => {
+  let scaffold: WebScaffold
+  let browser: Browser
+  let page: Page
+
+  beforeAll(async () => {
+    scaffold = await launchWebScaffold({})
+    await seedSession(scaffold, emptyScienceFixture(), 'science-empty-sidebar-web-e2e', 'science')
+    browser = await chromium.launch()
+    page = await newEnglishPage(browser)
+    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const groupRow = page.locator('[role="treeitem"]').first()
+    await groupRow.waitFor({ timeout: 15_000 })
+    await groupRow.click()
+    await page.locator('[role="treeitem"]').nth(1).click()
+  }, 120_000)
+
+  afterAll(async () => {
+    await browser?.close()
+    await scaffold?.close()
+  })
+
+  it('opens the Files projection with no fabricated attachments', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-files-empty'))
+    await page.getByText('Open Files before any artifact is generated.', { exact: true }).waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Science details' }).click()
+    const detailsPanel = page.locator('[class*="detailsCol"]')
+    await detailsPanel.getByText('No artifacts yet.', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await detailsPanel.getByRole('tablist', { name: 'Open artifacts' }).count()).toBe(0)
+  }, 30_000)
 })

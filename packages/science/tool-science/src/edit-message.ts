@@ -5,7 +5,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { assertNever, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { foldScience } from '@deepseek-ai/dsh-science-session'
+import { foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
@@ -15,6 +15,9 @@ import type {
   ScienceEditRequest,
   ScienceEditSelection,
   ScienceEditTarget,
+  ScienceArtifactNoteAddRequest,
+  ScienceArtifactNoteRemoveRequest,
+  ScienceArtifactNoteReceipt,
   ScienceStyleEditReceipt,
   ScienceStyleEditRequest,
 } from './types.ts'
@@ -308,5 +311,57 @@ export class ScienceEditService extends TypertRemoteService {
     }
     agent.session.append('science/artifact-saved', { version: 1, artifact })
     return { artifactId: artifact.artifactId, version: artifact.version, origin: artifact.origin }
+  }
+
+  /**
+   * Add one user-only note after validating its logical artifact and visible version.
+   * @param agent - Agent whose session owns the artifact.
+   * @param request - Exact artifact version and plain note text.
+   * @returns Acceptance receipt after the note event is logged.
+   */
+  @Remote('addArtifactNote')
+  addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt {
+    const state = foldScience(agent.session.events)
+    const artifact = state.artifacts.find(candidate =>
+      candidate.artifactId === request.artifactId && candidate.version === request.version)
+    if (artifact === undefined) {
+      throw new ScienceEditError('Science artifact note target does not identify a committed version', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
+    }
+    const text = resolveFreeText(request.text, 'artifact note')
+    if (text.length > MAX_SCIENCE_ARTIFACT_NOTE_LENGTH) {
+      invalid(`Science edit artifact note must be at most ${String(MAX_SCIENCE_ARTIFACT_NOTE_LENGTH)} characters`)
+    }
+    agent.session.append('science/artifact-note-added', {
+      version: 1,
+      artifactId: artifact.artifactId,
+      artifactVersion: artifact.version,
+      text,
+      createdAt: Date.now(),
+    }, { ignorable: true })
+    return { accepted: true }
+  }
+
+  /**
+   * Remove one active user-only note owned by the named logical artifact.
+   * @param agent - Agent whose session owns the note.
+   * @param request - Logical artifact and add-event sequence identifying the note.
+   * @returns Acceptance receipt after the removal event is logged.
+   */
+  @Remote('removeArtifactNote')
+  removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt {
+    const note = agent.session.events.find(event => event.seq === request.noteSeq
+      && event.type === 'science/artifact-note-added' && event.data.artifactId === request.artifactId)
+    const removed = agent.session.events.some(event => event.type === 'science/artifact-note-removed'
+      && event.data.artifactId === request.artifactId && event.data.noteSeq === request.noteSeq)
+    if (note === undefined || removed) {
+      throw new ScienceEditError('Science artifact note does not identify an active note', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
+    }
+    agent.session.append('science/artifact-note-removed', {
+      version: 1,
+      artifactId: request.artifactId,
+      noteSeq: request.noteSeq,
+      removedAt: Date.now(),
+    }, { ignorable: true })
+    return { accepted: true }
   }
 }

@@ -1,38 +1,29 @@
-## Details column — artifact viewer (csv/json/md/png)
+## Details column — artifact viewer
 - text: Files
 - button "Close details"
 - tablist "Open artifacts":
-  - tab "summary.csv"
-  - button "Close summary.csv":
-    - img
-  - tab "metrics.json"
-  - button "Close metrics.json":
-    - img
-  - tab "report.md"
-  - button "Close report.md":
-    - img
-  - tab "plot.png" [selected]
-  - button "Close plot.png":
+  - tab "Missing revision" [selected]
+  - button "Close Missing revision":
     - img
 - button "File library":
   - img
   - text: File library
-- text: plot.png
+- text: Missing revision
 - button "Download":
   - img
 - button "Expand":
   - img
 - button "Close tab":
   - img
-- button "Back to conversation" [disabled]
-- button "Previous version" [disabled]:
+- button "Back to conversation"
+- button "Previous version":
   - img
-- text: v1
+- text: v2
 - button "Next version" [disabled]:
   - img
-- 'button "View original: plot.png"':
-  - img "plot.png"
+- button "Failed to load, click to retry"
 - button "Select region to edit"
+- paragraph: Missing object fixture
 - region "Notes":
   - heading "Notes" [level=3]
   - paragraph: No notes yet.

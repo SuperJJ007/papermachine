@@ -12,7 +12,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
   Session,
@@ -39,7 +39,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const ARTIFACTS_EXPECTED = fileURLToPath(
-  new URL('./snapshots/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
+  new URL('./snapshots/science-artifacts/panel.expected.md', import.meta.url),
 )
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-chart-outcome-web-e2e'
@@ -67,7 +67,6 @@ const FIRST_CHART_CALL_ID = CallId('call-chart-browser-1')
 const SECOND_CHART_CALL_ID = CallId('call-chart-browser-2')
 const FIRST_OUTCOME_CALL_ID = CallId('call-outcome-browser-1')
 const SECOND_OUTCOME_CALL_ID = CallId('call-outcome-browser-2')
-
 /** Append one settled tool result with the exact durable presentation value. */
 function appendToolResult(
   session: Session,
@@ -154,6 +153,18 @@ function scienceFixture(stored: ImageAttachmentRef): string {
     header: { config: { provider: 'fixture', model: 'fixture' } },
     reason: 'initial',
   })
+  session.append('assistant/message', {
+    turn: 1,
+    step: 1,
+    message: createAssistantMessage({
+      content: [
+        { id: RUN_CALL_ID, name: 'run_python' },
+        { id: FIRST_CHART_CALL_ID, name: 'annotate_artifact' },
+        { id: FIRST_OUTCOME_CALL_ID, name: 'publish_outcome' },
+      ].map(call => ({ type: 'tool-call' as const, ...call, arguments: '{}' })),
+      source: { provider: 'fixture', model: 'fixture' },
+    }),
+  }, { surfaceOp: 'append' })
 
   session.append('science/kernel-state', {
     version: 1,
@@ -326,6 +337,19 @@ function scienceFixture(stored: ImageAttachmentRef): string {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('step/start', { turn: 2, step: 1 })
+  session.append('assistant/message', {
+    turn: 2,
+    step: 1,
+    message: createAssistantMessage({
+      content: [
+        { id: SECOND_RUN_CALL_ID, name: 'run_python' },
+        { id: SECOND_CHART_CALL_ID, name: 'annotate_artifact' },
+        { id: SECOND_OUTCOME_CALL_ID, name: 'publish_outcome' },
+        { id: CANCELLED_RUN_CALL_ID, name: 'run_python' },
+      ].map(call => ({ type: 'tool-call' as const, ...call, arguments: '{}' })),
+      source: { provider: 'fixture', model: 'fixture' },
+    }),
+  }, { surfaceOp: 'append' })
   const secondRunCall = session.append('tool/call', {
     turn: 2, step: 1, callId: SECOND_RUN_CALL_ID, name: 'run_python', arguments: '{}',
   })
@@ -548,48 +572,29 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await scienceAction.count()).toBe(0)
 
     // The built-in `science` preset session shows the action; activating it
-    // opens the Details column with no tab open — the landing view (gallery
-    // of latest chart versions, plus the latest Outcome below it).
+    // opens the Details column with no tab open — the Files landing view.
     await openSessionByTitle(SEED_TITLE)
     await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
-    await detailsPanel.getByText('Science', { exact: true }).waitFor({ timeout: 10_000 })
+    await detailsPanel.getByText('Files', { exact: true }).waitFor({ timeout: 10_000 })
 
     // Only the latest accepted chart version renders in the gallery (v2, the
-    // missing object), and the latest Outcome renders below it with its
-    // evidence — the same projection the transcript rows already reused, no
-    // second reader.
+    // missing object). Outcome stays on its independent Details route.
     expect(await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).count()).toBe(1)
     expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
-    // No Environment strip or Runs list on the landing view (removed with
-    // the dashboard); those facts now live only in the per-artifact
-    // Provenance drill-in, checked below.
+    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(0)
+    // No Environment strip or Runs list remains in the object-state viewer.
     expect(await detailsPanel.getByText('Profile:', { exact: false }).count()).toBe(0)
 
-    // Drill into the artifact's Provenance → Environment sub-tab: the same
-    // client-safe projection, rendered as JSON.
+    // Opening an artifact exposes preview, version history, notes, and the
+    // conversation return action without a causal top-level view.
     await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).click()
-    await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
-    await detailsPanel.getByRole('tab', { name: 'Environment' }).click()
-    // Shiki-highlighted JSON tokenizes the text across spans, so poll the
-    // panel's flattened text rather than matching a single text node.
-    await expect.poll(async () => (await detailsPanel.innerText()).includes('"profileId"'), { timeout: 10_000 }).toBe(true)
-
+    expect(await detailsPanel.getByRole('region', { name: 'Notes' }).count()).toBe(1)
+    expect(await detailsPanel.getByRole('button', { name: 'Back to conversation' }).count()).toBe(1)
+    expect(await detailsPanel.getByRole('tab', { name: 'Provenance' }).count()).toBe(0)
+    expect(await detailsPanel.getByRole('tab', { name: 'Diff' }).count()).toBe(0)
     const detailsText = await detailsPanel.innerText()
-    // Client-safe facts reach the panel: profile id, revision, per-language
-    // capability, language version, and the twelve-character fingerprint
-    // preview.
-    expect(detailsText).toContain('"profileId": "browser-profile"')
-    expect(detailsText).toContain('"revision": 1')
-    expect(detailsText).toContain('"capability": "available"')
-    expect(detailsText).toContain('"languageVersion": "3.13.5"')
-    expect(detailsText).toContain('"fingerprintPreview": "bbbbbbbbbbbb"')
-    // No absolute Host path, executable identity, condaHistorySha256, or the
-    // full 64-character fingerprint ever reaches the rendered panel — only
-    // the twelve-character preview asserted above.
     expect(detailsText).not.toContain('/private/host/science')
     expect(detailsText).not.toContain('/private/host/science/bin/python')
     expect(detailsText).not.toContain('dev:1-ino:2')
@@ -605,8 +610,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
 
-  it('activating a transcript chart row opens its tab, the toolbar steps versions, and the provenance drill-in jumps to the transcript', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-provenance'))
+  it('opens exact versions, expands the producing turn trace, and returns from the viewer to chat', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-state'))
     const detailsPanel = page.locator('[class*="detailsCol"]')
     const centerCol = page.locator('[class*="centerCol"]')
 
@@ -623,6 +628,11 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const secondRun = runRows.nth(1)
     expect(await firstRun.innerText()).toContain('run complete')
     expect(await secondRun.innerText()).toContain('revised run complete')
+    const turnTrace = centerCol.getByRole('button', { name: /This turn produced 1 files · View trace/ }).first()
+    await turnTrace.click()
+    const turnCard = centerCol.locator('[data-science-turn-card]').first()
+    await turnCard.waitFor({ timeout: 10_000 })
+    expect(await turnCard.locator(':scope > *').count()).toBe(3)
     // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
     // "Version" definition, which renders the identical "v1"/"v2" text.
     const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
@@ -636,6 +646,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const tab = detailsPanel.getByRole('tab', { name: 'Missing revision' })
     await tab.waitFor({ timeout: 10_000 })
     expect(await tab.getAttribute('aria-selected')).toBe('true')
+    await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).waitFor({ timeout: 10_000 })
 
     // The version stepper walks to the other durable version and back.
     const prevVersion = detailsPanel.getByRole('button', { name: 'Previous version' })
@@ -646,6 +657,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await detailsPanel.getByText('Observed series', { exact: true }).first().waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('Durable browser fixture', { exact: true }).count()).toBe(1)
     expect(await prevVersion.isDisabled()).toBe(true)
+    await detailsPanel.getByText('Viewing an older version — v1 of 2', { exact: true }).waitFor({ timeout: 10_000 })
+    await detailsPanel.getByRole('img', { name: 'observed.png' }).waitFor({ timeout: 10_000 })
 
     // Maximize opens the shared lightbox from the toolbar (not the image's
     // own click-to-open state) — v1's attachment is stored, so the load
@@ -658,25 +671,13 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     await nextVersion.click()
     await detailsPanel.getByText('Missing revision', { exact: true }).first().waitFor({ timeout: 10_000 })
+    // v2's attachment is the deliberately missing object (same as the first
+    // visit above): its loader settles into the failed state, not the
+    // transient "Loading…" one, before the golden capture below.
+    await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).waitFor({ timeout: 10_000 })
 
-    // Provenance drills in: a breadcrumb over four sub-tabs. The sub-tab
-    // selection is a sticky preference carried across tabs (not reset here),
-    // so select Code explicitly rather than assuming a fresh default.
-    await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
-    await detailsPanel.getByRole('navigation', { name: 'Provenance' }).waitFor({ timeout: 10_000 })
-    await detailsPanel.getByRole('tab', { name: 'Code' }).click()
-    // The durable digest anchor renders even though the fixture's run
-    // arguments carry no `code` field (the code part itself reports unavailable).
-    expect(await detailsPanel.getByText(`SHA-256 ${'c'.repeat(64)}`, { exact: true }).count()).toBe(1)
-
-    await detailsPanel.getByRole('tab', { name: 'Execution log' }).click()
-    await detailsPanel.getByText('stdout 2 bytes, stderr 0 bytes', { exact: true }).waitFor({ timeout: 10_000 })
-
-    // The assembled golden: the tab strip, toolbar (version label, expand,
-    // download, close tab), and the drill-in's breadcrumb/sub-tabs/Execution
-    // log body, all inside the Details column — the whole rendered
-    // accessibility tree, so a regression that drops or reorders a region
-    // changes this file.
+    // The assembled golden pins the single preview mode, version controls,
+    // private notes, and conversation return action.
     await compareOrRefreshGolden(
       ARTIFACTS_EXPECTED,
       [
@@ -686,12 +687,47 @@ describe('web e2e: Science chart and Outcome replay', () => {
       MODE,
     )
 
-    // The Messages sub-tab's jump reaches the real transcript: the center
-    // column switches to Trajectory and reveals the target call.
-    await detailsPanel.getByRole('tab', { name: 'Messages' }).click()
-    await detailsPanel.getByRole('button', { name: 'Jump to transcript' }).click()
-    await expect.poll(() => centerCol.getByRole('tab', { name: 'Trajectory' }).getAttribute('aria-selected'))
-      .toBe('true')
+    await detailsPanel.getByRole('button', { name: 'Back to conversation' }).click()
+    await expect.poll(() => centerCol.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
+
+    await page.setViewportSize({ width: 720, height: 900 })
+    await expect.poll(() => page.locator('[data-science-session="true"]').getAttribute('data-details-collapsed')).toBe('true')
+    await page.setViewportSize({ width: 1680, height: 1000 })
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
+  }, 60_000)
+
+  it('persists an added artifact note through the real Remote across a full page reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-note-persistence'))
+    const detailsPanel = page.locator('[class*="detailsCol"]')
+    const scienceAction = page.getByRole('button', { name: 'Science details' })
+    const noteText = `Persisted note ${String(Date.now())}`
+
+    async function openMissingRevisionTab(): Promise<void> {
+      await openSessionByTitle(SEED_TITLE)
+      await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+      await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
+      await scienceAction.click()
+      // An earlier case in this file may leave the client-side selection
+      // store already pointed at this exact tab (a fresh page load, below,
+      // always starts from the landing view instead) — open the gallery
+      // entry only when the landing view, not the tab itself, is current.
+      const openButton = detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' })
+      if (await openButton.count() > 0) await openButton.click()
+      await detailsPanel.getByRole('region', { name: 'Notes' }).waitFor({ timeout: 10_000 })
+    }
+
+    await openMissingRevisionTab()
+    await detailsPanel.getByRole('textbox', { name: 'Artifact note' }).fill(noteText)
+    await detailsPanel.getByRole('button', { name: 'Add' }).click()
+    await detailsPanel.getByText(noteText, { exact: true }).waitFor({ timeout: 10_000 })
+
+    // The note round-trips through the real scienceEdits Remote and durable
+    // session log — not just component state — so it survives a full reload.
+    await page.reload({ waitUntil: 'load' })
+    await openMissingRevisionTab()
+    await detailsPanel.getByText(noteText, { exact: true }).waitFor({ timeout: 10_000 })
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])

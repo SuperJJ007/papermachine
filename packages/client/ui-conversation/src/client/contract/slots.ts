@@ -434,6 +434,8 @@ export interface TurnTailOwnerProps {
    * view resolves relative paths against the session cwd).
    */
   openFile: (path: string) => void
+  /** Inspect one Tool call through the shared Details handoff. */
+  inspectCall?: (callId: CallId) => void
 }
 
 /**

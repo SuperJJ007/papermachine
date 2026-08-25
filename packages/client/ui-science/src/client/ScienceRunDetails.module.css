@@ -1,0 +1,4 @@
+.root { display: grid; min-width: 0; gap: 10px; }
+.root section { min-width: 0; }
+.root h4, .root p { margin: 0 0 6px; }
+.root p { color: var(--dsw-alias-label-caption); overflow-wrap: anywhere; }

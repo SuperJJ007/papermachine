@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /** Semantic Science trace grouping and actor-owned presentation. */
 
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
@@ -20,6 +20,7 @@ const translate = (key: keyof typeof en, params?: Record<string, unknown>): stri
   return text
 }
 const t = translate as TranslateNS<'science'>
+afterEach(cleanup)
 
 function assistant(turn: number, seq: number, calls: readonly string[], text = ''): ConversationNode {
   return {
@@ -122,8 +123,7 @@ describe('Science semantic trace', () => {
     expect(model.turns).toEqual([1, 2])
     expect(model.groups).toHaveLength(2)
     expect(model.groups[0]?.runs).toHaveLength(8)
-    expect(model.dialogues.filter(item => item.actor === 'agent' && item.turn === 1))
-      .toMatchObject([{ seq: 10, text: 'The chart is ready.' }])
+    expect(model.dialogues.some(item => item.text === 'The chart is ready.')).toBe(false)
     expect(model.groups[0]?.title).toEqual({ kind: 'generate', name: 'chart.vl.json', count: 2 })
     expect(model.groups[0]?.artifacts.map(item => item.action)).toEqual(['created', 'curated'])
     expect(model.groups[1]?.failedCount).toBe(1)
@@ -209,29 +209,26 @@ describe('Science semantic trace', () => {
     ])
   })
 
-  it('renders user and agent sides, opens failed groups, and routes explicit call and artifact anchors', () => {
+  it('renders three-line fact cards and routes run and artifact anchors without repeating answers', () => {
     const { nodes, science, turnTimes } = fixture()
     const inspectCall = vi.fn()
     const openArtifact = vi.fn()
+    const selectDetailed = vi.fn()
     const openTab = vi.fn()
     const snapshot = { nodes, turnTimings: turnTimes } as unknown as ConversationSnapshot
     render(<ScienceTraceView {...({
       useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
       useProjection: () => science,
-      inspectCall, actions: { openTab }, openArtifact, t,
+      inspectCall, actions: { openTab }, openArtifact, selectDetailed, t,
     } as unknown as ScienceTraceViewProps)} />)
 
-    expect(document.querySelector('[data-kind="selection"]')?.getAttribute('data-actor')).toBe('user')
-    expect(document.querySelector('details[data-actor="agent"]')).toBeTruthy()
+    expect(document.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
     expect(screen.queryByText(/Intermediate narration/)).toBeNull()
-    expect(screen.getByText('The chart is ready.')).toBeTruthy()
-    expect(document.querySelectorAll('details[open]')).toHaveLength(1)
-    const failed = screen.getByRole('button', { name: /python · 500 ms · failed/ })
-    expect(failed.getAttribute('data-anchor')).toBe('call:repair-1')
+    expect(screen.queryByText('The chart is ready.')).toBeNull()
+    const failed = screen.getByRole('button', { name: /python ×2.*1 failed/u })
     fireEvent.click(failed)
+    expect(selectDetailed).toHaveBeenCalledTimes(1)
     expect(inspectCall).toHaveBeenCalledWith('repair-1')
-    fireEvent.click(screen.getByRole('button', { name: 'Open delegated task' }))
-    expect(inspectCall).toHaveBeenCalledWith('subagent-child')
     const chip = screen.getByRole('button', { name: /chart.vl.json v2/ })
     expect(chip.getAttribute('data-anchor')).toBe('artifact:chart-1@2')
     fireEvent.click(chip)
@@ -239,6 +236,46 @@ describe('Science semantic trace', () => {
     expect(openArtifact).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Open artifact' }))
     expect(openTab).toHaveBeenCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 3 })
+  })
+
+  it('shows the no-runs and no-artifacts fallbacks, and skips the group card for a human-edit-only turn', () => {
+    const nodes = [
+      { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'First' }] },
+      assistant(1, 2, ['run-a']),
+      { kind: 'user', seq: 3, time: 3, source: { kind: 'user' }, content: [{ type: 'text', text: 'Second' }] },
+      assistant(2, 4, ['subagent-a']),
+      { kind: 'user', seq: 5, time: 5, source: { kind: 'user' }, content: [{ type: 'text', text: 'Third' }] },
+    ] as ConversationNode[]
+    const science = {
+      mode: {}, environment: null, kernels: [], outcome: null, lastScienceEventSeq: 5,
+      runs: [run('run-a', 1)],
+      artifacts: [
+        { artifactId: ScienceArtifactId('note'), logicalName: 'note.md', version: 2, title: 'Note',
+          parent: { artifactId: ScienceArtifactId('note'), version: 1 }, attachment: {} as never,
+          environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 25, origin: 'human-edit' },
+      ],
+      metrics: {},
+    } as unknown as ScienceClientProjection
+    const turnTimes = new Map([
+      [1, { startTime: 0, endTime: 10 }], [2, { startTime: 11, endTime: 20 }], [3, { startTime: 21, endTime: 30 }],
+    ])
+    const snapshot = { nodes, turnTimings: turnTimes } as unknown as ConversationSnapshot
+    render(<ScienceTraceView {...({
+      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
+      useProjection: () => science,
+      inspectCall: vi.fn(), actions: { openTab: vi.fn() }, openArtifact: vi.fn(), selectDetailed: vi.fn(), t,
+    } as unknown as ScienceTraceViewProps)} />)
+
+    // Turn 3 published only a human edit: no card renders for it, but its
+    // human-edit node still does (reusing the already-covered node render).
+    expect(document.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
+    expect(screen.getByText(/directly edited note\.md/u)).toBeTruthy()
+    // Turn 1 ran code but produced no artifact.
+    expect(screen.getAllByText('No produced files').length).toBeGreaterThan(0)
+    // Turn 2 delegated to a subagent with no run of its own: the facts button
+    // is disabled and falls back to the no-runs label.
+    const noRuns = screen.getByRole('button', { name: 'No code runs' })
+    expect(noRuns.hasAttribute('disabled')).toBe(true)
   })
 
   it('renders the empty projection state', () => {
@@ -250,7 +287,7 @@ describe('Science semantic trace', () => {
     expect(screen.getByText(/Intent groups will appear/)).toBeTruthy()
   })
 
-  it('renders the final assistant text as a standalone conclusion when a turn has no intent group', () => {
+  it('never renders a direct assistant conclusion in the trace', () => {
     const nodes = [
       { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'Answer directly' }] },
       assistant(1, 2, [], 'Direct conclusion'),
@@ -260,7 +297,7 @@ describe('Science semantic trace', () => {
       useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
       useProjection: () => ({ ...fixture().science, runs: [], artifacts: [] }), t,
     } as unknown as ScienceTraceViewProps)} />)
-    expect(screen.getByText('Direct conclusion')).toBeTruthy()
-    expect(document.querySelector('[data-kind="dialogue"]')).toBeTruthy()
+    expect(screen.queryByText('Direct conclusion')).toBeNull()
+    expect(document.querySelector('[data-kind="dialogue"]')).toBeNull()
   })
 })

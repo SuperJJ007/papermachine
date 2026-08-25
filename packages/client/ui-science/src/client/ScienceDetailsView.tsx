@@ -6,10 +6,8 @@
 // close tab) above the dispatched content (ArtifactContent.tsx), or — one
 // toolbar click away — the provenance drill-in (ScienceArtifactProvenance.tsx).
 // With no open tabs the panel shows the landing view: a gallery of latest
-// artifact versions (opening one opens its tab) plus the latest Outcome,
-// kept reachable but secondary below the gallery rather than as its own tab,
-// since it carries no version history or provenance of its own to navigate.
-// It builds no second projection reader, artifact store, or Outcome editor;
+// artifact versions (opening one opens its tab).
+// It builds no second projection reader or artifact store;
 // the one piece of local state it owns is the shared ui-science selection
 // store (selection-store.ts). Thumbnails and content load through this
 // package's own session-scoped loaders (science-attachment-loader.ts) —
@@ -26,7 +24,7 @@ import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
-  IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, MarkdownText, Tooltip,
+  IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -34,8 +32,7 @@ import type { ConversationSnapshot, SnapshotStore } from '@deepseek-ai/dsh-clien
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientOutcomePublication, ScienceClientProjection,
-  ScienceEvidenceRef,
+  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
   ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
@@ -61,6 +58,8 @@ export interface ScienceDetailsInjected {
   composerSelections: SnapshotStore<readonly ScienceEditSelection[]>
   /** Open the semantic trace at one generation turn. */
   openTrace: (turn: number) => void
+  /** Select the detailed trajectory subview before inspecting one call. */
+  selectDetailed: () => void
   /** Commit a complete styled Vega-Lite working copy over one exact current version. */
   commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
     | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
@@ -77,16 +76,6 @@ export type ScienceDetailsViewProps =
 /* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
 function assertNever(value: never): never {
   throw new Error(`unhandled value: ${JSON.stringify(value)}`)
-}
-
-function evidenceText(item: ScienceEvidenceRef, t: TranslateNS<'science'>): string {
-  switch (item.kind) {
-    case 'run': return t('outcome.evidenceRun', { runId: item.runId })
-    case 'chart': return t('outcome.evidenceChart', { chartId: item.chartId, version: item.version })
-    case 'message': return t('outcome.evidenceMessage', { seq: item.seq })
-    /* v8 ignore next -- closed evidence-kind union */
-    default: return assertNever(item)
-  }
 }
 
 /** Latest accepted version per logical artifact, in first-appearance (commit) order. */
@@ -379,7 +368,7 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
                 button swallows clicks meant for its ancestor, even from a
                 sibling outside the inner button — proven by this exact
                 structure in this package's own tests); a div with a button
-                role is the same pattern ScienceArtifactRow's row uses. */}
+                role follows the artifact gallery's other interactive cards. */}
                 {/* An explicit label: without it this role="button" wrapper's
                 accessible name is computed from its contents, which include
                 MessageImage's own button — so the wrapper would announce (and
@@ -428,37 +417,9 @@ function MessageImageTile({ attachment, loadImage, t }: {
   )
 }
 
-function OutcomeSection({ outcome, t }: {
-  outcome: ScienceClientOutcomePublication | null
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <section className={css.section}>
-      <div className={css.sectionLabel}>{t('outcome.title')}</div>
-      {outcome === null
-        ? <p className={css.notice} role="status">{t('details.outcome.empty')}</p>
-        : (
-          <div className={css.outcomeBody}>
-            <div className={css.outcomeHead}>
-              <span className={css.outcomeTitle}>{outcome.title}</span>
-              <span className={css.badge}>{t('outcome.revision', { revision: outcome.revision })}</span>
-            </div>
-            <MarkdownText text={outcome.summaryMarkdown} />
-            {outcome.evidence.length > 0 && (
-              <ul className={css.evidenceList}>
-                {outcome.evidence.map((item, index) => <li key={index}>{evidenceText(item, t)}</li>)}
-              </ul>
-            )}
-          </div>
-        )}
-    </section>
-  )
-}
-
-/** No open tabs: a gallery of latest artifact versions (opening one opens its tab), plus the Outcome kept reachable below it. */
-function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
+/** No open tabs: a gallery of latest artifact versions. */
+function LandingView({ artifacts, loadImage, onOpenTab, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
-  outcome: ScienceClientOutcomePublication | null
   loadImage: ImageLoader
   onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
@@ -469,7 +430,6 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
         <div className={css.sectionLabel}>{t('details.artifacts.title')}</div>
         <ArtifactGallery artifacts={artifacts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
       </section>
-      <OutcomeSection outcome={outcome} t={t} />
     </div>
   )
 }
@@ -477,7 +437,8 @@ function LandingView({ artifacts, outcome, loadImage, onOpenTab, t }: {
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
   science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText,
-  addToConversation, removeFromConversation, composerSelections, openTrace, commitStyleEdit, useStore, actions, inspectCall, t,
+  addToConversation, removeFromConversation, composerSelections, openTrace, selectDetailed,
+  commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -491,6 +452,7 @@ function ArtifactTab({
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
   composerSelections: ScienceDetailsInjected['composerSelections']
   openTrace: ScienceDetailsInjected['openTrace']
+  selectDetailed: ScienceDetailsInjected['selectDetailed']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -556,6 +518,7 @@ function ArtifactTab({
         onSubTabChange={(subTab) => { actions.setProvenanceSubTab(subTab) }}
         onBack={() => { actions.setView('content') }}
         inspectCall={inspectCall}
+        selectDetailed={selectDetailed}
         openTrace={openTrace}
         t={t}
       />
@@ -627,7 +590,7 @@ function ArtifactTab({
 
 function ArtifactViewer({
   science, snapshot, loadImage, loadText, addToConversation, removeFromConversation,
-  composerSelections, openTrace, commitStyleEdit, useStore, actions, inspectCall, t,
+  composerSelections, openTrace, selectDetailed, commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   snapshot: ConversationSnapshot
@@ -637,6 +600,7 @@ function ArtifactViewer({
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
   composerSelections: ScienceDetailsInjected['composerSelections']
   openTrace: ScienceDetailsInjected['openTrace']
+  selectDetailed: ScienceDetailsInjected['selectDetailed']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -657,7 +621,6 @@ function ArtifactViewer({
       <div className={css.body}>
         <LandingView
           artifacts={artifacts}
-          outcome={science.outcome}
           loadImage={loadImage}
           onOpenTab={(selection) => { actions.openTab(selection) }}
           t={t}
@@ -698,6 +661,7 @@ function ArtifactViewer({
             removeFromConversation={removeFromConversation}
             composerSelections={composerSelections}
             openTrace={openTrace}
+            selectDetailed={selectDetailed}
             commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
@@ -718,7 +682,8 @@ function ArtifactViewer({
  */
 export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
-  inspectCall, loadImage, loadText, addToConversation, removeFromConversation, composerSelections, openTrace, commitStyleEdit, t,
+  inspectCall, loadImage, loadText, addToConversation, removeFromConversation, composerSelections,
+  openTrace, selectDetailed, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   const science = useProjection('science')
@@ -746,6 +711,7 @@ export function ScienceDetailsView({
       science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
       removeFromConversation={removeFromConversation} composerSelections={composerSelections} openTrace={openTrace}
+      selectDetailed={selectDetailed}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

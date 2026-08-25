@@ -1,4 +1,4 @@
-import { IconDataOutline16, IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
@@ -8,10 +8,10 @@ import css from './ScienceDestinations.module.css'
 /** Full props for the Science project destination rows. */
 export type ScienceDestinationsProps = PropsRuntime<'sidebar.destinations'> & PropsLocale<'science'> & {
   /** Reveal the Science artifact stage for a mounted Session. */
-  openScience: (sessionId: SessionId, destination: 'files' | 'outcomes') => void
+  openScience: (sessionId: SessionId) => void
 }
 
-/** Render distinct Files and Outcomes destinations only for the current Science Session. */
+/** Render the Files destination only for the current Science Session. */
 export function ScienceDestinations({ wide, useSessions, openScience, t }: ScienceDestinationsProps) {
   const current = useSessions(state => state.current)
   const science = useSessions(state => current !== undefined && state.byId[current]?.agentPreset === 'science')
@@ -30,8 +30,7 @@ export function ScienceDestinations({ wide, useSessions, openScience, t }: Scien
   )
   return (
     <div className={css.root}>
-      {destination(t('nav.files'), <IconDataOutline16 />, () => { openScience(current, 'files') })}
-      {destination(t('nav.outcomes'), <IconGoalOutline16 />, () => { openScience(current, 'outcomes') })}
+      {destination(t('nav.files'), <IconDataOutline16 />, () => { openScience(current) })}
     </div>
   )
 }

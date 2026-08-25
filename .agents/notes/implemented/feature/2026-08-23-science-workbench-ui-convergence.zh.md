@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-23-science-workbench-ui-convergence.md) | 中文
 
+本记录中 Trace 与 Outcome 的放置已由 [Science 轨迹与会话记录信息架构](2026-08-25-science-trajectory-and-transcript-ia.zh.md) 取代。文件舞台、composer 选择、设置、内核状态、浅色 composition 与桌面 toggle 放置仍然有效。
+
 ## Problem
 
 Science artifact 可以通过会话 Details 操作进入，但外围产品仍把对话当作主要工作区。项目文件与结论没有稳定入口，模型辅助编辑在 artifact viewer 内使用第二个指令输入框，而工程用途的 Trajectory 是对话视图标签环里唯一的事件级记录。这些分裂造成导航重复，也让选中的图表元素离开用户的主请求上下文。

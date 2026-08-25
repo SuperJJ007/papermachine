@@ -1,26 +1,23 @@
-/** Science-only semantic trace: user intent and human edits opposite agent intent groups and conclusions. */
+/** Science-only semantic swimlane: per-turn request, run/artifact facts, and human edits opposite agent intent groups on the timeline. */
 
 import { useMemo } from 'react'
-import {
-  IconCodeOutline16, IconFolderOpenOutline16, IconThinkOutline16, IconUserOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InjectFace, PropsLocale, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconCodeOutline16, IconFolderOpenOutline16, IconThinkOutline16, IconUserOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceSelectionStore } from './selection-store.ts'
-import {
-  buildScienceTraceModel, type ScienceTraceArtifactDelta, type ScienceTraceGroup,
-} from './science-trace-model.ts'
+import { buildScienceTraceModel, type ScienceTraceGroup } from './science-trace-model.ts'
 import css from './ScienceTraceView.module.css'
 
 /** Cross-view writes supplied by the Science trace registration. */
 export interface ScienceTraceInjected {
   /** Open one exact artifact version in the Science Details stage. */
   openArtifact: (selection: { readonly artifactId: ScienceArtifactId; readonly version: number }) => void
+  /** Select the detailed Trajectory implementation before applying an inspect handoff. */
+  selectDetailed: () => void
 }
 
 /** Full props for the Science semantic trace view. */
-export type ScienceTraceViewProps = ConvViewProps & PropsLocale<'science'>
+export type ScienceTraceViewProps = PropsRuntime<'trajectory.view'> & PropsLocale<'science'>
   & PropsStore<ScienceSelectionStore> & InjectFace<ScienceTraceInjected>
 
 function compact(text: string): string {
@@ -50,20 +47,10 @@ export function scienceTraceGroupTitle(group: ScienceTraceGroup, t: TranslateNS<
   }
 }
 
-function artifactDeltaText(artifact: ScienceTraceArtifactDelta, t: TranslateNS<'science'>): string {
-  switch (artifact.action) {
-    case 'created': return t('trace.artifact.created', { name: artifact.logicalName, version: artifact.version })
-    case 'curated': return t('trace.artifact.curated', {
-      name: artifact.logicalName, version: artifact.version, title: artifact.title,
-    })
-    case 'advanced': return t('trace.artifact.advanced', {
-      name: artifact.logicalName, version: artifact.version, parent: artifact.parentVersion,
-    })
-  }
-}
-
 /** Render the turn-grouped Science trace using actor-owned sides of the center timeline. */
-export function ScienceTraceView({ useSession, useProjection, inspectCall, actions, openArtifact, t }: ScienceTraceViewProps) {
+export function ScienceTraceView({
+  useSession, useProjection, inspectCall, actions, openArtifact, selectDetailed, t,
+}: ScienceTraceViewProps) {
   const nodes = useSession(snapshot => snapshot.nodes)
   const turnTimes = useSession(snapshot => snapshot.turnTimings)
   const science = useProjection('science')
@@ -91,37 +78,36 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
         )}
         {model.turns.map((turn) => {
           const dialogues = model.dialogues.filter(item => item.turn === turn)
-          const conclusion = dialogues.find(item => item.actor === 'agent')
           const group = model.groups.find(item => item.turn === turn)
           const humanEdits = model.humanEdits.filter(item => item.turn === turn)
+          if (group === undefined && humanEdits.length === 0) return null
+          const request = dialogues[0]
+          const languageCounts = new Map<string, number>()
+          for (const row of group?.runs ?? []) {
+            languageCounts.set(row.run.language, (languageCounts.get(row.run.language) ?? 0) + 1)
+          }
+          const runFacts = [...languageCounts].map(([language, count]) => `${language} ×${String(count)}`)
+          if (group !== undefined && group.failedCount > 0) runFacts.push(t('trace.failures', { count: group.failedCount }))
+          if (group !== undefined && group.miscToolCount > 0) runFacts.push(t('trace.miscTools', { count: group.miscToolCount }))
           return (
             <section className={css.turn} id={`trace-turn-${String(turn)}`} data-anchor={`turn:${String(turn)}`} key={turn}>
               <div className={css.turnLabel}>{t('trace.turn', { turn })}</div>
-              {dialogues.filter(item => item.actor === 'user').map(item => (
-                <article className={css.node} data-actor="user" data-kind={item.selection ? 'selection' : 'dialogue'}
-                  data-anchor={item.anchor} key={item.anchor}>
-                  <span className={css.icon}><IconUserOutline16 /></span>
-                  <div><b>{item.selection ? t('trace.yourSelection') : t('trace.you')}</b><p>{compact(item.text)}</p></div>
-                </article>
-              ))}
               {group !== undefined && (
-                <details className={css.group} data-actor="agent" data-anchor={group.anchor} open={group.failedCount > 0}>
-                  <summary>
-                    <span className={css.icon}><IconThinkOutline16 /></span>
-                    <span><b>{scienceTraceGroupTitle(group, t)}</b><small>{group.failedCount === 0
-                      ? t('trace.groupStatus', {
-                        attempts: group.runs.length, duration: formatScienceTraceDuration(group.durationMs, t),
-                      })
-                      : t('trace.groupStatusFailed', {
-                        attempts: group.runs.length, failures: group.failedCount,
-                        duration: formatScienceTraceDuration(group.durationMs, t),
-                      })}</small>
-                    {conclusion !== undefined && (
-                      <span className={css.conclusion}>{compact(conclusion.text)}</span>
-                    )}
-                    </span>
-                  </summary>
-                  {group.artifacts.length > 0 && <div className={css.chips}>{group.artifacts.map(artifact => (
+                <article className={css.group} data-actor="agent" data-anchor={group.anchor} data-line-budget="3">
+                  {/* Design budget: exactly three semantic rows. Every free-text
+                      row clamps to one line; files never create a fourth. */}
+                  <p className={css.request} title={request?.text}>{request === undefined ? t('trace.requestUnavailable') : compact(request.text)}</p>
+                  <button type="button" className={css.facts} disabled={group.runs.length === 0}
+                    onClick={() => {
+                      const first = group.runs[0]
+                      /* v8 ignore next -- disabled whenever runs is empty, so a click only fires once runs[0] exists. */
+                      if (first === undefined) return
+                      selectDetailed()
+                      inspectCall(first.callId)
+                    }}>
+                    <IconThinkOutline16 /> {runFacts.join(' · ') || t('trace.noRuns')}
+                  </button>
+                  <div className={css.chips}>{group.artifacts.map(artifact => (
                     <button type="button" data-anchor={artifact.anchor}
                       key={`${artifact.artifactId}:${String(artifact.version)}:${artifact.action}:${artifact.title}`}
                       onClick={() => {
@@ -130,28 +116,8 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
                       }}>
                       <IconFolderOpenOutline16 /> <code>{artifact.logicalName} v{artifact.version}</code>
                     </button>
-                  ))}</div>}
-                  <div className={css.details}>
-                    {group.runs.map(row => (
-                      <button type="button" className={css.run} data-failed={row.failed || undefined}
-                        data-anchor={`call:${row.callId}`} key={row.run.runId} onClick={() => { inspectCall(row.callId) }}>
-                        <span>{row.run.language} · {formatScienceTraceDuration(row.durationMs, t)} · {t(`trace.run.${row.run.status}`)}</span>
-                        <small>{t('trace.runInputs', { count: row.run.inputs?.length ?? 0 })} · <code>{row.anchor}</code></small>
-                      </button>
-                    ))}
-                    {group.artifacts.map(artifact => (
-                      <p data-anchor={artifact.anchor}
-                        key={`delta:${artifact.artifactId}:${String(artifact.version)}:${artifact.action}:${artifact.title}`}>
-                        {artifactDeltaText(artifact, t)}
-                      </p>
-                    ))}
-                    {group.miscToolCount > 0 && <p>{t('trace.miscTools', { count: group.miscToolCount })}</p>}
-                    {group.delegatedCallIds.map(callId => (
-                      <button type="button" className={css.delegation} data-anchor={`call:${callId}`} key={callId}
-                        onClick={() => { inspectCall(callId) }}>{t('trace.delegation')}</button>
-                    ))}
-                  </div>
-                </details>
+                  ))}{group.artifacts.length === 0 && <span>{t('trace.noArtifacts')}</span>}</div>
+                </article>
               )}
               {humanEdits.map(item => (
                 <article className={css.node} data-actor="user" data-kind="human-edit" data-anchor={item.anchor} key={item.anchor}>
@@ -162,12 +128,6 @@ export function ScienceTraceView({ useSession, useProjection, inspectCall, actio
                     actions.openTab({ artifactId: item.artifact.artifactId, version: item.artifact.version })
                     openArtifact(item.artifact)
                   }}>{t('trace.openArtifact')}</button></div>
-                </article>
-              ))}
-              {group === undefined && dialogues.filter(item => item.actor === 'agent').map(item => (
-                <article className={css.node} data-actor="agent" data-kind="dialogue" data-anchor={item.anchor} key={item.anchor}>
-                  <span className={css.icon}><IconThinkOutline16 /></span>
-                  <div><b>{t('trace.agentConclusion')}</b><p>{compact(item.text)}</p></div>
                 </article>
               ))}
             </section>

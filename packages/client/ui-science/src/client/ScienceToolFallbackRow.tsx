@@ -25,7 +25,7 @@ export interface ScienceToolFallbackRowProps {
   readonly status: string | null
   readonly text: string | null
   readonly classes: ScienceToolFallbackClasses
-  /** Content appended after the rendered text, e.g. `ScienceRunRow`'s clickable captured-artifact list. */
+  /** Optional content appended after the rendered text. */
   readonly after?: ReactNode
 }
 

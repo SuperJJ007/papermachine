@@ -2,25 +2,25 @@
 
 [English](README.md) | 中文
 
-浏览器端的持久化 `run_python`/`run_r`、`annotate_artifact` 与 `publish_outcome` 会话记录行展示、Science 设置卡片、语义泳道、artifact viewer（带按媒体类型分派内容与每版本溯源下钻的标签式查看器），以及打开它的文件 toggle。会话记录行注册按键分派的 `tool.call.toolview` 条目，只消费冻结的工具调用/结果数据、客户端安全的 `science` 会话投影，以及（对图像而言）会话界面拥有的会话附件加载器；它们既不创建 Science 事实，也不通过独立路由加载附件字节。设置卡片注册按键分派的 `settings.plugin.item` 条目，通过绑定的 settings scope 读写固定 `science` 配置档案的 Conda 前缀。语义泳道与 artifact viewer 读取同一客户端安全投影加一个本包内部选择状态存储，都不构建第二套投影读取器、artifact 历史或 Outcome 编辑器。
+浏览器端的 Science 执行单元格、轮末产物组、语义泳道、artifact viewer、Science 设置卡片和文件 toggle。本包只消费冻结的工具调用/结果数据与客户端安全的 `science` 会话投影；它不创建 Science 事实，也不改变模型可见内容。泳道与 artifact viewer 共享同一投影和一个本包内部选择状态存储。
 
 ## 语义泳道
 
-`trace` 对话视图按权威 turn 聚合 Science 活动，而不是为每条事件各画一张卡。每个意图组汇总运行尝试次数、失败数、运行耗时、artifact 增量、委派调用与杂项工具；标题只由结构化运行和 artifact 字段决定。失败组默认展开，成功组默认收起。用户提问、结构化 Science 选择与直接人工编辑位于中轴的用户侧，agent 任务组和结语位于另一侧。显式按钮携带共享的 `turn:`、`call:`、`run:`、`artifact:` 与 `seq:` 锚点词汇，跳向 Trajectory 账本或确切 artifact 版本。steering 保留在当前 turn，绝不增加 turn 计数。
+泳道以 `trajectory.view` id `swimlane` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在内置「详细」之前，因此 Science 会话进入「轨迹」时默认显示泳道，其他会话仍只显示详细账本。每个生成轮只有一张卡，严格限制为三行：截断的用户要求、结构化的运行/失败摘要，以及不换行的精确 artifact 版本小标签。泳道不复制 Assistant 散文或 Agent 结语。运行摘要在「详细」中打开对应调用；artifact 小标签在共享查看器中打开精确版本。
 
-该标签页的可见性是一次 `ctx.conversation.registerViewVisibility('trace', source)` 注册，其 `ViewVisibilitySource` 在某个 Session 指名 `science` preset、或其 `science` 投影已经落定后回答 `true`。每当会话列表变化，`source.subscribe` 都会为列表中每个 Session 重新建立一次投影订阅，因此 preset 指派、Session 出现，或该 Session 的投影绑定，都能各自触达标签栏自身的响应式机制——标签页会自行出现或消失，而不必等待一次无关的 `conversation.view` 注册。
+可见性通过 `ctx.trajectorySubviews.registerVisibility('swimlane', source)` 注册。会话列表变化时，该 source 会重新绑定投影订阅，因此 preset 指派、Session 创建、投影解析、插件卸载与热更新都会直接使轨迹内层切换器失效并重算。
 
-## Artifact 行
+## 轮末产物
 
-带受支持标签化展示元数据的已完成 `annotate_artifact` 结果会渲染为一个紧凑的导航行：一个缩略图（图像经由 `MessageImage` 渲染；其他任何受支持的媒体类型则渲染 `ArtifactFileTile`——一个静态的图标加扩展名磁贴，从不发起加载，因为非图像 artifact 没有可加载的位图）、逻辑 artifact 名、版本徽章与标题。面向用户的 artifact 卡片不显示内部运行 id 与附件字节数。激活该行（缩略图以外的任意位置）会在共享选择状态存储中打开（或激活，定位到该确切版本）该 artifact 的标签页，并在 `science` 条目上打开 Details 列。图像缩略图上悬停显现的控件会直接打开共享灯箱，因此全屏查看不必打开该列；非图像磁贴没有此控件。运行中、失败、中断、缺失、格式错误或不受支持的展示值都会保留可读的文本回退。持久化的 `interrupted` 与 dispatch 后的 `ABORTED` 结果显示为已中止；`ABORTED_BEFORE_DISPATCH` 仍显示为错误。一份组装 Web 回归通过真实控件停止 live persistent-kernel run，并将这一已中止展示与其持久化 cancelled run 对照。
+Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant 回复之后，一个轮末组为每个逻辑 artifact 渲染一张卡，并仅保留该轮产生的最高版本。卡片显示缩略图或媒体类型磁贴、文件名与版本；激活卡片会在 Science Details 中打开该精确版本。`annotate_artifact` 仍是折叠的过程单元格，不在调用处渲染 artifact 卡，因此文件在会话记录中只出现一次。
 
-## Run 行
+## 执行单元格
 
-`run_python`/`run_r` 结果始终通过与回退行共享的同一纯文本卡片渲染其完整的渲染文本（状态、退出码、stdout/stderr，以及持久化的捕获回执行）——一次运行的主要内容就是这段文本，而不是一张会被展示元数据取代的卡片。当已完成结果的标签化展示指出该次调用的自动捕获产出了一个或多个文件时，该行会在文本下方为每个文件追加一个可点击的引用小标签（图标、逻辑名、版本徽章；不发起缩略图加载），点击后打开该 artifact 的标签页，与 artifact 行自身的激活方式一致。
+`run_python` 与 `run_r` 默认渲染为单行折叠单元格，内含语言、状态和简短摘要。展开后才挂载源代码与已完成输出。运行中、失败和已中止状态在折叠时仍然可见。展开状态是组件本地的前端状态，既不记入日志，也不投影到 provider 请求。
 
 ## Outcome 行
 
-已完成的 `publish_outcome` 结果会渲染其自身不可变的版本、标题、Markdown 摘要，以及运行/图表/消息证据标签。精确图表引用通过当前客户端安全的 `science` 投影解析：图像附件复用同一附件加载器显示缩略图，非图像附件渲染 `ArtifactFileTile`，而无法解析的引用（投影中已不存在该确切版本）会与前两者明确区分地报告不可用。
+已完成的 `publish_outcome` 默认只显示单行版本摘要。展开单元格后才显示不可变的标题、Markdown 摘要和运行/图表/消息证据；精确图表引用仍通过当前客户端安全的 `science` 投影解析。展开状态仅存在于前端。
 
 ## 设置卡片
 
@@ -40,11 +40,11 @@ viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `sc
 - **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层会画出一个人工样式区域，一旦区域画出，就提供同样的备注加 `+`/`−` 控件——单纯画出区域不会暂存任何东西，只有这个显式控件才会——因此区域 target 与结构化 target 经由同一条路径抵达 composer，产出同样的 `edit.regionTarget` chip。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id 加版本）：切换标签页或步进版本都会重新挂载内容子树，因此某个 artifact/版本上还未暂存的备注草稿绝不会预填进另一个共享同一 spec path 或区域坐标的字段。在某个 target 已经暂存之后再编辑其备注，会立即更新已暂存的选择（而不必等到下一次点击 `+`），因此 composer chip 与最终面向模型的指令始终携带最新文本。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注，并在拒绝前指明是哪个字段出了问题——共享指令本身，还是某个 target 自己的备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **直接样式编辑** — 选择 Vega-Lite `mark` 或 `encoding.*` target 还会打开基于不可变工作副本的样式面板。面板只暴露颜色、字号与 encoding axis/legend 标题文本；每次修改都会重新渲染实时 SVG 预览，数据变换仍由 agent 完成。定稿时通过 `remote.scienceEdits.commitStyleEdit` 发送完整 JSON spec；成功后选择返回的下一个 version，其详情明确标记直接编辑并指名确切 parent。Host 的 stale/media/JSON/admission 拒绝会保持可见，且不改变所选 version。UI 子集用于塑造工作流，并不声称能对任意 Vega-Lite JSON 建立安全不变量。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
-- **落地视图** — 在没有标签页打开时显示：每个 logical chart 最新版本组成的图库（打开其中一个即打开其标签页），以及带证据引用的最新 Outcome，展示在图库下方——保持可达但处于次要位置，因为它不像图表那样携带需要导览的版本历史或溯源信息。
+- **落地视图** — 在没有标签页打开时显示每个 logical artifact 的最新版本图库；打开任一项即创建其标签页。
 
-在第一条 Science 事件之前，viewer 显示一个未绑定状态；当会话摘要携带 preset 时一并显示所选的 preset。缺失投影支持、图表附件不可用、失效标签页（指向投影已无法解析的图表/版本——在正常交互中不可达，因为标签页只会从一次已解析的选择打开，这里只是为防御一个被破坏的存储状态而设），以及没有 Outcome，各自渲染不同的文案。
+在第一条 Science 事件之前，viewer 显示一个未绑定状态；当会话摘要携带 preset 时一并显示所选 preset。缺失投影支持、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，各自渲染不同文案。
 
-**设计说明——原仪表盘中的事实去了哪里。** 常驻的环境概览（配置档案、版本号、逐语言 capability/版本/指纹/包数量）与运行列表已经移除；它们不会以任何形式的会话级面板小节重新出现。环境相关的事实只存在于溯源下钻的"环境"子标签页中，作用域是某一个 artifact 的运行——与溯源下钻一直以来的行为相同（JSON 展示加已被取代版本的回退，见下文），如今按已打开的 artifact 各自可达，而不是重复出现在一条常驻概览中。没有任何会话级的"环境未生效"替代提示：该提示专属于已删除的概览小节，而一个没有任何 artifact 打开的会话也没有什么可供下钻。早于该概览存在的两条顶层文案——缺失投影支持与未绑定状态——与它无关，保持不变。Outcome 小节保持可达，但迁移到落地视图而非拥有自己的伪标签页，因为（与图表不同）它没有需要导览的版本历史或溯源信息——落地视图的一个小节不需要额外的外观开销，而会话记录中 `publish_outcome` 行本身仍是定位某个具体 Outcome 版本证据的首选方式。
+**设计说明——原仪表盘中的事实去了哪里。** 常驻的环境概览与运行列表不会重新出现为会话级面板小节。环境事实只存在于溯源下钻的「环境」子标签页，作用域是某一个 artifact 的运行。Outcome 保留在折叠的 `publish_outcome` 会话单元格中，不再有独立 Details 目的地或落地视图小节。
 
 Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-attachment-loader.ts`）解析，而非图像会话记录行使用的、由会话界面拥有的那个：Details 条目的宿主份额只携带 Details 座位自身的 `inspectCall`（见下文），因此它直接调用 `ISession.readAttachment`/`readTextAttachment`。`loadImage` 把返回的字节转换为 `data:` URI；`loadText` 原样返回 `readTextAttachment` 已解码的 UTF-8 字符串（文本准入后必为合法 UTF-8——不需要 base64 步骤）。两者都不使用 `Map`，也不持有 `URL.createObjectURL` 句柄——没有任何东西需要在会话释放时回收，也不会在会话加载器自己的缓存之外再添加一套缓存。
 
@@ -72,12 +72,11 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 除了上面的文件 toggle 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——除 `global` 模式下的文件 toggle 之外，没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
 
-- **`sidebar.destinations`**（`ScienceDestinations`） — 当前 Science Session 旁边的文件与结论行，出现在侧边栏其余目的地旁；分别打开对应的 Details 条目（`science` 或 `science-outcomes`）。没有当前 Science Session 时不渲染任何内容。
+- **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个文件行；它打开 `science` Details 条目，没有当前 Science Session 时不渲染。
 - **`conversation.page.utilities`** — 文件 toggle 在 `session` 模式下的欢迎页交接注册（`ScienceHeroAction`），或在 `global` 模式下的唯一注册（`ScienceGlobalToggle`）；见[文件 toggle](#files-toggle)。
 - **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
 - **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
 - **`details.files`**（`ScienceEmptyDetails`） — 没有当前 Session 时 Details 列的占位内容，说明选择一个 Session 后这里会显示其文件，并通过宿主提供的 `closeDetails` 关闭该列。
-- **`science-outcomes`**（`ScienceOutcomeDetails`，第二个 `conversation.details.view` 条目） — 单独展示最新的 Outcome，从侧边栏的结论目的地进入，无需打开完整的 artifact viewer；空态与无法解析引用的展示状态与 artifact viewer 自身的 Outcome 小节相同。
 
 ## 组装
 
@@ -93,7 +92,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 ## 已知限制与暂缓事项
 
-- **`annotate_artifact` 的行只展示一个 artifact** — 它的标签化展示总是恰好指出那一个被标注的条目，因此该行是单张紧凑卡片，而非小标签列表；如果未来某次标注调用可以一次标注多个文件，这一行会需要自己的列表渲染路径（目前只有 Run 行的小标签列表具备这一能力）。
+- **轮末产物依赖标签化 presentation 元数据** — 如果某个已完成 turn 的工具未发布 `science/artifact` presentation 值，即使独立投影稍后包含相关文件，该 turn 也没有产物组。
 - **没有独立附件缓存** — 会话记录行的图像缩略图沿用由会话界面拥有的会话附件加载器（宿主提供的 `loadImage`），其生命周期、重试与 object URL 回收仍归那里所有。Details 条目的缩略图与内容通过自己无状态的加载器、经由 `ISession.readAttachment`/`readTextAttachment` 解析；两条路径都不添加自己的持久化 Map 缓存。
 - **仅一个固定配置档案、两个字段** — 卡片只编辑内置 `science` 配置档案的 `pythonPrefix`/`rPrefix`，因为内置 preset 是当前唯一的产品消费方；其他部署配置档案 id 仍是文件/配置层面的事，不由浏览器管理。
 - **没有发现、探测或即时生效** — 卡片从不列出、探测或校验某个 Conda 环境，也没有文件系统选择器或即时生效控件；已存储的前缀只有到下一次 Host 重启才会生效，卡片的 `pendingRestart`/`effective` 状态会上报这一点，但无法缩短等待。

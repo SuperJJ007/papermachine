@@ -34,7 +34,7 @@ function assertNever(value: never): never {
 /**
  * Build `MessageImage`'s labels from the `science` namespace. Shared by
  * every `MessageImage` mount in this package (`ArtifactContent.tsx`'s own
- * full-size render, `ScienceArtifactRow.tsx`'s transcript-row thumbnail,
+ * full-size render, the Turn-tail artifact thumbnail,
  * `ScienceDetailsView.tsx`'s gallery tile) so the five strings and the
  * lightbox pair stay defined once.
  * @param t - the `science` namespace translator.

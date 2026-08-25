@@ -442,7 +442,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
    * neither the label nor the row's position is a stable selector).
    */
   async function currentSeedIdentity(): Promise<'science' | 'standard' | 'unknown'> {
-    if (await page.getByText('Updated finding', { exact: true }).count() > 0) return 'science'
+    if (await page.getByText('Outcome published · revision 2', { exact: true }).count() > 0) return 'science'
     if (await page.getByText('DONE', { exact: true }).count() > 0) return 'standard'
     return 'unknown'
   }
@@ -477,47 +477,29 @@ describe('web e2e: Science chart and Outcome replay', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-chart-outcome'))
     const openSeed = async (): Promise<void> => {
       await openSessionByTitle(SEED_TITLE)
-      await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     }
 
     await openSeed()
-    await expect.poll(() => page.getByRole('img', { name: 'observed.png' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
-    for (const image of await page.getByRole('img', { name: 'observed.png' }).all()) {
-      expect(await image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
-    }
-    expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('observed-series', { exact: true }).count()).toBe(4)
-    await expect.poll(() => page.getByRole('button', { name: 'Failed to load, click to retry' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
+    expect(await page.getByText('Outcome published · revision 1', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Outcome published · revision 2', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(0)
+    expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(0)
+    expect(await page.getByRole('listitem', { name: /observed-series v1/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /observed-series v2/u }).count()).toBe(1)
+    expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
     const aria = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-    expect(aria).toContain('Initial finding')
-    expect(aria).toContain('Updated finding')
-    expect(aria).toContain('The missing object is reported without hiding the publication.')
+    expect(aria).toContain('Outcome published · revision 1')
+    expect(aria).toContain('Outcome published · revision 2')
+    expect(aria).not.toContain('The missing object is reported without hiding the publication.')
     expect(aria).not.toContain('/private/host/science')
     expect(aria).not.toContain(FINGERPRINT)
 
-    const opener = page.getByRole('button', { name: 'View original: observed.png' }).first()
-    await opener.click()
-    const dialog = page.getByRole('dialog', { name: 'Original' })
-    await dialog.waitFor({ timeout: 10_000 })
-    await expect.poll(() => page.getByRole('button', { name: 'Close', exact: true })
-      .evaluate(element => element === document.activeElement))
-      .toBe(true)
-    await page.keyboard.press('Escape')
-    await expect.poll(() => dialog.count()).toBe(0)
-    await expect.poll(() => opener.evaluate(element => element === document.activeElement)).toBe(true)
-
     await page.reload({ waitUntil: 'load' })
     await openSeed()
-    await expect.poll(() => page.getByRole('img', { name: 'observed.png' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
-    expect(await page.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(2)
+    expect(await page.getByRole('listitem', { name: /observed-series v1/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /observed-series v2/u }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
@@ -525,10 +507,11 @@ describe('web e2e: Science chart and Outcome replay', () => {
   it('renders a canonical post-dispatch abort as stopped while replay retains CANCELLED', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-cancelled-run'))
     await openSessionByTitle(SEED_TITLE)
-    await page.getByText('Error: tool call aborted', { exact: true }).waitFor({ timeout: 15_000 })
     const row = page.locator('[data-tool="science-run"][data-state="stopped"]')
     await row.waitFor({ timeout: 15_000 })
     expect(await row.getByText('Run stopped', { exact: true }).count()).toBe(1)
+    expect(await row.getByText('Error: tool call aborted', { exact: true }).count()).toBe(0)
+    await row.getByRole('button').first().click()
     expect(await row.getByText('Error: tool call aborted', { exact: true }).count()).toBe(1)
 
     const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
@@ -548,22 +531,17 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await scienceAction.count()).toBe(0)
 
     // The built-in `science` preset session shows the action; activating it
-    // opens the Details column with no tab open — the landing view (gallery
-    // of latest chart versions, plus the latest Outcome below it).
+    // opens the Details column with no tab open: the latest-artifact gallery.
     await openSessionByTitle(SEED_TITLE)
-    await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+    await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
     await detailsPanel.getByText('Science', { exact: true }).waitFor({ timeout: 10_000 })
 
-    // Only the latest accepted chart version renders in the gallery (v2, the
-    // missing object), and the latest Outcome renders below it with its
-    // evidence — the same projection the transcript rows already reused, no
-    // second reader.
+    // Only the latest accepted chart version renders in the gallery (v2, the missing object).
     expect(await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).count()).toBe(1)
     expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(0)
     // No Environment strip or Runs list on the landing view (removed with
     // the dashboard); those facts now live only in the per-artifact
     // Provenance drill-in, checked below.
@@ -613,22 +591,21 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await openSessionByTitle(SEED_TITLE)
     // Scoped to the transcript: an earlier case leaves the Details column
     // open, and the artifact viewer's landing view renders this same title.
-    await centerCol.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+    await centerCol.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
 
-    // Each run result carries its own auto-capture receipt. Its chip opens
-    // the exact durable version, rather than relying on later curation rows.
+    // Execution cells stay folded; exact artifact versions open from their Turn-end cards.
     const runRows = centerCol.locator('[data-tool="science-run"]')
     expect(await runRows.count()).toBe(3)
     const firstRun = runRows.nth(0)
     const secondRun = runRows.nth(1)
-    expect(await firstRun.innerText()).toContain('run complete')
-    expect(await secondRun.innerText()).toContain('revised run complete')
+    expect(await firstRun.innerText()).not.toContain('run complete')
+    expect(await secondRun.innerText()).not.toContain('revised run complete')
     // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
     // "Version" definition, which renders the identical "v1"/"v2" text.
     const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
-    await firstRun.getByRole('button', { name: /observed-series.*v1/ }).click()
+    await centerCol.getByRole('listitem', { name: /observed-series v1/u }).click()
     await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
-    await secondRun.getByRole('button', { name: /observed-series.*v2/ }).click()
+    await centerCol.getByRole('listitem', { name: /observed-series v2/u }).click()
     await stepperLabel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
 
     // The v2 run chip opens its exact version directly in the content view —

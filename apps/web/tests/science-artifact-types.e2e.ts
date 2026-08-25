@@ -28,6 +28,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const PANEL_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/panel.expected.md', import.meta.url))
+const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/transcript.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-artifact-types-web-e2e'
 const SEED_TITLE = 'Science artifact types'
@@ -235,15 +236,24 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await scaffold?.close()
   })
 
-  it('renders a sortable CSV table, a JSON tree, rendered Markdown, and the existing image path, all reached from the run\'s reference chips', async () => {
+  it('renders each media type from the Turn-end artifact group', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-types'))
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
 
-    await centerCol.getByText('Captured 4 artifacts', { exact: false }).waitFor({ timeout: 15_000 })
+    await centerCol.getByText('Files produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await centerCol.getByText('Captured 4 artifacts', { exact: false }).count()).toBe(0)
+    await compareOrRefreshGolden(
+      TRANSCRIPT_EXPECTED,
+      [
+        '## Center column — collapsed Science transcript cells and Turn-end artifacts',
+        await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+      ].join('\n'),
+      MODE,
+    )
 
-    // Each reference chip opens its artifact's tab directly in the content view.
-    await centerCol.getByRole('button', { name: /summary\.csv/ }).click()
+    // Each Turn-end card opens its artifact's tab directly in the content view.
+    await centerCol.getByRole('listitem', { name: /summary\.csv/ }).click()
     const table = detailsPanel.getByRole('table', { name: 'summary.csv' })
     await table.waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByRole('columnheader', { name: /name/i }).count()).toBe(1)
@@ -256,15 +266,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     const rowsAscending = await table.locator('tbody tr').allInnerTexts()
     expect(rowsAscending[0]).toContain('bob')
 
-    await centerCol.getByRole('button', { name: /metrics\.json/ }).click()
+    await centerCol.getByRole('listitem', { name: /metrics\.json/ }).click()
     await detailsPanel.getByRole('tree').waitFor({ timeout: 10_000 })
     expect(await detailsPanel.innerText()).toContain('accuracy')
 
-    await centerCol.getByRole('button', { name: /report\.md/ }).click()
+    await centerCol.getByRole('listitem', { name: /report\.md/ }).click()
     await detailsPanel.getByRole('heading', { name: 'Result' }).waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('converged', { exact: false }).count()).toBeGreaterThan(0)
 
-    await centerCol.getByRole('button', { name: /plot\.png/ }).click()
+    await centerCol.getByRole('listitem', { name: /plot\.png/ }).click()
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
     // All four tabs stayed open across the chip clicks above.

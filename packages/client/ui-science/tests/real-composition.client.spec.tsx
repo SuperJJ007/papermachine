@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ui-science's acceptance chain on the REAL machinery stack: SlotTestRuntime
 // (cordis Context + SlotRegistry ledger + the web-react renderer) with
-// ui-conversation, ui-tool, and ui-science mounted through their real
+// ui-conversation, ui-tool, ui-trajectory, and ui-science mounted through their real
 // apply() — no hand-built ctx.plugin(...) presentation stub. Proves the
 // transcript row → Details column linkage end to end (activating the
 // compact `annotate_artifact` row opens that exact version's tab through the
@@ -24,6 +24,7 @@ import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyTool, inject as injectTool } from '@deepseek-ai/dsh-client-ui-tool/client'
+import { apply as applyTrajectory, inject as injectTrajectory } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import { apply as applyScience, inject as injectScience } from '../src/client/index.ts'
 
 const SID = 'sci-1' as SessionId
@@ -63,7 +64,17 @@ function toolResult(seq: number, callId: string, name: string, meta?: unknown): 
 
 /** Real production key format (matches `conversation-nodes/tool.ts`'s chatNode `context.key`). */
 function toolChatSnapshot(nodes: readonly ToolResultNode[]): ChatSnapshot {
-  const viewNodes: ChatConversationViewNode[] = nodes.map(root => ({
+  const turnData = new Map<string, unknown>([
+    ['science-turn-artifacts', { artifacts: [ARTIFACT_ITEM] }],
+    ['turn-tail', {
+      turn: 1, seq: 4, time: 4_000, closing: null, branchUnavailable: true,
+    }],
+  ])
+  const turn = {
+    turn: 1, start: undefined, end: undefined, status: 'closed', steps: [],
+    data: { get: (key: string) => turnData.get(key) },
+  } as never
+  const toolNodes: ChatConversationViewNode[] = nodes.map(root => ({
     key: conversationContextKey('tool-call', root.callId),
     kind: 'tool-call',
     id: root.callId,
@@ -73,12 +84,19 @@ function toolChatSnapshot(nodes: readonly ToolResultNode[]): ChatSnapshot {
     visibility: 'visible',
     data: { root },
   }))
+  const tail: ChatConversationViewNode = {
+    key: conversationContextKey('turn-tail', '1'), kind: 'turn-tail', id: '1', target: 'chat',
+    anchorSeq: 4, location: { kind: 'turn', turn }, visibility: 'visible',
+    data: turnData.get('turn-tail'),
+  }
+  const viewNodes = [...toolNodes, tail]
   const byKey = new Map(viewNodes.map(node => [node.key, node]))
+  const turnKeys = viewNodes.map(node => node.key)
   const empty: readonly string[] = []
   return {
     order: viewNodes.map(node => node.key),
     nodes: { get: key => byKey.get(key), values: () => viewNodes },
-    locations: { getTurn: () => empty, getStep: () => empty },
+    locations: { getTurn: value => value === 1 ? turnKeys : empty, getStep: () => empty },
     timeline: { turnOrder: [], turns: new Map() },
     legacy: { nodes, runningCalls: [], partial: null, turnTimings: new Map(), turnEnds: new Map() },
   }
@@ -158,35 +176,48 @@ async function bench() {
   await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   await runtime.mount({ inject: [...injectTool], apply: applyTool })
+  await runtime.mount({ inject: [...injectTrajectory], apply: applyTrajectory })
   const scienceHandle = await runtime.mount({ inject: [...injectScience], apply: applyScience })
   return { runtime, slots: runtime.slots, layout, scienceHandle }
 }
 
 describe('ui-science on the real machinery stack', () => {
-  it('activating the compact transcript row opens that exact version\'s tab in the routed Science Details entry', async () => {
+  it('places Swimlane and Detailed inside the single Trajectory tab and defaults Science Sessions to Swimlane', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
 
-    const row = view.container.querySelector('[data-tool="science-artifact"]')
-    expect(row).not.toBeNull()
-    fireEvent.click(row!)
+    fireEvent.click(view.getByRole('tab', { name: 'Trajectory' }))
+    expect(view.getByRole('tab', { name: 'Swimlane' }).getAttribute('aria-selected')).toBe('true')
+    expect(view.getByRole('tab', { name: 'Detailed' }).getAttribute('aria-selected')).toBe('false')
+    fireEvent.click(view.getByRole('tab', { name: 'Detailed' }))
+    expect(view.getByRole('tab', { name: 'Detailed' }).getAttribute('aria-selected')).toBe('true')
+    expect(view.getByRole('toolbar', { name: 'Trajectory toolbar' })).toBeTruthy()
+    fireEvent.click(view.getByRole('tab', { name: 'Swimlane' }))
+    expect(view.getByRole('tab', { name: 'Swimlane' }).getAttribute('aria-selected')).toBe('true')
+    await b.runtime.dispose()
+  })
+
+  it('renders artifact metadata only at the Turn tail and opens that exact version in Science Details', async () => {
+    const b = await bench()
+    const view = b.runtime.renderRoot()
+
+    expect(view.container.querySelector('[data-tool="science-artifact"]')).toBeNull()
+    const card = await view.findByRole('listitem', { name: /loss-curve\.png/u })
+    fireEvent.click(card)
 
     expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
     const chatStore = b.runtime.storeOf('conversation.view', SID) as { getSnapshot(): { detailsView: string | null } }
     expect(chatStore.getSnapshot().detailsView).toBe('science')
 
-    // The Details column renders the artifact directly in its content view
-    // (the tab the row just opened): the title appears once in the
-    // transcript row and once in the viewer's own toolbar, plus a tab.
-    expect(view.getAllByText('Loss curve')).toHaveLength(3)
+    expect(view.getByText('Files produced this turn: 1')).toBeTruthy()
     expect(await view.findByRole('tab', { name: 'Loss curve' })).toBeTruthy()
     await b.runtime.dispose()
   })
 
-  it('the transcript row and the artifact viewer observe the one write the row makes (shared selection store)', async () => {
+  it('the Turn-tail card and artifact viewer share one selection store', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(view.container.querySelector('[data-tool="science-artifact"]')!)
+    fireEvent.click(await view.findByRole('listitem', { name: /loss-curve\.png/u }))
 
     // If the row's `openTab` write landed on a store instance different from
     // the one the viewer reads, the tab would never appear here — the tab
@@ -205,7 +236,7 @@ describe('ui-science on the real machinery stack', () => {
   it('the toolbar\'s provenance control opens the drill-in, and its Messages sub-tab reaches the real DetailsPanel inspectCall handoff', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(view.container.querySelector('[data-tool="science-artifact"]')!)
+    fireEvent.click(await view.findByRole('listitem', { name: /loss-curve\.png/u }))
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
     fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
@@ -220,6 +251,8 @@ describe('ui-science on the real machinery stack', () => {
     }
     expect(chatStore.getSnapshot().inspect).toEqual({ callId: CALL_ID })
     expect(chatStore.getSnapshot().view).toBe('trajectory')
+    expect((b.runtime.ctx.get('trajectorySubviews') as { selection(id: SessionId): string | null }).selection(SID))
+      .toBe('detailed')
     await b.runtime.dispose()
   })
 
@@ -230,6 +263,7 @@ describe('ui-science on the real machinery stack', () => {
       .toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
     expect(b.slots.entries('conversation.session.header.utilities').map(e => e.options.id)).toContain('science')
+    expect(b.slots.entries('trajectory.view').map(e => e.options.id)).toEqual(['swimlane', 'detailed'])
 
     await b.scienceHandle.dispose()
 
@@ -237,6 +271,7 @@ describe('ui-science on the real machinery stack', () => {
       .not.toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).not.toContain('science')
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('trajectory.view').map(e => e.options.id)).toEqual(['detailed'])
     // ui-tool's own bash sample (mounted by applyTool, not applyScience)
     // survives the ui-science fiber's disposal.
     expect(b.slots.entries('conversation.chat.node').map(e => (e.options as { key?: string }).key)).toContain('tool-call')

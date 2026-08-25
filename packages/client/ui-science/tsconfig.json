@@ -42,6 +42,9 @@
       "path": "../ui-tool"
     },
     {
+      "path": "../ui-trajectory"
+    },
+    {
       "path": "../ui-primitives"
     },
     {

@@ -1,49 +1,13 @@
 /**
- * Science transcript rows, settings card, session-header action, and
- * artifact viewer, browser half: registers the `science` locale
- * dictionaries, the four dedicated keyed toolview rows — `run_python` and
- * `run_r` (`ScienceRunRow`, run text plus a clickable reference per captured
- * file), `annotate_artifact` (`ScienceArtifactRow`, the one curated
- * reference), and `publish_outcome` — the Science settings card keyed on the
- * `science-runtime` namespace, the Files toggle, and the
- * `conversation.details.view` entry (id `science`, the artifact viewer) that
- * renders current Science state from the same projection: a top tab strip
- * over opened artifacts, an in-panel toolbar, per-media-type dispatched
- * content, and — one toolbar click away — the provenance drill-in, entirely
- * inside this one Details entry (no separate `conversation.view` tab or
- * `conversation.details.header.actions` registration). The Files toggle's
- * own placement is `../toggle-scope.ts`'s resolved `ToggleScope`: the
- * generic Web default (`session`) registers the right-aligned
- * `conversation.session.header.utilities` entry (`ScienceHeaderAction`,
- * gated to a non-blank Science Session) alongside a `conversation.page.utilities`
- * hand-off for a blank one (`ScienceHeroAction`); the desktop composition's
- * `global` placement instead registers one unconditional
- * `conversation.page.utilities` owner (`ScienceGlobalToggle`) and skips the
- * session-header registration, so the toggle is visible app-wide — before
- * any workspace is selected, before any Session exists, and through every
- * later Session state — with exactly one owner. A Science-only Trace
- * tab and distinct Files/Outcomes Details routes complete the workbench,
- * alongside sidebar destinations, staged-target composer chips
- * (`conversation.input.accessory`), and a composer-dock kernel status
- * line — every one of these (other than the Files toggle) gated the same way
- * `ScienceHeaderAction` is, so no other Science surface reaches another
- * preset or a Session-less page. The Trace tab's own visibility is a
- * `registerViewVisibility` source
- * (`createTraceVisibilitySource`) that re-subscribes to the sessions list and
- * every listed Session's `science` projection, so the tab strip reacts to a
- * preset assignment or a projection resolving on its own. The toolview rows
- * are pure functions of the frozen call/result slice, the loaded durable
- * image/text bytes, and (for the Outcome row) the live `science` session
- * projection; the settings card owns its own staging over the bound
- * settings scope; the artifact viewer and the transcript rows share one
- * package-local per-session selection store (selection-store.ts) — Science
- * viewing state ui-conversation's `ChatStoreState` has no reason to carry. A
- * raster region drawn in the artifact viewer stages into the same composer
- * selections store as a Vega-Lite structural target, through the same
- * comment-plus-add control; every comment draft is scoped to its exact
- * artifact identity so switching tabs or versions never bleeds one draft into
- * another, and editing a comment after staging updates the staged selection
- * immediately.
+ * Browser composition for Science transcript cells, Turn-end artifacts,
+ * the Trajectory Swimlane, the Files Details entry, settings, composer
+ * selections, and kernel status. Process Tool rows are collapsed visual
+ * cells; artifact presentation values accumulate in Turn data and render
+ * once after the Assistant reply. Science contributes `trajectory.view`
+ * id `swimlane` through ui-trajectory's extension point and registers its
+ * own reactive visibility source. The artifact viewer, Turn-tail cards, and
+ * composer controls share package-local per-Session stores; none of their
+ * visual state enters the Session log or model requests.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -60,15 +24,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: the conversation.session.header.utilities and
 // conversation.details.view slots' declarations, and the Details seam's
 // inspectCall owner callback (same cross-plugin rule).
-import type { ViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TrajectoryViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
 // Type-only: pulls the generated Science Remote namespace into ClientContext.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
-import { ScienceArtifactRow } from './ScienceArtifactRow.tsx'
-import { ScienceRunRow } from './ScienceRunRow.tsx'
+import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
+import { ScienceExecutionRow } from './ScienceExecutionRow.tsx'
 import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
@@ -79,9 +43,10 @@ import { ScienceComposerChips } from './ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from './composer-selections.ts'
 import { ScienceDestinations } from './ScienceDestinations.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
+import { ScienceTurnArtifacts, type ScienceTurnArtifactsInjected } from './ScienceTurnArtifacts.tsx'
+import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from './science-turn-artifacts.ts'
 import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
-import { ScienceOutcomeDetails } from './ScienceOutcomeDetails.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { readToggleScope } from './toggle-scope.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
@@ -97,10 +62,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Details entry id this package registers (matches the header action's `openDetailsView` argument). */
 const SCIENCE_DETAILS_ID = 'science'
-const SCIENCE_OUTCOMES_ID = 'science-outcomes'
 
 /**
- * The `trace` view's visibility source: a Session qualifies once it names
+ * The Swimlane's visibility source: a Session qualifies once it names
  * the `science` preset OR its `science` projection has resolved (a
  * subagent, or a preset switch after creation, may bind one without the
  * preset field itself ever being `science`). `subscribe` re-derives its
@@ -114,7 +78,7 @@ const SCIENCE_OUTCOMES_ID = 'science-outcomes'
  * @param ctx - client root context (reads `ctx.sessions`).
  * @returns the registrable {@link ViewVisibilitySource}.
  */
-function createTraceVisibilitySource(ctx: ClientContext): ViewVisibilitySource {
+function createTraceVisibilitySource(ctx: ClientContext): TrajectoryViewVisibilitySource {
   return {
     visible: sessionId =>
       ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset === 'science'
@@ -157,7 +121,7 @@ function createTraceVisibilitySource(ctx: ClientContext): ViewVisibilitySource {
  * share carries nothing beyond the Details seam's own callbacks, per
  * `DetailsViewOwnerProps`).
  */
-export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation']
+export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation', 'conversationEvents', 'trajectorySubviews']
 
 /**
  * Client plugin body: register dictionaries, the two keyed toolview rows,
@@ -167,6 +131,7 @@ export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienc
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-science: dictionaries')
+  ctx.conversationEvents.register(scienceTurnArtifactsDefinition)
 
   // Package-local per-session store: which artifacts are open, which one is
   // active, and its content/provenance view — shared by the artifact viewer
@@ -188,8 +153,8 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar.destinations', () => ctx.slots.register({
     name: 'sidebar.destinations', id: 'science', order: 0, locale: NS,
     inject: () => ({
-      openScience: (sessionId: SessionId, destination: 'files' | 'outcomes') => {
-        ctx.conversation.openDetailsView(sessionId, destination === 'files' ? SCIENCE_DETAILS_ID : SCIENCE_OUTCOMES_ID)
+      openScience: (sessionId: SessionId) => {
+        ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID)
       },
     }),
   }, ScienceDestinations))
@@ -197,18 +162,29 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('tool.call.toolview', function* () {
     yield ctx.slots.register(
       { name: 'tool.call.toolview', key: 'annotate_artifact', locale: NS, store: scienceSelectionStore },
-      ScienceArtifactRow,
+      ScienceAnnotationRow,
     )
     yield ctx.slots.register(
       { name: 'tool.call.toolview', key: 'run_python', locale: NS, store: scienceSelectionStore },
-      ScienceRunRow,
+      ScienceExecutionRow,
     )
     yield ctx.slots.register(
       { name: 'tool.call.toolview', key: 'run_r', locale: NS, store: scienceSelectionStore },
-      ScienceRunRow,
+      ScienceExecutionRow,
     )
     yield ctx.slots.register({ name: 'tool.call.toolview', key: 'publish_outcome', locale: NS }, ScienceOutcomeRow)
   })
+
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail',
+    select: selectScienceTurnArtifacts,
+    locale: NS,
+    store: scienceSelectionStore,
+    inject: (sessionId: SessionId): ScienceTurnArtifactsInjected => ({
+      loadImage: createScienceImageLoader(ctx.sessions, sessionId),
+      openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+    }),
+  }, ScienceTurnArtifacts))
 
   const settingsCard = new ScienceSettingsCardController(
     ctx.settingsScope.bind<ScienceRuntimeSettingsSection>({ namespace: SCIENCE_RUNTIME_NS }),
@@ -277,13 +253,14 @@ export function apply(ctx: ClientContext): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.conversation.registerViewVisibility('trace', createTraceVisibilitySource(ctx)),
-    'ui-science: trace visibility')
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view', id: 'trace', order: 20, label: () => t('trace.view'), locale: NS,
+  ctx.effect(() => ctx.trajectorySubviews.registerVisibility('swimlane', createTraceVisibilitySource(ctx)),
+    'ui-science: swimlane visibility')
+  ctx.slots.inject('trajectory.view', () => ctx.slots.register({
+    name: 'trajectory.view', id: 'swimlane', order: 0, label: () => t('trace.view'), locale: NS,
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceTraceInjected => ({
       openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+      selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
     }),
   }, ScienceTraceView))
   ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
@@ -300,14 +277,12 @@ export function apply(ctx: ClientContext): void {
       removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
       composerSelections: composerSelections.store(sessionId),
       openTrace: (turn) => {
-        ctx.conversation.openView(sessionId, 'trace')
+        ctx.trajectorySubviews.select(sessionId, 'swimlane')
+        ctx.conversation.openView(sessionId, 'trajectory')
         requestAnimationFrame(() => { document.getElementById(`trace-turn-${String(turn)}`)?.scrollIntoView() })
       },
+      selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
       commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))
-  ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
-    name: 'conversation.details.view', id: SCIENCE_OUTCOMES_ID, order: 11,
-    label: () => t('outcome.title'), locale: NS,
-  }, ScienceOutcomeDetails))
 }

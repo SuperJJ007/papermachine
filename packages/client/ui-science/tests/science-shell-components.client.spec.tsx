@@ -15,7 +15,6 @@ import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
 import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
-import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
 import { en } from '../src/client/locales.ts'
 
 const SESSION = 'session-1' as SessionId
@@ -38,7 +37,7 @@ function sessionState(current: SessionId | undefined): SessionListState {
 }
 
 describe('ScienceDestinations', () => {
-  it('renders wide destinations and opens Files and Outcomes for the current Session', () => {
+  it('renders the Files destination and opens it for the current Session', () => {
     const openScience = vi.fn()
     render(<ScienceDestinations {...({
       wide: true,
@@ -48,9 +47,8 @@ describe('ScienceDestinations', () => {
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
     expect(screen.queryByRole('button', { name: 'Sessions' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Files' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Outcomes' }))
-    expect(openScience).toHaveBeenNthCalledWith(1, SESSION, 'files')
-    expect(openScience).toHaveBeenNthCalledWith(2, SESSION, 'outcomes')
+    expect(screen.queryByRole('button', { name: 'Outcomes' })).toBeNull()
+    expect(openScience).toHaveBeenCalledWith(SESSION)
   })
 
   it('renders no Science destinations without a current Science Session', () => {
@@ -74,29 +72,6 @@ describe('ScienceDestinations', () => {
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
     expect(screen.getByRole('button', { name: 'Files' }).getAttribute('title')).toBe('Files')
     expect(screen.queryByText('Files')).toBeNull()
-  })
-})
-
-describe('ScienceOutcomeDetails', () => {
-  it('renders an empty state for unsupported and unpublished projections', () => {
-    const empty = (projection: ScienceClientProjection | null | undefined) => render(<ScienceOutcomeDetails {...({
-      useProjection: () => projection, t,
-    } as unknown as Parameters<typeof ScienceOutcomeDetails>[0])} />)
-    expect(empty(undefined).getByText('No outcome published yet.')).toBeTruthy()
-    cleanup()
-    expect(empty({ outcome: null } as ScienceClientProjection).getByText('No outcome published yet.')).toBeTruthy()
-  })
-
-  it('renders only the published Outcome', () => {
-    render(<ScienceOutcomeDetails {...({
-      useProjection: () => ({ outcome: {
-        revision: 2, title: 'Stable result', summaryMarkdown: 'The **result** holds.',
-      } } as ScienceClientProjection),
-      t,
-    } as unknown as Parameters<typeof ScienceOutcomeDetails>[0])} />)
-    expect(screen.getByText('Stable result')).toBeTruthy()
-    expect(screen.getByText('revision 2')).toBeTruthy()
-    expect(document.querySelector('strong')?.textContent).toBe('result')
   })
 })
 

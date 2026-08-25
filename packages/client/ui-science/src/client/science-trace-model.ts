@@ -57,7 +57,7 @@ export interface ScienceTraceGroup {
 
 /** One user or agent dialogue node retained around the grouped work. */
 export interface ScienceTraceDialogue {
-  readonly actor: 'user' | 'agent'
+  readonly actor: 'user'
   readonly turn: number
   readonly text: string
   readonly seq: number
@@ -86,10 +86,8 @@ export interface ScienceTraceModel {
   readonly environment?: ScienceTraceEnvironment
   readonly turns: readonly number[]
   /**
-   * User/steering entries in sequence order, followed by one agent
-   * conclusion per turn in turn order. Agent conclusions are appended after
-   * all dialogue entries; the array is not seq-interleaved with
-   * conclusions.
+   * User and steering entries in sequence order. Model answers stay in Chat
+   * and are never copied into the semantic trace.
    */
   readonly dialogues: readonly ScienceTraceDialogue[]
   readonly groups: readonly ScienceTraceGroup[]
@@ -137,7 +135,6 @@ export function buildScienceTraceModel(
   const callTurns = new Map<string, number>()
   const calls = new Map<string, { readonly name: string; readonly turn: number }>()
   const dialogues: ScienceTraceDialogue[] = []
-  const conclusions = new Map<number, ScienceTraceDialogue>()
   let inferredTurn = 0
   for (const node of nodes) {
     if (node.kind === 'user') {
@@ -162,13 +159,7 @@ export function buildScienceTraceModel(
         calls.set(block.callId, { name: block.name, turn: node.turn })
       }
     }
-    const answer = [...node.blocks].reverse().find(block => block.kind === 'text' && block.text.trim() !== '')
-    if (answer?.kind === 'text') conclusions.set(node.turn, {
-      actor: 'agent', turn: node.turn, text: answer.text.trim(), seq: node.seq,
-      selection: false, anchor: `seq:${node.seq}`,
-    })
   }
-  dialogues.push(...conclusions.values())
 
   const lastTurn = Math.max(1, inferredTurn)
   const artifactsByTurn = new Map<number, ScienceClientArtifactVersion[]>()

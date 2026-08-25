@@ -118,6 +118,7 @@ function props(over: {
   onSubTabChange?: (subTab: ScienceProvenanceSubTab) => void
   onBack?: () => void
   inspectCall?: (callId: string) => void
+  selectDetailed?: () => void
   openTrace?: (turn: number) => void
   snapshot?: ConversationSnapshot
 } = {}): Props {
@@ -130,6 +131,7 @@ function props(over: {
     onSubTabChange: over.onSubTabChange ?? vi.fn(),
     onBack: over.onBack ?? vi.fn(),
     inspectCall: over.inspectCall ?? vi.fn(),
+    selectDetailed: over.selectDetailed ?? vi.fn(),
     openTrace: over.openTrace ?? vi.fn(),
     t,
   }
@@ -253,8 +255,9 @@ describe('ScienceArtifactProvenance: execution log', () => {
 describe('ScienceArtifactProvenance: messages', () => {
   it('summarizes the generating turn and links both trajectory views by stable anchors', () => {
     const inspectCall = vi.fn()
+    const selectDetailed = vi.fn()
     const openTrace = vi.fn()
-    const view = render(<ScienceArtifactProvenance {...props({ inspectCall, openTrace })} />)
+    const view = render(<ScienceArtifactProvenance {...props({ inspectCall, selectDetailed, openTrace })} />)
     expect(view.container.textContent).toContain('Generated in turn 1')
     expect(view.container.textContent).toContain('Build a compact loss chart')
     expect(view.container.textContent).toContain('The chart highlights the convergence trend.')
@@ -265,6 +268,7 @@ describe('ScienceArtifactProvenance: messages', () => {
     fireEvent.click(trajectory)
     fireEvent.click(trace)
     expect(inspectCall).toHaveBeenCalledWith(CALL_ID)
+    expect(selectDetailed).toHaveBeenCalledTimes(1)
     expect(openTrace).toHaveBeenCalledWith(1)
   })
 
@@ -326,10 +330,12 @@ describe('ScienceArtifactProvenance: messages', () => {
 
   it('renders the request/turn facts and jumps to the transcript on demand', () => {
     const inspectCall = vi.fn()
-    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall })} />)
+    const selectDetailed = vi.fn()
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall, selectDetailed })} />)
     expect(view.container.textContent).toContain('Request 7')
     view.getByRole('button', { name: 'Jump to transcript' }).click()
     expect(inspectCall).toHaveBeenCalledWith(CALL_ID)
+    expect(selectDetailed).toHaveBeenCalledTimes(1)
   })
 })
 

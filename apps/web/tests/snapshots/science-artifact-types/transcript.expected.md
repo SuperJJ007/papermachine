@@ -1,0 +1,36 @@
+## Center column — collapsed Science transcript cells and Turn-end artifacts
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science artifact types" [disabled]
+  - img
+  - text: Science mode
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Science details":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Summarize the experiment as csv, json, markdown, and a chart. {{clock}}
+- button "Copy":
+  - img
+- 'button "Python run {}"':
+  - img
+  - img
+  - text: "Python run {}"
+- paragraph: "Files produced this turn: 4"
+- list:
+  - listitem "summary.csv v1"
+  - listitem "metrics.json v1"
+  - listitem "report.md v1"
+  - listitem "plot.png v1"
+- textbox "This model is unavailable — select one to continue" [disabled]
+- button "Commands" [disabled]:
+  - img
+- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
+- button "Select model":
+  - text: Select model
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps Tool call {{duration}} python · epoch 1 · interrupted

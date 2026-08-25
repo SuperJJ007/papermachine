@@ -214,6 +214,7 @@ function props(
     commitStyleEdit?: CommitStyleEdit
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
+    selectDetailed?: () => void
     snapshot?: ConversationSnapshot
   } = {},
 ): Props {
@@ -244,6 +245,7 @@ function props(
     useStore: store.useStore,
     actions: store.actions,
     inspectCall: over.inspectCall ?? vi.fn(),
+    selectDetailed: over.selectDetailed ?? vi.fn(),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
     addToConversation: over.addToConversation ?? vi.fn(),
@@ -284,10 +286,10 @@ describe('ScienceDetailsView: unbound', () => {
 })
 
 describe('ScienceDetailsView: landing view (no open tabs)', () => {
-  it('reports no charts yet and no outcome yet for an empty history', () => {
+  it('reports no artifacts for an empty history', () => {
     render(<ScienceDetailsView {...props(baseProjection())} />)
     const statuses = screen.getAllByRole('status')
-    expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.', 'No outcome published yet.'])
+    expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.'])
   })
 
   it('renders one gallery entry per logical chart at its latest accepted version', () => {
@@ -381,27 +383,6 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
   })
 
-  it('reports no outcome published yet before publication, and renders the latest Outcome with evidence once published', () => {
-    const science = baseProjection({
-      outcome: {
-        revision: 3, title: 'Model converges', summaryMarkdown: 'The **loss** dropped.',
-        evidence: [
-          { kind: 'run', runId: 'run-1' as never },
-          { kind: 'chart', chartId: 'chart-1' as never, version: 2 },
-          { kind: 'message', seq: 7 },
-        ],
-        publishedAt: 5_000,
-        environmentRevisions: [1],
-      },
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText('Model converges')).toBeTruthy()
-    expect(screen.getByText(/revision 3/)).toBeTruthy()
-    expect(document.querySelector('strong')?.textContent).toBe('loss')
-    expect(screen.getByText('run run-1')).toBeTruthy()
-    expect(screen.getByText('chart chart-1 v2')).toBeTruthy()
-    expect(screen.getByText('message #7')).toBeTruthy()
-  })
 })
 
 describe('ScienceDetailsView: opening a tab', () => {
@@ -1393,11 +1374,13 @@ describe('ScienceDetailsView: provenance drill-in', () => {
 
   it('the Messages sub-tab\'s jump reaches the Details seam\'s inspectCall callback', () => {
     const inspectCall = vi.fn()
+    const selectDetailed = vi.fn()
     const { science, store } = withRunAndChart()
-    render(<ScienceDetailsView {...props(science, { store, inspectCall })} />)
+    render(<ScienceDetailsView {...props(science, { store, inspectCall, selectDetailed })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
     fireEvent.click(screen.getByRole('button', { name: 'Jump to transcript' }))
+    expect(selectDetailed).toHaveBeenCalledOnce()
     expect(inspectCall).toHaveBeenCalledWith('call-run-1')
   })
 
@@ -1461,6 +1444,6 @@ describe('ScienceDetailsView: distinct accessible text per top-level state', () 
     cleanup()
 
     expect(new Set(texts).size).toBe(texts.length)
-    expect(texts).toHaveLength(4)
+    expect(texts).toHaveLength(3)
   })
 })

@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-23-science-workbench-ui-convergence.zh.md)
 
+The Trace and Outcome placement in this record is superseded by [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). The Files stage, composer selections, settings, kernel status, light-palette composition, and desktop toggle placement remain current.
+
 ## Problem
 
 Science artifacts were reachable through a session Details action, but the surrounding product still treated conversation as the primary workspace. Project files and Outcomes lacked stable destinations, model-assisted edits used a second instruction composer inside the artifact viewer, and the engineering Trajectory view was the only event-level account available from the conversation view ring. These splits duplicated navigation and made selected chart elements disappear from the user's main request context.

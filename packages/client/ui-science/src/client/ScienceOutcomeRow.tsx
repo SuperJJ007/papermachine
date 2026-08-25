@@ -10,7 +10,7 @@
 
 import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
-import { IconGoalOutline16, MarkdownText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGoalOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 // Merges the `science` key into SessionProjectionMap for useProjection.
@@ -18,11 +18,10 @@ import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/t
 import type { ScienceOutcomeEvidencePresentation, ScienceOutcomePresentation } from '@deepseek-ai/dsh-tool-science/types'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import css from './ScienceOutcomeRow.module.css'
+import { ScienceToolCell } from './ScienceToolCell.tsx'
 import {
-  ScienceToolFallbackRow,
   scienceToolResultText,
   scienceToolRowState,
-  type ScienceToolRowState,
 } from './ScienceToolFallbackRow.tsx'
 
 /** Full row props: the toolview runtime share plus this package's locale seat. */
@@ -47,15 +46,6 @@ function isEvidenceItem(value: unknown): value is ScienceOutcomeEvidencePresenta
   if (item.kind === 'chart') return typeof item.chart_id === 'string' && typeof item.version === 'number'
   if (item.kind === 'message') return typeof item.seq === 'number'
   return false
-}
-
-/** State-derived leading icon, matching the accent-row family's icon-or-dot convention. */
-function leadingFor(state: ScienceToolRowState) {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    default: return <IconGoalOutline16 size={14} />
-  }
 }
 
 /** One evidence row: a text label, plus a resolved chart thumbnail when the citation is a chart. */
@@ -123,7 +113,7 @@ function EvidenceItem({ item, science, loadImage, t }: {
  * @param props - keyed toolview payload plus the science locale seat.
  * @returns the dedicated Outcome row.
  */
-export function ScienceOutcomeRow({ block, loadImage, useProjection, t }: ScienceOutcomeRowProps) {
+export function ScienceOutcomeRow({ block, loadImage, useProjection, inspect, t }: ScienceOutcomeRowProps) {
   const state = scienceToolRowState(block)
   const meta = 'kind' in block ? block.meta : undefined
   const presentation = state === 'ok' ? parsePresentation(meta) : null
@@ -136,34 +126,18 @@ export function ScienceOutcomeRow({ block, loadImage, useProjection, t }: Scienc
         ? t('outcome.failed')
         : state === 'stopped' ? t('outcome.stopped') : null
     const text = scienceToolResultText(block)
-    return (
-      <ScienceToolFallbackRow
-        dataTool="science-outcome"
-        state={state}
-        leading={leadingFor(state)}
-        title={t('outcome.title')}
-        status={status}
-        text={text}
-        classes={{
-          card: css.card,
-          header: css.header,
-          leading: css.leading,
-          title: css.title,
-          status: css.status,
-          fallbackText: css.fallbackText,
-        }}
-      />
-    )
+    return <ScienceToolCell state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
+      summary={status ?? text?.split(/\r?\n/u)[0] ?? ''} output={text} inspect={inspect}
+      copyLabel={t('cell.copy')} copiedLabel={t('cell.copied')} toolKind="science-outcome" />
   }
 
   return (
-    <div className={css.card} data-tool="science-outcome" data-state={state}>
-      <div className={css.header}>
-        <span className={css.leading}><IconGoalOutline16 size={14} /></span>
-        <span className={css.title}>{presentation.title}</span>
-        <span className={css.badge}>{t('outcome.revision', { revision: presentation.revision })}</span>
-      </div>
+    <ScienceToolCell state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
+      summary={t('outcome.published', { revision: presentation.revision })} inspect={inspect}
+      copyLabel={t('cell.copy')} copiedLabel={t('cell.copied')} toolKind="science-outcome">
       <div className={css.summary}>
+        <div className={css.header}><span className={css.title}>{presentation.title}</span>
+          <span className={css.badge}>{t('outcome.revision', { revision: presentation.revision })}</span></div>
         <MarkdownText text={presentation.summaryMarkdown} />
       </div>
       {presentation.evidence.length > 0 && (
@@ -176,6 +150,6 @@ export function ScienceOutcomeRow({ block, loadImage, useProjection, t }: Scienc
           </ul>
         </div>
       )}
-    </div>
+    </ScienceToolCell>
   )
 }

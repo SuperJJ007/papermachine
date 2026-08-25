@@ -293,6 +293,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-deliverables ProducedFiles',
+      'client-ui-science ScienceTurnArtifacts',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -543,7 +544,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-conversation ToolDetailsView id \'tool\'',
       'client-ui-science ScienceDetailsView',
-      'client-ui-science ScienceOutcomeDetails',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.details.view\', () => ctx.slots.register(\n      { name: \'conversation.details.view\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1084,6 +1084,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-science ScienceGlobalToggle',
       'client-ui-science ScienceHeroAction',
     ],
     replaceRisk: 'none',
@@ -1335,8 +1336,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation ChatView id \'chat\'',
-      'client-ui-science ScienceTraceView id \'trace\'',
-      'client-ui-trajectory TrajectoryView id \'trajectory\'',
+      'client-ui-trajectory TrajectoryShell id \'trajectory\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.view\', () => ctx.slots.register(\n      { name: \'conversation.view\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2096,9 +2096,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-tool), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-science ScienceArtifactRow key \'annotate_artifact\'',
-      'client-ui-science ScienceRunRow key \'run_python\'',
-      'client-ui-science ScienceRunRow key \'run_r\'',
+      'client-ui-science ScienceAnnotationRow key \'annotate_artifact\'',
+      'client-ui-science ScienceExecutionRow key \'run_python\'',
+      'client-ui-science ScienceExecutionRow key \'run_r\'',
       'client-ui-science ScienceOutcomeRow key \'publish_outcome\'',
       'client-ui-skill SkillRow key \'skill\'',
       'client-ui-tool AskQuestionRow key \'ask_user_question\'',
@@ -2159,6 +2159,60 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.view.cordis\', () => ctx.slots.register(\n      { name: \'tool.view.cordis\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/extensions/ui-cordis/src/client/slots.ts:31',
+  },
+  {
+    key: 'trajectory.view',
+    kind: 'list',
+    scope: 'session',
+    summary: 'One selectable implementation inside the Trajectory conversation tab.',
+    doc: 'One selectable implementation inside the Trajectory conversation tab.',
+    registerOptions: [
+      {
+        name: 'id',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
+      },
+    ],
+    ownerProps: [
+      '/**\n * View-slot owner share: the cross-view inspect handoff (otherwise views need\n * nothing from the render site — sessionId and the snapshot hook arrive as\n * framework-standard props; tool rows go through each view\'s own declared\n * toolview hole).\n */\nexport interface ConvViewOwnerProps {\n  /** One-shot inspect request from another view (chat\'s Inspect button); null when idle. */\n  inspect?: { callId: CallId } | null\n  /** Acknowledge the inspect request once applied (clears the store field). */\n  onInspectDone?: () => void\n  /**\n   * Write the one-shot inspect target and switch to the trajectory view — the\n   * same handoff chat\'s own tool rows trigger (`ChatNodeOwnerProps.inspectCall`\n   * → `ToolCallOwnerProps.inspect`), available to every `conversation.view`\n   * entry so a non-chat view can also reveal a call there.\n   */\n  inspectCall: (callId: CallId) => void\n}',
+    ],
+    ownerPropsReferences: [
+      'ChatNodeOwnerProps',
+      'ToolCallOwnerProps',
+    ],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'conversation.view\' (client-ui-trajectory), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-science ScienceTraceView id \'swimlane\'',
+      'client-ui-trajectory TrajectoryView id \'detailed\'',
+    ],
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'trajectory.view\', () => ctx.slots.register(\n      { name: \'trajectory.view\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-trajectory/src/client/trajectory-subviews.ts:9',
   },
 ]
 /* jscpd:ignore-end */

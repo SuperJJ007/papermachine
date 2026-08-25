@@ -38,6 +38,8 @@ export interface ScienceArtifactProvenanceProps {
   onSubTabChange: (subTab: ScienceProvenanceSubTab) => void
   onBack: () => void
   inspectCall: (callId: string) => void
+  /** Select the detailed trajectory subview before inspecting one call. */
+  selectDetailed: () => void
   openTrace: (turn: number) => void
   t: TranslateNS<'science'>
 }
@@ -171,9 +173,10 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
   )
 }
 
-function MessagesSection({ run, inspectCall, t }: {
+function MessagesSection({ run, inspectCall, selectDetailed, t }: {
   run: ScienceClientRun
   inspectCall: (callId: string) => void
+  selectDetailed: () => void
   t: TranslateNS<'science'>
 }) {
   return (
@@ -181,7 +184,7 @@ function MessagesSection({ run, inspectCall, t }: {
       <p className={css.anchor}>
         {t('provenance.messages.turn', { requestHeaderSeq: run.requestHeaderSeq, startedAt: formatTime(run.startedAt) })}
       </p>
-      <button type="button" className={css.jumpButton} onClick={() => { inspectCall(run.toolCallId) }}>
+      <button type="button" className={css.jumpButton} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>
         {t('provenance.messages.jump')}
       </button>
     </section>
@@ -218,7 +221,7 @@ function EnvironmentSection({ run, environment, t }: {
  * @returns the drill-in body.
  */
 export function ScienceArtifactProvenance({
-  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, openTrace, t,
+  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed, openTrace, t,
 }: ScienceArtifactProvenanceProps) {
   const block = resolveRunCall(snapshot, run.toolCallId)
   const summary = generationSummary(snapshot, run.toolCallId)
@@ -236,7 +239,7 @@ export function ScienceArtifactProvenance({
           {summary.user !== '' && <p><b>{t('provenance.summary.user')}</b>{summary.user}</p>}
           {summary.agent !== '' && <p><b>{t('provenance.summary.agent')}</b>{summary.agent}</p>}
           <div className={css.summaryActions}>
-            <button type="button" data-anchor={`call:${run.toolCallId}`} onClick={() => { inspectCall(run.toolCallId) }}>
+            <button type="button" data-anchor={`call:${run.toolCallId}`} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>
               {t('provenance.summary.trajectory')}
             </button>
             <button type="button" data-anchor={`turn:${String(summary.turn)}`} onClick={() => { openTrace(summary.turn) }}>
@@ -261,7 +264,7 @@ export function ScienceArtifactProvenance({
       </div>
       {subTab === 'code' && <CodeSection run={run} block={block} t={t} />}
       {subTab === 'log' && <ExecutionLogSection run={run} block={block} t={t} />}
-      {subTab === 'messages' && <MessagesSection run={run} inspectCall={inspectCall} t={t} />}
+      {subTab === 'messages' && <MessagesSection run={run} inspectCall={inspectCall} selectDetailed={selectDetailed} t={t} />}
       {subTab === 'environment' && <EnvironmentSection run={run} environment={environment} t={t} />}
     </div>
   )

@@ -26,6 +26,9 @@
   - img
   - img
   - text: "Think The user's goal is: \"做两个turn，每个turn输出随机一个包的文件结构。注意你做完一个turn之后，直接输出内容，停止，我们的系统会帮你再开一个turn，你看着做一个类似的\" — which translates to: \"Do two turns, each turn output the file structure of a random package. Note that after you finish one turn, directly output the content and stop; our system will help you open another turn, and you just do something similar.\""
+- button "Ran 1 code executions, Ran 1 other steps 2 steps" [expanded]:
+  - img
+  - text: Ran 1 code executions, Ran 1 other steps 2 steps
 - button "Bash Show working directory and its contents":
   - img
   - img
@@ -104,6 +107,9 @@
   - img
   - img
   - text: "Think The random pick returned the same package as turn 1. Since turn 1 already covered `session-reference`, it would be better to pick a different one for variety. Let me re-roll, excluding the already-covered package."
+- button "Ran 2 code executions 2 steps" [expanded]:
+  - img
+  - text: Ran 2 code executions 2 steps
 - button "Bash Re-roll excluding the package from turn 1":
   - img
   - img

@@ -16,7 +16,20 @@ Science artifact presentation metadata accumulates in authoritative Turn data. A
 
 ## Execution cells
 
-`run_python` and `run_r` render as collapsed one-line cells containing language, state, and a short summary. Expanding a cell mounts its source code and settled output. Running, failed, and stopped states remain visible while collapsed. Expansion is component-local frontend state and is neither logged nor projected into provider requests. Every other Tool call (`get_science_state`, `read`, `grep`, `todo_write`, and so on) already collapses to the same one-line-cell-plus-expand interaction through `ui-tool`'s generic `ToolRow` dispatch fallback, unregistered here — Science neither shadows nor duplicates it.
+`run_python` and `run_r` render across eight presentation states (`ScienceExecutionRow.tsx`, `run-output.ts`), driven from the durable tool-result text `tool-science`'s `formatRunResult` produces and the joined `science` Session projection run entry (matched by `toolCallId`) — never a new Host fact. A captured table/chart artifact never renders a chip on the row; every artifact surfaces once, in the Turn-tail group (see above).
+
+1. **Running** — a live `mm:ss` elapsed status and a turn-level Stop (the composer's own control, reused through an injected `cancel`); the row degrades to a static "Running…" summary line since no stdout-streaming channel exists yet — a live tail is future work, not a new channel this row opens.
+2. **Success, short output** (≤ 8 retained lines) — the full stdout renders inline, no fold.
+3. **Success, long output** (> 8 lines) — a caret fold names the line count and retained byte size; the full text mounts only on expansion.
+4. **Success, output truncated** — the fold instead names the retained tail's byte size, with a banner explaining the cap and that the complete output is recoverable from provenance.
+5. **Failed** (any non-success status except a died kernel) — a tail-first stderr summary (its last two lines) renders inline in the error color; a second fold reveals the complete stderr.
+6. **Kernel exited mid-run** (`failureCode: 'KERNEL_DIED'`) — a distinct amber state naming the exited kernel epoch and the epoch the next run will start, with a "View exit reason" action reusing the row's own `inspect` (the same call-level Trajectory jump every other state offers — no separate kernel-state-event navigation exists yet).
+
+A row falls back to the pre-eight-state plain folded cell (collapsed code + settled output, expand-on-click) whenever the science projection has no run entry for this call, or the flattened text does not carry `formatRunResult`'s fixed section markers (a hand-built fixture, or a genuine tool-level exception/turn interruption) — both degrade rather than invent a state the durable facts do not support. Expansion and the live elapsed counter are component-local frontend state, never logged or projected into provider requests.
+
+**Deferred**: promoting an in-memory DataFrame result to its own artifact-like row (the design board's `df — …` chip) waits for the Notebook/Compute data-grounding stage; a "Restart and rerun" action on the kernel-exited state is deferred to keep a rerun routed through the model/conversation rather than a direct client control that would break trajectory consistency.
+
+Every other Tool call (`get_science_state`, `read`, `grep`, `todo_write`, and so on) collapses to a one-line-cell-plus-expand interaction — now organized into `ui-conversation`'s generic Tool group when adjacent — through `ui-tool`'s generic `ToolRow` dispatch fallback, unregistered here — Science neither shadows nor duplicates it.
 
 ## Transcript process-detail chrome
 
@@ -95,6 +108,9 @@ None; this package neither assembles nor sends provider requests.
 
 ## Known Limitations and Deferred Work
 
+- **The running row's mid-execution summary is static, not a live tail** — no stdout-streaming channel exists between the Runtime and the browser, so a running `run_python`/`run_r` row shows a fixed "Running…" line instead of the design board's latest-stdout-line preview until such a channel exists.
+- **A kernel-exited row's "View exit reason" jumps to the failing call, not its own `kernel-state` event** — the row reuses the same call-level Trajectory `inspect` every other state offers; a dedicated jump to the exact `science/kernel-state` fact is future navigation work.
+- **No in-memory DataFrame promotion** — a `run_python`/`run_r` result that only produced an in-memory value (the design board's `df — …` row) has nothing to promote to an artifact-like chip until the Notebook/Compute data-grounding stage lands.
 - **Turn-end artifacts depend on tagged presentation metadata** — a completed Turn whose tools do not publish `science/artifact` presentation values has no artifact group even if a separate projection later contains related files.
 - **No independent attachment cache** — the transcript rows' image thumbnails ride the conversation-owned session attachment loader (owner-supplied `loadImage`), whose lifetime, retry, and object-URL revocation stay owned there. The Details entry's thumbnails and content resolve through its own stateless loaders over `ISession.readAttachment`/`readTextAttachment`; neither path adds a persistent Map-based cache of its own.
 - **One fixed profile, two fields** — the card edits only the shipped `science` profile's `pythonPrefix`/`rPrefix`, because the built-in preset is the only current product consumer; another deployment profile id remains a file/configuration concern, not a browser-managed one.

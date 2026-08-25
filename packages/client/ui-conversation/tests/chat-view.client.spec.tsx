@@ -1490,3 +1490,65 @@ describe('ChatView', () => {
     expect(failedView.container.querySelector('[data-state="error"]')).not.toBeNull()
   })
 })
+
+describe('Tool groups', () => {
+  it('keeps a single tool call ungrouped — no group title, the row renders exactly as before', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /段代码|个文件|次|Skill|项操作/u })).toBeNull()
+  })
+
+  it('groups two or more adjacent tool-call rows under one generated title, expanded by default', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a'), toolResult(4, 'b')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('2 步')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+  })
+
+  it('collapses and reopens the whole group as one unit, without touching an ungrouped row elsewhere', () => {
+    const h = makeHarness({
+      nodes: [toolResult(3, 'a'), toolResult(4, 'b'), user(5, 'thanks'), toolResult(6, 'solo')],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    // The ungrouped row is unaffected by a sibling group's own collapse.
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+  })
+
+  it('splits a tool-call run wherever assistant text interrupts it, and does not group the resulting singletons', () => {
+    const h = makeHarness({
+      nodes: [toolResult(3, 'a'), assistant(4, 'checking in'), toolResult(5, 'b'), toolResult(6, 'c')],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryAllByRole('button', { name: /运行了/u })).toHaveLength(1)
+    expect(view.getByRole('button', { name: /运行了 2 段代码/u })).toBeTruthy()
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-c')).toBeTruthy()
+  })
+
+  it('names the failure count from the structured settled result, and mixes categories in the title', () => {
+    const h = makeHarness({
+      nodes: [
+        { ...toolResult(3, 'a', 'write'), isError: true },
+        toolResult(4, 'b'),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('button', { name: /运行了 1 段代码，保存或编辑了 1 个文件/u })).toBeTruthy()
+    expect(view.getByText('2 步 · 1 失败')).toBeTruthy()
+  })
+})

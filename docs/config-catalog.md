@@ -1715,6 +1715,40 @@ Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
 Source: [`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
 
+<a id="deepseek-aidsh-science-artifact-store"></a>
+
+## `@deepseek-ai/dsh-science-artifact-store`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
+  dshHome?: string
+  /**
+   * SQLite `journal_mode` pragma for every project's `store.sqlite`. `wal`
+   * (the default) suits local disks; pick a rollback-journal mode on
+   * filesystems where WAL's shared-memory files do not work (network mounts).
+   */
+  journalMode?: JournalMode
+  /**
+   * Maximum time, in milliseconds, a writer blocks waiting for a competing
+   * SQLite write lock before failing (`sqlite3_busy_timeout()`). This is
+   * what makes the append linearization point correct across concurrent
+   * processes instead of failing the second writer outright.
+   */
+  busyTimeoutMs?: number
+}
+
+/**
+ * Journal modes the store will run under. `wal` is the default; the
+ * rollback-journal modes exist for filesystems where WAL's shared-memory
+ * files do not work (network mounts).
+ */
+export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
+```
+
+Source: [`packages/science/science-artifact-store/src/index.ts:48`](../packages/science/science-artifact-store/src/index.ts)
+
 <a id="deepseek-aidsh-science-runtime"></a>
 
 ## `@deepseek-ai/dsh-science-runtime`

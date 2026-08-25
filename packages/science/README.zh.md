@@ -6,6 +6,7 @@ Science 领域：required-on-read Session 事件、host-local Runtime 操作、�
 
 | 包 | 职责 | ctx 键 |
 |---|---|---|
+| [`science-artifact-store/`](science-artifact-store/README.zh.md) | Project 拥有的 artifact 注册表：工作区身份、每个 Project 一份 SQLite 索引加内容寻址 blob，以及跨 Project 内各 Session 共享的线性追加操作。 | `ctx.scienceArtifactStore` |
 | [`science-session/`](science-session/README.zh.md) | 拥有七个 Science Session 事件、严格 Host replay、pre-commit invariant、客户端安全 projection 与 artifact 附件提取。 | 组合时注册到 `ctx.sessionProjections` / `ctx.sessionAttachments` |
 | [`science-runtime/`](science-runtime/README.zh.md) | Host-local Conda Runtime：environment binding、按 (session, language) 持久化的 Python/R kernel execution、私有 scratch、run 写出文件的自动捕获，以及纯元数据的 artifact 策展。 | `ctx.scienceRuntime` |
 | [`tool-science/`](tool-science/README.zh.md) | 面向模型的 Consumer：首次使用 binding/context，以及 `get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`publish_outcome`。 | 注册到 `ctx.tools` / `ctx.systemPrompt` |

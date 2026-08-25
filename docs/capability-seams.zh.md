@@ -98,6 +98,8 @@ flowchart LR
   svc_agentPresets["ctx.agentPresets<br/>Per-session agent composition"]
   pkg_commands["commands"]
   svc_commands["ctx.commands<br/>Human command registry"]
+  pkg_science_artifact_store["science-artifact-store"]
+  svc_scienceArtifactStore["ctx.scienceArtifactStore<br/>Project-owned Science artifact store"]
   pkg_science_runtime["science-runtime"]
   svc_scienceRuntime["ctx.scienceRuntime<br/>Host-local Science Runtime"]
   pkg_tool_science["tool-science"]
@@ -263,6 +265,7 @@ flowchart LR
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
+  pkg_science_artifact_store --> svc_scienceArtifactStore
   pkg_science_runtime --> svc_scienceRuntime
   pkg_session --> svc_sessions
   pkg_session_attachment_index --> svc_sessionAttachments
@@ -469,6 +472,7 @@ flowchart LR
 | `ctx.planMode` | `core` | [`plan-mode`](../packages/plan/plan-mode) | - | - | - | 折叠已记录的计划／模式状态，在轮次边界刷新用户选择，渲染由部署方拥有的指导信息，注册 /plan，并在状态转换期间保持计划退出 schema 稳定。 |
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | 在受信任根目录与用户创作根目录上发现 preset 目录，并在创建期把一份 preset cordis.yml 挂载到 agent 作用域之下，拒绝始终未激活或向根服务 realm 发布服务的行。 |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | 插件注册直接面向人的命令，而不会把调用发送给模型。 |
+| `ctx.scienceArtifactStore` | `core` | [`science-artifact-store`](../packages/science/science-artifact-store) | - | - | - | 拥有工作区 Project 身份、每个 Project 一份 SQLite 索引加 harness home 下的内容寻址 blob，以及跨 Project 内各 Session 共享的线性追加操作。 |
 | `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | 拥有已绑定的 Conda 环境、受限运行、图表提交，以及由 Science 工具消费的环境、运行与图表 Session 事件。 |
 | `ctx.scienceEdits` | `core` | [`tool-science`](../packages/science/tool-science) | - | `ui-science` | - | Host provider 校验在线 Agent 的精确 artifact 选择、提交有界的直接 Vega-Lite 样式版本，或排入结构化模型编辑消息；浏览器 consumer 本身绝不修改 projection。 |
 | `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | `apiproxy`, [`science-session`](../packages/science/science-session) | - | 从持久 Session 事件提取完整附件引用，供 Host 读取与导出使用；领域包为自己的事件类型注册受生命周期约束的提取器。 |

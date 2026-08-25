@@ -96,6 +96,8 @@ flowchart LR
   svc_agentPresets["ctx.agentPresets<br/>Per-session agent composition"]
   pkg_commands["commands"]
   svc_commands["ctx.commands<br/>Human command registry"]
+  pkg_science_artifact_store["science-artifact-store"]
+  svc_scienceArtifactStore["ctx.scienceArtifactStore<br/>Project-owned Science artifact store"]
   pkg_science_runtime["science-runtime"]
   svc_scienceRuntime["ctx.scienceRuntime<br/>Host-local Science Runtime"]
   pkg_tool_science["tool-science"]
@@ -261,6 +263,7 @@ flowchart LR
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
+  pkg_science_artifact_store --> svc_scienceArtifactStore
   pkg_science_runtime --> svc_scienceRuntime
   pkg_session --> svc_sessions
   pkg_session_attachment_index --> svc_sessionAttachments
@@ -467,6 +470,7 @@ flowchart LR
 | `ctx.planMode` | `core` | [`plan-mode`](../packages/plan/plan-mode) | - | - | - | Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions. |
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm. |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
+| `ctx.scienceArtifactStore` | `core` | [`science-artifact-store`](../packages/science/science-artifact-store) | - | - | - | Owns workspace project identity, one SQLite index plus content-addressed blobs per project under the harness home, and the linear-chain append operation shared across a project's sessions. |
 | `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | Owns bound Conda environments, confined runs, chart commits, and the environment, run, and chart Session events consumed by Science tools. |
 | `ctx.scienceEdits` | `core` | [`tool-science`](../packages/science/tool-science) | - | `ui-science` | - | The Host provider validates exact live-Agent artifact selections, commits bounded direct Vega-Lite style versions, or queues structured model edit messages; the browser consumer never mutates the projection itself. |
 | `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | `apiproxy`, [`science-session`](../packages/science/science-session) | - | Extracts complete attachment references from durable Session events for Host reads and exports; domain packages register lifecycle-owned extractors for their event types. |

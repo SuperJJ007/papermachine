@@ -317,6 +317,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plugins register direct human commands without sending invocations to the model.',
   },
   {
+    key: 'scienceArtifactStore',
+    pkg: 'science-artifact-store',
+    title: 'Project-owned Science artifact store',
+    mode: 'core',
+    note: 'Owns workspace project identity, one SQLite index plus content-addressed blobs per project under the harness home, and the linear-chain append operation shared across a project\'s sessions.',
+  },
+  {
     key: 'scienceRuntime',
     pkg: 'science-runtime',
     title: 'Host-local Science Runtime',

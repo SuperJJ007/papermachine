@@ -265,6 +265,7 @@ flowchart TD
     pkg_schedule["schedule"]
   end
   subgraph group_science["packages/science"]
+    pkg_science_artifact_store["science-artifact-store"]
     pkg_science_runtime["science-runtime"]
     pkg_science_session["science-session"]
     pkg_tool_science["tool-science"]
@@ -495,6 +496,11 @@ flowchart TD
   pkg_sandbox --> pkg_invariants
   pkg_sandbox --> pkg_llm
   pkg_sandbox --> pkg_session
+  pkg_science_artifact_store --> pkg_atomic_write
+  pkg_science_artifact_store --> pkg_brand
+  pkg_science_artifact_store --> pkg_home_paths
+  pkg_science_artifact_store --> pkg_invariants
+  pkg_science_artifact_store --> pkg_session
   pkg_session_attachment_index --> pkg_attachment
   pkg_session_attachment_index --> pkg_invariants
   pkg_session_attachment_index --> pkg_session
@@ -1588,6 +1594,7 @@ flowchart TD
 | [`code-runtime-worker-thread`](../packages/code-runtime/code-runtime-worker-thread) | `code-runtime` | [`code-runtime`](../packages/code-runtime/code-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
 | [`persona`](../packages/preset/persona) | `preset` | [`invariants`](../packages/runtime-diagnostics/invariants), [`system-prompt`](../packages/core/system-prompt) |
 | [`sandbox`](../packages/sandbox/sandbox) | `sandbox` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
+| [`science-artifact-store`](../packages/science/science-artifact-store) | `science` | [`atomic-write`](../packages/util/atomic-write), [`brand`](../packages/util/brand), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`session-attachment-index`](../packages/session/session-attachment-index) | `session` | [`attachment`](../packages/attachment/attachment), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`session-persistence`](../packages/session/session-persistence) | `session` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
 | [`session-projection`](../packages/session/session-projection) | `session` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |

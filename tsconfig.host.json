@@ -152,6 +152,7 @@
     { "path": "./packages/session/session-persistence-jsonl" },
     { "path": "./packages/session/session-persistence-sqlite" },
     { "path": "./packages/session/session-attachment-index" },
+    { "path": "./packages/science/science-artifact-store" },
     { "path": "./packages/science/science-session" },
     { "path": "./packages/science/science-runtime" },
     { "path": "./packages/science/tool-science" },

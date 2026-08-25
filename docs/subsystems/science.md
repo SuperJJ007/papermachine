@@ -22,6 +22,104 @@ Every probe and run uses direct argv, `environmentBase: 'empty'`, a fixed allowl
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxscienceartifactstore--scienceartifactstore"></a>
+
+### `ctx.scienceArtifactStore` — `ScienceArtifactStore`
+
+The project artifact store service. Registers as `ctx.scienceArtifactStore`; every method is self-sufficient given a `projectId` (no prior `openProject` call is required in the same process), so a Host restart or a second session in the same project can resume work against a project it already knows the id of.
+
+```ts cordis-catalog
+/**
+ * Resolve a workspace directory's project identity and ensure its store is open.
+ * @param workspacePath - the workspace directory to resolve.
+ * @returns the resolved identity, store root, and how it was resolved.
+ */
+openProject(workspacePath: string): Promise<OpenedProject>
+
+/**
+ * Create a new artifact and its first version.
+ * @param projectId - the owning project.
+ * @param input - the first version's bytes, media type, origin, and metadata.
+ * @returns the created artifact and its first version.
+ */
+createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }>
+
+/**
+ * Append a new version onto an existing artifact, linearized against every
+ * other concurrent append to the same artifact.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact to append to.
+ * @param input - the new version's bytes, media type, origin, and metadata.
+ * @returns the appended version.
+ */
+appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord>
+
+/**
+ * Apply a metadata-only patch to one version in place.
+ * @param projectId - the owning project.
+ * @param versionId - the version to curate.
+ * @param patch - fields to overwrite; an omitted field keeps its current value.
+ * @returns the updated version.
+ */
+annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord>
+
+/**
+ * Look up one artifact by id.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact to look up.
+ * @returns the artifact, or `undefined` when no such artifact exists.
+ */
+getArtifact(projectId: ProjectId, artifactId: ArtifactId): Promise<ArtifactRecord | undefined>
+
+/**
+ * Look up one version by id.
+ * @param projectId - the owning project.
+ * @param versionId - the version to look up.
+ * @returns the version, or `undefined` when no such version exists.
+ */
+getVersion(projectId: ProjectId, versionId: VersionId): Promise<VersionRecord | undefined>
+
+/**
+ * Look up an artifact's current latest version.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact whose latest version to fetch.
+ * @returns the latest version, or `undefined` when the artifact does not exist.
+ */
+getLatestVersion(projectId: ProjectId, artifactId: ArtifactId): Promise<VersionRecord | undefined>
+
+/**
+ * List every artifact in a project, oldest first.
+ * @param projectId - the owning project.
+ * @returns every artifact currently in the project's store.
+ */
+listArtifacts(projectId: ProjectId): Promise<readonly ArtifactRecord[]>
+
+/**
+ * List one artifact's versions in ordinal order.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact whose versions to list.
+ * @returns every version of the artifact, oldest first.
+ */
+listVersions(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly VersionRecord[]>
+
+/**
+ * Read one version's bytes by content address.
+ * @param projectId - the owning project.
+ * @param sha256 - the digest from an already-resolved version row.
+ * @returns the verified bytes.
+ */
+readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>
+
+/**
+ * Permanently delete a project's entire store. The one cascade boundary:
+ * session deletion never calls this, and never removes artifact rows.
+ * @param projectId - the project to delete.
+ */
+deleteProject(projectId: ProjectId): Promise<void>
+```
+
+Source: [`packages/science/science-artifact-store/src/index.ts`](../../packages/science/science-artifact-store/src/index.ts)
+
 <a id="ctxscienceedits--scienceeditservice"></a>
 
 ### `ctx.scienceEdits` — `ScienceEditService`

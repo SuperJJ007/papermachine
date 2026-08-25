@@ -44,6 +44,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
+  'packages/science/science-artifact-store': { kind: 'none', reason: 'the package persists project-owned artifact bytes and metadata; model-facing consumers such as dsh-science-runtime and dsh-tool-science own any prompt, schema, or request rendering of what it stores' },
   'packages/util/byte-size': { kind: 'indirect', reason: 'The library only formats a byte count; consumers such as dsh-tool-science own the model-visible text it is embedded in.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },
   'packages/shell/shell-env': { kind: 'indirect', reason: 'The env service exposes managed DSH_* facts through the shell tools (dsh-tool-bash/dsh-tool-pwsh); it registers no prompt or schema of its own.' },

@@ -16,7 +16,11 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 执行单元格
 
-`run_python` 与 `run_r` 默认渲染为单行折叠单元格，内含语言、状态和简短摘要。展开后才挂载源代码与已完成输出。运行中、失败和已中止状态在折叠时仍然可见。展开状态是组件本地的前端状态，既不记入日志，也不投影到 provider 请求。
+`run_python` 与 `run_r` 默认渲染为单行折叠单元格，内含语言、状态和简短摘要。展开后才挂载源代码与已完成输出。运行中、失败和已中止状态在折叠时仍然可见。展开状态是组件本地的前端状态，既不记入日志，也不投影到 provider 请求。其余一切 Tool 调用（`get_science_state`、`read`、`grep`、`todo_write` 等）已经通过 `ui-tool` 的通用 `ToolRow` 兜底分发，收敛为同样的「单行单元格 + 展开」交互——本包对此未注册，也不重复实现。
+
+## 对话流过程细节 chrome
+
+`registerTranscriptDetailVisibility`（`ui-conversation` 的 `IConversation`）会为满足泳道资格的会话隐藏对话流中的上下文注入展开行，以及每轮的 `用时`/TTFT/吞吐标签（`createTranscriptDetailVisibilitySource`，与泳道自身可见性来源同一套响应式判定逻辑，取反）。两者都仍可从持久日志重建——上下文行经由 Trajectory 详细子视图，计时数字经由 composer dock 的全会话统计条，本抑制机制不影响后者。`ui-conversation` 自身无条件渲染两者，仅通过其 `processDetailVisible` chat-node Hook 咨询已注册的来源，因此不携带任何 Science 专属代码；本包目前是唯一的注册方。
 
 ## Outcome 行
 

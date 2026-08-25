@@ -22,8 +22,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // client bundle purity gate.
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: the conversation.session.header.utilities and
-// conversation.details.view slots' declarations, and the Details seam's
-// inspectCall owner callback (same cross-plugin rule).
+// conversation.details.view slots' declarations, the Details seam's
+// inspectCall owner callback, and IConversation.registerTranscriptDetailVisibility's
+// source type (same cross-plugin rule).
+import type { TranscriptDetailVisibilitySource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TrajectoryViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
@@ -105,6 +107,24 @@ function createTraceVisibilitySource(ctx: ClientContext): TrajectoryViewVisibili
         bindingDisposers.clear()
       }
     },
+  }
+}
+
+/**
+ * Transcript process-detail chrome (context-injection rows, turn-timing
+ * stats) stays hidden for every Science Session: Science's own transcript
+ * cells and Turn-end artifact groups are the denser presentation, and this
+ * detail remains reconstructable from the durable log. Same reactive
+ * predicate as the Swimlane, inverted — a Session qualifies for hiding
+ * exactly when it qualifies for the Swimlane.
+ * @param ctx - client root context (reads `ctx.sessions`).
+ * @returns the registrable {@link TranscriptDetailVisibilitySource}.
+ */
+function createTranscriptDetailVisibilitySource(ctx: ClientContext): TranscriptDetailVisibilitySource {
+  const trace = createTraceVisibilitySource(ctx)
+  return {
+    visible: sessionId => !trace.visible(sessionId),
+    subscribe: callback => trace.subscribe(callback),
   }
 }
 
@@ -248,6 +268,9 @@ export function apply(ctx: ClientContext): void {
       return { kind: 'success' as const }
     })
   }), 'ui-science: composer edit submission')
+
+  ctx.effect(() => ctx.conversation.registerTranscriptDetailVisibility(createTranscriptDetailVisibilitySource(ctx)),
+    'ui-science: transcript process-detail visibility')
 
   // Registration-time text (the entry's tab label) reads through the bound
   // translate as a thunk, so it follows the active locale without

@@ -49,10 +49,12 @@ interface MessageItemProps {
   readonly node: ConversationNode
   readonly t: ChatNodeViewProps['t']
   readonly referenceLabels?: readonly string[]
+  /** Stubs the process-detail-visibility Hook; defaults to shown. */
+  readonly processDetailVisible?: boolean
 }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
-function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) {
+function MessageItem({ node, t: translate, referenceLabels, processDetailVisible = true }: MessageItemProps) {
   const kind = node.kind === 'assistant' ? 'assistant-step' : node.kind
   const viewNode: ChatConversationViewNode = {
     key: `fixture:${node.kind}:${node.seq}`,
@@ -68,7 +70,8 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
+  const useProcessDetailVisible = () => processDetailVisible
+  const props = { node: viewNode, t: translate, renderMessageImages, useProcessDetailVisible } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -341,6 +344,28 @@ describe('MessageItem arms', () => {
 
     fireEvent.keyDown(disclosure, { key: ' ' })
     expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('renders nothing when the process-detail chrome Hook reports it suppressed', () => {
+    // A denser-presentation consumer (e.g. Science) registers a
+    // TranscriptDetailVisibilitySource; this row must vanish from the flow
+    // rather than render collapsed, since the durable log already carries it.
+    const view = render(
+      <MessageItem
+        t={t}
+        processDetailVisible={false}
+        node={{
+          kind: 'context',
+          seq: 3,
+          content: [{ type: 'text', text: 'line one' }],
+          source: { kind: 'plugin', plugin: 'fixture', empty: {}, list: [] },
+          provenance: { role: 'inject', label: 'fixture' },
+          form: null,
+        } as never}
+      />,
+    )
+    expect(view.container.textContent).toBe('')
+    expect(view.queryByRole('button')).toBeNull()
   })
 
   it('the instructions form names the files it reconciled above their text', () => {

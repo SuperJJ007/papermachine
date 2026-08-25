@@ -149,7 +149,7 @@ function emptyWorkspaces() {
   return bindSnapshotSelector(store)
 }
 
-function makeHarness(init?: Partial<ConversationSnapshot>) {
+function makeHarness(init?: Partial<ConversationSnapshot>, options?: { processDetailVisible?: boolean }) {
   const { set, source } = makeSource(init)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
@@ -195,8 +195,9 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
         ? location.turn.data.get(dataKey)
         : undefined
     })
+    const useProcessDetailVisible = () => options?.processDetailVisible ?? true
     const nodeProps = <Kind extends ChatNode['kind']>(): ChatNodeViewProps<Kind> => (
-      { ...props, ...nodeOwner, useTurnData } as unknown as ChatNodeViewProps<Kind>
+      { ...props, ...nodeOwner, useTurnData, useProcessDetailVisible } as unknown as ChatNodeViewProps<Kind>
     )
     switch (nodeOwner.node.kind) {
       case 'user':
@@ -693,6 +694,32 @@ describe('ChatView', () => {
     expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
     expect(view.getAllByText(/首 token 1\.2秒/)).toHaveLength(1)
     expect(view.getAllByText(/20 tok\/s/)).toHaveLength(1)
+  })
+
+  it('keeps only the plain clock when the process-detail chrome Hook reports it suppressed', () => {
+    // A denser-presentation consumer (e.g. Science) registers a
+    // TranscriptDetailVisibilitySource; the durable log already carries run
+    // time, ttft, and throughput, so this row drops them rather than repeat
+    // them in the transcript.
+    const first: AssistantMessageNode = {
+      kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'mid' }],
+      timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
+      usage: { outputTokens: 40 },
+    }
+    const second: AssistantMessageNode = {
+      kind: 'assistant', seq: 16, time: 16_000, turn: 1, step: 2, blocks: [{ kind: 'text', text: 'final' }],
+      timing: { stepStartTime: 10_000, firstTokenTime: 10_200, completedTime: 12_200 },
+      usage: { outputTokens: 60 },
+    }
+    const h = makeHarness({
+      nodes: [user(1, 'hi'), first, second],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
+      turnEnds: new Map([[1, 20]]),
+    }, { processDetailVisible: false })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByText(/用时|首 token|tok\/s/)).toBeNull()
+    // The action row itself (copy/branch) stays; only the metrics text drops.
+    expect(view.getAllByRole('button', { name: '复制' }).length).toBeGreaterThan(0)
   })
 
   it('withholds ttft and throughput while the turn is still running', () => {

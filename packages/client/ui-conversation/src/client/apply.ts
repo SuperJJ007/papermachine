@@ -1,4 +1,5 @@
 /** Registers the conversation components, shared store, and service callbacks. */
+import { useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -12,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { DetailsViewEntry, ViewTab } from './contract/views.ts'
 import type {
-  ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
+  ApprovalWait, ChatNodeInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
   ComposerChainProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionInjected,
   DetailsInjected,
 } from './contract/slots.ts'
@@ -76,17 +77,32 @@ const ABSENT_MENU_LAUNCHER = {
   subscribe: () => () => {},
 }
 
-const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
-  hooks: {
-    turnData: ({ useSession }, nodeKey) => function useTurnData(key) {
-      return useSession((snapshot) => {
-        const location = snapshot.chat.nodes.get(nodeKey)?.location
-        return location?.kind === 'turn' || location?.kind === 'step'
-          ? location.turn.data.get(key)
-          : undefined
-      })
+/**
+ * Build the slot-level `inject` face every keyed 'conversation.chat.node'
+ * renderer receives, regardless of which package registered its key.
+ * @param ctx - owning root context (closed over so the returned Hooks can
+ * reach the concrete conversation service; components themselves never see ctx).
+ * @returns the Hook factories: Turn data and process-detail visibility.
+ */
+function createChatNodeInject(ctx: Context): ChatNodeInjected {
+  return {
+    hooks: {
+      turnData: ({ useSession }, nodeKey) => function useTurnData(key) {
+        return useSession((snapshot) => {
+          const location = snapshot.chat.nodes.get(nodeKey)?.location
+          return location?.kind === 'turn' || location?.kind === 'step'
+            ? location.turn.data.get(key)
+            : undefined
+        })
+      },
+      processDetailVisible: ({ sessionId }) => function useProcessDetailVisible() {
+        return useSyncExternalStore(
+          callback => concreteConversation(ctx).subscribeTranscriptDetailVisibility(callback),
+          () => concreteConversation(ctx).transcriptDetailVisible(sessionId),
+        )
+      },
     },
-  },
+  }
 }
 
 /** Resolve the session-scoped conversation face (scope-addressed send/cancel), failing loud. */
@@ -434,7 +450,7 @@ export function apply(ctx: Context): void {
     label: () => t('view.chat'),
     locale: NS,
     children: {
-      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: createChatNodeInject(ctx) },
       'conversation.message.images': { kind: 'single', scope: 'session' },
     },
     store: chatStore,

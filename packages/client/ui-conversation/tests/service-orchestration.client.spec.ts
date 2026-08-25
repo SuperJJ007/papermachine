@@ -119,6 +119,55 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('suppresses transcript process-detail chrome only where every registered source agrees', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    // No registrant: every Session keeps the chrome.
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(true)
+
+    const scienceSubscribers: (() => void)[] = []
+    const disposeScience = b.root.registerTranscriptDetailVisibility({
+      visible: id => id !== sessionId,
+      subscribe: (callback) => { scienceSubscribers.push(callback); return () => {} },
+    })
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    expect(b.root.transcriptDetailVisible('other' as never)).toBe(true)
+
+    // A second source narrows further: both must agree for the chrome to show.
+    const disposeOther = b.root.registerTranscriptDetailVisibility({
+      visible: () => false,
+      subscribe: () => () => {},
+    })
+    expect(b.root.transcriptDetailVisible('other' as never)).toBe(false)
+
+    // The source's own invalidation reaches subscribeTranscriptDetailVisibility,
+    // independent of anything the slot ledger tracks.
+    const listener = vi.fn()
+    const unsubscribe = b.root.subscribeTranscriptDetailVisibility(listener)
+    scienceSubscribers[0]?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+
+    disposeScience()
+    // Disposing an already-removed source is a no-op.
+    disposeScience()
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    disposeOther()
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(true)
+    await b.runtime.dispose()
+  })
+
+  it('tears down a still-registered transcript-detail source on service disposal', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    b.root.registerTranscriptDetailVisibility({
+      visible: () => false,
+      subscribe: () => () => {},
+    })
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

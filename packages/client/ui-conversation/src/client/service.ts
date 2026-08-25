@@ -54,6 +54,26 @@ export interface ViewVisibilitySource {
 }
 
 /**
+ * A transcript process-detail Session predicate with its own invalidation
+ * signal, the same shape as {@link ViewVisibilitySource}. A registrant with
+ * its own denser transcript presentation (e.g. Science's folded tool cells
+ * and Turn-end artifact groups) reports `false` for a matching Session to
+ * hide context-injection rows and turn-timing stats from the chat flow; that
+ * detail remains reconstructable from the durable log and, for Session
+ * kinds that render one, the Trajectory detailed subview.
+ */
+export interface TranscriptDetailVisibilitySource {
+  /** Whether transcript process-detail chrome currently shows for this Session. */
+  visible(sessionId: SessionId): boolean
+  /**
+   * Subscribe to a change in what `visible` might answer.
+   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
+   * @returns disposer removing this subscription.
+   */
+  subscribe(callback: () => void): () => void
+}
+
+/**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
  * verbs and the input registry other plugins may reach — and exactly what a
  * test fake must supply.
@@ -74,6 +94,13 @@ export interface IConversation {
   openView(sessionId: SessionId, id: string): void
   /** Register a predicate that limits one main view to matching Sessions. */
   registerViewVisibility(id: string, source: ViewVisibilitySource): () => void
+  /**
+   * Register a predicate that hides transcript process-detail chrome
+   * (context-injection rows, turn-timing stats) for matching Sessions.
+   * Every registered source must answer `visible` for a Session to keep the
+   * chrome shown there; no registrant means it stays shown everywhere.
+   */
+  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -146,6 +173,9 @@ export class ConversationController extends Service implements IConversation {
   /** Bumped whenever any registered {@link ViewVisibilitySource} invalidates; the `views` snapshot in apply.ts. */
   private viewVisibilityVersionCounter = 0
   private readonly viewVisibilitySubscribers = new Set<() => void>()
+  private readonly detailVisibilitySources: TranscriptDetailVisibilitySource[] = []
+  private readonly detailVisibilityDisposers = new Map<TranscriptDetailVisibilitySource, () => void>()
+  private readonly detailVisibilitySubscribers = new Set<() => void>()
   private disposed = false
 
   /**
@@ -172,6 +202,10 @@ export class ConversationController extends Service implements IConversation {
       for (const dispose of this.viewVisibilityDisposers.values()) dispose()
       this.viewVisibilityDisposers.clear()
       this.viewVisibilitySubscribers.clear()
+      this.detailVisibilitySources.length = 0
+      for (const dispose of this.detailVisibilityDisposers.values()) dispose()
+      this.detailVisibilityDisposers.clear()
+      this.detailVisibilitySubscribers.clear()
     }, 'conversation attachment URL cache')
   }
 
@@ -314,6 +348,41 @@ export class ConversationController extends Service implements IConversation {
    */
   viewVisibilityVersion(): number {
     return this.viewVisibilityVersionCounter
+  }
+
+  /** Register one transcript process-detail Session predicate. */
+  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void {
+    this.detailVisibilitySources.push(source)
+    this.detailVisibilityDisposers.set(source, source.subscribe(() => {
+      for (const callback of this.detailVisibilitySubscribers) callback()
+    }))
+    return () => {
+      const index = this.detailVisibilitySources.indexOf(source)
+      if (index < 0) return
+      this.detailVisibilitySources.splice(index, 1)
+      this.detailVisibilityDisposers.get(source)?.()
+      this.detailVisibilityDisposers.delete(source)
+    }
+  }
+
+  /**
+   * Resolve whether transcript process-detail chrome shows for an addressed Session.
+   * @param sessionId - addressed Session.
+   * @returns `true` when every registered source answers `visible` (including none registered).
+   */
+  transcriptDetailVisible(sessionId: SessionId): boolean {
+    return this.detailVisibilitySources.every(source => source.visible(sessionId))
+  }
+
+  /**
+   * Subscribe to every registered {@link TranscriptDetailVisibilitySource}'s
+   * invalidation, present and future.
+   * @param callback - invoked with no arguments on any source's invalidation.
+   * @returns disposer removing this subscription.
+   */
+  subscribeTranscriptDetailVisibility(callback: () => void): () => void {
+    this.detailVisibilitySubscribers.add(callback)
+    return () => { this.detailVisibilitySubscribers.delete(callback) }
   }
 
   /**

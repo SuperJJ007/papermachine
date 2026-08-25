@@ -108,6 +108,7 @@ function setup(sessionsOverride?: unknown) {
   } as never)
   ctx.provide('conversation', {
     registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: vi.fn(), openView: vi.fn(),
+    registerTranscriptDetailVisibility: vi.fn(() => () => {}),
   } as never)
   ctx.provide('conversationEvents', { register: vi.fn() } as never)
   ctx.provide('trajectorySubviews', {

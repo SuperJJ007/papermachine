@@ -301,9 +301,18 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   )
 })
 
-/** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+/**
+ * Injected-context keyed Chat renderer. Hidden — rather than the row it
+ * would otherwise show — whenever the process-detail Hook reports the chrome
+ * suppressed for this Session (a denser-presentation consumer's own
+ * transcript still carries this content via the durable log).
+ */
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({
+  node, t, useProcessDetailVisible,
+}: ChatNodeViewProps<'context'>) {
   const data = node.data
+  const visible = useProcessDetailVisible()
+  if (!visible) return null
   return (
     <ContextInjectionRow
       content={data.content}

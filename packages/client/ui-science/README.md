@@ -16,7 +16,11 @@ Science artifact presentation metadata accumulates in authoritative Turn data. A
 
 ## Execution cells
 
-`run_python` and `run_r` render as collapsed one-line cells containing language, state, and a short summary. Expanding a cell mounts its source code and settled output. Running, failed, and stopped states remain visible while collapsed. Expansion is component-local frontend state and is neither logged nor projected into provider requests.
+`run_python` and `run_r` render as collapsed one-line cells containing language, state, and a short summary. Expanding a cell mounts its source code and settled output. Running, failed, and stopped states remain visible while collapsed. Expansion is component-local frontend state and is neither logged nor projected into provider requests. Every other Tool call (`get_science_state`, `read`, `grep`, `todo_write`, and so on) already collapses to the same one-line-cell-plus-expand interaction through `ui-tool`'s generic `ToolRow` dispatch fallback, unregistered here — Science neither shadows nor duplicates it.
+
+## Transcript process-detail chrome
+
+`registerTranscriptDetailVisibility` (`ui-conversation`'s `IConversation`) hides the chat flow's injected-context disclosure row and each turn's `Ran for`/TTFT/throughput labels for a Session that qualifies for the Swimlane (`createTranscriptDetailVisibilitySource`, the same reactive predicate as the Swimlane's own visibility source, inverted). Both stay reconstructable from the durable log — the context row through the Trajectory detailed subview, the timing figures through the composer dock's whole-session stats strip, which this suppression does not touch. `ui-conversation` renders both unconditionally on its own and only consults registered sources through its `processDetailVisible` chat-node Hook, so it carries no Science-specific code; this package is the sole registrant today.
 
 ## Outcome row
 

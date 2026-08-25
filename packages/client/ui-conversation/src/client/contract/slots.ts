@@ -118,7 +118,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: ChatNodeOwnerProps
       keyProps: { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }
       hookContext: string
-      inject: ChatNodeTurnDataInjected
+      inject: ChatNodeInjected
     }
     /** Optional renderer for one consecutive group of durable message images. */
     'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
@@ -451,10 +451,20 @@ export type UseChatNodeTurnData = <Key extends Extract<keyof ConversationTurnDat
   key: Key,
 ) => Readonly<ConversationTurnDataMap[Key]> | undefined
 
-/** Slot-level Hook factory used by renderers reading their Node's Turn data. */
-export interface ChatNodeTurnDataInjected {
+/**
+ * Slot-level Hook factories every keyed 'conversation.chat.node' renderer
+ * receives, regardless of which package registered its key: reading the
+ * owning Node's Turn data, and whether transcript process-detail chrome
+ * (context-injection rows, turn-timing stats) currently shows for this
+ * Session. A denser-presentation consumer (e.g. Science) registers a
+ * {@link TranscriptDetailVisibilitySource} through
+ * `IConversation.registerTranscriptDetailVisibility` to suppress it for
+ * matching Sessions without this package knowing that consumer exists.
+ */
+export interface ChatNodeInjected {
   hooks: {
     turnData: SlotHookFactory<'conversation.chat.node', UseChatNodeTurnData>
+    processDetailVisible: SlotHookFactory<'conversation.chat.node', () => boolean>
   }
 }
 

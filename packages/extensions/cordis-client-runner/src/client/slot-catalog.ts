@@ -235,7 +235,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     keyDomain: 'fixed by the owner\'s key table { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }, already taken: assistant-step, command, command-input, compaction, context, manual-compaction, model-retry, steering, tool-call, turn-error, turn-max-tokens, turn-tail, unknown, user, workflow-run',
     hookContext: 'string',
-    slotInject: 'ChatNodeTurnDataInjected',
+    slotInject: 'ChatNodeInjected',
     declaredBy: 'an entry in \'conversation.view\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation UserMessageNodeView key \'user\'',

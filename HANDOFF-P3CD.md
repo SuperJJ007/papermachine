@@ -120,51 +120,66 @@ vite-entry, workspace-management, turn-tail-actions, skill-tool-row, skill-invoc
 subagent-conversation, workflow-run, cordis-tool-round, code-mode-round, web-search-round,
 pwsh-terminal` (* = refreshed).
 
-**Not fully cleared — needs follow-up**: the LAST batch (the 22-file batch ending in
-`subagent-interrupt-ui.e2e.ts`/`subagent-interrupt.e2e.ts`) reported **3 failed test files / 10 failed
-tests** when the stop directive arrived. Only one failure's full output was captured before stopping:
+### Verification sweep, session 2 (2026-08-26) — 3 failing files identified, 2 resolved, 1 open
 
-```
-apps/web/tests/subagent-interrupt-ui.e2e.ts > composer interrupt for a running continuable child
-  > interrupts through subagent.interrupt, parks the follow-up, and resumes it FIFO
-AssertionError: expected [ { content: [ ... ] } ] to have a length of 2 but got 1
-  expect(child!.inbox.nextTurn).toHaveLength(2)
-```
+A successor agent triaged the "3 failed files / 10 failed tests" from the last batch, then was
+stopped by a coordinator context-budget override before finishing. State as of that stop:
 
-This assertion is about subagent inbox/queue mechanics — nothing in this PR touches queueing,
-subagent inbox, or anything besides Tool-call presentation — so it reads as **unrelated to this
-change** (likely a pre-existing flake, or an ordering/timing artifact from running many e2e files
-back-to-back in one process; it was NOT independently verified against the base branch before the
-stop). The other 2 failed files in that batch were never inspected at all — their names and failure
-reasons are unknown. **Whoever resumes must**:
+**The 3 failing files are now identified** (2 + 5 + 3 = the 10 failed tests):
+`subagent-interrupt-ui.e2e.ts` (2), `smoke-real.e2e.ts` (5), `seeded-history.e2e.ts` (3).
 
-1. Re-run that last batch alone (`trajectory-virtualization` was already confirmed green in an
-   earlier batch — the remaining unverified ones are `subagent-interrupt-ui.e2e.ts`,
-   `subagent-interrupt.e2e.ts`, and whichever third file failed; re-run the exact list in the
-   "Batches actually run" note above minus the ones already confirmed, or just re-run
-   `subagent-interrupt-ui.e2e.ts subagent-interrupt.e2e.ts vite-entry.e2e.ts workspace-management.e2e.ts`
-   — the tail end of that batch — to identify the 3 failing files precisely).
-2. For each failure, check first whether it reproduces on `HEAD~1` (before this PR's changes) in the
-   same worktree/environment — if it does, it's baseline noise, not a regression, and needs no fix
-   here. If a failure is a genuine ARIA-golden mismatch from Tool grouping, refresh it the same way
-   as the three already done: `DSH_SNAPSHOT=refresh pnpm exec vitest run --config vitest.web.config.ts
-   apps/web/tests/<file>.e2e.ts`, inspect the diff (`git diff -- apps/web/tests/snapshots/`) for
-   sanity, then re-run in default (replay) mode to confirm green.
-3. This sweep never reached the several other e2e files not listed in "Batches actually run" above and
-   not in the original 14 already covered — cross-check against `ls apps/web/tests/*.e2e.ts` for any
-   file this handoff doesn't mention, and sweep it the same way if it constructs ≥2 adjacent ordinary
-   tool calls (skill/subagent/workflow/live-interaction scenarios are the likeliest remaining hits per
-   the P3b Agent Note's own list of e2e categories that show non-Science tool rows).
+**Sweep coverage is COMPLETE.** A set-diff of `ls apps/web/tests/*.e2e.ts` (78 files) against the
+union of session 1's batches plus session 2's reruns is empty — no never-swept file remains.
+Follow-up item 3 from the earlier version of this handoff is closed.
+
+**1. `subagent-interrupt-ui.e2e.ts` / `subagent-interrupt.e2e.ts` — flake, no action.**
+Both pass in isolation (4/4 tests) and passed again inside a 22-file batch rerun and a 21-file batch
+rerun in this session. The captured `inbox.nextTurn toHaveLength(2)` failure never reproduced.
+Verdict: ordering/timing flake from batch execution, not a P3c/P3d regression. Nothing to fix here.
+
+**2. `seeded-history.e2e.ts` — intended P3d output; golden refresh needed (NOT yet done).**
+All 3 tests fail with the identical ARIA diff: the received output adds
+`- button "Read 2 files 2 steps" [expanded]` above the two adjacent `read` tool rows — exactly the
+P3d Tool-group header, same class of change as the `message-actions` refresh already committed.
+This is the intended behavior, not a bug. The refresh was NOT run (stop order arrived first).
+Next session: `DSH_SNAPSHOT=refresh pnpm exec vitest run --config vitest.web.config.ts
+apps/web/tests/seeded-history.e2e.ts`, sanity-check `git diff -- apps/web/tests/snapshots/seeded-history/`
+(expect only the group header + indentation), rerun in replay mode to confirm green, commit.
+
+**3. `smoke-real.e2e.ts` — OPEN, verdict not reached. This is a REAL-API test.**
+It self-skips without `DEEPSEEK_API_KEY`, but the repo-root `.env` key loads via
+`vitest.web.config.ts`, so session 2's triage runs (one solo run + one batch run) DID hit the real
+API (7/12 tests passed each time, so real model rounds ran). Budget accordingly before rerunning.
+The 5 failures, from the saved solo log:
+- 3 tests (`empty-state first send`, `view tabs`, `bash differential rendering`) die inside
+  `connectFreshWorkspace` (`apps/web/tests/support.ts:76`): a welcome overlay —
+  `<div role="presentation" class="_root_15u5s_2">` containing the paragraph "We look forward to
+  exploring the limits of intell…" — intercepts pointer events over the "Choose workspace" textarea,
+  so the click/fill retries for 30s and times out **before any model call**.
+- `sidebar drag widens the column`: track stays `280px` after the drag (expected change).
+- `reload recovery`: times out waiting for `WEB_ROUND_DONE` (downstream of the same boot problem).
+Evidence so far: d1dcf58fc9 touches only the ui-science run row and ui-conversation chat grouping —
+neither renders that overlay — so a P3c/P3d cause is implausible but NOT proven. smoke-real is also
+the only sweep file that runs the **built dist** (`requireDist`) instead of source-mode replay, so a
+stale/mismatched `apps/web` frontend build in this worktree is a live hypothesis alongside a
+pre-existing overlay pointer-events bug and an environment quirk. Planned next steps (not executed):
+rebuild the frontend dist (`pnpm --filter @deepseek-ai/dsh-web-frontend run build`), rerun
+`pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/smoke-real.e2e.ts` once; if still
+failing, build + run at the parent commit `3e59f4c29d` in a detached scratch worktree to split
+pre-existing vs regression — both steps spend real API budget, so coordinate first. Failure
+screenshots from session 2's runs are under `.artifacts/`.
 
 ## Not done at all
 
 - **Acceptance screenshots** — explicitly out of scope for this implementing pass per the task brief
   (a separate step). None taken.
+- `seeded-history` golden refresh and the `smoke-real` verdict — see the session-2 section above.
 - No `pnpm run doc-sync` run (README pairing was re-recorded per-file via
   `pnpm run verify-translation-pairing --write <path>` and spot-checked with the bare check; the full
-  doc-sync gate covering catalogs/other cross-file doc consistency was not run for time).
-- `pnpm run duplication` / `pnpm run hygiene` — not run; no reason to expect either is affected
-  (no new package, no export surface change), but not verified.
+  doc-sync gate covering catalogs/other cross-file doc consistency was not run for time, in either
+  session — session 2 was stopped before reaching it).
+- `pnpm run duplication` / `pnpm run hygiene` — not run in either session; no reason to expect either
+  is affected (no new package, no export surface change), but not verified.
 
 ## Commit
 

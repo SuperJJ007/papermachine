@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 /**
  * ui-science browser half: locale dictionary registration, the four keyed
  * toolview registrations (`run_python`, `run_r`, `annotate_artifact`,
@@ -30,7 +29,7 @@ import { ScienceHeroAction } from '../src/client/ScienceHeroAction.tsx'
 import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
 import { TOGGLE_SCOPE_GLOBAL } from '../src/toggle-scope.ts'
-import { ScienceTurnTrace } from '../src/client/ScienceTurnTrace.tsx'
+import { ScienceTraceView } from '../src/client/ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceOutcomeDetails } from '../src/client/ScienceOutcomeDetails.tsx'
 import { SCIENCE_RUNTIME_NS } from '../src/client/settings-card-controller.ts'
@@ -69,7 +68,6 @@ function providePresentation(ctx: Context, sciencePreset = false) {
       'conversation.input.accessory': { kind: 'list', scope: 'session' },
       'conversation.composer.dock': { kind: 'list', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
-      'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
       'sidebar.destinations': { kind: 'list', scope: 'root' },
       'details.files': { kind: 'single', scope: 'root' },
     },
@@ -86,12 +84,8 @@ function providePresentation(ctx: Context, sciencePreset = false) {
   })
   ctx.provide('connection', {} as never)
   const submit = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
-  const addArtifactNote = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
-  const removeArtifactNote = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const scienceEdits = {
     submit,
-    addArtifactNote,
-    removeArtifactNote,
     commitStyleEdit: () => Promise.resolve({
       ok: true,
       value: { artifactId: 'artifact-2', version: 2, origin: 'human-edit' },
@@ -112,9 +106,7 @@ function providePresentation(ctx: Context, sciencePreset = false) {
   }
   ctx.provide('sessions', {
     binding: (sessionId: SessionId) => sessionId === 'session-1'
-      ? { session: { projections: { faceOf: () => scienceFace }, getSnapshot: () => ({
-        nodes: [{ kind: 'assistant', seq: 5, turn: 2 }, { kind: 'user', seq: 4, turn: 2 }],
-      }) } }
+      ? { session: { projections: { faceOf: () => scienceFace } } }
       : undefined,
     list: {
       getSnapshot: () => ({
@@ -149,11 +141,10 @@ function providePresentation(ctx: Context, sciencePreset = false) {
       return () => { viewVisibility.splice(viewVisibility.indexOf(source.visible), 1) }
     },
   } as never)
-  ctx.provide('conversationEvents', { register: () => () => {} } as never)
   const { scope } = stubSettingsScope()
   ctx.provide('settingsScope', { bind: () => scope })
   return {
-    capture, submit, addArtifactNote, removeArtifactNote, openDetailsView, openView, viewVisibility,
+    capture, submit, openDetailsView, openView, viewVisibility,
     visibilityHarness: {
       setIds: (ids: string[]) => { sessionIds = ids },
       emitList: () => { for (const callback of listSubscribers) callback() },
@@ -165,7 +156,7 @@ function providePresentation(ctx: Context, sciencePreset = false) {
 
 describe('apply', () => {
   it('declares the services it binds — locale/slots for the toolview rows, connection/remote/settingsScope for the settings card (settingsScope.bind\'s own documented precondition on its caller), and sessions for the Details entry\'s own attachment loader', () => {
-    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation', 'conversationEvents'])
+    expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation'])
   })
 
   it('registers the science locale dictionaries and the run_python / run_r / annotate_artifact / publish_outcome toolview rows', async () => {
@@ -222,7 +213,7 @@ describe('apply', () => {
 
   it('registers the artifact viewer (Science Details entry) with id "science" and a registered label from the science namespace', async () => {
     const ctx = new Context()
-    const { capture: presentation, addArtifactNote, removeArtifactNote } = providePresentation(ctx)
+    const { capture: presentation } = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const entries = presentation.slots.entries('conversation.details.view')
@@ -250,55 +241,11 @@ describe('apply', () => {
     await expect(face?.commitStyleEdit({} as never)).resolves.toMatchObject({
       ok: true, value: { version: 2, origin: 'human-edit' },
     })
-
-    // addArtifactNote/removeArtifactNote forward verbatim to the bound session's own Remote seat.
-    await face?.addArtifactNote({ artifactId: 'chart-1' as never, version: 1, text: 'note' })
-    expect(addArtifactNote).toHaveBeenCalledWith('any-session', { artifactId: 'chart-1', version: 1, text: 'note' })
-    await face?.removeArtifactNote({ artifactId: 'chart-1' as never, noteSeq: 3 })
-    expect(removeArtifactNote).toHaveBeenCalledWith('any-session', { artifactId: 'chart-1', noteSeq: 3 })
-  })
-
-  it('returnToConversation opens chat and scrolls to the assistant message that produced the given seq, no-op when it cannot be resolved', async () => {
-    const ctx = new Context()
-    const { capture, openView } = providePresentation(ctx)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const details = capture.slots.entries('conversation.details.view')[0]
-    const face = (details?.inject as unknown as (sessionId: SessionId) => ScienceDetailsInjected)('session-1' as SessionId)
-
-    const rafCallbacks: FrameRequestCallback[] = []
-    const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
-      .mockImplementation((callback: FrameRequestCallback) => { rafCallbacks.push(callback); return 0 })
-    const target = document.createElement('div')
-    target.dataset['turnTail'] = '2'
-    const scrollIntoView = vi.fn()
-    target.scrollIntoView = scrollIntoView
-    document.body.append(target)
-
-    // The bound seq's producing assistant message is turn 2: opens chat, then scrolls once the frame runs.
-    face.returnToConversation(5)
-    expect(openView).toHaveBeenCalledWith('session-1', 'chat')
-    expect(scrollIntoView).not.toHaveBeenCalled()
-    rafCallbacks.shift()?.(0)
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
-
-    // A seq with no matching assistant message in the bound session's snapshot is a silent no-op.
-    face.returnToConversation(999)
-    rafCallbacks.shift()?.(0)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-
-    // A session with no live binding at all takes the same no-op path.
-    const unboundFace = (details?.inject as unknown as (sessionId: SessionId) => ScienceDetailsInjected)('unbound-session' as SessionId)
-    unboundFace.returnToConversation(5)
-    rafCallbacks.shift()?.(0)
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-
-    rafSpy.mockRestore()
-    target.remove()
   })
 
   it('registers every Science shell slot contribution', async () => {
     const ctx = new Context()
-    const { capture, openDetailsView, viewVisibility } = providePresentation(ctx, true)
+    const { capture, openDetailsView, openView, viewVisibility } = providePresentation(ctx, true)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const destinations = capture.slots.entries('sidebar.destinations')[0]
@@ -324,19 +271,49 @@ describe('apply', () => {
     expect(Accessory({ sessionId: 'session-1' as SessionId, t: (key: string) => key, useProjection: () => null } as never)).toBeNull()
     expect(Accessory({ sessionId: 'session-1' as SessionId, t: (key: string) => key, useProjection: () => undefined } as never)).toBeNull()
     expect(capture.slots.entries('conversation.composer.dock')[0]?.component).toBe(ScienceKernelStatus)
-    expect(capture.slots.entries('conversation.view')).toHaveLength(0)
-    const turnTrace = capture.slots.entries('conversation.chat.turnTail')[0]
-    expect(turnTrace?.component).toBe(ScienceTurnTrace)
-    const injectTrace = turnTrace?.inject as unknown as (sessionId: SessionId) => { openArtifact: () => void }
-    injectTrace('session-1' as SessionId).openArtifact()
+    const trace = capture.slots.entries('conversation.view')[0]
+    expect(trace?.component).toBe(ScienceTraceView)
+    expect((trace?.options as { label?: () => string }).label?.()).toBe('trace.view')
+    const injectTrace = trace?.inject as unknown as (sessionId: SessionId) => { openArtifact: () => void }
+    const traceFace = injectTrace('session-1' as SessionId)
+    traceFace.openArtifact()
     expect(openDetailsView).toHaveBeenCalledWith('session-1', 'science')
-    expect(viewVisibility).toHaveLength(0)
+    expect(viewVisibility).toHaveLength(1)
+    expect(viewVisibility[0]?.('session-1' as SessionId)).toBe(true)
+    expect(viewVisibility[0]?.('unmounted' as SessionId)).toBe(false)
 
     const details = capture.slots.entries('conversation.details.view')[0]
     const detailsFace = (details?.inject as unknown as (sessionId: SessionId) => ScienceDetailsInjected)('session-1' as SessionId)
     detailsFace.removeFromConversation({
       artifactId: ScienceArtifactId('missing'), version: 1, target: { kind: 'spec-path', path: 'mark' },
     })
+    const scrollIntoView = vi.fn()
+    vi.stubGlobal('document', { getElementById: vi.fn(() => ({ scrollIntoView })) })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
+    detailsFace.openTrace(4)
+    expect(openView).toHaveBeenCalledWith('session-1', 'trace')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('rebinds Trace visibility invalidation as sessions enter and leave the list', async () => {
+    const ctx = new Context()
+    const { capture, visibilityHarness } = providePresentation(ctx, true)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const source = capture.viewVisibilitySources[0]
+    if (source === undefined) throw new Error('expected Trace visibility source')
+    const callback = vi.fn()
+    const dispose = source.subscribe(callback)
+    visibilityHarness.emitFace()
+    visibilityHarness.emitList()
+    expect(callback).toHaveBeenCalledTimes(2)
+    visibilityHarness.setIds([])
+    visibilityHarness.emitList()
+    expect(visibilityHarness.faceDisposeCount()).toBe(1)
+    visibilityHarness.setIds(['session-1'])
+    visibilityHarness.emitList()
+    dispose()
+    expect(visibilityHarness.faceDisposeCount()).toBe(2)
   })
 
   it('submits staged targets, rejects ordinary images, reports Remote errors, and clears only after success', async () => {
@@ -381,7 +358,8 @@ describe('apply', () => {
       .find(entry => (entry.options as { key?: string }).key === 'run_python')
     const detailsEntry = presentation.slots.entries('conversation.details.view')
       .find(entry => entry.options.id === 'science')
-    const traceEntry = presentation.slots.entries('conversation.chat.turnTail')[0]
+    const traceEntry = presentation.slots.entries('conversation.view')
+      .find(entry => entry.options.id === 'trace')
     expect(artifactEntry?.store).toBeDefined()
     expect(artifactEntry?.store).toBe(detailsEntry?.store)
     expect(runEntry?.store).toBe(detailsEntry?.store)
@@ -406,8 +384,7 @@ describe('apply', () => {
     expect(presentation.slots.entries('details.files')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(1)
     expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(1)
-    expect(presentation.slots.entries('conversation.view')).toHaveLength(0)
-    expect(presentation.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
+    expect(presentation.slots.entries('conversation.view')).toHaveLength(1)
     expect(presentation.submissionHandlers).toHaveLength(1)
     await fiber.dispose()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
@@ -419,7 +396,6 @@ describe('apply', () => {
     expect(presentation.slots.entries('details.files')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.input.accessory')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.composer.dock')).toHaveLength(0)
-    expect(presentation.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(presentation.slots.entries('conversation.view')).toHaveLength(0)
     expect(presentation.submissionHandlers).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)

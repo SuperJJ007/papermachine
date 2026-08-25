@@ -1,11 +1,9 @@
-/* Science Details entry: Files, a horizontally tabbed Artifact viewer, and
-   its single Preview body inside the shared Details column. */
+/* Science Details entry: the artifact viewer — tab strip, toolbar, dispatched
+   content or the provenance drill-in, and the no-tab landing view (gallery +
+   Outcome) — stacked in the routed Details column body (the shell owns
+   header chrome and scroll). */
 
 .body {
-  /* The viewer contains elevated cards and scrolling descendants, so its
-     scrollbar inherits the l2 elevation pair from the shared theme skin. */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -42,16 +40,13 @@
 
 .tabStrip {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .tab {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
   padding: 2px 2px 2px 8px;
@@ -96,22 +91,13 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Toolbar: title/actions first, view switch and exact version second. */
+/* Toolbar: filename, version stepper, provenance/download/maximize/close. */
 
 .toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 4px 0 2px;
-}
-
-.toolbarHeading,
-.toolbarNavigation {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 .toolbarTitle {
@@ -145,24 +131,27 @@
   white-space: nowrap;
 }
 
-.toolbarActions {
+.metaRail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.metaRail div { min-width: 0; }
+.metaRail dt { color: var(--dsw-alias-label-caption); font-size: 10px; line-height: 15px; }
+.metaRail dd { overflow: hidden; margin: 1px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+
+.toolbarControls {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: none;
 }
-
-.conversationBack { padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
-.conversationBack:disabled { cursor: default; opacity: .45; }
-
-.notes { display: flex; min-width: 0; flex-direction: column; gap: 7px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
-.notes h3, .notes p { margin: 0; }
-.notes ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.notes li { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 7px; }
-.notes li span { overflow-wrap: anywhere; }
-.notes small { color: var(--dsw-alias-label-caption); white-space: nowrap; }
-.notes form { display: flex; align-items: flex-start; gap: 6px; }
-.notes textarea { min-width: 0; min-height: 52px; flex: 1; resize: vertical; overflow-wrap: anywhere; }
 
 .toolbarAction {
   display: inline-flex;
@@ -184,32 +173,30 @@
   cursor: not-allowed;
 }
 
+.toolbarAction[data-unavailable] {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.toolbarAction[data-unavailable]:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .stepper {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex: none;
-}
-
-.historicalNotice,
-.viewerError {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.historicalNotice {
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.viewerError {
-  padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-state-error-secondary);
-  border-radius: 8px;
-  color: var(--dsw-alias-state-error-primary);
+  margin-right: 4px;
 }
 
 .stepperButton {
@@ -384,6 +371,15 @@
   pointer-events: none;
 }
 
+.editPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
 .stylePanel {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -418,6 +414,26 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.editLabel {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.editInstruction {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
 .editSubmit {
   align-self: flex-end;
   padding: 6px 10px;
@@ -433,7 +449,7 @@
   cursor: default;
 }
 
-/* Files landing view: one latest tile per durable Artifact identity. */
+/* Landing view: gallery of latest chart versions, plus Outcome below it. */
 
 .landing {
   display: flex;
@@ -544,4 +560,58 @@
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .metaRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.chartLogicalName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.badge {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.outcomeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.outcomeHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outcomeTitle {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
 }

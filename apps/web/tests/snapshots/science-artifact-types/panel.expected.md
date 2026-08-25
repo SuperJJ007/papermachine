@@ -1,5 +1,5 @@
 ## Details column — artifact viewer (csv/json/md/png)
-- text: Files
+- text: Science
 - button "Close details"
 - tablist "Open artifacts":
   - tab "summary.csv"
@@ -18,24 +18,28 @@
   - img
   - text: File library
 - text: plot.png
-- button "Download":
-  - img
-- button "Expand":
-  - img
-- button "Close tab":
-  - img
-- button "Back to conversation" [disabled]
 - button "Previous version" [disabled]:
   - img
 - text: v1
 - button "Next version" [disabled]:
   - img
+- button "Provenance"
+- button "Download":
+  - img
+- button "Export" [disabled]
+- text: Export will be available in C4
+- button "Expand":
+  - img
+- button "Close tab":
+  - img
+- term: Format
+- definition: Image
+- term: Version
+- definition: v1
+- term: Source
+- definition: Generation turn not loaded
+- term: Status
+- definition: Read-only
 - 'button "View original: plot.png"':
   - img "plot.png"
 - button "Select region to edit"
-- region "Notes":
-  - heading "Notes" [level=3]
-  - paragraph: No notes yet.
-  - textbox "Artifact note":
-    - /placeholder: Add a private note
-  - button "Add" [disabled]

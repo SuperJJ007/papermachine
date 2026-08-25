@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:351`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:358`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:387`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:419`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:347`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:408`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -606,39 +606,6 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 
 ### `science/*`
 
-<a id="scienceartifact-note-added--log-only"></a>
-
-#### `science/artifact-note-added` — log-only
-
-```ts persistence-catalog
-/**
- * Adds a user-only note to one logical artifact.
- * @param artifactId - Logical artifact that owns the note.
- * @param artifactVersion - Version visible when the note was added.
- * @param text - Plain user-authored note text.
- * @param createdAt - Epoch milliseconds when the user added the note.
- */
-'science/artifact-note-added': ScienceArtifactNoteAddedEvent
-```
-
-Source: [`packages/science/science-session/src/domain.ts:92`](../packages/science/science-session/src/domain.ts)
-
-<a id="scienceartifact-note-removed--log-only"></a>
-
-#### `science/artifact-note-removed` — log-only
-
-```ts persistence-catalog
-/**
- * Removes one prior user-only artifact note.
- * @param artifactId - Logical artifact that owns the note.
- * @param noteSeq - Sequence of the note-add event being removed.
- * @param removedAt - Epoch milliseconds when the user removed the note.
- */
-'science/artifact-note-removed': ScienceArtifactNoteRemovedEvent
-```
-
-Source: [`packages/science/science-session/src/domain.ts:99`](../packages/science/science-session/src/domain.ts)
-
 <a id="scienceartifact-saved--log-only"></a>
 
 #### `science/artifact-saved` — log-only
@@ -648,7 +615,7 @@ Source: [`packages/science/science-session/src/domain.ts:99`](../packages/scienc
 'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:84`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:66`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceenvironment-bound--log-only"></a>
 
@@ -659,7 +626,7 @@ Source: [`packages/science/science-session/src/domain.ts:84`](../packages/scienc
 'science/environment-bound': ScienceEnvironmentBoundEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:78`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:60`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencekernel-state--log-only"></a>
 
@@ -670,7 +637,7 @@ Source: [`packages/science/science-session/src/domain.ts:78`](../packages/scienc
 'science/kernel-state': ScienceKernelStateEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:103`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:70`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencemode-bound--log-only"></a>
 
@@ -681,7 +648,7 @@ Source: [`packages/science/science-session/src/domain.ts:103`](../packages/scien
 'science/mode-bound': ScienceModeBoundEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:76`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:58`](../packages/science/science-session/src/domain.ts)
 
 <a id="scienceoutcome-published--log-only"></a>
 
@@ -692,7 +659,7 @@ Source: [`packages/science/science-session/src/domain.ts:76`](../packages/scienc
 'science/outcome-published': ScienceOutcomePublishedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:101`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:68`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-finished--log-only"></a>
 
@@ -703,7 +670,7 @@ Source: [`packages/science/science-session/src/domain.ts:101`](../packages/scien
 'science/run-finished': ScienceRunFinishedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:82`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:64`](../packages/science/science-session/src/domain.ts)
 
 <a id="sciencerun-started--log-only"></a>
 
@@ -714,7 +681,7 @@ Source: [`packages/science/science-session/src/domain.ts:82`](../packages/scienc
 'science/run-started': ScienceRunStartedEvent
 ```
 
-Source: [`packages/science/science-session/src/domain.ts:80`](../packages/science/science-session/src/domain.ts)
+Source: [`packages/science/science-session/src/domain.ts:62`](../packages/science/science-session/src/domain.ts)
 
 ### `session/*`
 

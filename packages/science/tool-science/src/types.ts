@@ -72,24 +72,6 @@ export interface ScienceStyleEditReceipt {
   readonly origin: 'human-edit'
 }
 
-/** Browser request to add a user-only note to one logical artifact. */
-export interface ScienceArtifactNoteAddRequest {
-  readonly artifactId: ScienceArtifactId
-  readonly version: number
-  readonly text: string
-}
-
-/** Browser request to remove one user-only artifact note. */
-export interface ScienceArtifactNoteRemoveRequest {
-  readonly artifactId: ScienceArtifactId
-  readonly noteSeq: number
-}
-
-/** Receipt for a committed user-only artifact-note change. */
-export interface ScienceArtifactNoteReceipt {
-  readonly accepted: true
-}
-
 /** Stable rejection classes for Science edit-message admission. */
 export type ScienceEditErrorCode =
   | 'SCIENCE_EDIT_INVALID_REQUEST'

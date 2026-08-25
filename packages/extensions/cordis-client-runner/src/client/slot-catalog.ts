@@ -273,7 +273,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Owner currency of the chat view\'s turn-tail hole: the engine-owned Turn and\n * the closing assistant\'s anchor. Registrants read their own typed Turn data\n * and open files through the same opener the tool rows use.\n */\nexport interface TurnTailOwnerProps {\n  /** Engine-owned closing Turn boundary. */\n  turn: TurnLocation\n  /** The closing assistant\'s seq — the anchor the tail renders under. */\n  seq: number\n  /**\n   * Open a filesystem path through the Host (tool-row semantics; the chat\n   * view resolves relative paths against the session cwd).\n   */\n  openFile: (path: string) => void\n  /** Inspect one Tool call through the shared Details handoff. */\n  inspectCall?: (callId: CallId) => void\n}',
+      '/**\n * Owner currency of the chat view\'s turn-tail hole: the engine-owned Turn and\n * the closing assistant\'s anchor. Registrants read their own typed Turn data\n * and open files through the same opener the tool rows use.\n */\nexport interface TurnTailOwnerProps {\n  /** Engine-owned closing Turn boundary. */\n  turn: TurnLocation\n  /** The closing assistant\'s seq — the anchor the tail renders under. */\n  seq: number\n  /**\n   * Open a filesystem path through the Host (tool-row semantics; the chat\n   * view resolves relative paths against the session cwd).\n   */\n  openFile: (path: string) => void\n}',
     ],
     ownerPropsReferences: [
       'TurnLocation',
@@ -293,7 +293,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-deliverables ProducedFiles',
-      'client-ui-science ScienceTurnTrace',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1085,7 +1084,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-science ScienceGlobalToggle',
       'client-ui-science ScienceHeroAction',
     ],
     replaceRisk: 'none',
@@ -1337,6 +1335,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation ChatView id \'chat\'',
+      'client-ui-science ScienceTraceView id \'trace\'',
       'client-ui-trajectory TrajectoryView id \'trajectory\'',
     ],
     replaceRisk: 'none',

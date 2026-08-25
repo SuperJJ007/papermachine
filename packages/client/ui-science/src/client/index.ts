@@ -7,10 +7,11 @@
  * reference), and `publish_outcome` — the Science settings card keyed on the
  * `science-runtime` namespace, the Files toggle, and the
  * `conversation.details.view` entry (id `science`, the artifact viewer) that
- * renders current Science state from the same projection: a top tab strip,
- * exact-version preview, user-only notes, and a jump to the producing chat
- * turn. Producing assistant messages own their compact turn-local trace; no
- * causal view is registered in the artifact panel. The Files toggle's
+ * renders current Science state from the same projection: a top tab strip
+ * over opened artifacts, an in-panel toolbar, per-media-type dispatched
+ * content, and — one toolbar click away — the provenance drill-in, entirely
+ * inside this one Details entry (no separate `conversation.view` tab or
+ * `conversation.details.header.actions` registration). The Files toggle's
  * own placement is `../toggle-scope.ts`'s resolved `ToggleScope`: the
  * generic Web default (`session`) registers the right-aligned
  * `conversation.session.header.utilities` entry (`ScienceHeaderAction`,
@@ -20,13 +21,17 @@
  * `conversation.page.utilities` owner (`ScienceGlobalToggle`) and skips the
  * session-header registration, so the toggle is visible app-wide — before
  * any workspace is selected, before any Session exists, and through every
- * later Session state — with exactly one owner. Distinct Files/Outcomes
- * Details routes complete the workbench alongside sidebar destinations,
- * staged-target composer chips
+ * later Session state — with exactly one owner. A Science-only Trace
+ * tab and distinct Files/Outcomes Details routes complete the workbench,
+ * alongside sidebar destinations, staged-target composer chips
  * (`conversation.input.accessory`), and a composer-dock kernel status
  * line — every one of these (other than the Files toggle) gated the same way
  * `ScienceHeaderAction` is, so no other Science surface reaches another
- * preset or a Session-less page. The toolview rows
+ * preset or a Session-less page. The Trace tab's own visibility is a
+ * `registerViewVisibility` source
+ * (`createTraceVisibilitySource`) that re-subscribes to the sessions list and
+ * every listed Session's `science` projection, so the tab strip reacts to a
+ * preset assignment or a projection resolving on its own. The toolview rows
  * are pure functions of the frozen call/result slice, the loaded durable
  * image/text bytes, and (for the Outcome row) the live `science` session
  * projection; the settings card owns its own staging over the bound
@@ -40,7 +45,7 @@
  * another, and editing a comment after staging updates the staged selection
  * immediately.
  */
-import type { ClientContext, ConversationNode, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { createElement } from 'react'
 // Type-only: resolves ctx.locale and ctx.slots on ClientContext.
@@ -55,7 +60,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 // Type-only: the conversation.session.header.utilities and
 // conversation.details.view slots' declarations, and the Details seam's
 // inspectCall owner callback (same cross-plugin rule).
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ViewVisibilitySource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: brings the `science` SessionProjectionMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
@@ -74,10 +79,9 @@ import { ScienceComposerChips } from './ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from './composer-selections.ts'
 import { ScienceDestinations } from './ScienceDestinations.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
+import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import { ScienceOutcomeDetails } from './ScienceOutcomeDetails.tsx'
-import { ScienceTurnTrace } from './ScienceTurnTrace.tsx'
-import { scienceTurnTraceDefinition, selectScienceTurnTrace } from './science-turn-trace.ts'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { readToggleScope } from './toggle-scope.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
@@ -96,6 +100,51 @@ const SCIENCE_DETAILS_ID = 'science'
 const SCIENCE_OUTCOMES_ID = 'science-outcomes'
 
 /**
+ * The `trace` view's visibility source: a Session qualifies once it names
+ * the `science` preset OR its `science` projection has resolved (a
+ * subagent, or a preset switch after creation, may bind one without the
+ * preset field itself ever being `science`). `subscribe` re-derives its
+ * per-Session projection subscriptions every time the sessions list
+ * changes, so a preset assignment (the list itself), a Session appearing or
+ * leaving, or that Session's science projection binding/updating each reach
+ * the callback — the tab strip's `views.subscribe` folds this in beside the
+ * `conversation.view` slot ledger (ui-conversation's `apply.ts`), so a
+ * flip here re-lists the tabs on its own, without waiting for an unrelated
+ * ledger mutation.
+ * @param ctx - client root context (reads `ctx.sessions`).
+ * @returns the registrable {@link ViewVisibilitySource}.
+ */
+function createTraceVisibilitySource(ctx: ClientContext): ViewVisibilitySource {
+  return {
+    visible: sessionId =>
+      ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset === 'science'
+      || (ctx.sessions.binding(sessionId)?.session.projections.faceOf('science').getSnapshot() ?? null) !== null,
+    subscribe: (callback) => {
+      const bindingDisposers = new Map<SessionId, () => void>()
+      const syncBindings = (): void => {
+        const ids = new Set(ctx.sessions.list.getSnapshot().ids)
+        for (const [id, dispose] of bindingDisposers) {
+          if (!ids.has(id)) { dispose(); bindingDisposers.delete(id) }
+        }
+        for (const id of ids) {
+          if (bindingDisposers.has(id)) continue
+          const face = ctx.sessions.binding(id)?.session.projections.faceOf('science')
+          if (face === undefined) continue
+          bindingDisposers.set(id, face.subscribe(callback))
+        }
+      }
+      syncBindings()
+      const disposeList = ctx.sessions.list.subscribe(() => { callback(); syncBindings() })
+      return () => {
+        disposeList()
+        for (const dispose of bindingDisposers.values()) dispose()
+        bindingDisposers.clear()
+      }
+    },
+  }
+}
+
+/**
  * Required services: the locale, slot, and session registries, plus
  * `connection` and `remote` — `ctx.settingsScope.bind()`'s own documented
  * precondition (`SettingsScopeBinder.bind`, `dsh-client-ui-settings`) is that
@@ -108,7 +157,7 @@ const SCIENCE_OUTCOMES_ID = 'science-outcomes'
  * share carries nothing beyond the Details seam's own callbacks, per
  * `DetailsViewOwnerProps`).
  */
-export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation', 'conversationEvents']
+export const inject = ['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation']
 
 /**
  * Client plugin body: register dictionaries, the two keyed toolview rows,
@@ -120,7 +169,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-science: dictionaries')
 
   // Package-local per-session store: which artifacts are open, which one is
-  // active and whether its lightbox is open — shared by the artifact viewer
+  // active, and its content/provenance view — shared by the artifact viewer
   // and the transcript row. Created once for this fiber and shared by
   // reference across every registration below that declares it as `store:`
   // — the framework resolves one live instance per (this handle, session) pair.
@@ -224,21 +273,19 @@ export function apply(ctx: ClientContext): void {
     })
   }), 'ui-science: composer edit submission')
 
-  ctx.conversationEvents.register(scienceTurnTraceDefinition)
-  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail',
-    select: selectScienceTurnTrace,
-    locale: NS,
-    store: scienceSelectionStore,
-    inject: (sessionId: SessionId) => ({
-      openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
-    }),
-  }, ScienceTurnTrace))
-
   // Registration-time text (the entry's tab label) reads through the bound
   // translate as a thunk, so it follows the active locale without
   // re-registration; components read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
+  ctx.effect(() => ctx.conversation.registerViewVisibility('trace', createTraceVisibilitySource(ctx)),
+    'ui-science: trace visibility')
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view', id: 'trace', order: 20, label: () => t('trace.view'), locale: NS,
+    store: scienceSelectionStore,
+    inject: (sessionId: SessionId): ScienceTraceInjected => ({
+      openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+    }),
+  }, ScienceTraceView))
   ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
     name: 'conversation.details.view',
     id: SCIENCE_DETAILS_ID,
@@ -252,20 +299,10 @@ export function apply(ctx: ClientContext): void {
       addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
       removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
       composerSelections: composerSelections.store(sessionId),
-      returnToConversation: (seq) => {
-        ctx.conversation.openView(sessionId, 'chat')
-        requestAnimationFrame(() => {
-          const snapshot = ctx.sessions.binding(sessionId)?.session.getSnapshot()
-          const assistant = snapshot?.nodes.find((node): node is Extract<ConversationNode, { kind: 'assistant' }> =>
-            node.kind === 'assistant' && node.seq === seq)
-          const turn = assistant?.turn
-          if (turn === undefined) return
-          const target = document.querySelector<HTMLElement>(`[data-turn-tail="${String(turn)}"]`)
-          target?.scrollIntoView({ block: 'center' })
-        })
+      openTrace: (turn) => {
+        ctx.conversation.openView(sessionId, 'trace')
+        requestAnimationFrame(() => { document.getElementById(`trace-turn-${String(turn)}`)?.scrollIntoView() })
       },
-      addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
-      removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
       commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))

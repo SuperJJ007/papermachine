@@ -14,10 +14,6 @@ Artifact version 可选的 `parent: { artifactId, version }` 指名其内容所�
 
 除上文两个 run 产出 origin 外，`origin: 'human-edit'` 是第三个严格分支，而不是缺少字段的 run。它要求一个确切 parent 与 Vega-Lite 文本附件，复制 parent 的 environment revision 与 fingerprint，且不携带 `runId`、`toolCallId` 或 `requestHeaderSeq`。fold 只允许它在同一 artifact 当前已提交的 Vega-Lite parent 之上开启下一个连续 version，提交时间须晚于 parent fact 且不晚于自身保存事件；它不能开启 version 1，也不能原地取代一个 version。
 
-### 纯用户 artifact 备注
-
-`science/artifact-note-added` 与 `science/artifact-note-removed` 是声明在 `IgnorableSessionEventMap` 中的增量 UI 事件，追加时始终携带 `ignorable: true`。添加事件记录 logical artifact id、写入时可见版本、去除首尾空白后的纯文本与创建时间；删除事件引用添加事件的 sequence。旧 reader 可以省略这些事件，因为它们既不改变严格 Science 领域 fold，也不改变 model-visible history。它们不改变 `SESSION_FORMAT_VERSION`。
-
 ## 严格 fold 与 invariant
 
 `replayScience(events)` 把一段完整连续的日志确定性地重放为完整的 Host 侧 `ScienceProjection`，在有效 mode 绑定之前为 `null`。若某个调用方要在一次操作中追加许多 Science 事件(例如 `@deepseek-ai/dsh-science-runtime` 的自动捕获遍历)，可以增量推进同一个 fold，而不必在每次追加后都重放完整日志：先用 `foldScience(events)` 生成一次累加器，再对每个新追加的事件调用 `applyScienceEvent(state, event)`(该事件的 `seq` 必须等于累加器自身期望的下一个序号)，需要公开值时按需调用 `projectScienceFold(state)`——这正是 `replayScience` 自身一次性执行的那三步组合。该 fold 拒绝不连续的序列、格式错误的值、非法转移、逆向来源证明（`requestHeaderSeq`/`toolCallId` 必须指向 mode 绑定之后同类事实中最新的一个）、被复用或已 settle 的 tool call、非单调的 revision 或时间，以及外来证据。一个 version 就是某一轮请求所产出的内容，因此一次重存要么开启下一个连续 version，要么就地取代某个既有 version。`origin: 'auto'` 的保存只有在来源 run 与目标 version 共享同一个 `tool/call.turn` 时才可用不同字节就地取代；`origin: 'model'` 的策展必须逐字节重复目标的 `attachment`。任一来源都可以在任意轮次就地取代未变化的 attachment。`requestHeaderSeq` 仍是授权与溯源信息，而非版本身份：同一条 request header 可以授权不同轮次的调用。自动保存若在新的一轮里改变内容，就必须开启下一个 version；在那里复用版本号会被拒绝。两次重存都保留在持久化日志中——被折叠的只是投影出的版本列表——且该 version 保留的事实会跟随取代它的那个事件，因此针对某个 version 引用的证据，其时间取自真正产出其当前内容的那次重存。fold 本身不做任何基于内容哈希的去重，调用方若想跳过未变化的文件，需要自行在追加前比较内容哈希。一个 `origin: 'auto'` 的 artifact version，其 `toolCallId`/`requestHeaderSeq` 必须与其来源 run 自身的值相等(该值在 run 启动时已被证明)，因为无人值守捕获并非一次独立的模型发起调用，也从不重复消费某次调用——从同一个 run 捕获的多个文件共用该 run 的调用。`origin: 'model'` 的 version 则一如既往，每次都独立消费一次全新的 tool call。一次 kernel-state 事实会为同一个 fold 增加它自己的 pre-commit 规则：其 `kernelEpoch` 必须严格大于该 session 已经接受过的每一个 epoch；当某语言已经存在一个处于打开状态的 kernel 时，一次 `started` 事实会被拒绝，且它必须指名该 session 当前最新的已应用 environment revision，其 fingerprint 须与该 revision 上、对应语言的可用 binding 一致——这与 `science/run-started` 所断言的关系相同，且刻意不对 `exited` 方向作此要求，后者的 revision 改由下文的身份匹配来锚定；而一次 `exited` 事实只有在准确指名该语言当前打开的 epoch、原样重复该 started 事实自身的 `environmentRevision`/`environmentFingerprint`、且携带与该 started 事实 `at` 相等的 `startedAt` 时才会被接受。每条 kernel-state 事实自身的 `at` 都不得超过其提交事件的时间，且一条 `exited` 事实的 `at` 不得早于其 started 事实的 `at`。一条 `science/run-started` 事实的 `kernelEpoch` 必须指名其自身语言当前处于打开状态的某个 kernel，且该 kernel 的 `environmentRevision`/`environmentFingerprint` 与该 run 自身的一致——任何 run 都不得指名一个从未 started 或已经 exited 的 kernel。在已经存在 run 之后，一个已应用的 environment revision 仍可以取代更早的 revision（供后续的 environment-rebound 路径使用），只有当某次 run 仍处于 `running` 状态时才会被拒绝。只有 `session/end-seed` 才会为一个未匹配的运行中 run 或一个未匹配的打开状态 kernel 派生 `interrupted`；不会追加任何合成的 Science 终态事件。包自带的 invariant（`./invariant`）在每次提交前应用同一条适用性规则与严格 fold，因此被拒绝的候选事件不会向持久化日志追加任何内容。
@@ -31,8 +27,6 @@ Artifact parent 与 run input 和其它来源证明一样，只能指向先前�
 公开的 `ScienceClientProjection` 会原样保留 run 的精确 artifact input identity 与路径，以及 artifact version 可选的 parent identity。
 
 run 产出的 artifact 投影保留其授权 run、tool-call 与 request-header 身份。人工编辑版本的投影则保留确切 parent 与直接编辑 origin，不伪造 run 链接；每个确切 artifact version 仍可作为 run input、edit parent 与 Outcome chart evidence。
-
-独立的可选 `scienceArtifactNotes` projection 只 fold 活跃用户备注。它不是 `ScienceClientProjection` 的字段，因此 prompt 与 Runtime consumer 无法通过读取 Science 领域状态获得备注。
 
 ## 附件授权
 

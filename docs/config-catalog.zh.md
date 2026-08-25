@@ -443,34 +443,6 @@ export interface Config {
 
 来源：[`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-client-ui-science"></a>
-
-## `@deepseek-ai/dsh-client-ui-science`
-
-```ts config-catalog
-/** Plugin config: where this deployment renders the Science Files toggle. */
-export interface Config {
-  /**
-   * `session` (default) gates the toggle to a Science Session's own header,
-   * matching the generic Web presentation fence; `global` renders it
-   * app-wide, unconditionally, before any workspace is selected.
-   */
-  toggleScope?: ToggleScope
-}
-
-/**
- * Where the Files toggle renders for this deployment. `session` gates it to
- * a Science Session's own header — the generic Web presentation fence,
- * unchanged from before this field existed. `global` renders it app-wide,
- * unconditionally, from before any workspace is selected and before any
- * Session exists — the desktop composition's placement, since the desktop
- * overlay forces Science as the product default.
- */
-export type ToggleScope = typeof TOGGLE_SCOPES[number]
-```
-
-来源：[`packages/client/ui-science/src/index.ts:19`](../packages/client/ui-science/src/index.ts)
-
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-code-runtime-worker-thread`
@@ -3372,6 +3344,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-plan`（[`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-science`（[`packages/client/ui-science/src/index.ts`](../packages/client/ui-science/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）

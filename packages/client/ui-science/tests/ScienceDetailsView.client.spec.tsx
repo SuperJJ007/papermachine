@@ -2,20 +2,20 @@
 /**
  * The Science Details entry (the artifact viewer): every reachable state
  * from the accepted client-safe `science` projection (missing projection
- * support, unbound, Files landing view, opening a tab,
+ * support, unbound, no-tab landing view with gallery/Outcome, opening a tab,
  * the tab strip across multiple open artifacts, the toolbar's version
  * stepper/provenance/download/maximize/close-tab controls, content dispatch
  * across every accepted media type, the provenance drill-in reached from the
  * toolbar, a stale tab, and distinct accessible text per top-level state).
  */
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import { createSnapshotStore, type ConversationSnapshot, type SessionId, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceArtifactNote, ScienceClientArtifactVersion, ScienceClientHumanEditArtifactVersion, ScienceClientProjection,
-  ScienceClientRunArtifactVersion,
+  ScienceClientArtifactVersion, ScienceClientHumanEditArtifactVersion, ScienceClientProjection,
+  ScienceClientRun, ScienceClientRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditSelection, ScienceStyleEditReceipt, ScienceStyleEditRequest } from '@deepseek-ai/dsh-tool-science/types'
 import {
@@ -173,6 +173,31 @@ function humanEditChart(over: Partial<ScienceClientHumanEditArtifactVersion> = {
   }
 }
 
+function run(over: Partial<ScienceClientRun> = {}): ScienceClientRun {
+  return {
+    runId: 'run-1' as never,
+    language: 'python',
+    toolCallId: 'call-run-1' as never,
+    requestHeaderSeq: 3,
+    environmentRevision: 1,
+    environmentFingerprintPreview: 'f'.repeat(12),
+    startedAt: 1_000,
+    codeSha256: 'c'.repeat(64),
+    kernelEpoch: 1,
+    status: 'success',
+    finishedAt: 2_000,
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    ...over,
+    // `over` can widen `status` to any ScienceClientRun member (e.g.
+    // 'interrupted'), which no single discriminated member's field set
+    // matches on its own; the cast asserts the caller's own override is
+    // internally consistent.
+  } as ScienceClientRun
+}
+
 function emptySnapshot(): ConversationSnapshot {
   return { nodes: [], chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
 }
@@ -190,10 +215,6 @@ function props(
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
     snapshot?: ConversationSnapshot
-    notes?: readonly ScienceArtifactNote[]
-    returnToConversation?: Props['returnToConversation']
-    addArtifactNote?: Props['addArtifactNote']
-    removeArtifactNote?: Props['removeArtifactNote']
   } = {},
 ): Props {
   const state = {
@@ -219,7 +240,7 @@ function props(
     sessionId: SESSION,
     useSessions,
     useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
-    useProjection: vi.fn((key: string) => key === 'science' ? science : over.notes ?? []),
+    useProjection: vi.fn(() => science),
     useStore: store.useStore,
     actions: store.actions,
     inspectCall: over.inspectCall ?? vi.fn(),
@@ -228,9 +249,7 @@ function props(
     addToConversation: over.addToConversation ?? vi.fn(),
     removeFromConversation: over.removeFromConversation ?? vi.fn(),
     composerSelections: over.composerSelections ?? createSnapshotStore([]),
-    returnToConversation: over.returnToConversation ?? vi.fn(),
-    addArtifactNote: over.addArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
-    removeArtifactNote: over.removeArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    openTrace: vi.fn(),
     commitStyleEdit: over.commitStyleEdit ?? vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit' },
     }),
@@ -265,10 +284,10 @@ describe('ScienceDetailsView: unbound', () => {
 })
 
 describe('ScienceDetailsView: landing view (no open tabs)', () => {
-  it('reports the Files empty state without projecting Outcome into this route', () => {
+  it('reports no charts yet and no outcome yet for an empty history', () => {
     render(<ScienceDetailsView {...props(baseProjection())} />)
     const statuses = screen.getAllByRole('status')
-    expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.'])
+    expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.', 'No outcome published yet.'])
   })
 
   it('renders one gallery entry per logical chart at its latest accepted version', () => {
@@ -352,22 +371,6 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.queryByRole('img')).toBeNull()
   })
 
-  it('labels JSON, Markdown, and plain-text gallery entries with their own artifact type', () => {
-    const science = baseProjection({
-      artifacts: [
-        chart({ artifactId: 'chart-json' as never, logicalName: 'metrics.json',
-          attachment: { attachmentId: 'sha256:json' as never, mediaType: 'application/json', bytes: 20 } }),
-        chart({ artifactId: 'chart-md' as never, logicalName: 'report.md',
-          attachment: { attachmentId: 'sha256:md' as never, mediaType: 'text/markdown', bytes: 20 } }),
-        chart({ artifactId: 'chart-txt' as never, logicalName: 'log.txt',
-          attachment: { attachmentId: 'sha256:txt' as never, mediaType: 'text/plain', bytes: 20 } }),
-      ],
-    })
-    render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText('JSON · v1 · 20 B')).toBeTruthy()
-    expect(screen.getAllByText('Document · v1 · 20 B')).toHaveLength(2)
-  })
-
   it('activates a gallery entry on Enter/Space and ignores every other key', () => {
     const science = baseProjection({ artifacts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
@@ -378,7 +381,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
   })
 
-  it('does not render the independently routed Outcome on the Files landing view', () => {
+  it('reports no outcome published yet before publication, and renders the latest Outcome with evidence once published', () => {
     const science = baseProjection({
       outcome: {
         revision: 3, title: 'Model converges', summaryMarkdown: 'The **loss** dropped.',
@@ -392,8 +395,12 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       },
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.queryByText('Model converges')).toBeNull()
-    expect(screen.queryByText(/revision 3/)).toBeNull()
+    expect(screen.getByText('Model converges')).toBeTruthy()
+    expect(screen.getByText(/revision 3/)).toBeTruthy()
+    expect(document.querySelector('strong')?.textContent).toBe('loss')
+    expect(screen.getByText('run run-1')).toBeTruthy()
+    expect(screen.getByText('chart chart-1 v2')).toBeTruthy()
+    expect(screen.getByText('message #7')).toBeTruthy()
   })
 })
 
@@ -405,15 +412,14 @@ describe('ScienceDetailsView: opening a tab', () => {
 
     expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Back to conversation' })).toBeTruthy()
-    expect(screen.getByRole('region', { name: 'Notes' })).toBeTruthy()
+    expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
     expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     expect(screen.getByText('v2 title')).toBeTruthy()
   })
 
-  it('returns to the producing assistant after skipping unrelated nodes and calls', () => {
+  it('shows the generating turn in the viewer source rail after skipping unrelated nodes and calls', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const snapshot = {
       ...emptySnapshot(),
@@ -424,80 +430,10 @@ describe('ScienceDetailsView: opening a tab', () => {
         { kind: 'assistant', seq: 4, turn: 3, blocks: [{ kind: 'tool-call', callId: 'call-chart-1', name: 'annotate_artifact' }] },
       ],
     } as unknown as ConversationSnapshot
-    const returnToConversation = vi.fn()
-    render(<ScienceDetailsView {...props(science, { snapshot, returnToConversation })} />)
+    render(<ScienceDetailsView {...props(science, { snapshot })} />)
     fireEvent.click(screen.getByText('Loss curve'))
-    fireEvent.click(screen.getByRole('button', { name: 'Back to conversation' }))
-    expect(returnToConversation).toHaveBeenCalledWith(4)
-  })
-
-  it('disables returning to conversation for a version edited from another human edit (no producing assistant message)', () => {
-    const original = chart({ version: 1 })
-    const firstEdit = humanEditChart({ version: 2, parent: { artifactId: 'chart-1' as never, version: 1 } })
-    const secondEdit = humanEditChart({ version: 3, parent: { artifactId: 'chart-1' as never, version: 2 } })
-    const science = baseProjection({ artifacts: [original, firstEdit, secondEdit] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 3 })
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    expect((screen.getByRole('button', { name: 'Back to conversation' }) as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('lists versioned user notes and submits trimmed text without exposing a model-context control', async () => {
-    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
-    const addArtifactNote = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
-    const removeArtifactNote = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
-    render(<ScienceDetailsView {...props(science, {
-      store, addArtifactNote, removeArtifactNote,
-      notes: [{ seq: 19, artifactId: 'chart-1' as never, version: 1, text: 'Keep this label', createdAt: 1_000 }],
-    })} />)
-
-    expect(screen.getByText('Keep this label')).toBeTruthy()
-    // Locale-formatted (not raw ISO), matching the old provenance display —
-    // derived rather than hardcoded so this assertion is not tied to one timezone/locale.
-    expect(screen.getByText(`Added at v1 · ${new Date(1_000).toLocaleString()}`)).toBeTruthy()
-    expect(screen.queryByText(/model context/i)).toBeNull()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Artifact note' }), { target: { value: '  New note  ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-    await waitFor(() => { expect(addArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', version: 2, text: 'New note' }) })
-    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }))
-    await waitFor(() => { expect(removeArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', noteSeq: 19 }) })
-  })
-
-  it('surfaces the Remote rejection message and leaves the note in place when adding or removing fails', async () => {
-    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
-    const addArtifactNote = vi.fn().mockResolvedValue({ ok: false, error: { message: 'note rejected' } })
-    const removeArtifactNote = vi.fn().mockResolvedValue({ ok: false, error: { message: 'delete rejected' } })
-    render(<ScienceDetailsView {...props(science, {
-      store, addArtifactNote, removeArtifactNote,
-      notes: [{ seq: 19, artifactId: 'chart-1' as never, version: 1, text: 'Keep this label', createdAt: 1_000 }],
-    })} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }))
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'delete rejected')
-    expect(screen.getByText('Keep this label')).toBeTruthy()
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Artifact note' }), { target: { value: 'New note' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-    await waitFor(() => { expect(screen.getByRole('alert')).toHaveProperty('textContent', 'note rejected') })
-  })
-
-  it('ignores a note form submission left blank after trimming', () => {
-    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
-    const addArtifactNote = vi.fn()
-    render(<ScienceDetailsView {...props(science, { store, addArtifactNote, notes: [] })} />)
-
-    const textarea = screen.getByRole('textbox', { name: 'Artifact note' })
-    fireEvent.change(textarea, { target: { value: '   ' } })
-    // The submit button stays disabled for blank text; submitting the form
-    // element directly still must not call through with an empty value.
-    fireEvent.submit(textarea.closest('form')!)
-    expect(addArtifactNote).not.toHaveBeenCalled()
+    expect(screen.getByText('Generated in turn 3')).toBeTruthy()
+    expect(screen.getByText('Read-only')).toBeTruthy()
   })
 })
 
@@ -515,7 +451,7 @@ describe('ScienceDetailsView: tab strip', () => {
   it('renders one tab per opened artifact, the most recently opened active', () => {
     const { science, store } = twoTabs()
     render(<ScienceDetailsView {...props(science, { store })} />)
-    const tabs = within(screen.getByRole('tablist', { name: 'Open artifacts' })).getAllByRole('tab')
+    const tabs = screen.getAllByRole('tab')
     expect(tabs.map(tab => tab.textContent)).toEqual(['Alpha', 'Beta'])
     expect(screen.getByRole('tab', { name: 'Beta' }).getAttribute('aria-selected')).toBe('true')
   })
@@ -1399,7 +1335,7 @@ describe('ScienceDetailsView: download', () => {
     clickSpy.mockRestore()
   })
 
-  it('a rejected download keeps the Viewer open and reports an actionable error', async () => {
+  it('a rejected download is swallowed (no dialog, no crash, no anchor click)', async () => {
     const loadImage = vi.fn()
       .mockResolvedValueOnce('data:image/png;base64,thumb')
       .mockRejectedValueOnce(new Error('network'))
@@ -1409,9 +1345,102 @@ describe('ScienceDetailsView: download', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(2) })
     expect(clickSpy).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toContain('Download failed.')
-    expect(screen.getByRole('tab', { name: 'Loss curve' })).toBeTruthy()
     clickSpy.mockRestore()
+  })
+})
+
+describe('ScienceDetailsView: export placeholder', () => {
+  it('stays reachable in the tab order and names the reason through aria-describedby, instead of a native disabled', () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    const exportButton = screen.getByRole('button', { name: 'Export' })
+    expect(exportButton.hasAttribute('disabled')).toBe(false)
+    expect(exportButton.getAttribute('aria-disabled')).toBe('true')
+    expect(exportButton.getAttribute('data-unavailable')).toBe('true')
+    const reasonId = exportButton.getAttribute('aria-describedby')
+    expect(reasonId).toBeTruthy()
+    expect(document.getElementById(reasonId!)?.textContent).toBe('Export will be available in C4')
+  })
+})
+
+describe('ScienceDetailsView: provenance drill-in', () => {
+  function withRunAndChart() {
+    const science = baseProjection({ runs: [run()], artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    return { science, store }
+  }
+
+  it('opens from the toolbar\'s provenance control, showing the breadcrumb and the code sub-tab by default', () => {
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect(screen.getByRole('navigation', { name: 'Provenance' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Code' }).getAttribute('aria-selected')).toBe('true')
+    expect(store.instance.getSnapshot().view).toBe('provenance')
+  })
+
+  it('the breadcrumb root returns to the content view', () => {
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Loss curve' }))
+    expect(store.instance.getSnapshot().view).toBe('content')
+    expect(screen.getByRole('button', { name: 'Provenance' })).toBeTruthy()
+  })
+
+  it('the Messages sub-tab\'s jump reaches the Details seam\'s inspectCall callback', () => {
+    const inspectCall = vi.fn()
+    const { science, store } = withRunAndChart()
+    render(<ScienceDetailsView {...props(science, { store, inspectCall })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to transcript' }))
+    expect(inspectCall).toHaveBeenCalledWith('call-run-1')
+  })
+
+  it('shows direct-edit ancestry without a source run and lets the breadcrumb return to content', () => {
+    const parent = chart({
+      logicalName: 'chart.vl.json',
+      attachment: {
+        attachmentId: 'sha256:parent' as never,
+        mediaType: 'application/vnd.vega-lite+json',
+        bytes: 40,
+      },
+    })
+    const { runId: _runId, toolCallId: _toolCallId, requestHeaderSeq: _requestHeaderSeq, ...base } = parent
+    const human: ScienceClientArtifactVersion = {
+      ...base,
+      version: 2,
+      parent: { artifactId: parent.artifactId, version: 1 },
+      origin: 'human-edit',
+      attachment: {
+        attachmentId: 'sha256:human' as never,
+        mediaType: 'application/vnd.vega-lite+json',
+        bytes: 48,
+      },
+      createdAt: 600,
+    }
+    const science = baseProjection({ artifacts: [parent, human] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: human.artifactId, version: 2 })
+    store.actions.setView('provenance')
+    render(<ScienceDetailsView {...props(science, { store })} />)
+
+    expect(screen.getByText('Human style edit based on v1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Loss curve' }))
+    expect(store.instance.getSnapshot().view).toBe('content')
+  })
+
+  it('reports the artifact as unavailable in the drill-in when the source run no longer resolves', () => {
+    const science = baseProjection({ runs: [], artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    store.actions.setView('provenance')
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    expect(statusText()).toBe('This artifact version is no longer available.')
   })
 })
 
@@ -1432,6 +1461,6 @@ describe('ScienceDetailsView: distinct accessible text per top-level state', () 
     cleanup()
 
     expect(new Set(texts).size).toBe(texts.length)
-    expect(texts).toHaveLength(3)
+    expect(texts).toHaveLength(4)
   })
 })

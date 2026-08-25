@@ -80,7 +80,7 @@
 
 - `sourceEventSeqs?: number[]`：被引用为来源的较早事件 seq（例如 `assistant/message` 引用的 `assistant/chunk` seq，或压缩替换条目引用的已遮蔽条目）。对于 `assistant/message`，存在的 `[]` 表示已知提供方流为空；省略则表示旧版或外部事件没有记录源流。其他 surface 事件若有此字段，则要求非空列表。
 - `surfaceOp?: SurfaceOp`：事件进入 surface 的方式。非 surface 事件（边界、分片、用量、错误）不含该字段。
-- `ignorable?: true`：标记读取器在不认识事件类型时可以安全跳过该事件；缺失表示必需，不认识的事件类型会使会话重建被拒绝。只有合并进 `IgnorableSessionEventMap` 的键可由 writer 请求该标记，且这些键在 `Session.append()` 时必须提供 literal marker（[机制](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)）。
+- `ignorable?: true`：标记读取器在不认识事件类型时可以安全跳过该事件；缺失表示必需，不认识的事件类型会使会话重建被拒绝（[机制](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)）。
 
 ### 元数据类型（`types.ts`）
 

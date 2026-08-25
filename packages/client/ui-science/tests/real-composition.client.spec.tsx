@@ -105,9 +105,6 @@ async function bench() {
   runtime.provide('remote', { $on: () => () => {} })
   runtime.provide('remote.scienceEdits', {
     submit: () => Promise.resolve({ ok: true, value: { accepted: true } }),
-    commitStyleEdit: () => Promise.resolve({ ok: true, value: { artifactId: 'artifact-1', version: 2, origin: 'human-edit' } }),
-    addArtifactNote: () => Promise.resolve({ ok: true, value: { accepted: true } }),
-    removeArtifactNote: () => Promise.resolve({ ok: true, value: { accepted: true } }),
   })
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
@@ -198,21 +195,31 @@ describe('ui-science on the real machinery stack', () => {
     // ui-slots/store.ts), not two independent stores that merely started
     // from the same declaration.
     expect(await view.findByRole('tab', { name: 'Loss curve' })).toBeTruthy()
-    const notes = await view.findByRole('region', { name: 'Notes' })
+    const provenanceButton = await view.findByRole('button', { name: 'Provenance' })
     const expandButton = view.getByRole('button', { name: 'Expand' })
-    expect(notes).toBeTruthy()
+    expect(provenanceButton).toBeTruthy()
     expect(expandButton).toBeTruthy()
     await b.runtime.dispose()
   })
 
-  it('the artifact viewer exposes only object-state controls and no causal top-level tab', async () => {
+  it('the toolbar\'s provenance control opens the drill-in, and its Messages sub-tab reaches the real DetailsPanel inspectCall handoff', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
     fireEvent.click(view.container.querySelector('[data-tool="science-artifact"]')!)
-    expect(await view.findByRole('button', { name: 'Back to conversation' })).toBeTruthy()
-    expect(view.getByRole('region', { name: 'Notes' })).toBeTruthy()
-    expect(view.queryByRole('tab', { name: 'Provenance' })).toBeNull()
-    expect(view.queryByRole('tab', { name: 'Diff' })).toBeNull()
+    fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
+
+    fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
+    fireEvent.click(view.getByRole('button', { name: 'Jump to transcript' }))
+
+    // DetailsPanel.tsx supplies this Details-seam owner callback from the
+    // same real `store: chatStore` share it already holds for its header
+    // controls and routed-entry dispatch — the one ui-conversation touch
+    // this redesign made (DetailsViewOwnerProps.inspectCall).
+    const chatStore = b.runtime.storeOf('conversation.view', SID) as {
+      getSnapshot(): { inspect: { callId: string } | null; view: string | null }
+    }
+    expect(chatStore.getSnapshot().inspect).toEqual({ callId: CALL_ID })
+    expect(chatStore.getSnapshot().view).toBe('trajectory')
     await b.runtime.dispose()
   })
 

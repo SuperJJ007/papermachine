@@ -16,7 +16,6 @@ coverage/
 .oxlint-contract-*/
 .oxlintrc.contract-*.json
 oxlint-contract-*.ts
-.tool-science-test-*/
 .humanize/
 tmp/
 .claude/commands/

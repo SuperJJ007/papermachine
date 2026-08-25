@@ -468,6 +468,37 @@ export function authorizePythonRun(session: Session, id = 'science-runtime-run-c
   return authorizeRun(session, 'python', id)
 }
 
+/**
+ * Append the two `tool/call` facts one assistant step's `run_python` +
+ * `run_r` calls would carry — one shared `step/start`/`request/header`, one
+ * `tool/call` per language — matching the real model output that reaches
+ * `startRun` for each: {@link authorizeRun}'s own per-call fresh turn/header
+ * only fits a call issued alone.
+ * @param session - session to append the shared turn's facts to.
+ * @param ids - per-language `toolCallId` values; defaults distinguish the two calls.
+ * @returns the shared `requestHeaderSeq` plus each language's own `toolCallId`.
+ */
+export function authorizeConcurrentRuns(
+  session: Session,
+  ids: { readonly python?: string; readonly r?: string } = {},
+): {
+  readonly requestHeaderSeq: number
+  readonly python: ReturnType<typeof CallId>
+  readonly r: ReturnType<typeof CallId>
+} {
+  const turn = nextFreshTurn(session)
+  session.append('step/start', { turn, step: 1 })
+  const header = session.append('request/header', {
+    header: { config: { provider: 'test', model: 'test-model' } },
+    reason: 'initial',
+  })
+  const python = CallId(ids.python ?? 'science-runtime-run-call-python')
+  session.append('tool/call', { turn, step: 1, callId: python, name: 'run_python', arguments: '{}' })
+  const r = CallId(ids.r ?? 'science-runtime-run-call-r')
+  session.append('tool/call', { turn, step: 1, callId: r, name: 'run_r', arguments: '{}' })
+  return { requestHeaderSeq: header.seq, python, r }
+}
+
 /** Append the request/header and annotate_artifact tool-call facts that authorize one curated re-save. */
 export function authorizeAnnotateArtifact(session: Session, id = 'science-runtime-annotate-artifact-call') {
   return authorizeToolCall(session, 'annotate_artifact', id)

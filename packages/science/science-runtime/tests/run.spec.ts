@@ -19,6 +19,7 @@ import { ensureSessionScratch, planKernelScratch, planSessionScratch } from '../
 import ScienceRuntime from '../src/index.ts'
 import {
   attachScienceSession,
+  authorizeConcurrentRuns,
   authorizePythonRun,
   authorizeRun,
   createFakePythonPrefix,
@@ -142,18 +143,73 @@ describe('ScienceRuntime.startRun preflight', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
-  it('rejects a second concurrent run with RUNTIME_BUSY', async () => {
+  it('queues a second concurrent run for the same session instead of rejecting or cancelling it', async () => {
+    // Regression for a Science Runtime bug: two run_python/run_r calls
+    // issued together in one assistant step (the durable session log admits
+    // only one 'running' run at a time — transition.ts's own
+    // `applyRunStarted` invariant) used to depend entirely on the tool
+    // scheduler to serialize them; a caller that DID reach `startRun` while
+    // another was live got an outright `RUNTIME_BUSY` rejection instead of
+    // a real turn. `reserveQueued` now queues that second caller instead.
     const { runtime, session } = await readyPythonHarness('science-run-busy')
     const first = await runtime.startRun({
-      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 50 }),
       ...authorizePythonRun(session, 'science-run-busy-1'), signal: new AbortController().signal,
     })
-    await expect(runtime.startRun({
+    const secondStarting = runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-run-busy-2'), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+    })
+    await expect(first.done).resolves.toMatchObject({ terminal: { status: 'success' } })
+    const second = await secondStarting
+    await expect(second.done).resolves.toMatchObject({ terminal: { status: 'success' } })
+    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(2)
+  })
+
+  it('cancels a queued run cleanly, without ever spawning a kernel, when its own signal aborts before its turn arrives', async () => {
+    const { runtime, session } = await readyPythonHarness('science-run-queued-cancel')
+    const first = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
+      ...authorizePythonRun(session, 'science-run-queued-cancel-1'), signal: new AbortController().signal,
+    })
+    const secondCaller = new AbortController()
+    const secondStarting = runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session, 'science-run-queued-cancel-2'), signal: secondCaller.signal,
+    })
+    secondCaller.abort()
+    await expect(secondStarting).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
     first.cancel()
     await expect(first.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
+    expect(session.events.some(event => event.type === 'science/run-started'
+      && event.data.run.toolCallId === 'science-run-queued-cancel-2')).toBe(false)
+  })
+
+  it('rejects a queued run with SERVICE_DISPOSING, without acquiring a lease, once the Runtime begins disposing while it waits', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-queued-dispose-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-queued-dispose')
+    await bindFakePython(harness.runtime, session)
+    const first = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
+      ...authorizePythonRun(session, 'science-run-queued-dispose-1'), signal: new AbortController().signal,
+    })
+    const secondStarting = harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session, 'science-run-queued-dispose-2'), signal: new AbortController().signal,
+    })
+    // Attached before disposal, not after: `secondStarting` can reject the
+    // instant `disposeAll` cancels the run it is queued behind, and nothing
+    // may leave it unhandled in between.
+    const secondRejection = expect(secondStarting).rejects.toMatchObject({ code: 'SERVICE_DISPOSING' })
+    await harness.runtimeFiber.dispose()
+    await secondRejection
+    await expect(first.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
+    expect(session.events.some(event => event.type === 'science/run-started'
+      && event.data.run.toolCallId === 'science-run-queued-dispose-2')).toBe(false)
   })
 
   it('rejects a fresh run with RUNTIME_BUSY when a prior run-finished append never committed, leaving the projection with an open run', async () => {
@@ -421,6 +477,44 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     expect(kernelFacts[2]?.data).toMatchObject({ kernel: { state: 'started', kernelEpoch: 2 } })
     const started = session.events.filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
+  })
+
+  it('lets a Python and R run issued together (Promise.all, no await between them) both complete rather than cancelling whichever is second', async () => {
+    // Regression: a model issuing run_python and run_r in one assistant step
+    // used to have the second call's `startRun` reach `KernelSet.acquire`
+    // only once the tool scheduler finally let it start (after the first
+    // call's whole result committed), and a caller-signal abort landing in
+    // that widened window produced `OPERATION_CANCELLED` with no
+    // `run-started` fact — see the Agent Note. Both must still get a real,
+    // durable result when issued together and never cancelled.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-cross-language-'))
+    roots.push(root)
+    const pythonPrefix = createFakePythonPrefix(root)
+    const rPrefix = createFakeRPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { both: { pythonPrefix, rPrefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-cross-language')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('both'), signal: new AbortController().signal,
+    })
+    // One shared step/request-header, one tool/call per language — the same
+    // facts a real assistant step emitting both calls together produces.
+    const authorized = authorizeConcurrentRuns(session)
+    const [pythonHandle, rHandle] = await Promise.all([
+      harness.runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        toolCallId: authorized.python, requestHeaderSeq: authorized.requestHeaderSeq, signal: new AbortController().signal,
+      }),
+      harness.runtime.startRun({
+        session, language: 'r', code: kernelAction({ status: 'ok' }),
+        toolCallId: authorized.r, requestHeaderSeq: authorized.requestHeaderSeq, signal: new AbortController().signal,
+      }),
+    ])
+    await expect(pythonHandle.done).resolves.toMatchObject({ terminal: { status: 'success', language: 'python' } })
+    await expect(rHandle.done).resolves.toMatchObject({ terminal: { status: 'success', language: 'r' } })
+    const started = session.events.filter(event => event.type === 'science/run-started')
+    expect(started).toHaveLength(2)
+    expect(started.map(event => event.data.run.language).sort()).toEqual(['python', 'r'])
   })
 
   it('allocates kernelEpoch N+1 through the real durable-projection allocator for a session seeded with prior kernel facts', async () => {

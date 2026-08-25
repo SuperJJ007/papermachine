@@ -39,7 +39,7 @@ import {
 } from './kernel-set.ts'
 import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from './kernel-set.ts'
 import { LeaseRegistry, OperationControl } from './lifecycle.ts'
-import type { OperationCause } from './lifecycle.ts'
+import type { OperationCause, RuntimeLease } from './lifecycle.ts'
 import { prepareRunArtifacts } from './inputs.ts'
 import type { PreparedRunArtifacts } from './inputs.ts'
 import { attachRuntimeSettings } from './settings.ts'
@@ -207,6 +207,27 @@ function kernelStartCauseClass(error: unknown): string {
   if (error instanceof KernelProtocolError) return 'the kernel did not complete its startup handshake'
   if (error instanceof AggregateError) return 'the kernel could not be stopped cleanly after its startup failed'
   return 'the kernel process could not be started'
+}
+
+/**
+ * Wait for `settlement`, or return as soon as `signal` aborts — whichever
+ * comes first. Used by {@link ScienceRuntime.reserveQueued} so a caller
+ * queued behind another Session-wide operation stops waiting the moment its
+ * own cancellation arrives, rather than only noticing on its next retry
+ * after the blocking lease eventually settles on its own.
+ * @param settlement - the blocking lease's own settlement promise.
+ * @param signal - the queued caller's cancellation signal.
+ */
+function raceSettlementOrAbort(settlement: Promise<void>, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const onAbort = (): void => { resolve() }
+    signal.addEventListener('abort', onAbort, { once: true })
+    void settlement.then(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    })
+  })
 }
 
 /**
@@ -470,22 +491,35 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     if (process.platform === 'win32') {
       throw new ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', 'Science kernel execution requires macOS or Linux')
     }
-    const projection = this.assertSession(request.session)
+    this.assertSession(request.session)
     this.assertHostLocal()
-    const environment = projection.environment
-    if (environment === null || environment.status !== 'applied') {
-      throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-    }
-    if (projection.runs.some(run => run.status === 'running')) {
-      throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-    }
-    const profile = this.profile(String(environment.profileId))
-    const lease = this.reserve(request.session, request.signal)
+    // Queues behind another run/bind/annotate operation already holding
+    // this Session's lease instead of rejecting outright — see
+    // `reserveQueued`'s own doc. `environment`/the open-run check below are
+    // read fresh AFTER the lease is granted, not from this pre-queue probe:
+    // a call that queued behind a run has stale state by the time it
+    // actually starts.
+    const lease = await this.reserveQueued(request.session, request.signal)
     let sessionScratch: ScienceSessionScratch | undefined
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
       this.assertPrepublication(request.session, lease.control)
+      const projection = this.assertSession(request.session)
+      const environment = projection.environment
+      if (environment === null || environment.status !== 'applied') {
+        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
+      }
+      // Reaching this with an open run means the lease itself is free (the
+      // holder released it) while the durable log still shows a run
+      // 'running' — an orphan left by a run whose settlement fired without
+      // its own `run-finished` ever committing (e.g. a crash before a Host
+      // restart re-attached this Session), not the in-process race
+      // `reserveQueued` already resolved by queueing.
+      if (projection.runs.some(run => run.status === 'running')) {
+        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
+      }
+      const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
       const preparedArtifacts = await prepareRunArtifacts(
         projection,
@@ -678,6 +712,54 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     } catch (error) {
       control.dispose()
       throw error
+    }
+  }
+
+  /**
+   * Reserve `session` for a run, queueing behind any run/bind/annotate
+   * operation already holding this Session's lease instead of failing the
+   * caller outright. `run_python` and `run_r` issued in the same assistant
+   * step share one Session-wide lease (`startRun`'s durable open-run check
+   * and `KernelSet`'s own per-Session acquire discipline both require at
+   * most one Runtime operation in flight per Session — see `kernel-set.ts`'s
+   * module doc), so this lets whichever call arrives second get a genuine
+   * turn once the first vacates instead of racing `RUNTIME_BUSY` against
+   * whichever call's synchronous prefix reserved first — the outcome a
+   * caller cancelled mid-race would otherwise see reported as an opaque
+   * `Science Runtime operation was cancelled` with no `run-started` fact to
+   * explain it.
+   *
+   * Retries {@link reserve} each time the blocking lease settles; every
+   * retry constructs a fresh {@link OperationControl}, so a caller's own
+   * per-operation deadline starts counting from when it actually acquires
+   * the lease, not from when it started queueing. `signal` aborting while
+   * queued, or the Runtime entering disposal while queued, rejects before
+   * constructing any `OperationControl`, so a caller cancelled or preempted
+   * while only queued never touches Runtime state.
+   * @param session - exact live Session that will own the reservation.
+   * @param signal - caller-owned cancellation signal.
+   * @returns the granted lease.
+   */
+  private async reserveQueued(session: BindScienceEnvironmentRequest['session'], signal: AbortSignal): Promise<RuntimeLease> {
+    for (;;) {
+      if (signal.aborted) {
+        throw new ScienceRuntimeError('OPERATION_CANCELLED', 'Science Runtime operation was cancelled', { cause: signal.reason })
+      }
+      if (this.disposing) throw new ScienceRuntimeError('SERVICE_DISPOSING', 'Science Runtime is disposing')
+      try {
+        return this.reserve(session, signal)
+      } catch (error) {
+        // LeaseRegistry.reserve's only throw is the RUNTIME_BUSY rejection
+        // this loop retries on (lifecycle.ts); a different shape is a
+        // defensive backstop, not a reachable production path.
+        /* v8 ignore next 2 */
+        if (!(error instanceof ScienceRuntimeError) || error.code !== 'RUNTIME_BUSY') throw error
+        // Synchronous throw-then-read with no `await` between them: the
+        // lease this RUNTIME_BUSY just named cannot have released yet.
+        // oxlint-disable-next-line typescript/no-non-null-assertion -- see above
+        const blocking = this.leases.blocking(session)!
+        await raceSettlementOrAbort(blocking.settlement, signal)
+      }
     }
   }
 

@@ -157,7 +157,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, openDetailsView, t,
+  fileMentions, openDetailsView, bindAnchorJump, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -249,6 +249,22 @@ export function ChatView({
     setAtBottom(true)
     chatScroll.save(null)
   }
+
+  useEffect(() => bindAnchorJump((anchorKey) => {
+    const local = listRef.current
+    /* v8 ignore next -- the binding exists only while the mounted Chat view owns its list ref. */
+    if (local === null) return
+    const row = anchorElement(local, anchorKey)
+    if (row === null) return
+    const el = scrollerOf(local)
+    el.scrollTop += flowTop(row, el) - Math.max(0, (el.clientHeight - row.offsetHeight) / 2)
+    observedTopRef.current = el.scrollTop
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
+    atBottomRef.current = isAtBottom
+    setAtBottom(isAtBottom)
+    const position = isAtBottom ? null : scrollPosition(local, el)
+    chatScroll.save(position)
+  }), [bindAnchorJump, chatScroll])
 
   useLayoutEffect(() => {
     const local = listRef.current

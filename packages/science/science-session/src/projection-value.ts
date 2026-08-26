@@ -156,6 +156,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
 function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
   const common = {
     artifactId: artifact.artifactId,
+    producerSessionId: artifact.producerSessionId,
     logicalName: artifact.logicalName,
     version: artifact.version,
     title: artifact.title,

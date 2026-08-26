@@ -147,6 +147,22 @@ Remote service admitting browser edit gestures into the addressed live agent.
  * @returns identity and direct-edit provenance of the new contiguous version.
  */
 @Remote('commitStyleEdit') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>
+
+/**
+ * Add one user-only note after validating its exact visible artifact version.
+ * @param agent - Agent whose session owns the artifact.
+ * @param request - Exact artifact version and plain note text.
+ * @returns acceptance receipt after the note event commits.
+ */
+@Remote('addArtifactNote') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt
+
+/**
+ * Remove one active user-only note owned by the named logical artifact.
+ * @param agent - Agent whose session owns the note.
+ * @param request - Logical artifact and add-event sequence identifying the note.
+ * @returns acceptance receipt after the removal event commits.
+ */
+@Remote('removeArtifactNote') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt
 ```
 
 Types: [Agent](core.zh.md)

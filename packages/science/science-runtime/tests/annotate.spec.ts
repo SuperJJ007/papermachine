@@ -141,6 +141,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       version: 1,
       artifact: {
         artifactId: parent.artifactId,
+        producerSessionId: stored.producerSessionId,
         logicalName: parent.logicalName,
         version: stored.ordinal,
         parent: { artifactId: parent.artifactId, version: 1 },

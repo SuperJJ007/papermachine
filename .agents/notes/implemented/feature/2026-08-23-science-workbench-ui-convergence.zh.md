@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-23-science-workbench-ui-convergence.md) | 中文
 
-本记录中 Trace 与 Outcome 的放置已由 [Science 轨迹与会话记录信息架构](2026-08-25-science-trajectory-and-transcript-ia.zh.md) 取代。文件舞台、composer 选择、设置、内核状态、浅色 composition 与桌面 toggle 放置仍然有效。
+本记录中 Trace 与 Outcome 的放置已由 [Science 轨迹与会话记录信息架构](2026-08-25-science-trajectory-and-transcript-ia.zh.md) 取代；其中的溯源摘要布局已由 [Science artifact 溯源与私有 Review](2026-08-26-science-artifact-provenance-review.zh.md) 取代。文件舞台、composer 选择、设置、内核状态、浅色 composition 与桌面 toggle 放置仍然有效。
 
 ## Problem
 

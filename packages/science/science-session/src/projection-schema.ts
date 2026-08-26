@@ -229,7 +229,7 @@ function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
   const humanEdit = candidate['origin'] === 'human-edit'
-  const keys = ['artifactId', 'logicalName', 'version', 'title', 'origin',
+  const keys = ['artifactId', 'producerSessionId', 'logicalName', 'version', 'title', 'origin',
     'versionId', 'sha256', 'mediaType', 'byteCount',
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
   if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq')
@@ -238,6 +238,8 @@ function validArtifact(value: unknown): boolean {
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && candidate['artifactId'].length > 0
+    && typeof candidate['producerSessionId'] === 'string'
+    && candidate['producerSessionId'].length > 0
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
     && (humanEdit ? validArtifactVersionRef(candidate['parent']) : candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))

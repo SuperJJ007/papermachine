@@ -253,6 +253,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
 
     const artifact: ScienceArtifactVersion = {
       artifactId: stored.artifactId,
+      producerSessionId: stored.producerSessionId,
       logicalName: relativePath,
       // New content always opens the next version; the store's per-artifact
       // ordinal is that version number, so the log and the index agree.

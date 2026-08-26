@@ -142,6 +142,7 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
 function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClientRunArtifactVersion {
   return {
     artifactId: 'chart-1' as never,
+    producerSessionId: SESSION,
     logicalName: 'loss-curve.png',
     version: 1,
     title: 'Loss curve',
@@ -160,6 +161,7 @@ function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClie
 function humanEditChart(over: Partial<ScienceClientHumanEditArtifactVersion> = {}): ScienceClientHumanEditArtifactVersion {
   return {
     artifactId: 'chart-1' as never,
+    producerSessionId: SESSION,
     logicalName: 'summary.vl.json',
     version: 2,
     title: 'summary.vl.json',
@@ -216,13 +218,19 @@ function props(
     inspectCall?: (callId: string) => void
     selectDetailed?: () => void
     snapshot?: ConversationSnapshot
+    notes?: readonly import('@deepseek-ai/dsh-science-session/types').ScienceArtifactNote[]
+    returnToConversation?: Props['returnToConversation']
+    addArtifactNote?: Props['addArtifactNote']
+    removeArtifactNote?: Props['removeArtifactNote']
+    displayTitle?: string
+    includeUnknownSession?: boolean
   } = {},
 ): Props {
   const state = {
-    ids: [SESSION],
+    ids: over.includeUnknownSession ? [SESSION, 'unknown-session' as SessionId] : [SESSION],
     byId: {
       [SESSION]: {
-        id: SESSION, displayTitle: SESSION, running: false, blank: false, updatedAt: 0,
+        id: SESSION, displayTitle: over.displayTitle ?? SESSION, running: false, blank: false, updatedAt: 0,
         ...over.agentPreset === undefined ? {} : { agentPreset: over.agentPreset },
       },
     },
@@ -241,7 +249,7 @@ function props(
     sessionId: SESSION,
     useSessions,
     useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
-    useProjection: vi.fn(() => science),
+    useProjection: vi.fn((key: string) => key === 'science' ? science : over.notes),
     useStore: store.useStore,
     actions: store.actions,
     inspectCall: over.inspectCall ?? vi.fn(),
@@ -251,7 +259,9 @@ function props(
     addToConversation: over.addToConversation ?? vi.fn(),
     removeFromConversation: over.removeFromConversation ?? vi.fn(),
     composerSelections: over.composerSelections ?? createSnapshotStore([]),
-    openTrace: vi.fn(),
+    returnToConversation: over.returnToConversation ?? vi.fn(),
+    addArtifactNote: over.addArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    removeArtifactNote: over.removeArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     commitStyleEdit: over.commitStyleEdit ?? vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit' },
     }),
@@ -416,6 +426,67 @@ describe('ScienceDetailsView: opening a tab', () => {
     expect(screen.getByText('Generated in turn 3')).toBeTruthy()
     expect(screen.getByText('Read-only')).toBeTruthy()
   })
+
+  it('shows versioned private notes in Review position and submits trimmed text', async () => {
+    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const addArtifactNote = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
+    const removeArtifactNote = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
+    render(<ScienceDetailsView {...props(science, {
+      store, addArtifactNote, removeArtifactNote,
+      notes: [{ seq: 19, artifactId: 'chart-1' as never, version: 1, text: 'Keep this label', createdAt: 1_000 }],
+    })} />)
+    expect(screen.getByRole('region', { name: 'Notes' })).toBeTruthy()
+    expect(screen.getByText('Keep this label')).toBeTruthy()
+    expect(screen.getByText('These notes belong only to you and never enter model context.')).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Artifact note' }), { target: { value: '  New note  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(addArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', version: 2, text: 'New note' }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }))
+    await waitFor(() => { expect(removeArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', noteSeq: 19 }) })
+  })
+
+  it('surfaces the Host rejection for an over-limit note without truncating the draft', async () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const addArtifactNote = vi.fn().mockResolvedValue({ ok: false, error: { message: 'note text must be at most 8192 characters' } })
+    render(<ScienceDetailsView {...props(science, { store, addArtifactNote })} />)
+    const longNote = 'x'.repeat(8_193)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Artifact note' }), { target: { value: longNote } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'note text must be at most 8192 characters')
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Artifact note').value).toBe(longNote)
+  })
+
+  it('ignores an empty review submission and surfaces a delete rejection', async () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const removeArtifactNote = vi.fn().mockResolvedValue({ ok: false, error: { message: 'delete rejected' } })
+    const view = render(<ScienceDetailsView {...props(science, {
+      store,
+      removeArtifactNote,
+      notes: [{ seq: 19, artifactId: 'chart-1' as never, version: 1, text: 'Keep this label', createdAt: 1_000 }],
+    })} />)
+    fireEvent.submit(view.container.querySelector('form')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'delete rejected')
+  })
+
+  it('accepts a known session display title while resolving the active artifact', () => {
+    const localScience = baseProjection({ artifacts: [chart()] })
+    const localStore = testScienceSelectionStore()
+    localStore.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    localStore.actions.setView('provenance')
+    localStore.actions.setProvenanceSubTab('messages')
+    const view = render(<ScienceDetailsView {...props(localScience, {
+      store: localStore, displayTitle: 'Named session', includeUnknownSession: true,
+    })} />)
+    expect(view.container.textContent).not.toContain('session-1')
+  })
+
 })
 
 describe('ScienceDetailsView: tab strip', () => {
@@ -1372,14 +1443,22 @@ describe('ScienceDetailsView: provenance drill-in', () => {
     expect(screen.getByRole('button', { name: 'Provenance' })).toBeTruthy()
   })
 
-  it('the Messages sub-tab\'s jump reaches the Details seam\'s inspectCall callback', () => {
+  it('the Messages sub-tab opens detailed trajectory through the Details seam', () => {
     const inspectCall = vi.fn()
     const selectDetailed = vi.fn()
     const { science, store } = withRunAndChart()
-    render(<ScienceDetailsView {...props(science, { store, inspectCall, selectDetailed })} />)
+    const snapshot = {
+      ...emptySnapshot(),
+      nodes: [
+        { kind: 'user', seq: 1, content: [{ type: 'text', text: 'Plot it' }] },
+        { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: 'call-run-1', name: 'run_python' }] },
+        { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'Done' }] },
+      ],
+    } as unknown as ConversationSnapshot
+    render(<ScienceDetailsView {...props(science, { store, inspectCall, selectDetailed, snapshot })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Jump to transcript' }))
+    fireEvent.click(screen.getByRole('button', { name: 'View trajectory' }))
     expect(selectDetailed).toHaveBeenCalledOnce()
     expect(inspectCall).toHaveBeenCalledWith('call-run-1')
   })

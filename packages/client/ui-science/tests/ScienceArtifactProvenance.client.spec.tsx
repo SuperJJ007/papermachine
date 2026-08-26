@@ -22,6 +22,7 @@ import { en } from '../src/client/locales.ts'
 
 type Props = ScienceArtifactProvenanceProps
 const CALL_ID = 'call-run-1'
+const SESSION_ID = 'session-1' as never
 const t: Props['t'] = makeTranslate(en)
 
 afterEach(cleanup)
@@ -29,6 +30,7 @@ afterEach(cleanup)
 function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClientRunArtifactVersion {
   return {
     artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve', origin: 'model',
+    producerSessionId: SESSION_ID,
     attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 10, width: 1, height: 1 },
     runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8,
     environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 3_000,
@@ -97,8 +99,8 @@ function snapshotWith(block: ToolCallBlock | undefined): ConversationSnapshot {
   return {
     nodes: [
       { kind: 'user', seq: 1, content: [{ type: 'text', text: 'Build a compact loss chart' }] },
-      { kind: 'assistant', seq: 2, turn: 1, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
-      { kind: 'assistant', seq: 3, turn: 1, blocks: [{ kind: 'text', text: 'The chart highlights the convergence trend.' }] },
+      { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+      { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'The chart highlights the convergence trend.' }] },
     ],
     chat: {
       nodes: {
@@ -119,7 +121,7 @@ function props(over: {
   onBack?: () => void
   inspectCall?: (callId: string) => void
   selectDetailed?: () => void
-  openTrace?: (turn: number) => void
+  returnToConversation?: (anchorKey: string) => void
   snapshot?: ConversationSnapshot
 } = {}): Props {
   return {
@@ -132,7 +134,9 @@ function props(over: {
     onBack: over.onBack ?? vi.fn(),
     inspectCall: over.inspectCall ?? vi.fn(),
     selectDetailed: over.selectDetailed ?? vi.fn(),
-    openTrace: over.openTrace ?? vi.fn(),
+    currentSessionId: SESSION_ID,
+    sourceSessionTitle: 'Source session',
+    returnToConversation: over.returnToConversation ?? vi.fn(),
     t,
   }
 }
@@ -167,7 +171,7 @@ describe('ScienceArtifactProvenance: sub-tab strip', () => {
 
   it('renders exactly one sub-tab section body at a time', () => {
     const view = render(<ScienceArtifactProvenance {...props({ subTab: 'code' })} />)
-    expect(view.container.querySelectorAll('section')).toHaveLength(2)
+    expect(view.container.querySelectorAll('section')).toHaveLength(1)
   })
 })
 
@@ -204,6 +208,8 @@ describe('ScienceArtifactProvenance: code', () => {
   it('reports code as absent when the argsRaw is not valid JSON or carries no code field', () => {
     const block = settledInWindow('not-json', 'output')
     const view = render(<ScienceArtifactProvenance {...props({ subTab: 'code', block })} />)
+    expect(view.getByRole('status')).toBeTruthy()
+    view.rerender(<ScienceArtifactProvenance {...props({ subTab: 'code', block: settledInWindow('{"other":1}', 'output') })} />)
     expect(view.getByRole('status')).toBeTruthy()
   })
 })
@@ -253,37 +259,35 @@ describe('ScienceArtifactProvenance: execution log', () => {
 })
 
 describe('ScienceArtifactProvenance: messages', () => {
-  it('summarizes the generating turn and links both trajectory views by stable anchors', () => {
+  it('shows only the bounded question, result, and two distinct local actions', () => {
     const inspectCall = vi.fn()
     const selectDetailed = vi.fn()
-    const openTrace = vi.fn()
-    const view = render(<ScienceArtifactProvenance {...props({ inspectCall, selectDetailed, openTrace })} />)
-    expect(view.container.textContent).toContain('Generated in turn 1')
+    const returnToConversation = vi.fn()
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall, selectDetailed, returnToConversation })} />)
     expect(view.container.textContent).toContain('Build a compact loss chart')
     expect(view.container.textContent).toContain('The chart highlights the convergence trend.')
-    const trajectory = screen.getByRole('button', { name: 'Trajectory' })
-    const trace = screen.getByRole('button', { name: 'Semantic trace' })
-    expect(trajectory.getAttribute('data-anchor')).toBe(`call:${CALL_ID}`)
-    expect(trace.getAttribute('data-anchor')).toBe('turn:1')
+    expect(view.container.querySelectorAll('section')).toHaveLength(1)
+    const trajectory = screen.getByRole('button', { name: 'View trajectory' })
+    const conversation = screen.getByRole('button', { name: 'Back to original conversation' })
     fireEvent.click(trajectory)
-    fireEvent.click(trace)
+    fireEvent.click(conversation)
     expect(inspectCall).toHaveBeenCalledWith(CALL_ID)
     expect(selectDetailed).toHaveBeenCalledTimes(1)
-    expect(openTrace).toHaveBeenCalledWith(1)
+    expect(returnToConversation).toHaveBeenCalledWith(conversationContextKey('assistant-step', '1:0'))
   })
 
-  it('keeps the complete turn request and conclusion in the provenance summary', () => {
+  it('keeps complete summary text in the DOM for CSS three-line clamping', () => {
     const suffix = 'FULL_TEXT_SUFFIX'
     const longText = `${'detail '.repeat(40)}${suffix}`
     const snapshot = {
       ...snapshotWith(undefined),
       nodes: [
         { kind: 'user', seq: 1, content: [{ type: 'text', text: longText }] },
-        { kind: 'assistant', seq: 2, turn: 1, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
-        { kind: 'assistant', seq: 3, turn: 1, blocks: [{ kind: 'text', text: longText }] },
+        { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+        { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: longText }] },
       ],
     } as unknown as ConversationSnapshot
-    const view = render(<ScienceArtifactProvenance {...props({ snapshot })} />)
+    const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.container.textContent?.match(new RegExp(suffix, 'gu'))).toHaveLength(2)
   })
 
@@ -292,50 +296,46 @@ describe('ScienceArtifactProvenance: messages', () => {
       ...snapshotWith(undefined),
       nodes: [
         { kind: 'user', seq: 1, content: [{ type: 'image', attachment: {} }] },
-        { kind: 'steering', seq: 2, content: [{ type: 'text', text: 'Use the compact comparison' }] },
-        { kind: 'assistant', seq: 3, turn: 2, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+        { kind: 'steering', seq: 2, content: [{ type: 'image', attachment: {} }, { type: 'text', text: 'Use the compact comparison' }] },
+        { kind: 'assistant', seq: 3, turn: 2, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
       ],
     } as unknown as ConversationSnapshot
-    const view = render(<ScienceArtifactProvenance {...props({ snapshot })} />)
+    const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.container.textContent).toContain('Use the compact comparison')
     expect(view.container.textContent).not.toContain('The chart highlights')
   })
 
-  it('omits the generating-turn summary when the call is outside loaded messages', () => {
-    const snapshot = { ...snapshotWith(undefined), nodes: [] } as unknown as ConversationSnapshot
-    const view = render(<ScienceArtifactProvenance {...props({ snapshot })} />)
-    expect(view.container.textContent).not.toContain('Generated in turn')
-  })
-
-  it('renders an empty request summary when no prior text exists', () => {
+  it('leaves the question empty when no prior user message is loaded', () => {
     const snapshot = {
       ...snapshotWith(undefined),
       nodes: [
-        { kind: 'user', seq: 1, content: [{ type: 'image', attachment: {} }] },
-        { kind: 'assistant', seq: 2, turn: 1, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+        { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+        { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'Loaded result' }] },
       ],
     } as unknown as ConversationSnapshot
-    const view = render(<ScienceArtifactProvenance {...props({ snapshot })} />)
-    expect(view.container.textContent).toContain('Generated in turn 1')
-    expect(view.container.textContent).not.toContain('Build a compact loss chart')
-
-    const noUser = {
-      ...snapshot,
-      nodes: [{ kind: 'assistant', seq: 1, turn: 1, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] }],
-    } as unknown as ConversationSnapshot
-    cleanup()
-    expect(render(<ScienceArtifactProvenance {...props({ snapshot: noUser })} />).container.textContent)
-      .toContain('Generated in turn 1')
+    const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
+    expect(view.container.textContent).toContain('Loaded result')
   })
 
-  it('renders the request/turn facts and jumps to the transcript on demand', () => {
-    const inspectCall = vi.fn()
-    const selectDetailed = vi.fn()
-    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall, selectDetailed })} />)
-    expect(view.container.textContent).toContain('Request 7')
-    view.getByRole('button', { name: 'Jump to transcript' }).click()
-    expect(inspectCall).toHaveBeenCalledWith(CALL_ID)
-    expect(selectDetailed).toHaveBeenCalledTimes(1)
+  it('reports when the generating message is outside loaded history', () => {
+    const snapshot = { ...snapshotWith(undefined), nodes: [] } as unknown as ConversationSnapshot
+    const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
+    expect(view.getByText('The generating message is not loaded.')).toBeTruthy()
+  })
+
+  it('shows a source-session label and no fake navigation for a foreign version', () => {
+    const view = render(<ScienceArtifactProvenance {...props({
+      subTab: 'messages', chart: chart({ producerSessionId: 'foreign-session' as never }),
+    })} />)
+    expect(view.container.textContent).toContain('Source session')
+    expect(view.queryByRole('button', { name: 'Back to original conversation' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'View trajectory' })).toBeNull()
+  })
+
+  it('falls back to the foreign producer id when its session title is unavailable', () => {
+    const foreign = chart({ producerSessionId: 'foreign-session' as never })
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', chart: foreign })} sourceSessionTitle={undefined} />)
+    expect(view.container.textContent).toContain('foreign-session')
   })
 })
 

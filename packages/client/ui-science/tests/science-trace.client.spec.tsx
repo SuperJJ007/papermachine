@@ -278,6 +278,22 @@ describe('Science semantic trace', () => {
     expect(noRuns.hasAttribute('disabled')).toBe(true)
   })
 
+  it('falls back to a request-unavailable label when no dialogue precedes the group\'s turn', () => {
+    const nodes = [assistant(1, 1, ['run-a'])] as ConversationNode[]
+    const science = {
+      mode: {}, environment: null, kernels: [], outcome: null, lastScienceEventSeq: 1,
+      runs: [run('run-a', 1)], artifacts: [], metrics: {},
+    } as unknown as ScienceClientProjection
+    const snapshot = { nodes, turnTimings: new Map() } as unknown as ConversationSnapshot
+    render(<ScienceTraceView {...({
+      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
+      useProjection: () => science,
+      inspectCall: vi.fn(), actions: { openTab: vi.fn() }, openArtifact: vi.fn(), selectDetailed: vi.fn(), t,
+    } as unknown as ScienceTraceViewProps)} />)
+
+    expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
+  })
+
   it('renders the empty projection state', () => {
     const snapshot = { nodes: [], turnTimings: new Map() } as unknown as ConversationSnapshot
     render(<ScienceTraceView {...({

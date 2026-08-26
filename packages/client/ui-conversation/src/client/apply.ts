@@ -467,6 +467,7 @@ export function apply(ctx: Context): void {
           actions.setDetailsView(id)
           layout.openDetails()
         },
+        bindAnchorJump: opener => concreteConversation(ctx).bindChatAnchorOpener(sessionId, opener),
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd

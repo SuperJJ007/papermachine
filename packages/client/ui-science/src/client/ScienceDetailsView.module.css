@@ -251,6 +251,20 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Review position: private notes stay with the viewer and never enter provenance. */
+.notes { display: flex; min-width: 0; flex-direction: column; gap: 7px; margin-top: 12px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.notes h3, .notes p { margin: 0; }
+.notes h3 { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
+.notes ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.notes li { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.notes li span { overflow-wrap: anywhere; }
+.notes small { color: var(--dsw-alias-label-caption); white-space: nowrap; }
+.notes button { padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.notes button:disabled { cursor: default; opacity: .45; }
+.notes form { display: flex; align-items: stretch; gap: 6px; }
+.notes textarea { min-width: 0; min-height: 52px; flex: 1; padding: 7px 8px; resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.notesPrivacy { color: var(--dsw-alias-label-caption); font-size: 11px; line-height: 16px; }
+
 /* Plain-text and unparseable-JSON content fallback. */
 
 .textContent {

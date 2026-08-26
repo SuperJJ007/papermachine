@@ -32,10 +32,10 @@ import type { ConversationSnapshot, SnapshotStore } from '@deepseek-ai/dsh-clien
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection,
+  ScienceArtifactId, ScienceArtifactNote, ScienceArtifactNotesProjection, ScienceClientArtifactVersion, ScienceClientProjection,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
-  ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
+  ScienceArtifactNoteReceipt, ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
@@ -56,10 +56,20 @@ export interface ScienceDetailsInjected {
   removeFromConversation: (target: ScienceEditSelection) => void
   /** Observable exact targets currently staged in the main composer. */
   composerSelections: SnapshotStore<readonly ScienceEditSelection[]>
-  /** Open the semantic trace at one generation turn. */
-  openTrace: (turn: number) => void
+  /** Switch to chat and center the generating assistant node. */
+  returnToConversation: (anchorKey: string) => void
   /** Select the detailed trajectory subview before inspecting one call. */
   selectDetailed: () => void
+  /** Add one user-only note to an exact visible artifact version. */
+  addArtifactNote: (request: { artifactId: ScienceArtifactId; version: number; text: string }) => Promise<
+    | { readonly ok: true; readonly value: ScienceArtifactNoteReceipt }
+    | { readonly ok: false; readonly error: { readonly message: string } }
+  >
+  /** Remove one active user-only note. */
+  removeArtifactNote: (request: { artifactId: ScienceArtifactId; noteSeq: number }) => Promise<
+    | { readonly ok: true; readonly value: ScienceArtifactNoteReceipt }
+    | { readonly ok: false; readonly error: { readonly message: string } }
+  >
   /** Commit a complete styled Vega-Lite working copy over one exact current version. */
   commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
     | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
@@ -434,15 +444,63 @@ function LandingView({ artifacts, loadImage, onOpenTab, t }: {
   )
 }
 
+/** User-only review notes attached to the logical artifact across versions. */
+function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }: {
+  chart: ScienceClientArtifactVersion
+  notes: readonly ScienceArtifactNote[]
+  addArtifactNote: ScienceDetailsInjected['addArtifactNote']
+  removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
+  t: TranslateNS<'science'>
+}) {
+  const [text, setText] = useState('')
+  const [error, setError] = useState<string | undefined>()
+  const [pending, setPending] = useState(false)
+  return (
+    <section className={css.notes} aria-label={t('notes.title')}>
+      <h3>{t('notes.title')}</h3>
+      {notes.length === 0 ? <p>{t('notes.empty')}</p> : <ul>{notes.map(note => (
+        <li key={note.seq}>
+          <span>{note.text}</span>
+          <small>{t('notes.version', { version: note.version, time: new Date(note.createdAt).toLocaleString() })}</small>
+          <button type="button" aria-label={t('notes.delete')} disabled={pending} onClick={() => {
+            setPending(true); setError(undefined)
+            void removeArtifactNote({ artifactId: chart.artifactId, noteSeq: note.seq })
+              .then((result) => { if (!result.ok) setError(result.error.message) })
+              .finally(() => { setPending(false) })
+          }}>{t('notes.delete')}</button>
+        </li>
+      ))}</ul>}
+      <form onSubmit={(event) => {
+        event.preventDefault()
+        const value = text.trim()
+        if (value === '') return
+        setPending(true); setError(undefined)
+        void addArtifactNote({ artifactId: chart.artifactId, version: chart.version, text: value })
+          .then((result) => { if (result.ok) setText(''); else setError(result.error.message) })
+          .finally(() => { setPending(false) })
+      }}>
+        <textarea value={text} aria-label={t('notes.input')} placeholder={t('notes.placeholder')}
+          onChange={(event) => { setText(event.currentTarget.value) }} />
+        <button type="submit" disabled={pending || text.trim() === ''}>{t('notes.add')}</button>
+      </form>
+      <p className={css.notesPrivacy}>{t('notes.privacy')}</p>
+      {error !== undefined && <p role="alert">{error}</p>}
+    </section>
+  )
+}
+
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  science, artifacts, chart, view, provenanceSubTab, snapshot, loadImage, loadText,
-  addToConversation, removeFromConversation, composerSelections, openTrace, selectDetailed,
-  commitStyleEdit, useStore, actions, inspectCall, t,
+  science, artifacts, chart, notes, currentSessionId, sourceSessionTitle, view, provenanceSubTab, snapshot, loadImage, loadText,
+  addToConversation, removeFromConversation, composerSelections, returnToConversation, selectDetailed,
+  addArtifactNote, removeArtifactNote, commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
   chart: ScienceClientArtifactVersion
+  notes: readonly ScienceArtifactNote[]
+  currentSessionId: ScienceDetailsViewProps['sessionId']
+  sourceSessionTitle: string | undefined
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
@@ -451,8 +509,10 @@ function ArtifactTab({
   addToConversation: ScienceDetailsInjected['addToConversation']
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
   composerSelections: ScienceDetailsInjected['composerSelections']
-  openTrace: ScienceDetailsInjected['openTrace']
+  returnToConversation: ScienceDetailsInjected['returnToConversation']
   selectDetailed: ScienceDetailsInjected['selectDetailed']
+  addArtifactNote: ScienceDetailsInjected['addArtifactNote']
+  removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -519,7 +579,9 @@ function ArtifactTab({
         onBack={() => { actions.setView('content') }}
         inspectCall={inspectCall}
         selectDetailed={selectDetailed}
-        openTrace={openTrace}
+        currentSessionId={currentSessionId}
+        sourceSessionTitle={sourceSessionTitle}
+        returnToConversation={returnToConversation}
         t={t}
       />
     )
@@ -574,6 +636,7 @@ function ArtifactTab({
         }}
         t={t}
       />
+      <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
       {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
       {'width' in chart.attachment && (
         <ArtifactLightbox
@@ -589,18 +652,24 @@ function ArtifactTab({
 }
 
 function ArtifactViewer({
-  science, snapshot, loadImage, loadText, addToConversation, removeFromConversation,
-  composerSelections, openTrace, selectDetailed, commitStyleEdit, useStore, actions, inspectCall, t,
+  science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText, addToConversation, removeFromConversation,
+  composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote,
+  commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
+  notes: ScienceArtifactNotesProjection
+  currentSessionId: ScienceDetailsViewProps['sessionId']
+  sessionTitles: Readonly<Record<string, string>>
   snapshot: ConversationSnapshot
   loadImage: ImageLoader
   loadText: TextLoader
   addToConversation: ScienceDetailsInjected['addToConversation']
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
   composerSelections: ScienceDetailsInjected['composerSelections']
-  openTrace: ScienceDetailsInjected['openTrace']
+  returnToConversation: ScienceDetailsInjected['returnToConversation']
   selectDetailed: ScienceDetailsInjected['selectDetailed']
+  addArtifactNote: ScienceDetailsInjected['addArtifactNote']
+  removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
   commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
@@ -652,6 +721,9 @@ function ArtifactViewer({
             science={science}
             artifacts={artifacts}
             chart={activeChart}
+            notes={notes.filter(note => note.artifactId === activeChart.artifactId)}
+            currentSessionId={currentSessionId}
+            sourceSessionTitle={sessionTitles[activeChart.producerSessionId]}
             view={view}
             provenanceSubTab={provenanceSubTab}
             snapshot={snapshot}
@@ -660,8 +732,10 @@ function ArtifactViewer({
             addToConversation={addToConversation}
             removeFromConversation={removeFromConversation}
             composerSelections={composerSelections}
-            openTrace={openTrace}
+            returnToConversation={returnToConversation}
             selectDetailed={selectDetailed}
+            addArtifactNote={addArtifactNote}
+            removeArtifactNote={removeArtifactNote}
             commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
@@ -683,10 +757,12 @@ function ArtifactViewer({
 export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
   inspectCall, loadImage, loadText, addToConversation, removeFromConversation, composerSelections,
-  openTrace, selectDetailed, commitStyleEdit, t,
+  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
+  const sessionTitles = useSessions(state => Object.fromEntries(state.ids.map(id => [id, state.byId[id]?.displayTitle ?? id])))
   const science = useProjection('science')
+  const notes = useProjection('scienceArtifactNotes') ?? []
   const snapshot = useSession(s => s)
 
   if (science === undefined) {
@@ -708,10 +784,12 @@ export function ScienceDetailsView({
 
   return (
     <ArtifactViewer
-      science={science} snapshot={snapshot} loadImage={loadImage} loadText={loadText}
+      science={science} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
+      snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
-      removeFromConversation={removeFromConversation} composerSelections={composerSelections} openTrace={openTrace}
+      removeFromConversation={removeFromConversation} composerSelections={composerSelections} returnToConversation={returnToConversation}
       selectDetailed={selectDetailed}
+      addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

@@ -134,7 +134,11 @@ async function bench() {
   await runtime.sessions.add({
     id: SID,
     summary: { title: 'Science', displayTitle: 'Science', agentPreset: 'science' },
-    snapshot: { nodes: [], chat: toolChatSnapshot([toolResult(3, CALL_ID, 'annotate_artifact', ARTIFACT_META)]) },
+    snapshot: { nodes: [
+      { kind: 'user', seq: 1, content: [{ type: 'text', text: 'Build a loss curve' }] },
+      { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
+      { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'The loss curve is ready.' }] },
+    ], chat: toolChatSnapshot([toolResult(3, CALL_ID, 'annotate_artifact', ARTIFACT_META)]) } as never,
     session: {
       loadOlder: vi.fn<ISession['loadOlder']>(),
       prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
@@ -164,6 +168,7 @@ async function bench() {
     kernels: [],
     artifacts: [{
       artifactId: ARTIFACT_ITEM.artifactId, logicalName: ARTIFACT_ITEM.logicalName, version: ARTIFACT_ITEM.version,
+      producerSessionId: SID,
       title: ARTIFACT_ITEM.title, origin: 'model', attachment: ARTIFACT_ITEM.attachment, runId: 'run-1',
       toolCallId: CALL_ID, requestHeaderSeq: 1, environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1_000,
@@ -233,14 +238,14 @@ describe('ui-science on the real machinery stack', () => {
     await b.runtime.dispose()
   })
 
-  it('the toolbar\'s provenance control opens the drill-in, and its Messages sub-tab reaches the real DetailsPanel inspectCall handoff', async () => {
+  it('the toolbar Messages sub-tab reaches detailed trajectory through the real DetailsPanel handoff', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
     fireEvent.click(await view.findByRole('listitem', { name: /loss-curve\.png/u }))
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
     fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
-    fireEvent.click(view.getByRole('button', { name: 'Jump to transcript' }))
+    fireEvent.click(view.getByRole('button', { name: 'View trajectory' }))
 
     // DetailsPanel.tsx supplies this Details-seam owner callback from the
     // same real `store: chatStore` share it already holds for its header

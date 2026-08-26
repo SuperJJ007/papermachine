@@ -160,6 +160,7 @@ function scienceFixture(
       version: 1,
       artifact: {
         artifactId, logicalName, version: 1, title: logicalName, origin: 'auto',
+        producerSessionId: session.id,
         projectId: PROJECT_ID, versionId, sha256, mediaType, byteCount,
         runId: RUN_ID, toolCallId: RUN_CALL_ID, requestHeaderSeq: request.seq,
         environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt,

@@ -458,6 +458,7 @@ describe('Science auto-capture', () => {
       version: 1,
       artifact: {
         artifactId: parent.artifactId,
+        producerSessionId: humanEditV2.producerSessionId,
         logicalName: parent.logicalName,
         version: humanEditV2.ordinal,
         parent: { artifactId: parent.artifactId, version: 1 },
@@ -507,6 +508,7 @@ describe('Science auto-capture', () => {
       version: 1,
       artifact: {
         artifactId: parent.artifactId,
+        producerSessionId: humanEditV4.producerSessionId,
         logicalName: parent.logicalName,
         version: humanEditV4.ordinal,
         parent: { artifactId: parent.artifactId, version: 3 },

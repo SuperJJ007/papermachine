@@ -46,6 +46,7 @@ describe('strict Science fold transitions', () => {
     overrides: Partial<Extract<ScienceArtifactVersion, { origin: 'human-edit' }>> = {},
   ): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> => ({
     artifactId: ARTIFACT_ID,
+    producerSessionId: artifact().producerSessionId,
     logicalName: 'trend.vl.json',
     version: 2,
     parent: { artifactId: ARTIFACT_ID, version: 1 },

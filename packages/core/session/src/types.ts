@@ -336,6 +336,17 @@ export interface SessionEventMap {
   'session/end-seed': Record<string, never>
 }
 
+/**
+ * Merge-extensible vocabulary of additive, user-interface-only events that an
+ * older reader may skip without changing model-visible history or required
+ * runtime state. Declaring a key here makes `Session.append()` require the
+ * literal `{ ignorable: true }` marker for that event type.
+ */
+export interface IgnorableSessionEventMap {}
+
+/** Session event types explicitly declared safe for older readers to skip. */
+export type IgnorableSessionEventType = keyof IgnorableSessionEventMap
+
 /** The appendable event-type keys of {@link SessionEventMap}, plugin-merged extensions included. */
 export type SessionEventType = keyof SessionEventMap
 

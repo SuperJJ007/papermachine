@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-08-23-science-workbench-ui-convergence.zh.md)
 
-The Trace and Outcome placement in this record is superseded by [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). The Files stage, composer selections, settings, kernel status, light-palette composition, and desktop toggle placement remain current.
+The Trace and Outcome placement in this record is superseded by [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). Its provenance-summary placement is superseded by [Science artifact provenance and private review](2026-08-26-science-artifact-provenance-review.md). The Files stage, composer selections, settings, kernel status, light-palette composition, and desktop toggle placement remain current.
 
 ## Problem
 

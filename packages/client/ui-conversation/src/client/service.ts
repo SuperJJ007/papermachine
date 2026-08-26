@@ -92,6 +92,8 @@ export interface IConversation {
   openDetailsView(sessionId: SessionId, id: string): void
   /** Select one main conversation view for an already-mounted Session. */
   openView(sessionId: SessionId, id: string): void
+  /** Select Chat and center one rendered semantic anchor in its scrollport. */
+  openChatAt(sessionId: SessionId, anchorKey: string): void
   /** Register a predicate that limits one main view to matching Sessions. */
   registerViewVisibility(id: string, source: ViewVisibilitySource): () => void
   /**
@@ -168,6 +170,8 @@ export class ConversationController extends Service implements IConversation {
   private readonly submissionHandlers: ComposerSubmissionHandler[] = []
   private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
   private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly chatAnchorOpeners = new Map<SessionId, (anchorKey: string) => void>()
+  private readonly pendingChatAnchors = new Map<SessionId, string>()
   private readonly viewVisibility = new Map<string, ViewVisibilitySource>()
   private readonly viewVisibilityDisposers = new Map<string, () => void>()
   /** Bumped whenever any registered {@link ViewVisibilitySource} invalidates; the `views` snapshot in apply.ts. */
@@ -198,6 +202,8 @@ export class ConversationController extends Service implements IConversation {
       this.imageGenerations.clear()
       this.detailsOpeners.clear()
       this.viewOpeners.clear()
+      this.chatAnchorOpeners.clear()
+      this.pendingChatAnchors.clear()
       this.viewVisibility.clear()
       for (const dispose of this.viewVisibilityDisposers.values()) dispose()
       this.viewVisibilityDisposers.clear()
@@ -300,6 +306,34 @@ export class ConversationController extends Service implements IConversation {
   /** Select one main conversation view. */
   openView(sessionId: SessionId, id: string): void {
     this.viewOpeners.get(sessionId)?.(id)
+  }
+
+  /** Select Chat and hand one semantic anchor to its mounted scroll owner. */
+  openChatAt(sessionId: SessionId, anchorKey: string): void {
+    this.pendingChatAnchors.set(sessionId, anchorKey)
+    this.openView(sessionId, 'chat')
+    const open = this.chatAnchorOpeners.get(sessionId)
+    if (open === undefined) return
+    this.pendingChatAnchors.delete(sessionId)
+    open(anchorKey)
+  }
+
+  /**
+   * Bind the mounted Chat view's semantic-anchor action.
+   * @param sessionId - mounted Session.
+   * @param opener - Chat-owned scroll action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindChatAnchorOpener(sessionId: SessionId, opener: (anchorKey: string) => void): () => void {
+    this.chatAnchorOpeners.set(sessionId, opener)
+    const pending = this.pendingChatAnchors.get(sessionId)
+    if (pending !== undefined) {
+      this.pendingChatAnchors.delete(sessionId)
+      opener(pending)
+    }
+    return () => {
+      if (this.chatAnchorOpeners.get(sessionId) === opener) this.chatAnchorOpeners.delete(sessionId)
+    }
   }
 
   /** Register one main-view Session predicate. */

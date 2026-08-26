@@ -2,7 +2,7 @@
 
 import { Buffer } from 'node:buffer'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
   SCIENCE_EVENT_VERSION,
@@ -297,6 +297,7 @@ const ARTIFACT_MEDIA_TYPES = [
 
 const artifactBaseSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
+  producerSessionId: SAFE_ID.transform(value => value as SessionId),
   logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
   title: text(MAX_LABEL_LENGTH),

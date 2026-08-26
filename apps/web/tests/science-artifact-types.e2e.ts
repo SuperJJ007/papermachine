@@ -1,5 +1,5 @@
 // Web e2e scenario: cold replay of one `run_python` call whose auto-capture
-// produced one file per accepted non-image media type plus a PNG, so real
+// produced one file per accepted text media type plus a PNG, so real
 // Chromium exercises the artifact viewer's full per-media-type content
 // dispatch — a sortable CSV table, a JSON tree, rendered Markdown, and the
 // existing image path — reached through the same tab strip/toolbar every
@@ -40,12 +40,18 @@ const PNG = Uint8Array.from(Buffer.from(
 const CSV_TEXT = 'name,score\nada,10\nbob,2\ncleo,33\n'
 const JSON_TEXT = '{"accuracy":0.97,"epochs":12}'
 const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
+const VEGA_LITE_TEXT = JSON.stringify({
+  title: 'Scores',
+  mark: 'bar',
+  data: { values: [{ name: 'ada', score: 10 }, { name: 'bob', score: 2 }] },
+  encoding: { x: { field: 'name', type: 'nominal' }, y: { field: 'score', type: 'quantitative' } },
+})
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
-/** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png artifacts. */
+/** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png/Vega-Lite artifacts. */
 function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[]): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
@@ -165,6 +171,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     artifact(stored[1]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'metrics.json', 'application/json', stored[1]!),
     artifact(stored[2]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'report.md', 'text/markdown', stored[2]!),
     artifact(stored[3]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'plot.png', 'image/png', stored[3]!),
+    artifact(stored[4]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'scores.vl.json', 'application/vnd.vega-lite+json', stored[4]!),
   ]
 
   session.append('tool/result', {
@@ -172,7 +179,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     step: 1,
     message: createToolResultMessage({
       callId: RUN_CALL_ID,
-      content: [{ type: 'text', text: 'status: success\nCaptured 4 artifacts.' }],
+      content: [{ type: 'text', text: 'status: success\nCaptured 5 artifacts.' }],
       isError: false,
     }),
     meta: {
@@ -217,6 +224,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       { logicalName: 'metrics.json', data: Buffer.from(JSON_TEXT, 'utf8'), mediaType: 'application/json' },
       { logicalName: 'report.md', data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown' },
       { logicalName: 'plot.png', data: PNG, mediaType: 'image/png' },
+      { logicalName: 'scores.vl.json', data: Buffer.from(VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/vnd.vega-lite+json' },
     ] as const
     const stored: StoredArtifact[] = []
     for (const definition of definitions) {
@@ -252,8 +260,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
 
-    await centerCol.getByText('Files produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await centerCol.getByText('Captured 4 artifacts', { exact: false }).count()).toBe(0)
+    await centerCol.getByText('Files produced this turn: 5', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await centerCol.getByText('Captured 5 artifacts', { exact: false }).count()).toBe(0)
     await compareOrRefreshGolden(
       TRANSCRIPT_EXPECTED,
       [
@@ -288,8 +296,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await centerCol.getByRole('listitem', { name: /plot\.png/ }).click()
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
-    // All four tabs stayed open across the chip clicks above.
-    expect(await detailsPanel.getByRole('tab').count()).toBe(4)
+    await centerCol.getByRole('listitem', { name: /scores\.vl\.json/ }).click()
+    await detailsPanel.locator('[data-testid="vega-lite-view"] svg').waitFor({ timeout: 15_000 })
+    await detailsPanel.getByRole('button', { name: 'X axis', exact: true }).click()
+    const exactOutline = detailsPanel.locator('[data-vega-selection-outline="exact"]')
+    await exactOutline.waitFor({ timeout: 10_000 })
+    expect((await exactOutline.boundingBox())?.width).toBeGreaterThan(0)
+
+    // All five tabs stayed open across the chip clicks above.
+    expect(await detailsPanel.getByRole('tab').count()).toBe(5)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')
@@ -299,7 +314,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(aria).not.toContain('a'.repeat(64))
     await compareOrRefreshGolden(
       PANEL_EXPECTED,
-      ['## Details column — artifact viewer (csv/json/md/png)', aria].join('\n'),
+      ['## Details column — artifact viewer (csv/json/md/png/Vega-Lite)', aria].join('\n'),
       MODE,
     )
 

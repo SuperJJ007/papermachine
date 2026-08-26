@@ -22,7 +22,9 @@ import {
   ScienceDetailsView,
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
-import { applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel } from '../src/client/ArtifactContent.tsx'
+import {
+  applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel, vegaSelectionOutline,
+} from '../src/client/ArtifactContent.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
@@ -68,6 +70,7 @@ type HumanChartOverrides = Omit<Partial<ScienceClientHumanEditArtifactVersion>, 
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   embedMock.mockReset()
   finalizeMock.mockReset()
   loaderLoadMock.mockReset()
@@ -75,6 +78,48 @@ afterEach(() => {
 })
 
 describe('Vega-Lite style helpers', () => {
+  it('maps unique top-level Vega roles exactly and falls ambiguous or nested paths back to the whole SVG', () => {
+    const frame = document.createElement('div')
+    const chart = document.createElement('div')
+    chart.innerHTML = `<svg>
+      <g class="role-title"></g>
+      <g class="role-mark"></g>
+      <g class="role-axis" aria-label="X-axis titled Category"></g>
+      <g class="role-axis" aria-label="Y-axis titled Value"></g>
+      <g class="role-axis"></g>
+      <g class="role-legend"></g>
+    </svg>`
+    frame.append(chart)
+    frame.scrollLeft = 5
+    frame.scrollTop = 7
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
+      x: 10, y: 20, left: 10, top: 20, right: 410, bottom: 320, width: 400, height: 300, toJSON: () => ({}),
+    })
+    const svg = chart.querySelector('svg') as SVGSVGElement
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      x: 20, y: 40, left: 20, top: 40, right: 320, bottom: 240, width: 300, height: 200, toJSON: () => ({}),
+    })
+    for (const [index, element] of [...svg.querySelectorAll('g')].entries()) {
+      vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+        x: 30 + index, y: 50 + index, left: 30 + index, top: 50 + index,
+        right: 130 + index, bottom: 90 + index, width: 100, height: 40, toJSON: () => ({}),
+      })
+    }
+
+    expect(vegaSelectionOutline(frame, chart, 'title')).toEqual({ left: 25, top: 37, width: 100, height: 40, mode: 'exact' })
+    expect(vegaSelectionOutline(frame, chart, 'mark')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.x')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.y')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'layer.0.mark')).toEqual({
+      left: 15, top: 27, width: 300, height: 200, mode: 'chart',
+    })
+
+    svg.append(svg.querySelector('.role-legend')!.cloneNode())
+    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('chart')
+    expect(vegaSelectionOutline(frame, document.createElement('div'), 'mark')).toBeUndefined()
+  })
+
   it('delegates local sanitize requests to the underlying loader and blocks protocol-relative/HTTP(S) URIs before they reach it', async () => {
     loaderSanitizeMock.mockResolvedValue({ href: 'local data' })
     await expect(restrictedVegaLoader.sanitize('data/values.csv', { context: 'href' })).resolves.toEqual({ href: 'local data' })
@@ -755,6 +800,52 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.keyDown(chartButton, { key: ' ' })
     expect(screen.getByRole('region', { name: 'Style' })).toBeTruthy()
     fireEvent.click(chartButton)
+  })
+
+  it('draws an exact SVG-subtree outline, recomputes it after resize and content render, and falls nested paths back to the chart', async () => {
+    let resize: (() => void) | undefined
+    const disconnect = vi.fn()
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        resize = () => { callback([], this as unknown as ResizeObserver) }
+      }
+      observe(): void {}
+      disconnect(): void { disconnect() }
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    embedMock.mockImplementation(async (element: HTMLElement) => {
+      element.innerHTML = `<svg>
+        <g class="role-axis" aria-label="X-axis titled Category"></g>
+        <g class="role-mark"></g>
+      </svg>`
+      return { view: { finalize: finalizeMock } }
+    })
+    const loadText = vi.fn().mockResolvedValue(JSON.stringify({
+      encoding: { x: { field: 'category' } },
+      layer: [{ mark: 'bar' }],
+    }))
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'X axis' }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+    })
+    act(() => { resize?.() })
+    expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Title text'), { target: { value: 'Category label' } })
+    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(2) })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'layer.0.mark' }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="chart"]')).toBeTruthy()
+    })
+    view.unmount()
+    expect(disconnect).toHaveBeenCalled()
   })
 
   it('does not expose chart-selection handlers when a spec has no structural targets', async () => {

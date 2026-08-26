@@ -9,7 +9,7 @@
  * case here, never a change to the viewer's tab strip, toolbar, or gallery.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import embed, { vega } from 'vega-embed'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
@@ -88,6 +88,15 @@ function parseJsonForTree(text: string): object | unknown[] | undefined {
 /** A parsed Vega-Lite document accepted at the file boundary before the renderer performs schema validation. */
 type VegaLiteDocument = Record<string, unknown>
 
+/** A selection outline positioned in the scrollable Vega frame. */
+export interface VegaSelectionOutline {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+  readonly mode: 'exact' | 'chart'
+}
+
 type StyleField = 'color' | 'font-size' | 'label'
 type StyleCommitResult = { readonly ok: true } | { readonly ok: false; readonly error: string }
 
@@ -158,6 +167,50 @@ export function specPathLabel(path: string, t: TranslateNS<'science'>): string {
   if (path === 'mark') return t('edit.specPath.mark')
   if (path === 'encoding.color') return t('edit.specPath.color')
   return path
+}
+
+/** Return the one rendered SVG subtree that unambiguously represents a top-level spec path. */
+function exactVegaTarget(svg: SVGSVGElement, path: string): Element | undefined {
+  let candidates: Element[]
+  if (path === 'title') {
+    candidates = [...svg.querySelectorAll('.role-title')]
+  } else if (path === 'mark') {
+    candidates = [...svg.querySelectorAll('.role-mark')]
+  } else if (path === 'encoding.x' || path === 'encoding.y') {
+    const axis = path.endsWith('.x') ? 'X' : 'Y'
+    candidates = [...svg.querySelectorAll('.role-axis')]
+      .filter(element => new RegExp(`^${axis}-axis\\b`, 'iu').test(element.getAttribute('aria-label') ?? ''))
+  } else if (/^encoding\.(?:color|fill|stroke|size|shape|opacity)$/u.test(path)) {
+    candidates = [...svg.querySelectorAll('.role-legend')]
+  } else {
+    return undefined
+  }
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
+/**
+ * Resolve one selected Vega-Lite path to an overlay rectangle. Top-level
+ * title, mark, x/y axis, and a sole legend are exact; every ambiguous or
+ * composition-nested path falls back to the complete rendered SVG.
+ */
+export function vegaSelectionOutline(
+  frame: HTMLElement,
+  chart: HTMLElement,
+  path: string,
+): VegaSelectionOutline | undefined {
+  const svg = chart.querySelector('svg')
+  if (!(svg instanceof SVGSVGElement)) return undefined
+  const exact = exactVegaTarget(svg, path)
+  const target = exact ?? svg
+  const frameRect = frame.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  return {
+    left: targetRect.left - frameRect.left + frame.scrollLeft,
+    top: targetRect.top - frameRect.top + frame.scrollTop,
+    width: targetRect.width,
+    height: targetRect.height,
+    mode: exact === undefined ? 'chart' : 'exact',
+  }
 }
 
 function updateSpecPath(
@@ -306,9 +359,21 @@ function VegaLiteArtifact({
   useEffect(() => { setWorkingDocument(document) }, [document])
   const renderedDocument = workingDocument ?? document
   const paths = useMemo(() => renderedDocument === undefined ? [] : selectableSpecPaths(renderedDocument), [renderedDocument])
+  const frame = useRef<HTMLDivElement>(null)
   const container = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<'render' | 'external-url' | undefined>(undefined)
   const [comments, setComments] = useState<Record<string, string>>({})
+  const [renderRevision, setRenderRevision] = useState(0)
+  const [outline, setOutline] = useState<VegaSelectionOutline | undefined>(undefined)
+
+  const recomputeOutline = useCallback((): void => {
+    const selected = selectionTarget?.kind === 'spec-path' ? selectionTarget.path : undefined
+    const frameElement = frame.current
+    const chartElement = container.current
+    setOutline(selected === undefined || failure !== undefined || frameElement === null || chartElement === null
+      ? undefined
+      : vegaSelectionOutline(frameElement, chartElement, selected))
+  }, [failure, selectionTarget])
 
   useEffect(() => {
     const element = container.current
@@ -316,12 +381,16 @@ function VegaLiteArtifact({
     let live = true
     let finalize: (() => void) | undefined
     setFailure(undefined)
+    setOutline(undefined)
     void embed(element, renderedDocument, {
       actions: false, loader: restrictedVegaLoader, mode: 'vega-lite', renderer: 'svg',
     })
       .then((result) => {
         if (!live) result.view.finalize()
-        else finalize = () => { result.view.finalize() }
+        else {
+          finalize = () => { result.view.finalize() }
+          setRenderRevision(revision => revision + 1)
+        }
       })
       .catch((error: unknown) => {
         if (live) setFailure(String(error).includes(EXTERNAL_VEGA_URL_BLOCKED) ? 'external-url' : 'render')
@@ -333,6 +402,18 @@ function VegaLiteArtifact({
     }
   }, [renderedDocument])
 
+  useEffect(() => { recomputeOutline() }, [recomputeOutline, renderRevision])
+
+  useEffect(() => {
+    const element = frame.current
+    if (element === null || typeof ResizeObserver !== 'function') return
+    const observer = new ResizeObserver(recomputeOutline)
+    observer.observe(element)
+    // Both refs belong to the same committed JSX subtree.
+    observer.observe(container.current as HTMLDivElement)
+    return () => { observer.disconnect() }
+  }, [recomputeOutline])
+
   if (document === undefined) {
     return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
   }
@@ -340,9 +421,8 @@ function VegaLiteArtifact({
   return (
     <>
       <div
-        ref={container}
-        className={css.vegaLite}
-        data-testid="vega-lite-view"
+        ref={frame}
+        className={css.vegaFrame}
         hidden={failure !== undefined}
         role={paths.length === 0 ? undefined : 'button'}
         tabIndex={paths.length === 0 ? undefined : 0}
@@ -351,7 +431,17 @@ function VegaLiteArtifact({
         onKeyDown={chartTarget === undefined ? undefined : (event) => {
           if (event.key === 'Enter' || event.key === ' ') onSelectTarget({ kind: 'spec-path', path: chartTarget })
         }}
-      />
+      >
+        <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failure !== undefined} />
+        {outline !== undefined && (
+          <span
+            aria-hidden="true"
+            className={css.vegaSelectionOutline}
+            data-vega-selection-outline={outline.mode}
+            style={{ left: outline.left, top: outline.top, width: outline.width, height: outline.height }}
+          />
+        )}
+      </div>
       {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
       {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
       {paths.length > 0 && (

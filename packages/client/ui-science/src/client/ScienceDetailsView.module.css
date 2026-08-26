@@ -140,6 +140,12 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
+  /* Elevated surface: the l2 layer. Content nested under this rail inherits
+     this rebind, so scrolling content added here later draws the l2 thumb
+     instead of the default (see ui-theme styles/scrollbar.css for the
+     rebinding contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .metaRail div { min-width: 0; }

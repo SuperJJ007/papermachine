@@ -16,9 +16,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { ToolGroup } from './ToolGroup.tsx'
+import { groupAdjacentToolNodes } from './tool-group.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -161,6 +163,15 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
+  // Adjacent tool-call runs (≥ 2) fold under one generated group title; a
+  // lone tool-call key stays a 'single' entry, the same ungrouped row it
+  // always was. Grouping only needs each key's Node kind, already resolved
+  // above — this recomputes whenever ChatView already re-renders from a
+  // `nodeStore`/`order` change, adding no new subscription.
+  const flowEntries = useMemo(
+    () => groupAdjacentToolNodes(order, key => nodeStore.get(key)?.kind),
+    [order, nodeStore],
+  )
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -215,6 +226,11 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  // Owner currency both flow-row shapes forward unchanged (single seat / group wrapper).
+  const seatProps: ChatNodeOwnerProps & Pick<ChatViewSlotProps, 'useSession' | 'renderSlot' | 't'> = {
+    useSession, selectedCallId, cwd, openFile: requestOpenFile, inspectCall, forkAt,
+    renderMessageImages, fileMentions, openDetailsView, loadImage, renderSlot, t,
+  }
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -445,23 +461,10 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
-            <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              openDetailsView={openDetailsView}
-              loadImage={loadImage}
-              renderSlot={renderSlot}
-              t={t}
-            />
+          {flowEntries.map(entry => entry.kind === 'single' ? (
+            <ChatNodeSeat key={entry.key} nodeKey={entry.key} {...seatProps} />
+          ) : (
+            <ToolGroup key={entry.groupKey} groupKey={entry.groupKey} keys={entry.keys} {...seatProps} />
           ))}
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would

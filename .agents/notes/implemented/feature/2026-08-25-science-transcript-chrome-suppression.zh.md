@@ -30,4 +30,4 @@
 
 `ui-conversation` 多了一个新的能力接缝（`registerTranscriptDetailVisibility`），其形态与响应式契约与 `registerViewVisibility` 完全相同，未来的领域包可以照同一套方式组合，无需再造一个专属注册表。被抑制的内容仍可从持久日志重建：上下文行经由 Trajectory 的详细子视图（本就独立于对话流的构建器），计时数字经由 composer dock 的全会话统计条（一个不受本次抑制影响的聚合 `sessionStats` 投影）。一个新的 keyless web e2e 场景（`science-transcript-chrome.e2e.ts`）针对一份手工构造的确定性会话 fixture 端到端证明了这两项抑制——无需 LLM 录制；而既有的 `turn-tail-actions`/`message-actions` golden 则证明非 Science 会话未受影响。
 
-供后续参考的对话流最终形态定义：用户消息、assistant 文字、折叠的过程单元格（Think、Tool 调用、Science 自己的执行/结论单元格），以及一个轮末 artifact 组——仅此而已。本次改动之前就已满足的几项（Think 折叠、通用 Tool 折叠、分支提示）不需要代码改动；记录在此只是为了让未来的读者不会把它们重新诊断成缺口。
+供后续参考的对话流最终形态定义：回合最终形态——用户消息 → 工具组/执行卡 → assistant 回复 → 轮末产物组。相邻两个及以上的普通 Tool 调用聚成一个自动生成标题的工具组（`ui-conversation` 的 `ToolGroup`）；单独一个调用保持原有单行形态，Science 自己的 `run_python`/`run_r` 八态执行卡（[运行行八态与工具组笔记](2026-08-26-science-run-row-states-and-tool-groups.zh.md)）在组内外渲染完全一致。本次改动之前就已满足的几项（Think 折叠、通用 Tool 折叠、分支提示）不需要代码改动；记录在此只是为了让未来的读者不会把它们重新诊断成缺口。

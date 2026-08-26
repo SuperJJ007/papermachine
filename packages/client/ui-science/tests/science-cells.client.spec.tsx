@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Science process cells stay one line until the user expands their durable material. */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,12 +33,48 @@ function running(name: string): RunningToolCall {
 function props(
   block: ToolResultNode | RunningToolCall,
   toolName: string,
-  overrides: Partial<ToolCallViewProps & ScienceOutcomeInjected> = {},
+  overrides: Partial<ToolCallViewProps & ScienceOutcomeInjected & { cancel: () => void }> = {},
 ) {
   return {
     block, toolName, callId: block.callId, inspect: vi.fn(), openFile: vi.fn(), loadImage: vi.fn(), loadScienceImage: vi.fn(),
-    openDetailsView: vi.fn(), useProjection: vi.fn(), sessionId: 'session-1', t, ...overrides,
-  } as unknown as ToolCallViewProps & PropsLocale<'science'> & ScienceOutcomeInjected
+    openDetailsView: vi.fn(), useProjection: vi.fn(), sessionId: 'session-1', cancel: vi.fn(), t, ...overrides,
+  } as unknown as ToolCallViewProps & PropsLocale<'science'> & ScienceOutcomeInjected & { cancel: () => void }
+}
+
+/** One `formatRunResult`-shaped tool-result content string (tool-science `run.ts`'s durable text shape). */
+function runResultText(opts: {
+  stdout?: string
+  stdoutTruncated?: boolean
+  stderr?: string
+  stderrTruncated?: boolean
+  status?: string
+} = {}): string {
+  const { stdout = '', stdoutTruncated = false, stderr = '', stderrTruncated = false, status = 'success' } = opts
+  const lines = [`status: ${status}`, '--- stdout ---', stdout === '' ? '(empty)' : stdout]
+  if (stdoutTruncated) lines.push('(stdout truncated)')
+  lines.push('--- stderr ---', stderr === '' ? '(empty)' : stderr)
+  if (stderrTruncated) lines.push('(stderr truncated)')
+  return lines.join('\n')
+}
+
+/** One `science` projection whose single run joins the given `toolCallId`. */
+function projectionWithRun(toolCallId: string, run: Partial<ScienceClientProjection['runs'][number]> = {}): ScienceClientProjection {
+  return {
+    mode: { modeId: 'science', presetId: 'science', modeRevision: 'r' },
+    environment: null,
+    runs: [{
+      runId: 'run-1' as never, language: 'python', toolCallId: toolCallId as never, requestHeaderSeq: 1,
+      environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), startedAt: 0,
+      codeSha256: 'c'.repeat(64), kernelEpoch: 3, status: 'success', finishedAt: 900,
+      stdoutBytes: 0, stderrBytes: 0, stdoutTruncated: false, stderrTruncated: false,
+      ...run,
+    } as ScienceClientProjection['runs'][number]],
+    kernels: [],
+    artifacts: [],
+    outcome: null,
+    metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 0, artifactVersionCount: 0, outcomeRevision: 0, kernelCount: 1 },
+    lastScienceEventSeq: 1,
+  }
 }
 
 function projectionWithChart(): ScienceClientProjection {
@@ -88,10 +124,172 @@ describe('Science execution cells', () => {
     expect(view.container.querySelector('code')?.textContent).toBe('not json')
   })
 
-  it('renders a running execution cell without a failed or stopped status label', () => {
-    const view = render(<ScienceExecutionRow {...props(running('run_python'), 'run_python')} />)
-    expect(view.container.textContent).toContain('正在运行')
-    expect(view.container.querySelector('[data-state="running"]')).toBeTruthy()
+  it('shows the raw call arguments verbatim when they parse as JSON but carry no string `code` field', () => {
+    const block = settled('run_python', { call: { name: 'run_python', argsRaw: '{}' } })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python')} />)
+    fireEvent.click(screen.getByRole('button', { name: /Python 运行/u }))
+    expect(view.container.querySelector('code')?.textContent).toBe('{}')
+  })
+
+  it('state 1 — running: shows a live elapsed status, the degraded static summary, and wires the interrupt button to the existing whole-turn cancel', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(12_000)
+    const cancel = vi.fn()
+    const view = render(<ScienceExecutionRow {...props(running('run_python'), 'run_python', { cancel })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="running"]')).toBeTruthy()
+    expect(view.container.textContent).toContain('运行中 · 00:10')
+    expect(view.container.textContent).toContain('正在执行…')
+    fireEvent.click(screen.getByRole('button', { name: '中断' }))
+    expect(cancel).toHaveBeenCalledOnce()
+    act(() => { vi.advanceTimersByTime(5_000) })
+    expect(view.container.textContent).toContain('运行中 · 00:15')
+    vi.useRealTimers()
+  })
+
+  it('state 1 — running: prefers the science projection run\'s own startedAt over the call event time when a matching run exists', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(12_000)
+    const block = running('run_python')
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId, { status: 'running', startedAt: 7_000 } as never)),
+    })} />)
+    expect(view.container.textContent).toContain('运行中 · 00:05')
+    vi.useRealTimers()
+  })
+
+  it('state 2 — success, short output: shows the full retained stdout with no fold, plus the kernel badge', () => {
+    const block = settled('run_python', {
+      content: [{ type: 'text', text: runResultText({ stdout: 'line one\nline two' }) }],
+    })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId)),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="success"]')).toBeTruthy()
+    expect(view.container.querySelector('pre')?.textContent).toBe('line one\nline two')
+    expect(view.container.textContent).toContain('内核 #3')
+    expect(screen.queryByRole('button', { name: /标准输出/u })).toBeNull()
+  })
+
+  it('state 2 — success, empty output: shows only the status header, with no output box and no fold', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText() }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId)),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="success"]')).toBeTruthy()
+    expect(view.container.querySelector('pre')).toBeNull()
+    expect(view.container.querySelector('button')).toBeNull()
+  })
+
+  it('state 3/5 — captured artifacts never render a chip in the row regardless of stdout size', () => {
+    const block = settled('run_python', {
+      content: [{ type: 'text', text: runResultText({ stdout: 'ok' }) }],
+      meta: {
+        kind: 'science/artifact', version: 1, artifacts: [{
+          artifactId: 'chart-1', logicalName: 'loss', version: 1, title: 'Loss',
+          attachment: { attachmentId: 'sha256:a', mediaType: 'image/png', bytes: 10, width: 1, height: 1 },
+        }],
+      },
+    })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId)),
+    })} />)
+    expect(view.container.querySelector('[role="listitem"]')).toBeNull()
+    expect(screen.queryByText('loss', { exact: false })).toBeNull()
+  })
+
+  it('state 4 — success, long output: folds behind a line-count/size caret and reveals the full text on click', () => {
+    const stdout = Array.from({ length: 12 }, (_, i) => `line ${String(i)}`).join('\n')
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ stdout }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId)),
+    })} />)
+    expect(view.container.querySelector('pre')).toBeNull()
+    const fold = screen.getByRole('button', { name: /标准输出 12 行 · \d/u })
+    fireEvent.click(fold)
+    expect(view.container.querySelector('pre')?.textContent).toBe(stdout)
+  })
+
+  it('state 6 — failed: shows the tail-first stderr summary and the full stack behind its own fold', () => {
+    const stderr = 'Traceback (most recent call last):\n  File "<run>", line 1\nKeyError: \'x\''
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ status: 'failed', stderr }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId, { status: 'failed', failureCode: 'EXECUTION_FAILED' })),
+    })} />)
+    const pres = () => [...view.container.querySelectorAll('pre')]
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="failed"]')).toBeTruthy()
+    expect(view.container.textContent).toContain('失败 · 执行报错')
+    expect(pres()).toHaveLength(1)
+    expect(pres()[0]?.textContent).toBe('  File "<run>", line 1\nKeyError: \'x\'')
+    fireEvent.click(screen.getByRole('button', { name: /完整调用栈 3 行/u }))
+    expect(pres()).toHaveLength(2)
+    expect(pres()[1]?.textContent).toBe(stderr)
+  })
+
+  it('state 7 — kernel died: names the exited and next kernel epoch with no invented variable count, and views the exit reason', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ status: 'failed' }) }] })
+    const inspect = vi.fn()
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      inspect,
+      useProjection: vi.fn(() => projectionWithRun(block.callId, { status: 'failed', failureCode: 'KERNEL_DIED', kernelEpoch: 3 })),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="kernel-died"]')).toBeTruthy()
+    expect(view.container.textContent).toContain('中断 · 内核已退出')
+    expect(view.container.textContent).toContain('内核 #3')
+    expect(view.container.textContent).toContain('内核 #4')
+    fireEvent.click(screen.getByRole('button', { name: '查看退出原因' }))
+    expect(inspect).toHaveBeenCalledOnce()
+  })
+
+  it('state 7 — omits the view-exit-reason button when no inspect callback is available', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ status: 'failed' }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      inspect: undefined,
+      useProjection: vi.fn(() => projectionWithRun(block.callId, { status: 'failed', failureCode: 'KERNEL_DIED' })),
+    })} />)
+    expect(view.container.querySelector('button')).toBeNull()
+  })
+
+  it('state 8 — success, output truncated: the fold names the retained tail size and a banner explains the cap', () => {
+    const stdout = 'kept tail only'
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ stdout, stdoutTruncated: true }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId, { stdoutTruncated: true })),
+    })} />)
+    expect(screen.getByRole('button', { name: /标准输出 · 保留末尾/u })).toBeTruthy()
+    expect(view.container.textContent).toContain('开头部分未保留')
+    expect(view.container.querySelector('pre')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /标准输出 · 保留末尾/u }))
+    expect(view.container.querySelector('pre')?.textContent).toBe(stdout)
+  })
+
+  it('degrades to the plain folded cell when the science projection has no matching run — never inventing kernel or run facts', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ stdout: 'x' }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => ({ ...projectionWithRun('other-call'), runs: [] })),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="success"]')).toBeNull()
+    expect(view.container.querySelector('[data-science-cell]')).toBeTruthy()
+    expect(screen.queryByText('内核', { exact: false })).toBeNull()
+  })
+
+  it('degrades to the plain folded cell when the durable text does not carry the formatRunResult section markers', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: 'a bespoke non-standard result' }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId)),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="success"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Python 运行/u }))
+    expect(screen.getByText('a bespoke non-standard result')).toBeTruthy()
+  })
+
+  it('treats a replay-derived interrupted run status the same as an ordinary failure, defensively, since it never settles a tool call as ok in practice', () => {
+    const block = settled('run_python', { content: [{ type: 'text', text: runResultText({ status: 'interrupted' }) }] })
+    const view = render(<ScienceExecutionRow {...props(block, 'run_python', {
+      useProjection: vi.fn(() => projectionWithRun(block.callId, {
+        status: 'interrupted', finishedAt: 900, interruptedAtSeq: 5,
+      } as never)),
+    })} />)
+    expect(view.container.querySelector('[data-tool="science-run"][data-state="failed"]')).toBeTruthy()
   })
 
   it('shows a stopped status label when the run was interrupted', () => {

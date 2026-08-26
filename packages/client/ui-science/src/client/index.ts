@@ -34,7 +34,7 @@ import type {} from '@deepseek-ai/dsh-science-session/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
-import { ScienceExecutionRow } from './ScienceExecutionRow.tsx'
+import { ScienceExecutionRow, type ScienceExecutionRowInjected } from './ScienceExecutionRow.tsx'
 import { ScienceOutcomeRow, type ScienceOutcomeInjected } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
@@ -185,11 +185,17 @@ export function apply(ctx: ClientContext): void {
       ScienceAnnotationRow,
     )
     yield ctx.slots.register(
-      { name: 'tool.call.toolview', key: 'run_python', locale: NS, store: scienceSelectionStore },
+      {
+        name: 'tool.call.toolview', key: 'run_python', locale: NS, store: scienceSelectionStore,
+        inject: (): ScienceExecutionRowInjected => ({ cancel: () => { void ctx.conversation.cancel() } }),
+      },
       ScienceExecutionRow,
     )
     yield ctx.slots.register(
-      { name: 'tool.call.toolview', key: 'run_r', locale: NS, store: scienceSelectionStore },
+      {
+        name: 'tool.call.toolview', key: 'run_r', locale: NS, store: scienceSelectionStore,
+        inject: (): ScienceExecutionRowInjected => ({ cancel: () => { void ctx.conversation.cancel() } }),
+      },
       ScienceExecutionRow,
     )
     yield ctx.slots.register({

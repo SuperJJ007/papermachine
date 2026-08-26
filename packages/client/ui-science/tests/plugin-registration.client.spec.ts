@@ -108,9 +108,13 @@ function setup(sessionsOverride?: unknown) {
     binding: () => ({ session: { projections: { faceOf: () => face } } }),
     list: { getSnapshot: () => ({ ids: ['s1'], byId: { s1: { agentPreset: 'science' } } }), subscribe: () => () => {} },
   } as never)
+  // conversationCancel is returned as its own plain local below (not read back
+  // via ctx.get(...).cancel) so an assertion against it never trips the
+  // unbound-method lint rule that a real interface-typed method reference would.
+  const conversationCancel = vi.fn(() => Promise.resolve())
   const conversation = {
     registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: vi.fn(), openView: vi.fn(), openChatAt: vi.fn(),
-    registerTranscriptDetailVisibility: vi.fn(() => () => {}),
+    registerTranscriptDetailVisibility: vi.fn(() => () => {}), cancel: conversationCancel,
   }
   ctx.provide('conversation', conversation as never)
   ctx.provide('conversationEvents', { register: vi.fn() } as never)
@@ -118,7 +122,7 @@ function setup(sessionsOverride?: unknown) {
     registerVisibility: vi.fn(() => () => {}), select: vi.fn(),
   } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  return { ctx, slots, scienceEdits, conversation }
+  return { ctx, slots, scienceEdits, conversation, conversationCancel }
 }
 
 describe('ui-science apply', () => {
@@ -144,6 +148,19 @@ describe('ui-science apply', () => {
     expect(slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(slots.entries('trajectory.view')).toHaveLength(0)
+  })
+
+  it('the run_python/run_r toolview registrations inject a cancel that drives the existing whole-turn Stop', async () => {
+    const { ctx, slots, conversationCancel } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    for (const key of ['run_python', 'run_r']) {
+      const entry = slots.entries('tool.call.toolview').find(candidate => candidate.options.key === key)
+      if (entry?.inject === undefined) throw new Error(`expected an injected ${key} toolview`)
+      ;(entry.inject() as { cancel: () => void }).cancel()
+    }
+    expect(conversationCancel).toHaveBeenCalledTimes(2)
+    await fiber.dispose()
   })
 
   it('registers the app-global toggle instead of a session-header action when the Host injects the global placement', async () => {

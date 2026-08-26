@@ -14,6 +14,9 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
+- button "Ran 2 code executions 2 steps · 2 failed" [expanded]:
+  - img
+  - text: Ran 2 code executions 2 steps · 2 failed
 - 'button "Failed Bash Error: tool call aborted" [expanded]':
   - img
   - text: "Failed Bash Error: tool call aborted"

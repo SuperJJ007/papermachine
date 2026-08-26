@@ -25,6 +25,9 @@
 - button "Branch into a new conversation" [disabled]:
   - img
 - text: Available only on the last message of a completed turn 7/25 {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- button "Read 2 files 2 steps" [expanded]:
+  - img
+  - text: Read 2 files 2 steps
 - button "Read a.txt":
   - img
   - img

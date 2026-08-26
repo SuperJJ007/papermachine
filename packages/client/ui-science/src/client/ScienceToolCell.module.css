@@ -5,7 +5,17 @@
 .chevron { color: var(--dsw-alias-label-caption); }
 .summary { min-width: 0; overflow: hidden; color: var(--dsw-alias-label-secondary); text-overflow: ellipsis; white-space: nowrap; }
 .sep { width: 3px; height: 3px; flex: none; border-radius: 50%; background: var(--dsw-alias-label-caption); }
-.body { position: relative; max-height: 360px; overflow: auto; padding: 8px 0 8px 24px; }
+/* `.inspect` below sits on the l2 elevated rung inside this scroll container,
+   so its own scrollbar rebinds to the l2 pair (see ui-theme
+   styles/scrollbar.css for the rebinding contract). */
+.body {
+  position: relative;
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px 0 8px 24px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
 .code, .output { margin: 0 0 8px; overflow-wrap: anywhere; }
 .output { padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-markdown-code-block); color: var(--dsw-alias-label-secondary); white-space: pre-wrap; font: var(--dsw-font-markdown-code-block-small); }
 .root[data-state='error'] .output { color: var(--dsw-alias-state-error-primary); }

@@ -322,6 +322,9 @@ describe('registration and disposal', () => {
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.contexts.some(entry => entry.name === 'science:environment')).toBe(true)
     expect(assembly.sections.some(section => section.name === 'tool:science')).toBe(true)
+    expect(assembly.sections.find(section => section.name === 'tool:science')?.text).toContain(
+      'reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path',
+    )
   })
 
   it('HMR-safety: disposing the plugin fiber removes every registration', async () => {

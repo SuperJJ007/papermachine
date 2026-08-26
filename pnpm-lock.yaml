@@ -1734,6 +1734,9 @@ importers:
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:^
         version: link:../../llm/llm-retry
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../../science/science-artifact-store
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -5163,6 +5166,12 @@ importers:
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../util/native-command
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../../science/science-artifact-store
+      '@deepseek-ai/dsh-science-session':
+        specifier: workspace:^
+        version: link:../../science/science-session
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session

@@ -21,7 +21,7 @@
 // states below are unrelated to that strip and are unchanged.
 
 import { useEffect, useId, useState, useSyncExternalStore } from 'react'
-import { ImageLightbox, MessageImage, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
@@ -41,13 +41,14 @@ import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import type { ScienceArtifactView, ScienceOpenArtifact, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
-import type { TextLoader } from './science-attachment-loader.ts'
+import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
 export interface ScienceDetailsInjected {
   /** Session-scoped image artifact loader (science-attachment-loader.ts). */
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   /** Session-scoped text artifact loader (science-attachment-loader.ts). */
   loadText: TextLoader
   /** Add selected artifact elements to the main conversation composer. */
@@ -118,23 +119,19 @@ function splitExtension(name: string): { stem: string; ext: string } {
 }
 
 /**
- * The durable browser save name for one artifact version: the attachment's
- * own display name when it has one, else the logical name (already the
- * captured file's real path, extension included) with the version inserted
- * before that extension.
+ * The durable browser save name for one artifact version: its logical path
+ * with the version inserted before the extension.
  */
 function downloadFilename(chart: ScienceClientArtifactVersion): string {
-  if (chart.attachment.name !== undefined) return chart.attachment.name
   const { stem, ext } = splitExtension(chart.logicalName)
   return `${stem}-v${String(chart.version)}${ext}`
 }
 
 /** Trigger a browser save of the durable bytes behind one artifact version through a throwaway URI anchor. */
-async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: ImageLoader, loadText: TextLoader): Promise<void> {
-  const { attachment } = chart
-  const url = 'width' in attachment
-    ? await loadImage(attachment)
-    : `data:${attachment.mediaType};charset=utf-8,${encodeURIComponent(await loadText(attachment))}`
+async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: ScienceImageLoader, loadText: TextLoader): Promise<void> {
+  const url = chart.mediaType === 'image/png'
+    ? await loadImage(chart)
+    : `data:${chart.mediaType};charset=utf-8,${encodeURIComponent(await loadText(chart))}`
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = downloadFilename(chart)
@@ -153,8 +150,8 @@ async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: 
  * thumbnail's own retry control covers for the ordinary click-to-open path.
  */
 function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
-  chart: ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }
-  loadImage: ImageLoader
+  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  loadImage: ScienceImageLoader
   open: boolean
   onClose: () => void
   t: TranslateNS<'science'>
@@ -164,15 +161,15 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   useEffect(() => {
     if (!open) { setSrc(null); return }
     let live = true
-    void loadImage(chart.attachment).then((url) => { if (live) setSrc(url) }).catch(() => {})
+    void loadImage(chart).then((url) => { if (live) setSrc(url) }).catch(() => {})
     return () => { live = false }
-  }, [open, chart.attachment, loadImage])
+  }, [open, chart, loadImage])
 
   if (!open || src === null) return null
   return (
     <ImageLightbox
       src={src}
-      alt={chart.attachment.name ?? t('artifact.title')}
+      alt={chart.title || t('artifact.title')}
       labels={{ dialog: t('artifact.lightboxOriginal'), close: t('artifact.lightboxClose') }}
       onClose={onClose}
     />
@@ -187,7 +184,7 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   onOpenProvenance: () => void
   onMaximize: () => void
   onCloseTab: () => void
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   loadText: TextLoader
   t: TranslateNS<'science'>
 }) {
@@ -196,7 +193,7 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   const index = versions.findIndex(candidate => candidate.version === chart.version)
   const prev = index > 0 ? versions[index - 1] : undefined
   const next = index < versions.length - 1 ? versions[index + 1] : undefined
-  const isImage = 'width' in chart.attachment
+  const isImage = chart.mediaType === 'image/png'
   const exportUnavailableId = useId()
 
   return (
@@ -305,16 +302,13 @@ function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): numbe
 }
 
 function artifactType(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
-  // Captured so the switch narrows this single literal-union binding rather
-  // than the `chart.attachment.mediaType` member expression, which does not
-  // narrow to `never` in the default case because `attachment`'s type
-  // itself varies across ScienceClientArtifactVersion's union members.
-  const mediaType = chart.attachment.mediaType
+  // Captured so the switch narrows this single literal-union binding.
+  const mediaType = chart.mediaType
   switch (mediaType) {
     case 'application/vnd.vega-lite+json': return t('details.artifact.typeChart')
     case 'text/csv': return t('details.artifact.typeDataset')
     case 'application/json': return t('details.artifact.typeJson')
-    case 'image/png': case 'image/jpeg': case 'image/webp': case 'image/gif': return t('details.artifact.typeImage')
+    case 'image/png': return t('details.artifact.typeImage')
     case 'text/markdown': case 'text/plain': return t('details.artifact.typeDocument')
     /* v8 ignore next -- closed media-type union */
     default: return assertNever(mediaType)
@@ -328,11 +322,7 @@ function formatBytes(bytes: number): string {
 }
 
 function artifactFacts(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
-  const dimensions = 'width' in chart.attachment
-    ? t('details.artifact.dimensions', { width: chart.attachment.width, height: chart.attachment.height })
-    : undefined
-  return [artifactType(chart, t), t('artifact.version', { version: chart.version }), dimensions, formatBytes(chart.attachment.bytes)]
-    .filter((value): value is string => value !== undefined).join(' · ')
+  return [artifactType(chart, t), t('artifact.version', { version: chart.version }), formatBytes(chart.byteCount)].join(' · ')
 }
 
 function ArtifactMetaRail({ chart, snapshot, t }: {
@@ -350,7 +340,7 @@ function ArtifactMetaRail({ chart, snapshot, t }: {
         : turn === undefined
           ? t('details.artifact.sourcePending')
           : t('details.artifact.generationSource', { turn })}</dd></div>
-      <div><dt>{t('details.artifact.status')}</dt><dd>{chart.attachment.mediaType === 'application/vnd.vega-lite+json'
+      <div><dt>{t('details.artifact.status')}</dt><dd>{chart.mediaType === 'application/vnd.vega-lite+json'
         ? t('details.artifact.editable') : t('details.artifact.readOnly')}</dd></div>
     </dl>
   )
@@ -358,7 +348,7 @@ function ArtifactMetaRail({ chart, snapshot, t }: {
 
 function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   onOpen: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
@@ -370,7 +360,6 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
         {latest.length === 0
           ? <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>
           : <ul className={css.chartList}>{latest.map((artifact) => {
-            const { attachment } = artifact
             return (
               <li key={artifact.artifactId} className={css.chartItem}>
                 {/* A real <button> wrapping MessageImage's own thumbnail <button>
@@ -395,9 +384,9 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
                     onOpen({ artifactId: artifact.artifactId, version: artifact.version })
                   }}
                 >
-                  {'width' in attachment
-                    ? <MessageImageTile attachment={attachment} loadImage={loadImage} t={t} />
-                    : <ArtifactFileTile mediaType={attachment.mediaType} />}
+                  {artifact.mediaType === 'image/png'
+                    ? <ScienceArtifactImage content={artifact} label={artifact.title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
+                    : <ArtifactFileTile mediaType={artifact.mediaType} />}
                   <div className={css.chartMeta}>
                     <span className={css.chartTitle}>{artifact.title}</span>
                     <span className={css.libraryFacts}>{artifactFacts(artifact, t)}</span>
@@ -411,26 +400,10 @@ function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
   )
 }
 
-/** Thin `MessageImage` wrapper isolating the `variant`/`labels` construction the gallery's `tile` thumbnails share. */
-function MessageImageTile({ attachment, loadImage, t }: {
-  attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }>
-  loadImage: ImageLoader
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <MessageImage
-      attachment={attachment}
-      load={loadImage}
-      variant="tile"
-      labels={artifactImageLabels(t)}
-    />
-  )
-}
-
 /** No open tabs: a gallery of latest artifact versions. */
 function LandingView({ artifacts, loadImage, onOpenTab, t }: {
   artifacts: readonly ScienceClientArtifactVersion[]
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
   t: TranslateNS<'science'>
 }) {
@@ -504,7 +477,7 @@ function ArtifactTab({
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   loadText: TextLoader
   addToConversation: ScienceDetailsInjected['addToConversation']
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
@@ -638,9 +611,9 @@ function ArtifactTab({
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
       {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
-      {'width' in chart.attachment && (
+      {chart.mediaType === 'image/png' && (
         <ArtifactLightbox
-          chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
+          chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
           loadImage={loadImage}
           open={lightboxOpen}
           onClose={() => { actions.setLightboxOpen(false) }}
@@ -661,7 +634,7 @@ function ArtifactViewer({
   currentSessionId: ScienceDetailsViewProps['sessionId']
   sessionTitles: Readonly<Record<string, string>>
   snapshot: ConversationSnapshot
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   loadText: TextLoader
   addToConversation: ScienceDetailsInjected['addToConversation']
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']

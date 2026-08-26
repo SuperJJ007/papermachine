@@ -4,7 +4,7 @@ import type { AttachmentIdType } from '@deepseek-ai/dsh-attachment'
 import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  AgentContext, ConversationSnapshot, ISessions, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
+  AgentContext, ConversationSnapshot, ISession, ISessions, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
   SessionListState, SessionProvideDescriptor, SessionSearchResultItem, SessionSummary, SnapshotStore,
   SubagentAddress,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -105,6 +105,15 @@ export class FixtureSession implements SessionFace {
    */
   readTextAttachment(_attachmentId: AttachmentIdType): never {
     throw new Error(`test session "${this.sessionId}": readTextAttachment is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
+   * Fail-loud stub; supply `readScienceArtifact` on the fixture's session face to exercise it.
+   * @param _versionId - opaque project-store version id.
+   * @returns never — always throws.
+   */
+  readScienceArtifact(_versionId: Parameters<ISession['readScienceArtifact']>[0]): never {
+    throw new Error(`test session "${this.sessionId}": readScienceArtifact is not stubbed — supply it on the fixture's session face`)
   }
 
   /**

@@ -2589,6 +2589,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         return ok(request, stored)
       },
+      scienceArtifact: request => err(request, {
+        code: 'science-artifact-error',
+        message: 'fixture Science artifact missing',
+        details: { reason: 'VERSION_NOT_FOUND' },
+      }),
       textAttachment: (request) => {
         const stored = texts.get(String(request.payload.attachmentId))
         if (stored === undefined) {
@@ -3219,6 +3224,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.fork': return this.api.sessions.fork(request)
       case 'session.prompt': return this.api.sessions.prompt(request)
       case 'session.attachment': return this.api.sessions.attachment(request)
+      case 'session.scienceArtifact': return this.api.sessions.scienceArtifact(request)
       case 'session.textAttachment': return this.api.sessions.textAttachment(request)
       case 'session.updateQueue': return this.api.sessions.updateQueue(request)
       case 'session.cancel': return this.api.sessions.cancel(request)

@@ -1,18 +1,18 @@
 /** One Turn's deduplicated artifact group, rendered after its assistant answer. */
 
 import { useEffect, useState } from 'react'
-import type { ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceArtifactPresentationItem } from '@deepseek-ai/dsh-tool-science/types'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
+import type { ScienceImageLoader } from './science-attachment-loader.ts'
 import type { ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceTurnArtifactsData } from './science-turn-artifacts.ts'
 import css from './ScienceTurnArtifacts.module.css'
 
 /** Navigation and loading capabilities supplied by the Turn-tail registration. */
 export interface ScienceTurnArtifactsInjected {
-  readonly loadImage: ImageLoader
+  readonly loadImage: ScienceImageLoader
   readonly openArtifact: () => void
 }
 
@@ -21,32 +21,22 @@ export type ScienceTurnArtifactsProps = PropsRuntime<'conversation.chat.turnTail
   & PropsLocale<'science'> & PropsStore<ScienceSelectionStore>
   & InjectFace<ScienceTurnArtifactsInjected>
 
-function hasDimensions(item: ScienceArtifactPresentationItem): item is ScienceArtifactPresentationItem & {
-  attachment: ScienceArtifactPresentationItem['attachment'] & { width: number; height: number }
-} {
-  return item.attachment.width !== undefined && item.attachment.height !== undefined
-}
-
 function ArtifactThumbnail({ item, loadImage }: {
   item: ScienceArtifactPresentationItem
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
 }) {
   const [src, setSrc] = useState<string | null>(null)
   useEffect(() => {
     setSrc(null)
-    if (!hasDimensions(item)) return
+    if (item.content.mediaType !== 'image/png') return
     let live = true
-    void loadImage({
-      ...item.attachment,
-      attachmentId: item.attachment.attachmentId as never,
-      mediaType: item.attachment.mediaType as never,
-    }).then((url) => { if (live) setSrc(url) }).catch(() => {
+    void loadImage(item.content).then((url) => { if (live) setSrc(url) }).catch(() => {
       // Image loading failures retain the media-type tile.
     })
     return () => { live = false }
   }, [item, loadImage])
   return src === null
-    ? <ArtifactFileTile mediaType={item.attachment.mediaType} />
+    ? <ArtifactFileTile mediaType={item.content.mediaType} />
     : <img src={src} alt="" />
 }
 

@@ -11,7 +11,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceAnnotationRow } from '../src/client/ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow } from '../src/client/ScienceExecutionRow.tsx'
-import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
+import { ScienceOutcomeRow, type ScienceOutcomeInjected } from '../src/client/ScienceOutcomeRow.tsx'
 import { zh } from '../src/client/locales.ts'
 
 const t = makeTranslate(zh, commonZh)
@@ -33,12 +33,12 @@ function running(name: string): RunningToolCall {
 function props(
   block: ToolResultNode | RunningToolCall,
   toolName: string,
-  overrides: Partial<ToolCallViewProps> = {},
+  overrides: Partial<ToolCallViewProps & ScienceOutcomeInjected> = {},
 ) {
   return {
-    block, toolName, callId: block.callId, inspect: vi.fn(), openFile: vi.fn(), loadImage: vi.fn(),
+    block, toolName, callId: block.callId, inspect: vi.fn(), openFile: vi.fn(), loadImage: vi.fn(), loadScienceImage: vi.fn(),
     openDetailsView: vi.fn(), useProjection: vi.fn(), sessionId: 'session-1', t, ...overrides,
-  } as unknown as ToolCallViewProps & PropsLocale<'science'>
+  } as unknown as ToolCallViewProps & PropsLocale<'science'> & ScienceOutcomeInjected
 }
 
 function projectionWithChart(): ScienceClientProjection {
@@ -49,7 +49,8 @@ function projectionWithChart(): ScienceClientProjection {
     kernels: [],
     artifacts: [{
       artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve', origin: 'model',
-      attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
+      producerSessionId: 'session-1' as never,
+      versionId: 'version-abc' as never, sha256: 'abc', mediaType: 'image/png', byteCount: 100,
       runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4,
       environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
@@ -170,14 +171,14 @@ describe('Science Outcome cell', () => {
     const load = vi.fn().mockResolvedValue('blob:fake-url')
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => projectionWithChart()), loadImage: load },
+      { useProjection: vi.fn(() => projectionWithChart()), loadScienceImage: load },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
     expect(screen.getByText('运行 run-1')).toBeTruthy()
     expect(screen.getByText('图表 chart-1 v1')).toBeTruthy()
     expect(screen.getByText('消息 #7')).toBeTruthy()
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
-    expect(load.mock.calls[0]?.[0]).toMatchObject({ attachmentId: 'sha256:abc' })
+    expect(load.mock.calls[0]?.[0]).toMatchObject({ versionId: 'version-abc' })
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
   })
 
@@ -195,7 +196,9 @@ describe('Science Outcome cell', () => {
     const projection = projectionWithChart()
     const source = projection.artifacts[0]
     if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
-    const textArtifact = { ...source, attachment: { attachmentId: 'sha256:def' as never, mediaType: 'text/csv', bytes: 40 } }
+    const textArtifact = {
+      ...source, versionId: 'version-def' as never, sha256: 'def', mediaType: 'text/csv' as const, byteCount: 40,
+    }
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
       { useProjection: vi.fn(() => ({ ...projection, artifacts: [textArtifact] })) },
@@ -288,28 +291,17 @@ describe('Science Outcome cell', () => {
     }
   })
 
-  it('renders a chart thumbnail without a display name when the projected attachment carries none, and with one when it does', async () => {
+  it('loads a chart thumbnail from the exact immutable version reference', async () => {
     const projection = projectionWithChart()
     const source = projection.artifacts[0]
     if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
     const load = vi.fn().mockResolvedValue('blob:fake-url')
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => projection), loadImage: load },
+      { useProjection: vi.fn(() => projection), loadScienceImage: load },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
-    expect(load.mock.calls[0]?.[0]).not.toHaveProperty('name')
-    cleanup()
-
-    const named = { ...source, attachment: { ...source.attachment, name: 'loss.png' } }
-    const namedLoad = vi.fn().mockResolvedValue('blob:fake-url')
-    render(<ScienceOutcomeRow {...props(
-      settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => ({ ...projection, artifacts: [named] })), loadImage: namedLoad },
-    )} />)
-    fireEvent.click(screen.getByRole('button', { name: /结论/u }))
-    await waitFor(() => { expect(namedLoad).toHaveBeenCalledTimes(1) })
-    expect(namedLoad.mock.calls[0]?.[0]).toMatchObject({ name: 'loss.png' })
+    expect(load.mock.calls[0]?.[0]).toMatchObject({ versionId: 'version-abc', mediaType: 'image/png', byteCount: 100 })
   })
 })

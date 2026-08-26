@@ -24,17 +24,17 @@ function isItem(value: unknown): value is ScienceArtifactPresentationItem {
   const item = value as Record<string, unknown>
   if (typeof item.artifactId !== 'string' || typeof item.logicalName !== 'string') return false
   if (typeof item.version !== 'number' || typeof item.title !== 'string') return false
-  const attachment = item.attachment
-  if (typeof attachment !== 'object' || attachment === null) return false
-  const fields = attachment as Record<string, unknown>
-  return typeof fields.attachmentId === 'string' && typeof fields.mediaType === 'string'
-    && typeof fields.bytes === 'number'
+  const content = item.content
+  if (typeof content !== 'object' || content === null) return false
+  const fields = content as Record<string, unknown>
+  return typeof fields.versionId === 'string' && typeof fields.mediaType === 'string'
+    && typeof fields.byteCount === 'number'
 }
 
 function presentation(value: unknown): ScienceArtifactPresentation | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
-  if (record.kind !== 'science/artifact' || record.version !== 1 || !Array.isArray(record.artifacts)) return undefined
+  if (record.kind !== 'science/artifact' || record.version !== 2 || !Array.isArray(record.artifacts)) return undefined
   if (!record.artifacts.every(isItem)) return undefined
   return value as ScienceArtifactPresentation
 }

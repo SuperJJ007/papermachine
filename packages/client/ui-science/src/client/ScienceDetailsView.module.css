@@ -280,16 +280,27 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.vegaLite {
+.vegaFrame {
+  position: relative;
   width: 100%;
   min-height: 360px;
   overflow: auto;
+}
+
+.vegaLite {
+  width: 100%;
+  min-height: 360px;
 }
 
 .vegaLite :global(svg) {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+.vegaSelectionOutline {
+  position: absolute;
+  z-index: 2;
 }
 
 .specTargets {
@@ -373,12 +384,48 @@
   z-index: 2;
 }
 
+.artifactImageFrame {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.artifactImageFrame[data-variant='tile'] {
+  width: 64px;
+  height: 64px;
+}
+
+.artifactImage {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.artifactImageFrame[data-variant='tile'] .artifactImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artifactImageError {
+  min-width: 64px;
+  min-height: 40px;
+}
+
 .regionGesture {
   inset: 0;
   cursor: crosshair;
 }
 
-.regionBox {
+.regionBox,
+.vegaSelectionOutline {
   box-sizing: border-box;
   border: 2px solid var(--dsw-alias-label-primary);
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);

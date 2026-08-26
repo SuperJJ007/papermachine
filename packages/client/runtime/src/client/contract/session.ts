@@ -12,6 +12,7 @@ import type {
   MessageId, PromptContentPart, QueueAction, RpcResult, SessionId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ConversationSnapshot } from '../sessions/conversation.ts'
 import type { ObservableSnapshot } from './store.ts'
 
@@ -60,6 +61,15 @@ export interface ISession {
   readTextAttachment(
     attachmentId: AttachmentIdType,
   ): Promise<RpcResult<{ attachment: TextAttachmentRef; data: string }>>
+  /**
+   * Resolve one project-store Science artifact version authorized by this
+   * session's strict fold.
+   * @param versionId - opaque store version id carried by the Science projection.
+   * @returns Host-verified metadata and decoded bytes.
+   */
+  readScienceArtifact(
+    versionId: VersionId,
+  ): Promise<RpcResult<{ versionId: VersionId; mediaType: string; byteCount: number; data: Uint8Array }>>
   /**
    * Apply one edit, remove, or strict steer action to a still-pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.

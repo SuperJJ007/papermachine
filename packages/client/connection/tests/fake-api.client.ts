@@ -70,6 +70,8 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
   onTextAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'text/plain'; bytes: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'text/plain', bytes: 1 }, data: 'a' }))
+  onScienceArtifact: (payload: unknown) => Promise<RpcResponse<{ versionId: never; mediaType: string; byteCount: number; data: string }>> =
+    () => Promise.resolve(ok({ versionId: 'version-a' as never, mediaType: 'image/png', byteCount: 1, data: 'AA==' }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onDescribe: (payload: unknown) => Promise<RpcResponse<{
@@ -123,6 +125,7 @@ export class FakeApiClient implements IApiClient {
     prompt: (payload: unknown) => this.record('session.prompt', payload, this.onPrompt(payload)),
     attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
     textAttachment: (payload: unknown) => this.record('session.textAttachment', payload, this.onTextAttachment(payload)),
+    scienceArtifact: (payload: unknown) => this.record('session.scienceArtifact', payload, this.onScienceArtifact(payload)),
     updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
     cancel: (payload: unknown) => this.record('session.cancel', payload, this.onCancel(payload)),
   }

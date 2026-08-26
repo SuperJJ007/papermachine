@@ -15,6 +15,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
@@ -382,6 +383,15 @@ export interface SessionsApi {
    */
   textAttachment(request: RpcRequest<{ sessionId: SessionId; attachmentId: AttachmentIdType }>):
   Promise<RpcResponse<{ attachment: TextAttachmentRef; data: string }>>
+
+  /**
+   * Reads one project-store artifact version after the named session's fold
+   * proves that exact version is a local artifact or a verified S3 run input.
+   * The Host derives the owning project and content digest; neither is a
+   * caller-controlled field.
+   */
+  scienceArtifact(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
+  Promise<RpcResponse<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>>
 
   /**
    * Edits, removes, or strictly steers one pending queued occurrence on an ordinary session.

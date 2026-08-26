@@ -1,7 +1,7 @@
 /**
  * The artifact viewer's per-media-type content dispatch: the seam
  * `ScienceDetailsView.tsx`'s toolbar/tab-strip never touches. An image
- * attachment renders through `MessageImage`; a text attachment fetches its
+ * image renders through `ScienceArtifactImage`; a text artifact fetches its
  * decoded bytes through `loadText` and dispatches again on media type — CSV
  * as a sortable table (`ArtifactTable`), Vega-Lite as an SVG visualization,
  * JSON as `JsonTree`, Markdown as `MarkdownText`, and plain text as
@@ -9,17 +9,17 @@
  * case here, never a change to the viewer's tab strip, toolbar, or gallery.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import embed, { vega } from 'vega-embed'
-import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
-import type { ImageLoader, MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
-import type { TextLoader } from './science-attachment-loader.ts'
+import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
 import { capTextForDisplay, MAX_ARTIFACT_TEXT_CHARACTERS } from './format.ts'
@@ -56,17 +56,21 @@ type TextLoadState =
   | { status: 'ready'; text: string }
   | { status: 'error' }
 
+type TextArtifactContentRef = Omit<ScienceArtifactContentRef, 'mediaType'> & {
+  readonly mediaType: Exclude<ScienceArtifactMediaType, 'image/png'>
+}
+
 /** Fetch one text attachment's decoded content, re-fetching whenever `retryToken` changes. */
-function useLoadedText(attachment: TextAttachmentRef, loadText: TextLoader, retryToken: number): TextLoadState {
+function useLoadedText(content: ScienceArtifactContentRef, loadText: TextLoader, retryToken: number): TextLoadState {
   const [state, setState] = useState<TextLoadState>({ status: 'loading' })
   useEffect(() => {
     let live = true
     setState({ status: 'loading' })
-    loadText(attachment)
+    loadText(content)
       .then((text) => { if (live) setState({ status: 'ready', text }) })
       .catch(() => { if (live) setState({ status: 'error' }) })
     return () => { live = false }
-  }, [attachment, loadText, retryToken])
+  }, [content, loadText, retryToken])
   return state
 }
 
@@ -83,6 +87,15 @@ function parseJsonForTree(text: string): object | unknown[] | undefined {
 
 /** A parsed Vega-Lite document accepted at the file boundary before the renderer performs schema validation. */
 type VegaLiteDocument = Record<string, unknown>
+
+/** A selection outline positioned in the scrollable Vega frame. */
+export interface VegaSelectionOutline {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+  readonly mode: 'exact' | 'chart'
+}
 
 type StyleField = 'color' | 'font-size' | 'label'
 type StyleCommitResult = { readonly ok: true } | { readonly ok: false; readonly error: string }
@@ -154,6 +167,50 @@ export function specPathLabel(path: string, t: TranslateNS<'science'>): string {
   if (path === 'mark') return t('edit.specPath.mark')
   if (path === 'encoding.color') return t('edit.specPath.color')
   return path
+}
+
+/** Return the one rendered SVG subtree that unambiguously represents a top-level spec path. */
+function exactVegaTarget(svg: SVGSVGElement, path: string): Element | undefined {
+  let candidates: Element[]
+  if (path === 'title') {
+    candidates = [...svg.querySelectorAll('.role-title')]
+  } else if (path === 'mark') {
+    candidates = [...svg.querySelectorAll('.role-mark')]
+  } else if (path === 'encoding.x' || path === 'encoding.y') {
+    const axis = path.endsWith('.x') ? 'X' : 'Y'
+    candidates = [...svg.querySelectorAll('.role-axis')]
+      .filter(element => new RegExp(`^${axis}-axis\\b`, 'iu').test(element.getAttribute('aria-label') ?? ''))
+  } else if (/^encoding\.(?:color|fill|stroke|size|shape|opacity)$/u.test(path)) {
+    candidates = [...svg.querySelectorAll('.role-legend')]
+  } else {
+    return undefined
+  }
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
+/**
+ * Resolve one selected Vega-Lite path to an overlay rectangle. Top-level
+ * title, mark, x/y axis, and a sole legend are exact; every ambiguous or
+ * composition-nested path falls back to the complete rendered SVG.
+ */
+export function vegaSelectionOutline(
+  frame: HTMLElement,
+  chart: HTMLElement,
+  path: string,
+): VegaSelectionOutline | undefined {
+  const svg = chart.querySelector('svg')
+  if (!(svg instanceof SVGSVGElement)) return undefined
+  const exact = exactVegaTarget(svg, path)
+  const target = exact ?? svg
+  const frameRect = frame.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  return {
+    left: targetRect.left - frameRect.left + frame.scrollLeft,
+    top: targetRect.top - frameRect.top + frame.scrollTop,
+    width: targetRect.width,
+    height: targetRect.height,
+    mode: exact === undefined ? 'chart' : 'exact',
+  }
 }
 
 function updateSpecPath(
@@ -302,9 +359,21 @@ function VegaLiteArtifact({
   useEffect(() => { setWorkingDocument(document) }, [document])
   const renderedDocument = workingDocument ?? document
   const paths = useMemo(() => renderedDocument === undefined ? [] : selectableSpecPaths(renderedDocument), [renderedDocument])
+  const frame = useRef<HTMLDivElement>(null)
   const container = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<'render' | 'external-url' | undefined>(undefined)
   const [comments, setComments] = useState<Record<string, string>>({})
+  const [renderRevision, setRenderRevision] = useState(0)
+  const [outline, setOutline] = useState<VegaSelectionOutline | undefined>(undefined)
+
+  const recomputeOutline = useCallback((): void => {
+    const selected = selectionTarget?.kind === 'spec-path' ? selectionTarget.path : undefined
+    const frameElement = frame.current
+    const chartElement = container.current
+    setOutline(selected === undefined || failure !== undefined || frameElement === null || chartElement === null
+      ? undefined
+      : vegaSelectionOutline(frameElement, chartElement, selected))
+  }, [failure, selectionTarget])
 
   useEffect(() => {
     const element = container.current
@@ -312,12 +381,16 @@ function VegaLiteArtifact({
     let live = true
     let finalize: (() => void) | undefined
     setFailure(undefined)
+    setOutline(undefined)
     void embed(element, renderedDocument, {
       actions: false, loader: restrictedVegaLoader, mode: 'vega-lite', renderer: 'svg',
     })
       .then((result) => {
         if (!live) result.view.finalize()
-        else finalize = () => { result.view.finalize() }
+        else {
+          finalize = () => { result.view.finalize() }
+          setRenderRevision(revision => revision + 1)
+        }
       })
       .catch((error: unknown) => {
         if (live) setFailure(String(error).includes(EXTERNAL_VEGA_URL_BLOCKED) ? 'external-url' : 'render')
@@ -329,6 +402,18 @@ function VegaLiteArtifact({
     }
   }, [renderedDocument])
 
+  useEffect(() => { recomputeOutline() }, [recomputeOutline, renderRevision])
+
+  useEffect(() => {
+    const element = frame.current
+    if (element === null || typeof ResizeObserver !== 'function') return
+    const observer = new ResizeObserver(recomputeOutline)
+    observer.observe(element)
+    // Both refs belong to the same committed JSX subtree.
+    observer.observe(container.current as HTMLDivElement)
+    return () => { observer.disconnect() }
+  }, [recomputeOutline])
+
   if (document === undefined) {
     return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
   }
@@ -336,9 +421,8 @@ function VegaLiteArtifact({
   return (
     <>
       <div
-        ref={container}
-        className={css.vegaLite}
-        data-testid="vega-lite-view"
+        ref={frame}
+        className={css.vegaFrame}
         hidden={failure !== undefined}
         role={paths.length === 0 ? undefined : 'button'}
         tabIndex={paths.length === 0 ? undefined : 0}
@@ -347,7 +431,17 @@ function VegaLiteArtifact({
         onKeyDown={chartTarget === undefined ? undefined : (event) => {
           if (event.key === 'Enter' || event.key === ' ') onSelectTarget({ kind: 'spec-path', path: chartTarget })
         }}
-      />
+      >
+        <div ref={container} className={css.vegaLite} data-testid="vega-lite-view" hidden={failure !== undefined} />
+        {outline !== undefined && (
+          <span
+            aria-hidden="true"
+            className={css.vegaSelectionOutline}
+            data-vega-selection-outline={outline.mode}
+            style={{ left: outline.left, top: outline.top, width: outline.width, height: outline.height }}
+          />
+        )}
+      </div>
       {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
       {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
       {paths.length > 0 && (
@@ -411,11 +505,11 @@ function VegaLiteArtifact({
 
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
 function TextArtifactBody({
-  logicalName, attachment, loadText, selectionTarget, onSelectTarget, isTargetAdded,
+  logicalName, content, loadText, selectionTarget, onSelectTarget, isTargetAdded,
   targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
 }: {
   logicalName: string
-  attachment: TextAttachmentRef
+  content: TextArtifactContentRef
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
@@ -427,7 +521,7 @@ function TextArtifactBody({
   t: TranslateNS<'science'>
 }) {
   const [retryToken, setRetryToken] = useState(0)
-  const state = useLoadedText(attachment, loadText, retryToken)
+  const state = useLoadedText(content, loadText, retryToken)
 
   if (state.status === 'loading') return <p className={css.notice} role="status">{t('artifact.loading')}</p>
   if (state.status === 'error') {
@@ -438,7 +532,7 @@ function TextArtifactBody({
     )
   }
 
-  switch (attachment.mediaType) {
+  switch (content.mediaType) {
     case 'text/csv':
       return (
         <ArtifactTable
@@ -478,7 +572,7 @@ function TextArtifactBody({
       return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
     }
     /* v8 ignore next -- closed TextMediaType union; every current member has a case above */
-    default: return assertNever(attachment.mediaType)
+    default: return assertNever(content.mediaType)
   }
 }
 
@@ -494,8 +588,8 @@ function normalizedPoint(event: ReactMouseEvent<HTMLDivElement>): { x: number; y
 function RasterArtifact({
   chart, loadImage, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
 }: {
-  chart: ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }
-  loadImage: ImageLoader
+  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  loadImage: ScienceImageLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
@@ -555,7 +649,7 @@ function RasterArtifact({
   return (
     <div className={css.rasterSelector}>
       <div className={css.rasterCanvas}>
-        <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={artifactImageLabels(t)} />
+        <ScienceArtifactImage content={chart} label={chart.title} load={loadImage} variant="single" labels={artifactImageLabels(t)} />
         {region !== undefined && (
           <span
             className={css.regionBox}
@@ -629,8 +723,8 @@ function BoundedPreText({ text, truncated, total, t }: {
 }
 
 /**
- * Render one artifact version's content: an image through `MessageImage`, or
- * a text attachment fetched through `loadText` and dispatched by media type.
+ * Render one artifact version's content: an image preview, or text fetched
+ * through `loadText` and dispatched by media type.
  * @param props - the artifact version to render and both durable-byte loaders.
  * @returns the dispatched content and optional human-edit ancestry.
  */
@@ -639,7 +733,7 @@ export function ArtifactContent({
   targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
 }: {
   chart: ScienceClientArtifactVersion
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
@@ -650,14 +744,13 @@ export function ArtifactContent({
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
-  const { attachment } = chart
-  const isImage = 'width' in attachment
+  const isImage = chart.mediaType === 'image/png'
   return (
     <div className={css.content}>
       {isImage
         ? (
           <RasterArtifact
-            chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
+            chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
             loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
             isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
             t={t}
@@ -665,7 +758,7 @@ export function ArtifactContent({
         )
         : (
           <TextArtifactBody
-            logicalName={chart.logicalName} attachment={attachment} loadText={loadText}
+            logicalName={chart.logicalName} content={chart as TextArtifactContentRef} loadText={loadText}
             selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
             isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
             onCommitStyle={onCommitStyle} t={t}

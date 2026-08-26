@@ -86,6 +86,9 @@ import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@dee
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
+import { foldScience } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -1503,6 +1506,63 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
   }
 
+  /** Store row plus project identity proven by a session's strict Science fold. */
+  interface AuthorizedScienceArtifact {
+    readonly projectId: Parameters<ScienceArtifactStore['readBlob']>[0]
+    readonly versionId: VersionId
+    readonly sha256: string
+    readonly mediaType: string
+    readonly byteCount: number
+  }
+
+  /**
+   * Resolve a requested store version only from facts the session fold can
+   * prove. A local artifact event carries the complete store coordinates. An
+   * S3 cross-session run input carries only `(artifactId, ordinal)`, so the
+   * session's durable cwd selects the project and the store corroborates the
+   * corresponding version row before its id can authorize a read.
+   */
+  async function authorizedScienceArtifact(
+    state: SessionReadState,
+    requestedVersionId: VersionId,
+    store: ScienceArtifactStore,
+  ): Promise<AuthorizedScienceArtifact | undefined> {
+    const fold = foldScience(state.events)
+    const local = fold.artifacts.find(artifact => artifact.versionId === requestedVersionId)
+    if (local !== undefined) {
+      return {
+        projectId: local.projectId,
+        versionId: local.versionId,
+        sha256: local.sha256,
+        mediaType: local.mediaType,
+        byteCount: local.byteCount,
+      }
+    }
+
+    const referenced = new Map<string, Set<number>>()
+    for (const run of fold.runs) {
+      for (const input of run.inputs ?? []) {
+        const ordinals = referenced.get(input.artifactId) ?? new Set<number>()
+        ordinals.add(input.version)
+        referenced.set(input.artifactId, ordinals)
+      }
+    }
+    if (referenced.size === 0 || state.header.cwd === undefined) return undefined
+    const projectId = (await store.openProject(state.header.cwd)).projectId
+    for (const [artifactId, ordinals] of referenced) {
+      const versions = await store.listVersions(projectId, artifactId as Parameters<ScienceArtifactStore['listVersions']>[1])
+      const matched = versions.find(version => version.versionId === requestedVersionId && ordinals.has(version.ordinal))
+      if (matched !== undefined) return {
+        projectId,
+        versionId: matched.versionId,
+        sha256: matched.sha256,
+        mediaType: matched.mediaType,
+        byteCount: matched.byteCount,
+      }
+    }
+    return undefined
+  }
+
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
   async function forkWorkspace(source: Pick<Session, 'id' | 'header'>): Promise<Workspace | undefined> {
     const workspaces = ctx.workspaceRegistry.list()
@@ -2491,6 +2551,75 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           notReferencedMessage: 'Text file is not referenced by this session.',
           readFailureMessage: 'Unable to read text attachment.',
         })
+      },
+
+      async scienceArtifact(request) {
+        const { sessionId } = request.payload
+        const versionId = VersionId(String(request.payload.versionId))
+        let state: SessionReadState
+        try {
+          state = await readSessionState(sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) {
+            return err(request, {
+              code: 'session-not-found',
+              message: error.message,
+              details: { sessionId },
+            })
+          }
+          return err(request, {
+            code: 'internal',
+            message: `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        const store = ctx.get('scienceArtifactStore')
+        if (store === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'Science artifact reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
+            details: {},
+          })
+        }
+        let artifact: AuthorizedScienceArtifact | undefined
+        try {
+          artifact = await authorizedScienceArtifact(state, versionId, store)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        if (artifact === undefined) {
+          return err(request, {
+            code: 'science-artifact-error',
+            message: 'Science artifact version is not referenced by this session.',
+            details: { reason: 'VERSION_NOT_REFERENCED' },
+          })
+        }
+        try {
+          const data = await store.readBlob(artifact.projectId, artifact.sha256)
+          return ok(request, {
+            versionId: artifact.versionId,
+            mediaType: artifact.mediaType,
+            byteCount: artifact.byteCount,
+            data: Buffer.from(data).toString('base64'),
+          })
+        } catch (error: unknown) {
+          if (error instanceof ProjectArtifactStoreError) {
+            return err(request, {
+              code: 'science-artifact-error',
+              message: error.message,
+              details: { reason: error.code },
+            })
+          }
+          return err(request, {
+            code: 'internal',
+            message: 'Unable to read Science artifact.',
+            details: {},
+          })
+        }
       },
 
       updateQueue(request) {

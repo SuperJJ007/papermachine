@@ -22,7 +22,9 @@ import {
   ScienceDetailsView,
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
-import { applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel } from '../src/client/ArtifactContent.tsx'
+import {
+  applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel, vegaSelectionOutline,
+} from '../src/client/ArtifactContent.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
@@ -51,8 +53,24 @@ type CommitStyleEdit = (request: ScienceStyleEditRequest) => Promise<
 const SESSION = 'session-1' as SessionId
 const t: Props['t'] = makeTranslate(en)
 
+interface LegacyArtifactContent {
+  readonly attachmentId: string
+  readonly mediaType: ScienceClientArtifactVersion['mediaType']
+  readonly bytes: number
+  readonly width?: number
+  readonly height?: number
+}
+
+type RunChartOverrides = Omit<Partial<ScienceClientRunArtifactVersion>, 'mediaType' | 'byteCount'> & {
+  readonly attachment?: LegacyArtifactContent
+}
+type HumanChartOverrides = Omit<Partial<ScienceClientHumanEditArtifactVersion>, 'mediaType' | 'byteCount'> & {
+  readonly attachment?: LegacyArtifactContent
+}
+
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   embedMock.mockReset()
   finalizeMock.mockReset()
   loaderLoadMock.mockReset()
@@ -60,6 +78,48 @@ afterEach(() => {
 })
 
 describe('Vega-Lite style helpers', () => {
+  it('maps unique top-level Vega roles exactly and falls ambiguous or nested paths back to the whole SVG', () => {
+    const frame = document.createElement('div')
+    const chart = document.createElement('div')
+    chart.innerHTML = `<svg>
+      <g class="role-title"></g>
+      <g class="role-mark"></g>
+      <g class="role-axis" aria-label="X-axis titled Category"></g>
+      <g class="role-axis" aria-label="Y-axis titled Value"></g>
+      <g class="role-axis"></g>
+      <g class="role-legend"></g>
+    </svg>`
+    frame.append(chart)
+    frame.scrollLeft = 5
+    frame.scrollTop = 7
+    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
+      x: 10, y: 20, left: 10, top: 20, right: 410, bottom: 320, width: 400, height: 300, toJSON: () => ({}),
+    })
+    const svg = chart.querySelector('svg') as SVGSVGElement
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      x: 20, y: 40, left: 20, top: 40, right: 320, bottom: 240, width: 300, height: 200, toJSON: () => ({}),
+    })
+    for (const [index, element] of [...svg.querySelectorAll('g')].entries()) {
+      vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+        x: 30 + index, y: 50 + index, left: 30 + index, top: 50 + index,
+        right: 130 + index, bottom: 90 + index, width: 100, height: 40, toJSON: () => ({}),
+      })
+    }
+
+    expect(vegaSelectionOutline(frame, chart, 'title')).toEqual({ left: 25, top: 37, width: 100, height: 40, mode: 'exact' })
+    expect(vegaSelectionOutline(frame, chart, 'mark')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.x')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.y')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('exact')
+    expect(vegaSelectionOutline(frame, chart, 'layer.0.mark')).toEqual({
+      left: 15, top: 27, width: 300, height: 200, mode: 'chart',
+    })
+
+    svg.append(svg.querySelector('.role-legend')!.cloneNode())
+    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('chart')
+    expect(vegaSelectionOutline(frame, document.createElement('div'), 'mark')).toBeUndefined()
+  })
+
   it('delegates local sanitize requests to the underlying loader and blocks protocol-relative/HTTP(S) URIs before they reach it', async () => {
     loaderSanitizeMock.mockResolvedValue({ href: 'local data' })
     await expect(restrictedVegaLoader.sanitize('data/values.csv', { context: 'href' })).resolves.toEqual({ href: 'local data' })
@@ -139,7 +199,9 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
   }
 }
 
-function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClientRunArtifactVersion {
+function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
+  const { attachment, ...fields } = over
+  const content = attachment ?? { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100 }
   return {
     artifactId: 'chart-1' as never,
     producerSessionId: SESSION,
@@ -147,18 +209,25 @@ function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClie
     version: 1,
     title: 'Loss curve',
     origin: 'model',
-    attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
+    versionId: `version:${content.attachmentId}` as never,
+    sha256: content.attachmentId,
+    mediaType: content.mediaType,
+    byteCount: content.bytes,
     runId: 'run-1' as never,
     toolCallId: 'call-chart-1' as never,
     requestHeaderSeq: 4,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     createdAt: 500,
-    ...over,
+    ...fields,
   }
 }
 
-function humanEditChart(over: Partial<ScienceClientHumanEditArtifactVersion> = {}): ScienceClientHumanEditArtifactVersion {
+function humanEditChart(over: HumanChartOverrides = {}): ScienceClientHumanEditArtifactVersion {
+  const { attachment, ...fields } = over
+  const content = attachment ?? {
+    attachmentId: 'sha256:human', mediaType: 'application/vnd.vega-lite+json' as const, bytes: 40,
+  }
   return {
     artifactId: 'chart-1' as never,
     producerSessionId: SESSION,
@@ -167,11 +236,14 @@ function humanEditChart(over: Partial<ScienceClientHumanEditArtifactVersion> = {
     title: 'summary.vl.json',
     origin: 'human-edit',
     parent: { artifactId: 'chart-1' as never, version: 1 },
-    attachment: { attachmentId: 'sha256:human' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 40 },
+    versionId: `version:${content.attachmentId}` as never,
+    sha256: content.attachmentId,
+    mediaType: 'application/vnd.vega-lite+json',
+    byteCount: content.bytes,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     createdAt: 700,
-    ...over,
+    ...fields,
   }
 }
 
@@ -310,7 +382,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText('Image · v2 · 10 × 10 · 100 B')).toBeTruthy()
+    expect(screen.getByText('Image · v2 · 100 B')).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
     expect(screen.getByText('Other')).toBeTruthy()
   })
@@ -340,7 +412,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    expect(screen.getByText('Image · v5 · 10 × 10 · 100 B')).toBeTruthy()
+    expect(screen.getByText('Image · v5 · 100 B')).toBeTruthy()
   })
 
   it('labels first-generation and human-edited artifacts without internal generation facts', () => {
@@ -354,7 +426,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
-    expect(screen.getByText('Image · v1 · 10 × 10 · 100 B')).toBeTruthy()
+    expect(screen.getByText('Image · v1 · 100 B')).toBeTruthy()
     expect(screen.getByText('Chart · v2 · 40 B')).toBeTruthy()
   })
 
@@ -363,7 +435,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const view = render(<ScienceDetailsView {...props(science, { loadImage })} />)
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
-    expect(loadImage.mock.calls[0]?.[0]).toMatchObject({ attachmentId: 'sha256:abc' })
+    expect(loadImage.mock.calls[0]?.[0]).toMatchObject({ versionId: 'version:sha256:abc' })
     await waitFor(() => { expect(view.container.querySelector('img')).not.toBeNull() })
   })
 
@@ -609,7 +681,8 @@ describe('ScienceDetailsView: viewer title', () => {
 })
 
 describe('ScienceDetailsView: content dispatch', () => {
-  it.each(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const)('renders an image for %s attachments', async (mediaType) => {
+  it('renders a PNG from project-store content', async () => {
+    const mediaType = 'image/png' as const
     const science = baseProjection({
       artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
     })
@@ -646,7 +719,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
     await waitFor(() => { expect(screen.getByRole('table')).toBeTruthy() })
     expect(screen.getAllByRole('columnheader').map(th => th.textContent)).toEqual(['name', 'score'])
-    expect(loadText.mock.calls[0]?.[0]).toMatchObject({ attachmentId: 'sha256:txt' })
+    expect(loadText.mock.calls[0]?.[0]).toMatchObject({ versionId: 'version:sha256:txt' })
     // No dimensions fact for a non-image artifact — only the byte size.
     expect(screen.queryByText(/×/)).toBeNull()
   })
@@ -727,6 +800,52 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.keyDown(chartButton, { key: ' ' })
     expect(screen.getByRole('region', { name: 'Style' })).toBeTruthy()
     fireEvent.click(chartButton)
+  })
+
+  it('draws an exact SVG-subtree outline, recomputes it after resize and content render, and falls nested paths back to the chart', async () => {
+    let resize: (() => void) | undefined
+    const disconnect = vi.fn()
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        resize = () => { callback([], this as unknown as ResizeObserver) }
+      }
+      observe(): void {}
+      disconnect(): void { disconnect() }
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    embedMock.mockImplementation(async (element: HTMLElement) => {
+      element.innerHTML = `<svg>
+        <g class="role-axis" aria-label="X-axis titled Category"></g>
+        <g class="role-mark"></g>
+      </svg>`
+      return { view: { finalize: finalizeMock } }
+    })
+    const loadText = vi.fn().mockResolvedValue(JSON.stringify({
+      encoding: { x: { field: 'category' } },
+      layer: [{ mark: 'bar' }],
+    }))
+    const { science, store } = textArtifact('application/vnd.vega-lite+json')
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'X axis' }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+    })
+    act(() => { resize?.() })
+    expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Title text'), { target: { value: 'Category label' } })
+    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(2) })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'layer.0.mark' }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-vega-selection-outline="chart"]')).toBeTruthy()
+    })
+    view.unmount()
+    expect(disconnect).toHaveBeenCalled()
   })
 
   it('does not expose chart-selection handlers when a spec has no structural targets', async () => {
@@ -1247,6 +1366,17 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
     await waitFor(() => { expect(store.instance.getSnapshot().lightboxOpen).toBe(false) })
   })
 
+  it('uses the generic artifact title as the lightbox alt when the stored title is empty', async () => {
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
+    const science = baseProjection({ artifacts: [chart({ title: '' })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, loadImage })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(await screen.findByRole('img', { name: 'Artifact' })).toBeTruthy()
+  })
+
   it('reports the lightbox image as unavailable when the loader rejects (no dialog, no crash)', async () => {
     const loadImage = vi.fn().mockRejectedValue(new Error('network'))
     const science = baseProjection({ artifacts: [chart()] })
@@ -1270,9 +1400,9 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 
   it('discards a lightbox load that resolves after the lightbox already closed', async () => {
     let resolveLoad: ((url: string) => void) | undefined
-    const loadImage = vi.fn((attachment: { attachmentId: string }) => {
+    const loadImage = vi.fn((content: { versionId: string }) => {
       if (loadImage.mock.calls.length === 1) return Promise.resolve('data:image/png;base64,thumb')
-      void attachment
+      void content
       return new Promise<string>((resolve) => { resolveLoad = resolve })
     })
     const science = baseProjection({ artifacts: [chart()] })
@@ -1290,7 +1420,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 })
 
 describe('ScienceDetailsView: download', () => {
-  function withOneTab(attachmentOver: Partial<ScienceClientArtifactVersion['attachment']> = {}) {
+  function withOneTab(attachmentOver: Partial<LegacyArtifactContent> = {}) {
     const science = baseProjection({
       artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
     })
@@ -1299,9 +1429,9 @@ describe('ScienceDetailsView: download', () => {
     return { science, store }
   }
 
-  it('resolves the durable bytes and triggers a browser save through a throwaway anchor named for the attachment', async () => {
+  it('resolves durable bytes and triggers a browser save named for the logical artifact', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
-    const { science, store } = withOneTab({ name: 'observed.png' })
+    const { science, store } = withOneTab()
     const created: HTMLAnchorElement[] = []
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       created.push(this)
@@ -1310,11 +1440,11 @@ describe('ScienceDetailsView: download', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
     expect(created[0]?.href).toBe('data:image/png;base64,xyz')
-    expect(created[0]?.download).toBe('observed.png')
+    expect(created[0]?.download).toBe('loss-curve-v1.png')
     clickSpy.mockRestore()
   })
 
-  it('falls back to a logicalName-version filename when the attachment carries no name', async () => {
+  it('keeps the logicalName-version filename stable across repeated downloads', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
     const { science, store } = withOneTab()
     const created: HTMLAnchorElement[] = []
@@ -1478,11 +1608,10 @@ describe('ScienceDetailsView: provenance drill-in', () => {
       version: 2,
       parent: { artifactId: parent.artifactId, version: 1 },
       origin: 'human-edit',
-      attachment: {
-        attachmentId: 'sha256:human' as never,
-        mediaType: 'application/vnd.vega-lite+json',
-        bytes: 48,
-      },
+      versionId: 'version:sha256:human' as never,
+      sha256: 'sha256:human',
+      mediaType: 'application/vnd.vega-lite+json',
+      byteCount: 48,
       createdAt: 600,
     }
     const science = baseProjection({ artifacts: [parent, human] })

@@ -576,6 +576,23 @@ describe('prompt and cancel errors', () => {
       sessionId: SID, attachmentId: 'attachment-1',
     }])
   })
+
+  it('reads fold-authorized Science artifact bytes and keeps the version id on the wire', async () => {
+    const { api, session } = makeSession()
+    const result = await session.readScienceArtifact('version-1' as never)
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        versionId: 'version-a',
+        mediaType: 'image/png',
+        byteCount: 1,
+        data: Uint8Array.of(0),
+      },
+    })
+    expect(api.callsOf('session.scienceArtifact')).toEqual([{
+      sessionId: SID, versionId: 'version-1',
+    }])
+  })
 })
 
 describe('rename', () => {

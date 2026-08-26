@@ -39,6 +39,9 @@
       "path": "../../session/session-title"
     },
     {
+      "path": "../../science/science-artifact-store"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

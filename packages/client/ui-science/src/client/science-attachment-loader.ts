@@ -1,28 +1,28 @@
 /**
- * Image and text artifact loaders for the Science Details entry.
+ * Image and text artifact loaders for Science project-store content.
  *
- * The dedicated transcript rows receive `loadImage` through their tool-call
- * owner share, which traces to the conversation-owned session attachment
- * loader's Map-based cache. The Details entry rides no owner share
- * (`DetailsViewOwnerProps` carries nothing), so it resolves each durable
- * artifact itself through the same runtime-owned, session-scoped verbs those
- * loaders call underneath — `ISession.readAttachment`/`readTextAttachment`
- * (`packages/client/runtime/src/client/contract/session.ts`) — the explicit
- * "behavior verbs" that interface documents feature packages may call
- * directly. `loadImage` returns a fresh `data:` URI; `loadText` returns the
- * already-decoded UTF-8 string `readTextAttachment` provides. Neither keeps
- * a Map or an `URL.createObjectURL` handle, so neither has anything to
- * revoke on session release — at the scale of a session's logical artifact
- * count, a second Map-based cache would duplicate the conversation loader's
- * own for no correctness gain.
+ * Both loaders call `ISession.readScienceArtifact`, whose Host endpoint folds
+ * the named session before reading the project store. `loadImage` returns a
+ * fresh `data:` URI and `loadText` decodes the same authenticated bytes as
+ * UTF-8. Neither loader retains URLs or a duplicate cache.
  */
 
-import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
-/** Resolves one durable text attachment to its decoded UTF-8 content, mirroring `ImageLoader` for the text family. */
-export type TextLoader = (attachment: TextAttachmentRef) => Promise<string>
+/** Browser-visible coordinates for one immutable project-store artifact version. */
+export interface ScienceArtifactContentRef {
+  readonly versionId: string
+  readonly mediaType: ScienceArtifactMediaType
+  readonly byteCount: number
+}
+
+/** Resolves one durable Science image version to a displayable URL. */
+export type ScienceImageLoader = (content: ScienceArtifactContentRef) => Promise<string>
+
+/** Resolves one durable Science text version to decoded UTF-8. */
+export type TextLoader = (content: ScienceArtifactContentRef) => Promise<string>
 
 /** Base64-encode bytes in fixed-size chunks (call-stack-safe for large PNGs). */
 function bytesToBase64(data: Uint8Array): string {
@@ -40,39 +40,37 @@ function bytesToBase64(data: Uint8Array): string {
  * @param sessionId - the Details entry's own session mount (bound per registration inject call).
  * @returns a loader resolving one durable image reference to a displayable `data:` URI.
  */
-export function createScienceImageLoader(sessions: ISessions, sessionId: SessionId): ImageLoader {
-  return async (attachment: ImageAttachmentRef): Promise<string> => {
+export function createScienceImageLoader(sessions: ISessions, sessionId: SessionId): ScienceImageLoader {
+  return async (content: ScienceArtifactContentRef): Promise<string> => {
     const session = sessions.binding(sessionId)?.session
     if (session === undefined) {
       throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
     }
-    const result = await session.readAttachment(attachment.attachmentId)
+    const result = await session.readScienceArtifact(content.versionId as VersionId)
     if (!result.ok) {
       throw new Error(`${result.error.code}: ${result.error.message}`)
     }
-    return `data:${result.value.attachment.mediaType};base64,${bytesToBase64(result.value.data)}`
+    return `data:${result.value.mediaType};base64,${bytesToBase64(result.value.data)}`
   }
 }
 
 /**
  * Build the Details entry's `loadText` for one session mount — the CSV/
- * JSON/Markdown content dispatch's byte source. `ISession.readTextAttachment`
- * already returns decoded UTF-8 text (text is always valid UTF-8 post-
- * admission), so this needs no base64/`data:` conversion.
+ * JSON/Markdown content dispatch's byte source.
  * @param sessions - the injected runtime sessions service.
  * @param sessionId - the Details entry's own session mount (bound per registration inject call).
  * @returns a loader resolving one durable text reference to its decoded content.
  */
 export function createScienceTextLoader(sessions: ISessions, sessionId: SessionId): TextLoader {
-  return async (attachment: TextAttachmentRef): Promise<string> => {
+  return async (content: ScienceArtifactContentRef): Promise<string> => {
     const session = sessions.binding(sessionId)?.session
     if (session === undefined) {
       throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
     }
-    const result = await session.readTextAttachment(attachment.attachmentId)
+    const result = await session.readScienceArtifact(content.versionId as VersionId)
     if (!result.ok) {
       throw new Error(`${result.error.code}: ${result.error.message}`)
     }
-    return result.value.data
+    return new TextDecoder('utf-8', { fatal: true }).decode(result.value.data)
   }
 }

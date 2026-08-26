@@ -35,7 +35,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow } from './ScienceExecutionRow.tsx'
-import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
+import { ScienceOutcomeRow, type ScienceOutcomeInjected } from './ScienceOutcomeRow.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
 import { ScienceHeaderAction } from './ScienceHeaderAction.tsx'
 import { ScienceHeroAction } from './ScienceHeroAction.tsx'
@@ -192,7 +192,12 @@ export function apply(ctx: ClientContext): void {
       { name: 'tool.call.toolview', key: 'run_r', locale: NS, store: scienceSelectionStore },
       ScienceExecutionRow,
     )
-    yield ctx.slots.register({ name: 'tool.call.toolview', key: 'publish_outcome', locale: NS }, ScienceOutcomeRow)
+    yield ctx.slots.register({
+      name: 'tool.call.toolview', key: 'publish_outcome', locale: NS,
+      inject: (sessionId: SessionId): ScienceOutcomeInjected => ({
+        loadScienceImage: createScienceImageLoader(ctx.sessions, sessionId),
+      }),
+    }, ScienceOutcomeRow)
   })
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({

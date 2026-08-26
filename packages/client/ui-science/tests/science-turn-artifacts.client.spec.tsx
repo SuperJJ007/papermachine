@@ -17,10 +17,10 @@ const t = makeTranslate(zh, commonZh)
 afterEach(cleanup)
 
 const v1 = { artifactId: 'a-1', logicalName: 'result.csv', version: 1, title: 'Result',
-  attachment: { attachmentId: 'sha256:a', mediaType: 'text/csv', bytes: 10 } }
-const v2 = { ...v1, version: 2, attachment: { ...v1.attachment, attachmentId: 'sha256:b' } }
+  content: { versionId: 'version-a', mediaType: 'text/csv', byteCount: 10 } }
+const v2 = { ...v1, version: 2, content: { ...v1.content, versionId: 'version-b' } }
 const second = { artifactId: 'a-2', logicalName: 'plot.json', version: 1, title: 'Plot',
-  attachment: { attachmentId: 'sha256:c', mediaType: 'application/json', bytes: 20 } }
+  content: { versionId: 'version-c', mediaType: 'application/json', byteCount: 20 } }
 
 function startTurn() {
   return scienceTurnArtifactsDefinition.start(
@@ -31,7 +31,7 @@ function startTurn() {
 function updateWith(state: ReturnType<typeof startTurn>, artifacts: unknown[]) {
   return scienceTurnArtifactsDefinition.update(
     { state } as never,
-    { event: { type: 'tool/result', data: { meta: { kind: 'science/artifact', version: 1, artifacts } } } } as never,
+    { event: { type: 'tool/result', data: { meta: { kind: 'science/artifact', version: 2, artifacts } } } } as never,
   )
 }
 
@@ -75,17 +75,17 @@ describe('scienceTurnArtifactsDefinition', () => {
       'not-an-object',
       ['array-not-record'],
       { kind: 'other', version: 1, artifacts: [] },
-      { kind: 'science/artifact', version: 2, artifacts: [] },
-      { kind: 'science/artifact', version: 1, artifacts: 'not-an-array' },
-      { kind: 'science/artifact', version: 1, artifacts: ['not-an-object'] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, artifactId: 1 }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, logicalName: 1 }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, version: '1' }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, title: 1 }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, attachment: null }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, attachment: { ...v1.attachment, attachmentId: 1 } }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, attachment: { ...v1.attachment, mediaType: 1 } }] },
-      { kind: 'science/artifact', version: 1, artifacts: [{ ...v1, attachment: { ...v1.attachment, bytes: '10' } }] },
+      { kind: 'science/artifact', version: 1, artifacts: [] },
+      { kind: 'science/artifact', version: 2, artifacts: 'not-an-array' },
+      { kind: 'science/artifact', version: 2, artifacts: ['not-an-object'] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, artifactId: 1 }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, logicalName: 1 }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, version: '1' }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, title: 1 }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, content: null }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, content: { ...v1.content, versionId: 1 } }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, content: { ...v1.content, mediaType: 1 } }] },
+      { kind: 'science/artifact', version: 2, artifacts: [{ ...v1, content: { ...v1.content, byteCount: '10' } }] },
     ]
     for (const meta of malformedMetas) expect(updateMeta(meta)).toBe(start)
     // A non-`tool/result` update is ignored outright.
@@ -138,21 +138,21 @@ describe('ScienceTurnArtifacts', () => {
   it('loads a thumbnail for a dimensioned image artifact', async () => {
     const store = testScienceSelectionStore()
     const chart = { artifactId: 'a-3', logicalName: 'plot.png', version: 1, title: 'Plot',
-      attachment: { attachmentId: 'sha256:d', mediaType: 'image/png', bytes: 30, width: 4, height: 4 } }
+      content: { versionId: 'version-d', mediaType: 'image/png', byteCount: 30 } }
     const loadImage = vi.fn().mockResolvedValue('blob:fake-url')
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,
       loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1',
     } as unknown as ScienceTurnArtifactsProps)} />)
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
-    expect(loadImage).toHaveBeenCalledWith(expect.objectContaining({ attachmentId: 'sha256:d' }))
+    expect(loadImage).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'version-d' }))
     await waitFor(() => { expect(view.container.querySelector('img')?.getAttribute('src')).toBe('blob:fake-url') })
   })
 
   it('keeps the media-type tile when a dimensioned image fails to load', async () => {
     const store = testScienceSelectionStore()
     const chart = { artifactId: 'a-4', logicalName: 'plot2.png', version: 1, title: 'Plot 2',
-      attachment: { attachmentId: 'sha256:e', mediaType: 'image/png', bytes: 30, width: 4, height: 4 } }
+      content: { versionId: 'version-e', mediaType: 'image/png', byteCount: 30 } }
     const loadImage = vi.fn().mockRejectedValue(new Error('load failed'))
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,

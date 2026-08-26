@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
@@ -370,6 +371,23 @@ export const sessionTextAttachmentValueSchema = z.object({
   attachment: textAttachmentRefSchema,
   data: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.textAttachment'>>>
+
+/** Opaque project-store version id after string-shape validation. */
+export const scienceVersionIdSchema = z.string().min(1) as unknown as z.ZodType<VersionId>
+
+/** session.scienceArtifact request payload. */
+export const sessionScienceArtifactRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  versionId: scienceVersionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'session.scienceArtifact'>>>
+
+/** session.scienceArtifact response value; artifact bytes are base64 on the JSON wire. */
+export const sessionScienceArtifactValueSchema = z.object({
+  versionId: scienceVersionIdSchema,
+  mediaType: z.string().min(1),
+  byteCount: z.number().int().nonnegative(),
+  data: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.scienceArtifact'>>>
 
 /** session.updateQueue request payload. */
 export const sessionUpdateQueueRequestSchema = z.object({

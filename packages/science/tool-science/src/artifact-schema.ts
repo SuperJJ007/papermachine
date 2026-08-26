@@ -3,7 +3,7 @@
  * values, common to `annotate_artifact` and `get_science_state`.
  */
 
-import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 
 /** Identity, curation, source, and media fields shared by the artifact-receipt and state schemas. */
 export const scienceArtifactSchemaProperties = {
@@ -36,7 +36,7 @@ export interface ScienceArtifactValueFields {
   readonly origin: ScienceArtifactVersion['origin']
   readonly parent?: { readonly artifactId: string; readonly version: number }
   readonly runId?: string
-  readonly mediaType: string
+  readonly mediaType: ScienceArtifactMediaType
   readonly bytes: number
   readonly createdAt: number
 }

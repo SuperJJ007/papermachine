@@ -27,14 +27,22 @@ const t: Props['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-function chart(over: Partial<ScienceClientRunArtifactVersion> = {}): ScienceClientRunArtifactVersion {
+type LegacyChartOverrides = Omit<Partial<ScienceClientRunArtifactVersion>, 'mediaType' | 'byteCount'> & {
+  readonly attachment?: { readonly attachmentId?: string; readonly mediaType?: ScienceClientRunArtifactVersion['mediaType']; readonly bytes?: number }
+}
+
+function chart(over: LegacyChartOverrides = {}): ScienceClientRunArtifactVersion {
+  const { attachment, ...fields } = over
   return {
     artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve', origin: 'model',
     producerSessionId: SESSION_ID,
-    attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 10, width: 1, height: 1 },
+    versionId: (attachment?.attachmentId ?? 'version-abc') as never,
+    sha256: attachment?.attachmentId ?? 'abc',
+    mediaType: attachment?.mediaType ?? 'image/png',
+    byteCount: attachment?.bytes ?? 10,
     runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8,
     environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 3_000,
-    ...over,
+    ...fields,
   }
 }
 

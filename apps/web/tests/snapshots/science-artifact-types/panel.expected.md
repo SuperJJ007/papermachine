@@ -1,4 +1,4 @@
-## Details column — artifact viewer (csv/json/md/png)
+## Details column — artifact viewer (csv/json/md/png/Vega-Lite)
 - text: Science
 - button "Close details"
 - tablist "Open artifacts":
@@ -11,13 +11,16 @@
   - tab "report.md"
   - button "Close report.md":
     - img
-  - tab "plot.png" [selected]
+  - tab "plot.png"
   - button "Close plot.png":
+    - img
+  - tab "scores.vl.json" [selected]
+  - button "Close scores.vl.json":
     - img
 - button "File library":
   - img
   - text: File library
-- text: plot.png
+- text: scores.vl.json
 - button "Previous version" [disabled]:
   - img
 - text: v1
@@ -28,18 +31,48 @@
   - img
 - button "Export" [disabled]
 - text: Export will be available in C4
-- button "Expand":
-  - img
 - button "Close tab":
   - img
 - term: Format
-- definition: Image
+- definition: Chart
 - term: Version
 - definition: v1
 - term: Source
 - definition: Generation turn not loaded
 - term: Status
-- definition: Read-only
-- 'button "View original: plot.png"':
-  - img "plot.png"
-- button "Select region to edit"
+- definition: Editable
+- button "Open chart style editor":
+  - img: ada bob name 0 1 2 3 4 5 6 7 8 9 10 score Scores
+- region "Editable chart structure":
+  - heading "Modify elements" [level=3]
+  - button "Title"
+  - textbox "Edit note for Title":
+    - /placeholder: Optional note
+  - button "Add Title to the conversation": +
+  - button "Mark style"
+  - textbox "Edit note for Mark style":
+    - /placeholder: Optional note
+  - button "Add Mark style to the conversation": +
+  - button "X axis" [pressed]
+  - textbox "Edit note for X axis":
+    - /placeholder: Optional note
+  - button "Add X axis to the conversation": +
+  - button "Y axis"
+  - textbox "Edit note for Y axis":
+    - /placeholder: Optional note
+  - button "Add Y axis to the conversation": +
+- region "Style":
+  - text: Style
+  - code: encoding.x
+  - text: Font size
+  - spinbutton "Font size": "12"
+  - text: Title text
+  - textbox "Title text"
+  - button "Commit as new version"
+- region "Notes":
+  - heading "Notes" [level=3]
+  - paragraph: No notes yet.
+  - textbox "Artifact note":
+    - /placeholder: Add a private note
+  - button "Save" [disabled]
+  - paragraph: These notes belong only to you and never enter model context.

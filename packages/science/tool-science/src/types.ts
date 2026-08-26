@@ -10,7 +10,7 @@
  * @module @deepseek-ai/dsh-tool-science/types
  */
 
-import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId, ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
 /** A Vega-Lite structural target selected in the artifact viewer. */
 export interface ScienceSpecPathTarget {
@@ -111,7 +111,7 @@ declare module '@deepseek-ai/dsh-llm' {
  */
 export interface ScienceArtifactPresentationContent {
   readonly versionId: string
-  readonly mediaType: string
+  readonly mediaType: ScienceArtifactMediaType
   readonly byteCount: number
 }
 

@@ -42,7 +42,7 @@
 - term: Status
 - definition: Editable
 - button "Open chart style editor":
-  - img: ada bob name 0 1 2 3 4 5 6 7 8 9 10 score Scores
+  - img: 0 500 1,000 1,500 2,000 2,500 3,000 exposure 0 10 20 30 40 50 60 70 80 90 100 score Scores
 - region "Editable chart structure":
   - heading "Modify elements" [level=3]
   - button "Title"

@@ -41,6 +41,7 @@ const STATIC_GUIDANCE = [
   'A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed.',
   'Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run.',
   'For Python charts, prefer Altair and save the Vega-Lite specification as a .vl.json file under SCIENCE_ARTIFACT_DIR. For R charts, prefer a Vega-Lite specification built as an R list and write it with jsonlite::write_json(spec, file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), "chart.vl.json"), auto_unbox = TRUE, digits = NA); for example, put data.frame rows under data$values and use mark = "bar". Use PNG only when Vega-Lite cannot express the chart, such as complex statistical or ggplot2-specific geometry.',
+  'Before passing a large dataset to alt.Chart, aggregate or sample it in pandas and keep only the rows and columns the chart needs, so the specification does not inline the raw table.',
   'A run\'s eligible written files (csv/json/vl.json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader.',
   'Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.',
 ].join(' ')

@@ -22,7 +22,11 @@ import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from '
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
-import { capTextForDisplay, MAX_ARTIFACT_TEXT_CHARACTERS } from './format.ts'
+import {
+  capTextForDisplay,
+  MAX_ARTIFACT_TEXT_CHARACTERS,
+  MAX_VEGA_LITE_SPEC_CHARACTERS,
+} from './format.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Closed-union exhaustiveness fence. */
@@ -332,18 +336,17 @@ function parseVegaLiteDocument(text: string): VegaLiteDocument | undefined {
 /**
  * Render one Vega-Lite attachment: parse, mount through the maintained
  * client renderer, and finalize the view on replacement or unmount. Owns the
- * complete degrade ladder — unparseable text falls back to preformatted
- * text, a spec the renderer rejects falls back to `JsonTree`. The parse is
+ * complete degrade ladder — an oversized or unparseable spec and a spec the
+ * renderer rejects all fall back to bounded preformatted source text. Parsing is
  * memoized on the text so a parent re-render never re-embeds, and the mount
  * container stays in the tree (hidden) while the fallback shows, so the
  * effect's element reference is never `null` across failure and re-render.
  */
 function VegaLiteArtifact({
-  text, logicalName, selectionTarget, onSelectTarget, isTargetAdded,
+  text, selectionTarget, onSelectTarget, isTargetAdded,
   targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
 }: {
   text: string
-  logicalName: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
@@ -353,8 +356,9 @@ function VegaLiteArtifact({
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
-  const capped = useMemo(() => capTextForDisplay(text, MAX_ARTIFACT_TEXT_CHARACTERS), [text])
-  const document = useMemo(() => parseVegaLiteDocument(capped.value), [capped.value])
+  const fallback = useMemo(() => capTextForDisplay(text, MAX_ARTIFACT_TEXT_CHARACTERS), [text])
+  const oversized = text.length > MAX_VEGA_LITE_SPEC_CHARACTERS
+  const document = useMemo(() => oversized ? undefined : parseVegaLiteDocument(text), [oversized, text])
   const [workingDocument, setWorkingDocument] = useState<VegaLiteDocument | undefined>(document)
   useEffect(() => { setWorkingDocument(document) }, [document])
   const renderedDocument = workingDocument ?? document
@@ -415,7 +419,16 @@ function VegaLiteArtifact({
   }, [recomputeOutline])
 
   if (document === undefined) {
-    return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
+    return (
+      <>
+        <p className={css.notice} role="note">
+          {oversized
+            ? t('artifact.vegaTooLarge', { limit: MAX_VEGA_LITE_SPEC_CHARACTERS })
+            : t('artifact.vegaParseFailed')}
+        </p>
+        <BoundedPreText text={fallback.value} truncated={fallback.truncated} total={fallback.total} t={t} />
+      </>
+    )
   }
   const chartTarget = paths[0]
   return (
@@ -442,9 +455,15 @@ function VegaLiteArtifact({
           />
         )}
       </div>
-      {failure === 'external-url' && <p className={css.notice} role="note">{t('artifact.externalDataBlocked')}</p>}
-      {failure !== undefined && <JsonTree data={renderedDocument as VegaLiteDocument} label={logicalName} />}
-      {paths.length > 0 && (
+      {failure !== undefined && (
+        <>
+          <p className={css.notice} role="note">
+            {failure === 'external-url' ? t('artifact.externalDataBlocked') : t('artifact.vegaRenderFailed')}
+          </p>
+          <BoundedPreText text={fallback.value} truncated={fallback.truncated} total={fallback.total} t={t} />
+        </>
+      )}
+      {failure === undefined && paths.length > 0 && (
         <section className={css.elementPanel} aria-label={t('edit.specTargets')}>
           <h3>{t('edit.elements')}</h3>
           <div className={css.specTargets}>
@@ -560,7 +579,7 @@ function TextArtifactBody({
     case 'application/vnd.vega-lite+json':
       return (
         <VegaLiteArtifact
-          text={state.text} logicalName={logicalName} selectionTarget={selectionTarget}
+          text={state.text} selectionTarget={selectionTarget}
           onSelectTarget={onSelectTarget} isTargetAdded={isTargetAdded} targetComment={targetComment}
           onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget} onCommitStyle={onCommitStyle} t={t}
         />

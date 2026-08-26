@@ -40,12 +40,21 @@ const PNG = Uint8Array.from(Buffer.from(
 const CSV_TEXT = 'name,score\nada,10\nbob,2\ncleo,33\n'
 const JSON_TEXT = '{"accuracy":0.97,"epochs":12}'
 const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
-const VEGA_LITE_TEXT = JSON.stringify({
-  title: 'Scores',
-  mark: 'bar',
-  data: { values: [{ name: 'ada', score: 10 }, { name: 'bob', score: 2 }] },
-  encoding: { x: { field: 'name', type: 'nominal' }, y: { field: 'score', type: 'quantitative' } },
-})
+/** Generate a large inline-data fixture without committing hundreds of kilobytes of static JSON. */
+function makeVegaLiteText(rowCount: number): string {
+  return JSON.stringify({
+    title: 'Scores',
+    mark: 'point',
+    data: { values: Array.from({ length: rowCount }, (_, index) => ({
+      name: `participant-${String(index)}`, score: index % 101, exposure: index,
+    })) },
+    encoding: {
+      x: { field: 'exposure', type: 'quantitative' },
+      y: { field: 'score', type: 'quantitative' },
+    },
+  })
+}
+const VEGA_LITE_TEXT = makeVegaLiteText(3_000)
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
@@ -259,6 +268,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-types'))
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
+    expect(VEGA_LITE_TEXT.length).toBeGreaterThan(100_000)
+    expect(VEGA_LITE_TEXT.length).toBeLessThan(8_000_000)
 
     await centerCol.getByText('Files produced this turn: 5', { exact: true }).waitFor({ timeout: 15_000 })
     expect(await centerCol.getByText('Captured 5 artifacts', { exact: false }).count()).toBe(0)

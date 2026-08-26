@@ -131,7 +131,7 @@ describe('ScienceTurnArtifacts', () => {
     expect(screen.getByText('本轮产出 2 个文件')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     fireEvent.click(screen.getByRole('listitem', { name: /result\.csv/u }))
-    expect(store.instance.getSnapshot().openArtifacts).toEqual([{ artifactId: 'a-1', version: 2 }])
+    expect(store.instance.getSnapshot().openArtifacts).toEqual([{ kind: 'artifact', artifactId: 'a-1', version: 2 }])
     expect(openArtifact).toHaveBeenCalledTimes(1)
   })
 

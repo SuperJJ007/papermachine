@@ -22,7 +22,8 @@ import type { PendingInteraction } from './pending.ts'
 import { PendingWait } from './pending.ts'
 import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ScienceLibraryArtifact, WorkspaceFileEntry } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
@@ -329,6 +330,34 @@ export class Session implements SessionFace {
     } catch (error) {
       return transportError(error)
     }
+  }
+
+  async readScienceLibrary(): Promise<RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>> {
+    try {
+      return (await this.api.sessions.scienceLibrary({ sessionId: this.sessionId })).result
+    } catch (error) { return transportError(error) }
+  }
+
+  async readWorkspaceFiles(path?: string): Promise<RpcResult<{ root: string; entries: WorkspaceFileEntry[]; truncated?: true }>> {
+    try {
+      return (await this.api.sessions.workspaceFiles({
+        sessionId: this.sessionId,
+        ...(path === undefined ? {} : { path }),
+      })).result
+    } catch (error) { return transportError(error) }
+  }
+
+  async readWorkspaceFile(path: string): Promise<RpcResult<{ mediaType: string; byteCount: number; data: Uint8Array }>> {
+    try {
+      const result = (await this.api.sessions.workspaceFile({ sessionId: this.sessionId, path })).result
+      if (!result.ok) return result
+      const binary = atob(result.value.data)
+      return { ok: true, value: {
+        mediaType: result.value.mediaType,
+        byteCount: result.value.byteCount,
+        data: Uint8Array.from(binary, char => char.charCodeAt(0)),
+      } }
+    } catch (error) { return transportError(error) }
   }
 
   /** Apply one operation to a still-pending queue occurrence. */

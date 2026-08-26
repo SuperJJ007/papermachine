@@ -116,6 +116,15 @@ export class FixtureSession implements SessionFace {
     throw new Error(`test session "${this.sessionId}": readScienceArtifact is not stubbed — supply it on the fixture's session face`)
   }
 
+  /** Fail-loud project library stub. */
+  readScienceLibrary(): never { throw new Error(`test session "${this.sessionId}": readScienceLibrary is not stubbed`) }
+
+  /** Fail-loud workspace listing stub. */
+  readWorkspaceFiles(_path?: string): never { throw new Error(`test session "${this.sessionId}": readWorkspaceFiles is not stubbed`) }
+
+  /** Fail-loud workspace file stub. */
+  readWorkspaceFile(_path: string): never { throw new Error(`test session "${this.sessionId}": readWorkspaceFile is not stubbed`) }
+
   /**
    * Fail-loud stub; supply `updateQueue` on the fixture's session face to exercise it.
    * @returns never — always throws.

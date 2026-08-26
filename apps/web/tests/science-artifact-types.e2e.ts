@@ -167,11 +167,11 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
   }
 
   const items = [
-    artifact(stored[0]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'summary.csv', 'text/csv', stored[0]!),
-    artifact(stored[1]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'metrics.json', 'application/json', stored[1]!),
-    artifact(stored[2]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'report.md', 'text/markdown', stored[2]!),
-    artifact(stored[3]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'plot.png', 'image/png', stored[3]!),
-    artifact(stored[4]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'scores.vl.json', 'application/vnd.vega-lite+json', stored[4]!),
+    artifact(stored[0]!.artifact.artifactId, 'summary.csv', 'text/csv', stored[0]!),
+    artifact(stored[1]!.artifact.artifactId, 'metrics.json', 'application/json', stored[1]!),
+    artifact(stored[2]!.artifact.artifactId, 'report.md', 'text/markdown', stored[2]!),
+    artifact(stored[3]!.artifact.artifactId, 'plot.png', 'image/png', stored[3]!),
+    artifact(stored[4]!.artifact.artifactId, 'scores.vl.json', 'application/vnd.vega-lite+json', stored[4]!),
   ]
 
   session.append('tool/result', {
@@ -303,8 +303,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await exactOutline.waitFor({ timeout: 10_000 })
     expect((await exactOutline.boundingBox())?.width).toBeGreaterThan(0)
 
-    // All five tabs stayed open across the chip clicks above.
-    expect(await detailsPanel.getByRole('tab').count()).toBe(5)
+    // The fixed library home plus all five document tabs stay open.
+    expect(await detailsPanel.getByRole('tab').count()).toBe(6)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')

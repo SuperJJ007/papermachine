@@ -6,6 +6,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -390,7 +393,8 @@ describe('Web session model selection', () => {
       mediaType: 'image/png',
       byteCount: 1,
     }]))
-    ctx.provide('scienceArtifactStore', { readBlob, openProject, listVersions } as never)
+    const getVersion = vi.fn(() => Promise.resolve(undefined))
+    ctx.provide('scienceArtifactStore', { readBlob, openProject, listVersions, getVersion } as never)
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',
@@ -408,6 +412,95 @@ describe('Web session model selection', () => {
     })
     expect(readBlob).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
+  })
+
+  it('lists the project library and reads any exact version owned by the session project', async () => {
+    const cwd = '/tmp/science-library-project'
+    const { ctx, sessionId } = await harness(undefined, cwd)
+    const version = {
+      versionId: 'project-version-1', artifactId: ARTIFACT_ID, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 42, origin: 'auto', title: 'Results',
+    }
+    const otherSession = ctx.sessions.create(undefined, { meta: { cwd: '/tmp/other-science-project' } })
+    const otherProjectId = 'project-other' as typeof PROJECT_ID
+    ctx.provide('scienceArtifactStore', {
+      openProject: vi.fn((path: string) => Promise.resolve({ projectId: path === cwd ? PROJECT_ID : otherProjectId })),
+      listArtifacts: vi.fn(() => Promise.resolve([{
+        artifactId: ARTIFACT_ID, owningProjectId: PROJECT_ID, logicalName: 'results.csv',
+        originSessionId: sessionId, latestVersionId: version.versionId, createdAt: 41,
+      }])),
+      getLatestVersion: vi.fn(() => Promise.resolve(version)),
+      getVersion: vi.fn((projectId: typeof PROJECT_ID) => Promise.resolve(projectId === PROJECT_ID ? version : undefined)),
+      listVersions: vi.fn(() => Promise.resolve([])),
+      readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    expect(expectValue(await api.sessions.scienceLibrary(request({ sessionId })))).toMatchObject({
+      projectId: PROJECT_ID,
+      artifacts: [{ logicalName: 'results.csv', title: 'Results', latest: { versionId: 'project-version-1', ordinal: 1 } }],
+    })
+    expect(expectValue(await api.sessions.scienceArtifact(request({ sessionId, versionId: version.versionId as never })))).toMatchObject({
+      mediaType: 'text/csv', data: 'YQox',
+    })
+    expect((await api.sessions.scienceArtifact(request({
+      sessionId: otherSession.id, versionId: version.versionId as never,
+    }))).result).toMatchObject({
+      ok: false, error: { details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('fails the project library explicitly when the artifact store is not mounted', async () => {
+    const { ctx, sessionId } = await harness(undefined, '/tmp/science-library-no-store')
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.scienceLibrary(request({ sessionId }))).result).toMatchObject({
+      ok: false, error: { code: 'internal' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('contains workspace listing and preview reads within the session cwd', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-workspace-library-'))
+    try {
+      await mkdir(join(cwd, 'data'))
+      await mkdir(join(cwd, 'many'))
+      await Promise.all(Array.from({ length: 2_001 }, (_, index) => mkdir(join(cwd, 'many', `entry-${String(index).padStart(4, '0')}`))))
+      await mkdir(join(cwd, '.private'))
+      await mkdir(join(cwd, 'node_modules'))
+      await writeFile(join(cwd, 'table.csv'), 'a,b\n1,2\n')
+      await writeFile(join(cwd, 'large.txt'), Buffer.alloc(2 * 1_024 * 1_024 + 1))
+      await writeFile(join(cwd, '.secret'), 'hidden')
+      await symlink(tmpdir(), join(cwd, 'escape'))
+      const { ctx, sessionId } = await harness(undefined, cwd)
+      const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+      const root = expectValue(await api.sessions.workspaceFiles(request({ sessionId })))
+      expect(root.root).toBe('')
+      expect(root.entries.map(entry => [entry.name, entry.kind, entry.mediaType])).toEqual([
+        ['data', 'dir', undefined],
+        ['large.txt', 'file', 'text/plain'],
+        ['many', 'dir', undefined],
+        ['table.csv', 'file', 'text/csv'],
+      ])
+      expect(expectValue(await api.sessions.workspaceFiles(request({ sessionId, path: 'many' })))).toMatchObject({
+        root: 'many', truncated: true,
+      })
+      expect(expectValue(await api.sessions.workspaceFile(request({ sessionId, path: 'table.csv' })))).toEqual({
+        mediaType: 'text/csv', byteCount: 8, data: 'YSxiCjEsMgo=',
+      })
+      expect((await api.sessions.workspaceFile(request({ sessionId, path: '../outside.txt' }))).result).toMatchObject({
+        ok: false, error: { details: { reason: 'PATH_OUTSIDE_WORKSPACE' } },
+      })
+      expect((await api.sessions.workspaceFile(request({ sessionId, path: 'large.txt' }))).result).toMatchObject({
+        ok: false, error: { details: { reason: 'FILE_TOO_LARGE' } },
+      })
+      await ctx.fiber.dispose()
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   it('groups successful providers and leaves an unlisted current selection out of the catalog', async () => {

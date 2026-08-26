@@ -12,7 +12,8 @@ import type {
   MessageId, PromptContentPart, QueueAction, RpcResult, SessionId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ScienceLibraryArtifact, WorkspaceFileEntry } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ConversationSnapshot } from '../sessions/conversation.ts'
 import type { ObservableSnapshot } from './store.ts'
 
@@ -70,6 +71,12 @@ export interface ISession {
   readScienceArtifact(
     versionId: VersionId,
   ): Promise<RpcResult<{ versionId: VersionId; mediaType: string; byteCount: number; data: Uint8Array }>>
+  /** List the latest artifacts in the project selected by this session's workspace. */
+  readScienceLibrary(): Promise<RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>>
+  /** List one relative directory inside this session's workspace. */
+  readWorkspaceFiles(path?: string): Promise<RpcResult<{ root: string; entries: WorkspaceFileEntry[]; truncated?: true }>>
+  /** Read one bounded relative workspace file as preview bytes. */
+  readWorkspaceFile(path: string): Promise<RpcResult<{ mediaType: string; byteCount: number; data: Uint8Array }>>
   /**
    * Apply one edit, remove, or strict steer action to a still-pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.

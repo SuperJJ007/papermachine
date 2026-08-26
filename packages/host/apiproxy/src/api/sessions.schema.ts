@@ -389,6 +389,43 @@ export const sessionScienceArtifactValueSchema = z.object({
   data: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.scienceArtifact'>>>
 
+/** Project Science library request payload. */
+export const sessionsScienceLibraryRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceLibrary'>>>
+
+/** Project Science library response value. */
+export const sessionsScienceLibraryValueSchema = z.object({
+  projectId: z.string().min(1),
+  artifacts: z.array(z.object({
+    artifactId: z.string().min(1), logicalName: z.string(), title: z.string().optional(), caption: z.string().optional(),
+    originSessionId: sessionIdSchema, originSessionTitle: z.string().optional(),
+    latest: z.object({
+      versionId: scienceVersionIdSchema, ordinal: z.number().int().positive(), mediaType: z.string().min(1),
+      byteCount: z.number().int().nonnegative(), createdAt: z.number(),
+    }),
+  })),
+}) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceLibrary'>>>
+
+/** Bounded workspace directory request payload. */
+export const sessionsWorkspaceFilesRequestSchema = z.object({ sessionId: sessionIdSchema, path: z.string().optional() }) satisfies z.ZodType<Wire<RequestPayload<'sessions.workspaceFiles'>>>
+
+/** Bounded workspace directory response value. */
+export const sessionsWorkspaceFilesValueSchema = z.object({
+  root: z.string(),
+  entries: z.array(z.object({
+    name: z.string(), kind: z.union([z.literal('file'), z.literal('dir')]), byteCount: z.number().int().nonnegative().optional(),
+    modifiedAt: z.number(), mediaType: z.string().optional(),
+  })),
+  truncated: z.literal(true).optional(),
+}) satisfies z.ZodType<Wire<ResponseValue<'sessions.workspaceFiles'>>>
+
+/** Workspace file preview request payload. */
+export const sessionsWorkspaceFileRequestSchema = z.object({ sessionId: sessionIdSchema, path: z.string().min(1) }) satisfies z.ZodType<Wire<RequestPayload<'sessions.workspaceFile'>>>
+
+/** Workspace file preview response value. */
+export const sessionsWorkspaceFileValueSchema = z.object({
+  mediaType: z.string().min(1), byteCount: z.number().int().nonnegative(), data: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'sessions.workspaceFile'>>>
+
 /** session.updateQueue request payload. */
 export const sessionUpdateQueueRequestSchema = z.object({
   sessionId: sessionIdSchema,

@@ -66,6 +66,9 @@ function scriptedApi(overrides: {
       scienceArtifact: r => ok(r, {
         versionId: r.payload.versionId, mediaType: 'image/png', byteCount: 1, data: 'AA==',
       }),
+      scienceLibrary: r => ok(r, { projectId: 'project-1' as never, artifacts: [] }),
+      workspaceFiles: r => ok(r, { root: '', entries: [] }),
+      workspaceFile: r => ok(r, { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' }),
       updateQueue: r => ok(r, { accepted: true as const }),
       cancel: r => ok(r, { accepted: true as const }),
       ...overrides.sessions,
@@ -224,6 +227,17 @@ describe('unary round trip', () => {
     const response = await client(api).sessions.fork({ sessionId: sid('s-parent'), atSeq: 7 })
     expect(seen?.payload).toEqual({ sessionId: 's-parent', atSeq: 7 })
     expect(response.result).toEqual({ ok: true, value: { sessionId: 's-child' } })
+  })
+
+  it('routes the project library and workspace file calls through the wire', async () => {
+    const c = client(scriptedApi())
+
+    expect((await c.sessions.scienceLibrary({ sessionId: sid('s1') })).result)
+      .toEqual({ ok: true, value: { projectId: 'project-1', artifacts: [] } })
+    expect((await c.sessions.workspaceFiles({ sessionId: sid('s1') })).result)
+      .toEqual({ ok: true, value: { root: '', entries: [] } })
+    expect((await c.sessions.workspaceFile({ sessionId: sid('s1'), path: 'notes.txt' })).result)
+      .toEqual({ ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' } })
   })
 
   it('routes workspace rename, delete, and ordering through the wire', async () => {

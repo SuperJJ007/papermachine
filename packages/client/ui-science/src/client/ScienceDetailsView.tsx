@@ -27,12 +27,13 @@ import {
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConversationSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, ISession, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ScienceArtifactId, ScienceArtifactNote, ScienceArtifactNotesProjection, ScienceClientArtifactVersion, ScienceClientProjection,
+  ScienceArtifactId, ScienceArtifactMediaType, ScienceArtifactNote, ScienceArtifactNotesProjection,
+  ScienceClientArtifactVersion, ScienceClientProjection,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
   ScienceArtifactNoteReceipt, ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
@@ -40,7 +41,8 @@ import type {
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
-import type { ScienceArtifactView, ScienceOpenArtifact, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
+import { scienceTabId } from './selection-store.ts'
+import type { ScienceArtifactView, ScienceOpenTab, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import css from './ScienceDetailsView.module.css'
@@ -51,6 +53,12 @@ export interface ScienceDetailsInjected {
   loadImage: ScienceImageLoader
   /** Session-scoped text artifact loader (science-attachment-loader.ts). */
   loadText: TextLoader
+  /** Read the project-level latest-artifact library. */
+  loadLibrary: ISession['readScienceLibrary']
+  /** List one project workspace directory. */
+  loadWorkspaceFiles: ISession['readWorkspaceFiles']
+  /** Read one project workspace file. */
+  loadWorkspaceFile: ISession['readWorkspaceFile']
   /** Add selected artifact elements to the main conversation composer. */
   addToConversation: (targets: readonly ScienceEditSelection[]) => void
   /** Remove one exact target from the main conversation composer. */
@@ -89,19 +97,14 @@ function assertNever(value: never): never {
   throw new Error(`unhandled value: ${JSON.stringify(value)}`)
 }
 
-/** Latest accepted version per logical artifact, in first-appearance (commit) order. */
-function latestArtifacts<T extends ScienceClientArtifactVersion>(artifacts: readonly T[]): T[] {
-  const byId = new Map<string, T>()
-  for (const artifact of artifacts) {
-    const current = byId.get(artifact.artifactId)
-    if (current === undefined || artifact.version > current.version) byId.set(artifact.artifactId, artifact)
-  }
-  return [...byId.values()]
-}
-
 /** Every durable version of one logical artifact, ascending — the version stepper's walk order. */
 function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly T[], artifactId: ScienceArtifactId): T[] {
   return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
+}
+
+function workspaceFileName(path: string): string {
+  /* v8 ignore next -- workspace RPC paths are non-empty */
+  return path.split('/').at(-1) ?? path
 }
 
 /**
@@ -263,28 +266,31 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   )
 }
 
-function TabStrip({ tabs, artifacts, activeArtifactId, onActivate, onClose, t }: {
-  tabs: readonly ScienceOpenArtifact[]
+function TabStrip({ tabs, artifacts, activeTabId, onActivate, onClose, t }: {
+  tabs: readonly ScienceOpenTab[]
   artifacts: readonly ScienceClientArtifactVersion[]
-  activeArtifactId: ScienceArtifactId | null
-  onActivate: (artifactId: ScienceArtifactId) => void
-  onClose: (artifactId: ScienceArtifactId) => void
+  activeTabId: string | null
+  onActivate: (tabId: string) => void
+  onClose: (tabId: string) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
       {tabs.map((tab) => {
-        const artifact = artifacts.find(candidate => candidate.artifactId === tab.artifactId && candidate.version === tab.version)
-        const label = artifact?.title ?? tab.artifactId
-        const active = tab.artifactId === activeArtifactId
+        const artifact = tab.kind === 'artifact' ? artifacts.find(candidate => candidate.artifactId === tab.artifactId && candidate.version === tab.version) : undefined
+        const label = tab.kind === 'artifact'
+          ? artifact?.title ?? tab.artifactId
+          : workspaceFileName(tab.path)
+        const id = scienceTabId(tab)
+        const active = id === activeTabId
         return (
-          <div key={tab.artifactId} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
-            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(tab.artifactId) }}>
+          <div key={id} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
+            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(id) }}>
               {label}
             </button>
             <button
               type="button" className={css.tabClose} aria-label={t('toolbar.closeNamedTab', { title: label })}
-              onClick={() => { onClose(tab.artifactId) }}
+              onClick={() => { onClose(id) }}
             >
               <IconCloseFill14 size={10} />
             </button>
@@ -321,10 +327,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_048_576).toFixed(1)} MB`
 }
 
-function artifactFacts(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
-  return [artifactType(chart, t), t('artifact.version', { version: chart.version }), formatBytes(chart.byteCount)].join(' · ')
-}
-
 function ArtifactMetaRail({ chart, snapshot, t }: {
   chart: ScienceClientArtifactVersion
   snapshot: ConversationSnapshot
@@ -346,75 +348,216 @@ function ArtifactMetaRail({ chart, snapshot, t }: {
   )
 }
 
-function ArtifactGallery({ artifacts, loadImage, onOpen, t }: {
-  artifacts: readonly ScienceClientArtifactVersion[]
+interface LibraryArtifact {
+  artifactId: string
+  logicalName: string
+  title?: string
+  caption?: string
+  originSessionId: string
+  originSessionTitle?: string
+  latest: {
+    versionId: string
+    ordinal: number
+    mediaType: ScienceArtifactMediaType
+    byteCount: number
+    createdAt: number
+  }
+}
+interface WorkspaceEntry {
+  name: string
+  kind: 'file' | 'dir'
+  byteCount?: number
+  modifiedAt: number
+  mediaType?: string
+}
+
+/** Project-level library home: latest artifacts plus bounded workspace browsing. */
+function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, t }: {
+  loadLibrary: ScienceDetailsInjected['loadLibrary']
+  loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
   loadImage: ScienceImageLoader
-  onOpen: (selection: { artifactId: ScienceArtifactId; version: number }) => void
+  onOpenArtifact: (artifact: LibraryArtifact) => void
+  onOpenFile: (path: string) => void
+  currentSessionId: string
   t: TranslateNS<'science'>
 }) {
-  const latest = latestArtifacts(artifacts)
+  const [section, setSection] = useState<'artifacts' | 'files'>('artifacts')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'name'>('newest')
+  const [layout, setLayout] = useState<'grid' | 'list'>('grid')
+  const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([])
+  const [path, setPath] = useState('')
+  const [entries, setEntries] = useState<WorkspaceEntry[]>([])
+  const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    let live = true
+    setError(undefined)
+    void loadLibrary().then((result) => {
+      if (!live) return
+      if (result.ok) setArtifacts(result.value.artifacts)
+      else setError(result.error.message)
+    })
+    return () => { live = false }
+  }, [loadLibrary])
+
+  useEffect(() => {
+    if (section !== 'files') return
+    let live = true
+    setError(undefined)
+    void loadWorkspaceFiles(path).then((result) => {
+      if (!live) return
+      if (result.ok) setEntries(result.value.entries)
+      else setError(result.error.message)
+    })
+    return () => { live = false }
+  }, [loadWorkspaceFiles, path, section])
+
+  const needle = query.trim().toLocaleLowerCase()
+  const visibleArtifacts = artifacts.filter(item => `${item.logicalName}\n${item.title ?? ''}`.toLocaleLowerCase().includes(needle)).sort((a, b) => {
+    if (sort === 'name') return (a.title ?? a.logicalName).localeCompare(b.title ?? b.logicalName)
+    return sort === 'newest' ? b.latest.createdAt - a.latest.createdAt : a.latest.createdAt - b.latest.createdAt
+  })
+  const visibleEntries = entries.filter(entry => entry.name.toLocaleLowerCase().includes(needle))
+  const crumbs = path === '' ? [] : path.split('/')
+
   return (
-    <div className={css.library}>
-      <section className={css.librarySection}>
-        <div className={css.librarySectionHead}><h3>{t('details.artifacts.generated')}</h3><span>{latest.length}</span></div>
-        {latest.length === 0
-          ? <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>
-          : <ul className={css.chartList}>{latest.map((artifact) => {
-            return (
-              <li key={artifact.artifactId} className={css.chartItem}>
-                {/* A real <button> wrapping MessageImage's own thumbnail <button>
-                is invalid HTML that also breaks click delivery (a nested
-                button swallows clicks meant for its ancestor, even from a
-                sibling outside the inner button — proven by this exact
-                structure in this package's own tests); a div with a button
-                role follows the artifact gallery's other interactive cards. */}
-                {/* An explicit label: without it this role="button" wrapper's
-                accessible name is computed from its contents, which include
-                MessageImage's own button — so the wrapper would announce (and
-                match by role+name as) whatever state that thumbnail is in. */}
-                <div
-                  className={css.galleryButton}
-                  role="button"
-                  aria-label={t('details.artifact.select', { title: artifact.title, version: artifact.version })}
-                  tabIndex={0}
-                  onClick={() => { onOpen({ artifactId: artifact.artifactId, version: artifact.version }) }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    onOpen({ artifactId: artifact.artifactId, version: artifact.version })
-                  }}
-                >
-                  {artifact.mediaType === 'image/png'
-                    ? <ScienceArtifactImage content={artifact} label={artifact.title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
-                    : <ArtifactFileTile mediaType={artifact.mediaType} />}
-                  <div className={css.chartMeta}>
-                    <span className={css.chartTitle}>{artifact.title}</span>
-                    <span className={css.libraryFacts}>{artifactFacts(artifact, t)}</span>
-                  </div>
-                </div>
-              </li>
-            )
-          })}</ul>}
-      </section>
+    <div className={css.libraryHome}>
+      <div className={css.librarySwitch}>
+        <button type="button" aria-pressed={section === 'artifacts'} onClick={() => { setSection('artifacts'); setQuery('') }}>{t('library.artifacts')}</button>
+        <button type="button" aria-pressed={section === 'files'} onClick={() => { setSection('files'); setQuery('') }}>{t('library.files')}</button>
+      </div>
+      <div className={css.libraryToolbar}>
+        <input aria-label={t('library.search')} placeholder={t('library.search')} value={query} onChange={(event) => { setQuery(event.target.value) }} />
+        {section === 'artifacts' && <>
+          <select aria-label={t('library.sort')} value={sort} onChange={(event) => { setSort(event.target.value as typeof sort) }}>
+            <option value="newest">{t('library.newest')}</option><option value="oldest">{t('library.oldest')}</option><option value="name">{t('library.name')}</option>
+          </select>
+          <button type="button" aria-label={t('library.layout')} onClick={() => { setLayout(value => value === 'grid' ? 'list' : 'grid') }}>{layout === 'grid' ? t('library.grid') : t('library.list')}</button>
+        </>}
+        <span>{section === 'artifacts' ? t('library.artifactCount', { count: visibleArtifacts.length }) : t('library.fileCount', { count: visibleEntries.length })}</span>
+      </div>
+      {error !== undefined && <p role="alert" className={css.notice}>{error}</p>}
+      {section === 'artifacts' ? <>
+        {visibleArtifacts.length === 0 && <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>}
+        <ul className={layout === 'grid' ? css.chartList : css.libraryList}>{visibleArtifacts.map((item) => {
+          const title = item.title ?? item.logicalName
+          const source = item.originSessionId === currentSessionId
+            ? t('library.currentSession')
+            : item.originSessionTitle ?? item.originSessionId
+          return <li key={item.artifactId} className={css.chartItem}><div role="button" tabIndex={0} aria-label={t('details.artifact.select', { title, version: item.latest.ordinal })} className={css.libraryCard} onClick={() => { onOpenArtifact(item) }} onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            onOpenArtifact(item)
+          }}>
+            {item.latest.mediaType === 'image/png'
+              ? <ScienceArtifactImage content={item.latest} label={title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
+              : <ArtifactFileTile mediaType={item.latest.mediaType} />}
+            <span className={css.chartMeta}>
+              <strong className={css.chartTitle}>{title}</strong>
+              <span className={css.libraryFacts}>
+                v{String(item.latest.ordinal)} · {item.latest.mediaType} · {source}
+              </span>
+            </span>
+          </div></li>
+        })}</ul>
+      </> : <>
+        <nav className={css.breadcrumb} aria-label={t('library.breadcrumb')}>
+          <button type="button" onClick={() => { setPath('') }}>{t('library.root')}</button>
+          {crumbs.map((crumb, index) => <button type="button" key={`${crumb}:${String(index)}`} onClick={() => { setPath(crumbs.slice(0, index + 1).join('/')) }}>› {crumb}</button>)}
+        </nav>
+        <ul className={css.workspaceList}>{visibleEntries.map((entry) => {
+          const child = path === '' ? entry.name : `${path}/${entry.name}`
+          return <li key={entry.name}><button type="button" onClick={() => { if (entry.kind === 'dir') setPath(child); else onOpenFile(child) }}>
+            <span>{entry.kind === 'dir' ? '▸' : '·'} {entry.name}</span><small>{entry.kind === 'file' ? formatBytes(entry.byteCount ?? 0) : ''}</small>
+          </button></li>
+        })}</ul>
+      </>}
     </div>
   )
 }
 
-/** No open tabs: a gallery of latest artifact versions. */
-function LandingView({ artifacts, loadImage, onOpenTab, t }: {
-  artifacts: readonly ScienceClientArtifactVersion[]
+const PREVIEW_MEDIA = new Set<ScienceArtifactMediaType>([
+  'image/png', 'text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain',
+])
+
+function isPreviewMediaType(value: string): value is ScienceArtifactMediaType {
+  return PREVIEW_MEDIA.has(value as ScienceArtifactMediaType)
+}
+
+function previewChart(ref: {
+  artifactId: string
+  logicalName: string
+  title: string
+  caption?: string
+  versionId: string
+  version: number
+  mediaType: ScienceArtifactMediaType
+  byteCount: number
+  createdAt: number
+}): ScienceClientArtifactVersion {
+  return {
+    ...ref, producerSessionId: '' as never, sha256: '', environmentRevision: 0, environmentFingerprintPreview: '',
+    origin: 'auto', runId: '' as never, toolCallId: '' as never, requestHeaderSeq: 0,
+  } as unknown as ScienceClientArtifactVersion
+}
+
+function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
+  chart: ScienceClientArtifactVersion
   loadImage: ScienceImageLoader
-  onOpenTab: (selection: { artifactId: ScienceArtifactId; version: number }) => void
+  loadText: TextLoader
   t: TranslateNS<'science'>
 }) {
-  return (
-    <div className={css.landing}>
-      <section className={css.section}>
-        <div className={css.sectionLabel}>{t('details.artifacts.title')}</div>
-        <ArtifactGallery artifacts={artifacts} loadImage={loadImage} onOpen={onOpenTab} t={t} />
-      </section>
-    </div>
-  )
+  return <ArtifactContent
+    chart={chart} loadImage={loadImage} loadText={loadText} selectionTarget={undefined}
+    /* v8 ignore next -- read-only previews deliberately expose an inert selection hook */
+    onSelectTarget={() => {}}
+    /* v8 ignore next -- read-only previews never stage selection targets */
+    isTargetAdded={() => false}
+    /* v8 ignore next -- read-only previews have no target comments */
+    targetComment={() => ''}
+    /* v8 ignore next -- read-only previews cannot add targets */
+    onAddTarget={() => {}}
+    /* v8 ignore next -- read-only previews cannot remove targets */
+    onRemoveTarget={() => {}}
+    /* v8 ignore next -- read-only previews reject the style editor's write hook */
+    onCommitStyle={() => Promise.resolve({ ok: false, error: t('details.artifact.readOnly') })} t={t}
+  />
+}
+
+function WorkspaceFilePreview({ path, loadWorkspaceFile, t }: {
+  path: string
+  loadWorkspaceFile: ScienceDetailsInjected['loadWorkspaceFile']
+  t: TranslateNS<'science'>
+}) {
+  const [loaded, setLoaded] = useState<{ mediaType: string; byteCount: number; data: Uint8Array }>()
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    let live = true
+    void loadWorkspaceFile(path).then((result) => {
+      if (!live) return
+      if (result.ok) setLoaded(result.value); else setError(result.error.message)
+    })
+    return () => { live = false }
+  }, [loadWorkspaceFile, path])
+  if (error !== undefined) return <p role="alert" className={css.notice}>{error}</p>
+  if (loaded === undefined) return <p role="status" className={css.notice}>{t('artifact.loading')}</p>
+  if (!isPreviewMediaType(loaded.mediaType)) {
+    return <p className={css.notice}>{t('library.unsupported', { bytes: formatBytes(loaded.byteCount) })}</p>
+  }
+  const chart = previewChart({
+    artifactId: path, logicalName: path, title: workspaceFileName(path),
+    versionId: path, version: 1, mediaType: loaded.mediaType, byteCount: loaded.byteCount, createdAt: 0,
+  })
+  const loadText: TextLoader = () => Promise.resolve(new TextDecoder('utf-8', { fatal: true }).decode(loaded.data))
+  const loadImage: ScienceImageLoader = () => {
+    let binary = ''
+    for (let offset = 0; offset < loaded.data.length; offset += 0x8000) {
+      binary += String.fromCharCode(...loaded.data.subarray(offset, offset + 0x8000))
+    }
+    return Promise.resolve(`data:${loaded.mediaType};base64,${btoa(binary)}`)
+  }
+  return <ReadOnlyPreview chart={chart} loadImage={loadImage} loadText={loadText} t={t} />
 }
 
 /** User-only review notes attached to the logical artifact across versions. */
@@ -569,7 +712,7 @@ function ArtifactTab({
         onStepVersion={(version) => { actions.setTabVersion({ artifactId: chart.artifactId, version }) }}
         onOpenProvenance={() => { actions.setView('provenance') }}
         onMaximize={() => { actions.setLightboxOpen(true) }}
-        onCloseTab={() => { actions.closeTab(chart.artifactId) }}
+        onCloseTab={() => { actions.closeTab(`artifact:${chart.artifactId}`) }}
         loadImage={loadImage}
         loadText={loadText}
         t={t}
@@ -625,7 +768,8 @@ function ArtifactTab({
 }
 
 function ArtifactViewer({
-  science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText, addToConversation, removeFromConversation,
+  science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText,
+  loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, addToConversation, removeFromConversation,
   composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote,
   commitStyleEdit, useStore, actions, inspectCall, t,
 }: {
@@ -636,6 +780,9 @@ function ArtifactViewer({
   snapshot: ConversationSnapshot
   loadImage: ScienceImageLoader
   loadText: TextLoader
+  loadLibrary: ScienceDetailsInjected['loadLibrary']
+  loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
+  loadWorkspaceFile: ScienceDetailsInjected['loadWorkspaceFile']
   addToConversation: ScienceDetailsInjected['addToConversation']
   removeFromConversation: ScienceDetailsInjected['removeFromConversation']
   composerSelections: ScienceDetailsInjected['composerSelections']
@@ -650,46 +797,82 @@ function ArtifactViewer({
   t: TranslateNS<'science'>
 }) {
   const openArtifacts = useStore(s => s.openArtifacts)
-  const activeArtifactId = useStore(s => s.activeArtifactId)
+  const activeTabId = useStore(s => s.activeTabId)
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
+  const [libraryTabs, setLibraryTabs] = useState<Record<string, LibraryArtifact>>({})
+  const libraryCharts = Object.values(libraryTabs).map(item => previewChart({
+    artifactId: item.artifactId, logicalName: item.logicalName, title: item.title ?? item.logicalName,
+    ...(item.caption === undefined ? {} : { caption: item.caption }), versionId: item.latest.versionId,
+    version: item.latest.ordinal, mediaType: item.latest.mediaType, byteCount: item.latest.byteCount, createdAt: item.latest.createdAt,
+  }))
+  const tabArtifacts = [...artifacts, ...libraryCharts]
 
   // `showLibrary` deliberately leaves open tabs intact while clearing the
   // active id; every non-null active id still names one open tab.
-  const activeTab = openArtifacts.find(tab => tab.artifactId === activeArtifactId)
+  const activeTab = openArtifacts.find(tab => scienceTabId(tab) === activeTabId)
+  const tabStrip = <TabStrip tabs={openArtifacts} artifacts={tabArtifacts} activeTabId={activeTabId}
+    onActivate={(tabId) => { actions.activateTab(tabId) }}
+    onClose={(tabId) => { actions.closeTab(tabId) }} t={t} />
   if (activeTab === undefined) {
     return (
       <div className={css.body}>
-        <LandingView
-          artifacts={artifacts}
-          loadImage={loadImage}
-          onOpenTab={(selection) => { actions.openTab(selection) }}
-          t={t}
-        />
+        {tabStrip}
+        <ProjectLibrary key={science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}
+          loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadImage={loadImage}
+          currentSessionId={currentSessionId}
+          onOpenArtifact={(item) => {
+            setLibraryTabs(current => ({ ...current, [item.artifactId]: item }))
+            actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.latest.ordinal })
+          }}
+          onOpenFile={(path) => { actions.openFileTab(path) }} t={t} />
       </div>
     )
+  }
+
+  if (activeTab.kind === 'file') {
+    return <div className={css.body}>{tabStrip}<div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
   }
 
   // The one remaining way `activeChart` resolves to undefined is the
   // durable projection not having this exact (artifactId, version) pair — a
   // stale tab, handled below as "artifact unavailable".
-  const activeChart = artifacts.find(candidate =>
+  const activeChart = tabArtifacts.find(candidate =>
     candidate.artifactId === activeTab.artifactId && candidate.version === activeTab.version)
 
   return (
     <div className={css.body}>
-      <TabStrip
-        tabs={openArtifacts}
-        artifacts={artifacts}
-        activeArtifactId={activeArtifactId}
-        onActivate={(artifactId) => { actions.activateTab(artifactId) }}
-        onClose={(artifactId) => { actions.closeTab(artifactId) }}
-        t={t}
-      />
+      {tabStrip}
       {activeChart === undefined
         ? <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
-        : (
+        : libraryTabs[activeChart.artifactId] !== undefined && !artifacts.includes(activeChart) ? (
+          view === 'provenance'
+            ? <div className={css.body}>
+              <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
+                <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
+                  {activeChart.title}
+                </button>
+                <span className={css.breadcrumbSep} aria-hidden="true">›</span>
+                <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
+              </nav>
+              <section className={css.editPanel}>
+                <strong>{t('provenance.messages.sourceSession')}</strong>
+                <span>{libraryTabs[activeChart.artifactId]?.originSessionTitle
+                  ?? libraryTabs[activeChart.artifactId]?.originSessionId}</span>
+                <button type="button" disabled title={t('library.sourceNavigationUnavailable')}>
+                  {t('provenance.messages.conversation')}
+                </button>
+              </section>
+            </div>
+            : <><ArtifactToolbar chart={activeChart} versions={[activeChart]} onBack={() => { actions.showLibrary() }}
+              /* v8 ignore next -- the library RPC supplies only the latest version, so both step controls are disabled */
+              onStepVersion={() => {}} onOpenProvenance={() => { actions.setView('provenance') }}
+              onMaximize={() => { actions.setLightboxOpen(true) }}
+              onCloseTab={() => { actions.closeTab(`artifact:${activeChart.artifactId}`) }}
+              loadImage={loadImage} loadText={loadText} t={t} />
+            <ReadOnlyPreview chart={activeChart} loadImage={loadImage} loadText={loadText} t={t} /></>
+        ) : (
           <ArtifactTab
             science={science}
             artifacts={artifacts}
@@ -729,7 +912,8 @@ function ArtifactViewer({
  */
 export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
-  inspectCall, loadImage, loadText, addToConversation, removeFromConversation, composerSelections,
+  inspectCall, loadImage, loadText, loadLibrary, loadWorkspaceFiles, loadWorkspaceFile,
+  addToConversation, removeFromConversation, composerSelections,
   returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
@@ -759,6 +943,7 @@ export function ScienceDetailsView({
     <ArtifactViewer
       science={science} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
       snapshot={snapshot} loadImage={loadImage} loadText={loadText}
+      loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadWorkspaceFile={loadWorkspaceFile}
       addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
       removeFromConversation={removeFromConversation} composerSelections={composerSelections} returnToConversation={returnToConversation}
       selectDetailed={selectDetailed}

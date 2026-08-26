@@ -282,6 +282,9 @@ function props(
     agentPreset?: string
     loadImage?: Props['loadImage']
     loadText?: Props['loadText']
+    loadLibrary?: Props['loadLibrary']
+    loadWorkspaceFiles?: Props['loadWorkspaceFiles']
+    loadWorkspaceFile?: Props['loadWorkspaceFile']
     addToConversation?: Props['addToConversation']
     removeFromConversation?: Props['removeFromConversation']
     composerSelections?: Props['composerSelections']
@@ -317,6 +320,19 @@ function props(
   }
   const snapshot = over.snapshot ?? emptySnapshot()
   const store = over.store ?? testScienceSelectionStore()
+  const latestByArtifact = new Map<string, ScienceClientArtifactVersion>()
+  for (const item of science?.artifacts ?? []) {
+    const current = latestByArtifact.get(item.artifactId)
+    if (current === undefined || current.version < item.version) latestByArtifact.set(item.artifactId, item)
+  }
+  const libraryArtifacts = [...latestByArtifact.values()].map(item => ({
+    artifactId: item.artifactId, logicalName: item.logicalName, title: item.title,
+    ...(item.caption === undefined ? {} : { caption: item.caption }), originSessionId: item.producerSessionId,
+    latest: {
+      versionId: item.versionId, ordinal: item.version, mediaType: item.mediaType,
+      byteCount: item.byteCount, createdAt: item.createdAt,
+    },
+  }))
   return {
     sessionId: SESSION,
     useSessions,
@@ -328,6 +344,9 @@ function props(
     selectDetailed: over.selectDetailed ?? vi.fn(),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
+    loadLibrary: over.loadLibrary ?? vi.fn().mockResolvedValue({ ok: true, value: { projectId: 'project-1', artifacts: libraryArtifacts } }),
+    loadWorkspaceFiles: over.loadWorkspaceFiles ?? vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [] } }),
+    loadWorkspaceFile: over.loadWorkspaceFile ?? vi.fn().mockResolvedValue({ ok: false, error: { code: 'internal', message: 'missing', details: {} } }),
     addToConversation: over.addToConversation ?? vi.fn(),
     removeFromConversation: over.removeFromConversation ?? vi.fn(),
     composerSelections: over.composerSelections ?? createSnapshotStore([]),
@@ -374,7 +393,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(statuses.map(el => el.textContent)).toEqual(['No artifacts yet.'])
   })
 
-  it('renders one gallery entry per logical chart at its latest accepted version', () => {
+  it('renders one gallery entry per logical chart at its latest accepted version', async () => {
     const science = baseProjection({
       artifacts: [
         chart({ version: 1 }), chart({ version: 2 }), chart({ version: 1 }),
@@ -382,22 +401,22 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText('Image · v2 · 100 B')).toBeTruthy()
+    expect(await screen.findByText('v2 · image/png · This session')).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
     expect(screen.getByText('Other')).toBeTruthy()
   })
 
-  it('formats kilobyte and megabyte artifact sizes', () => {
+  it('keeps byte counts out of artifact cards', () => {
     const science = baseProjection({ artifacts: [
-      chart({ artifactId: 'chart-kb' as never, title: 'Kilobytes', attachment: { attachmentId: 'sha256:kb' as never, mediaType: 'image/png', bytes: 2_048, width: 10, height: 10 } }),
-      chart({ artifactId: 'chart-mb' as never, title: 'Megabytes', attachment: { attachmentId: 'sha256:mb' as never, mediaType: 'image/png', bytes: 2_097_152, width: 10, height: 10 } }),
+      chart({ artifactId: 'chart-kb' as never, title: 'Kilobytes', attachment: { attachmentId: 'sha256:kb', mediaType: 'image/png', bytes: 2_048, width: 10, height: 10 } }),
+      chart({ artifactId: 'chart-mb' as never, title: 'Megabytes', attachment: { attachmentId: 'sha256:mb', mediaType: 'image/png', bytes: 2_097_152, width: 10, height: 10 } }),
     ] })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText(/2.0 KB/)).toBeTruthy()
-    expect(screen.getByText(/2.0 MB/)).toBeTruthy()
+    expect(screen.queryByText(/2.0 KB/)).toBeNull()
+    expect(screen.queryByText(/2.0 MB/)).toBeNull()
   })
 
-  it('labels a generated artifact with its turn, version, and parent version', () => {
+  it('labels a generated artifact with its turn, version, and parent version', async () => {
     const science = baseProjection({
       artifacts: [chart({
         version: 5,
@@ -412,10 +431,10 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    expect(screen.getByText('Image · v5 · 100 B')).toBeTruthy()
+    expect(await screen.findByText('v5 · image/png · This session')).toBeTruthy()
   })
 
-  it('labels first-generation and human-edited artifacts without internal generation facts', () => {
+  it('labels first-generation and human-edited artifacts without internal generation facts', async () => {
     const generated = chart({ artifactId: 'chart-generated' as never, version: 1, title: 'Generated' })
     const edited = humanEditChart({ artifactId: 'chart-edited' as never, version: 2, title: 'Edited' })
     const snapshot = {
@@ -426,8 +445,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
-    expect(screen.getByText('Image · v1 · 100 B')).toBeTruthy()
-    expect(screen.getByText('Chart · v2 · 40 B')).toBeTruthy()
+    expect(await screen.findByText('v1 · image/png · This session')).toBeTruthy()
+    expect(screen.getByText('v2 · application/vnd.vega-lite+json · This session')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -446,43 +465,187 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(await screen.findByRole('button', { name: 'Failed to load, click to retry' })).toBeTruthy()
   })
 
-  it('renders a file-type tile (never an <img>) for a non-image artifact\'s gallery entry', () => {
+  it('renders a file-type tile (never an <img>) for a non-image artifact\'s gallery entry', async () => {
     const science = baseProjection({
-      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv' as never, mediaType: 'text/csv', bytes: 40 } })],
+      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv', mediaType: 'text/csv', bytes: 40 } })],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(screen.getByText('CSV')).toBeTruthy()
+    expect(await screen.findByText('CSV')).toBeTruthy()
     expect(screen.queryByRole('img')).toBeNull()
   })
 
-  it('activates a gallery entry on Enter/Space and ignores every other key', () => {
+  it('activates a gallery entry on Enter/Space and ignores every other key', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
-    const gallery = document.querySelector('[role="button"]') as HTMLElement
+    const gallery = await screen.findByRole('button', { name: 'Open Loss curve, version 1' })
     fireEvent.keyDown(gallery, { key: 'a' })
-    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
     expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
+  })
+
+  it('filters and opens a latest artifact produced by another project session', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1',
+      artifacts: [{
+        artifactId: 'cross-chart', logicalName: 'cross.png', title: 'Cross-session chart', caption: 'Cross caption',
+        originSessionId: 'session-a', originSessionTitle: 'Source experiment',
+        latest: {
+          versionId: 'cross-version', ordinal: 3, mediaType: 'image/png', byteCount: 1, createdAt: 10,
+        },
+      }],
+    } })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
+    const search = screen.getByRole('textbox', { name: 'Search' })
+    fireEvent.change(search, { target: { value: 'Cross-session' } })
+    expect(await screen.findByText('v3 · image/png · Source experiment')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Cross-session chart, version 3' }))
+    expect(screen.getByRole('tab', { name: 'Cross-session chart' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect(screen.getByText('Source experiment')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to original conversation' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cross-session chart' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File library' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Cross-session chart, version 3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
+    expect(screen.queryByRole('tab', { name: 'Cross-session chart' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy()
+  })
+
+  it('browses a workspace directory and opens a supported file preview', async () => {
+    const loadWorkspaceFiles = vi.fn().mockResolvedValue({ ok: true, value: {
+      root: '', entries: [{ name: 'results.csv', kind: 'file', byteCount: 8, modifiedAt: 1, mediaType: 'text/csv' }],
+    } })
+    const loadWorkspaceFile = vi.fn().mockResolvedValue({ ok: true, value: {
+      mediaType: 'text/csv', byteCount: 8, data: new TextEncoder().encode('a,b\n1,2\n'),
+    } })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, loadWorkspaceFile })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /results\.csv/ }))
+    expect(await screen.findByRole('table', { name: 'results.csv' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '‹ File library' }))
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
+  })
+
+  it('exercises project-library sorting, layout, keyboard activation, and directory breadcrumbs', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1',
+      artifacts: [
+        { artifactId: 'z', logicalName: 'z.png', originSessionId: 'unknown-session', latest: { versionId: 'z1', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 30 } },
+        { artifactId: 'y', logicalName: 'y.txt', originSessionId: 'unknown-session', latest: { versionId: 'y1', ordinal: 1, mediaType: 'text/plain', byteCount: 1, createdAt: 25 } },
+        { artifactId: 'a', logicalName: 'a.md', title: 'Alpha', originSessionId: SESSION, latest: { versionId: 'a1', ordinal: 1, mediaType: 'text/markdown', byteCount: 2, createdAt: 10 } },
+        { artifactId: 'b', logicalName: 'b.json', title: 'Beta', originSessionId: 'source', originSessionTitle: 'Source', latest: { versionId: 'b1', ordinal: 1, mediaType: 'application/json', byteCount: 3, createdAt: 20 } },
+      ],
+    } })
+    const loadWorkspaceFiles = vi.fn().mockImplementation((path: string) => Promise.resolve({ ok: true, value: path === ''
+      ? { root: '', entries: [{ name: 'data', kind: 'dir', modifiedAt: 1 }, { name: 'root.bin', kind: 'file', byteCount: 2_048, modifiedAt: 1 }, { name: 'unknown.bin', kind: 'file', modifiedAt: 1 }] }
+      : { root: path, entries: [{ name: 'large.bin', kind: 'file', byteCount: 2_097_152, modifiedAt: 1 }] } }))
+    const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles })} />)
+    expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Switch grid or list view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Switch grid or list view' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'z.png' } })
+    const z = screen.getByRole('button', { name: 'Open z.png, version 1' })
+    fireEvent.keyDown(z, { key: 'x' })
+    fireEvent.keyDown(z, { key: ' ' })
+    expect(screen.getByRole('tab', { name: 'z.png' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect(screen.getByText('unknown-session')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File library' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /data/ }))
+    expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
+    fireEvent.click(screen.getByRole('button', { name: '› data' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project' }))
+    expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
+    expect((await screen.findByRole('button', { name: /unknown\.bin/ })).textContent).toContain('0 B')
+    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
+    expect(screen.getByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
+    view.unmount()
+  })
+
+  it('reports library and workspace failures plus unsupported and PNG file previews', async () => {
+    const failed = render(<ScienceDetailsView {...props(baseProjection(), {
+      loadLibrary: vi.fn().mockResolvedValue({ ok: false, error: { message: 'library offline' } }),
+      loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: false, error: { message: 'workspace offline' } }),
+    })} />)
+    expect((await screen.findByRole('alert')).textContent).toContain('library offline')
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('workspace offline')
+    failed.unmount()
+
+    const entries = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [
+      { name: 'raw.bin', kind: 'file', byteCount: 1_048_576, modifiedAt: 1, mediaType: 'application/octet-stream' },
+      { name: 'pixel.png', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'image/png' },
+      { name: 'broken.txt', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'text/plain' },
+    ] } })
+    const file = vi.fn().mockImplementation((path: string) => Promise.resolve(path === 'broken.txt'
+      ? { ok: false, error: { message: 'file unavailable' } }
+      : { ok: true, value: path === 'pixel.png'
+        ? { mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(255) }
+        : { mediaType: 'application/octet-stream', byteCount: 1_048_576, data: Uint8Array.of() } }))
+    const unsupported = render(<ScienceDetailsView {...props(baseProjection(), {
+      loadWorkspaceFiles: entries,
+      loadWorkspaceFile: file,
+    })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /raw\.bin/ }))
+    expect(await screen.findByText('Preview unavailable, 1.0 MB')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /File library/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /pixel\.png/ }))
+    expect(await screen.findByRole('img', { name: 'pixel.png' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /File library/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /broken\.txt/ }))
+    expect((await screen.findByRole('alert')).textContent).toContain('file unavailable')
+    unsupported.unmount()
+  })
+
+  it('ignores workspace listing and file reads that settle after the library unmounts', async () => {
+    let settleListing!: (value: unknown) => void
+    const listing = new Promise((resolve) => { settleListing = resolve })
+    const first = render(<ScienceDetailsView {...props(baseProjection(), {
+      loadWorkspaceFiles: vi.fn().mockReturnValue(listing),
+    })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    first.unmount()
+    await act(async () => { settleListing({ ok: true, value: { root: '', entries: [] } }); await listing })
+
+    let settleFile!: (value: unknown) => void
+    const pendingFile = new Promise((resolve) => { settleFile = resolve })
+    const second = render(<ScienceDetailsView {...props(baseProjection(), {
+      loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [{ name: 'late.txt', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'text/plain' }] } }),
+      loadWorkspaceFile: vi.fn().mockReturnValue(pendingFile),
+    })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    fireEvent.click(await screen.findByRole('button', { name: /late\.txt/ }))
+    second.unmount()
+    await act(async () => { settleFile({ ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(65) } }); await pendingFile })
   })
 
 })
 
 describe('ScienceDetailsView: opening a tab', () => {
-  it('clicking a gallery entry opens its tab, shows the tab strip and toolbar, and switches away from the landing view', () => {
+  it('clicking a gallery entry opens its tab, shows the tab strip and toolbar, and switches away from the landing view', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })] })
     render(<ScienceDetailsView {...props(science)} />)
-    fireEvent.click(screen.getByText('v2 title'))
+    fireEvent.click(await screen.findByText('v2 title'))
 
     expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
     expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
-    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     expect(screen.getByText('v2 title')).toBeTruthy()
   })
 
-  it('shows the generating turn in the viewer source rail after skipping unrelated nodes and calls', () => {
+  it('shows the generating turn in the viewer source rail after skipping unrelated nodes and calls', async () => {
     const science = baseProjection({ artifacts: [chart()] })
     const snapshot = {
       ...emptySnapshot(),
@@ -494,7 +657,7 @@ describe('ScienceDetailsView: opening a tab', () => {
       ],
     } as unknown as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    fireEvent.click(screen.getByText('Loss curve'))
+    fireEvent.click(await screen.findByText('Loss curve'))
     expect(screen.getByText('Generated in turn 3')).toBeTruthy()
     expect(screen.getByText('Read-only')).toBeTruthy()
   })
@@ -584,10 +747,10 @@ describe('ScienceDetailsView: tab strip', () => {
     const { science, store } = twoTabs()
     render(<ScienceDetailsView {...props(science, { store })} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Alpha' }))
-    expect(store.instance.getSnapshot().activeArtifactId).toBe('chart-1')
+    expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-1')
   })
 
-  it('closing a tab through its own close control removes it; closing the last tab returns to the landing view', () => {
+  it('closing a tab through its own close control removes it; closing the last tab returns to the landing view', async () => {
     const { science, store } = twoTabs()
     render(<ScienceDetailsView {...props(science, { store })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Close Alpha' }))
@@ -595,10 +758,10 @@ describe('ScienceDetailsView: tab strip', () => {
     expect(screen.getByRole('tab', { name: 'Beta' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
+    expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
     // Back to the landing view: the gallery lists both charts again (closing
     // a tab never removes the chart itself from the projection).
-    expect(screen.getByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open Beta, version 1' })).toBeTruthy()
   })
 
@@ -616,9 +779,9 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
   function threeVersions() {
     const science = baseProjection({
       artifacts: [
-        chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
-        chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
-        chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
+        chart({ version: 1, title: 'v1 title', caption: 'First pass', attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 512, width: 10, height: 10 } }),
+        chart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 2048, width: 10, height: 10 } }),
+        chart({ version: 3, title: 'v3 title', attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 5 * 1024 * 1024, width: 10, height: 10 } }),
       ],
     })
     const store = testScienceSelectionStore()
@@ -684,7 +847,7 @@ describe('ScienceDetailsView: content dispatch', () => {
   it('renders a PNG from project-store content', async () => {
     const mediaType = 'image/png' as const
     const science = baseProjection({
-      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType, bytes: 100, width: 10, height: 10 } })],
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc', mediaType, bytes: 100, width: 10, height: 10 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -706,7 +869,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     mediaType: TextMediaType, over: Partial<ScienceClientRunArtifactVersion> = {},
   ): { science: ScienceClientProjection; store: ReturnType<typeof testScienceSelectionStore> } {
     const science = baseProjection({
-      artifacts: [chart({ logicalName: 'data.txt', attachment: { attachmentId: 'sha256:txt' as never, mediaType, bytes: 20 }, ...over })],
+      artifacts: [chart({ logicalName: 'data.txt', attachment: { attachmentId: 'sha256:txt', mediaType, bytes: 20 }, ...over })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -899,29 +1062,29 @@ describe('ScienceDetailsView: content dispatch', () => {
       artifacts: [
         chart({
           artifactId: 'chart-1' as never, logicalName: 'a.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:a' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
+          attachment: { attachmentId: 'sha256:a', mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
         }),
         chart({
           artifactId: 'chart-2' as never, logicalName: 'b.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:b' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
+          attachment: { attachmentId: 'sha256:b', mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
         }),
       ],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 })
-    act(() => { store.actions.activateTab('chart-1' as never) })
+    act(() => { store.actions.activateTab('chart-1') })
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
     const commentA = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     fireEvent.change(commentA, { target: { value: 'artifact A note' } })
     expect(commentA.value).toBe('artifact A note')
 
-    act(() => { store.actions.activateTab('chart-2' as never) })
+    act(() => { store.actions.activateTab('chart-2') })
     const commentB = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     expect(commentB.value).toBe('')
 
-    act(() => { store.actions.activateTab('chart-1' as never) })
+    act(() => { store.actions.activateTab('chart-1') })
     const commentAAgain = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
     expect(commentAAgain.value).toBe('')
   })
@@ -971,7 +1134,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(JSON.parse(request?.spec ?? '{}')).toMatchObject({
       encoding: { color: { title: 'Group', scale: { range: ['#ff0000'] }, legend: { labelFontSize: 96 } } },
     })
-    expect(store.instance.getSnapshot().openArtifacts[0]?.version).toBe(4)
+    expect(store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 4 })
   })
 
   it('shows the style commit success status once the committed version is live', async () => {
@@ -984,7 +1147,7 @@ describe('ScienceDetailsView: content dispatch', () => {
       artifacts: [
         chart({
           logicalName: 'summary.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:v1' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 30 },
+          attachment: { attachmentId: 'sha256:v1', mediaType: 'application/vnd.vega-lite+json', bytes: 30 },
         }),
         humanEditChart({ version: 2 }),
       ],
@@ -997,7 +1160,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
     await waitFor(() => { expect(screen.getByText('Human-edited version committed.')).toBeTruthy() })
-    expect(store.instance.getSnapshot().openArtifacts[0]?.version).toBe(2)
+    expect(store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 2 })
   })
 
   it('renders Host style-commit failures and rejected calls without changing versions', async () => {
@@ -1011,7 +1174,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect((await screen.findByRole('alert')).textContent).toContain('style version is stale')
-    expect(first.store.instance.getSnapshot().openArtifacts[0]?.version).toBe(1)
+    expect(first.store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 1 })
     failedView.unmount()
 
     const rejectedCommit = vi.fn<CommitStyleEdit>().mockRejectedValue('offline')
@@ -1022,7 +1185,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect((await screen.findByRole('alert')).textContent).toContain('offline')
-    expect(second.store.instance.getSnapshot().openArtifacts[0]?.version).toBe(1)
+    expect(second.store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 1 })
     rejectedView.unmount()
 
     const errorCommit = vi.fn<CommitStyleEdit>().mockRejectedValue(new Error('commit transport failed'))
@@ -1390,7 +1553,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 
   it('has no maximize control for a non-image artifact — nothing to raster-maximize', () => {
     const science = baseProjection({
-      artifacts: [chart({ attachment: { attachmentId: 'sha256:txt' as never, mediaType: 'text/plain', bytes: 5 } })],
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:txt', mediaType: 'text/plain', bytes: 5 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -1422,7 +1585,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 describe('ScienceDetailsView: download', () => {
   function withOneTab(attachmentOver: Partial<LegacyArtifactContent> = {}) {
     const science = baseProjection({
-      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
+      artifacts: [chart({ attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -1462,7 +1625,7 @@ describe('ScienceDetailsView: download', () => {
     const loadImage = vi.fn()
     const loadText = vi.fn().mockResolvedValue('a,b\n1,2\n')
     const science = baseProjection({
-      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv' as never, mediaType: 'text/csv', bytes: 40 } })],
+      artifacts: [chart({ logicalName: 'summary.csv', attachment: { attachmentId: 'sha256:csv', mediaType: 'text/csv', bytes: 40 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -1484,7 +1647,7 @@ describe('ScienceDetailsView: download', () => {
     const loadImage = vi.fn()
     const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
     const science = baseProjection({
-      artifacts: [chart({ logicalName: 'summary.vl.json', attachment: { attachmentId: 'sha256:vl' as never, mediaType: 'application/vnd.vega-lite+json', bytes: 14 } })],
+      artifacts: [chart({ logicalName: 'summary.vl.json', attachment: { attachmentId: 'sha256:vl', mediaType: 'application/vnd.vega-lite+json', bytes: 14 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -1502,7 +1665,7 @@ describe('ScienceDetailsView: download', () => {
   it('inserts the version with no extension when the logical name (and the attachment) carry none', async () => {
     const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,xyz')
     const science = baseProjection({
-      artifacts: [chart({ logicalName: 'no-extension', attachment: { attachmentId: 'sha256:abc' as never, mediaType: 'image/png', bytes: 100, width: 10, height: 10 } })],
+      artifacts: [chart({ logicalName: 'no-extension', attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
@@ -1597,7 +1760,7 @@ describe('ScienceDetailsView: provenance drill-in', () => {
     const parent = chart({
       logicalName: 'chart.vl.json',
       attachment: {
-        attachmentId: 'sha256:parent' as never,
+        attachmentId: 'sha256:parent',
         mediaType: 'application/vnd.vega-lite+json',
         bytes: 40,
       },

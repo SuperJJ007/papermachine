@@ -45,26 +45,26 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 选择状态存储
 
-artifact viewer 与会话记录行共享同一个本包私有的、按会话划分的存储（`selection-store.ts`），保存开放标签页模型：一个有序的 `openArtifacts` 列表（每个 logical chart 一条，每条携带该标签页当前展示的持久化版本）、`activeArtifactId`、活跃标签页的 `view`（`'content' | 'provenance'`）、下钻上一次展示的 `provenanceSubTab`，以及一个 `lightboxOpen` 标记。活跃标签页所展示的版本本身并不单独成字段——它总是从 `openArtifacts` 中匹配的条目读取，因此一个标签页所展示的版本只有一处记录。`view` 与 `provenanceSubTab` 是单一字段，而非按标签页各自持有：切换到另一个标签页总会回到 `'content'`，而上一次选中的溯源子标签页作为一个跨标签页保留的偏好设置。该存储是 Science 专属的查看状态，因此由 ui-science 直接持有，而不是加进 `@deepseek-ai/dsh-client-ui-conversation` 的 `ChatStoreState`——后者由该包持有，服务于其自身骨架分派的状态。每个插件 fiber 创建一个句柄，作为 `store:` 注册座位传给需要它的每一个条目，因此让会话记录行与 viewer 就同一实时实例达成一致的是框架自身的"句柄 × 会话"缓存，而不是它们之间的一次值导入；正是这同一个按会话划分的缓存，让一个会话已打开的标签页在 Details 列关闭再重新打开之间保持不变，与 `@deepseek-ai/dsh-client-ui-layout` 自身的"切换会话时强制关闭"行为无关。
+artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在文件库主页处为 null。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 与 `provenanceSubTab` 仍是共享 viewer 字段：激活文档会回到 content，同时保留最近一次 provenance 子标签偏好。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。
 
 ## Artifact viewer（Details 条目）
 
 viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `science` 命名空间的已注册文案。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；写路径调用 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
 
-- **标签栏** — 每个已打开的 artifact（logical chart）一个标签页，各自可独立关闭；点击一条会话记录中的图表行会打开或激活该图表的标签页，并定位到该行所指的确切版本。没有任何标签页打开时，viewer 显示其落地视图，而非一条空标签栏。
+- **标签栏** — 只显示可关闭的 artifact tab 与 workspace file tab；文件库主页没有自己的文档 tab。点击会话记录 artifact 会打开其精确版本，工具栏返回键回到文件库，关闭最后一个文档也会自动回到文件库。
 - **工具栏** — 面向活跃标签页的内容视图：artifact 的标题与逻辑名、一个版本步进器（‹ v*n* ›，在两侧相邻的持久化版本间切换），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化 project-store 媒体类型分派：`image/png` 经本包的 `ScienceArtifactImage` 渲染；文本媒体类型通过 `loadText` 取得并解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
 - **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；渲染后的 SVG 同时会为可唯一识别的顶层 title、mark group、X/Y axis 或唯一 legend 绘制外框，对嵌套或有歧义的 path 则回退为整张 SVG 外框。行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层会画出一个人工样式区域，一旦区域画出，就提供同样的备注加 `+`/`−` 控件——单纯画出区域不会暂存任何东西，只有这个显式控件才会——因此区域 target 与结构化 target 经由同一条路径抵达 composer，产出同样的 `edit.regionTarget` chip。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id 加版本）：切换标签页或步进版本都会重新挂载内容子树，因此某个 artifact/版本上还未暂存的备注草稿绝不会预填进另一个共享同一 spec path 或区域坐标的字段。在某个 target 已经暂存之后再编辑其备注，会立即更新已暂存的选择（而不必等到下一次点击 `+`），因此 composer chip 与最终面向模型的指令始终携带最新文本。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注，并在拒绝前指明是哪个字段出了问题——共享指令本身，还是某个 target 自己的备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **直接样式编辑** — 选择 Vega-Lite `mark` 或 `encoding.*` target 还会打开基于不可变工作副本的样式面板。面板只暴露颜色、字号与 encoding axis/legend 标题文本；每次修改都会重新渲染实时 SVG 预览，数据变换仍由 agent 完成。定稿时通过 `remote.scienceEdits.commitStyleEdit` 发送完整 JSON spec；成功后选择返回的下一个 version，其详情明确标记直接编辑并指名确切 parent。Host 的 stale/media/JSON/admission 拒绝会保持可见，且不改变所选 version。UI 子集用于塑造工作流，并不声称能对任意 Vega-Lite JSON 建立安全不变量。
 - **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
-- **落地视图** — 在没有标签页打开时显示每个 logical artifact 的最新版本图库；打开任一项即创建其标签页。
+- **文件库主页** — `sessions.scienceLibrary` 提供 Session 所属 project 内每个 logical artifact 的一张最新版本卡片，并提供搜索、排序和网格／列表控制。`sessions.workspaceFiles` 提供可搜索的单层目录浏览；file tab 通过 `sessions.workspaceFile` 读取至多 2 MiB，并把支持的媒体类型交给现有内容 renderer。文件库每次显示时刷新，当前 Session 的 artifact 投影变化时也会刷新。
 
 在第一条 Science 事件之前，viewer 显示一个未绑定状态；当会话摘要携带 preset 时一并显示所选 preset。缺失投影支持、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，各自渲染不同文案。
 
 **设计说明——原仪表盘中的事实去了哪里。** 常驻的环境概览与运行列表不会重新出现为会话级面板小节。环境事实只存在于溯源下钻的「环境」子标签页，作用域是某一个 artifact 的运行。Outcome 保留在折叠的 `publish_outcome` 会话单元格中，不再有独立 Details 目的地或落地视图小节。
 
-Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-attachment-loader.ts`）解析，而非会话界面拥有的附件加载器。两者都调用 `ISession.readScienceArtifact(versionId)`：Host 在读取字节之前，会对照该 Session 的严格 Science fold 鉴权确切 store 版本。`loadImage` 把返回字节转换为 `data:` URI；`loadText` 以严格 UTF-8 解码。两者都不使用 `Map`，也不持有 `URL.createObjectURL` 句柄，因此 Session 释放时无需回收，也没有第二套缓存。
+Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-attachment-loader.ts`）解析，而非会话界面拥有的附件加载器。两者都调用 `ISession.readScienceArtifact(versionId)`：Host 接受 Session fold 证明的版本、经确认的跨 Session input，或 Session 所属 project 中的精确成员。`loadImage` 把返回字节转换为 `data:` URI；`loadText` 以严格 UTF-8 解码。两者都不保留第二套持久缓存。
 
 **CSV 表格（`ArtifactTable.tsx`）是本包内部组件，而非 `dsh-client-ui-primitives` 的导出。** 设计阶段对 `packages/client` 的一次全仓库搜索没有发现任何表格组件，也没有会需要它的第二个消费方；`JsonTree`/`MarkdownText` 之所以原样复用 `ui-primitives` 里的实现，是因为它们已经为其他消费方存在于那里。解析逻辑（`csv.ts`）是手写的、类 RFC4180 解析器（带引号字段、字段内嵌逗号/换行、双引号转义），而非一个依赖：这是对自动捕获或模型标注文件的只读预览，从不涉及任意不受信任的上传，"可配置性不能作为提供不受支持……公开操作集的理由"（`packages/AGENTS.md`）对一个投机性共享基础组件同样适用。未来出现真正的第二个消费方，才是把两者提升进 `ui-primitives` 的触发条件，而不是这一个。
 

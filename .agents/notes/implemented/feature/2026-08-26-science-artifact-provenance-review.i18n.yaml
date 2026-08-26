@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-science-artifact-provenance-review.md
-2026-08-26-science-artifact-provenance-review.md: 2ac395bf2877a458582e9e0bc05abf3e7bbe05e1
-2026-08-26-science-artifact-provenance-review.zh.md: c468b2ddb6dbb15db0aba811c24ffda9dba8cbb5
+2026-08-26-science-artifact-provenance-review.md: 06994ab32fc34965b0e9a4f5250725e7e5635f9c
+2026-08-26-science-artifact-provenance-review.zh.md: 6f64e1c298a871888ce934520c90e3ac44c39a65

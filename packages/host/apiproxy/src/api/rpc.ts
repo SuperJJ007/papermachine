@@ -54,6 +54,7 @@ export interface RpcErrorDetailsMap {
   'agent-preset-not-copyable': { agentPreset: string; source: string; reason: string }
   'agent-busy': { reason: string }
   'attachment-error': { reason: string }
+  'science-artifact-error': { reason: string }
   'queue-item-not-found': { itemId: MessageId }
   'steer-unavailable': { itemId: MessageId }
   /** A known slash command reported a usage/state error; the message is the command's own text. */

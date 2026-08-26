@@ -1,7 +1,7 @@
 /**
  * The artifact viewer's per-media-type content dispatch: the seam
  * `ScienceDetailsView.tsx`'s toolbar/tab-strip never touches. An image
- * attachment renders through `MessageImage`; a text attachment fetches its
+ * image renders through `ScienceArtifactImage`; a text artifact fetches its
  * decoded bytes through `loadText` and dispatches again on media type — CSV
  * as a sortable table (`ArtifactTable`), Vega-Lite as an SVG visualization,
  * JSON as `JsonTree`, Markdown as `MarkdownText`, and plain text as
@@ -12,14 +12,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import embed, { vega } from 'vega-embed'
-import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
-import type { ImageLoader, MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
-import type { TextLoader } from './science-attachment-loader.ts'
+import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
 import { capTextForDisplay, MAX_ARTIFACT_TEXT_CHARACTERS } from './format.ts'
@@ -56,17 +56,21 @@ type TextLoadState =
   | { status: 'ready'; text: string }
   | { status: 'error' }
 
+type TextArtifactContentRef = Omit<ScienceArtifactContentRef, 'mediaType'> & {
+  readonly mediaType: Exclude<ScienceArtifactMediaType, 'image/png'>
+}
+
 /** Fetch one text attachment's decoded content, re-fetching whenever `retryToken` changes. */
-function useLoadedText(attachment: TextAttachmentRef, loadText: TextLoader, retryToken: number): TextLoadState {
+function useLoadedText(content: ScienceArtifactContentRef, loadText: TextLoader, retryToken: number): TextLoadState {
   const [state, setState] = useState<TextLoadState>({ status: 'loading' })
   useEffect(() => {
     let live = true
     setState({ status: 'loading' })
-    loadText(attachment)
+    loadText(content)
       .then((text) => { if (live) setState({ status: 'ready', text }) })
       .catch(() => { if (live) setState({ status: 'error' }) })
     return () => { live = false }
-  }, [attachment, loadText, retryToken])
+  }, [content, loadText, retryToken])
   return state
 }
 
@@ -411,11 +415,11 @@ function VegaLiteArtifact({
 
 /** One text attachment's dispatched body: loading/error states, then the per-media-type renderer. */
 function TextArtifactBody({
-  logicalName, attachment, loadText, selectionTarget, onSelectTarget, isTargetAdded,
+  logicalName, content, loadText, selectionTarget, onSelectTarget, isTargetAdded,
   targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
 }: {
   logicalName: string
-  attachment: TextAttachmentRef
+  content: TextArtifactContentRef
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
@@ -427,7 +431,7 @@ function TextArtifactBody({
   t: TranslateNS<'science'>
 }) {
   const [retryToken, setRetryToken] = useState(0)
-  const state = useLoadedText(attachment, loadText, retryToken)
+  const state = useLoadedText(content, loadText, retryToken)
 
   if (state.status === 'loading') return <p className={css.notice} role="status">{t('artifact.loading')}</p>
   if (state.status === 'error') {
@@ -438,7 +442,7 @@ function TextArtifactBody({
     )
   }
 
-  switch (attachment.mediaType) {
+  switch (content.mediaType) {
     case 'text/csv':
       return (
         <ArtifactTable
@@ -478,7 +482,7 @@ function TextArtifactBody({
       return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
     }
     /* v8 ignore next -- closed TextMediaType union; every current member has a case above */
-    default: return assertNever(attachment.mediaType)
+    default: return assertNever(content.mediaType)
   }
 }
 
@@ -494,8 +498,8 @@ function normalizedPoint(event: ReactMouseEvent<HTMLDivElement>): { x: number; y
 function RasterArtifact({
   chart, loadImage, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
 }: {
-  chart: ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }
-  loadImage: ImageLoader
+  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  loadImage: ScienceImageLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
@@ -555,7 +559,7 @@ function RasterArtifact({
   return (
     <div className={css.rasterSelector}>
       <div className={css.rasterCanvas}>
-        <MessageImage attachment={chart.attachment} load={loadImage} variant="single" labels={artifactImageLabels(t)} />
+        <ScienceArtifactImage content={chart} label={chart.title} load={loadImage} variant="single" labels={artifactImageLabels(t)} />
         {region !== undefined && (
           <span
             className={css.regionBox}
@@ -629,8 +633,8 @@ function BoundedPreText({ text, truncated, total, t }: {
 }
 
 /**
- * Render one artifact version's content: an image through `MessageImage`, or
- * a text attachment fetched through `loadText` and dispatched by media type.
+ * Render one artifact version's content: an image preview, or text fetched
+ * through `loadText` and dispatched by media type.
  * @param props - the artifact version to render and both durable-byte loaders.
  * @returns the dispatched content and optional human-edit ancestry.
  */
@@ -639,7 +643,7 @@ export function ArtifactContent({
   targetComment, onAddTarget, onRemoveTarget, onCommitStyle, t,
 }: {
   chart: ScienceClientArtifactVersion
-  loadImage: ImageLoader
+  loadImage: ScienceImageLoader
   loadText: TextLoader
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
@@ -650,14 +654,13 @@ export function ArtifactContent({
   onCommitStyle: (spec: string) => Promise<StyleCommitResult>
   t: TranslateNS<'science'>
 }) {
-  const { attachment } = chart
-  const isImage = 'width' in attachment
+  const isImage = chart.mediaType === 'image/png'
   return (
     <div className={css.content}>
       {isImage
         ? (
           <RasterArtifact
-            chart={chart as ScienceClientArtifactVersion & { attachment: Extract<ScienceClientArtifactVersion['attachment'], { width: number }> }}
+            chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
             loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
             isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
             t={t}
@@ -665,7 +668,7 @@ export function ArtifactContent({
         )
         : (
           <TextArtifactBody
-            logicalName={chart.logicalName} attachment={attachment} loadText={loadText}
+            logicalName={chart.logicalName} content={chart as TextArtifactContentRef} loadText={loadText}
             selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
             isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
             onCommitStyle={onCommitStyle} t={t}

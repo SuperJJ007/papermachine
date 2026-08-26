@@ -5,17 +5,16 @@
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
-import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { ArtifactRecord, ProjectId, VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, ScienceVersionId,
+  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
 } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
@@ -44,17 +43,10 @@ const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
-const PROJECT_ID = ScienceProjectId('project-types-1')
-
-/** Deterministic fixture digest: a real sha256 over a fixed label, not a store-verified content hash. */
-function fixtureDigest(label: string): string {
-  return createHash('sha256').update(label).digest('hex')
-}
+type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
 /** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png artifacts. */
-function scienceFixture(
-  csv: TextAttachmentRef, json: TextAttachmentRef, markdown: TextAttachmentRef, png: ImageAttachmentRef,
-): string {
+function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[]): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
   // own creation-time anchor plus that event's delta from the fixture's
@@ -150,18 +142,17 @@ function scienceFixture(
 
   const artifact = (
     artifactId: ReturnType<typeof ScienceArtifactId>, logicalName: string,
-    mediaType: ScienceArtifactMediaType, source: TextAttachmentRef | ImageAttachmentRef,
+    mediaType: ScienceArtifactMediaType, storedArtifact: StoredArtifact,
   ) => {
     const createdAt = eventTime(runCall.seq + 3)
-    const versionId = ScienceVersionId(fixtureDigest(`${logicalName}:version`))
-    const sha256 = fixtureDigest(logicalName)
-    const byteCount = source.bytes
+    const { version } = storedArtifact
+    const { versionId, sha256, byteCount } = version
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         artifactId, logicalName, version: 1, title: logicalName, origin: 'auto',
         producerSessionId: session.id,
-        projectId: PROJECT_ID, versionId, sha256, mediaType, byteCount,
+        projectId, versionId, sha256, mediaType, byteCount,
         runId: RUN_ID, toolCallId: RUN_CALL_ID, requestHeaderSeq: request.seq,
         environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt,
       },
@@ -170,10 +161,10 @@ function scienceFixture(
   }
 
   const items = [
-    artifact(ScienceArtifactId('artifact-csv'), 'summary.csv', 'text/csv', csv),
-    artifact(ScienceArtifactId('artifact-json'), 'metrics.json', 'application/json', json),
-    artifact(ScienceArtifactId('artifact-md'), 'report.md', 'text/markdown', markdown),
-    artifact(ScienceArtifactId('artifact-png'), 'plot.png', 'image/png', png),
+    artifact(stored[0]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'summary.csv', 'text/csv', stored[0]!),
+    artifact(stored[1]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'metrics.json', 'application/json', stored[1]!),
+    artifact(stored[2]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'report.md', 'text/markdown', stored[2]!),
+    artifact(stored[3]!.artifact.artifactId as ReturnType<typeof ScienceArtifactId>, 'plot.png', 'image/png', stored[3]!),
   ]
 
   session.append('tool/result', {
@@ -220,11 +211,23 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    const csv = await scaffold.ctx.attachments.saveText({ data: Buffer.from(CSV_TEXT, 'utf8'), mediaType: 'text/csv', name: 'summary.csv' })
-    const json = await scaffold.ctx.attachments.saveText({ data: Buffer.from(JSON_TEXT, 'utf8'), mediaType: 'application/json', name: 'metrics.json' })
-    const markdown = await scaffold.ctx.attachments.saveText({ data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown', name: 'report.md' })
-    const png = await scaffold.ctx.attachments.saveImage({ data: PNG, mediaType: 'image/png', name: 'plot.png' })
-    await seedSession(scaffold, scienceFixture(csv, json, markdown, png), SEED_ID, 'science')
+    const opened = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
+    const definitions = [
+      { logicalName: 'summary.csv', data: Buffer.from(CSV_TEXT, 'utf8'), mediaType: 'text/csv' },
+      { logicalName: 'metrics.json', data: Buffer.from(JSON_TEXT, 'utf8'), mediaType: 'application/json' },
+      { logicalName: 'report.md', data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown' },
+      { logicalName: 'plot.png', data: PNG, mediaType: 'image/png' },
+    ] as const
+    const stored: StoredArtifact[] = []
+    for (const definition of definitions) {
+      stored.push(await scaffold.ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+        ...definition,
+        originSessionId: SessionId(SEED_ID),
+        origin: 'auto',
+        title: definition.logicalName,
+      }))
+    }
+    await seedSession(scaffold, scienceFixture(opened.projectId, stored), SEED_ID, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)

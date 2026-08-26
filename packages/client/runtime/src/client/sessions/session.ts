@@ -22,6 +22,7 @@ import type { PendingInteraction } from './pending.ts'
 import { PendingWait } from './pending.ts'
 import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
@@ -302,6 +303,29 @@ export class Session implements SessionFace {
       })).result
       if (!result.ok) return result
       return { ok: true, value: { attachment: result.value.attachment, data: result.value.data } }
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
+  /** Resolve one fold-authorized Science artifact version into browser-consumable bytes. */
+  async readScienceArtifact(
+    versionId: VersionId,
+  ): Promise<RpcResult<{ versionId: VersionId; mediaType: string; byteCount: number; data: Uint8Array }>> {
+    try {
+      const result = (await this.api.sessions.scienceArtifact({
+        sessionId: this.sessionId,
+        versionId,
+      })).result
+      if (!result.ok) return result
+      const binary = atob(result.value.data)
+      const data = Uint8Array.from(binary, char => char.charCodeAt(0))
+      return { ok: true, value: {
+        versionId: result.value.versionId,
+        mediaType: result.value.mediaType,
+        byteCount: result.value.byteCount,
+        data,
+      } }
     } catch (error) {
       return transportError(error)
     }

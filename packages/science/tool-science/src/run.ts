@@ -7,7 +7,13 @@ import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
 import { replayScience, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceLanguage, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import type {
+  ScienceArtifactMediaType,
+  ScienceArtifactVersion,
+  ScienceLanguage,
+  ScienceProjection,
+  ScienceRunTerminal,
+} from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './context.ts'
 import { requireDirectDispatch } from './guard.ts'
@@ -147,7 +153,7 @@ function capturedArtifactPresentationItem(artifact: InferValue<typeof capturedAr
     title: artifact.title,
     content: {
       versionId: artifact.versionId,
-      mediaType: artifact.mediaType,
+      mediaType: artifact.mediaType as ScienceArtifactMediaType,
       byteCount: artifact.bytes,
     },
   }

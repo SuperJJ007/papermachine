@@ -8,15 +8,16 @@
 // inventing a replacement. A running, failed, stopped, or unrecognized/stale
 // presentation falls back to a plain row.
 
-import { MessageImage } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { IconGoalOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 // Merges the `science` key into SessionProjectionMap for useProjection.
 import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceOutcomeEvidencePresentation, ScienceOutcomePresentation } from '@deepseek-ai/dsh-tool-science/types'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
+import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
+import type { ScienceImageLoader } from './science-attachment-loader.ts'
 import css from './ScienceOutcomeRow.module.css'
 import { ScienceToolCell } from './ScienceToolCell.tsx'
 import {
@@ -25,7 +26,12 @@ import {
 } from './ScienceToolFallbackRow.tsx'
 
 /** Full row props: the toolview runtime share plus this package's locale seat. */
-type ScienceOutcomeRowProps = ToolCallViewProps & PropsLocale<'science'>
+export interface ScienceOutcomeInjected {
+  /** Session-fold-authorized project-store image loader. */
+  readonly loadScienceImage: ScienceImageLoader
+}
+
+type ScienceOutcomeRowProps = ToolCallViewProps & PropsLocale<'science'> & InjectFace<ScienceOutcomeInjected>
 
 /** Structurally validate `block.meta` against the exact tagged, versioned shape. */
 function parsePresentation(meta: unknown): ScienceOutcomePresentation | null {
@@ -49,10 +55,10 @@ function isEvidenceItem(value: unknown): value is ScienceOutcomeEvidencePresenta
 }
 
 /** One evidence row: a text label, plus a resolved chart thumbnail when the citation is a chart. */
-function EvidenceItem({ item, science, loadImage, t }: {
+function EvidenceItem({ item, science, loadScienceImage, t }: {
   item: ScienceOutcomeEvidencePresentation
   science: ScienceClientProjection | null | undefined
-  loadImage: ScienceOutcomeRowProps['loadImage']
+  loadScienceImage: ScienceImageLoader
   t: ScienceOutcomeRowProps['t']
 }) {
   if (item.kind === 'run') {
@@ -71,11 +77,11 @@ function EvidenceItem({ item, science, loadImage, t }: {
       </li>
     )
   }
-  if (!('width' in chart.attachment)) {
+  if (chart.mediaType !== 'image/png') {
     return (
       <li className={css.evidenceItem}>
         <span>{label}</span>
-        <ArtifactFileTile mediaType={chart.attachment.mediaType} />
+        <ArtifactFileTile mediaType={chart.mediaType} />
       </li>
     )
   }
@@ -90,16 +96,10 @@ function EvidenceItem({ item, science, loadImage, t }: {
   return (
     <li className={css.evidenceItem}>
       <span>{label}</span>
-      <MessageImage
-        attachment={{
-          attachmentId: chart.attachment.attachmentId,
-          mediaType: chart.attachment.mediaType,
-          bytes: chart.attachment.bytes,
-          width: chart.attachment.width,
-          height: chart.attachment.height,
-          ...chart.attachment.name === undefined ? {} : { name: chart.attachment.name },
-        }}
-        load={loadImage}
+      <ScienceArtifactImage
+        content={chart}
+        label={label}
+        load={loadScienceImage}
         variant="tile"
         labels={labels}
       />
@@ -113,7 +113,7 @@ function EvidenceItem({ item, science, loadImage, t }: {
  * @param props - keyed toolview payload plus the science locale seat.
  * @returns the dedicated Outcome row.
  */
-export function ScienceOutcomeRow({ block, loadImage, useProjection, inspect, t }: ScienceOutcomeRowProps) {
+export function ScienceOutcomeRow({ block, loadScienceImage, useProjection, inspect, t }: ScienceOutcomeRowProps) {
   const state = scienceToolRowState(block)
   const meta = 'kind' in block ? block.meta : undefined
   const presentation = state === 'ok' ? parsePresentation(meta) : null
@@ -145,7 +145,7 @@ export function ScienceOutcomeRow({ block, loadImage, useProjection, inspect, t 
           <div className={css.evidenceLabel}>{t('outcome.evidence')}</div>
           <ul className={css.evidenceList}>
             {presentation.evidence.map((item, index) => (
-              <EvidenceItem key={index} item={item} science={science} loadImage={loadImage} t={t} />
+              <EvidenceItem key={index} item={item} science={science} loadScienceImage={loadScienceImage} t={t} />
             ))}
           </ul>
         </div>

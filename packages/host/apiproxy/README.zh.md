@@ -22,6 +22,8 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 `session.textAttachment` 返回通过鉴权的文本引用及其 UTF-8 明文数据；响应 schema 接受附件包固定的 `TextMediaType` 集合，包括 `application/vnd.vega-lite+json`，因此浏览器客户端收到的媒体类型与附件存储准入的类型一致。
 
+`session.scienceArtifact({ sessionId, versionId })` 只有在严格折叠指定 Session 并确认该不可变版本已获授权后，才返回 base64 编码字节和 store 元数据。同 Session 保存的 artifact 会直接提供可信的 project 与 blob 坐标；S3 跨 Session run input 只携带 artifact id 和 ordinal，因此网关从 Session header 的持久 `cwd` 推导 project，并对照该 project 的 store 行确认请求版本。请求不携带 `projectId`，网关也绝不接受浏览器提供的 project id。
+
 分层与协议决策记录在 [GUI 分层与 RPC 协议 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md) 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md) 中。
 
 首个回答认领待处理请求之前，系统会对照该请求校验问题响应。多选题的回答项可以同时携带 `selected` 中的请求选项标签与非空 `custom` 文本；单选题的回答项必须二选一。标签重复、标签未知、id 不匹配、批次不完整以及自定义文本为空都会以 `bad-response` 拒绝。

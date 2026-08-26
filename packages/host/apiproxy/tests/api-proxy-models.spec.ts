@@ -25,6 +25,16 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
+import {
+  appendFixtureEvents,
+  ARTIFACT_ID,
+  ARTIFACT_SHA,
+  legalEvents,
+  PROJECT_ID,
+  RUN_CALL_ID,
+  runStarted,
+  VERSION_ID,
+} from '../../../science/science-session/tests/fixtures.ts'
 
 // Test-owned extractor-required event type: no production domain event is a
 // stable stand-in for this suite (every real domain's own registration is
@@ -97,7 +107,7 @@ async function harness(logged?: {
   provider: string
   model: string
   reasoningEffort?: ReasoningEffortId
-}): Promise<{
+}, cwd?: string): Promise<{
   ctx: Context
   agent: Agent
   sessionId: SessionId
@@ -121,7 +131,7 @@ async function harness(logged?: {
     { provider: 'duplicate', id: 'same', name: 'Same' },
     { provider: 'duplicate', id: 'same', name: 'Same Again' },
   ]))
-  const session = ctx.sessions.create()
+  const session = ctx.sessions.create(undefined, cwd === undefined ? undefined : { meta: { cwd } })
   if (logged !== undefined) {
     session.append('request/header', { header: { config: logged }, reason: 'initial' })
   }
@@ -320,6 +330,83 @@ describe('Web session model selection', () => {
       error: { code: 'attachment-error', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } },
     })
     expect(readText).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('reads a project-store blob only for a version proven by the named session fold', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const readBlob = vi.fn(() => Promise.resolve(Uint8Array.of(1, 2, 3)))
+    const openProject = vi.fn()
+    ctx.provide('scienceArtifactStore', {
+      readBlob,
+      openProject,
+      listVersions: vi.fn(),
+    } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const allowed = await api.sessions.scienceArtifact(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(allowed.result).toEqual({
+      ok: true,
+      value: { versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128, data: 'AQID' },
+    })
+    expect(readBlob).toHaveBeenCalledWith(PROJECT_ID, ARTIFACT_SHA)
+    expect(openProject).not.toHaveBeenCalled()
+
+    const denied = await api.sessions.scienceArtifact(request({ sessionId, versionId: 'unreferenced' as never }))
+    expect(denied.result).toMatchObject({
+      ok: false,
+      error: { code: 'science-artifact-error', details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    expect(readBlob).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('corroborates an S3 cross-session input ordinal in the session project before reading its version id', async () => {
+    const cwd = '/tmp/science-cross-session'
+    const { ctx, sessionId, agent } = await harness(undefined, cwd)
+    appendFixtureEvents(agent.session, legalEvents().slice(0, 4))
+    const runCall = agent.session.append('tool/call', {
+      turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_python', arguments: '{}',
+    })
+    agent.session.append('science/run-started', {
+      version: 1,
+      run: runStarted({
+        requestHeaderSeq: 3,
+        startedAt: runCall.time,
+        inputs: [{ artifactId: ARTIFACT_ID, version: 2, path: 'reference/plot.png' }],
+      }),
+    })
+    const crossVersionId = 'cross-version-2'
+    const readBlob = vi.fn(() => Promise.resolve(Uint8Array.of(9)))
+    const openProject = vi.fn(() => Promise.resolve({ projectId: PROJECT_ID }))
+    const listVersions = vi.fn(() => Promise.resolve([{
+      versionId: crossVersionId,
+      ordinal: 2,
+      sha256: '9'.repeat(64),
+      mediaType: 'image/png',
+      byteCount: 1,
+    }]))
+    ctx.provide('scienceArtifactStore', { readBlob, openProject, listVersions } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const allowed = await api.sessions.scienceArtifact(request({ sessionId, versionId: crossVersionId as never }))
+    expect(allowed.result).toMatchObject({ ok: true, value: { versionId: crossVersionId, data: 'CQ==' } })
+    expect(openProject).toHaveBeenCalledWith(cwd)
+    expect(listVersions).toHaveBeenCalledWith(PROJECT_ID, ARTIFACT_ID)
+
+    const wrongOrdinal = await api.sessions.scienceArtifact(request({ sessionId, versionId: 'cross-version-3' as never }))
+    expect(wrongOrdinal.result).toMatchObject({
+      ok: false,
+      error: { code: 'science-artifact-error', details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    expect(readBlob).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
 

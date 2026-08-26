@@ -43,3 +43,10 @@
 - 'button "View original: plot.png"':
   - img "plot.png"
 - button "Select region to edit"
+- region "Notes":
+  - heading "Notes" [level=3]
+  - paragraph: No notes yet.
+  - textbox "Artifact note":
+    - /placeholder: Add a private note
+  - button "Save" [disabled]
+  - paragraph: These notes belong only to you and never enter model context.

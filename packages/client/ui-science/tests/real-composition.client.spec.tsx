@@ -48,9 +48,9 @@ beforeEach(() => {
 const ARTIFACT_ITEM = {
   artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2,
   title: 'Loss curve',
-  attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100, width: 10, height: 10 },
+  content: { versionId: 'version-abc', mediaType: 'image/png', byteCount: 100 },
 }
-const ARTIFACT_META = { kind: 'science/artifact', version: 1, artifacts: [ARTIFACT_ITEM] }
+const ARTIFACT_META = { kind: 'science/artifact', version: 2, artifacts: [ARTIFACT_ITEM] }
 
 function toolResult(seq: number, callId: string, name: string, meta?: unknown): ToolResultNode {
   return {
@@ -142,13 +142,9 @@ async function bench() {
     session: {
       loadOlder: vi.fn<ISession['loadOlder']>(),
       prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
-      readAttachment: vi.fn<ISession['readAttachment']>(async () => ({
+      readScienceArtifact: vi.fn<ISession['readScienceArtifact']>(async () => ({
         ok: true,
-        value: { attachment: ARTIFACT_ITEM.attachment as never, data: new Uint8Array() },
-      })),
-      readTextAttachment: vi.fn<ISession['readTextAttachment']>(async () => ({
-        ok: true,
-        value: { attachment: { attachmentId: 'sha256:txt', mediaType: 'text/plain', bytes: 0 } as never, data: '' },
+        value: { ...ARTIFACT_ITEM.content, versionId: ARTIFACT_ITEM.content.versionId as never, data: new Uint8Array() },
       })),
     },
   })
@@ -169,7 +165,8 @@ async function bench() {
     artifacts: [{
       artifactId: ARTIFACT_ITEM.artifactId, logicalName: ARTIFACT_ITEM.logicalName, version: ARTIFACT_ITEM.version,
       producerSessionId: SID,
-      title: ARTIFACT_ITEM.title, origin: 'model', attachment: ARTIFACT_ITEM.attachment, runId: 'run-1',
+      title: ARTIFACT_ITEM.title, origin: 'model', versionId: ARTIFACT_ITEM.content.versionId,
+      sha256: 'abc', mediaType: ARTIFACT_ITEM.content.mediaType, byteCount: ARTIFACT_ITEM.content.byteCount, runId: 'run-1',
       toolCallId: CALL_ID, requestHeaderSeq: 1, environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1_000,
     }],
@@ -269,6 +266,13 @@ describe('ui-science on the real machinery stack', () => {
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
     expect(b.slots.entries('conversation.session.header.utilities').map(e => e.options.id)).toContain('science')
     expect(b.slots.entries('trajectory.view').map(e => e.options.id)).toEqual(['swimlane', 'detailed'])
+
+    const outcome = b.slots.entries('tool.call.toolview')
+      .find(entry => (entry.options as { key?: string }).key === 'publish_outcome')
+    const injected = (outcome?.inject as (sessionId: SessionId) => {
+      loadScienceImage(content: typeof ARTIFACT_ITEM.content): Promise<string>
+    })(SID)
+    await expect(injected.loadScienceImage(ARTIFACT_ITEM.content)).resolves.toBe('data:image/png;base64,')
 
     await b.scienceHandle.dispose()
 

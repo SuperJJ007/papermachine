@@ -69,6 +69,12 @@
       "path": "../../session/session-title"
     },
     {
+      "path": "../../science/science-artifact-store"
+    },
+    {
+      "path": "../../science/science-session"
+    },
+    {
       "path": "../../session-query/session-query"
     },
     {

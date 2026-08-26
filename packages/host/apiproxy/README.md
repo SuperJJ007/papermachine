@@ -22,6 +22,8 @@ Wire messages form a four-quadrant discriminated union — who initiates × requ
 
 `session.textAttachment` returns the authenticated text reference plus its plain UTF-8 data; its response schema accepts the attachment package's fixed `TextMediaType` set, including `application/vnd.vega-lite+json`, so browser clients receive the same media type admitted by the attachment store.
 
+`session.scienceArtifact({ sessionId, versionId })` returns base64-encoded bytes and store metadata only after a strict fold of the named Session authorizes that immutable version. A locally saved artifact supplies its trusted project and blob coordinates directly. An S3 cross-Session run input supplies only artifact id plus ordinal, so the gateway derives the project from the Session header's durable `cwd` and corroborates the requested version against that project's store rows. The request carries no `projectId`, and the gateway never accepts one from the browser.
+
 The layering/protocol decisions are recorded in the [GUI layering and RPC protocol RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md); the browser-side consumption architecture in the [web client architecture RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md).
 
 Question responses are validated against their pending request before the first answer claims it. A multi-select item may carry both requested option labels in `selected` and non-empty `custom` text; a single-select item must use one or the other. Duplicate labels, unknown labels, mismatched ids, incomplete batches, and empty custom text are rejected as `bad-response`.

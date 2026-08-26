@@ -30,12 +30,12 @@ Status: implemented
 
 **彻底把捕获的创建/追加判断改为完全依赖 store**(去掉 session 本地的快路径) — 已否决:该 session 自身的实时 projection 已经能以零 I/O 的方式正确回答"这个逻辑名是否已有 artifact",只要文件是这个 SESSION 自己此前某次 run 捕获的;为了正确处理更罕见的跨 session 情形而放弃这条路径、让每个被捕获文件都去查一次 store,只会拖慢占绝大多数的常见情形(单 session 反复运行)。
 
-**做一个专门的 project 级"Files"列表工具或 RPC** — 本切片否决:store 既有的 `listArtifacts`/`getVersion`(S1)已经完整回答了"每个 artifact 一行、latest 版本"这个问题;在这份数据之上做一个面向模型或浏览器的新呈现是 S4 UI 接线的工作(`packages/client/ui-science` 目前无法编译,已明确推迟到那里),不是本切片需要发明的新后端机制。
+**做一个专门的 project 级"Files"列表工具或 RPC** — 已否决：store 既有的 `listArtifacts`/`getVersion`（S1）已经完整回答了"每个 artifact 一行、latest 版本"这个问题。后续的 [Session 鉴权读取路径](2026-08-26-session-authorized-science-artifact-reads.zh.md)恢复了浏览器端确切版本的内容读取，但没有增加这个独立范围的 project 全量呈现。
 
 ## 后果
 
 `science-runtime` 的自动捕获遍历与 `prepareRunArtifacts` 现在除了 S2 已经使用的读写方法外,还依赖 `ScienceArtifactStore.listArtifacts`/`listVersions`;store 没有任何公开方法签名发生变化。`science-session` 的严格 fold 现在只接受一个更窄的、此前会被拒绝的 `science/run-started`/`science/artifact-saved` 值子集——一个等于或低于该 session 自身对某 artifactId 已记录的本地最高版本、又与某个本地记录不完全匹配的引用,仍然照旧被拒绝;而一个严格高于该本地最高版本的引用现在会被接受,无论该 session 自身的 fold 此前是否记录过这个 artifactId 的任何版本。`packages/science/science-session/tests/fold.spec.ts`、`fold-transitions.spec.ts` 与 `invariant.spec.ts` 覆盖了两个方向:接受高于本地最高版本的引用(包括并发 session 交错追加留下的跳跃,不只是紧邻的下一个 ordinal),以及拒绝落在已知范围内但不匹配的引用;`science-runtime/tests/capture.spec.ts` 通过两个针对同一个真实 project store 真正交错的 session,端到端证明了同一条规则。
 
-`editBaselines`/parent 血缘、人工编辑接续与 `annotate_artifact` 策展目前仍只能对照发起操作的 session 自身的 fold 本地历史解析——对这些路径而言,指名另一个 session 产出的版本仍会被拒绝。浏览器端的 artifact 读取(`packages/client/ui-science`)仍处于不可用状态;真正把"Files"做成一个 project 级 UI(与 session 会话内出现的记录区分开、单独列出该 project 全部 artifact 的一个板块)是 S4 在本切片已经验证正确的这份 store 数据之上要做的工作。本切片没有新增 keyless ACP/headless snapshot 场景:面向工具的 schema(`run_python`/`run_r` 的 `artifact_inputs`、`get_science_state`)与切片之前逐字节一致——改变的是哪些此前会被拒绝的调用现在会成功,这一点通过真实的、以 `ctx.plugin` 组装的 `science-runtime` 测试(真实 `ScienceArtifactStore`、真实 session,新增覆盖中没有 mock store)得到验证,而不是一个新的多 session headless-agent 场景——后者需要新的 fixture 脚手架才能在一个录制示例里表达两个 session,这里作为留给下一个扩展 headless-agent 示例套件的人的缺口标出,并未在本切片预算内修复。
+`editBaselines`/parent 血缘、人工编辑接续与 `annotate_artifact` 策展目前仍只能对照发起操作的 session 自身的 fold 本地历史解析——对这些路径而言，指名另一个 session 产出的版本仍会被拒绝。浏览器内容读取现在使用后续的 Session 鉴权确切版本 RPC；真正的 project 级"Files" UI（与 session 会话内出现的记录区分开、单独列出该 project 全部 artifact 的板块）仍不属于这项机制。本切片没有新增 keyless ACP/headless snapshot 场景：面向工具的 schema（`run_python`/`run_r` 的 `artifact_inputs`、`get_science_state`）与切片之前逐字节一致——改变的是哪些此前会被拒绝的调用现在会成功，这一点通过真实的、以 `ctx.plugin` 组装的 `science-runtime` 测试（真实 `ScienceArtifactStore`、真实 session，新增覆盖中没有 mock store）得到验证，而不是一个新的多 session headless-agent 场景——后者需要新的 fixture 脚手架才能在一个录制示例里表达两个 session，这里作为留给下一个扩展 headless-agent 示例套件的人的缺口标出，并未在本切片预算内修复。
 
 `packages/science/science-session/src/applicability.ts` 与 `transition.ts` 目前均为按文件 100% 覆盖率。

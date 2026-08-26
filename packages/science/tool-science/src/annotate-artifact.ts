@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
-import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { latestRequestHeaderSeq, requireScienceSession } from './run.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
@@ -95,7 +95,7 @@ export function applyAnnotateArtifactTool(ctx: Context): void {
         title: value.title,
         content: {
           versionId: value.versionId,
-          mediaType: value.mediaType,
+          mediaType: value.mediaType as ScienceArtifactMediaType,
           byteCount: value.bytes,
         },
       }]),

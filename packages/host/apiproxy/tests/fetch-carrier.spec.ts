@@ -108,6 +108,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: { ok: true, value: { attachment: { attachmentId: 'a' as never, mediaType: 'text/plain' as const, bytes: 1 }, data: 'a' } },
         }
       },
+      async scienceArtifact(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { versionId: request.payload.versionId, mediaType: 'image/png', byteCount: 1, data: 'AA==' } },
+        }
+      },
       async updateQueue(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true as const } } }
       },
@@ -365,6 +371,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.sessions.prompt({ sessionId: 's' as never, mode: 'queue', content: [{ type: 'text', text: 'x' }] })).result.ok).toBe(true)
     expect((await c.sessions.attachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.textAttachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
+    expect((await c.sessions.scienceArtifact({ sessionId: 's' as never, versionId: 'version-1' as never })).result.ok).toBe(true)
     expect((await c.sessions.updateQueue({
       sessionId: 's' as never,
       itemId: 'item-1' as never,

@@ -36,7 +36,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Tab strip: one tab per opened artifact, plus its own close control. */
+/* Tab strip: one tab per opened document, plus its own close control. */
 
 .tabStrip {
   display: flex;
@@ -47,16 +47,6 @@
   overflow-x: auto;
   gap: 2px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.homeTab {
-  flex: none;
-  width: 42px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
 }
 
 .tab {

@@ -1,8 +1,7 @@
 ## Details column — project file library
-- text: Science
+- text: Files
 - button "Close details"
-- tablist "Open artifacts":
-  - tab "File library" [selected]: ⌂
+- tablist "Open artifacts"
 - button "Artifacts" [pressed]
 - button "Project files"
 - textbox "Search"
@@ -11,6 +10,17 @@
   - option "Oldest"
   - option "Name"
 - button "Switch grid or list view": Grid
-- text: 0 artifacts
-- status: No artifacts yet.
-- list
+- text: 3 artifacts
+- list:
+  - listitem:
+    - button "Open Research notes, version 1":
+      - strong: Research notes
+      - text: v1 · text/markdown · Source session A
+  - listitem:
+    - button "Open Beta metrics, version 1":
+      - strong: Beta metrics
+      - text: v1 · application/json · This session
+  - listitem:
+    - button "Open Alpha results, version 1":
+      - strong: Alpha results
+      - text: v1 · text/csv · Source session A

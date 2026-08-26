@@ -266,18 +266,16 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   )
 }
 
-function TabStrip({ tabs, artifacts, activeTabId, onLibrary, onActivate, onClose, t }: {
+function TabStrip({ tabs, artifacts, activeTabId, onActivate, onClose, t }: {
   tabs: readonly ScienceOpenTab[]
   artifacts: readonly ScienceClientArtifactVersion[]
   activeTabId: string | null
-  onLibrary: () => void
   onActivate: (tabId: string) => void
   onClose: (tabId: string) => void
   t: TranslateNS<'science'>
 }) {
   return (
     <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
-      <button type="button" role="tab" aria-label={t('library.home')} aria-selected={activeTabId === null} className={activeTabId === null ? `${css.homeTab} ${css.tabActive}` : css.homeTab} onClick={onLibrary}>⌂</button>
       {tabs.map((tab) => {
         const artifact = tab.kind === 'artifact' ? artifacts.find(candidate => candidate.artifactId === tab.artifactId && candidate.version === tab.version) : undefined
         const label = tab.kind === 'artifact'
@@ -815,7 +813,7 @@ function ArtifactViewer({
   // active id; every non-null active id still names one open tab.
   const activeTab = openArtifacts.find(tab => scienceTabId(tab) === activeTabId)
   const tabStrip = <TabStrip tabs={openArtifacts} artifacts={tabArtifacts} activeTabId={activeTabId}
-    onLibrary={() => { actions.showLibrary() }} onActivate={(tabId) => { actions.activateTab(tabId) }}
+    onActivate={(tabId) => { actions.activateTab(tabId) }}
     onClose={(tabId) => { actions.closeTab(tabId) }} t={t} />
   if (activeTab === undefined) {
     return (

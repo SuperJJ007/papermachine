@@ -479,7 +479,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     render(<ScienceDetailsView {...props(science)} />)
     const gallery = await screen.findByRole('button', { name: 'Open Loss curve, version 1' })
     fireEvent.keyDown(gallery, { key: 'a' })
-    expect(screen.getByRole('tab', { name: 'File library' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
     expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
   })
@@ -509,7 +509,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open Cross-session chart, version 3' }))
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(screen.getByRole('tab', { name: 'File library' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: 'Cross-session chart' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy()
   })
 
   it('browses a workspace directory and opens a supported file preview', async () => {
@@ -524,7 +525,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /results\.csv/ }))
     expect(await screen.findByRole('table', { name: 'results.csv' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '‹ File library' }))
-    expect(screen.getByRole('tab', { name: 'File library' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
   })
 
   it('exercises project-library sorting, layout, keyboard activation, and directory breadcrumbs', async () => {
@@ -554,7 +555,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByText('unknown-session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'File library' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File library' }))
     fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /data/ }))
     expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
@@ -594,11 +595,11 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /raw\.bin/ }))
     expect(await screen.findByText('Preview unavailable, 1.0 MB')).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: 'File library' }))
+    fireEvent.click(screen.getByRole('button', { name: /File library/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /pixel\.png/ }))
     expect(await screen.findByRole('img', { name: 'pixel.png' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: 'File library' }))
+    fireEvent.click(screen.getByRole('button', { name: /File library/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /broken\.txt/ }))
     expect((await screen.findByRole('alert')).textContent).toContain('file unavailable')
@@ -640,7 +641,7 @@ describe('ScienceDetailsView: opening a tab', () => {
     expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
-    expect(screen.getByRole('tab', { name: 'File library' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     expect(screen.getByText('v2 title')).toBeTruthy()
   })
 
@@ -738,7 +739,7 @@ describe('ScienceDetailsView: tab strip', () => {
     const { science, store } = twoTabs()
     render(<ScienceDetailsView {...props(science, { store })} />)
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map(tab => tab.textContent)).toEqual(['⌂', 'Alpha', 'Beta'])
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Alpha', 'Beta'])
     expect(screen.getByRole('tab', { name: 'Beta' }).getAttribute('aria-selected')).toBe('true')
   })
 

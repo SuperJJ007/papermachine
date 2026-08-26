@@ -131,7 +131,8 @@ describe('web e2e: project Science file library', () => {
     expect(await details.getByText('Source session A', { exact: true }).count()).toBe(1)
     expect(await details.getByRole('button', { name: 'Back to original conversation', exact: true }).isDisabled()).toBe(true)
     await page.screenshot({ path: SHOT_CROSS_SESSION, fullPage: true })
-    await details.getByRole('tab', { name: 'File library' }).click()
+    await details.getByRole('button', { name: 'Alpha results', exact: true }).click()
+    await details.getByRole('button', { name: 'File library', exact: true }).click()
     await details.getByRole('button', { name: 'Close Alpha results', exact: true }).click()
 
     await details.getByRole('button', { name: 'Project files', exact: true }).click()
@@ -141,7 +142,7 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('table', { name: 'seed.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('project', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Close seed.csv', exact: true }).click()
-    expect(await details.getByRole('tab', { name: 'File library' }).getAttribute('aria-selected')).toBe('true')
+    await expect.poll(() => details.getByText('3 artifacts', { exact: true }).count()).toBe(1)
 
     await compareOrRefreshGolden(
       EXPECTED,

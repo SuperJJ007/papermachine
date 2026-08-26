@@ -88,9 +88,13 @@ PLAN.md's S3 bullet: "同 project 新会话读取/引用/追加既有 artifact(p
 
 ## Design decisions S4 must know
 
-- **A same-session reference is still validated strictly by the fold; only a
-  reference this session's own fold has never seen at all is trusted.** If
-  S4 (or anything else) ever needs the fold to validate a cross-session
+- **A reference is trusted only strictly ahead of this session's own
+  locally-recorded maximum version for that artifactId; a reference at or
+  below that maximum is still validated strictly by the fold** (corrected
+  after S3 shipped: the original binary known/unknown test above did not
+  survive two sessions truly interleaving writes against one artifact — see
+  the S3 Agent Note's Decision section for the current rule). If S4 (or
+  anything else) ever needs the fold to validate a cross-session
   `parent`/`editBaselines` reference, that is new design work — the human-edit
   invariants (parent logical name, media type, environment-provenance
   equality) have no fallback for a `parent` with no local copy to check those
@@ -159,9 +163,6 @@ headless-agent example suite.
 
 ## Known pre-existing gaps, confirmed NOT this slice's to fix
 
-- `packages/science/science-session/src/applicability.ts`'s presetId
-  self-consistency branches (S2's presetId rider) are below the per-file
-  100% coverage gate — S2's own handoff already flagged this as not run.
 - `packages/session/session-attachment-index/tests/policy.spec.ts`'s `team/*`
   event classification gap and the `session-attachment-index` 27/28 baseline
   — both pre-existing per this task's own instructions, independently

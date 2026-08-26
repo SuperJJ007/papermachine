@@ -11,6 +11,7 @@ import {
   ScienceArtifactId,
   ScienceRunId,
   ScienceScratchKey,
+  ScienceVersionId,
 } from '../src/index.ts'
 import {
   ARTIFACT_ID,
@@ -207,6 +208,31 @@ describe('Science stream invariant', () => {
       meta: { agentPreset: 'science' },
     })
     appendFixtureEvents(inputSession, legalEvents().slice(0, 9))
+    // Commit a second ARTIFACT_ID version beyond version 1, so this
+    // session's own log locally knows versions 1 and 4 (a legitimate S3
+    // interleaving gap: version 2 could have been taken by a concurrent
+    // session's own append; see science-session's fold.spec.ts). A run
+    // input inside that locally-known range which matches neither is still
+    // a same-session inconsistency the fold catches, unlike a version ahead
+    // of the local maximum (also accepted, same file) or an artifactId this
+    // session's log has never recorded at all (S3's original acceptance).
+    const gapCall = inputSession.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: CallId('call-artifact-gap'),
+      name: 'annotate_artifact',
+      arguments: '{}',
+    })
+    inputSession.append('science/artifact-saved', {
+      version: 1,
+      artifact: artifact({
+        version: 4,
+        toolCallId: gapCall.data.callId,
+        createdAt: gapCall.time,
+        versionId: ScienceVersionId('version-gap-ahead-invariant'),
+      }),
+    })
+
     const call = inputSession.append('tool/call', {
       turn: 2,
       step: 1,
@@ -215,12 +241,6 @@ describe('Science stream invariant', () => {
       arguments: '{}',
     })
     const inputSeq = inputSession.seq
-    // ARTIFACT_ID is known to this session's own log (committed by the
-    // `legalEvents().slice(0, 9)` prefix above), so naming it at a version
-    // that was never committed is a same-session inconsistency the fold
-    // still catches — unlike an artifactId this session's log has never
-    // recorded at all, which S3 accepts as a legitimate cross-session
-    // reference (see science-session's fold.spec.ts).
     expect(() => inputSession.append('science/run-started', {
       version: 1,
       run: runStarted({
@@ -228,7 +248,7 @@ describe('Science stream invariant', () => {
         toolCallId: call.data.callId,
         startedAt: call.time,
         runDirectoryRef: 'runs/input-run/',
-        inputs: [{ artifactId: ARTIFACT_ID, version: 99, path: 'input.png' }],
+        inputs: [{ artifactId: ARTIFACT_ID, version: 2, path: 'input.png' }],
       }),
     })).toThrow(/does not identify a committed artifact version/)
     expect(inputSession.seq).toBe(inputSeq)

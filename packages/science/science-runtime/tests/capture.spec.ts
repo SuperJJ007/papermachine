@@ -668,6 +668,47 @@ describe('Science auto-capture', () => {
     expect(third.result.capture?.captured).toEqual([])
   })
 
+  it('accepts session A\'s own append landing beyond its local knowledge after session B interleaves (S3 interleaving fix)', async () => {
+    const root = tmp('.science-capture-interleave-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const workspace = tmp('.science-interleave-workspace-')
+    const sessionA = createScienceSession(harness.ctx, 'science-interleave-a', workspace)
+    const sessionB = createScienceSession(harness.ctx, 'science-interleave-b', workspace)
+
+    const first = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n1,2\n' })
+    const versionA1 = first.result.capture?.captured.at(0)
+    if (versionA1 === undefined) throw new Error('interleaving test: expected session A to capture version 1')
+    expect(versionA1).toMatchObject({ version: 1, origin: 'auto' })
+
+    // Session B — not session A — takes the project's next ordinal (2).
+    // Session A's OWN log still locally knows only version 1.
+    const second = await runWithFiles(harness, root, sessionB, { 'shared.csv': 'a,b\n3,4\n' })
+    const versionB = second.result.capture?.captured.at(0)
+    if (versionB === undefined) throw new Error('interleaving test: expected session B to take version 2')
+    expect(versionB).toMatchObject({ artifactId: versionA1.artifactId, version: 2 })
+
+    // Session A appends again. It resolves the continuation from its OWN
+    // local fold (which still only knows version 1), so it calls
+    // `store.appendVersion` the same way a same-session continuation would
+    // — but the store's linearized ordinal assignment gives it version 3,
+    // not the 2 session A's own local history would predict. Before this
+    // fix, committing that `science/artifact-saved` fact into session A's
+    // own log would throw on replay (exact `latest.version + 1` only); the
+    // fix accepts any version beyond session A's own locally-recorded
+    // maximum, so the live Runtime's already-store-validated ordinal is
+    // trusted instead of re-derived.
+    const third = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n5,6\n' }, 'ok', true)
+    const versionA2 = third.result.capture?.captured.at(0)
+    if (versionA2 === undefined) throw new Error('interleaving test: expected session A to capture a further version')
+    expect(versionA2).toMatchObject({ artifactId: versionA1.artifactId, version: 3, origin: 'auto' })
+
+    // Session A's own session log replays cleanly with the accepted gap.
+    const projectionA = replayScience(sessionA.events)
+    expect(projectionA?.artifacts.map(v => v.version)).toEqual([1, 3])
+  })
+
   it('continues writing to the same on-disk project store across a Host restart (fresh Context/Runtime, same project)', async () => {
     const root = tmp('.science-capture-restart-')
     const prefix = createFakePythonPrefix(root)

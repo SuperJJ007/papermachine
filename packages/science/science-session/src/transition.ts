@@ -35,25 +35,31 @@ function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVer
 
 /**
  * Validate one `science/run-started` input reference against this session's
- * own fold-local artifact history, tolerating a reference this session has
- * never recorded. A run input naming an artifactId this session's own log
- * already has SOME version of is validated strictly, exactly like
- * {@link requireArtifactVersion}: the log alone proves or disproves it. A
- * run input naming an artifactId this session's log has never recorded is a
- * legitimate cross-session reference (a second session in the same project
- * reading an artifact a different session produced): the live Runtime
- * validated it against the project store before the referencing
- * `science/run-started` event committed (`prepareRunArtifacts` in
- * `science-runtime`), and pure fold replay — which cannot reach the store —
- * trusts that already-validated fact instead of re-deriving it. This is
- * strictly narrower than accepting every unknown reference: a same-session
- * artifactId at the wrong version still throws.
+ * own fold-local artifact history, trusting any version strictly ahead of
+ * what this session has recorded locally for that artifactId. This
+ * session's log has never recorded the referenced artifactId at all, or
+ * only versions up to some local maximum: either way, a version beyond that
+ * local knowledge is a legitimate cross-session advance (a second session
+ * in the same project produced it, either as the artifact's first version
+ * or as a concurrent append interleaved after this session's own last
+ * locally-known version) — the live Runtime validated the reference against
+ * the project store before the referencing `science/run-started` event
+ * committed (`prepareRunArtifacts` in `science-runtime`, whose
+ * `store.appendVersion` transaction is the true serialization authority),
+ * and pure fold replay — which cannot reach the store — trusts that
+ * already-validated fact instead of re-deriving it. A version at or inside
+ * the locally-known range is still fully verifiable from the log alone: it
+ * must match a locally-recorded version exactly, or it is a regression or a
+ * gap this session's own history disproves, and throws.
+ * @param state - fold accumulator to read this session's own locally-recorded artifact versions from.
+ * @param ref - the run-input artifactId/version reference being validated.
+ * @param subject - noun phrase identifying the reference kind in thrown messages.
  */
 function requireRunInputArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): void {
-  const knownLocally = state.artifacts.some(candidate => candidate.artifactId === ref.artifactId)
-  if (!knownLocally) return
-  const artifact = state.artifacts.find(candidate =>
-    candidate.artifactId === ref.artifactId && candidate.version === ref.version)
+  const known = state.artifacts.filter(candidate => candidate.artifactId === ref.artifactId)
+  const latest = known.at(-1)
+  if (latest === undefined || ref.version > latest.version) return
+  const artifact = known.find(candidate => candidate.version === ref.version)
   if (artifact === undefined) {
     throw new Error(`${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`)
   }
@@ -318,8 +324,9 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('Science artifact creation time is outside its supporting-fact event interval')
     }
   }
-  // New content always opens the next contiguous version, whose store row is
-  // fresh; only a model curation (annotate_artifact) supersedes an existing
+  // New content always opens a version beyond this session's own
+  // locally-known range for that logicalName, whose store row is fresh;
+  // only a model curation (annotate_artifact) supersedes an existing
   // version in place, and it is metadata-only — the superseded version's
   // store content reference (versionId/sha256/mediaType/byteCount) is
   // retained verbatim.
@@ -337,16 +344,25 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       // POSITIVE_INTEGER schema already rejects anything but a positive
       // ordinal). The live Runtime is what actually enforced the true prior
       // ordinal (`store.appendVersion`'s own linearized MAX(ordinal)+1
-      // transaction) before this event ever committed; a same-session
-      // continuation (the `else` branch below) still enforces strict
-      // contiguity, which the log alone can verify without trusting
-      // anything external.
+      // transaction) before this event ever committed.
       const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
       if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
     } else if (artifact.artifactId !== latest.artifactId
-      || artifact.version !== latest.version + 1
+      || artifact.version <= latest.version
       || artifact.createdAt < latest.createdAt) {
-      throw new Error('artifact versions must retain artifactId and advance contiguously')
+      // A version beyond this session's own last locally-known one for this
+      // logicalName is trusted the same way the "never recorded at all"
+      // branch above trusts version 1: the store's own linearized
+      // MAX(ordinal)+1 transaction already proved it real before this event
+      // committed, whether it is this session's own immediate next version
+      // or a gap left by a concurrent session's interleaved append landing
+      // in between in store-serialized order (S3 cross-session interleaving).
+      // A version at or below that local maximum is fully verifiable from
+      // the log alone and is never trusted from the store: it must equal
+      // `latest.version` exactly to reach the `target !== undefined`
+      // supersede path below, or it names a regression or an already-decided
+      // gap inside the locally-seen range, and throws here.
+      throw new Error('artifact versions must retain artifactId and advance beyond the locally committed version')
     }
     if (state.artifacts.some(candidate => candidate.versionId === artifact.versionId)) {
       throw new Error('a Science artifact versionId cannot back two committed versions')

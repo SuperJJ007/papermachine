@@ -451,7 +451,7 @@ describe('strict Science fold', () => {
     expect(() => foldScience(backward)).toThrow(/moves time backwards/)
   })
 
-  it('accepts a first-sighted artifact version above 1 as a cross-session continuation (S3), still rejecting a same-session skip', () => {
+  it('accepts a first-sighted artifact version above 1 as a cross-session continuation (S3)', () => {
     // This session's own log has never recorded ARTIFACT_ID before this
     // event: it may be opening a brand-new artifact, or continuing one a
     // different session in the same project already versioned. The fold
@@ -465,19 +465,90 @@ describe('strict Science fold', () => {
     })
     const state = foldScience(continued)
     expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 4 })
+  })
 
-    // Once this session's own log DOES carry a local version of that
-    // artifactId, a same-session skip ahead is still a same-session
-    // inconsistency the log alone can catch, and still throws.
-    const skipped = continued.slice()
-    skipped.push(
-      toolCall(9, 185, CallId('call-continue-skip'), 'annotate_artifact'),
+  it('accepts a later artifact-saved version beyond this session\'s own local maximum, still rejecting an in-range mismatch (S3 interleaving)', () => {
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+
+    // A save beyond this session's own local maximum (4) for that
+    // artifactId is trusted even though it is not exactly the next
+    // contiguous version: a concurrent session's own interleaved append may
+    // have landed in between in store-serialized order before this event
+    // ever committed, exactly like the store-validated first-sighted case
+    // above trusts any positive ordinal.
+    const gapAhead = continued.slice()
+    gapAhead.push(
+      toolCall(9, 185, CallId('call-continue-ahead'), 'annotate_artifact'),
       event('science/artifact-saved', 10, 190, {
         version: 1,
-        artifact: artifact({ version: 6, toolCallId: CallId('call-continue-skip'), createdAt: 189 }),
+        artifact: artifact({
+          version: 7,
+          toolCallId: CallId('call-continue-ahead'),
+          createdAt: 189,
+          versionId: ScienceVersionId('version-continue-ahead'),
+        }),
       }),
     )
-    expect(() => foldScience(skipped)).toThrow(/artifact versions must retain artifactId and advance contiguously/)
+    const advanced = foldScience(gapAhead)
+    expect(advanced.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 7 })
+
+    // A value at or below that local maximum which does not exactly match a
+    // locally recorded version is a same-session inconsistency the log
+    // alone can catch (a regression, or a gap inside the locally-seen
+    // range), and still throws.
+    const belowRange = continued.slice()
+    belowRange.push(
+      toolCall(9, 185, CallId('call-continue-below'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({ version: 2, toolCallId: CallId('call-continue-below'), createdAt: 189 }),
+      }),
+    )
+    expect(() => foldScience(belowRange)).toThrow(/must retain artifactId and advance beyond the locally committed version/)
+  })
+
+  it('accepts a run input version beyond this session\'s own local maximum, still rejecting an in-range mismatch (S3 interleaving)', () => {
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+
+    const runCall = CallId('call-run-continue')
+    const run = runStarted({
+      runId: ScienceRunId('run-continue'),
+      toolCallId: runCall,
+      startedAt: 189,
+      runDirectoryRef: 'runs/run-continue/',
+      inputs: [{ artifactId: ARTIFACT_ID, version: 6, path: 'ahead.png' }],
+    })
+    const aheadOfLocalMax = [
+      ...continued,
+      toolCall(9, 185, runCall, 'run_python'),
+      event('science/run-started', 10, 190, { version: 1, run }),
+    ]
+    // A run input naming a version strictly ahead of this session's own
+    // locally-recorded maximum (4) is trusted for the same reason a save
+    // beyond that maximum is: the live Runtime already validated the
+    // reference against the project store before this event committed.
+    expect(() => foldScience(aheadOfLocalMax)).not.toThrow()
+
+    const inRangeMismatch = [
+      ...continued,
+      toolCall(9, 185, runCall, 'run_python'),
+      event('science/run-started', 10, 190, {
+        version: 1,
+        run: { ...run, inputs: [{ artifactId: ARTIFACT_ID, version: 2, path: 'between.png' }] },
+      }),
+    ]
+    // A value at or below that local maximum which does not exactly match a
+    // locally recorded version is still fully verifiable from the log
+    // alone, and throws.
+    expect(() => foldScience(inRangeMismatch)).toThrow(/run input .* does not identify a committed artifact version/)
   })
 
   it('rejects missing or forward references and terminal whole-value rewrites', () => {
@@ -517,7 +588,7 @@ describe('strict Science fold', () => {
     }))).toThrow()
   })
 
-  it('accepts committed artifact ancestry and run inputs, and rejects unresolved or self references', () => {
+  it('accepts committed artifact ancestry and run inputs, and rejects unresolved parent or self references', () => {
     const branchCall = CallId('call-branch')
     const branchId = ScienceArtifactId('artifact-branch')
     const parent = { artifactId: ARTIFACT_ID, version: 1 }
@@ -550,12 +621,19 @@ describe('strict Science fold', () => {
     expect(state.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
     expect(state.runs.at(-1)).toMatchObject({ runId: secondRun.runId, inputs: secondRun.inputs })
 
-    const missingInput = events.slice()
-    missingInput[12] = event('science/run-started', 12, 190, {
+    // A run input naming a version strictly ahead of this session's own
+    // locally-recorded maximum for a KNOWN artifactId (branchId is locally
+    // known only at version 1) is trusted the same way an entirely unknown
+    // artifactId is trusted below: the live Runtime already validated the
+    // reference against the project store before this event committed, and
+    // a concurrent session may have advanced the artifact past this
+    // session's own local knowledge of it (S3 interleaving).
+    const aheadOfLocalMax = events.slice()
+    aheadOfLocalMax[12] = event('science/run-started', 12, 190, {
       version: 1,
-      run: { ...secondRun, inputs: [{ artifactId: branchId, version: 99, path: 'missing.png' }] },
+      run: { ...secondRun, inputs: [{ artifactId: branchId, version: 99, path: 'ahead.png' }] },
     })
-    expect(() => foldScience(missingInput)).toThrow(/run input .* does not identify a committed artifact version/)
+    expect(() => foldScience(aheadOfLocalMax)).not.toThrow()
 
     // A run input naming an artifactId this session's own log has never
     // recorded at all — not even at a different version — is a legitimate

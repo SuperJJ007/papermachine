@@ -100,7 +100,7 @@ describe('strict Science fold transitions', () => {
     ])).toThrow(/parent must be Vega-Lite/)
   })
 
-  it('requires each direct edit to name the current version and open the next version', () => {
+  it('requires each direct edit to name the current committed parent, but not necessarily the immediate next version', () => {
     const v2 = humanEdit()
     const history = [
       ...vegaHistory(),
@@ -119,10 +119,17 @@ describe('strict Science fold transitions', () => {
         }),
       }),
     ])).toThrow(/parent must be the current committed version/)
-    expect(() => foldScience([
+
+    // A direct edit naming the correct current-committed parent may still
+    // open a version beyond this session's own local maximum without being
+    // exactly the next one: like any other artifact-saved fact, the store's
+    // own transaction already proved that ordinal real (a concurrent
+    // session's own interleaved append may have taken version 2).
+    const state = foldScience([
       ...vegaHistory(),
       event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ version: 3 }) }),
-    ])).toThrow(/advance contiguously/)
+    ])
+    expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 3 })
   })
 
   it('rejects model curation of a direct-edit version', () => {
@@ -151,6 +158,7 @@ describe('strict Science fold transitions', () => {
 
   it('rejects every strict transition discontinuity without mutating the contract', () => {
     const secondCall = CallId('call-second')
+    const thirdChartCall = CallId('call-chart-regress')
     const secondRunId = ScienceRunId('run-2')
     const invalidEnvironment = environment({
       revision: 2,
@@ -367,8 +375,25 @@ describe('strict Science fold transitions', () => {
         ? event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact({ createdAt: 171 }) })
         : candidate), /creation time/],
       ['artifactId reused for another logical artifact', secondChart({ logicalName: 'other' }), /two logical artifacts/],
-      ['chart version changes identity', secondChart({ artifactId: ScienceArtifactId('chart-2'), version: 2 }), /advance contiguously/],
-      ['chart version skips', secondChart({ version: 3 }), /advance contiguously/],
+      ['chart version changes identity', secondChart({ artifactId: ScienceArtifactId('chart-2'), version: 2 }), /advance beyond the locally committed version/],
+      // Once this session's own log carries versions 1 and 4 for ARTIFACT_ID
+      // (the version-4 save itself accepted as an S3 interleaving gap, see
+      // fold.spec.ts), a value inside that locally-known range which
+      // matches neither is still a same-session inconsistency the log alone
+      // can catch, and throws.
+      ['chart version regresses inside the locally-known range', [
+        ...legalEvents().slice(0, 9),
+        toolCall(9, 180, secondCall, 'annotate_artifact'),
+        event('science/artifact-saved', 10, 190, {
+          version: 1,
+          artifact: artifact({ version: 4, toolCallId: secondCall, createdAt: 189, versionId: ScienceVersionId('version-gap-ahead') }),
+        }),
+        toolCall(11, 195, thirdChartCall, 'annotate_artifact'),
+        event('science/artifact-saved', 12, 200, {
+          version: 1,
+          artifact: artifact({ version: 2, toolCallId: thirdChartCall, createdAt: 199 }),
+        }),
+      ], /advance beyond the locally committed version/],
       ['chart version moves creation time backwards', [
         ...legalEvents().slice(0, 9),
         toolCall(9, 168, secondCall, 'annotate_artifact'),
@@ -380,7 +405,7 @@ describe('strict Science fold transitions', () => {
             createdAt: 168,
           }),
         }),
-      ], /advance contiguously/],
+      ], /advance beyond the locally committed version/],
       ['outcome before mode', [
         event('science/outcome-published', 0, 180, { version: 1, outcome: outcome() }),
       ], /prior mode binding/],

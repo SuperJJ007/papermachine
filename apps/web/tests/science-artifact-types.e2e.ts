@@ -55,6 +55,43 @@ function makeVegaLiteText(rowCount: number): string {
   })
 }
 const VEGA_LITE_TEXT = makeVegaLiteText(3_000)
+/**
+ * Generate a large Altair-6-shaped fixture: top-level `datasets` keyed by
+ * name, `layer` referencing it by `data.name`, and a `config` block — the
+ * structure a reported large chart (~400 KB, ~900 rows, real Altair 6
+ * output) used and that still rendered as raw JSON text.
+ */
+function makeAltairVegaLiteText(rowCount: number): string {
+  const values = Array.from({ length: rowCount }, (_, index) => ({
+    name: `participant-${String(index)}`, score: index % 101, exposure: index,
+    category: index % 5 === 0 ? 'alpha' : 'beta',
+  }))
+  return JSON.stringify({
+    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+    config: { view: { continuousWidth: 300, continuousHeight: 300 }, axis: { labelFontSize: 12 } },
+    datasets: { 'data-altair-01': values },
+    layer: [
+      {
+        data: { name: 'data-altair-01' },
+        mark: 'point',
+        encoding: {
+          x: { field: 'exposure', type: 'quantitative' },
+          y: { field: 'score', type: 'quantitative' },
+          color: { field: 'category', type: 'nominal' },
+        },
+      },
+      {
+        data: { name: 'data-altair-01' },
+        mark: 'line',
+        encoding: {
+          x: { field: 'exposure', type: 'quantitative' },
+          y: { field: 'score', type: 'quantitative' },
+        },
+      },
+    ],
+  })
+}
+const ALTAIR_VEGA_LITE_TEXT = makeAltairVegaLiteText(4_500)
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
@@ -181,6 +218,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     artifact(stored[2]!.artifact.artifactId, 'report.md', 'text/markdown', stored[2]!),
     artifact(stored[3]!.artifact.artifactId, 'plot.png', 'image/png', stored[3]!),
     artifact(stored[4]!.artifact.artifactId, 'scores.vl.json', 'application/vnd.vega-lite+json', stored[4]!),
+    artifact(stored[5]!.artifact.artifactId, 'altair_style.vl.json', 'application/vnd.vega-lite+json', stored[5]!),
   ]
 
   session.append('tool/result', {
@@ -188,7 +226,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     step: 1,
     message: createToolResultMessage({
       callId: RUN_CALL_ID,
-      content: [{ type: 'text', text: 'status: success\nCaptured 5 artifacts.' }],
+      content: [{ type: 'text', text: 'status: success\nCaptured 6 artifacts.' }],
       isError: false,
     }),
     meta: {
@@ -234,6 +272,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       { logicalName: 'report.md', data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown' },
       { logicalName: 'plot.png', data: PNG, mediaType: 'image/png' },
       { logicalName: 'scores.vl.json', data: Buffer.from(VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/vnd.vega-lite+json' },
+      { logicalName: 'altair_style.vl.json', data: Buffer.from(ALTAIR_VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/vnd.vega-lite+json' },
     ] as const
     const stored: StoredArtifact[] = []
     for (const definition of definitions) {
@@ -271,8 +310,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(VEGA_LITE_TEXT.length).toBeGreaterThan(100_000)
     expect(VEGA_LITE_TEXT.length).toBeLessThan(8_000_000)
 
-    await centerCol.getByText('Files produced this turn: 5', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await centerCol.getByText('Captured 5 artifacts', { exact: false }).count()).toBe(0)
+    await centerCol.getByText('Files produced this turn: 6', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await centerCol.getByText('Captured 6 artifacts', { exact: false }).count()).toBe(0)
     await compareOrRefreshGolden(
       TRANSCRIPT_EXPECTED,
       [
@@ -338,6 +377,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       ['## Details column — artifact viewer (csv/json/md/png/Vega-Lite)', aria].join('\n'),
       MODE,
     )
+
+    // A large Vega-Lite spec shaped like real Altair 6 output (top-level
+    // `datasets` referenced by `layer[].data.name`, plus `config`) must
+    // parse and render exactly like the flat, single-mark spec above —
+    // not fall back to raw JSON text.
+    expect(ALTAIR_VEGA_LITE_TEXT.length).toBeGreaterThanOrEqual(300_000)
+    expect(ALTAIR_VEGA_LITE_TEXT.length).toBeLessThan(8_000_000)
+    await centerCol.getByRole('listitem', { name: /altair_style\.vl\.json/ }).click()
+    await detailsPanel.locator('[data-testid="vega-lite-view"] svg').waitFor({ timeout: 15_000 })
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])

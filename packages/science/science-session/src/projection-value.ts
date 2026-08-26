@@ -146,6 +146,28 @@ function clientRun(run: ScienceRun): ScienceClientRun {
 }
 
 /**
+ * Cache of {@link buildClientArtifact} results keyed by the source artifact
+ * version object. The fold state clones its `artifacts` array on every
+ * transition (`fold-state.ts`) but never mutates an unchanged version in
+ * place, so a version's source object stays reference-stable across
+ * projections until it is superseded by an edit or a new version. Caching on
+ * that identity keeps `toClientScienceProjection` returning the same client
+ * object for the same version across the frequent re-projections that occur
+ * while a session streams, instead of rebuilding one every emission — the
+ * client's per-version load effects key on this returned identity.
+ */
+const clientArtifactCache = new WeakMap<ScienceArtifactVersion, ScienceClientArtifactVersion>()
+
+/** Memoized `buildClientArtifact`, stable per source artifact version object. */
+function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+  const cached = clientArtifactCache.get(artifact)
+  if (cached !== undefined) return cached
+  const result = buildClientArtifact(artifact)
+  clientArtifactCache.set(artifact, result)
+  return result
+}
+
+/**
  * Remove the full environment fingerprint and the owning `projectId` from one
  * artifact version — content reads are session-addressed, so the client never
  * needs the store's project coordinate. `toolCallId` and `requestHeaderSeq`
@@ -153,7 +175,7 @@ function clientRun(run: ScienceRun): ScienceClientRun {
  * they let the client join an artifact version to its authorizing transcript
  * call for provenance.
  */
-function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
   const common = {
     artifactId: artifact.artifactId,
     producerSessionId: artifact.producerSessionId,

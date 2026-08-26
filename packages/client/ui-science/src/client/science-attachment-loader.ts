@@ -4,7 +4,11 @@
  * Both loaders call `ISession.readScienceArtifact`, whose Host endpoint folds
  * the named session before reading the project store. `loadImage` returns a
  * fresh `data:` URI and `loadText` decodes the same authenticated bytes as
- * UTF-8. Neither loader retains URLs or a duplicate cache.
+ * UTF-8. Each loader memoizes by `versionId` (`memoizedByVersionId`): a
+ * version's bytes are immutable, so a successful read is cached for the
+ * loader's lifetime, and every consumer requesting the same in-flight version
+ * shares one read. Neither loader returns or retains object URLs, so eviction
+ * never needs to revoke one.
  */
 
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
@@ -24,6 +28,40 @@ export type ScienceImageLoader = (content: ScienceArtifactContentRef) => Promise
 /** Resolves one durable Science text version to decoded UTF-8. */
 export type TextLoader = (content: ScienceArtifactContentRef) => Promise<string>
 
+/** Cache bound: an open Details panel realistically shows well under this many distinct versions at once. */
+const MAX_MEMOIZED_VERSIONS = 64
+
+/**
+ * Wrap a per-content resolver in a `versionId`-keyed cache. A version's bytes
+ * never change once written, so a settled read is kept for the wrapped
+ * function's lifetime and every caller requesting the same in-flight version
+ * shares one promise; a rejected read is evicted immediately so a retry
+ * re-fetches instead of replaying the same failure. The cache is bounded to
+ * {@link MAX_MEMOIZED_VERSIONS} entries, evicted oldest-inserted-first.
+ * @param resolve - the underlying per-content loader to memoize.
+ * @returns a loader with the same signature, memoized by `content.versionId`.
+ */
+function memoizedByVersionId<T>(
+  resolve: (content: ScienceArtifactContentRef) => Promise<T>,
+): (content: ScienceArtifactContentRef) => Promise<T> {
+  const cache = new Map<string, Promise<T>>()
+  return (content: ScienceArtifactContentRef): Promise<T> => {
+    const cached = cache.get(content.versionId)
+    if (cached !== undefined) return cached
+    const promise = resolve(content).catch((error: unknown) => {
+      cache.delete(content.versionId)
+      throw error
+    })
+    if (cache.size >= MAX_MEMOIZED_VERSIONS) {
+      // `cache.size >= 1` on this branch, so this loop always deletes exactly
+      // the oldest-inserted key (`Map` iterates insertion order) and stops.
+      for (const oldest of cache.keys()) { cache.delete(oldest); break }
+    }
+    cache.set(content.versionId, promise)
+    return promise
+  }
+}
+
 /** Base64-encode bytes in fixed-size chunks (call-stack-safe for large PNGs). */
 function bytesToBase64(data: Uint8Array): string {
   let binary = ''
@@ -41,7 +79,7 @@ function bytesToBase64(data: Uint8Array): string {
  * @returns a loader resolving one durable image reference to a displayable `data:` URI.
  */
 export function createScienceImageLoader(sessions: ISessions, sessionId: SessionId): ScienceImageLoader {
-  return async (content: ScienceArtifactContentRef): Promise<string> => {
+  return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
     const session = sessions.binding(sessionId)?.session
     if (session === undefined) {
       throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
@@ -51,7 +89,7 @@ export function createScienceImageLoader(sessions: ISessions, sessionId: Session
       throw new Error(`${result.error.code}: ${result.error.message}`)
     }
     return `data:${result.value.mediaType};base64,${bytesToBase64(result.value.data)}`
-  }
+  })
 }
 
 /**
@@ -62,7 +100,7 @@ export function createScienceImageLoader(sessions: ISessions, sessionId: Session
  * @returns a loader resolving one durable text reference to its decoded content.
  */
 export function createScienceTextLoader(sessions: ISessions, sessionId: SessionId): TextLoader {
-  return async (content: ScienceArtifactContentRef): Promise<string> => {
+  return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
     const session = sessions.binding(sessionId)?.session
     if (session === undefined) {
       throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
@@ -72,5 +110,5 @@ export function createScienceTextLoader(sessions: ISessions, sessionId: SessionI
       throw new Error(`${result.error.code}: ${result.error.message}`)
     }
     return new TextDecoder('utf-8', { fatal: true }).decode(result.value.data)
-  }
+  })
 }

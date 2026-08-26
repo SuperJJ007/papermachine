@@ -74,7 +74,11 @@ function useLoadedText(content: ScienceArtifactContentRef, loadText: TextLoader,
       .then((text) => { if (live) setState({ status: 'ready', text }) })
       .catch(() => { if (live) setState({ status: 'error' }) })
     return () => { live = false }
-  }, [content, loadText, retryToken])
+  // `content.versionId` is this immutable version's stable identity: a
+  // structurally-equal `content` object rebuilt for the same version (every
+  // projection re-derives fresh artifact objects) must not reset the loaded
+  // text and refetch.
+  }, [content.versionId, loadText, retryToken])
   return state
 }
 

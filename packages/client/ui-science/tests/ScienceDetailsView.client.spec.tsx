@@ -8,6 +8,7 @@
  * across every accepted media type, the provenance drill-in reached from the
  * toolbar, a stale tab, and distinct accessible text per top-level state).
  */
+import { useRef } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -337,7 +338,15 @@ function props(
   return {
     sessionId: SESSION,
     useSessions,
-    useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
+    // Mirrors the production `useSyncExternalStoreWithSelector` selector-hook
+    // contract closely enough to exercise a caller's `eq`: keep the previous
+    // selected value across renders unless `eq` (when supplied) reports it changed.
+    useSession: (select: (s: ConversationSnapshot) => unknown, eq?: (a: unknown, b: unknown) => boolean) => {
+      const ref = useRef<{ value: unknown } | undefined>(undefined)
+      const next = select(snapshot)
+      if (ref.current === undefined || eq === undefined || !eq(ref.current.value, next)) ref.current = { value: next }
+      return ref.current.value
+    },
     useProjection: vi.fn((key: string) => key === 'science' ? science : over.notes),
     useStore: store.useStore,
     actions: store.actions,
@@ -365,6 +374,27 @@ function props(
 function statusText(): string {
   return screen.getByRole('status').textContent ?? ''
 }
+
+describe('ScienceDetailsView: session snapshot selection', () => {
+  it('rebuilds the derived session snapshot only when nodes or chat actually change', () => {
+    const nodes: ConversationSnapshot['nodes'] = []
+    const chat = { nodes: { get: () => undefined, values: () => [] } } as unknown as ConversationSnapshot['chat']
+    const snapshotA = { nodes, chat } as unknown as ConversationSnapshot
+    const view = render(<ScienceDetailsView {...props(baseProjection(), { snapshot: snapshotA })} />)
+
+    // Same `nodes`/`chat` references from a re-render: the equality check
+    // must report no change (the flicker fix's "unrelated event" case).
+    view.rerender(<ScienceDetailsView {...props(baseProjection(), { snapshot: { ...snapshotA } as ConversationSnapshot })} />)
+
+    // A new `chat` reference with the same `nodes`: the equality check must report a change.
+    const snapshotB = { nodes, chat: { ...chat } } as unknown as ConversationSnapshot
+    view.rerender(<ScienceDetailsView {...props(baseProjection(), { snapshot: snapshotB })} />)
+
+    // A new `nodes` reference: the equality check must report a change.
+    const snapshotC = { nodes: [...nodes], chat } as unknown as ConversationSnapshot
+    view.rerender(<ScienceDetailsView {...props(baseProjection(), { snapshot: snapshotC })} />)
+  })
+})
 
 describe('ScienceDetailsView: missing projection support', () => {
   it('reports the capability gap distinctly, without a preset line', () => {
@@ -570,6 +600,34 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     act(() => { store.actions.setLibraryPage('artifacts') })
     expect(await screen.findByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
     view.unmount()
+  })
+
+  it('keeps the artifact library search across a switch to the file library and back', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1',
+      artifacts: [
+        { artifactId: 'z', logicalName: 'z.png', originSessionId: 'unknown-session', latest: { versionId: 'z1', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 30 } },
+        { artifactId: 'a', logicalName: 'a.md', title: 'Alpha', originSessionId: SESSION, latest: { versionId: 'a1', ordinal: 1, mediaType: 'text/markdown', byteCount: 2, createdAt: 10 } },
+      ],
+    } })
+    const loadWorkspaceFiles = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [] } })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
+    expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'z.png' } })
+    expect(screen.queryByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(screen.queryByText('Alpha')).toBeNull()
+
+    // Switching library pages is a prop change, not a remount: the ProjectLibrary
+    // key names only the artifact list, so search/sort/path state survives it.
+    act(() => { store.actions.setLibraryPage('files') })
+    await screen.findByRole('navigation', { name: 'Project file path' })
+    act(() => { store.actions.setLibraryPage('artifacts') })
+
+    expect((screen.getByRole('textbox', { name: 'Search' }) as HTMLInputElement).value).toBe('z.png')
+    expect(screen.queryByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(screen.queryByText('Alpha')).toBeNull()
   })
 
   it('reports library and workspace failures plus unsupported and PNG file previews', async () => {
@@ -866,6 +924,26 @@ describe('ScienceDetailsView: content dispatch', () => {
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
   })
 
+  it('does not reset or reload a PNG when re-rendered with a new, structurally-equal artifact object for the same version', async () => {
+    const mediaType = 'image/png' as const
+    const original = chart({ attachment: { attachmentId: 'sha256:abc', mediaType, bytes: 100 } })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const loadImage = vi.fn().mockResolvedValue(`data:${mediaType};base64,abc`)
+    const view = render(<ScienceDetailsView {...props(baseProjection({ artifacts: [original] }), { store, loadImage })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(loadImage).toHaveBeenCalledTimes(1)
+
+    // Every projection emission rebuilds fresh artifact objects (session's
+    // `clientArtifact`); a structurally-equal rebuild of the same version
+    // must not reset the loaded image or refetch it.
+    const rebuilt = { ...original }
+    view.rerender(<ScienceDetailsView {...props(baseProjection({ artifacts: [rebuilt] }), { store, loadImage })} />)
+    expect(screen.queryByText('Loading…')).toBeNull()
+    expect(document.querySelector('img')).not.toBeNull()
+    expect(loadImage).toHaveBeenCalledTimes(1)
+  })
+
   it('does not expose source run ids or attachment dimensions in artifact content', () => {
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
@@ -895,6 +973,24 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(loadText.mock.calls[0]?.[0]).toMatchObject({ versionId: 'version:sha256:txt' })
     // No dimensions fact for a non-image artifact — only the byte size.
     expect(screen.queryByText(/×/)).toBeNull()
+  })
+
+  it('does not reset or reload text content when re-rendered with a new, structurally-equal artifact object for the same version', async () => {
+    const loadText = vi.fn().mockResolvedValue('name,score\nada,10\nbob,2\n')
+    const { science, store } = textArtifact('text/csv')
+    const original = science.artifacts[0]!
+    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+    await waitFor(() => { expect(screen.getByRole('table')).toBeTruthy() })
+    expect(loadText).toHaveBeenCalledTimes(1)
+
+    // Every projection emission rebuilds fresh artifact objects (session's
+    // `clientArtifact`); a structurally-equal rebuild of the same version
+    // must not reset the loaded text and refetch it.
+    const rebuilt = { ...original }
+    view.rerender(<ScienceDetailsView {...props({ ...science, artifacts: [rebuilt] }, { store, loadText })} />)
+    expect(screen.queryByText('Loading…')).toBeNull()
+    expect(screen.getByRole('table')).toBeTruthy()
+    expect(loadText).toHaveBeenCalledTimes(1)
   })
 
   it('renders a JSON attachment as a JSON tree', async () => {

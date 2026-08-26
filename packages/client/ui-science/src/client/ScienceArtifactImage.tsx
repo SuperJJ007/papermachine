@@ -25,7 +25,11 @@ export function ScienceArtifactImage({ content, label, load, variant, labels }: 
     setSrc(null)
     void load(content).then((url) => { if (live) setSrc(url) }).catch(() => { if (live) setFailed(true) })
     return () => { live = false }
-  }, [content, load, attempt])
+  // `content.versionId` is this immutable version's stable identity: a
+  // structurally-equal `content` object rebuilt for the same version (every
+  // projection re-derives fresh artifact objects) must not reset the loaded
+  // image and refetch.
+  }, [content.versionId, load, attempt])
 
   if (failed) {
     return <button type="button" className={css.artifactImageError} data-variant={variant} onClick={retry}>{labels.loadFailed}</button>

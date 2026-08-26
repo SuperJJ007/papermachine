@@ -242,4 +242,16 @@ describe('Science projection replay', () => {
       environment: { ...environmentWithoutPython, r: unavailableR },
     })?.environment).not.toHaveProperty('python')
   })
+
+  it('reuses the same client artifact object across repeated projections of an unchanged version', () => {
+    // The client keys per-version load effects on this object's identity
+    // (`content.versionId` deps aside, the object itself must not churn) —
+    // a live session re-derives the client projection on every event while
+    // an artifact's source object stays untouched, so re-projecting the same
+    // host value must not rebuild its client artifact.
+    const host = replayScience(legalEvents())
+    const first = toClientScienceProjection(host)!
+    const second = toClientScienceProjection(host)!
+    expect(second.artifacts[0]).toBe(first.artifacts[0])
+  })
 })

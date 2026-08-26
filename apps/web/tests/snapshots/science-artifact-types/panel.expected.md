@@ -1,5 +1,7 @@
 ## Details column — artifact viewer (csv/json/md/png/Vega-Lite)
-- text: Science
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
 - button "Close details"
 - tablist "Open artifacts":
   - tab "summary.csv"
@@ -21,9 +23,9 @@
   - img
   - text: File library
 - text: scores.vl.json
-- button "Previous version" [disabled]:
+- button "Previous version":
   - img
-- text: v1
+- text: v2
 - button "Next version" [disabled]:
   - img
 - button "Provenance"
@@ -36,13 +38,13 @@
 - term: Format
 - definition: Chart
 - term: Version
-- definition: v1
+- definition: v2
 - term: Source
-- definition: Generation turn not loaded
+- definition: Human edit
 - term: Status
 - definition: Editable
 - button "Open chart style editor":
-  - img: ada bob name 0 1 2 3 4 5 6 7 8 9 10 score Scores
+  - img: 0 500 1,000 1,500 2,000 2,500 3,000 exposure 0 10 20 30 40 50 60 70 80 90 100 score Scores
 - region "Editable chart structure":
   - heading "Modify elements" [level=3]
   - button "Title"
@@ -53,7 +55,7 @@
   - textbox "Edit note for Mark style":
     - /placeholder: Optional note
   - button "Add Mark style to the conversation": +
-  - button "X axis" [pressed]
+  - button "X axis"
   - textbox "Edit note for X axis":
     - /placeholder: Optional note
   - button "Add X axis to the conversation": +
@@ -61,14 +63,7 @@
   - textbox "Edit note for Y axis":
     - /placeholder: Optional note
   - button "Add Y axis to the conversation": +
-- region "Style":
-  - text: Style
-  - code: encoding.x
-  - text: Font size
-  - spinbutton "Font size": "12"
-  - text: Title text
-  - textbox "Title text"
-  - button "Commit as new version"
+- text: Human style edit based on v1
 - region "Notes":
   - heading "Notes" [level=3]
   - paragraph: No notes yet.
@@ -76,3 +71,4 @@
     - /placeholder: Add a private note
   - button "Save" [disabled]
   - paragraph: These notes belong only to you and never enter model context.
+- status: Human-edited version committed.

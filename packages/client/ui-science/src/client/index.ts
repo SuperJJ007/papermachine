@@ -49,6 +49,7 @@ import { ScienceTurnArtifacts, type ScienceTurnArtifactsInjected } from './Scien
 import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from './science-turn-artifacts.ts'
 import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
+import { ScienceDetailsHeader } from './ScienceDetailsHeader.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { readToggleScope } from './toggle-scope.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController } from './settings-card-controller.ts'
@@ -283,9 +284,8 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.conversation.registerTranscriptDetailVisibility(createTranscriptDetailVisibilitySource(ctx)),
     'ui-science: transcript process-detail visibility')
 
-  // Registration-time text (the entry's tab label) reads through the bound
-  // translate as a thunk, so it follows the active locale without
-  // re-registration; components read the standard `t` seat instead.
+  // Registration-time text reads through the bound translator; components
+  // read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.trajectorySubviews.registerVisibility('swimlane', createTraceVisibilitySource(ctx)),
     'ui-science: swimlane visibility')
@@ -301,7 +301,7 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.details.view',
     id: SCIENCE_DETAILS_ID,
     order: 10,
-    label: () => t('details.label'),
+    label: '',
     locale: NS,
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceDetailsInjected => {
@@ -324,4 +324,8 @@ export function apply(ctx: ClientContext): void {
       }
     },
   }, ScienceDetailsView))
+  ctx.slots.inject('conversation.details.header.actions', () => ctx.slots.register({
+    name: 'conversation.details.header.actions', key: SCIENCE_DETAILS_ID, locale: NS,
+    store: scienceSelectionStore,
+  }, ScienceDetailsHeader))
 }

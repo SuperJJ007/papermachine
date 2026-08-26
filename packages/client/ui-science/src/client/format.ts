@@ -16,11 +16,19 @@ export const MAX_ARTIFACT_TABLE_ROWS = 500
  * mirroring `MAX_ARTIFACT_TABLE_ROWS`'s rationale for the non-CSV media
  * types: the deployment's `textLimits` allow up to 5 MiB, which is safe to
  * store and transfer but not to hand a browser's DOM/JSON-tree renderer
- * whole. Applied to the raw text before a JSON parse attempt, not after —
- * a truncated JSON document usually fails to parse, which is the existing,
- * already-tested "malformed JSON" fallback to preformatted raw text.
+ * whole. Ordinary JSON applies this limit before parsing. Vega-Lite uses its
+ * separate parse/render safety limit below and applies this display limit
+ * only to fallback source text.
  */
 export const MAX_ARTIFACT_TEXT_CHARACTERS = 100_000
+
+/**
+ * Browser-side Vega-Lite JSON parse and render safety limit. This is not a
+ * text display limit: specifications at or below it are parsed in full so
+ * large inline datasets remain renderable, while any fallback source text
+ * is still bounded by `MAX_ARTIFACT_TEXT_CHARACTERS`.
+ */
+export const MAX_VEGA_LITE_SPEC_CHARACTERS = 8_000_000
 
 /** One rendered slice of a larger value, plus whether the slice is shorter than the source. */
 export interface RenderTruncation<T> {

@@ -12,9 +12,9 @@ Status: proposed
 
 图表产物获得第二个内容家族——声明式 spec——与 Science 已经捕获的 raster PNG 并存;`run_python`/`run_r`、内核线协议、`.png`-only 的图片捕获路径都不变。spec 是一个普通的 run 产物,和 PNG 完全一样:agent 的绘图代码把它写到 `SCIENCE_ARTIFACT_DIR` 下,自动捕获走同一个走查流程接纳它。人工样式编辑是一条独立的新溯源路径:轻量编辑器提交一个背后没有 run 的新产物 Version,因此 `ScienceArtifactVersion` 当前这套 run-centric 字段无法照实描述它,该类型需要一个判别式分支。领域里的其余部分——以 `{artifactId, version}` 表达的产物身份、以 `parent` 表达的祖先关系、`publish_outcome` 的证据、Notebook 投影——都不变。
 
-### 1. Spec 格式:Vega-Lite,经 Altair 从 Python 生成
+### 1. Spec 格式:Vega-Lite,经 Altair 或直接 JSON 生成
 
-Spec 格式选 Vega-Lite:一份 JSON 文档、一个维护中的 SVG/canvas 渲染器(`vega`/`vega-lite`,通过 `vega-embed` 嵌入)、可按结构路径寻址的 mark/encoding(`mark`、`encoding.color` 等)——正是"按结构而非像素选择"这条要求所需要的。[R5](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md) 曾明确拒绝"采用通用图表 spec 或绘图依赖",理由是当时 Python/R 代码已经产出 attachment service 校验过的 raster 输出;现在采用 Vega-Lite,是选择一个维护中的渲染器而非自己动手造一个,与[依赖优先于手搓的政策](../../implemented/process/2026-07-26-dependencies-over-hand-rolling.zh.md)为 harness 代码定下的取舍方向一致——本文如何在不触碰 R5 已交付决策的前提下重新打开这一条 alternative,见下文"## Supersession 校验"。Python 侧,Altair 是符合语言习惯的 Vega-Lite 绑定:`chart.save('fig.vl.json')`(或 `.to_json()` 加一次文件写入)直接产出 spec。这属于 agent 指引,不是 harness 依赖:内核运行所在的 conda 环境由用户提供,因此这里不会给任何 `package.json` 添加 Altair;静态 Science 指引会推荐它,就像它已经点名 `SCIENCE_ARTIFACT_DIR` 却不随附任何写入它的库一样。R 侧没有对等的成熟度:没有哪个维护中的 R 包能以接近 Altair 的覆盖度产出 Vega-Lite JSON,把 ggplot2 的语法翻译到 Vega-Lite 的 encoding 模型也没有公认的无损映射。v1 中 R 图表继续走 ggplot2/base-R 的 raster PNG,通过既有的 raster 路径捕获与编辑(决策 6)——这是明确的降级,不是桥接方案的占位符。
+Spec 格式选 Vega-Lite:一份 JSON 文档、一个维护中的 SVG/canvas 渲染器(`vega`/`vega-lite`,通过 `vega-embed` 嵌入)、可按结构路径寻址的 mark/encoding(`mark`、`encoding.color` 等)——正是"按结构而非像素选择"这条要求所需要的。[R5](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md) 曾明确拒绝"采用通用图表 spec 或绘图依赖",理由是当时 Python/R 代码已经产出 attachment service 校验过的 raster 输出;现在采用 Vega-Lite,是选择一个维护中的渲染器而非自己动手造一个,与[依赖优先于手搓的政策](../../implemented/process/2026-07-26-dependencies-over-hand-rolling.zh.md)为 harness 代码定下的取舍方向一致——本文如何在不触碰 R5 已交付决策的前提下重新打开这一条 alternative,见下文"## Supersession 校验"。Python 侧,Altair 是符合语言习惯的 Vega-Lite 绑定:`chart.save('fig.vl.json')`(或 `.to_json()` 加一次文件写入)直接产出 spec。R 没有覆盖范围相当的绑定,但 Vega-Lite 是 JSON 而不是 Python 格式:R 代码以普通嵌套 list 构造 spec,把内联数据放在 `data.values`,再用 `jsonlite::write_json(..., auto_unbox = TRUE, digits = NA)` 写出。这属于 agent 指引,不是 harness 依赖:内核运行所在的 conda 环境由用户提供,因此这里不会给任何 `package.json` 添加 Altair 或 jsonlite;静态 Science 指引点名推荐的写出方式,与它已经点名 `SCIENCE_ARTIFACT_DIR` 的做法一致。Harness 不把 ggplot2 geometry 转译为 Vega-Lite,因为两套语法没有公认的无损映射。Vega-Lite 无法表达的图表继续走 ggplot2/base-R 或 Python raster PNG 路径,并通过决策 6 保留框选编辑。
 
 ### 2. Agent 如何产出 spec:普通的 run 产物,内核与工具都不改
 
@@ -38,7 +38,7 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 
 ## Supersession 校验
 
-[R5](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md) 的 Alternatives-considered 一节拒绝了"采用通用图表 spec 或绘图依赖",理由是"Python/R 代码已经产出输出,attachment service 也校验了 raster 字节"。本文只为默认的 Python 图表创作路径(决策 1)重新打开这一条 alternative;R5 已交付的发布、溯源与呈现决策(`annotate_artifact`、`publish_outcome`、Outcome revision 模型)不受影响,继续有效——因此这是对某一条 alternative 的部分 supersede,不是对 R5 决策本身的 supersede,R5 保持 active,不进 archive。[产物领域与图片编辑 note](2026-08-22-science-artifact-domain-and-image-edit.zh.md)因其 S1–S3 分片(已交付)与领域记录(产物身份、依赖边、Notebook 投影)保持 active;本文只 supersede 该 note S4 分片的范围,把 S4 收窄到 raster/降级图表路径(决策 6),而 spec-first 图表遵循决策 1–5 设计的管线。没有其他 active 的 Agent Note 覆盖 spec 格式、人工编辑溯源或 Science 消息结构。
+[R5](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md) 的 Alternatives-considered 一节拒绝了"采用通用图表 spec 或绘图依赖",理由是"Python/R 代码已经产出输出,attachment service 也校验了 raster 字节"。本文为两种语言的默认图表创作路径(决策 1)重新打开这一条 alternative;R5 已交付的发布、溯源与呈现决策(`annotate_artifact`、`publish_outcome`、Outcome revision 模型)不受影响,继续有效——因此这是对某一条 alternative 的部分 supersede,不是对 R5 决策本身的 supersede,R5 保持 active,不进 archive。[产物领域与图片编辑 note](2026-08-22-science-artifact-domain-and-image-edit.zh.md)因其 S1–S3 分片(已交付)与领域记录(产物身份、依赖边、Notebook 投影)保持 active;本文只 supersede 该 note S4 分片的范围,把 S4 收窄到 raster/降级图表路径(决策 6),而 spec-first 图表遵循决策 1–5 设计的管线。没有其他 active 的 Agent Note 覆盖 spec 格式、人工编辑溯源或 Science 消息结构。
 
 ## 实现分片
 
@@ -95,7 +95,7 @@ Viewer 修改不可变工作副本，并为实时预览重新 embed；定稿成�
 
 ## Alternatives considered
 
-- **把 R 图表桥接到 Vega-Lite。** v1 拒绝:没有哪个维护中的 R 包能以接近 Altair 的覆盖度产出 Vega-Lite JSON,自建一座桥本身就会成为依赖政策所警惕的手搓基础设施;R 图表已经有一条能用的 raster 路径。
+- **自动把 ggplot2 图表转换为 Vega-Lite。** 拒绝:没有维护中的转换器可以无损覆盖 ggplot2 的语法,而直接用嵌套 list 写 JSON 已能让 R 走同一条可编辑 spec 路径,不需要转换层。必须使用 ggplot2 专有 geometry 的图表保留 raster 兜底。
 - **新增一个专门用于保存 spec 的工具(比如 `save_chart_spec`)。** 拒绝理由与前一份 note 拒绝专用编辑工具相同:spec 是一个普通的 run 产物,新增一个保存工具会把 capture 走查已经在做的记账和 run 本身已经携带的溯源重复一遍。
 - **让 `ScienceArtifactVersion` 保持单一扁平形状,为人工编辑伪造一个假 run。** 拒绝:伪造的 run 会把从未发生过的授权说成 `runId`/`toolCallId`/`requestHeaderSeq` 这些字面事实,破坏每一个当前把这些字段当真的消费方。
 - **一开始就上 Host 侧无头导出。** v1 拒绝:目前没有任何非 Web Client 需要它,而且在没有现存消费方的情况下会新增一个 Host 渲染依赖;推迟建设的触发条件见「拍板记录」一节。
@@ -104,14 +104,14 @@ Viewer 修改不可变工作副本，并为实时预览重新 embed；定稿成�
 ## Acceptance criteria
 
 - 决策 1–6 在 C1 开工前就以本文所述定稿;之后若要改动其中任何一条,属于一次新决策,在本文仍是 proposed 时以修订本文的方式记录,或在开工后另立一份后续 note。
-- C1 把一份 Altair 产出的 `.vl.json` 以新媒体类型捕获为一个带版本的产物,并在查看器里渲染为可切换 Version 的 SVG,附 keyless snapshot 与一份 GIF。
+- C1 把 Python Altair 与 R jsonlite 产出的 `.vl.json` 以同一媒体类型捕获为带版本的产物,并在查看器里渲染为可切换 Version 的 SVG,附 keyless snapshot 与一份 GIF。
 - C2 从 spec-path 选择与 region 选择都能发出决策 4 的结构化消息,闭合前一份 note 的 S4 验收标准;agent 产出的编辑结果携带指向确切选中 Version 的 `parent`。
 - C3 提交一个 `origin` 能与每一个 run 产出的 Version 区分开的人工编辑 Version,按决策 3 做严格 fold 校验,附一份 GIF 与对新 schema 分支的完整覆盖。
 - C4 把 PNG/PDF 导出为一个派生附件,绝不是新的产物 Version,遵循决策 5。
 
 ## Risks
 
-- 没有 R 侧的 spec 路径(决策 1)会永久性地把 R 图表限制在 raster/降级管线上;如果 R 的采用相对 Python 增长,这会变成一个反复出现的产品缺口,而不是一次性的代价。
+- R 直接用 list 写 spec 比 Altair 更底层,并且只能表达 Vega-Lite 语法;保留的 raster 兜底仍用于 ggplot2 专有 geometry 与复杂统计图。
 - 判别式的 `ScienceArtifactVersion` schema(决策 3)是 `origin` 上第一个形状真正偏离 run-centric 基础的分支;C3 开工前,该类型当前每一个读者(`publish_outcome`、`annotate_artifact`、capture、Notebook 投影、呈现渲染)都需要针对新分支做一次明确审查,而不只是类型层面的窄化。
 - 客户端 Vega-Lite/Vega 渲染器(决策 1–2)是一个带有真实包体积与供应链暴露面的新 Web 依赖;C1 锁定具体包版本时,要对照[维护中依赖的门槛](../../implemented/process/2026-07-26-dependencies-over-hand-rolling.zh.md)评估它,而不是因为本文推荐了这个格式就默认它可以接受。
 - 推迟 Host 侧导出(决策 5)有风险:日后某个非 Web Client 可能在时间压力下才提出这个需求,而不是作为一个有计划的分片;「拍板记录」定下的触发条件就是缓解手段——一旦有第二个 Client 承诺支持 Science 图表,立即建设。

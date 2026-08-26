@@ -58,9 +58,6 @@
 }
 
 .libraryHome { display: flex; flex-direction: column; gap: 12px; padding: 8px 2px; }
-.librarySwitch { display: inline-flex; align-self: center; padding: 3px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); }
-.librarySwitch button { padding: 5px 14px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
-.librarySwitch button[aria-pressed="true"] { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); }
 .libraryToolbar { display: flex; align-items: center; gap: 6px; }
 .libraryToolbar input { min-width: 0; flex: 1; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); }
 .libraryToolbar select, .libraryToolbar button { padding: 5px 7px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); }

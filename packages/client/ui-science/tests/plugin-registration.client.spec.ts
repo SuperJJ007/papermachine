@@ -79,6 +79,7 @@ function setup(sessionsOverride?: unknown) {
     'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     'conversation.page.utilities': { kind: 'list', scope: 'root' },
     'conversation.details.view': { kind: 'list', scope: 'session' },
+    'conversation.details.header.actions': { kind: 'keyed', scope: 'session' },
     'conversation.input.accessory': { kind: 'list', scope: 'session' },
     'conversation.composer.dock': { kind: 'list', scope: 'session' },
     'sidebar.destinations': { kind: 'list', scope: 'root' },
@@ -153,11 +154,13 @@ describe('ui-science apply', () => {
     expect(slots.entries('trajectory.view')[0]?.component).toBe(ScienceTraceView)
     expect(slots.entries('trajectory.view')[0]?.options).toMatchObject({ id: 'swimlane', order: 0 })
     expect(slots.entries('conversation.details.view').map(entry => entry.options.id)).toEqual(['science'])
+    expect(slots.entries('conversation.details.header.actions').map(entry => entry.options.key)).toEqual(['science'])
 
     await fiber.dispose()
     expect(slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(slots.entries('trajectory.view')).toHaveLength(0)
+    expect(slots.entries('conversation.details.header.actions')).toHaveLength(0)
   })
 
   it('the run_python/run_r toolview registrations inject a cancel that drives the existing whole-turn Stop', async () => {

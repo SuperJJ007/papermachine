@@ -135,14 +135,22 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('button', { name: 'File library', exact: true }).click()
     await details.getByRole('button', { name: 'Close Alpha results', exact: true }).click()
 
-    await details.getByRole('button', { name: 'Project files', exact: true }).click()
+    await details.getByRole('tab', { name: 'Project files', exact: true }).click()
     await expect.poll(() => details.getByText('1 project files', { exact: true }).count()).toBe(1)
     await page.screenshot({ path: SHOT_FILES, fullPage: true })
     await details.getByRole('button', { name: /seed\.csv/ }).click()
     await details.getByRole('table', { name: 'seed.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('project', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Close seed.csv', exact: true }).click()
+    await expect.poll(() => details.getByText('1 project files', { exact: true }).count()).toBe(1)
+    await details.getByRole('tab', { name: 'Artifacts', exact: true }).click()
     await expect.poll(() => details.getByText('3 artifacts', { exact: true }).count()).toBe(1)
+    // Switching library pages remounts the artifact grid, so its sort choice
+    // does not survive the round trip through Project files; re-select Name
+    // sort for a deterministic order instead of the default newest-first,
+    // which ties (and reorders) on this fixture's near-simultaneous
+    // `createArtifact` calls.
+    await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption({ label: 'Name' })
 
     await compareOrRefreshGolden(
       EXPECTED,

@@ -26,6 +26,7 @@ import {
   applyStyle, restrictedVegaLoader, selectableSpecPaths, specPathLabel, vegaSelectionOutline,
 } from '../src/client/ArtifactContent.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
+import { MAX_ARTIFACT_TEXT_CHARACTERS, MAX_VEGA_LITE_SPEC_CHARACTERS } from '../src/client/format.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
@@ -478,6 +479,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const science = baseProjection({ artifacts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
     const gallery = await screen.findByRole('button', { name: 'Open Loss curve, version 1' })
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'a' })
     expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
@@ -510,7 +512,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
     expect(screen.queryByRole('tab', { name: 'Cross-session chart' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Search' })).toBeTruthy()
   })
 
   it('browses a workspace directory and opens a supported file preview', async () => {
@@ -520,8 +522,9 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFile = vi.fn().mockResolvedValue({ ok: true, value: {
       mediaType: 'text/csv', byteCount: 8, data: new TextEncoder().encode('a,b\n1,2\n'),
     } })
-    render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, loadWorkspaceFile })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    const store = testScienceSelectionStore()
+    act(() => { store.actions.setLibraryPage('files') })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, loadWorkspaceFile, store })} />)
     fireEvent.click(await screen.findByRole('button', { name: /results\.csv/ }))
     expect(await screen.findByRole('table', { name: 'results.csv' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '‹ File library' }))
@@ -541,7 +544,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFiles = vi.fn().mockImplementation((path: string) => Promise.resolve({ ok: true, value: path === ''
       ? { root: '', entries: [{ name: 'data', kind: 'dir', modifiedAt: 1 }, { name: 'root.bin', kind: 'file', byteCount: 2_048, modifiedAt: 1 }, { name: 'unknown.bin', kind: 'file', modifiedAt: 1 }] }
       : { root: path, entries: [{ name: 'large.bin', kind: 'file', byteCount: 2_097_152, modifiedAt: 1 }] } }))
-    const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles })} />)
+    const store = testScienceSelectionStore()
+    const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
     expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
@@ -556,26 +560,28 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByText('unknown-session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    act(() => { store.actions.setLibraryPage('files') })
     fireEvent.click(await screen.findByRole('button', { name: /data/ }))
     expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
     fireEvent.click(screen.getByRole('button', { name: '› data' }))
     fireEvent.click(screen.getByRole('button', { name: 'Project' }))
     expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
     expect((await screen.findByRole('button', { name: /unknown\.bin/ })).textContent).toContain('0 B')
-    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
-    expect(screen.getByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
+    act(() => { store.actions.setLibraryPage('artifacts') })
+    expect(await screen.findByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
     view.unmount()
   })
 
   it('reports library and workspace failures plus unsupported and PNG file previews', async () => {
+    const failedStore = testScienceSelectionStore()
     const failed = render(<ScienceDetailsView {...props(baseProjection(), {
       loadLibrary: vi.fn().mockResolvedValue({ ok: false, error: { message: 'library offline' } }),
       loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: false, error: { message: 'workspace offline' } }),
+      store: failedStore,
     })} />)
     expect((await screen.findByRole('alert')).textContent).toContain('library offline')
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('workspace offline')
+    act(() => { failedStore.actions.setLibraryPage('files') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('workspace offline') })
     failed.unmount()
 
     const entries = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [
@@ -588,19 +594,19 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       : { ok: true, value: path === 'pixel.png'
         ? { mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(255) }
         : { mediaType: 'application/octet-stream', byteCount: 1_048_576, data: Uint8Array.of() } }))
+    const unsupportedStore = testScienceSelectionStore()
+    unsupportedStore.actions.setLibraryPage('files')
     const unsupported = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: entries,
       loadWorkspaceFile: file,
+      store: unsupportedStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /raw\.bin/ }))
     expect(await screen.findByText('Preview unavailable, 1.0 MB')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /File library/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /pixel\.png/ }))
     expect(await screen.findByRole('img', { name: 'pixel.png' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /File library/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /broken\.txt/ }))
     expect((await screen.findByRole('alert')).textContent).toContain('file unavailable')
     unsupported.unmount()
@@ -609,20 +615,24 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
   it('ignores workspace listing and file reads that settle after the library unmounts', async () => {
     let settleListing!: (value: unknown) => void
     const listing = new Promise((resolve) => { settleListing = resolve })
+    const firstStore = testScienceSelectionStore()
+    firstStore.actions.setLibraryPage('files')
     const first = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: vi.fn().mockReturnValue(listing),
+      store: firstStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     first.unmount()
     await act(async () => { settleListing({ ok: true, value: { root: '', entries: [] } }); await listing })
 
     let settleFile!: (value: unknown) => void
     const pendingFile = new Promise((resolve) => { settleFile = resolve })
+    const secondStore = testScienceSelectionStore()
+    secondStore.actions.setLibraryPage('files')
     const second = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [{ name: 'late.txt', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'text/plain' }] } }),
       loadWorkspaceFile: vi.fn().mockReturnValue(pendingFile),
+      store: secondStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /late\.txt/ }))
     second.unmount()
     await act(async () => { settleFile({ ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(65) } }); await pendingFile })
@@ -758,7 +768,7 @@ describe('ScienceDetailsView: tab strip', () => {
     expect(screen.getByRole('tab', { name: 'Beta' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     // Back to the landing view: the gallery lists both charts again (closing
     // a tab never removes the chart itself from the projection).
     expect(await screen.findByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
@@ -928,6 +938,37 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect((embedCall?.[2] as { loader?: unknown } | undefined)?.loader).toBeDefined()
     view.unmount()
     expect(finalizeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('parses and renders a valid Vega-Lite specification beyond the raw-text display limit', async () => {
+    embedMock.mockImplementation(async (element: HTMLElement) => {
+      element.innerHTML = '<svg aria-label="Rendered large Vega-Lite chart"></svg>'
+      return { view: { finalize: finalizeMock } }
+    })
+    const text = JSON.stringify({
+      mark: 'bar',
+      description: 'x'.repeat(MAX_ARTIFACT_TEXT_CHARACTERS + 1),
+      data: { values: [{ category: 'A', value: 1 }] },
+    })
+    const loadText = vi.fn().mockResolvedValue(text)
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'large.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    await waitFor(() => { expect(screen.getByLabelText('Rendered large Vega-Lite chart')).toBeTruthy() })
+    expect(embedMock.mock.calls[0]?.[1]).toMatchObject({ mark: 'bar' })
+    expect(screen.queryByText(/Showing first/)).toBeNull()
+  })
+
+  it('does not parse or render a Vega-Lite specification beyond its safety limit', async () => {
+    const text = JSON.stringify({ mark: 'bar', description: 'x'.repeat(MAX_VEGA_LITE_SPEC_CHARACTERS) })
+    const loadText = vi.fn().mockResolvedValue(text)
+    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'too-large.vl.json' })
+    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
+
+    const note = await screen.findByRole('note')
+    expect(note.textContent).toContain(`exceeds ${String(MAX_VEGA_LITE_SPEC_CHARACTERS)} characters`)
+    expect(screen.getByRole('status').textContent).toContain(`Showing first ${String(MAX_ARTIFACT_TEXT_CHARACTERS)}`)
+    expect(embedMock).not.toHaveBeenCalled()
   })
 
   it('adds the selected Vega-Lite structural path and exact open version to the main composer', async () => {
@@ -1324,17 +1365,19 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(finalizeMock).not.toHaveBeenCalled()
   })
 
-  it('falls back to the JSON tree when Vega-Lite rejects a parsed document', async () => {
+  it('falls back to bounded source text when Vega-Lite rejects a parsed document', async () => {
     embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
     const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
     const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
     const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
-    await waitFor(() => { expect(screen.getByRole('tree')).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('could not be rendered') })
+    expect(screen.queryByRole('tree')).toBeNull()
+    expect(screen.getByText('{"mark":"not-a-mark","data":{"values":[]}}').tagName).toBe('PRE')
     expect(view.container.textContent).toContain('not-a-mark')
   })
 
-  it('blocks external Vega-Lite data URLs through the embed loader\'s sanitize seam and explains the JSON fallback', async () => {
+  it('blocks external Vega-Lite data URLs through the embed loader\'s sanitize seam and explains the source fallback', async () => {
     // `load()`'s real implementation (unmocked in production) calls
     // `this.sanitize` before fetching a `data.url`'s bytes; this models that
     // call directly since `vega-embed`/`vega.loader` are fully mocked here.
@@ -1349,7 +1392,8 @@ describe('ScienceDetailsView: content dispatch', () => {
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
     await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
-    expect(screen.getByRole('tree')).toBeTruthy()
+    expect(screen.queryByRole('tree')).toBeNull()
+    expect(screen.getByText('{"mark":"bar","data":{"url":"https://data.example/values.csv"}}').tagName).toBe('PRE')
     expect(loaderLoadMock).not.toHaveBeenCalled()
     expect(loaderSanitizeMock).not.toHaveBeenCalled()
   })
@@ -1380,7 +1424,8 @@ describe('ScienceDetailsView: content dispatch', () => {
     render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
     await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
-    expect(screen.getByRole('tree')).toBeTruthy()
+    expect(screen.queryByRole('tree')).toBeNull()
+    expect(screen.getByText('{"mark":"image","encoding":{"url":{"value":"https://data.example/logo.png"}}}').tagName).toBe('PRE')
     expect(loaderLoadMock).not.toHaveBeenCalled()
     expect(loaderSanitizeMock).not.toHaveBeenCalled()
   })
@@ -1411,16 +1456,17 @@ describe('ScienceDetailsView: content dispatch', () => {
     expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy()
   })
 
-  it('keeps the JSON-tree fallback alive across a re-render after the renderer rejected the spec', async () => {
+  it('keeps the bounded source fallback alive across a re-render after the renderer rejected the spec', async () => {
     embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
     const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
     const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
     const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
 
-    await waitFor(() => { expect(screen.getByRole('tree')).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('could not be rendered') })
     expect(screen.getByTestId('vega-lite-view').hidden).toBe(true)
     view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
-    expect(screen.getByRole('tree')).toBeTruthy()
+    expect(screen.queryByRole('tree')).toBeNull()
+    expect(screen.getByText('{"mark":"not-a-mark","data":{"values":[]}}').tagName).toBe('PRE')
     expect(view.container.textContent).toContain('not-a-mark')
   })
 

@@ -24,7 +24,7 @@ describe('selection-store: openTab', () => {
     s.actions.setLightboxOpen(true)
     s.actions.openTab({ artifactId: A, version: 1 })
     expect(s.getSnapshot()).toMatchObject({
-      openArtifacts: [tab(A, 1)], activeTabId: tabId(A), view: 'content', lightboxOpen: false,
+      openArtifacts: [tab(A, 1)], activeTabId: tabId(A), libraryPage: 'artifacts', view: 'content', lightboxOpen: false,
     })
   })
 
@@ -57,6 +57,17 @@ describe('selection-store: showLibrary', () => {
     expect(s.getSnapshot()).toMatchObject({
       openArtifacts: [tab(A, 1)], activeTabId: null, view: 'content', lightboxOpen: false,
     })
+  })
+})
+
+describe('selection-store: library page', () => {
+  it('remembers the selected library page independently of the active document', () => {
+    const s = store()
+    s.actions.openTab({ artifactId: A, version: 1 })
+    s.actions.setLibraryPage('files')
+    expect(s.getSnapshot()).toMatchObject({ activeTabId: tabId(A), libraryPage: 'files' })
+    s.actions.showLibrary()
+    expect(s.getSnapshot()).toMatchObject({ activeTabId: null, libraryPage: 'files' })
   })
 })
 

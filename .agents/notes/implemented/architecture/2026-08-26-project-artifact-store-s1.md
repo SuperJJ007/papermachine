@@ -12,7 +12,7 @@ English | [中文](2026-08-26-project-artifact-store-s1.zh.md)
 
 `@deepseek-ai/dsh-science-artifact-store` (`packages/science/science-artifact-store`) implements S0's project identity, store layout, Artifact/Version records, concurrent-append linearization, and delete boundary exactly as specified there. It is a standalone Cordis service with no current consumer: science-session, science-runtime, and tool-science are unchanged by this slice.
 
-Branded ids (`ProjectId`, `ArtifactId`, `VersionId`) are owned by this package, not by `science-session`'s existing `ScienceArtifactId` vocabulary — the store is a lower-level package science-session and science-runtime will depend on in S2, not the reverse, so it cannot take a dependency on either. S2 decides how (or whether) the two id spaces reconcile.
+Branded ids (`ProjectId`, `ArtifactId`, `VersionId`) are owned by this package, not by `science-session`'s existing `ScienceArtifactId` vocabulary — the store is a lower-level package science-session and science-runtime will depend on in S2, not the reverse, so it cannot take a dependency on either. [S2](2026-08-26-project-artifact-store-s2.md) reconciles the two id spaces by re-exporting these branded ids from `science-session` under its own names and deleting its prior `ScienceArtifactId` brand.
 
 Every public method past `openProject` takes a `projectId` directly and is self-sufficient: it opens or reuses a cached SQLite connection for that project without requiring a prior `openProject` call in the same process. This is what lets a Host restart or a second session that already knows a project id resume work immediately, per S0's S3 acceptance criterion, without forcing S3 to add a second access path.
 

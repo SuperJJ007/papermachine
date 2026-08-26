@@ -128,15 +128,20 @@ Remote service admitting browser edit gestures into the addressed live agent.
 
 ```ts cordis-catalog
 /**
- * Validate exact current artifact selections and queue one structured edit message.
+ * Validate exact current artifact selections and queue one structured edit
+ * message. A region target's raster is read back from the project artifact
+ * store and admitted as an ordinary session message attachment, so the
+ * model-visible image stays reconstructable from the session log alone.
  * @param agent - exact live agent resolved by the Remote lookup policy.
  * @param request - selected versions, targets, and shared user instruction.
  * @returns durable-inbox admission receipt.
  */
-@Remote('submit') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt
+@Remote('submit') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>
 
 /**
- * Validate and commit one complete Vega-Lite working copy as a direct human edit.
+ * Validate and commit one complete Vega-Lite working copy as a direct human
+ * edit: bytes into the owning project's artifact store, then the
+ * store-reference event.
  * @param agent - exact live agent whose Session owns the artifact.
  * @param request - exact current parent and complete edited JSON text.
  * @returns identity and direct-edit provenance of the new contiguous version.
@@ -174,17 +179,20 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
 
 /**
- * Re-commit an existing artifact version's exact attachment reference with
- * a curated title and caption: metadata-only, so it never reads or writes
- * the filesystem and never calls the attachment store, and it supersedes
- * the version it names rather than opening a new one whose bytes would
- * repeat their predecessor's. A committed event is never rolled back
- * because a later step fails; there is no later step here that can fail
- * after the append.
+ * Re-commit an existing artifact version's exact store content reference
+ * with a curated title and caption: metadata-only, so it supersedes the
+ * version it names rather than opening a new one whose bytes would repeat
+ * their predecessor's. The store row's metadata is curated in place first
+ * (`annotateVersion`), then the superseding event commits; a vetoed append
+ * after the store update leaves the store curated with no matching event —
+ * accepted metadata decay, resolved by the fold's own value staying the
+ * projection authority. A committed event is never rolled back because a
+ * later step fails; there is no later step here that can fail after the
+ * append.
  * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
  * @returns The durable curated version this operation committed.
  */
-annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
+async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
 ```
 
 Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)

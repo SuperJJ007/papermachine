@@ -32,7 +32,7 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
-    "lib/types/ids.js",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

@@ -1278,14 +1278,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Remote service admitting browser edit gestures into the addressed live agent.',
     methods: [
       {
-        signature: '@Remote(\'submit\') submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt',
-        description: 'Validate exact current artifact selections and queue one structured edit message.',
+        signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
+        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone.',
         parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
         returns: 'durable-inbox admission receipt.',
       },
       {
         signature: '@Remote(\'commitStyleEdit\') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>',
-        description: 'Validate and commit one complete Vega-Lite working copy as a direct human edit.',
+        description: 'Validate and commit one complete Vega-Lite working copy as a direct human edit: bytes into the owning project\'s artifact store, then the store-reference event.',
         parameters: [{ name: 'agent', description: 'exact live agent whose Session owns the artifact.' }, { name: 'request', description: 'exact current parent and complete edited JSON text.' }],
         returns: 'identity and direct-edit provenance of the new contiguous version.',
       },
@@ -1309,8 +1309,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
       {
-        signature: 'annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
-        description: 'Re-commit an existing artifact version\'s exact attachment reference with a curated title and caption: metadata-only, so it never reads or writes the filesystem and never calls the attachment store, and it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        signature: 'async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
+        description: 'Re-commit an existing artifact version\'s exact store content reference with a curated title and caption: metadata-only, so it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. The store row\'s metadata is curated in place first (`annotateVersion`), then the superseding event commits; a vetoed append after the store update leaves the store curated with no matching event — accepted metadata decay, resolved by the fold\'s own value staying the projection authority. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
         parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
         returns: 'The durable curated version this operation committed.',
       },
@@ -4280,7 +4280,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceArtifactId',
-    declaration: 'export type ScienceArtifactId = Branded<\'ScienceArtifactId\'>;',
+    declaration: 'export type ScienceArtifactId = ArtifactId;',
   },
   {
     name: 'ScienceArtifactVersion',
@@ -4320,7 +4320,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceHumanEditArtifactVersion',
-    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly attachment: TextAttachmentRef & {\n        readonly mediaType: \'application/vnd.vega-lite+json\';\n    };\n}',
+    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'application/vnd.vega-lite+json\';\n}',
   },
   {
     name: 'ScienceInterpreterAvailableBinding',
@@ -4357,6 +4357,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SciencePackage',
     declaration: 'export interface SciencePackage {\n    readonly name: string;\n    readonly version: string;\n}',
+  },
+  {
+    name: 'ScienceProjectId',
+    declaration: 'export type ScienceProjectId = ProjectId;',
   },
   {
     name: 'ScienceRunArtifactInput',

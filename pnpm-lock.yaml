@@ -599,6 +599,9 @@ importers:
       '@deepseek-ai/dsh-sandbox-policy':
         specifier: workspace:^
         version: link:../packages/sandbox/sandbox-policy
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:*
+        version: link:../packages/science/science-artifact-store
       '@deepseek-ai/dsh-science-runtime':
         specifier: workspace:*
         version: link:../packages/science/science-runtime
@@ -1498,6 +1501,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../../science/science-artifact-store
       '@deepseek-ai/dsh-science-runtime':
         specifier: workspace:^
         version: link:../../science/science-runtime
@@ -6256,12 +6262,6 @@ importers:
       '@deepseek-ai/cordis-plugin-loader':
         specifier: workspace:^
         version: link:../../../vendor/loader
-      '@deepseek-ai/dsh-attachment':
-        specifier: workspace:^
-        version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-attachment-local':
-        specifier: workspace:^
-        version: link:../../attachment/attachment-local
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
@@ -6277,6 +6277,9 @@ importers:
       '@deepseek-ai/dsh-sandbox-local':
         specifier: workspace:^
         version: link:../../sandbox/sandbox-local
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../science-artifact-store
       '@deepseek-ai/dsh-science-session':
         specifier: workspace:^
         version: link:../science-session
@@ -6311,9 +6314,6 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
-      '@deepseek-ai/dsh-attachment':
-        specifier: workspace:^
-        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
@@ -6323,12 +6323,12 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../science-artifact-store
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
-      '@deepseek-ai/dsh-session-attachment-index':
-        specifier: workspace:^
-        version: link:../../session/session-attachment-index
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:../../session/session-projection
@@ -6381,6 +6381,9 @@ importers:
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:^
         version: link:../../sandbox/sandbox
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../science-artifact-store
       '@deepseek-ai/dsh-science-runtime':
         specifier: workspace:^
         version: link:../science-runtime
@@ -9224,6 +9227,9 @@ importers:
       '@deepseek-ai/dsh-sandbox-policy':
         specifier: workspace:^
         version: link:../../packages/sandbox/sandbox-policy
+      '@deepseek-ai/dsh-science-artifact-store':
+        specifier: workspace:^
+        version: link:../../packages/science/science-artifact-store
       '@deepseek-ai/dsh-science-runtime':
         specifier: workspace:^
         version: link:../../packages/science/science-runtime

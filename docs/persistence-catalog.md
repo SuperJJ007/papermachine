@@ -611,7 +611,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 #### `science/artifact-saved` — log-only
 
 ```ts persistence-catalog
-/** Records one immutable Science artifact attachment version. */
+/** Records one immutable Science artifact version by project-store reference. */
 'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 

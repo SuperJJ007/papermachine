@@ -5,6 +5,7 @@
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -14,8 +15,9 @@ import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
+  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
   captureStableAria,
   compareOrRefreshGolden,
@@ -42,6 +44,12 @@ const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
+const PROJECT_ID = ScienceProjectId('project-types-1')
+
+/** Deterministic fixture digest: a real sha256 over a fixed label, not a store-verified content hash. */
+function fixtureDigest(label: string): string {
+  return createHash('sha256').update(label).digest('hex')
+}
 
 /** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png artifacts. */
 function scienceFixture(
@@ -142,25 +150,29 @@ function scienceFixture(
 
   const artifact = (
     artifactId: ReturnType<typeof ScienceArtifactId>, logicalName: string,
-    attachment: TextAttachmentRef | ImageAttachmentRef,
+    mediaType: ScienceArtifactMediaType, source: TextAttachmentRef | ImageAttachmentRef,
   ) => {
     const createdAt = eventTime(runCall.seq + 3)
+    const versionId = ScienceVersionId(fixtureDigest(`${logicalName}:version`))
+    const sha256 = fixtureDigest(logicalName)
+    const byteCount = source.bytes
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
-        artifactId, logicalName, version: 1, title: logicalName, origin: 'auto', attachment,
+        artifactId, logicalName, version: 1, title: logicalName, origin: 'auto',
+        projectId: PROJECT_ID, versionId, sha256, mediaType, byteCount,
         runId: RUN_ID, toolCallId: RUN_CALL_ID, requestHeaderSeq: request.seq,
         environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt,
       },
     })
-    return { artifactId, logicalName, version: 1, title: logicalName, attachment }
+    return { artifactId, logicalName, version: 1, title: logicalName, versionId, mediaType, byteCount }
   }
 
   const items = [
-    artifact(ScienceArtifactId('artifact-csv'), 'summary.csv', csv),
-    artifact(ScienceArtifactId('artifact-json'), 'metrics.json', json),
-    artifact(ScienceArtifactId('artifact-md'), 'report.md', markdown),
-    artifact(ScienceArtifactId('artifact-png'), 'plot.png', png),
+    artifact(ScienceArtifactId('artifact-csv'), 'summary.csv', 'text/csv', csv),
+    artifact(ScienceArtifactId('artifact-json'), 'metrics.json', 'application/json', json),
+    artifact(ScienceArtifactId('artifact-md'), 'report.md', 'text/markdown', markdown),
+    artifact(ScienceArtifactId('artifact-png'), 'plot.png', 'image/png', png),
   ]
 
   session.append('tool/result', {
@@ -173,15 +185,10 @@ function scienceFixture(
     }),
     meta: {
       kind: 'science/artifact',
-      version: 1,
+      version: 2,
       artifacts: items.map(item => ({
         artifactId: item.artifactId, logicalName: item.logicalName, version: item.version, title: item.title,
-        attachment: {
-          attachmentId: item.attachment.attachmentId,
-          mediaType: item.attachment.mediaType,
-          bytes: item.attachment.bytes,
-          ...'width' in item.attachment ? { width: item.attachment.width, height: item.attachment.height } : {},
-        },
+        content: { versionId: item.versionId, mediaType: item.mediaType, byteCount: item.byteCount },
       })),
     },
   }, { surfaceOp: 'append', sourceEventSeqs: [runCall.seq] })

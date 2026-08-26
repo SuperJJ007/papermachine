@@ -1,17 +1,19 @@
 // Web e2e scenario: cold Science chart and Outcome replay, plus the Science
 // session-header action and read-only Details entry it opens. A stored
-// Session and attachment fixture enters through the shipped Web composition
-// so real Chromium exercises projection replay, session-scoped attachment
-// reads, dedicated tool rows, reload, lightbox keyboard behavior, and the
-// routed Details column's client-safe environment/run/chart/Outcome
-// rendering.
+// Session fixture citing one project-store-backed chart version and one
+// deliberately unresolvable one enters through the shipped Web composition
+// so real Chromium exercises projection replay, dedicated tool rows, reload,
+// lightbox keyboard behavior, and the routed Details column's client-safe
+// environment/run/chart/Outcome rendering. Artifact-content reads through
+// the project store are wired in a later slice (S4); until then the
+// artifact viewer's per-version content pane stays unverified here.
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
@@ -23,10 +25,13 @@ import type {} from '@deepseek-ai/dsh-session-title'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
+  ScienceProjectId,
   replayScience,
   ScienceRunId,
   ScienceScratchKey,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
   captureStableAria,
   compareOrRefreshGolden,
@@ -56,6 +61,7 @@ const PNG = Uint8Array.from(Buffer.from(
   'base64',
 ))
 const FINGERPRINT = 'b'.repeat(64)
+const PROJECT_ID = ScienceProjectId('project-browser-1')
 const RUN_ID = ScienceRunId('run-browser-1')
 const SECOND_RUN_ID = ScienceRunId('run-browser-2')
 const CANCELLED_RUN_ID = ScienceRunId('run-browser-cancelled')
@@ -91,8 +97,21 @@ function appendToolResult(
   }, { surfaceOp: 'append', sourceEventSeqs: [callSeq] })
 }
 
-/** Build one valid closed Science session around stored and missing attachments. */
-function scienceFixture(stored: ImageAttachmentRef): string {
+/** Store coordinates and content facts one committed Science chart version carries. */
+interface ChartContent {
+  readonly versionId: ReturnType<typeof ScienceVersionId>
+  readonly sha256: string
+  readonly mediaType: ScienceArtifactMediaType
+  readonly byteCount: number
+}
+
+/** Deterministic fixture digest: a real sha256 over a fixed label, not a store-verified content hash. */
+function fixtureDigest(label: string): string {
+  return createHash('sha256').update(label).digest('hex')
+}
+
+/** Build one valid closed Science session around stored and missing chart object versions. */
+function scienceFixture(png: Uint8Array): string {
   const session = Session.create(SessionId('science-browser-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
   // own creation-time anchor plus that event's delta from the fixture's
@@ -105,10 +124,19 @@ function scienceFixture(stored: ImageAttachmentRef): string {
   // fact it depends on, regardless of time of day.
   const origin = Date.now() - 60_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
-  const missing: ImageAttachmentRef = {
-    ...stored,
-    attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`),
-    name: 'missing.png',
+  const stored: ChartContent = {
+    versionId: ScienceVersionId(fixtureDigest('observed-series:v1')),
+    sha256: createHash('sha256').update(png).digest('hex'),
+    mediaType: 'image/png',
+    byteCount: png.byteLength,
+  }
+  // A distinct committed version whose bytes the project artifact store
+  // never actually holds, exercising the artifact viewer's load-failure path.
+  const missing: ChartContent = {
+    versionId: ScienceVersionId(fixtureDigest('observed-series:v2-missing')),
+    sha256: fixtureDigest('observed-series:v2-missing-object'),
+    mediaType: 'image/png',
+    byteCount: png.byteLength,
   }
 
   session.append('turn/start', { turn: 1 })
@@ -197,30 +225,23 @@ function scienceFixture(stored: ImageAttachmentRef): string {
   })
   const artifactPresentation = (
     version: number,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     title: string,
   ): JsonValue => ({
     kind: 'science/artifact',
-    version: 1,
+    version: 2,
     artifacts: [{
       artifactId: CHART_ID,
       logicalName: 'observed-series',
       version,
       title,
-      attachment: {
-        attachmentId: attachment.attachmentId,
-        mediaType: attachment.mediaType,
-        bytes: attachment.bytes,
-        width: attachment.width,
-        height: attachment.height,
-        ...attachment.name === undefined ? {} : { name: attachment.name },
-      },
+      content: { versionId: content.versionId, mediaType: content.mediaType, byteCount: content.byteCount },
     }],
   })
 
   const appendCapturedChart = (
     version: number,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     sourceRunId: ReturnType<typeof ScienceRunId>,
     sourceCallId: ReturnType<typeof CallId>,
     sourceCallSeq: number,
@@ -236,7 +257,11 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         version,
         title,
         origin: 'auto',
-        attachment,
+        projectId: PROJECT_ID,
+        versionId: content.versionId,
+        sha256: content.sha256,
+        mediaType: content.mediaType,
+        byteCount: content.byteCount,
         runId: sourceRunId,
         toolCallId: sourceCallId,
         requestHeaderSeq: request.seq,
@@ -245,13 +270,13 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt: eventTime(sourceCallSeq + 3),
       },
     })
-    appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, attachment, title), turn)
+    appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, content, title), turn)
   }
 
   const appendChart = (
     version: number,
     callId: ReturnType<typeof CallId>,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     sourceRunId: ReturnType<typeof ScienceRunId>,
     turn: number,
   ): void => {
@@ -269,7 +294,11 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         title,
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
         origin: 'model',
-        attachment,
+        projectId: PROJECT_ID,
+        versionId: content.versionId,
+        sha256: content.sha256,
+        mediaType: content.mediaType,
+        byteCount: content.byteCount,
         runId: sourceRunId,
         toolCallId: callId,
         requestHeaderSeq: request.seq,
@@ -278,7 +307,7 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt,
       },
     })
-    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, attachment, title), turn)
+    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, content, title), turn)
   }
 
   const appendOutcome = (
@@ -412,12 +441,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    const stored = await scaffold.ctx.attachments.saveImage({
-      data: PNG,
-      mediaType: 'image/png',
-      name: 'observed.png',
-    })
-    await seedSession(scaffold, scienceFixture(stored), SEED_ID, 'science')
+    await seedSession(scaffold, scienceFixture(PNG), SEED_ID, 'science')
     // A non-Science Session (no agentPreset), seeded alongside the Science
     // one so the header-action test can assert real absence rather than an
     // absence that only holds because no other Session exists yet.

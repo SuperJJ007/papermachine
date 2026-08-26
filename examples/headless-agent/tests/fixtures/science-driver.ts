@@ -22,7 +22,11 @@ try {
   const sessionId = SessionId('science-tools-snapshot')
   await ctx.agents.create({
     sessionId,
-    meta: { agentPreset: 'science' },
+    // The Science project artifact store keys its store directory by this
+    // workspace path (this driver's own process cwd, already scrubbed from
+    // every snapshot assertion below), required since S2: `bindEnvironment`
+    // and `startRun` both resolve the session's owning project from it.
+    meta: { agentPreset: 'science', cwd: process.cwd() },
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
   const result = await runFixtureTurn(ctx, {
@@ -52,7 +56,7 @@ try {
       version: chart.version,
       spec: '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":{"type":"bar","color":"#2455a4","fontSize":16},"encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}',
     })
-    ctx.scienceEdits.submit(agent, {
+    await ctx.scienceEdits.submit(agent, {
       targets: [{
         artifactId: styled.artifactId,
         version: styled.version,
@@ -64,7 +68,7 @@ try {
     await agent.whenIdle()
     const plot = foldScience(agent.session.events).artifacts.findLast(artifact => artifact.logicalName === 'plot.png')
     if (plot === undefined) throw new Error(`${NAME}: the run produced no plot.png artifact`)
-    ctx.scienceEdits.submit(agent, {
+    await ctx.scienceEdits.submit(agent, {
       targets: [
         {
           artifactId: plot.artifactId,

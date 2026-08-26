@@ -1755,7 +1755,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 ## `@deepseek-ai/dsh-science-runtime`
 
-需要：`attachments` · `sessions` · `subprocess` · `sandbox`
+需要：`scienceArtifactStore` · `sessions` · `subprocess` · `sandbox`
 
 ```ts config-catalog
 /** Runtime configuration supplied by one Cordis row. */

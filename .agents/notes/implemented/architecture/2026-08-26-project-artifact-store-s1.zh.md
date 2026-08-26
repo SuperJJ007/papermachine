@@ -12,7 +12,7 @@ Status: implemented
 
 `@deepseek-ai/dsh-science-artifact-store`(`packages/science/science-artifact-store`)完整实现了 S0 规定的 Project 身份、存储布局、Artifact/Version 记录、并发追加线性化与删除边界。它是一个独立的 Cordis service,目前没有任何消费者:science-session、science-runtime 与 tool-science 均不受本切片影响。
 
-分支 id(`ProjectId`、`ArtifactId`、`VersionId`)由本包自行拥有,而不是复用 `science-session` 现有的 `ScienceArtifactId` 词汇——本存储是一个更底层的包,science-session 与 science-runtime 将在 S2 依赖它,而非反过来,因此本包不能反向依赖两者中的任何一个。两套 id 空间如何(是否)统一,由 S2 决定。
+分支 id(`ProjectId`、`ArtifactId`、`VersionId`)由本包自行拥有,而不是复用 `science-session` 现有的 `ScienceArtifactId` 词汇——本存储是一个更底层的包,science-session 与 science-runtime 将在 S2 依赖它,而非反过来,因此本包不能反向依赖两者中的任何一个。[S2](2026-08-26-project-artifact-store-s2.zh.md) 把这两套 id 空间归并了起来:让 `science-session` 用自己的命名重新导出这些分支 id,并删除了它此前的 `ScienceArtifactId` brand。
 
 除 `openProject` 外的每个公开方法都直接接收 `projectId`,并且是自给自足的:它会打开(或复用已缓存的)该 Project 的 SQLite 连接,不要求同一进程内先调用过 `openProject`。这正是 Host 重启后、或已知某个 project id 的第二个 session 能够立即续接工作的原因,对应 S0 中 S3 的验收标准,且不会迫使 S3 再新增一条访问路径。
 

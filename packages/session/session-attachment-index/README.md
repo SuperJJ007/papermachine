@@ -31,7 +31,7 @@ Generic Session attachment-reference registry. It owns `ctx.sessionAttachments`,
 
 ## Role
 
-This package owns the generic registry role of the attachment-authorization seam: domain host plugins (e.g. `dsh-science-session`) contribute typed extractors for their own event types, and `dsh-host-apiproxy` consumes the registry for both the live attachment RPC and Session ZIP export. Neither side knows the other.
+This package owns the generic registry role of the attachment-authorization seam: a domain host plugin contributes a typed extractor for its own extractor-required event type, and `dsh-host-apiproxy` consumes the registry for both the live attachment RPC and Session ZIP export. Neither side knows the other. No production domain registers an extractor today — Science's `science/artifact-saved` is `attachment-free`, since the project artifact store (`dsh-science-artifact-store`), not this registry, owns Science artifact bytes.
 
 ## Model Experience
 

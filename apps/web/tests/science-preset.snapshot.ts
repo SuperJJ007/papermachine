@@ -241,8 +241,8 @@ describe('science agent preset', () => {
     expect(firstAnnotate.isError).toBe(false)
     expect(secondAnnotate.isError).toBe(false)
     if (firstAnnotate.isError || secondAnnotate.isError) throw new Error('R5 snapshot artifact curation failed')
-    const firstArtifact = firstAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
-    const secondArtifact = secondAnnotate.value as unknown as { artifactId: string; version: number; attachmentId: string }
+    const firstArtifact = firstAnnotate.value as unknown as { artifactId: string; version: number }
+    const secondArtifact = secondAnnotate.value as unknown as { artifactId: string; version: number }
     expect(firstArtifact).toMatchObject({ version: 1 })
     expect(secondArtifact).toMatchObject({ artifactId: firstArtifact.artifactId, version: 1 })
 
@@ -275,6 +275,12 @@ describe('science agent preset', () => {
       expect(artifactState).not.toHaveProperty('environmentFingerprint')
       expect(artifactState).not.toHaveProperty('toolCallId')
       expect(artifactState).not.toHaveProperty('requestHeaderSeq')
+      // Model-visible state never exposes the project store's own
+      // coordinates: those stay Host-internal, resolved only by the
+      // durable event the Client reads separately.
+      expect(artifactState).not.toHaveProperty('projectId')
+      expect(artifactState).not.toHaveProperty('versionId')
+      expect(artifactState).not.toHaveProperty('sha256')
     }
 
     const r5Events = agentHandle.agent.session.events.filter(event => event.seq > result!.seq)
@@ -287,8 +293,8 @@ describe('science agent preset', () => {
     const annotateEvents = r5ToolResults.filter(event => event.type === 'tool/result'
       && event.data.message.source.callId.toString().includes('annotate_artifact'))
     expect(annotateEvents.map(event => event.type === 'tool/result' ? event.data.meta : undefined)).toEqual([
-      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 1 })] }),
-      expect.objectContaining({ kind: 'science/artifact', version: 1, artifacts: [expect.objectContaining({ version: 1 })] }),
+      expect.objectContaining({ kind: 'science/artifact', version: 2, artifacts: [expect.objectContaining({ version: 1 })] }),
+      expect.objectContaining({ kind: 'science/artifact', version: 2, artifacts: [expect.objectContaining({ version: 1 })] }),
     ])
     const serializedR5 = JSON.stringify(r5Events)
     expect(serializedR5).not.toContain(scratch!)
@@ -296,10 +302,10 @@ describe('science agent preset', () => {
 
     const artifactEvent = r5Events.find(event => event.type === 'science/artifact-saved')
     if (artifactEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot artifact event is missing')
-    const artifactAttachment = artifactEvent.data.artifact.attachment
-    if (!('width' in artifactAttachment)) throw new Error('R5 snapshot artifact is not an image attachment')
-    const stored = await scaffold.ctx.attachments.readImage(artifactAttachment)
-    expect(Buffer.from(stored.data)).toEqual(Buffer.from(PNG))
+    const savedArtifact = artifactEvent.data.artifact
+    if (savedArtifact.mediaType !== 'image/png') throw new Error('R5 snapshot artifact is not a PNG')
+    const stored = await scaffold.ctx.scienceArtifactStore.readBlob(savedArtifact.projectId, savedArtifact.sha256)
+    expect(Buffer.from(stored)).toEqual(Buffer.from(PNG))
 
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
   }, 30_000)

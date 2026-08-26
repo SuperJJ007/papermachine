@@ -20,12 +20,13 @@ export type SessionAttachmentPolicy = 'built-in' | 'attachment-free' | 'extracto
  * `ctx.sessionAttachments.register()`. A domain package that owns an
  * extractor-required known event type augments this interface — typically
  * beside its own `SessionEventMap` merge — to widen the registration's typed
- * key set. For example, the augmented interface can declare a
- * `'science/artifact-saved': true` member beside its domain's session event map.
+ * key set: `interface SessionAttachmentExtractorMap { 'domain/event-name': true }`.
  * The literal value carries no information; only the key matters. A type
  * this package already classifies `built-in` or `attachment-free` in its own
  * static policy table cannot also appear here — `register()` rejects that at
- * the registration effect.
+ * the registration effect. No production domain registers an extractor
+ * today: Science's own `science/artifact-saved` is `attachment-free` (the
+ * project artifact store owns its bytes, outside this registry entirely).
  */
 export interface SessionAttachmentExtractorMap {}
 

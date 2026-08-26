@@ -1753,7 +1753,7 @@ Source: [`packages/science/science-artifact-store/src/index.ts:48`](../packages/
 
 ## `@deepseek-ai/dsh-science-runtime`
 
-Requires: `attachments` · `sessions` · `subprocess` · `sandbox`
+Requires: `scienceArtifactStore` · `sessions` · `subprocess` · `sandbox`
 
 ```ts config-catalog
 /** Runtime configuration supplied by one Cordis row. */

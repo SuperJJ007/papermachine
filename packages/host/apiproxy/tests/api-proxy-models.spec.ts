@@ -10,6 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AttachmentStore from '@deepseek-ai/dsh-attachment'
+import type { TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions, LlmCallConfig, LlmModelInfo, LlmModelReasoningInfo, LlmProviderInfo,
@@ -24,6 +25,24 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
+
+// Test-owned extractor-required event type: no production domain event is a
+// stable stand-in for this suite (every real domain's own registration is
+// covered end to end in that domain's own tests), so the generic
+// registration/authorization mechanism `sessions.textAttachment` shares with
+// the image path is exercised against a locally merged event type instead.
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Test-only text-media event carrying one optional attachment reference. */
+    'test/text-media-saved': { readonly media?: { readonly attachment?: TextAttachmentRef } }
+  }
+}
+
+declare module '@deepseek-ai/dsh-session-attachment-index/types' {
+  interface SessionAttachmentExtractorMap {
+    'test/text-media-saved': true
+  }
+}
 
 let nextRpc = 1
 function request<P>(payload: P): RpcRequest<P> {
@@ -276,16 +295,14 @@ describe('Web session model selection', () => {
     const readText = vi.fn(() => Promise.resolve({ ref, data: new TextEncoder().encode('ok') }))
     ctx.provide('attachments', { readText } as never)
     await ctx.plugin(SessionAttachmentIndex)
-    // host-apiproxy has no dependency on any domain package (dsh-science-session
-    // included), so this exercises the generic extractor-registration/
-    // authorization mechanism `sessions.textAttachment` shares with the image
-    // path, through a hand-registered extractor under a representative event
-    // type name rather than a real domain event. Science's own real
-    // `science/artifact-saved` text-attachment producers (auto-capture,
-    // annotate_artifact) are covered end to end in `dsh-tool-science` and
-    // `dsh-science-runtime`'s own test suites.
-    ctx.sessionAttachments.register('science/artifact-saved', () => [ref])
-    agent.session.append('science/artifact-saved', { version: 1, artifact: {} } as never)
+    // host-apiproxy has no dependency on any domain package, so this exercises
+    // the generic extractor-registration/authorization mechanism against the
+    // test-owned `test/text-media-saved` event type declared above rather
+    // than a real domain event. Every real domain's own text-attachment
+    // producers (e.g. Science's auto-capture and `annotate_artifact`) are
+    // covered end to end in that domain's own test suites.
+    ctx.sessionAttachments.register('test/text-media-saved', () => [ref])
+    agent.session.append('test/text-media-saved', { media: { attachment: ref } })
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
       cwd: '/tmp',

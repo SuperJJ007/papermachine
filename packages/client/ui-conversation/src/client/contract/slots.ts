@@ -487,6 +487,19 @@ export interface ChatNodeOwnerProps {
    * business row that renders one on its own (outside `renderMessageImages`).
    */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /**
+   * Reasoning text folded onto this Node from one or more immediately
+   * preceding pure-reasoning `assistant-step` Nodes (`reasoning-attach.ts`),
+   * oldest first; absent or empty when none attached. An `assistant-step`
+   * renderer consumes this itself (synthesized leading `reasoning` blocks
+   * through `AssistantMarkdown`'s existing Think summary row); every other
+   * kind may ignore it — `ChatNodeSeat` renders it as a leading Think
+   * disclosure for a `tool-call` Node on the renderer's behalf, so ui-tool
+   * and ui-science's own toolviews need no changes to participate. Optional
+   * so an owner built outside `ChatNodeSeat` (a component test double for
+   * one keyed renderer in isolation) is not forced to supply it.
+   */
+  attachedReasoning?: readonly string[] | undefined
 }
 
 /** Full props of one registered keyed Chat business renderer. */

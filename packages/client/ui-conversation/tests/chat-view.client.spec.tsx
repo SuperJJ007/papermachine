@@ -95,6 +95,10 @@ const user = (seq: number, text: string): UserMessageNode => ({
 const assistant = (seq: number, text: string, turn = 1): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step: 1, blocks: [{ kind: 'text', text }],
 })
+/** A settled `assistant` Node whose only block is reasoning — a pure-reasoning step (`reasoning-attach.ts`). */
+const think = (seq: number, text: string, turn = 1): AssistantMessageNode => ({
+  kind: 'assistant', seq, time: seq * 1_000, turn, step: 1, blocks: [{ kind: 'reasoning', text }],
+})
 const retry = (seq: number): ModelRetryNode => ({
   kind: 'model-retry', retryId: 'chat-view-retry' as ModelRetryNode['retryId'],
   seq, time: seq * 1_000, turn: 1, step: 0,
@@ -1574,5 +1578,65 @@ describe('Tool groups', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('button', { name: /运行了 1 段代码，保存或编辑了 1 个文件/u })).toBeTruthy()
     expect(view.getByText('2 步 · 1 失败')).toBeTruthy()
+  })
+})
+
+describe('Think attach', () => {
+  it('Think -> tool: no independent Think row, a leading Think disclosure renders ahead of the tool row instead', () => {
+    const h = makeHarness({ nodes: [think(3, '看看有没有别的文件'), toolResult(4, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    // Only one Think disclosure exists, and it precedes the tool row it attached to.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    const html = view.container.innerHTML
+    expect(html.indexOf('data-variant="think"')).toBeLessThan(html.indexOf('tool-seat-a'))
+    // Default collapsed: the row exposes only the summary preview, not the expanded body.
+    const disclosure = screen.getByRole('button', { name: /Think/u })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector('[class*="thinkBody"]')).toBeNull()
+    fireEvent.click(screen.getByText('Think'))
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).toBe('看看有没有别的文件')
+  })
+
+  it('Think -> Think -> tool: two adjacent pure-reasoning steps fold onto the same tool as one disclosure, concatenated', () => {
+    const h = makeHarness({ nodes: [think(3, '第一段'), think(4, '第二段'), toolResult(5, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Think'))
+    const body = view.container.querySelector('[data-variant="think"] [class*="thinkBody"]')
+    expect(body?.textContent).toBe('第一段\n\n第二段')
+  })
+
+  it('Think -> 正文: the reasoning renders through the assistant-step\'s own leading Think summary row, not a second seat', () => {
+    const h = makeHarness({ nodes: [think(3, '先想一下'), assistant(4, '好的，答案是')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    expect(screen.getByText('好的，答案是')).toBeTruthy()
+    fireEvent.click(screen.getByText('Think'))
+    expect(screen.getByText('先想一下')).toBeTruthy()
+  })
+
+  it('Think at the turn end (no successor materialized yet) keeps today\'s standalone Think row', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), think(2, '仍在流式')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Think'))
+    expect(screen.getByText('仍在流式')).toBeTruthy()
+  })
+
+  it('a Think row folded ahead of a tool no longer breaks an otherwise-adjacent tool-call run apart', () => {
+    const h = makeHarness({
+      nodes: [
+        toolResult(3, 'read', 'read'), think(4, '看看有没有别的文件'), toolResult(5, 'glob', 'glob'), toolResult(6, 'state', 'grep'),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryAllByRole('button', { name: /运行了|读取了/u })).toHaveLength(1)
+    expect(view.getByRole('button', { name: /读取了 3 个文件/u })).toBeTruthy()
+    expect(view.getByTestId('tool-seat-read')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-glob')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-state')).toBeTruthy()
+    // The fold still shows exactly once, ahead of the group's first member.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
   })
 })

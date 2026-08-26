@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-science-run-row-states-and-tool-groups.md
-2026-08-26-science-run-row-states-and-tool-groups.md: 2d8e367034281e111fe57060c34aadcedf3befb5
-2026-08-26-science-run-row-states-and-tool-groups.zh.md: f3f8f81d4e48b1795fa1958ce4be93dced2e9c1d
+2026-08-26-science-run-row-states-and-tool-groups.md: 9f9c3c995178b2df4a26d81e2e3ecca641007b43
+2026-08-26-science-run-row-states-and-tool-groups.zh.md: 96575c1f809e9ff577ca06dc826067be79fec12a

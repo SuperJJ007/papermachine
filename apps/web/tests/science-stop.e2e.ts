@@ -2,10 +2,12 @@
 // through the Runtime suite's wire-protocol fixture, so the UI acts on the
 // same run-started/run-finished and tool-result path production uses. Beyond
 // the original Stop scenario, this file also proves the eight-state
-// `run_python`/`run_r` row redesign and the generic adjacent-Tool-call group
-// end to end: a real settled success (kernel badge, plain stdout), two real
-// adjacent run_python calls folding into one generated group title, and a
-// real kernel crash mid-run rendering the amber kernel-exited state.
+// `run_python`/`run_r` row redesign, the generic adjacent-Tool-call group,
+// and Think-attach end to end: a real settled success (kernel badge, plain
+// stdout), two real adjacent run_python calls folding into one generated
+// group title, a real kernel crash mid-run rendering the amber
+// kernel-exited state, and a real reasoning block ahead of a paired run
+// folding onto that same group instead of rendering its own Think row.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -82,6 +84,34 @@ function pairedRunEntry(action: Record<string, unknown>): ReplayEntry {
   }
 }
 
+/**
+ * One model response that reasons first, then dispatches two adjacent fake
+ * kernel runs in the same step (P3d/Think-attach: the pure-reasoning block
+ * must not split the two calls' Tool group apart, and must not render as
+ * its own independent row).
+ */
+function reasoningThenPairedRunEntry(action: Record<string, unknown>, reasoningText: string): ReplayEntry {
+  const firstId = CallId(`science-run-think-a-${Math.random().toString(36).slice(2)}`)
+  const secondId = CallId(`science-run-think-b-${Math.random().toString(36).slice(2)}`)
+  const argumentsJson = JSON.stringify({ code: JSON.stringify(action) })
+  return {
+    kind: 'chunks',
+    chunks: [
+      { type: 'block-start', index: 0, blockType: 'reasoning' },
+      { type: 'reasoning-delta', index: 0, text: reasoningText },
+      { type: 'block-end', index: 0, block: { type: 'reasoning', text: reasoningText } },
+      { type: 'block-start', index: 1, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 1, id: firstId, name: 'run_python', argumentsDelta: argumentsJson },
+      { type: 'block-end', index: 1, block: { type: 'tool-call', id: firstId, name: 'run_python', arguments: argumentsJson } },
+      { type: 'block-start', index: 2, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 2, id: secondId, name: 'run_python', argumentsDelta: argumentsJson },
+      { type: 'block-end', index: 2, block: { type: 'tool-call', id: secondId, name: 'run_python', arguments: argumentsJson } },
+      { type: 'usage', usage: { inputTokens: 32, outputTokens: 16 } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ],
+  }
+}
+
 /** A plain closing reply with no further tool call, so a turn whose run settled normally still ends. */
 function textFinishEntry(text: string): ReplayEntry {
   return {
@@ -123,6 +153,11 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
       textFinishEntry('Both finished.'),
       runEntry({ action: 'crash' }),
       textFinishEntry('The kernel exited; here is what happened.'),
+      reasoningThenPairedRunEntry(
+        { action: 'reply', status: 'ok', stdout: 'ok' },
+        'I should run the paired action twice to confirm it is stable.',
+      ),
+      textFinishEntry('Both finished, after thinking it through.'),
     ]))
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
@@ -235,5 +270,25 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
     if (session === undefined) throw new Error('Kernel-died session was not retained after its turn settled')
     const run = replayScience(session.events)?.runs.at(-1)
     expect(run).toMatchObject({ status: 'failed', failureCode: 'KERNEL_DIED' })
+  }, 90_000)
+
+  it('folds a Think step ahead of two adjacent run_python calls onto the group, with no independent Think row', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-think-attach'))
+    const input = page.locator('textarea').first()
+    const settled = scaffold.whenTurnSettled(60_000)
+    await input.fill('Think it through, then run the paired action twice.')
+    await input.press('Enter')
+    await settled
+
+    const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u }).last()
+    await groupHeader.waitFor({ timeout: 15_000 })
+    // Exactly one Think disclosure for this turn: the reasoning attached
+    // onto the group instead of also rendering as its own standalone row.
+    const thinkRows = page.locator('[data-variant="think"]')
+    expect(await thinkRows.count()).toBe(1)
+    await thinkRows.first().getByText('Think', { exact: true }).click()
+    await expect.poll(async () => thinkRows.first().getByText(
+      'I should run the paired action twice to confirm it is stable.', { exact: true },
+    ).count()).toBe(1)
   }, 90_000)
 })

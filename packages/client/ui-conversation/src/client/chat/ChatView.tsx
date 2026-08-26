@@ -21,6 +21,7 @@ import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { ToolGroup } from './ToolGroup.tsx'
 import { groupAdjacentToolNodes } from './tool-group.ts'
+import { attachReasoningNodes } from './reasoning-attach.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -163,14 +164,23 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
+  // A pure-reasoning `assistant-step` key never renders its own flow row: it
+  // folds onto its immediately following attachable key (a Tool-call or a
+  // prose `assistant-step`) instead, so it neither shows an independent
+  // Think row nor breaks an adjacent tool-call run apart. `reasoningByKey`
+  // reaches each successor's own seat below.
+  const { order: flowOrder, reasoningByKey } = useMemo(
+    () => attachReasoningNodes(order, key => nodeStore.get(key)),
+    [order, nodeStore],
+  )
   // Adjacent tool-call runs (≥ 2) fold under one generated group title; a
   // lone tool-call key stays a 'single' entry, the same ungrouped row it
   // always was. Grouping only needs each key's Node kind, already resolved
   // above — this recomputes whenever ChatView already re-renders from a
   // `nodeStore`/`order` change, adding no new subscription.
   const flowEntries = useMemo(
-    () => groupAdjacentToolNodes(order, key => nodeStore.get(key)?.kind),
-    [order, nodeStore],
+    () => groupAdjacentToolNodes(flowOrder, key => nodeStore.get(key)?.kind),
+    [flowOrder, nodeStore],
   )
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
@@ -227,7 +237,9 @@ export function ChatView({
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
   // Owner currency both flow-row shapes forward unchanged (single seat / group wrapper).
-  const seatProps: ChatNodeOwnerProps & Pick<ChatViewSlotProps, 'useSession' | 'renderSlot' | 't'> = {
+  // `attachedReasoning` is per-key (`reasoningByKey`, passed separately below),
+  // so it is excluded here rather than carrying one shared placeholder value.
+  const seatProps: Omit<ChatNodeOwnerProps, 'attachedReasoning'> & Pick<ChatViewSlotProps, 'useSession' | 'renderSlot' | 't'> = {
     useSession, selectedCallId, cwd, openFile: requestOpenFile, inspectCall, forkAt,
     renderMessageImages, fileMentions, openDetailsView, loadImage, renderSlot, t,
   }
@@ -462,9 +474,20 @@ export function ChatView({
             </div>
           )}
           {flowEntries.map(entry => entry.kind === 'single' ? (
-            <ChatNodeSeat key={entry.key} nodeKey={entry.key} {...seatProps} />
+            <ChatNodeSeat
+              key={entry.key}
+              nodeKey={entry.key}
+              attachedReasoning={reasoningByKey.get(entry.key)}
+              {...seatProps}
+            />
           ) : (
-            <ToolGroup key={entry.groupKey} groupKey={entry.groupKey} keys={entry.keys} {...seatProps} />
+            <ToolGroup
+              key={entry.groupKey}
+              groupKey={entry.groupKey}
+              keys={entry.keys}
+              reasoningByKey={reasoningByKey}
+              {...seatProps}
+            />
           ))}
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would

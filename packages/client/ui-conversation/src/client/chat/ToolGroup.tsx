@@ -16,16 +16,18 @@ import { resolveGroupRoots, summarizeToolGroup } from './tool-group.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import css from './ToolGroup.module.css'
 
-interface ToolGroupProps extends ChatNodeOwnerProps {
+interface ToolGroupProps extends Omit<ChatNodeOwnerProps, 'attachedReasoning'> {
   readonly groupKey: string
   readonly keys: readonly string[]
   readonly useSession: ChatViewSlotProps['useSession']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
   readonly t: ChatViewSlotProps['t']
+  /** Successor key -> attached reasoning texts (`reasoning-attach.ts`); a member key may own one. */
+  readonly reasoningByKey: ReadonlyMap<string, readonly string[]>
 }
 
 /** One auto-titled group over adjacent Tool call rows, open by default. */
-export function ToolGroup({ groupKey, keys, useSession, renderSlot, t, ...owner }: ToolGroupProps) {
+export function ToolGroup({ groupKey, keys, useSession, renderSlot, t, reasoningByKey, ...owner }: ToolGroupProps) {
   const [open, setOpen] = useState(true)
   const roots = useSession(snapshot => resolveGroupRoots(keys, snapshot.chat.nodes))
   const summary = summarizeToolGroup(roots, t)
@@ -50,7 +52,15 @@ export function ToolGroup({ groupKey, keys, useSession, renderSlot, t, ...owner 
       {open && (
         <div className={css.members}>
           {keys.map(key => (
-            <ChatNodeSeat key={key} nodeKey={key} useSession={useSession} renderSlot={renderSlot} t={t} {...owner} />
+            <ChatNodeSeat
+              key={key}
+              nodeKey={key}
+              useSession={useSession}
+              renderSlot={renderSlot}
+              t={t}
+              attachedReasoning={reasoningByKey.get(key)}
+              {...owner}
+            />
           ))}
         </div>
       )}

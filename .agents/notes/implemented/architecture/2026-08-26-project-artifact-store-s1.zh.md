@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-[Project 级 artifact store 设计](../../proposed/architecture/2026-08-25-project-artifact-store.zh.md)(S0)规定了一套 Project 拥有的 artifact 注册表,取代 session 级 attachment 存储,分 S1–S3 三个切片交付。S1 是存储本体:工作区身份注册表,以及 SQLite 索引加内容寻址 blob 存储——在任何产品包接入之前即可独立使用。S2(session 事件瘦身、捕获、`get_science_state` 重建)与 S3(跨 session 读取/引用/追加、Files projection、重启续接)尚未构建;S0 note 在它们交付前保持 `proposed` 状态。
+[Project 级 artifact store 设计](2026-08-25-project-artifact-store.zh.md)(S0)规定了一套 Project 拥有的 artifact 注册表,取代 session 级 attachment 存储,分 S1–S3 三个切片交付。S1 是存储本体:工作区身份注册表,以及 SQLite 索引加内容寻址 blob 存储——在任何产品包接入之前即可独立使用。[S2](2026-08-26-project-artifact-store-s2.zh.md)(session 事件瘦身、捕获、`get_science_state` 重建)与 [S3](2026-08-26-project-artifact-store-s3.zh.md)(跨 session 读取/引用/追加、Files projection、重启续接)已在此包之上交付;本 note 只描述 S1 自身交付的内容。
 
 ## Decision
 
@@ -28,7 +28,7 @@ Status: implemented
 
 **完整 fsync 持久化的 blob 写入**(仿照 `attachment-local` 的硬链接加目录 fsync 发布路径)——在 S1 阶段拒绝为不成比例的做法:S0 note 明确指定"先写临时文件再 rename",而内容寻址下对已存在目标的 rename 覆盖本身已经按哈希天然幂等,无需额外的持久化机制;若实践中出现持久化缺口,再重新评估。
 
-另见 [S0 note](../../proposed/architecture/2026-08-25-project-artifact-store.zh.md) 自身的 Alternatives considered 一节,本切片不再重复。
+另见 [S0 note](2026-08-25-project-artifact-store.zh.md) 自身的 Alternatives considered 一节,本切片不再重复。
 
 ## Consequences
 

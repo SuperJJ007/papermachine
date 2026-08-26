@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-25-project-artifact-store.md
-2026-08-25-project-artifact-store.md: 09dd668913229624e28ae497eced29c49fadb4b8
-2026-08-25-project-artifact-store.zh.md: fc26ab56f6b2ae2e3563a81f6c84b51ebaf02976
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md
+2026-08-25-project-artifact-store.md: 3af98dabea9a2bb81ba59ab5a188daead5582a8d
+2026-08-25-project-artifact-store.zh.md: b200f10a959f3a516a4016bae439396e5de9c99d

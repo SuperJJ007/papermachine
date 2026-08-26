@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-26-project-artifact-store-s2.md
-2026-08-26-project-artifact-store-s2.md: f36aa9e0b182439bf64e9983deef59fd7b3f555b
-2026-08-26-project-artifact-store-s2.zh.md: 64bbd3e88d944a27d76e2ca6566f7d4916cef226
+2026-08-26-project-artifact-store-s2.md: 70706e8cdd83f8910f63740d9690c5b4f08e12f2
+2026-08-26-project-artifact-store-s2.zh.md: fe91da0baffc8d1694374b9cefd862066879cc12

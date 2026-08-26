@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Project-owned Science artifact registry and content-addressed version store. Sessions are producers, consumers, and provenance of an artifact — never its owner: a second session in the same project reads, references, and appends to an artifact a first session created, and an artifact outlives the session that produced it. Design rationale: [project artifact store Agent Note](../../../.agents/notes/proposed/architecture/2026-08-25-project-artifact-store.md).
+Project-owned Science artifact registry and content-addressed version store. Sessions are producers, consumers, and provenance of an artifact — never its owner: a second session in the same project reads, references, and appends to an artifact a first session created, and an artifact outlives the session that produced it. Design rationale: [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md).
 
 ## Project identity
 
@@ -64,5 +64,5 @@ None — this package never assembles or sends provider requests; it has no live
 - **No unreferenced-blob garbage collection** — a blob admitted for an append that then fails its artifact-existence check (bytes are admitted before the transaction validates the target artifact) is never reclaimed; content addressing makes this an inert orphan, not a correctness issue.
 - **Workspace identity uses `resolve()`, not `realpath()`** — a workspace reached through two different symlink paths is not recognized as the same directory; only literal path equality distinguishes reopen from move/copy.
 - **Copy detection is heuristic at open time** — a copy opened while the original is unreachable (e.g. an unmounted disk) is indistinguishable from a move and keeps the id, per the design note's accepted v1 risk.
-- **No cross-project read/write, retention policy, or dependency DAG** — this package implements spec items 1/2/5/6/10 of the [project artifact store Agent Note](../../../.agents/notes/proposed/architecture/2026-08-25-project-artifact-store.md) only; cross-project access, version retention, and dependency tracking are explicitly deferred.
+- **No cross-project read/write, retention policy, or dependency DAG** — this package implements spec items 1/2/5/6/10 of the [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md) only; cross-project access, version retention, and dependency tracking are explicitly deferred.
 - **No science-runtime or tool-science wiring yet** — this package is the store only; the session-event, capture, and tool-resolution seams that consume it are a later slice of the same design.

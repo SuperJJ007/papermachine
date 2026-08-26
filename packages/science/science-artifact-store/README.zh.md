@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Project 级 Science artifact 注册表与内容寻址版本存储。Session 只是某个 artifact 的生产者、消费者与溯源来源——从不拥有它:同一 Project 内的第二个 Session 可以读取、引用并追加第一个 Session 创建的 artifact,artifact 的生命周期不随产生它的 Session 结束。设计依据:[project artifact store Agent Note](../../../.agents/notes/proposed/architecture/2026-08-25-project-artifact-store.zh.md)。
+Project 级 Science artifact 注册表与内容寻址版本存储。Session 只是某个 artifact 的生产者、消费者与溯源来源——从不拥有它:同一 Project 内的第二个 Session 可以读取、引用并追加第一个 Session 创建的 artifact,artifact 的生命周期不随产生它的 Session 结束。设计依据:[project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.zh.md)。
 
 ## Project 身份
 
@@ -64,5 +64,5 @@ None — this package never assembles or sends provider requests; it has no live
 - **没有未引用 blob 的垃圾回收** —— 一次 append 若在 artifact 存在性校验失败前已经写入了 blob(字节的写入发生在事务校验目标 artifact 之前),该 blob 不会被回收;内容寻址使其成为无害的孤儿数据,而非正确性问题。
 - **工作区身份使用 `resolve()` 而非 `realpath()`** —— 通过两条不同的符号链接路径到达同一目录不会被识别为同一目录;只有字面路径相等才能区分「重新打开」与「移动/复制」。
 - **复制检测在打开时是启发式的** —— 若原目录在打开副本时不可达(例如磁盘未挂载),该情况与移动无法区分,id 会被保留,这是设计 note 中已接受的 v1 风险。
-- **不支持跨 Project 读写、保留策略或依赖 DAG** —— 本包只实现了 [project artifact store Agent Note](../../../.agents/notes/proposed/architecture/2026-08-25-project-artifact-store.zh.md) 机制第 1/2/5/6/10 条;跨 Project 访问、版本保留策略与依赖追踪明确延后。
+- **不支持跨 Project 读写、保留策略或依赖 DAG** —— 本包只实现了 [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.zh.md) 机制第 1/2/5/6/10 条;跨 Project 访问、版本保留策略与依赖追踪明确延后。
 - **尚未接入 science-runtime 或 tool-science** —— 本包目前只是存储本体;消费它的 session 事件、捕获与工具解析等环节属于同一设计的后续切片。

@@ -6,7 +6,7 @@ English | [中文](2026-08-26-project-artifact-store-s1.zh.md)
 
 ## Problem
 
-[The project artifact store design](../../proposed/architecture/2026-08-25-project-artifact-store.md) (S0) specifies a project-owned artifact registry replacing session-scoped attachment storage, delivered across slices S1–S3. S1 is the store itself: the workspace-identity registry and the SQLite index plus content-addressed blob store, usable in isolation before any product package wires into it. S2 (session-event slimming, capture, `get_science_state` rebuild) and S3 (cross-session read/reference/append, Files projection, restart continuity) remain unbuilt; the S0 note stays `proposed` until they ship.
+[The project artifact store design](2026-08-25-project-artifact-store.md) (S0) specifies a project-owned artifact registry replacing session-scoped attachment storage, delivered across slices S1–S3. S1 is the store itself: the workspace-identity registry and the SQLite index plus content-addressed blob store, usable in isolation before any product package wires into it. [S2](2026-08-26-project-artifact-store-s2.md) (session-event slimming, capture, `get_science_state` rebuild) and [S3](2026-08-26-project-artifact-store-s3.md) (cross-session read/reference/append, Files projection, restart continuity) have since shipped on top of this package; this note describes only what S1 itself shipped.
 
 ## Decision
 
@@ -28,7 +28,7 @@ Package README documents the full public contract (project identity resolution r
 
 **Full fsync-durability blob admission** (matching `attachment-local`'s hardlink-plus-directory-fsync publish path) — rejected as disproportionate for S1: the S0 note specifies "written temp-then-rename", and content-addressed rename-over-existing-target is already idempotent by hash without the extra durability machinery; revisit if a durability gap surfaces in practice.
 
-See also the [S0 note](../../proposed/architecture/2026-08-25-project-artifact-store.md)'s own Alternatives considered section, which this slice does not revisit.
+See also the [S0 note](2026-08-25-project-artifact-store.md)'s own Alternatives considered section, which this slice does not revisit.
 
 ## Consequences
 

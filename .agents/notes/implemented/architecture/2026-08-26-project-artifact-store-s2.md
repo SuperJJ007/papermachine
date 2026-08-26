@@ -6,7 +6,7 @@ English | [中文](2026-08-26-project-artifact-store-s2.zh.md)
 
 ## Problem
 
-[S1](2026-08-26-project-artifact-store-s1.md) shipped `@deepseek-ai/dsh-science-artifact-store` as a standalone package with no consumer: `science-session`, `science-runtime`, and `tool-science` still embedded a complete attachment reference in `science/artifact-saved` and read/wrote bytes through the session-scoped attachment store. [S0](../../proposed/architecture/2026-08-25-project-artifact-store.md) specifies S2 as the slice that wires the store into the runtime — capture, curation, run inputs, artifact-viewer edits — and slims the durable event to store references. S0 stays `proposed` until S3 also ships.
+[S1](2026-08-26-project-artifact-store-s1.md) shipped `@deepseek-ai/dsh-science-artifact-store` as a standalone package with no consumer: `science-session`, `science-runtime`, and `tool-science` still embedded a complete attachment reference in `science/artifact-saved` and read/wrote bytes through the session-scoped attachment store. [S0](2026-08-25-project-artifact-store.md) specifies S2 as the slice that wires the store into the runtime — capture, curation, run inputs, artifact-viewer edits — and slims the durable event to store references. [S3](2026-08-26-project-artifact-store-s3.md) has since shipped cross-session continuation on top of this slice.
 
 ## Decision
 

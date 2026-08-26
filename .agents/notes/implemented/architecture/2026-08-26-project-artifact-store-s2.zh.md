@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-[S1](2026-08-26-project-artifact-store-s1.zh.md) 把 `@deepseek-ai/dsh-science-artifact-store` 交付为一个没有消费者的独立包：`science-session`、`science-runtime` 与 `tool-science` 当时仍在 `science/artifact-saved` 中内嵌完整附件引用，并通过 session 级附件存储读写字节。[S0](../../proposed/architecture/2026-08-25-project-artifact-store.zh.md) 把 S2 定义为把 store 接入运行时——捕获、策展、run input、artifact viewer 编辑——并把持久化事件瘦身为 store 引用的那一片。S0 在 S3 也交付之前继续保持 `proposed`。
+[S1](2026-08-26-project-artifact-store-s1.zh.md) 把 `@deepseek-ai/dsh-science-artifact-store` 交付为一个没有消费者的独立包：`science-session`、`science-runtime` 与 `tool-science` 当时仍在 `science/artifact-saved` 中内嵌完整附件引用，并通过 session 级附件存储读写字节。[S0](2026-08-25-project-artifact-store.zh.md) 把 S2 定义为把 store 接入运行时——捕获、策展、run input、artifact viewer 编辑——并把持久化事件瘦身为 store 引用的那一片。[S3](2026-08-26-project-artifact-store-s3.zh.md) 已在此切片之上交付了跨 session 接续。
 
 ## 决策
 

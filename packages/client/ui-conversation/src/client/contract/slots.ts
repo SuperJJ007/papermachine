@@ -871,6 +871,8 @@ export interface ChatViewInjected {
    * `ToolCallOwnerProps`) instead of the session header.
    */
   openDetailsView: (id: string) => void
+  /** Bind the Chat-owned semantic-anchor scroll action for external same-session jumps. */
+  bindAnchorJump: (opener: (anchorKey: string) => void) => () => void
   /**
    * Open a tool-arg filesystem path with the host OS default application
    * (relative paths resolve against the session cwd). Always returns a

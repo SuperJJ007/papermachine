@@ -163,6 +163,11 @@ function makeHarness(init?: Partial<ConversationSnapshot>, options?: { processDe
   }
   const forkAt = vi.fn()
   const openDetailsView = vi.fn<(id: string) => void>()
+  let anchorJump: ((anchorKey: string) => void) | undefined
+  const bindAnchorJump = vi.fn((opener: (anchorKey: string) => void) => {
+    anchorJump = opener
+    return () => { if (anchorJump === opener) anchorJump = undefined }
+  })
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -292,6 +297,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>, options?: { processDe
     chatScroll,
     forkAt,
     openDetailsView,
+    bindAnchorJump,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -300,7 +306,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>, options?: { processDe
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, openDetailsView, setSelection, toolOwners,
+    chatScroll, forkAt, openDetailsView, bindAnchorJump,
+    jumpToAnchor: (anchorKey: string) => { anchorJump?.(anchorKey) }, setSelection, toolOwners,
   }
 }
 
@@ -1262,6 +1269,23 @@ describe('ChatView', () => {
     } finally {
       host.remove()
     }
+  })
+
+  it('centers an externally requested semantic anchor and saves the reader position', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const userRow = view.container.querySelector('[data-chat-anchor-key="fixture:user:1"]') as HTMLDivElement
+    const row = view.container.querySelector('[data-chat-anchor-key="fixture:assistant:2"]') as HTMLDivElement
+    installScrollMetrics(scroller, 1_000, 300)
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 300 } as DOMRect)
+    vi.spyOn(userRow, 'getBoundingClientRect').mockReturnValue({ top: -200, bottom: -160 } as DOMRect)
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 600, bottom: 640 } as DOMRect)
+    Object.defineProperty(row, 'offsetHeight', { value: 40 })
+    act(() => { h.jumpToAnchor('fixture:assistant:2') })
+    expect(scroller.scrollTop).toBe(470)
+    expect(h.chatScroll.read()).not.toBeNull()
+    expect(view.getByLabelText('回到底部')).toBeTruthy()
   })
 
   it('a remount restores the saved semantic row after width reflow', () => {

@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-18-science-artifact-viewer-panel.md) | 中文
 
+本记录中的「消息」子视图及其导航已由 [Science artifact 溯源与私有 Review](2026-08-26-science-artifact-provenance-review.zh.md) 取代。Artifact 工作台、开放标签页、工具栏和其余溯源位置决策仍然有效。
+
 ## Problem
 
 Science Details 条目此前渲染为一个常驻仪表盘：始终可见的环境概览、有序的运行列表、带版本导览条的图库/详情切换、header 触发的灯箱——外加一个独立的宽屏 `conversation.view` 标签页（`science.provenance`），承载四部分的溯源信息（代码、执行日志、对话轮次、环境）。打开 Details 意味着要先浏览一个状态页才能到达任意一个图表；到达溯源意味着要离开 Details 列，进入一个完整的中间列标签页，而返回另一个图表则要经由图库。面板中没有任何东西建模"我现在打开的这些 artifact"，因此同时处理两个图表版本没有一个持久的落脚点。

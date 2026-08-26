@@ -43,6 +43,7 @@ viewer 以 id `science` 注册进 `conversation.details.view`，标签来自 `sc
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化附件媒体类型分派：`ImageMediaType` 经由 `MessageImage` 渲染；`TextMediaType` 通过 `loadText` 取得已解码字节后再次分派——`text/csv` 渲染为一个可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`application/vnd.vega-lite+json` 通过内联打包的 `vega-embed` 渲染器以 Vega-Lite 模式、关闭浏览器操作项并采用 SVG 渲染，`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。无法解析的 Vega-Lite JSON 回退为原始预格式化文本；已解析但被渲染器拒绝的文档回退为 `JsonTree`，因此畸形 spec 不会使 viewer 崩溃。这个分派正是后续新增受支持媒体类型要扩展的接缝：新增一个分支即可，无需改动标签栏或工具栏。CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行，非 CSV 文本在尝试 JSON 解析或 `<pre>` 渲染之前会被限制到 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000）个字符——二者都是固定的呈现层上限（`format.ts`），不是 `Config` 字段，与准入该文件的部署自身 `textLimits` 字节上限无关；被截断的渲染会显示一条"仅显示前 N 项"的提示。
 - **编辑选择** — Vega-Lite artifact 在每一层组合结构（`layer`/`hconcat`/`vconcat`/`concat` 成员与 `facet`/`repeat` 的子 `spec`）上暴露结构化的 `mark`/`encoding.*` 元素行。点击行名称或图表会选中人工样式 target；行内独立的 `+` 控件则把确切 target 及其可选备注暂存到主 composer，composer chip 的变化会立即同步行内 `+`/`−` 状态。raster 的可选归一化拖拽层会画出一个人工样式区域，一旦区域画出，就提供同样的备注加 `+`/`−` 控件——单纯画出区域不会暂存任何东西，只有这个显式控件才会——因此区域 target 与结构化 target 经由同一条路径抵达 composer，产出同样的 `edit.regionTarget` chip。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id 加版本）：切换标签页或步进版本都会重新挂载内容子树，因此某个 artifact/版本上还未暂存的备注草稿绝不会预填进另一个共享同一 spec path 或区域坐标的字段。在某个 target 已经暂存之后再编辑其备注，会立即更新已暂存的选择（而不必等到下一次点击 `+`），因此 composer chip 与最终面向模型的指令始终携带最新文本。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注，并在拒绝前指明是哪个字段出了问题——共享指令本身，还是某个 target 自己的备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **直接样式编辑** — 选择 Vega-Lite `mark` 或 `encoding.*` target 还会打开基于不可变工作副本的样式面板。面板只暴露颜色、字号与 encoding axis/legend 标题文本；每次修改都会重新渲染实时 SVG 预览，数据变换仍由 agent 完成。定稿时通过 `remote.scienceEdits.commitStyleEdit` 发送完整 JSON spec；成功后选择返回的下一个 version，其详情明确标记直接编辑并指名确切 parent。Host 的 stale/media/JSON/admission 拒绝会保持可见，且不改变所选 version。UI 子集用于塑造工作流，并不声称能对任意 Vega-Lite JSON 建立安全不变量。
+- **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **落地视图** — 在没有标签页打开时显示每个 logical artifact 的最新版本图库；打开任一项即创建其标签页。
 
@@ -67,7 +68,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 1. **代码** — 来源运行的 `code` 参数，通过该运行的 `toolCallId` 从会话快照中解析得到，并展示持久化的 `codeSha256` 作为锚点（与环境指纹不同，这里展示完整值——它是对同一次调用已经逐字复述过的源代码文本求的摘要，而不是 Host 基础设施事实）。
 2. **执行日志** — 来自同一调用已完成结果的 stdout/stderr 文本，并在旁展示投影中持久化的字节数与截断标记，作为权威度量——即使会话记录尚未加载也可见。
-3. **消息** — 请求序号与开始时间，附带一个跳转到会话记录的动作，复用 Details 座位的 `inspectCall` 宿主回调（写入一次性 inspect 目标，切换到 trajectory 视图）——是一段摘要加一次跳转，而非消息重放。下钻开头还会展示生成轮次中紧凑的用户请求与 agent 结论，随后提供显式的 `call:` Trajectory 与 `turn:` 语义 Trace 操作。
+3. **消息** — 展示生成轮次之前最近的用户文本和该轮最后一段 assistant 文本，二者在视觉上各限制为三行；另有两个不同动作，分别在对话中居中生成该产物的 assistant 节点，以及在详细 Trajectory 中检查该 run。下钻绝不重放对话。若某个 version 由另一 Session 产出，则仅以文本展示来源 Session 标题，不提供两个动作；跨 Session 导航延后处理。
 4. **环境** — 当投影仍保留该确切版本时，以 JSON 形式展示该环境版本（配置档案、版本号、状态、时间戳，以及逐语言的 capability/版本/指纹预览与包清单）；若该版本已被取代（投影只保留最新版本），则单独报告这一状态，并展示该运行自身的指纹预览作为仍然保留的事实。
 
 解析 chart/run 组合（并在其中任一方不再可解析时报告不可用）是 artifact viewer 的职责，不属于本下钻组件——它总是针对一个已经解析好的组合渲染。

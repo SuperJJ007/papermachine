@@ -1,5 +1,5 @@
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -27,6 +27,7 @@ const CODE_SHA = 'c'.repeat(64)
 const SCRATCH_KEY = ScienceScratchKey('d'.repeat(64))
 export const RUN_ID = ScienceRunId('run-1')
 export const ARTIFACT_ID = ScienceArtifactId('artifact-1')
+export const PRODUCER_SESSION_ID = SessionId('science-fixture-session')
 export const PROJECT_ID = ScienceProjectId('project-1')
 export const VERSION_ID = ScienceVersionId('version-1')
 export const AUTO_VERSION_ID = ScienceVersionId('version-2')
@@ -149,6 +150,7 @@ export const artifact = (
   overrides: Partial<ScienceRunArtifactVersion> = {},
 ): ScienceRunArtifactVersion => ({
   artifactId: ARTIFACT_ID,
+  producerSessionId: PRODUCER_SESSION_ID,
   logicalName: 'trend',
   version: 1,
   title: 'Trend',

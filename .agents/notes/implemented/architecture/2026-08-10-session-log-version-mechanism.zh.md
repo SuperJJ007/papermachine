@@ -20,7 +20,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 ## 影响
 
-v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、两个后端（SQLite 专用列，`SCHEMA_VERSION` 升到 15）和 BFF 线上 schema 接受。升级器链本身推迟到第一个真实的 v0→v1 变更出现、有真实对象可测时再建；写入侧目前不写 `ignorable`（还没有生产者需要它），`Session.append` 的这一表面随第一个使用者一起落地。在注册表面出现之前，仓库外插件的事件在第一方读取器下无法恢复会话，预发布立场接受这一点，而且拒绝是显式的而非静默的。未知类型守卫只在读取侧生效：`appendCore` 继续拒绝已淘汰的 legacy 形状，但不对新类型做词汇检查，因为写入时拒绝会让活跃会话的持久化中途停摆，代价大于下次加载时的显式拒绝。JSONL 后端还会在校验当前 header 形状、解码任何事件行之前，直接从原始 header 行拒绝外来版本，因此结构完全不同的未来格式仍会报告升级方向而不是"损坏"；SQLite 则先由自己的 `SCHEMA_VERSION` pragma 把关整个文件的结构。
+v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、两个后端（SQLite 专用列，`SCHEMA_VERSION` 升到 15）和 BFF 线上 schema 接受。升级器链本身推迟到第一个真实的 v0→v1 变更出现、有真实对象可测时再建；`dsh-science-session` 的 `science/artifact-note-added`/`science/artifact-note-removed` 事件是第一批把 `ignorable` 设为 `true` 的生产者，`Session.append` 按 `IgnorableSessionEventMap` 键控的条件类型分支强制这一表面。在注册表面出现之前，仓库外插件的事件在第一方读取器下无法恢复会话，预发布立场接受这一点，而且拒绝是显式的而非静默的。未知类型守卫只在读取侧生效：`appendCore` 继续拒绝已淘汰的 legacy 形状，但不对新类型做词汇检查，因为写入时拒绝会让活跃会话的持久化中途停摆，代价大于下次加载时的显式拒绝。JSONL 后端还会在校验当前 header 形状、解码任何事件行之前，直接从原始 header 行拒绝外来版本，因此结构完全不同的未来格式仍会报告升级方向而不是"损坏"；SQLite 则先由自己的 `SCHEMA_VERSION` pragma 把关整个文件的结构。
 
 ## 曾考虑的替代方案
 

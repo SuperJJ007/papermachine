@@ -45,40 +45,6 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.summaryCard {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.summaryCard p {
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 6px;
-  margin: 0;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.summaryActions {
-  display: flex;
-  gap: 6px;
-}
-
-.summaryActions button {
-  padding: 4px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-}
-
 .subTab {
   padding: 4px 8px;
   border: none;
@@ -122,19 +88,27 @@
   word-break: break-all;
 }
 
-.jumpButton {
-  align-self: flex-start;
-  padding: 4px 10px;
+.messagesSection { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.messageSummary { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+.messageSummary span { color: var(--dsw-alias-label-caption); font-size: 11px; line-height: 18px; }
+.messageSummary p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.messageActions { display: flex; gap: 6px; padding-left: 52px; }
+.primaryAction, .secondaryAction {
+  padding: 5px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  border-radius: 7px;
   font-size: 12px;
   line-height: 18px;
   cursor: pointer;
 }
-
-.jumpButton:hover {
+.primaryAction { border-color: var(--dsw-alias-label-primary); background: var(--dsw-alias-label-primary); color: var(--dsw-alias-bg-layer-1); }
+.secondaryAction {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+.secondaryAction:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
+.sourceSession { margin: 0 0 0 52px; padding: 7px 9px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.sourceSession span { margin-right: 7px; color: var(--dsw-alias-label-caption); }

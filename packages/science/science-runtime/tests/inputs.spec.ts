@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
@@ -24,6 +25,7 @@ function artifact(
 ): ScienceArtifactVersion {
   return {
     artifactId,
+    producerSessionId: SessionId('inputs-session'),
     logicalName,
     version: 1,
     title: logicalName,

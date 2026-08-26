@@ -9,6 +9,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunArtifactVersion } from '@deepseek-ai/dsh-science-session'
@@ -23,6 +24,7 @@ import * as EditService from '../src/edit-service.ts'
 function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return {
     artifactId: ScienceArtifactId('chart-1'),
+    producerSessionId: SessionId('session-1'),
     logicalName: 'loss.png',
     version: 1,
     title: 'Loss',

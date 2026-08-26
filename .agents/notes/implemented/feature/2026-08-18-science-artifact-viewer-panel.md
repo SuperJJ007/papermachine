@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-18-science-artifact-viewer-panel.zh.md)
 
+The Messages subview and its navigation in this record are superseded by [Science artifact provenance and private review](2026-08-26-science-artifact-provenance-review.md). The artifact-stage, open-tab, toolbar, and remaining provenance placement decisions remain current.
+
 ## Problem
 
 The Science Details entry rendered as a resident dashboard: an always-visible Environment strip, an ordered Runs list, an artifact gallery/detail toggle with a version rail, and a header-triggered lightbox — plus a separate wide `conversation.view` tab (`science.provenance`) for the four-part provenance bundle (code, execution log, conversation turn, environment). Opening Details meant scanning a status page before reaching any one chart; reaching provenance meant leaving the Details column for a full center-column tab, and getting back to a different chart meant returning through the gallery. Nothing in the panel modeled "the artifacts I have open right now," so working across two chart versions at once had no persistent home.

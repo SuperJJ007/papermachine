@@ -120,6 +120,7 @@ describe('Science projection replay', () => {
       version: 1,
       artifact: {
         artifactId: source.artifactId,
+        producerSessionId: source.producerSessionId,
         logicalName: source.logicalName,
         version: 2,
         parent: { artifactId: source.artifactId, version: 1 },

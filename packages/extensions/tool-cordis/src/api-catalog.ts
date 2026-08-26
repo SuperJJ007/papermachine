@@ -1289,6 +1289,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agent', description: 'exact live agent whose Session owns the artifact.' }, { name: 'request', description: 'exact current parent and complete edited JSON text.' }],
         returns: 'identity and direct-edit provenance of the new contiguous version.',
       },
+      {
+        signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
+        description: 'Add one user-only note after validating its exact visible artifact version.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the artifact.' }, { name: 'request', description: 'Exact artifact version and plain note text.' }],
+        returns: 'acceptance receipt after the note event commits.',
+      },
+      {
+        signature: '@Remote(\'removeArtifactNote\') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt',
+        description: 'Remove one active user-only note owned by the named logical artifact.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the note.' }, { name: 'request', description: 'Logical artifact and add-event sequence identifying the note.' }],
+        returns: 'acceptance receipt after the removal event commits.',
+      },
     ],
   },
   {
@@ -4281,6 +4293,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceArtifactId',
     declaration: 'export type ScienceArtifactId = ArtifactId;',
+  },
+  {
+    name: 'ScienceArtifactNoteAddRequest',
+    declaration: 'export interface ScienceArtifactNoteAddRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly text: string;\n}',
+  },
+  {
+    name: 'ScienceArtifactNoteReceipt',
+    declaration: 'export interface ScienceArtifactNoteReceipt {\n    readonly accepted: true;\n}',
+  },
+  {
+    name: 'ScienceArtifactNoteRemoveRequest',
+    declaration: 'export interface ScienceArtifactNoteRemoveRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly noteSeq: number;\n}',
   },
   {
     name: 'ScienceArtifactVersion',

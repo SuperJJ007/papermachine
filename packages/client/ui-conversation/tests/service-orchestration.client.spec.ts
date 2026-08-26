@@ -119,6 +119,30 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('selects Chat and delivers semantic anchors across mounted and remounted views', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const openView = vi.fn()
+    b.root.bindViewOpener(sessionId, openView)
+    const first = vi.fn()
+    const disposeFirst = b.root.bindChatAnchorOpener(sessionId, first)
+
+    b.root.openChatAt(sessionId, 'assistant:7')
+    expect(openView).toHaveBeenCalledWith('chat')
+    expect(first).toHaveBeenCalledWith('assistant:7')
+
+    disposeFirst()
+    b.root.openChatAt(sessionId, 'assistant:9')
+    expect(first).toHaveBeenCalledTimes(1)
+    const second = vi.fn()
+    const disposeSecond = b.root.bindChatAnchorOpener(sessionId, second)
+    expect(second).toHaveBeenCalledWith('assistant:9')
+    disposeFirst()
+    disposeSecond()
+    expect(() => { b.root.openChatAt(sessionId, 'assistant:11') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
   it('suppresses transcript process-detail chrome only where every registered source agrees', async () => {
     const b = await bench()
     const sessionId = b.runtime.sessions.behavior('s1').sessionId

@@ -253,6 +253,7 @@ function scienceFixture(png: Uint8Array): string {
       version: 1,
       artifact: {
         artifactId: CHART_ID,
+        producerSessionId: session.id,
         logicalName: 'observed-series',
         version,
         title,
@@ -289,6 +290,7 @@ function scienceFixture(png: Uint8Array): string {
       version: 1,
       artifact: {
         artifactId: CHART_ID,
+        producerSessionId: session.id,
         logicalName: 'observed-series',
         version,
         title,

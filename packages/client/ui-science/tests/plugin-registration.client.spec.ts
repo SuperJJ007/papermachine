@@ -97,6 +97,8 @@ function setup(sessionsOverride?: unknown) {
     submit: vi.fn<() => Promise<{ ok: boolean; value?: { accepted: boolean }; error?: { message: string } }>>(
       () => Promise.resolve({ ok: true, value: { accepted: true } }),
     ),
+    addArtifactNote: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
+    removeArtifactNote: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
     commitStyleEdit: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
   }
   ctx.provide('remote', { scienceEdits } as never)
@@ -106,16 +108,17 @@ function setup(sessionsOverride?: unknown) {
     binding: () => ({ session: { projections: { faceOf: () => face } } }),
     list: { getSnapshot: () => ({ ids: ['s1'], byId: { s1: { agentPreset: 'science' } } }), subscribe: () => () => {} },
   } as never)
-  ctx.provide('conversation', {
-    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: vi.fn(), openView: vi.fn(),
+  const conversation = {
+    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: vi.fn(), openView: vi.fn(), openChatAt: vi.fn(),
     registerTranscriptDetailVisibility: vi.fn(() => () => {}),
-  } as never)
+  }
+  ctx.provide('conversation', conversation as never)
   ctx.provide('conversationEvents', { register: vi.fn() } as never)
   ctx.provide('trajectorySubviews', {
     registerVisibility: vi.fn(() => () => {}), select: vi.fn(),
   } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  return { ctx, slots, scienceEdits }
+  return { ctx, slots, scienceEdits, conversation }
 }
 
 describe('ui-science apply', () => {
@@ -217,21 +220,23 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the Science Details entry jumps to the swimlane turn and forwards a style-edit commit', async () => {
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0 })
-    const { ctx, slots } = setup()
+  it('the Science Details entry returns to Chat and forwards review/style Remotes', async () => {
+    const { ctx, slots, conversation } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('conversation.details.view')[0]
     if (entry?.inject === undefined) throw new Error('expected the injected Details entry')
     const injected = (entry.inject as (sessionId: SessionId) => {
-      openTrace: (turn: number) => void
+      returnToConversation: (anchorKey: string) => void
+      addArtifactNote: (request: unknown) => Promise<unknown>
+      removeArtifactNote: (request: unknown) => Promise<unknown>
       commitStyleEdit: (request: unknown) => Promise<unknown>
     })(SID)
-    injected.openTrace(3)
-    expect(must(ctx.get('trajectorySubviews')).select).toHaveBeenCalledWith(SID, 'swimlane')
-    expect(must(ctx.get('conversation')).openView).toHaveBeenCalledWith(SID, 'trajectory')
+    injected.returnToConversation('assistant-anchor')
+    expect(conversation.openChatAt).toHaveBeenCalledWith(SID, 'assistant-anchor')
 
+    await expect(injected.addArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
+    await expect(injected.removeArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.commitStyleEdit({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await fiber.dispose()
   })

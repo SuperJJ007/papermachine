@@ -719,6 +719,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
     return {
       artifactId: latest.artifactId,
+      producerSessionId: source.producerSessionId,
       logicalName: request.logicalName,
       // Curation is metadata over content the session already holds, so it
       // supersedes the version it names instead of opening one whose bytes

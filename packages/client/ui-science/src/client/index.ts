@@ -299,12 +299,10 @@ export function apply(ctx: ClientContext): void {
       addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
       removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
       composerSelections: composerSelections.store(sessionId),
-      openTrace: (turn) => {
-        ctx.trajectorySubviews.select(sessionId, 'swimlane')
-        ctx.conversation.openView(sessionId, 'trajectory')
-        requestAnimationFrame(() => { document.getElementById(`trace-turn-${String(turn)}`)?.scrollIntoView() })
-      },
+      returnToConversation: (anchorKey) => { ctx.conversation.openChatAt(sessionId, anchorKey) },
       selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
+      addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
+      removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
       commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
     }),
   }, ScienceDetailsView))

@@ -17,6 +17,7 @@ import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceProvenanceSubTab } from './selection-store.ts'
 import css from './ScienceArtifactProvenance.module.css'
 
@@ -40,7 +41,9 @@ export interface ScienceArtifactProvenanceProps {
   inspectCall: (callId: string) => void
   /** Select the detailed trajectory subview before inspecting one call. */
   selectDetailed: () => void
-  openTrace: (turn: number) => void
+  currentSessionId: SessionId
+  sourceSessionTitle: string | undefined
+  returnToConversation: (anchorKey: string) => void
   t: TranslateNS<'science'>
 }
 
@@ -55,6 +58,7 @@ function userText(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>
 /** Resolve the generating turn plus nearby dialogue without parsing model prose. */
 function generationSummary(snapshot: ConversationSnapshot, callId: string): {
   readonly turn: number
+  readonly anchorKey: string
   readonly user: string
   readonly agent: string
 } | undefined {
@@ -71,6 +75,7 @@ function generationSummary(snapshot: ConversationSnapshot, callId: string): {
     : undefined
   return {
     turn: assistant.turn,
+    anchorKey: conversationContextKey('assistant-step', `${String(assistant.turn)}:${String(assistant.step)}`),
     user: priorUser?.kind === 'user' || priorUser?.kind === 'steering' ? normalizedSummary(userText(priorUser)) : '',
     agent: agent?.kind === 'text' ? normalizedSummary(agent.text) : '',
   }
@@ -133,11 +138,6 @@ function terminalCounts(run: ScienceClientRun): {
   }
 }
 
-/** Browser-locale timestamp; no fixed format is imposed on the reader's Intl settings. */
-function formatTime(ms: number): string {
-  return new Date(ms).toLocaleString()
-}
-
 function CodeSection({ run, block, t }: { run: ScienceClientRun; block: ToolCallBlock | undefined; t: TranslateNS<'science'> }) {
   const code = parseCode(resolveArgsRaw(block))
   return (
@@ -173,20 +173,31 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
   )
 }
 
-function MessagesSection({ run, inspectCall, selectDetailed, t }: {
+function MessagesSection({
+  chart, run, summary, currentSessionId, sourceSessionTitle, returnToConversation, inspectCall, selectDetailed, t,
+}: {
+  chart: ScienceClientArtifactVersion
   run: ScienceClientRun
+  summary: ReturnType<typeof generationSummary>
+  currentSessionId: SessionId
+  sourceSessionTitle: string | undefined
+  returnToConversation: (anchorKey: string) => void
   inspectCall: (callId: string) => void
   selectDetailed: () => void
   t: TranslateNS<'science'>
 }) {
+  if (summary === undefined) return <section className={css.section}><p className={css.notice}>{t('provenance.messages.pending')}</p></section>
+  const local = chart.producerSessionId === currentSessionId
   return (
-    <section className={css.section}>
-      <p className={css.anchor}>
-        {t('provenance.messages.turn', { requestHeaderSeq: run.requestHeaderSeq, startedAt: formatTime(run.startedAt) })}
-      </p>
-      <button type="button" className={css.jumpButton} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>
-        {t('provenance.messages.jump')}
-      </button>
+    <section className={css.messagesSection}>
+      <div className={css.messageSummary}><span>{t('provenance.messages.question')}</span><p>{summary.user}</p></div>
+      <div className={css.messageSummary}><span>{t('provenance.messages.result')}</span><p>{summary.agent}</p></div>
+      {local
+        ? <div className={css.messageActions}>
+          <button type="button" className={css.primaryAction} onClick={() => { returnToConversation(summary.anchorKey) }}>{t('provenance.messages.conversation')}</button>
+          <button type="button" className={css.secondaryAction} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>{t('provenance.messages.trajectory')}</button>
+        </div>
+        : <p className={css.sourceSession}><span>{t('provenance.messages.sourceSession')}</span>{sourceSessionTitle ?? chart.producerSessionId}</p>}
     </section>
   )
 }
@@ -221,7 +232,8 @@ function EnvironmentSection({ run, environment, t }: {
  * @returns the drill-in body.
  */
 export function ScienceArtifactProvenance({
-  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed, openTrace, t,
+  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed,
+  currentSessionId, sourceSessionTitle, returnToConversation, t,
 }: ScienceArtifactProvenanceProps) {
   const block = resolveRunCall(snapshot, run.toolCallId)
   const summary = generationSummary(snapshot, run.toolCallId)
@@ -233,21 +245,6 @@ export function ScienceArtifactProvenance({
         <span className={css.breadcrumbSep} aria-hidden="true">›</span>
         <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
       </nav>
-      {summary !== undefined && (
-        <section className={css.summaryCard}>
-          <strong>{t('provenance.summary.title', { turn: summary.turn })}</strong>
-          {summary.user !== '' && <p><b>{t('provenance.summary.user')}</b>{summary.user}</p>}
-          {summary.agent !== '' && <p><b>{t('provenance.summary.agent')}</b>{summary.agent}</p>}
-          <div className={css.summaryActions}>
-            <button type="button" data-anchor={`call:${run.toolCallId}`} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>
-              {t('provenance.summary.trajectory')}
-            </button>
-            <button type="button" data-anchor={`turn:${String(summary.turn)}`} onClick={() => { openTrace(summary.turn) }}>
-              {t('provenance.summary.trace')}
-            </button>
-          </div>
-        </section>
-      )}
       <div className={css.subTabs} role="tablist" aria-label={t('provenance.label')}>
         {SUB_TABS.map(({ id, labelKey }) => (
           <button
@@ -264,7 +261,9 @@ export function ScienceArtifactProvenance({
       </div>
       {subTab === 'code' && <CodeSection run={run} block={block} t={t} />}
       {subTab === 'log' && <ExecutionLogSection run={run} block={block} t={t} />}
-      {subTab === 'messages' && <MessagesSection run={run} inspectCall={inspectCall} selectDetailed={selectDetailed} t={t} />}
+      {subTab === 'messages' && <MessagesSection chart={chart} run={run} summary={summary}
+        currentSessionId={currentSessionId} sourceSessionTitle={sourceSessionTitle}
+        returnToConversation={returnToConversation} inspectCall={inspectCall} selectDetailed={selectDetailed} t={t} />}
       {subTab === 'environment' && <EnvironmentSection run={run} environment={environment} t={t} />}
     </div>
   )

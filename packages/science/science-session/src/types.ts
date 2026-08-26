@@ -8,6 +8,7 @@
  */
 
 import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -341,6 +342,8 @@ export type ScienceArtifactMediaType =
 interface ScienceArtifactVersionBase {
   /** Stable artifact identity, shared verbatim with the store's artifact row. */
   readonly artifactId: ScienceArtifactId
+  /** Session whose run or direct edit produced this immutable version. */
+  readonly producerSessionId: SessionId
   /** Stable logical artifact name within the session. */
   readonly logicalName: string
   /**
@@ -400,6 +403,23 @@ export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionB
 
 /** One immutable version of a logical Science artifact. */
 export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion
+
+/** One active user-only note attached to a logical Science artifact. */
+export interface ScienceArtifactNote {
+  /** Event sequence used as the stable deletion identity. */
+  readonly seq: number
+  /** Logical artifact that owns the note across versions. */
+  readonly artifactId: ScienceArtifactId
+  /** Artifact version visible when the note was added. */
+  readonly version: number
+  /** Plain user-authored text, never included in model requests. */
+  readonly text: string
+  /** Epoch milliseconds when the note event committed. */
+  readonly createdAt: number
+}
+
+/** Browser-safe active-note list for all logical artifacts in one session. */
+export type ScienceArtifactNotesProjection = readonly ScienceArtifactNote[]
 
 /** One run cited by a published Science outcome. */
 export interface ScienceRunEvidenceRef {
@@ -599,6 +619,7 @@ export type ScienceClientKernel = ScienceClientKernelState | ScienceClientKernel
  */
 interface ScienceClientArtifactVersionBase {
   readonly artifactId: ScienceArtifactId
+  readonly producerSessionId: SessionId
   readonly logicalName: string
   readonly version: number
   readonly title: string
@@ -660,5 +681,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * An absent key means this package was not composed in the host.
      */
     science: ScienceClientProjection | null
+    /** Active user-only artifact notes, or an empty list before the first note. */
+    scienceArtifactNotes: ScienceArtifactNotesProjection
+  }
+
+  interface SessionProjectionStateMap {
+    /** Active user-only artifact notes folded from add/remove events. */
+    scienceArtifactNotes: ScienceArtifactNotesProjection
   }
 }

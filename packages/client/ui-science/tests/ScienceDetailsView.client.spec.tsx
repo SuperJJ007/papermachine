@@ -479,6 +479,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const science = baseProjection({ artifacts: [chart({ version: 1 })] })
     render(<ScienceDetailsView {...props(science)} />)
     const gallery = await screen.findByRole('button', { name: 'Open Loss curve, version 1' })
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'a' })
     expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
@@ -511,7 +512,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
     expect(screen.queryByRole('tab', { name: 'Cross-session chart' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Artifacts' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Search' })).toBeTruthy()
   })
 
   it('browses a workspace directory and opens a supported file preview', async () => {
@@ -521,8 +522,9 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFile = vi.fn().mockResolvedValue({ ok: true, value: {
       mediaType: 'text/csv', byteCount: 8, data: new TextEncoder().encode('a,b\n1,2\n'),
     } })
-    render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, loadWorkspaceFile })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    const store = testScienceSelectionStore()
+    act(() => { store.actions.setLibraryPage('files') })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, loadWorkspaceFile, store })} />)
     fireEvent.click(await screen.findByRole('button', { name: /results\.csv/ }))
     expect(await screen.findByRole('table', { name: 'results.csv' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '‹ File library' }))
@@ -542,7 +544,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFiles = vi.fn().mockImplementation((path: string) => Promise.resolve({ ok: true, value: path === ''
       ? { root: '', entries: [{ name: 'data', kind: 'dir', modifiedAt: 1 }, { name: 'root.bin', kind: 'file', byteCount: 2_048, modifiedAt: 1 }, { name: 'unknown.bin', kind: 'file', modifiedAt: 1 }] }
       : { root: path, entries: [{ name: 'large.bin', kind: 'file', byteCount: 2_097_152, modifiedAt: 1 }] } }))
-    const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles })} />)
+    const store = testScienceSelectionStore()
+    const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
     expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
@@ -557,26 +560,28 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(screen.getByText('unknown-session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
+    act(() => { store.actions.setLibraryPage('files') })
     fireEvent.click(await screen.findByRole('button', { name: /data/ }))
     expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
     fireEvent.click(screen.getByRole('button', { name: '› data' }))
     fireEvent.click(screen.getByRole('button', { name: 'Project' }))
     expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
     expect((await screen.findByRole('button', { name: /unknown\.bin/ })).textContent).toContain('0 B')
-    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
-    expect(screen.getByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
+    act(() => { store.actions.setLibraryPage('artifacts') })
+    expect(await screen.findByRole('combobox', { name: 'Artifact sort' })).toBeTruthy()
     view.unmount()
   })
 
   it('reports library and workspace failures plus unsupported and PNG file previews', async () => {
+    const failedStore = testScienceSelectionStore()
     const failed = render(<ScienceDetailsView {...props(baseProjection(), {
       loadLibrary: vi.fn().mockResolvedValue({ ok: false, error: { message: 'library offline' } }),
       loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: false, error: { message: 'workspace offline' } }),
+      store: failedStore,
     })} />)
     expect((await screen.findByRole('alert')).textContent).toContain('library offline')
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('workspace offline')
+    act(() => { failedStore.actions.setLibraryPage('files') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('workspace offline') })
     failed.unmount()
 
     const entries = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [
@@ -589,19 +594,19 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       : { ok: true, value: path === 'pixel.png'
         ? { mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(255) }
         : { mediaType: 'application/octet-stream', byteCount: 1_048_576, data: Uint8Array.of() } }))
+    const unsupportedStore = testScienceSelectionStore()
+    unsupportedStore.actions.setLibraryPage('files')
     const unsupported = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: entries,
       loadWorkspaceFile: file,
+      store: unsupportedStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /raw\.bin/ }))
     expect(await screen.findByText('Preview unavailable, 1.0 MB')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /File library/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /pixel\.png/ }))
     expect(await screen.findByRole('img', { name: 'pixel.png' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /File library/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /broken\.txt/ }))
     expect((await screen.findByRole('alert')).textContent).toContain('file unavailable')
     unsupported.unmount()
@@ -610,20 +615,24 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
   it('ignores workspace listing and file reads that settle after the library unmounts', async () => {
     let settleListing!: (value: unknown) => void
     const listing = new Promise((resolve) => { settleListing = resolve })
+    const firstStore = testScienceSelectionStore()
+    firstStore.actions.setLibraryPage('files')
     const first = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: vi.fn().mockReturnValue(listing),
+      store: firstStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     first.unmount()
     await act(async () => { settleListing({ ok: true, value: { root: '', entries: [] } }); await listing })
 
     let settleFile!: (value: unknown) => void
     const pendingFile = new Promise((resolve) => { settleFile = resolve })
+    const secondStore = testScienceSelectionStore()
+    secondStore.actions.setLibraryPage('files')
     const second = render(<ScienceDetailsView {...props(baseProjection(), {
       loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [{ name: 'late.txt', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'text/plain' }] } }),
       loadWorkspaceFile: vi.fn().mockReturnValue(pendingFile),
+      store: secondStore,
     })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Project files' }))
     fireEvent.click(await screen.findByRole('button', { name: /late\.txt/ }))
     second.unmount()
     await act(async () => { settleFile({ ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(65) } }); await pendingFile })
@@ -759,7 +768,7 @@ describe('ScienceDetailsView: tab strip', () => {
     expect(screen.getByRole('tab', { name: 'Beta' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
     // Back to the landing view: the gallery lists both charts again (closing
     // a tab never removes the chart itself from the projection).
     expect(await screen.findByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()

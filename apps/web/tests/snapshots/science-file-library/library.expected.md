@@ -1,9 +1,8 @@
 ## Details column — project file library
-- text: Files
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
 - button "Close details"
-- tablist "Open artifacts"
-- button "Artifacts" [pressed]
-- button "Project files"
 - textbox "Search"
 - combobox "Artifact sort":
   - option "Newest" [selected]

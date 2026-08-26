@@ -16,7 +16,7 @@ Science Details 视图只能发现当前 Session fold 得到的 artifact。因�
 
 `sessions.workspaceFiles` 和 `sessions.workspaceFile` 提供以具名 Session 的规范化 workspace 为根的有界只读视图。路径必须是相对路径，拒绝绝对路径和父目录 segment，并在 containment check（包含性检查）前规范化，因此 symlink 无法逃逸 workspace。目录读取只列一层，省略隐藏条目、符号链接和 `node_modules`，并在 2,000 个可见条目处停止，同时返回明确的截断事实。文件读取上限为 2 MiB。只有 Science 预览支持的扩展名会得到可渲染 media type；其他文件统一以 `application/octet-stream` 返回，由 UI 显示不支持预览状态。
 
-浏览器 selection store 现在保存 artifact tab 与 file tab 组成的有序联合。artifact tab id 仍为 `artifact:<artifactId>`，同一逻辑 artifact 继续去重，并在原 tab 中切换所选版本。file tab id 为 `file:<relative path>`。活动 tab 为 null 时显示文件库主页，但不关闭其他 tab；主页没有自己的 tab 或图标，关闭最后一个文档后回到主页。
+浏览器 selection store 现在保存 artifact tab 与 file tab 组成的有序联合。artifact tab id 仍为 `artifact:<artifactId>`，同一逻辑 artifact 继续去重，并在原 tab 中切换所选版本。file tab id 为 `file:<relative path>`。活动 tab 为 null 时显示文件库主页，但不关闭其他 tab。Details header 选择一级「产物」或「项目文件」页；下方共用的文档 tab 条只在已有打开文档时出现。关闭最后一个文档后回到所选文件库页。
 
 三个 RPC 都是只读操作，不追加 Session 事件。project 文件库每次显示时都会刷新，当前 Session 的 Science artifact 投影变化时也会刷新；它不轮询其他 Session 的写入。
 

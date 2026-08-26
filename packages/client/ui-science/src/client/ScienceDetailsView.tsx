@@ -372,7 +372,8 @@ interface WorkspaceEntry {
 }
 
 /** Project-level library home: latest artifacts plus bounded workspace browsing. */
-function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, t }: {
+function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, t }: {
+  page: 'artifacts' | 'files'
   loadLibrary: ScienceDetailsInjected['loadLibrary']
   loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
   loadImage: ScienceImageLoader
@@ -381,7 +382,6 @@ function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArti
   currentSessionId: string
   t: TranslateNS<'science'>
 }) {
-  const [section, setSection] = useState<'artifacts' | 'files'>('artifacts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'newest' | 'oldest' | 'name'>('newest')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
@@ -391,6 +391,7 @@ function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArti
   const [error, setError] = useState<string>()
 
   useEffect(() => {
+    if (page !== 'artifacts') return
     let live = true
     setError(undefined)
     void loadLibrary().then((result) => {
@@ -399,10 +400,10 @@ function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArti
       else setError(result.error.message)
     })
     return () => { live = false }
-  }, [loadLibrary])
+  }, [loadLibrary, page])
 
   useEffect(() => {
-    if (section !== 'files') return
+    if (page !== 'files') return
     let live = true
     setError(undefined)
     void loadWorkspaceFiles(path).then((result) => {
@@ -411,7 +412,7 @@ function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArti
       else setError(result.error.message)
     })
     return () => { live = false }
-  }, [loadWorkspaceFiles, path, section])
+  }, [loadWorkspaceFiles, path, page])
 
   const needle = query.trim().toLocaleLowerCase()
   const visibleArtifacts = artifacts.filter(item => `${item.logicalName}\n${item.title ?? ''}`.toLocaleLowerCase().includes(needle)).sort((a, b) => {
@@ -423,22 +424,18 @@ function ProjectLibrary({ loadLibrary, loadWorkspaceFiles, loadImage, onOpenArti
 
   return (
     <div className={css.libraryHome}>
-      <div className={css.librarySwitch}>
-        <button type="button" aria-pressed={section === 'artifacts'} onClick={() => { setSection('artifacts'); setQuery('') }}>{t('library.artifacts')}</button>
-        <button type="button" aria-pressed={section === 'files'} onClick={() => { setSection('files'); setQuery('') }}>{t('library.files')}</button>
-      </div>
       <div className={css.libraryToolbar}>
         <input aria-label={t('library.search')} placeholder={t('library.search')} value={query} onChange={(event) => { setQuery(event.target.value) }} />
-        {section === 'artifacts' && <>
+        {page === 'artifacts' && <>
           <select aria-label={t('library.sort')} value={sort} onChange={(event) => { setSort(event.target.value as typeof sort) }}>
             <option value="newest">{t('library.newest')}</option><option value="oldest">{t('library.oldest')}</option><option value="name">{t('library.name')}</option>
           </select>
           <button type="button" aria-label={t('library.layout')} onClick={() => { setLayout(value => value === 'grid' ? 'list' : 'grid') }}>{layout === 'grid' ? t('library.grid') : t('library.list')}</button>
         </>}
-        <span>{section === 'artifacts' ? t('library.artifactCount', { count: visibleArtifacts.length }) : t('library.fileCount', { count: visibleEntries.length })}</span>
+        <span>{page === 'artifacts' ? t('library.artifactCount', { count: visibleArtifacts.length }) : t('library.fileCount', { count: visibleEntries.length })}</span>
       </div>
       {error !== undefined && <p role="alert" className={css.notice}>{error}</p>}
-      {section === 'artifacts' ? <>
+      {page === 'artifacts' ? <>
         {visibleArtifacts.length === 0 && <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>}
         <ul className={layout === 'grid' ? css.chartList : css.libraryList}>{visibleArtifacts.map((item) => {
           const title = item.title ?? item.logicalName
@@ -798,6 +795,7 @@ function ArtifactViewer({
 }) {
   const openArtifacts = useStore(s => s.openArtifacts)
   const activeTabId = useStore(s => s.activeTabId)
+  const libraryPage = useStore(s => s.libraryPage)
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
@@ -812,14 +810,15 @@ function ArtifactViewer({
   // `showLibrary` deliberately leaves open tabs intact while clearing the
   // active id; every non-null active id still names one open tab.
   const activeTab = openArtifacts.find(tab => scienceTabId(tab) === activeTabId)
-  const tabStrip = <TabStrip tabs={openArtifacts} artifacts={tabArtifacts} activeTabId={activeTabId}
+  const tabStrip = openArtifacts.length === 0 ? null : <TabStrip tabs={openArtifacts} artifacts={tabArtifacts} activeTabId={activeTabId}
     onActivate={(tabId) => { actions.activateTab(tabId) }}
     onClose={(tabId) => { actions.closeTab(tabId) }} t={t} />
   if (activeTab === undefined) {
     return (
       <div className={css.body}>
         {tabStrip}
-        <ProjectLibrary key={science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}
+        <ProjectLibrary key={`${libraryPage}:${science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}`}
+          page={libraryPage}
           loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadImage={loadImage}
           currentSessionId={currentSessionId}
           onOpenArtifact={(item) => {

@@ -49,6 +49,9 @@ function normalizedTabId(value: string): string {
 /** Which body the active tab shows: its rendered content, or the provenance drill-in. */
 export type ScienceArtifactView = 'content' | 'provenance'
 
+/** Which project-library page the Details header selects. */
+export type ScienceLibraryPage = 'artifacts' | 'files'
+
 /** One provenance drill-in sub-tab. */
 export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment'
 
@@ -72,6 +75,8 @@ export interface ScienceSelectionState {
   openArtifacts: ScienceOpenTab[]
   /** The active document id, or `null` while the library is showing. */
   activeTabId: string | null
+  /** The project-library page shown whenever no document tab is active. */
+  libraryPage: ScienceLibraryPage
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
   /** The last-selected provenance sub-tab. */
@@ -83,6 +88,8 @@ export interface ScienceSelectionState {
 type ScienceSelectionActions = {
   /** Show the artifact library without closing any artifact tabs. */
   showLibrary: (draft: ScienceSelectionState) => void
+  /** Select the artifact or project-files library page. */
+  setLibraryPage: (draft: ScienceSelectionState, page: ScienceLibraryPage) => void
   /** Open (or activate, if already open) the named artifact's tab at exactly the given version. */
   openTab: (draft: ScienceSelectionState, selection: { artifactId: ScienceArtifactId; version: number }) => void
   /** Open or activate one read-only workspace file. */
@@ -115,7 +122,7 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      openArtifacts: [], activeTabId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     actions: {
       showLibrary: (draft) => {
@@ -123,6 +130,7 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
         draft.view = 'content'
         draft.lightboxOpen = false
       },
+      setLibraryPage: (draft, page) => { draft.libraryPage = page },
       openTab: (draft, selection) => {
         const existing = draft.openArtifacts.find((tab): tab is ScienceOpenArtifact => tab.kind === 'artifact' && tab.artifactId === selection.artifactId)
         if (existing === undefined) draft.openArtifacts.push({ kind: 'artifact', artifactId: selection.artifactId, version: selection.version })

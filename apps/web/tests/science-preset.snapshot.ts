@@ -222,6 +222,7 @@ describe('science agent preset', () => {
         stdout: 'fake run output\n',
         artifact: 'tiny-png',
       }),
+      raster_artifacts: ['plot.png'],
     })
     expect(runResult.isError).toBe(false)
     if (runResult.isError) throw new Error('R5 snapshot run failed')

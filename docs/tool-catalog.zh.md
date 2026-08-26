@@ -2435,6 +2435,13 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
           "path"
         ]
       }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [
@@ -2503,6 +2510,13 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
           "version",
           "path"
         ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.",
+      "items": {
+        "type": "string"
       }
     }
   },

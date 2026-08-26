@@ -3252,7 +3252,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CaptureRunArtifactsResult',
-    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n}',
+    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedRasterPaths: readonly string[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n}',
   },
   {
     name: 'ClientResponse',
@@ -4864,7 +4864,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StartScienceRunRequest',
-    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly artifactInputs?: readonly ScienceRunArtifactInput[];\n    readonly editBaselines?: Readonly<Record<string, ScienceArtifactVersionRef>>;\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface StartScienceRunRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly code: string;\n    readonly artifactInputs?: readonly ScienceRunArtifactInput[];\n    readonly editBaselines?: Readonly<Record<string, ScienceArtifactVersionRef>>;\n    readonly rasterArtifacts?: readonly string[];\n    readonly toolCallId: ScienceRunStarted[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'StorageBackend',

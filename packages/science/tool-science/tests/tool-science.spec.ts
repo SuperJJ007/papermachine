@@ -649,7 +649,10 @@ describe('runValueFromResult / formatRunResult', () => {
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
-      capture: { captured: [image, csv], skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false },
+      capture: {
+        captured: [image, csv], skippedRasterPaths: ['debug/preview.png'],
+        skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false,
+      },
     })
     expect(value.capturedArtifacts).toEqual([
       {
@@ -662,14 +665,46 @@ describe('runValueFromResult / formatRunResult', () => {
         parent: { artifactId: 'source-artifact', version: 2 },
       },
     ])
+    expect(value.skippedRaster).toEqual(['debug/preview.png'])
     expect(value.captureSkippedOversizedCount).toBe(3)
     expect(value.captureTruncatedPerRun).toBe(true)
     expect(value.captureTruncatedPerSession).toBe(true)
     const text = formatRunResult(value)
     expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB, edited from source-artifact v2).')
+    expect(text).toContain('(1 PNG file not captured, not declared in raster_artifacts: debug/preview.png)')
     expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
     expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
+  })
+
+  it('appends a plural undeclared-raster receipt line, omitting it entirely when the list is empty', () => {
+    const csv = artifactVersionFixture({
+      logicalName: 'summary.csv', version: 1, versionId: ScienceVersionId('store-version-csv-2'),
+      sha256: 'e'.repeat(64), mediaType: 'text/csv', byteCount: 10,
+    })
+    const value = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: {
+        captured: [csv], skippedRasterPaths: ['a.png', 'b.png'],
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+      },
+    })
+    expect(value.skippedRaster).toEqual(['a.png', 'b.png'])
+    expect(formatRunResult(value)).toContain('(2 PNG files not captured, not declared in raster_artifacts: a.png, b.png)')
+
+    const withoutSkips = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: {
+        captured: [csv], skippedRasterPaths: [],
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+      },
+    })
+    expect(withoutSkips).not.toHaveProperty('skippedRaster')
+    expect(formatRunResult(withoutSkips)).not.toContain('not captured')
   })
 
   it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', () => {
@@ -685,7 +720,10 @@ describe('runValueFromResult / formatRunResult', () => {
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
-      capture: { captured: [large], skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false },
+      capture: {
+        captured: [large], skippedRasterPaths: [],
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+      },
     })
     expect(value).not.toHaveProperty('captureSkippedOversizedCount')
     expect(value).not.toHaveProperty('captureTruncatedPerRun')
@@ -701,7 +739,10 @@ describe('runValueFromResult / formatRunResult', () => {
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
-      capture: { captured: [], skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false },
+      capture: {
+        captured: [], skippedRasterPaths: [],
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+      },
     })
     expect(value.capturedArtifacts).toEqual([])
     const text = formatRunResult(value)
@@ -1196,9 +1237,11 @@ describe('run_python', () => {
     expect(pythonProperties).toMatchObject({
       artifact_inputs: { type: 'array' },
       edit_of: { type: 'array' },
+      raster_artifacts: { type: 'array', items: { type: 'string' } },
     })
     expect(rProperties?.artifact_inputs).toEqual(pythonProperties?.artifact_inputs)
     expect(rProperties?.edit_of).toEqual(pythonProperties?.edit_of)
+    expect(rProperties?.raster_artifacts).toEqual(pythonProperties?.raster_artifacts)
   })
 
   it('rejects empty code before starting a run', async () => {
@@ -1259,6 +1302,21 @@ describe('run_python', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
+  it('rejects a raster_artifacts path escape through the real Runtime before publishing a run', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-run-raster-path-escape')
+    const result = await ctx.tools.execute({
+      signal: testSignal,
+      callId: CallId('run-raster-path-escape'),
+      name: 'run_python',
+      arguments: { code: 'print(1)', raster_artifacts: ['../escape.png'] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('forward-slash relative file path'))).toBe(true)
+    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
   it('maps artifact_inputs and edit_of into the Runtime request without changing model field values', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-exact-inputs')
@@ -1298,6 +1356,7 @@ describe('run_python', () => {
         code: 'print(1)',
         artifact_inputs: [{ artifactId: 'artifact-input', version: 2, path: 'source/data.csv' }],
         edit_of: [{ artifactId: 'artifact-parent', version: 3, path: 'plots/edited.png' }],
+        raster_artifacts: ['debug/preview.png'],
       },
       agent: fakeAgent(session),
     })
@@ -1305,6 +1364,7 @@ describe('run_python', () => {
     expect(startRun).toHaveBeenCalledWith(expect.objectContaining({
       artifactInputs: [{ artifactId: 'artifact-input', version: 2, path: 'source/data.csv' }],
       editBaselines: { 'plots/edited.png': { artifactId: 'artifact-parent', version: 3 } },
+      rasterArtifacts: ['debug/preview.png'],
     }))
   })
 

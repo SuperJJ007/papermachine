@@ -19,6 +19,8 @@ export interface PreparedRunArtifacts {
   readonly materialized: readonly ScienceRunInputBytes[]
   /** Validated capture-path baselines retained until the post-run walk. */
   readonly editBaselines: ReadonlyMap<string, ScienceArtifactVersionRef>
+  /** Validated capture-relative `.png` paths declared for capture, retained until the post-run walk. */
+  readonly rasterArtifacts: ReadonlySet<string>
 }
 
 /**
@@ -141,10 +143,11 @@ async function resolveInputArtifactVersion(
  * @param projectId - The session's already-resolved owning project.
  * @param requestedInputs - Caller-supplied exact versions and destination paths.
  * @param requestedBaselines - Caller-supplied capture paths and exact parents.
+ * @param requestedRasterArtifacts - Caller-supplied capture-relative `.png` paths to admit under the `'declared'` raster-capture policy.
  * @param maxFiles - Configured per-run input count bound.
  * @param maxBytes - Configured per-run aggregate input byte bound.
  * @param signal - Fused operation cancellation and timeout signal.
- * @returns Durable input refs, verified bytes, and retained edit baselines.
+ * @returns Durable input refs, verified bytes, retained edit baselines, and the declared raster-artifact path set.
  */
 export async function prepareRunArtifacts(
   projection: ScienceProjection,
@@ -152,6 +155,7 @@ export async function prepareRunArtifacts(
   projectId: ScienceProjectId,
   requestedInputs: readonly ScienceRunArtifactInput[] | undefined,
   requestedBaselines: Readonly<Record<string, ScienceArtifactVersionRef>> | undefined,
+  requestedRasterArtifacts: readonly string[] | undefined,
   maxFiles: number,
   maxBytes: number,
   signal: AbortSignal,
@@ -211,5 +215,14 @@ export async function prepareRunArtifacts(
     artifactVersion(projection, ref, 'ARTIFACT_NOT_FOUND', 'Science edit baseline')
     editBaselines.set(path, { artifactId: ref.artifactId, version: ref.version })
   }
-  return { inputs, materialized, editBaselines }
+
+  // Naming an unrelated (non-`.png`) or nonexistent path here is harmless —
+  // capture.ts only ever consults this set for an eligible `.png` file — so
+  // this validates path safety only, the same rule inputs and edit
+  // baselines already enforce, without requiring the path to exist or end
+  // in `.png`.
+  const rasterArtifacts = new Set(
+    (requestedRasterArtifacts ?? []).map(path => safeRelativePath(path, 'Science raster artifact path', 'INVALID_REQUEST')),
+  )
+  return { inputs, materialized, editBaselines, rasterArtifacts }
 }

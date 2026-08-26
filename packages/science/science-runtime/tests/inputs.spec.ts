@@ -94,14 +94,14 @@ const signal = new AbortController().signal
 
 describe('prepareRunArtifacts', () => {
   it('copies empty requests and reads every input from the project store in request order', async () => {
-    await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, undefined, 2, 5, signal)).resolves.toEqual({
-      inputs: [], materialized: [], editBaselines: new Map(),
+    await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, undefined, undefined, 2, 5, signal)).resolves.toEqual({
+      inputs: [], materialized: [], editBaselines: new Map(), rasterArtifacts: new Set(),
     })
     const { store: reads, readBlob } = storeHarness()
     await expect(prepareRunArtifacts(projection, reads, PROJECT_ID, [
       { artifactId: TEXT_ID, version: 1, path: 'text.txt' },
       { artifactId: IMAGE_ID, version: 1, path: 'images/image.png' },
-    ], { 'branch.txt': { artifactId: TEXT_ID, version: 1 } }, 2, 5, signal)).resolves.toMatchObject({
+    ], { 'branch.txt': { artifactId: TEXT_ID, version: 1 } }, undefined, 2, 5, signal)).resolves.toMatchObject({
       inputs: [
         { artifactId: TEXT_ID, version: 1, path: 'text.txt' },
         { artifactId: IMAGE_ID, version: 1, path: 'images/image.png' },
@@ -121,7 +121,7 @@ describe('prepareRunArtifacts', () => {
       { artifactId: STYLE_ID, version: 2, path: 'source.vl.json' },
     ], {
       'result.vl.json': { artifactId: STYLE_ID, version: 2 },
-    }, 1, 2, signal)).resolves.toMatchObject({
+    }, undefined, 1, 2, signal)).resolves.toMatchObject({
       inputs: [{ artifactId: STYLE_ID, version: 2, path: 'source.vl.json' }],
       editBaselines: new Map([['result.vl.json', { artifactId: STYLE_ID, version: 2 }]]),
     })
@@ -132,7 +132,7 @@ describe('prepareRunArtifacts', () => {
     async (path) => {
       await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
         { artifactId: TEXT_ID, version: 1, path },
-      ], undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+      ], undefined, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
     },
   )
 
@@ -146,32 +146,49 @@ describe('prepareRunArtifacts', () => {
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
       { artifactId: TEXT_ID, version: 1, path: first },
       { artifactId: TEXT_ID, version: 1, path: second },
-    ], undefined, 2, 4, signal)).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+    ], undefined, undefined, 2, 4, signal)).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
   })
 
   it('rejects count, missing-version, declared-byte, and verified-byte excess', async () => {
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
       { artifactId: TEXT_ID, version: 1, path: 'a.txt' },
-    ], undefined, 0, 2, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
+    ], undefined, undefined, 0, 2, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
       { artifactId: TEXT_ID, version: 2, path: 'a.txt' },
-    ], undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
+    ], undefined, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
       { artifactId: TEXT_ID, version: 1, path: 'a.txt' },
-    ], undefined, 1, 1, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
+    ], undefined, undefined, 1, 1, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
     await expect(prepareRunArtifacts(projection, store({ [TEXT_SHA]: Uint8Array.of(1, 2, 3) }), PROJECT_ID, [
       { artifactId: TEXT_ID, version: 1, path: 'a.txt' },
-    ], undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
+    ], undefined, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INPUT_TOO_LARGE' })
   })
 
   it('rejects unsafe and unresolved edit baselines', async () => {
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, {
       '../output.txt': { artifactId: TEXT_ID, version: 1 },
-    }, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    }, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, {
       'output.txt': { artifactId: TEXT_ID, version: 2 },
-    }, 1, 2, signal)).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    }, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
   })
+
+  it('validates raster-artifact paths and retains them as a deduplicated set', async () => {
+    await expect(prepareRunArtifacts(
+      projection, store(), PROJECT_ID, undefined, undefined, ['chart.png', 'nested/chart.png', 'chart.png'], 1, 2, signal,
+    )).resolves.toMatchObject({
+      rasterArtifacts: new Set(['chart.png', 'nested/chart.png']),
+    })
+  })
+
+  it.each(['', '../chart.png', 'a\\b.png', 'a\0b.png', '.', '..', 'a/./chart.png', 'a/../chart.png'])(
+    'rejects unsafe raster-artifact path %j',
+    async (path) => {
+      await expect(prepareRunArtifacts(
+        projection, store(), PROJECT_ID, undefined, undefined, [path], 1, 2, signal,
+      )).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    },
+  )
 
   it.each([
     ['Edited.PNG', 'edited.png'],
@@ -182,7 +199,7 @@ describe('prepareRunArtifacts', () => {
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, {
       [first]: { artifactId: TEXT_ID, version: 1 },
       [second]: { artifactId: TEXT_ID, version: 1 },
-    }, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    }, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   })
 
   it('admits an artifact-input path and an edit-baseline path that share the same literal string', async () => {
@@ -194,7 +211,7 @@ describe('prepareRunArtifacts', () => {
       { artifactId: TEXT_ID, version: 1, path: 'shared.txt' },
     ], {
       'shared.txt': { artifactId: TEXT_ID, version: 1 },
-    }, 1, 2, signal)).resolves.toMatchObject({
+    }, undefined, 1, 2, signal)).resolves.toMatchObject({
       inputs: [{ artifactId: TEXT_ID, version: 1, path: 'shared.txt' }],
       editBaselines: new Map([['shared.txt', { artifactId: TEXT_ID, version: 1 }]]),
     })
@@ -228,7 +245,7 @@ describe('prepareRunArtifacts', () => {
 
     await expect(prepareRunArtifacts(projection, externalStore, PROJECT_ID, [
       { artifactId: EXTERNAL_ID, version: 3, path: 'external.txt' },
-    ], undefined, 1, 10, signal)).resolves.toMatchObject({
+    ], undefined, undefined, 1, 10, signal)).resolves.toMatchObject({
       materialized: [{ path: 'external.txt', data: Uint8Array.of(7, 7, 7, 7) }],
     })
     expect(listVersions).toHaveBeenCalledWith(PROJECT_ID, EXTERNAL_ID)
@@ -239,6 +256,6 @@ describe('prepareRunArtifacts', () => {
     // lookup, not a blanket bypass.
     await expect(prepareRunArtifacts(projection, externalStore, PROJECT_ID, [
       { artifactId: EXTERNAL_ID, version: 9, path: 'external.txt' },
-    ], undefined, 1, 10, signal)).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
+    ], undefined, undefined, 1, 10, signal)).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
   })
 })

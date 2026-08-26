@@ -53,6 +53,27 @@ function isCaptureEligible(relativePath: string): boolean {
   return captureMediaType(relativePath) !== undefined
 }
 
+/**
+ * Validated `rasterCapture` Config policy for one run's auto-capture walk.
+ * `'declared'` (the default) captures a `.png` only when the run request
+ * named it in `rasterArtifacts` — an editable Vega-Lite spec stays the
+ * captured deliverable until export, and a self-inspection render the model
+ * writes for its own QA never becomes a redundant artifact. `'always'`
+ * captures every eligible `.png` unconditionally, matching the auto-capture
+ * walk's pre-existing behavior for every other accepted extension.
+ */
+export type RasterCapturePolicy = 'declared' | 'always'
+
+/** Whether one eligible PNG path may be captured under the run's raster-capture policy. */
+function isRasterCaptureAllowed(
+  relativePath: string,
+  mediaType: ScienceArtifactMediaType,
+  rasterCapture: RasterCapturePolicy,
+  rasterArtifacts: ReadonlySet<string>,
+): boolean {
+  return mediaType !== 'image/png' || rasterCapture === 'always' || rasterArtifacts.has(relativePath)
+}
+
 /** Inputs for one terminal run's auto-capture walk. */
 export interface CaptureRunArtifactsRequest {
   /** Project artifact store that owns every captured version's bytes and index row. */
@@ -67,6 +88,10 @@ export interface CaptureRunArtifactsRequest {
   readonly sourceRun: ScienceRunTerminal
   /** Validated exact parent refs keyed by capture-relative output path. */
   readonly editBaselines?: ReadonlyMap<string, ScienceArtifactVersionRef>
+  /** Validated Runtime config: this run's raster-capture policy. */
+  readonly rasterCapture: RasterCapturePolicy
+  /** Validated capture-relative `.png` paths this run declared for capture; consulted only under the `'declared'` policy. */
+  readonly rasterArtifacts: ReadonlySet<string>
   /** Validated Runtime config bound on one captured file's encoded bytes. */
   readonly captureMaxFileBytes: number
   /** Validated Runtime config bound on eligible files captured from one run. */
@@ -79,6 +104,12 @@ export interface CaptureRunArtifactsRequest {
 export interface CaptureRunArtifactsResult {
   /** Versions this walk appended, in capture order. */
   readonly captured: readonly ScienceArtifactVersion[]
+  /**
+   * Otherwise-eligible `.png` paths left uncaptured under the `'declared'`
+   * raster-capture policy because this run did not name them in
+   * `rasterArtifacts`. Always empty under `'always'`.
+   */
+  readonly skippedRasterPaths: readonly string[]
   /** Eligible files skipped for exceeding `captureMaxFileBytes`. */
   readonly skippedOversizedCount: number
   /** Whether more eligible files existed than `captureMaxFilesPerRun` admits; the excess were not attempted. */
@@ -121,7 +152,14 @@ function fingerprintPreview(fingerprint: string): string {
  */
 export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): Promise<CaptureRunArtifactsResult> {
   const { session, sourceRun, store, projectId } = request
-  const eligible = (await walkArtifactFiles(request.runArtifacts)).filter(isCaptureEligible).sort()
+  const walked = (await walkArtifactFiles(request.runArtifacts)).filter(isCaptureEligible).sort()
+  const skippedRasterPaths = walked.filter((relativePath) => {
+    const mediaType = captureMediaType(relativePath)
+    /* v8 ignore next -- isCaptureEligible already required a mapped extension */
+    if (mediaType === undefined) return false
+    return !isRasterCaptureAllowed(relativePath, mediaType, request.rasterCapture, request.rasterArtifacts)
+  })
+  const eligible = walked.filter(relativePath => !skippedRasterPaths.includes(relativePath))
   const truncatedPerRun = eligible.length > request.captureMaxFilesPerRun
   const files = eligible.slice(0, request.captureMaxFilesPerRun)
 
@@ -294,5 +332,5 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     captured.push(artifact)
   }
 
-  return { captured, skippedOversizedCount, truncatedPerRun, truncatedPerSession, appendFailed }
+  return { captured, skippedRasterPaths, skippedOversizedCount, truncatedPerRun, truncatedPerSession, appendFailed }
 }

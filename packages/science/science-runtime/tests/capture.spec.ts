@@ -66,7 +66,7 @@ async function startHeldRun(
   session: Session,
   status: 'ok' | 'error' = 'ok',
   bound = false,
-  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines'>,
+  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'>,
 ): Promise<Awaited<ReturnType<typeof harness.runtime.startRun>>> {
   if (!bound) {
     await harness.runtime.bindEnvironment({
@@ -90,7 +90,7 @@ async function runWithFiles(
   files: Readonly<Record<string, Uint8Array | string>>,
   status: 'ok' | 'error' = 'ok',
   alreadyBound = false,
-  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines'>,
+  artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'>,
 ) {
   const handle = await startHeldRun(harness, session, status, alreadyBound, artifacts)
   for (const [relativePath, data] of Object.entries(files)) {
@@ -245,7 +245,9 @@ describe('Science auto-capture', () => {
     const session = createScienceSession(harness.ctx, 'science-capture-verbatim')
     const source = pngWithMetadata()
 
-    const { result } = await runWithFiles(harness, root, session, { 'plots/evidence.png': source })
+    const { result } = await runWithFiles(
+      harness, root, session, { 'plots/evidence.png': source }, 'ok', false, { rasterArtifacts: ['plots/evidence.png'] },
+    )
 
     const captured = result.capture?.captured.at(0)
     expect(captured).toMatchObject({ logicalName: 'plots/evidence.png', version: 1, mediaType: 'image/png' })
@@ -282,7 +284,9 @@ describe('Science auto-capture', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-new')
 
-    const first = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n', 'plot.png': PNG })
+    const first = await runWithFiles(
+      harness, root, session, { 'summary.csv': 'a,b\n1,2\n', 'plot.png': PNG }, 'ok', false, { rasterArtifacts: ['plot.png'] },
+    )
     expect(first.result.capture?.captured).toHaveLength(2)
     expect(first.result.capture?.captured.find(v => v.logicalName === 'summary.csv')).toMatchObject({
       logicalName: 'summary.csv', version: 1, origin: 'auto', title: 'summary.csv',

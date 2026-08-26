@@ -23,7 +23,7 @@ import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { captureRunArtifacts } from './capture.ts'
-import type { CaptureRunArtifactsResult } from './capture.ts'
+import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
@@ -274,6 +274,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly packagesMaxEntries: number
   /** Configured package-inventory byte bound. */
   private readonly packagesMaxBytes: number
+  /** Configured raster-capture policy for auto-captured `.png` files. */
+  private readonly rasterCapture: RasterCapturePolicy
   /** Configured auto-capture per-file byte bound. */
   private readonly captureMaxFileBytes: number
   /** Configured auto-capture per-run file-count bound. */
@@ -309,6 +311,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.dshHome = resolved.dshHome
     this.packagesMaxEntries = resolved.packagesMaxEntries
     this.packagesMaxBytes = resolved.packagesMaxBytes
+    this.rasterCapture = resolved.rasterCapture
     this.captureMaxFileBytes = resolved.captureMaxFileBytes
     this.captureMaxFilesPerRun = resolved.captureMaxFilesPerRun
     this.captureMaxArtifactVersionsPerSession = resolved.captureMaxArtifactVersionsPerSession
@@ -561,6 +564,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         projectId,
         request.artifactInputs,
         request.editBaselines,
+        request.rasterArtifacts,
         this.inputMaxFilesPerRun,
         this.inputMaxBytesPerRun,
         lease.control.signal,
@@ -991,7 +995,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           }
           throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
         }
-        const capture = await this.captureAfterFinish(session, projectId, runScratch, terminal, preparedArtifacts.editBaselines)
+        const capture = await this.captureAfterFinish(
+          session, projectId, runScratch, terminal, preparedArtifacts.editBaselines, preparedArtifacts.rasterArtifacts,
+        )
         return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
       } finally {
         // Retire-vs-rearm derives from `outcome` alone, already settled
@@ -1037,6 +1043,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @param runScratch - the run's private Host scratch, including its artifact directory.
    * @param terminal - the exact terminal record just committed, supplying every captured version's provenance.
    * @param editBaselines - Validated exact parents keyed by capture-relative path.
+   * @param rasterArtifacts - Validated capture-relative `.png` paths this run declared for capture.
    * @returns capture accounting, or `undefined` when the Session detached or capture itself failed.
    */
   private async captureAfterFinish(
@@ -1045,6 +1052,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
     terminal: ScienceRunTerminal,
     editBaselines: PreparedRunArtifacts['editBaselines'],
+    rasterArtifacts: PreparedRunArtifacts['rasterArtifacts'],
   ): Promise<CaptureRunArtifactsResult | undefined> {
     // The caller already re-verified liveness immediately before the
     // run-finished append this method follows; only a detach racing that
@@ -1061,6 +1069,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         runArtifacts: runScratch.artifacts,
         sourceRun: terminal,
         editBaselines,
+        rasterCapture: this.rasterCapture,
+        rasterArtifacts,
         captureMaxFileBytes: this.captureMaxFileBytes,
         captureMaxFilesPerRun: this.captureMaxFilesPerRun,
         captureMaxArtifactVersionsPerSession: this.captureMaxArtifactVersionsPerSession,

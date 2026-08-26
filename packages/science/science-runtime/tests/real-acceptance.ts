@@ -472,6 +472,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: successSource(language, canonicalPrefix),
+      rasterArtifacts: ['real-chart.png'],
       ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 1),
       signal: new AbortController().signal,
     })

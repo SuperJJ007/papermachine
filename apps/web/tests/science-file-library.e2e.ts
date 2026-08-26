@@ -145,6 +145,12 @@ describe('web e2e: project Science file library', () => {
     await expect.poll(() => details.getByText('1 project files', { exact: true }).count()).toBe(1)
     await details.getByRole('tab', { name: 'Artifacts', exact: true }).click()
     await expect.poll(() => details.getByText('3 artifacts', { exact: true }).count()).toBe(1)
+    // Switching library pages remounts the artifact grid, so its sort choice
+    // does not survive the round trip through Project files; re-select Name
+    // sort for a deterministic order instead of the default newest-first,
+    // which ties (and reorders) on this fixture's near-simultaneous
+    // `createArtifact` calls.
+    await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption({ label: 'Name' })
 
     await compareOrRefreshGolden(
       EXPECTED,

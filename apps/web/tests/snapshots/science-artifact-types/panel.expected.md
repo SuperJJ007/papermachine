@@ -1,5 +1,7 @@
 ## Details column — artifact viewer (csv/json/md/png/Vega-Lite)
-- text: Files
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
 - button "Close details"
 - tablist "Open artifacts":
   - tab "summary.csv"

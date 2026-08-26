@@ -322,8 +322,10 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await detailsPanel.getByText('Human-edited version committed.', { exact: true }).waitFor({ timeout: 15_000 })
 
     // All five document tabs stay open while the active chart advances to
-    // the directly edited version.
-    expect(await detailsPanel.getByRole('tab').count()).toBe(5)
+    // the directly edited version. Scope to the document tab strip, not the
+    // details header's "Artifacts"/"Project files" page tabs.
+    const openArtifactsTabs = detailsPanel.getByRole('tablist', { name: 'Open artifacts' })
+    expect(await openArtifactsTabs.getByRole('tab').count()).toBe(5)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')

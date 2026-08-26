@@ -5,21 +5,21 @@
 - button "Close details"
 - textbox "Search"
 - combobox "Artifact sort":
-  - option "Newest" [selected]
+  - option "Newest"
   - option "Oldest"
-  - option "Name"
+  - option "Name" [selected]
 - button "Switch grid or list view": Grid
 - text: 3 artifacts
 - list:
   - listitem:
-    - button "Open Research notes, version 1":
-      - strong: Research notes
-      - text: v1 · text/markdown · Source session A
+    - button "Open Alpha results, version 1":
+      - strong: Alpha results
+      - text: v1 · text/csv · Source session A
   - listitem:
     - button "Open Beta metrics, version 1":
       - strong: Beta metrics
       - text: v1 · application/json · This session
   - listitem:
-    - button "Open Alpha results, version 1":
-      - strong: Alpha results
-      - text: v1 · text/csv · Source session A
+    - button "Open Research notes, version 1":
+      - strong: Research notes
+      - text: v1 · text/markdown · Source session A

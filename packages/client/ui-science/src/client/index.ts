@@ -304,17 +304,24 @@ export function apply(ctx: ClientContext): void {
     label: () => t('details.label'),
     locale: NS,
     store: scienceSelectionStore,
-    inject: (sessionId: SessionId): ScienceDetailsInjected => ({
-      loadImage: createScienceImageLoader(ctx.sessions, sessionId),
-      loadText: createScienceTextLoader(ctx.sessions, sessionId),
-      addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
-      removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
-      composerSelections: composerSelections.store(sessionId),
-      returnToConversation: (anchorKey) => { ctx.conversation.openChatAt(sessionId, anchorKey) },
-      selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
-      addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
-      removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
-      commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
-    }),
+    inject: (sessionId: SessionId): ScienceDetailsInjected => {
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding === undefined) throw new Error(`science details: session ${sessionId} is unavailable`)
+      return {
+        loadImage: createScienceImageLoader(ctx.sessions, sessionId),
+        loadText: createScienceTextLoader(ctx.sessions, sessionId),
+        loadLibrary: () => binding.session.readScienceLibrary(),
+        loadWorkspaceFiles: path => binding.session.readWorkspaceFiles(path),
+        loadWorkspaceFile: path => binding.session.readWorkspaceFile(path),
+        addToConversation: (targets) => { composerSelections.add(sessionId, targets) },
+        removeFromConversation: (target) => { composerSelections.removeSelection(sessionId, target) },
+        composerSelections: composerSelections.store(sessionId),
+        returnToConversation: (anchorKey) => { ctx.conversation.openChatAt(sessionId, anchorKey) },
+        selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
+        addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
+        removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
+        commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
+      }
+    },
   }, ScienceDetailsView))
 }

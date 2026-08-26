@@ -104,8 +104,15 @@ function setup(sessionsOverride?: unknown) {
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
   const face = { getSnapshot: () => null, subscribe: () => () => {} }
+  const readScienceLibrary = vi.fn(() => Promise.resolve({ ok: true, value: { projectId: 'project-1', artifacts: [] } }))
+  const readWorkspaceFiles = vi.fn(() => Promise.resolve({ ok: true, value: { root: '', entries: [] } }))
+  const readWorkspaceFile = vi.fn(() => Promise.resolve({
+    ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(65) },
+  }))
   ctx.provide('sessions', sessionsOverride ?? {
-    binding: () => ({ session: { projections: { faceOf: () => face } } }),
+    binding: () => ({ session: {
+      projections: { faceOf: () => face }, readScienceLibrary, readWorkspaceFiles, readWorkspaceFile,
+    } }),
     list: { getSnapshot: () => ({ ids: ['s1'], byId: { s1: { agentPreset: 'science' } } }), subscribe: () => () => {} },
   } as never)
   // conversationCancel is returned as its own plain local below (not read back
@@ -122,7 +129,10 @@ function setup(sessionsOverride?: unknown) {
     registerVisibility: vi.fn(() => () => {}), select: vi.fn(),
   } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  return { ctx, slots, scienceEdits, conversation, conversationCancel }
+  return {
+    ctx, slots, scienceEdits, conversation, conversationCancel,
+    readScienceLibrary, readWorkspaceFiles, readWorkspaceFile,
+  }
 }
 
 describe('ui-science apply', () => {
@@ -237,14 +247,17 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the Science Details entry returns to Chat and forwards review/style Remotes', async () => {
-    const { ctx, slots, conversation } = setup()
+  it('the Science Details entry forwards project reads, Chat navigation, and review/style Remotes', async () => {
+    const { ctx, slots, conversation, readScienceLibrary, readWorkspaceFiles, readWorkspaceFile } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('conversation.details.view')[0]
     if (entry?.inject === undefined) throw new Error('expected the injected Details entry')
     const injected = (entry.inject as (sessionId: SessionId) => {
       returnToConversation: (anchorKey: string) => void
+      loadLibrary: () => Promise<unknown>
+      loadWorkspaceFiles: (path: string) => Promise<unknown>
+      loadWorkspaceFile: (path: string) => Promise<unknown>
       addArtifactNote: (request: unknown) => Promise<unknown>
       removeArtifactNote: (request: unknown) => Promise<unknown>
       commitStyleEdit: (request: unknown) => Promise<unknown>
@@ -252,9 +265,28 @@ describe('ui-science apply', () => {
     injected.returnToConversation('assistant-anchor')
     expect(conversation.openChatAt).toHaveBeenCalledWith(SID, 'assistant-anchor')
 
+    await injected.loadLibrary()
+    await injected.loadWorkspaceFiles('data')
+    await injected.loadWorkspaceFile('data/results.csv')
+    expect(readScienceLibrary).toHaveBeenCalledOnce()
+    expect(readWorkspaceFiles).toHaveBeenCalledWith('data')
+    expect(readWorkspaceFile).toHaveBeenCalledWith('data/results.csv')
+
     await expect(injected.addArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.removeArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.commitStyleEdit({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
+    await fiber.dispose()
+  })
+
+  it('rejects Details injection after its session binding disappears', async () => {
+    const sessionsFake = makeSessionsFake()
+    const { ctx, slots } = setup(sessionsFake.api)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = slots.entries('conversation.details.view')[0]
+    if (entry?.inject === undefined) throw new Error('expected the injected Details entry')
+    const injectDetails = entry.inject as (sessionId: SessionId) => unknown
+    expect(() => injectDetails(SID)).toThrow('science details: session s1 is unavailable')
     await fiber.dispose()
   })
 

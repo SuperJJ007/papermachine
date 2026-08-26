@@ -10,9 +10,17 @@ The [project artifact store S2](2026-08-26-project-artifact-store-s2.md) removed
 
 ## Decision
 
-`session.scienceArtifact({ sessionId, versionId })` is the only browser read path for one immutable Science artifact version. The gateway strictly folds the named Session before touching the store. If that fold contains the saved version, its `projectId`, hash, media type, and byte count are the trusted coordinates. If the fold proves an [S3](2026-08-26-project-artifact-store-s3.md) cross-Session run input, the log contains only artifact id and ordinal; the gateway therefore opens the project derived from the Session header's durable `cwd`, lists that artifact's versions, and accepts the requested version id only when the store row has the referenced ordinal. The request has no project-id field.
+`session.scienceArtifact({ sessionId, versionId })` is the only browser read path for one immutable Science artifact version. The request has no project-id field. The gateway accepts the first applicable proof:
 
-`ui-science` keeps stateless image and text loader call shapes, but both now call `ISession.readScienceArtifact(versionId)`. Images become `data:` URIs and text uses fatal UTF-8 decoding. Project-store images use a package-local preview component because attachment dimensions are not project-store metadata. This change restores Session artifact preview, download, provenance, Outcome evidence, and Turn-tail thumbnails; it does not add a project-level Files list, filter, or RPC.
+| Proof | Trusted coordinates |
+|---|---|
+| The named Session fold contains the saved version | Its logged project id, hash, media type, and byte count |
+| The fold contains an [S3](2026-08-26-project-artifact-store-s3.md) cross-Session run input | The Session header's durable `cwd` derives the project; the store corroborates artifact id plus ordinal |
+| Neither fold path matches, but the derived project contains the exact version id | `getVersion(projectId, versionId)` supplies the version metadata and proves same-project membership |
+
+The third path supports the [project file library](../feature/2026-08-26-project-file-library.md): selecting a Session authorizes browsing immutable artifacts owned by the project derived from that Session, including versions produced by another Session in the same workspace. A different workspace derives a different project and cannot use this path.
+
+`ui-science` keeps stateless image and text loader call shapes, but both call `ISession.readScienceArtifact(versionId)`. Images become `data:` URIs and text uses fatal UTF-8 decoding. Project-store images use a package-local preview component because attachment dimensions are not project-store metadata.
 
 ## Alternatives considered
 
@@ -20,7 +28,7 @@ The [project artifact store S2](2026-08-26-project-artifact-store-s2.md) removed
 
 **Authorize only versions saved by the same Session** — rejected because S3 intentionally allows a run to cite an exact version produced by another Session in the same project. The corroborating `(artifactId, ordinal)` plus durable Session workspace is the minimum evidence retained by that Session's log.
 
-**Add a project-wide artifact-listing RPC** — rejected because content retrieval needs one exact Session-authorized version only. A project Files surface remains separately scoped and is not implied by this read method.
+**Authorize only versions named by the current Session's log** — rejected because the project library deliberately displays every artifact in the Session's derived project. Requiring a synthetic reference event would misrepresent browsing as conversation history.
 
 ## Consequences
 

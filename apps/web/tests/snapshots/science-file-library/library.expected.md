@@ -1,0 +1,16 @@
+## Details column — project file library
+- text: Science
+- button "Close details"
+- tablist "Open artifacts":
+  - tab "File library" [selected]: ⌂
+- button "Artifacts" [pressed]
+- button "Project files"
+- textbox "Search"
+- combobox "Artifact sort":
+  - option "Newest" [selected]
+  - option "Oldest"
+  - option "Name"
+- button "Switch grid or list view": Grid
+- text: 0 artifacts
+- status: No artifacts yet.
+- list

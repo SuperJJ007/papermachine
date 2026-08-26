@@ -22,7 +22,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 `session.textAttachment` 返回通过鉴权的文本引用及其 UTF-8 明文数据；响应 schema 接受附件包固定的 `TextMediaType` 集合，包括 `application/vnd.vega-lite+json`，因此浏览器客户端收到的媒体类型与附件存储准入的类型一致。
 
-`session.scienceArtifact({ sessionId, versionId })` 只有在严格折叠指定 Session 并确认该不可变版本已获授权后，才返回 base64 编码字节和 store 元数据。同 Session 保存的 artifact 会直接提供可信的 project 与 blob 坐标；S3 跨 Session run input 只携带 artifact id 和 ordinal，因此网关从 Session header 的持久 `cwd` 推导 project，并对照该 project 的 store 行确认请求版本。请求不携带 `projectId`，网关也绝不接受浏览器提供的 project id。
+`session.scienceArtifact({ sessionId, versionId })` 只有在具名 Session 通过本地 fold、经确认的跨 Session input ordinal，或其持久 header `cwd` 推导出的 project 中的精确成员关系证明版本后，才返回 base64 编码字节和 store 元数据。`sessions.scienceLibrary` 使用同一个推导出的 project，为每个 artifact 返回一条最新记录。`sessions.workspaceFiles` 与 `sessions.workspaceFile` 提供经过规范路径 containment check 的 workspace 只读视图：单层目录最多 2,000 个条目，单个 base64 文件最多 2 MiB。这些请求都不接受浏览器提供的 `projectId` 或绝对文件系统路径。
 
 分层与协议决策记录在 [GUI 分层与 RPC 协议 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md) 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md) 中。
 

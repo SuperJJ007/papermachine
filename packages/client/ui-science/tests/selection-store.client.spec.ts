@@ -11,6 +11,8 @@ import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 const A = 'chart-a' as ScienceArtifactId
 const B = 'chart-b' as ScienceArtifactId
 const C = 'chart-c' as ScienceArtifactId
+const tab = (artifactId: ScienceArtifactId, version: number) => ({ kind: 'artifact' as const, artifactId, version })
+const tabId = (artifactId: ScienceArtifactId) => `artifact:${artifactId}`
 
 function store() {
   return createScienceSelectionStore().create()
@@ -22,7 +24,7 @@ describe('selection-store: openTab', () => {
     s.actions.setLightboxOpen(true)
     s.actions.openTab({ artifactId: A, version: 1 })
     expect(s.getSnapshot()).toMatchObject({
-      openArtifacts: [{ artifactId: A, version: 1 }], activeArtifactId: A, view: 'content', lightboxOpen: false,
+      openArtifacts: [tab(A, 1)], activeTabId: tabId(A), view: 'content', lightboxOpen: false,
     })
   })
 
@@ -31,8 +33,8 @@ describe('selection-store: openTab', () => {
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.openTab({ artifactId: B, version: 1 })
     s.actions.openTab({ artifactId: A, version: 2 })
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 2 }, { artifactId: B, version: 1 }])
-    expect(s.getSnapshot().activeArtifactId).toBe(A)
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 2), tab(B, 1)])
+    expect(s.getSnapshot().activeTabId).toBe(tabId(A))
   })
 
   it('opening a tab while viewing another tab\'s provenance drill-in returns to content', () => {
@@ -41,7 +43,7 @@ describe('selection-store: openTab', () => {
     s.actions.setView('provenance')
     s.actions.openTab({ artifactId: B, version: 1 })
     expect(s.getSnapshot().view).toBe('content')
-    expect(s.getSnapshot().activeArtifactId).toBe(B)
+    expect(s.getSnapshot().activeTabId).toBe(tabId(B))
   })
 })
 
@@ -53,8 +55,23 @@ describe('selection-store: showLibrary', () => {
     s.actions.setLightboxOpen(true)
     s.actions.showLibrary()
     expect(s.getSnapshot()).toMatchObject({
-      openArtifacts: [{ artifactId: A, version: 1 }], activeArtifactId: null, view: 'content', lightboxOpen: false,
+      openArtifacts: [tab(A, 1)], activeTabId: null, view: 'content', lightboxOpen: false,
     })
+  })
+})
+
+describe('selection-store: file tabs', () => {
+  it('opens one tab per path, activates it, and closes it back to the library', () => {
+    const s = store()
+    s.actions.openFileTab('data/results.csv')
+    s.actions.openFileTab('data/results.csv')
+    expect(s.getSnapshot().openArtifacts).toEqual([{ kind: 'file', path: 'data/results.csv' }])
+    expect(s.getSnapshot().activeTabId).toBe('file:data/results.csv')
+    s.actions.showLibrary()
+    s.actions.activateTab('file:data/results.csv')
+    expect(s.getSnapshot().activeTabId).toBe('file:data/results.csv')
+    s.actions.closeTab('file:data/results.csv')
+    expect(s.getSnapshot().activeTabId).toBeNull()
   })
 })
 
@@ -66,14 +83,14 @@ describe('selection-store: activateTab', () => {
     s.actions.setView('provenance')
     s.actions.setLightboxOpen(true)
     s.actions.activateTab(A)
-    expect(s.getSnapshot()).toMatchObject({ activeArtifactId: A, view: 'content', lightboxOpen: false })
+    expect(s.getSnapshot()).toMatchObject({ activeTabId: tabId(A), view: 'content', lightboxOpen: false })
   })
 
   it('activating a chart id that is not open is a no-op', () => {
     const s = store()
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.activateTab(C)
-    expect(s.getSnapshot().activeArtifactId).toBe(A)
+    expect(s.getSnapshot().activeTabId).toBe(tabId(A))
   })
 })
 
@@ -82,7 +99,7 @@ describe('selection-store: closeTab', () => {
     const s = store()
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.closeTab(C)
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 1 }])
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 1)])
   })
 
   it('closing an inactive tab removes it without disturbing the active tab', () => {
@@ -91,8 +108,8 @@ describe('selection-store: closeTab', () => {
     s.actions.openTab({ artifactId: B, version: 1 })
     s.actions.activateTab(A)
     s.actions.closeTab(B)
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 1 }])
-    expect(s.getSnapshot().activeArtifactId).toBe(A)
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 1)])
+    expect(s.getSnapshot().activeTabId).toBe(tabId(A))
   })
 
   it('closing the active tab activates the tab that now sits at its position', () => {
@@ -102,8 +119,8 @@ describe('selection-store: closeTab', () => {
     s.actions.openTab({ artifactId: C, version: 1 })
     s.actions.activateTab(B)
     s.actions.closeTab(B)
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 1 }, { artifactId: C, version: 1 }])
-    expect(s.getSnapshot().activeArtifactId).toBe(C)
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 1), tab(C, 1)])
+    expect(s.getSnapshot().activeTabId).toBe(tabId(C))
   })
 
   it('closing the last (active) tab activates the one before it', () => {
@@ -111,7 +128,7 @@ describe('selection-store: closeTab', () => {
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.openTab({ artifactId: B, version: 1 })
     s.actions.closeTab(B)
-    expect(s.getSnapshot().activeArtifactId).toBe(A)
+    expect(s.getSnapshot().activeTabId).toBe(tabId(A))
   })
 
   it('closing the only open tab falls back to the landing view (activeArtifactId null)', () => {
@@ -119,7 +136,7 @@ describe('selection-store: closeTab', () => {
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.setView('provenance')
     s.actions.closeTab(A)
-    expect(s.getSnapshot()).toMatchObject({ openArtifacts: [], activeArtifactId: null, view: 'content' })
+    expect(s.getSnapshot()).toMatchObject({ openArtifacts: [], activeTabId: null, view: 'content' })
   })
 })
 
@@ -129,7 +146,7 @@ describe('selection-store: setTabVersion', () => {
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.setLightboxOpen(true)
     s.actions.setTabVersion({ artifactId: A, version: 2 })
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 2 }])
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 2)])
     expect(s.getSnapshot().lightboxOpen).toBe(false)
   })
 
@@ -137,7 +154,7 @@ describe('selection-store: setTabVersion', () => {
     const s = store()
     s.actions.openTab({ artifactId: A, version: 1 })
     s.actions.setTabVersion({ artifactId: B, version: 2 })
-    expect(s.getSnapshot().openArtifacts).toEqual([{ artifactId: A, version: 1 }])
+    expect(s.getSnapshot().openArtifacts).toEqual([tab(A, 1)])
   })
 })
 

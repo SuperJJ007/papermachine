@@ -126,6 +126,9 @@ export class FakeApiClient implements IApiClient {
     attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
     textAttachment: (payload: unknown) => this.record('session.textAttachment', payload, this.onTextAttachment(payload)),
     scienceArtifact: (payload: unknown) => this.record('session.scienceArtifact', payload, this.onScienceArtifact(payload)),
+    scienceLibrary: (payload: unknown) => this.record('sessions.scienceLibrary', payload, Promise.resolve(ok({ projectId: 'project-a' as never, artifacts: [] }))),
+    workspaceFiles: (payload: unknown) => this.record('sessions.workspaceFiles', payload, Promise.resolve(ok({ root: '', entries: [] }))),
+    workspaceFile: (payload: unknown) => this.record('sessions.workspaceFile', payload, Promise.resolve(ok({ mediaType: 'text/plain', byteCount: 0, data: '' }))),
     updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
     cancel: (payload: unknown) => this.record('session.cancel', payload, this.onCancel(payload)),
   }

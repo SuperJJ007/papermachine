@@ -114,6 +114,15 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: { ok: true, value: { versionId: request.payload.versionId, mediaType: 'image/png', byteCount: 1, data: 'AA==' } },
         }
       },
+      async scienceLibrary(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { projectId: 'project-1' as never, artifacts: [] } } }
+      },
+      async workspaceFiles(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { root: '', entries: [] } } }
+      },
+      async workspaceFile(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' } } }
+      },
       async updateQueue(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true as const } } }
       },
@@ -372,6 +381,9 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.sessions.attachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.textAttachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.scienceArtifact({ sessionId: 's' as never, versionId: 'version-1' as never })).result.ok).toBe(true)
+    expect((await c.sessions.scienceLibrary({ sessionId: 's' as never })).result.ok).toBe(true)
+    expect((await c.sessions.workspaceFiles({ sessionId: 's' as never })).result.ok).toBe(true)
+    expect((await c.sessions.workspaceFile({ sessionId: 's' as never, path: 'notes.txt' })).result.ok).toBe(true)
     expect((await c.sessions.updateQueue({
       sessionId: 's' as never,
       itemId: 'item-1' as never,

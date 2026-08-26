@@ -29,6 +29,9 @@ import {
   sessionRenameValueSchema,
   sessionSearchValueSchema,
   sessionScienceArtifactValueSchema,
+  sessionsScienceLibraryValueSchema,
+  sessionsWorkspaceFileValueSchema,
+  sessionsWorkspaceFilesValueSchema,
   sessionSelectModelValueSchema,
   sessionTextAttachmentValueSchema,
   sessionUpdateQueueValueSchema,
@@ -100,6 +103,9 @@ export interface IApiClient {
     attachment(payload: RequestPayload<'session.attachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.attachment'>>>
     textAttachment(payload: RequestPayload<'session.textAttachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.textAttachment'>>>
     scienceArtifact(payload: RequestPayload<'session.scienceArtifact'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.scienceArtifact'>>>
+    scienceLibrary(payload: RequestPayload<'sessions.scienceLibrary'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceLibrary'>>>
+    workspaceFiles(payload: RequestPayload<'sessions.workspaceFiles'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFiles'>>>
+    workspaceFile(payload: RequestPayload<'sessions.workspaceFile'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFile'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
     cancel(payload: RequestPayload<'session.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.cancel'>>>
   }
@@ -186,6 +192,9 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'session.attachment': sessionAttachmentValueSchema,
   'session.textAttachment': sessionTextAttachmentValueSchema,
   'session.scienceArtifact': sessionScienceArtifactValueSchema,
+  'sessions.scienceLibrary': sessionsScienceLibraryValueSchema,
+  'sessions.workspaceFiles': sessionsWorkspaceFilesValueSchema,
+  'sessions.workspaceFile': sessionsWorkspaceFileValueSchema,
   'session.updateQueue': sessionUpdateQueueValueSchema,
   'session.cancel': sessionCancelValueSchema,
   'subagent.list': subagentListValueSchema,
@@ -428,6 +437,9 @@ export abstract class AbstractApiClient implements IApiClient {
     attachment: (payload, signal) => this.callUnary('session.attachment', payload, signal),
     textAttachment: (payload, signal) => this.callUnary('session.textAttachment', payload, signal),
     scienceArtifact: (payload, signal) => this.callUnary('session.scienceArtifact', payload, signal),
+    scienceLibrary: (payload, signal) => this.callUnary('sessions.scienceLibrary', payload, signal),
+    workspaceFiles: (payload, signal) => this.callUnary('sessions.workspaceFiles', payload, signal),
+    workspaceFile: (payload, signal) => this.callUnary('sessions.workspaceFile', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),
     cancel: (payload, signal) => this.callUnary('session.cancel', payload, signal),
   }

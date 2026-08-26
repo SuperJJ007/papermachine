@@ -15,7 +15,8 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
-import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ArtifactId, ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
@@ -59,6 +60,26 @@ export interface SessionListMetadata {
   blank: boolean
   /** Latest source.kind=user message time in the checkpoint prefix. */
   lastPromptAt: number | null
+}
+
+/** Latest project artifact metadata shown by the project file library. */
+export interface ScienceLibraryArtifact {
+  artifactId: ArtifactId
+  logicalName: string
+  title?: string
+  caption?: string
+  originSessionId: SessionId
+  originSessionTitle?: string
+  latest: { versionId: VersionId; ordinal: number; mediaType: ScienceArtifactMediaType; byteCount: number; createdAt: number }
+}
+
+/** One direct child of a session workspace directory. */
+export interface WorkspaceFileEntry {
+  name: string
+  kind: 'file' | 'dir'
+  byteCount?: number
+  modifiedAt: number
+  mediaType?: string
 }
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -392,6 +413,18 @@ export interface SessionsApi {
    */
   scienceArtifact(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
   Promise<RpcResponse<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>>
+
+  /** Lists one latest row per artifact in the project selected by the named session's workspace. */
+  scienceLibrary(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>>
+
+  /** Lists one workspace directory without following paths outside the named session's workspace. */
+  workspaceFiles(request: RpcRequest<{ sessionId: SessionId; path?: string }>):
+  Promise<RpcResponse<{ root: string; entries: WorkspaceFileEntry[]; truncated?: true }>>
+
+  /** Reads one bounded workspace file for read-only browser preview. */
+  workspaceFile(request: RpcRequest<{ sessionId: SessionId; path: string }>):
+  Promise<RpcResponse<{ mediaType: string; byteCount: number; data: string }>>
 
   /**
    * Edits, removes, or strictly steers one pending queued occurrence on an ordinary session.

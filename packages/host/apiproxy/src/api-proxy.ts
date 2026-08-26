@@ -4,9 +4,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -85,10 +85,11 @@ import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-setti
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
-import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
 import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -118,6 +119,36 @@ import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
+
+const WORKSPACE_ENTRY_LIMIT = 2_000
+const WORKSPACE_FILE_BYTE_LIMIT = 2 * 1_024 * 1_024
+
+class WorkspaceReadError extends Error {
+  constructor(message: string, readonly code: 'NO_WORKSPACE' | 'PATH_OUTSIDE_WORKSPACE' | 'FILE_TOO_LARGE') {
+    super(message)
+  }
+}
+
+/** Browser preview media types intentionally match ui-science's content dispatch. */
+function workspaceMediaType(path: string): string {
+  if (path.endsWith('.vl.json')) return 'application/vnd.vega-lite+json'
+  switch (extname(path).toLowerCase()) {
+    case '.csv': return 'text/csv'
+    case '.json': return 'application/json'
+    case '.md': case '.markdown': return 'text/markdown'
+    case '.txt': return 'text/plain'
+    case '.png': return 'image/png'
+    default: return 'application/octet-stream'
+  }
+}
+
+/** Narrow durable store metadata to the media set the Science library can render. */
+function scienceArtifactMediaType(value: string): ScienceArtifactMediaType {
+  switch (value) {
+    case 'image/png': case 'text/csv': case 'application/json': case 'application/vnd.vega-lite+json': case 'text/markdown': case 'text/plain': return value
+    default: throw new Error(`Science artifact store returned unsupported media type ${JSON.stringify(value)}`)
+  }
+}
 
 /** Provider work budget: at most 100 calls and 2,000 inspected hits. */
 const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
@@ -1421,6 +1452,28 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
   }
 
+  /** Resolve an existing relative workspace path and prove its canonical containment. */
+  async function resolveWorkspacePath(state: SessionReadState, requestedPath: string): Promise<{
+    readonly workspace: string
+    readonly target: string
+    readonly display: string
+  }> {
+    if (state.header.cwd === undefined) {
+      throw new WorkspaceReadError('Session has no workspace directory.', 'NO_WORKSPACE')
+    }
+    if (isAbsolute(requestedPath) || requestedPath.split(/[\\/]/u).includes('..')) {
+      throw new WorkspaceReadError('Path is outside the session workspace.', 'PATH_OUTSIDE_WORKSPACE')
+    }
+    const workspace = await realpath(state.header.cwd)
+    const candidate = resolve(workspace, requestedPath)
+    const target = await realpath(candidate)
+    const delta = relative(workspace, target)
+    if (delta === '..' || delta.startsWith(`..${sep}`) || isAbsolute(delta)) {
+      throw new WorkspaceReadError('Path is outside the session workspace.', 'PATH_OUTSIDE_WORKSPACE')
+    }
+    return { workspace, target, display: delta.split(sep).join('/') }
+  }
+
   /** One attachment family's finder/reader/wire-encoding trio for {@link readReferencedAttachment}. */
   interface ReferencedAttachmentKind<Ref> {
     /** Authorizes `attachmentId` against the session's own event log, mirroring `ctx.sessionAttachments`'s image/text finder pair. */
@@ -1547,7 +1600,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         referenced.set(input.artifactId, ordinals)
       }
     }
-    if (referenced.size === 0 || state.header.cwd === undefined) return undefined
+    if (state.header.cwd === undefined) return undefined
     const projectId = (await store.openProject(state.header.cwd)).projectId
     for (const [artifactId, ordinals] of referenced) {
       const versions = await store.listVersions(projectId, artifactId as Parameters<ScienceArtifactStore['listVersions']>[1])
@@ -1560,7 +1613,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         byteCount: matched.byteCount,
       }
     }
-    return undefined
+    const projectVersion = await store.getVersion(projectId, requestedVersionId)
+    return projectVersion === undefined ? undefined : {
+      projectId,
+      versionId: projectVersion.versionId,
+      sha256: projectVersion.sha256,
+      mediaType: projectVersion.mediaType,
+      byteCount: projectVersion.byteCount,
+    }
   }
 
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
@@ -2619,6 +2679,95 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             message: 'Unable to read Science artifact.',
             details: {},
           })
+        }
+      },
+
+      async scienceLibrary(request) {
+        const { sessionId } = request.payload
+        let state: SessionReadState
+        try {
+          state = await readSessionState(sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+          return err(request, { code: 'internal', message: `Science library unavailable for session "${sessionId}": ${String(error)}`, details: {} })
+        }
+        if (state.header.cwd === undefined) return err(request, { code: 'science-artifact-error', message: 'Session has no workspace directory.', details: { reason: 'NO_WORKSPACE' } })
+        const store = ctx.get('scienceArtifactStore')
+        if (store === undefined) return err(request, { code: 'internal', message: 'Science library is unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store', details: {} })
+        try {
+          const projectId = (await store.openProject(state.header.cwd)).projectId
+          const records = await store.listArtifacts(projectId)
+          const artifacts = (await Promise.all(records.map(async (record) => {
+            const latest = await store.getLatestVersion(projectId, record.artifactId)
+            if (latest === undefined) return undefined
+            let originSessionTitle: string | undefined
+            try {
+              originSessionTitle = foldSessionTitle((await readSessionState(record.originSessionId)).events)?.title
+            } catch { /* A removed origin session does not make its project artifact disappear. */ }
+            return {
+              artifactId: record.artifactId, logicalName: record.logicalName,
+              ...(latest.title === undefined ? {} : { title: latest.title }),
+              ...(latest.caption === undefined ? {} : { caption: latest.caption }),
+              originSessionId: record.originSessionId,
+              ...(originSessionTitle === undefined ? {} : { originSessionTitle }),
+              latest: {
+                versionId: latest.versionId, ordinal: latest.ordinal, mediaType: scienceArtifactMediaType(latest.mediaType),
+                byteCount: latest.byteCount, createdAt: latest.createdAt,
+              },
+            }
+          }))).filter(item => item !== undefined)
+          return ok(request, { projectId, artifacts })
+        } catch (error: unknown) {
+          if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
+          return err(request, { code: 'internal', message: `Science library unavailable for session "${sessionId}": ${String(error)}`, details: {} })
+        }
+      },
+
+      async workspaceFiles(request) {
+        const { sessionId } = request.payload
+        let state: SessionReadState
+        try { state = await readSessionState(sessionId) } catch (error: unknown) {
+          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+          return err(request, { code: 'internal', message: String(error), details: {} })
+        }
+        try {
+          const resolved = await resolveWorkspacePath(state, request.payload.path ?? '')
+          const children = (await readdir(resolved.target, { withFileTypes: true }))
+            .filter(entry => !entry.name.startsWith('.') && entry.name !== 'node_modules' && !entry.isSymbolicLink())
+            .sort((a, b) => a.name.localeCompare(b.name))
+          const truncated = children.length > WORKSPACE_ENTRY_LIMIT
+          const entries = await Promise.all(children.slice(0, WORKSPACE_ENTRY_LIMIT).map(async (entry) => {
+            const info = await stat(resolve(resolved.target, entry.name))
+            if (entry.isDirectory()) return { name: entry.name, kind: 'dir' as const, modifiedAt: info.mtimeMs }
+            return {
+              name: entry.name, kind: 'file' as const, byteCount: info.size, modifiedAt: info.mtimeMs,
+              mediaType: workspaceMediaType(entry.name),
+            }
+          }))
+          return ok(request, { root: resolved.display, entries, ...(truncated ? { truncated: true as const } : {}) })
+        } catch (error: unknown) {
+          if (error instanceof WorkspaceReadError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
+          return err(request, { code: 'internal', message: `Workspace listing unavailable: ${String(error)}`, details: {} })
+        }
+      },
+
+      async workspaceFile(request) {
+        const { sessionId, path } = request.payload
+        let state: SessionReadState
+        try { state = await readSessionState(sessionId) } catch (error: unknown) {
+          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+          return err(request, { code: 'internal', message: String(error), details: {} })
+        }
+        try {
+          const resolved = await resolveWorkspacePath(state, path)
+          const info = await stat(resolved.target)
+          if (!info.isFile()) throw new WorkspaceReadError('Workspace preview path is not a file.', 'PATH_OUTSIDE_WORKSPACE')
+          if (info.size > WORKSPACE_FILE_BYTE_LIMIT) throw new WorkspaceReadError('Workspace file exceeds the 2 MiB preview limit.', 'FILE_TOO_LARGE')
+          const data = await readFile(resolved.target)
+          return ok(request, { mediaType: workspaceMediaType(resolved.target), byteCount: data.byteLength, data: data.toString('base64') })
+        } catch (error: unknown) {
+          if (error instanceof WorkspaceReadError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
+          return err(request, { code: 'internal', message: `Workspace file unavailable: ${String(error)}`, details: {} })
         }
       },
 

@@ -31,6 +31,7 @@
     "tests/science-persistent-kernel-test-helpers.ts",
     "tests/science-chart-outcome.e2e.ts",
     "tests/science-artifact-types.e2e.ts",
+    "tests/science-file-library.e2e.ts",
     "tests/science-transcript-chrome.e2e.ts",
     "tests/message-feedback-protocol.snapshot.ts",
     "tests/live-interactions.e2e.ts",

@@ -14,8 +14,36 @@ import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 
 /** One artifact tab open in the viewer: a logical chart and the durable version it currently shows. */
 export interface ScienceOpenArtifact {
+  readonly kind: 'artifact'
   readonly artifactId: ScienceArtifactId
   version: number
+}
+
+/** One read-only project file tab. */
+export interface ScienceOpenFile { readonly kind: 'file'; readonly path: string }
+
+/** Open document kinds supported by the Science file library. */
+export type ScienceOpenTab = ScienceOpenArtifact | ScienceOpenFile
+
+/**
+ * Return the stable id shared by selection state and DOM keys.
+ * @param tab - Open artifact or workspace-file tab.
+ * @returns Kind-prefixed tab id.
+ */
+export function scienceTabId(tab: ScienceOpenTab): string {
+  switch (tab.kind) {
+    case 'artifact': return `artifact:${tab.artifactId}`
+    case 'file': return `file:${tab.path}`
+    /* v8 ignore next 2 -- merge-extensible tab kinds fail loud until their renderer lands */
+    default: return assertNever(tab)
+  }
+}
+
+/* v8 ignore next -- reached only through a forged, unimplemented tab kind */
+function assertNever(value: never): never { throw new Error(`Unsupported Science tab: ${JSON.stringify(value)}`) }
+
+function normalizedTabId(value: string): string {
+  return value.startsWith('artifact:') || value.startsWith('file:') ? value : `artifact:${value}`
 }
 
 /** Which body the active tab shows: its rendered content, or the provenance drill-in. */
@@ -31,7 +59,7 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
  * `readonly` field here would reject the mutation it exists to perform.
  *
  * The active version is deliberately not its own field: it is
- * `openArtifacts.find(tab => tab.artifactId === activeArtifactId)?.version`,
+ * `openArtifacts.find(tab => scienceTabId(tab) === activeTabId)`,
  * so there is exactly one place a tab's shown version is recorded. `view`
  * and `provenanceSubTab` are single fields, not per-tab — switching the
  * active tab always returns to `'content'` (see
@@ -40,10 +68,10 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
  * artifact.
  */
 export interface ScienceSelectionState {
-  /** Ordered open tabs — one entry per logical chart, never per version. */
-  openArtifacts: ScienceOpenArtifact[]
-  /** The active tab's artifact id, or `null` while the library is showing. */
-  activeArtifactId: ScienceArtifactId | null
+  /** Ordered open artifact and file tabs. */
+  openArtifacts: ScienceOpenTab[]
+  /** The active document id, or `null` while the library is showing. */
+  activeTabId: string | null
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
   /** The last-selected provenance sub-tab. */
@@ -57,10 +85,12 @@ type ScienceSelectionActions = {
   showLibrary: (draft: ScienceSelectionState) => void
   /** Open (or activate, if already open) the named artifact's tab at exactly the given version. */
   openTab: (draft: ScienceSelectionState, selection: { artifactId: ScienceArtifactId; version: number }) => void
+  /** Open or activate one read-only workspace file. */
+  openFileTab: (draft: ScienceSelectionState, path: string) => void
   /** Activate an already-open tab by artifact id; an artifact id not in `openArtifacts` is a no-op. */
-  activateTab: (draft: ScienceSelectionState, artifactId: ScienceArtifactId) => void
+  activateTab: (draft: ScienceSelectionState, tabId: string) => void
   /** Close a tab; if it was active, activate its neighbor, or fall back to the landing view when none remain. */
-  closeTab: (draft: ScienceSelectionState, artifactId: ScienceArtifactId) => void
+  closeTab: (draft: ScienceSelectionState, tabId: string) => void
   /** Step an already-open tab to a different durable version of the same artifact. */
   setTabVersion: (draft: ScienceSelectionState, next: { artifactId: ScienceArtifactId; version: number }) => void
   /** Switch the active tab's body between content and the provenance drill-in. */
@@ -85,43 +115,51 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      openArtifacts: [], activeArtifactId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      openArtifacts: [], activeTabId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     actions: {
       showLibrary: (draft) => {
-        draft.activeArtifactId = null
+        draft.activeTabId = null
         draft.view = 'content'
         draft.lightboxOpen = false
       },
       openTab: (draft, selection) => {
-        const existing = draft.openArtifacts.find(tab => tab.artifactId === selection.artifactId)
-        if (existing === undefined) draft.openArtifacts.push({ artifactId: selection.artifactId, version: selection.version })
+        const existing = draft.openArtifacts.find((tab): tab is ScienceOpenArtifact => tab.kind === 'artifact' && tab.artifactId === selection.artifactId)
+        if (existing === undefined) draft.openArtifacts.push({ kind: 'artifact', artifactId: selection.artifactId, version: selection.version })
         else existing.version = selection.version
-        draft.activeArtifactId = selection.artifactId
+        draft.activeTabId = `artifact:${selection.artifactId}`
         draft.view = 'content'
         draft.lightboxOpen = false
       },
-      activateTab: (draft, artifactId) => {
-        if (!draft.openArtifacts.some(tab => tab.artifactId === artifactId)) return
-        draft.activeArtifactId = artifactId
+      openFileTab: (draft, path) => {
+        if (!draft.openArtifacts.some(tab => tab.kind === 'file' && tab.path === path)) draft.openArtifacts.push({ kind: 'file', path })
+        draft.activeTabId = `file:${path}`
         draft.view = 'content'
         draft.lightboxOpen = false
       },
-      closeTab: (draft, artifactId) => {
-        const index = draft.openArtifacts.findIndex(tab => tab.artifactId === artifactId)
+      activateTab: (draft, tabId) => {
+        const id = normalizedTabId(tabId)
+        if (!draft.openArtifacts.some(tab => scienceTabId(tab) === id)) return
+        draft.activeTabId = id
+        draft.view = 'content'
+        draft.lightboxOpen = false
+      },
+      closeTab: (draft, tabId) => {
+        const id = normalizedTabId(tabId)
+        const index = draft.openArtifacts.findIndex(tab => scienceTabId(tab) === id)
         if (index === -1) return
         draft.openArtifacts.splice(index, 1)
-        if (draft.activeArtifactId !== artifactId) return
+        if (draft.activeTabId !== id) return
         // Browser-tab convention: activate whichever tab now sits at the
         // closed tab's position, or the one before it when the closed tab
         // was last; an empty ledger falls back to the landing view.
         const fallback = draft.openArtifacts[index] ?? draft.openArtifacts[index - 1]
-        draft.activeArtifactId = fallback?.artifactId ?? null
+        draft.activeTabId = fallback === undefined ? null : scienceTabId(fallback)
         draft.view = 'content'
         draft.lightboxOpen = false
       },
       setTabVersion: (draft, next) => {
-        const tab = draft.openArtifacts.find(candidate => candidate.artifactId === next.artifactId)
+        const tab = draft.openArtifacts.find((candidate): candidate is ScienceOpenArtifact => candidate.kind === 'artifact' && candidate.artifactId === next.artifactId)
         if (tab === undefined) return
         tab.version = next.version
         draft.lightboxOpen = false

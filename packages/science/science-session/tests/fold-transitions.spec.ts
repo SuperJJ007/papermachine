@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
+  ScienceVersionId,
 } from '../src/index.ts'
 import { foldScience } from '../src/fold.ts'
 import { emptyScienceFoldState } from '../src/fold-state.ts'
@@ -15,6 +15,7 @@ import {
   ARTIFACT_CALL_ID,
   ARTIFACT_ID,
   OUTCOME_CALL_ID,
+  PROJECT_ID,
   RUN_CALL_ID,
   RUN_ID,
   artifact,
@@ -35,12 +36,10 @@ import {
 describe('strict Science fold transitions', () => {
   const vegaParent = (): ScienceArtifactVersion => artifact({
     logicalName: 'trend.vl.json',
-    attachment: {
-      attachmentId: AttachmentId('attachment-vega-1'),
-      mediaType: 'application/vnd.vega-lite+json',
-      bytes: 128,
-      name: 'trend.vl.json',
-    },
+    versionId: ScienceVersionId('version-vega-1'),
+    sha256: '7'.repeat(64),
+    mediaType: 'application/vnd.vega-lite+json',
+    byteCount: 128,
   })
 
   const humanEdit = (
@@ -52,12 +51,11 @@ describe('strict Science fold transitions', () => {
     parent: { artifactId: ARTIFACT_ID, version: 1 },
     title: 'Trend',
     origin: 'human-edit',
-    attachment: {
-      attachmentId: AttachmentId('attachment-vega-2'),
-      mediaType: 'application/vnd.vega-lite+json',
-      bytes: 144,
-      name: 'trend.vl.json',
-    },
+    projectId: PROJECT_ID,
+    versionId: ScienceVersionId('version-vega-2'),
+    sha256: '8'.repeat(64),
+    mediaType: 'application/vnd.vega-lite+json',
+    byteCount: 144,
     environmentRevision: 1,
     environmentFingerprint: 'b'.repeat(64),
     createdAt: 179,
@@ -115,12 +113,8 @@ describe('strict Science fold transitions', () => {
         artifact: humanEdit({
           version: 3,
           parent: { artifactId: ARTIFACT_ID, version: 1 },
-          attachment: {
-            attachmentId: AttachmentId('attachment-vega-3'),
-            mediaType: 'application/vnd.vega-lite+json',
-            bytes: 144,
-            name: 'trend.vl.json',
-          },
+          versionId: ScienceVersionId('version-vega-3'),
+          sha256: '9'.repeat(64),
           createdAt: 189,
         }),
       }),
@@ -145,7 +139,10 @@ describe('strict Science fold transitions', () => {
           version: 2,
           parent: v2.parent,
           toolCallId: annotationCall,
-          attachment: v2.attachment,
+          versionId: v2.versionId,
+          sha256: v2.sha256,
+          mediaType: v2.mediaType,
+          byteCount: v2.byteCount,
           createdAt: 189,
         }),
       }),
@@ -575,6 +572,7 @@ describe('strict Science fold transitions', () => {
         artifact: artifact({
           version: 2,
           toolCallId: CallId('call-chart-2'),
+          versionId: ScienceVersionId('version-chart-2'),
           createdAt: 189,
         }),
       }),
@@ -582,12 +580,12 @@ describe('strict Science fold transitions', () => {
     expect(foldScience(chartVersionTwo).artifacts.map(candidate => candidate.version)).toEqual([1, 2])
   })
 
-  it('creates a new version for a curation-only re-save with an identical attachment', () => {
-    // The fold has no content-hash dedup of its own — deciding whether an
-    // unchanged attachment warrants a new version is the capture/curation
+  it('creates a new version for a curation-only re-save with identical content bytes', () => {
+    // The fold has no content-hash dedup of its own — deciding whether
+    // unchanged content warrants a new version is the capture/curation
     // caller's decision (see the Runtime), not this package's. A re-save
     // that only changes title, caption, and origin must still be accepted
-    // as the next contiguous version.
+    // as the next contiguous version, provided its store row is fresh.
     const events = [
       ...legalEvents().slice(0, 9),
       toolCall(9, 180, CallId('call-chart-2'), 'annotate_artifact'),
@@ -600,7 +598,8 @@ describe('strict Science fold transitions', () => {
           title: 'Curated trend',
           caption: 'Selected by the model.',
           origin: 'model',
-          // Identical attachment reference to the version-1 fixture.
+          // Identical sha256 to the version-1 fixture; fresh store row.
+          versionId: ScienceVersionId('version-resave'),
         }),
       }),
     ]
@@ -610,15 +609,15 @@ describe('strict Science fold transitions', () => {
       title: candidate.title,
       caption: candidate.caption,
       origin: candidate.origin,
-      attachment: candidate.attachment,
+      sha256: candidate.sha256,
     }))).toEqual([
-      { version: 1, title: 'Trend', caption: undefined, origin: 'model', attachment: artifact().attachment },
+      { version: 1, title: 'Trend', caption: undefined, origin: 'model', sha256: artifact().sha256 },
       {
         version: 2,
         title: 'Curated trend',
         caption: 'Selected by the model.',
         origin: 'model',
-        attachment: artifact().attachment,
+        sha256: artifact().sha256,
       },
     ])
   })

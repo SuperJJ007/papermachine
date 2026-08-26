@@ -6,9 +6,11 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
+import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import {
   createScienceEditMessage,
@@ -25,13 +27,11 @@ function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifac
     version: 1,
     title: 'Loss',
     origin: 'auto',
-    attachment: {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png',
-      bytes: 100,
-      width: 100,
-      height: 80,
-    },
+    projectId: ScienceProjectId('project-1'),
+    versionId: ScienceVersionId('store-version-image'),
+    sha256: 'a'.repeat(64),
+    mediaType: 'image/png',
+    byteCount: 100,
     runId: ScienceRunId('run-1'),
     toolCallId: CallId('call-1'),
     requestHeaderSeq: 2,
@@ -45,13 +45,17 @@ function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifac
 function vega(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return image({
     logicalName: 'loss.vl.json',
-    attachment: {
-      attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
-      mediaType: 'application/vnd.vega-lite+json',
-      bytes: 200,
-    },
+    versionId: ScienceVersionId('store-version-vega'),
+    sha256: 'c'.repeat(64),
+    mediaType: 'application/vnd.vega-lite+json',
+    byteCount: 200,
     ...over,
   })
+}
+
+/** Minted session message attachment a region target's raster rides the edit message as. */
+function mintedImage(name: string): ImageAttachmentRef {
+  return { attachmentId: AttachmentId(`sha256:${name}`), mediaType: 'image/png', bytes: 100, width: 100, height: 80 }
 }
 
 describe('Science edit-message admission', () => {
@@ -60,6 +64,7 @@ describe('Science edit-message admission', () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'science-edit-service-'))
     try {
       await ctx.plugin(LocalAttachmentStore, { dshHome })
+      await ctx.plugin(ScienceArtifactStore, { dshHome })
       const fiber = await ctx.plugin(EditService)
       expect(ctx.get('scienceEdits')).toBeInstanceOf(ScienceEditService)
       await fiber.dispose()
@@ -90,18 +95,28 @@ describe('Science edit-message admission', () => {
     ].join('\n') }])
   })
 
-  it('attaches the exact raster version after normalizing the selected region', () => {
+  it('attaches the minted raster image for the selected region, keyed by the target store version', () => {
     const artifact = image()
+    const minted = mintedImage('minted-image')
     const message = createScienceEditMessage(resolveScienceEdit([artifact], { targets: [{
       artifactId: artifact.artifactId,
       version: 1,
       target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
-    }], instruction: 'increase contrast' }))
+    }], instruction: 'increase contrast' }), new Map([[String(artifact.versionId), minted]]))
     expect(message.source).toMatchObject({
       kind: 'science-edit', targets: [{ artifactId: 'chart-1', version: 1,
         target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 } }],
     })
-    expect(message.content[1]).toEqual({ type: 'image', attachment: artifact.attachment })
+    expect(message.content[1]).toEqual({ type: 'image', attachment: minted })
+  })
+
+  it('rejects a region target whose message image was not minted', () => {
+    const artifact = image()
+    expect(() => createScienceEditMessage(resolveScienceEdit([artifact], { targets: [{
+      artifactId: artifact.artifactId,
+      version: 1,
+      target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+    }], instruction: 'increase contrast' }))).toThrow(/has no minted message image/)
   })
 
   it('rejects an older selected version instead of substituting the current version', () => {
@@ -166,18 +181,23 @@ describe('Science edit-message admission', () => {
 
   it('admits multiple exact targets atomically and attaches every raster in target order', () => {
     const chart = vega()
-    const raster = image({ artifactId: ScienceArtifactId('chart-2'), logicalName: 'residuals.png' })
+    const raster = image({
+      artifactId: ScienceArtifactId('chart-2'),
+      logicalName: 'residuals.png',
+      versionId: ScienceVersionId('store-version-residuals'),
+    })
+    const minted = mintedImage('minted-residuals')
     const message = createScienceEditMessage(resolveScienceEdit([chart, raster], {
       targets: [
         { artifactId: chart.artifactId, version: 1, target: { kind: 'spec-path', path: 'encoding.y' } },
         { artifactId: raster.artifactId, version: 1, target: { kind: 'normalized-region', x: 0, y: 0, width: 0.5, height: 1 } },
       ],
       instruction: 'use one blue palette',
-    }))
+    }), new Map([[String(raster.versionId), minted]]))
     if (message.source.kind !== 'science-edit') throw new Error('expected a science-edit source')
     expect(message.source.targets).toHaveLength(2)
     expect(message.content).toHaveLength(2)
-    expect(message.content[1]).toEqual({ type: 'image', attachment: raster.attachment })
+    expect(message.content[1]).toEqual({ type: 'image', attachment: minted })
   })
 
   it('identifies the failing selection without admitting any part of a multi-target request', () => {

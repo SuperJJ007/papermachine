@@ -23,8 +23,6 @@ export const scienceArtifactSchemaProperties = {
   runId: { type: 'string' },
   mediaType: { type: 'string', required: true },
   bytes: { type: 'integer', required: true },
-  width: { type: 'integer' },
-  height: { type: 'integer' },
   createdAt: { type: 'integer', required: true },
 } as const
 
@@ -40,8 +38,6 @@ export interface ScienceArtifactValueFields {
   readonly runId?: string
   readonly mediaType: string
   readonly bytes: number
-  readonly width?: number
-  readonly height?: number
   readonly createdAt: number
 }
 
@@ -50,14 +46,12 @@ export interface ScienceArtifactValueFields {
  * media fields, matching `scienceArtifactSchemaProperties` field-for-field.
  * The artifact-receipt (`annotate-artifact.ts`) and state (`state.ts`) value
  * builders each spread this and add their own remaining fields —
- * `attachmentId`/`attachmentName` for the receipt, `environmentRevision`/
+ * `versionId` for the receipt, `environmentRevision`/
  * `environmentFingerprintPreview` for state.
  * @param artifact - the durable artifact version to flatten.
- * @returns the shared value fields, `width`/`height` present only for an image attachment.
+ * @returns the shared value fields.
  */
 export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): ScienceArtifactValueFields {
-  const { attachment } = artifact
-  const isImage = 'width' in attachment
   return {
     artifactId: String(artifact.artifactId),
     logicalName: artifact.logicalName,
@@ -69,9 +63,8 @@ export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): Sc
       parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
     },
     ...artifact.origin === 'human-edit' ? {} : { runId: String(artifact.runId) },
-    mediaType: attachment.mediaType,
-    bytes: attachment.bytes,
-    ...isImage ? { width: attachment.width, height: attachment.height } : {},
+    mediaType: artifact.mediaType,
+    bytes: artifact.byteCount,
     createdAt: artifact.createdAt,
   }
 }

@@ -56,6 +56,7 @@
       "@deepseek-ai/dsh-attachment/types": ["./packages/attachment/attachment/src/types.ts"],
       "@deepseek-ai/dsh-session/types": ["./packages/core/session/src/types.ts"],
       "@deepseek-ai/dsh-session/surface": ["./packages/core/session/src/surface.ts"],
+      "@deepseek-ai/dsh-science-artifact-store/ids": ["./packages/science/science-artifact-store/src/ids.ts"],
       "@deepseek-ai/dsh-science-session": ["./packages/science/science-session/src/index.ts"],
       "@deepseek-ai/dsh-science-session/invariant": ["./packages/science/science-session/src/invariant.ts"],
       "@deepseek-ai/dsh-science-session/types": ["./packages/science/science-session/src/types.ts"],

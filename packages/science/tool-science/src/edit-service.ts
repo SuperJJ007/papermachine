@@ -9,8 +9,8 @@ import { ScienceEditService } from './edit-message.ts'
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'science-edit-service'
 
-/** Services required by the Host commit path. */
-export const inject = ['attachments']
+/** Services required by the Host commit path: the store owns artifact bytes; message-image admission still uses the attachment store. */
+export const inject = ['attachments', 'scienceArtifactStore']
 
 /**
  * Register the process-global Remote where the Host Typert Gateway can resolve it.

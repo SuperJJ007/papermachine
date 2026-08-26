@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { replayScience, ScienceArtifactId, ScienceRunId, toClientScienceProjection } from '../src/index.ts'
+import { replayScience, ScienceArtifactId, ScienceRunId, ScienceVersionId, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   ARTIFACT_CALL_ID,
@@ -83,6 +82,8 @@ describe('Science projection replay', () => {
           logicalName: 'projection-branch.png',
           parent,
           toolCallId: branchCall,
+          versionId: ScienceVersionId('projection-branch-v1'),
+          sha256: '3'.repeat(64),
           createdAt: 179,
         }),
       }),
@@ -109,12 +110,10 @@ describe('Science projection replay', () => {
     const events = legalEvents().slice(0, 9)
     const source = artifact({
       logicalName: 'projection-chart.vl.json',
-      attachment: {
-        attachmentId: AttachmentId('projection-chart-v1'),
-        mediaType: 'application/vnd.vega-lite+json',
-        bytes: 64,
-        name: 'projection-chart.vl.json',
-      },
+      versionId: ScienceVersionId('projection-chart-v1'),
+      sha256: '6'.repeat(64),
+      mediaType: 'application/vnd.vega-lite+json',
+      byteCount: 64,
     })
     events[8] = event('science/artifact-saved', 8, 170, { version: 1, artifact: source })
     events.push(event('science/artifact-saved', 9, 180, {
@@ -126,12 +125,11 @@ describe('Science projection replay', () => {
         parent: { artifactId: source.artifactId, version: 1 },
         title: source.title,
         origin: 'human-edit',
-        attachment: {
-          attachmentId: AttachmentId('projection-chart-v2'),
-          mediaType: 'application/vnd.vega-lite+json',
-          bytes: 72,
-          name: source.logicalName,
-        },
+        projectId: source.projectId,
+        versionId: ScienceVersionId('projection-chart-v2'),
+        sha256: '7'.repeat(64),
+        mediaType: 'application/vnd.vega-lite+json',
+        byteCount: 72,
         environmentRevision: source.environmentRevision,
         environmentFingerprint: source.environmentFingerprint,
         createdAt: 179,

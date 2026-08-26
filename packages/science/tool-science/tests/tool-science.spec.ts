@@ -6,7 +6,6 @@
  * required REAL-composition coverage).
  */
 
-import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,9 +14,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
@@ -28,8 +26,8 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -66,7 +64,7 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
   }
 }
 
-/** Minimal valid `ScienceArtifactVersion` fixture (image attachment); callers override only what they test. */
+/** Minimal valid `ScienceArtifactVersion` fixture (PNG content); callers override only what they test. */
 function artifactVersionFixture(overrides: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return {
     artifactId: ScienceArtifactId('artifact-1'),
@@ -74,7 +72,11 @@ function artifactVersionFixture(overrides: Partial<ScienceRunArtifactVersion> = 
     version: 1,
     title: 'file',
     origin: 'auto',
-    attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+    projectId: ScienceProjectId('project-1'),
+    versionId: ScienceVersionId('store-version-1'),
+    sha256: 'a'.repeat(64),
+    mediaType: 'image/png',
+    byteCount: 10,
     runId: ScienceRunId('run-1'),
     toolCallId: CallId('call-1'),
     requestHeaderSeq: 1,
@@ -96,11 +98,11 @@ function humanArtifactFixture(
     parent: { artifactId: ScienceArtifactId('artifact-1'), version: 1 },
     title: 'Chart',
     origin: 'human-edit',
-    attachment: {
-      attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
-      mediaType: 'application/vnd.vega-lite+json',
-      bytes: 64,
-    },
+    projectId: ScienceProjectId('project-1'),
+    versionId: ScienceVersionId('store-version-2'),
+    sha256: 'b'.repeat(64),
+    mediaType: 'application/vnd.vega-lite+json',
+    byteCount: 64,
     environmentRevision: 1,
     environmentFingerprint: 'a'.repeat(64),
     createdAt: 1001,
@@ -146,24 +148,35 @@ interface RunProvenance {
  * authorizing facts — the durable shape `dsh-science-runtime`'s real capture
  * walk appends, for a file the fake kernel driver never writes (it only
  * replies over the kernel wire protocol's FIFO, never touching `SCIENCE_ARTIFACT_DIR`).
- * Persists a real attachment through the mounted `ctx.attachments` first, so
- * the seeded event references a real content-addressed ref exactly as
- * capture would.
+ * Persists the bytes through the mounted project artifact store first, so the
+ * seeded event references a real store version row exactly as capture would.
  */
 async function seedAutoArtifact(
   ctx: Context, session: Session, run: RunProvenance, logicalName: string,
-  data: Uint8Array, mediaType: 'image/png' | TextMediaType,
+  data: Uint8Array, mediaType: ScienceArtifactMediaType,
 ): Promise<ScienceArtifactVersion> {
-  const attachment = mediaType === 'image/png'
-    ? await ctx.attachments.saveImage({ data, mediaType: 'image/png', name: logicalName })
-    : await ctx.attachments.saveText({ data, mediaType, name: logicalName })
+  const cwd = session.header.cwd
+  if (cwd === undefined) throw new Error('tool-science test: science session fixture requires a cwd')
+  const { projectId } = await ctx.scienceArtifactStore.openProject(cwd)
+  const stored = await ctx.scienceArtifactStore.createArtifact(projectId, {
+    logicalName,
+    originSessionId: session.id,
+    data,
+    mediaType,
+    origin: 'auto',
+    title: logicalName,
+  })
   const artifact: ScienceArtifactVersion = {
-    artifactId: ScienceArtifactId(randomUUID()),
+    artifactId: stored.artifact.artifactId,
     logicalName,
     version: 1,
     title: logicalName,
     origin: 'auto',
-    attachment,
+    projectId,
+    versionId: stored.version.versionId,
+    sha256: stored.version.sha256,
+    mediaType,
+    byteCount: stored.version.byteCount,
     runId: run.runId,
     toolCallId: run.toolCallId,
     requestHeaderSeq: run.requestHeaderSeq,
@@ -232,6 +245,7 @@ async function setup(options: SetupOptions = {}) {
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })
+    await ctx.plugin(ScienceArtifactStore, { dshHome: join(root, 'dsh-home') })
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: createFakePythonPrefix(root) } },
@@ -251,7 +265,7 @@ async function setup(options: SetupOptions = {}) {
 }
 
 function scienceSession(ctx: Context, id: string): Session {
-  return ctx.sessions.create(SessionId(id), { meta: { agentPreset: 'science' } })
+  return ctx.sessions.create(SessionId(id), { meta: { agentPreset: 'science', cwd: join(root, `workspace-${id}`) } })
 }
 
 /** Bind Science mode/environment on first use, then open turn 1's step/start and request/header. */
@@ -611,16 +625,19 @@ describe('runValueFromResult / formatRunResult', () => {
     const image = artifactVersionFixture({
       logicalName: 'plot.png',
       version: 1,
-      attachment: {
-        attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 500, width: 10, height: 20,
-        name: 'plot.png',
-      },
+      versionId: ScienceVersionId('store-version-plot'),
+      sha256: 'b'.repeat(64),
+      mediaType: 'image/png',
+      byteCount: 500,
     })
     const csv = artifactVersionFixture({
       logicalName: 'summary.csv',
       version: 1,
       parent: { artifactId: ScienceArtifactId('source-artifact'), version: 2 },
-      attachment: { attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), mediaType: 'text/csv', bytes: 2048 },
+      versionId: ScienceVersionId('store-version-csv'),
+      sha256: 'c'.repeat(64),
+      mediaType: 'text/csv',
+      byteCount: 2048,
     })
     const value = runValueFromResult({
       terminal: successTerminal(),
@@ -630,12 +647,12 @@ describe('runValueFromResult / formatRunResult', () => {
     })
     expect(value.capturedArtifacts).toEqual([
       {
-        artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500, width: 10, height: 20,
-        title: 'file', attachmentId: `sha256:${'b'.repeat(64)}`, attachmentName: 'plot.png',
+        artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500,
+        title: 'file', versionId: 'store-version-plot',
       },
       {
         artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048,
-        title: 'file', attachmentId: `sha256:${'c'.repeat(64)}`,
+        title: 'file', versionId: 'store-version-csv',
         parent: { artifactId: 'source-artifact', version: 2 },
       },
     ])
@@ -643,7 +660,7 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(value.captureTruncatedPerRun).toBe(true)
     expect(value.captureTruncatedPerSession).toBe(true)
     const text = formatRunResult(value)
-    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 10x20, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB, edited from source-artifact v2).')
+    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB, edited from source-artifact v2).')
     expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
     expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
@@ -653,7 +670,10 @@ describe('runValueFromResult / formatRunResult', () => {
     const large = artifactVersionFixture({
       logicalName: 'dataset.json',
       version: 1,
-      attachment: { attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), mediaType: 'application/json', bytes: 3 * 1024 * 1024 },
+      versionId: ScienceVersionId('store-version-dataset'),
+      sha256: 'd'.repeat(64),
+      mediaType: 'application/json',
+      byteCount: 3 * 1024 * 1024,
     })
     const value = runValueFromResult({
       terminal: successTerminal(),
@@ -946,7 +966,11 @@ describe('get_science_state', () => {
       version: 1,
       title: artifactId,
       origin: 'model',
-      attachment: { attachmentId: `attachment-${String(index + 1)}`, mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+      projectId: 'project-1',
+      versionId: `store-version-${String(index + 1)}`,
+      sha256: 'a'.repeat(64),
+      mediaType: 'image/png',
+      byteCount: 10,
       runId: `run-${String(index + 1)}`,
       toolCallId: `call-${String(index + 1)}`,
       requestHeaderSeq: 1,
@@ -1350,25 +1374,25 @@ describe('run_python', () => {
       capturedArtifacts: [
         {
           artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500,
-          width: 10, height: 20, title: 'plot.png', attachmentId: 'sha256:abc', attachmentName: 'plot.png',
+          title: 'plot.png', versionId: 'store-version-plot',
         },
         {
           artifactId: 'artifact-2', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 8,
-          title: 'summary.csv', attachmentId: 'sha256:def',
+          title: 'summary.csv', versionId: 'store-version-csv',
         },
       ],
     } as never
     expect(presentationMeta({}, value)).toEqual({
       kind: 'science/artifact',
-      version: 1,
+      version: 2,
       artifacts: [
         {
           artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, title: 'plot.png',
-          attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 500, width: 10, height: 20, name: 'plot.png' },
+          content: { versionId: 'store-version-plot', mediaType: 'image/png', byteCount: 500 },
         },
         {
           artifactId: 'artifact-2', logicalName: 'summary.csv', version: 1, title: 'summary.csv',
-          attachment: { attachmentId: 'sha256:def', mediaType: 'text/csv', bytes: 8 },
+          content: { versionId: 'store-version-csv', mediaType: 'text/csv', byteCount: 8 },
         },
       ],
     })
@@ -1416,43 +1440,26 @@ describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
     expect(() => artifactReceiptFromArtifact(humanArtifactFixture())).toThrow(/cannot return a human-edited artifact/)
   })
 
-  it('omits caption and the attachment name when both are absent from the durable artifact', () => {
-    const value = artifactReceiptFromArtifact({
-      artifactId: ScienceArtifactId('artifact-1'),
+  it('omits caption when absent from the durable artifact', () => {
+    const value = artifactReceiptFromArtifact(artifactVersionFixture({
       logicalName: 'main.png',
-      version: 1,
       title: 'Main plot',
       origin: 'model',
-      attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
-      runId: ScienceRunId('run-1'),
-      toolCallId: CallId('call-1'),
-      requestHeaderSeq: 1,
-      environmentRevision: 1,
-      environmentFingerprint: 'a'.repeat(64),
-      createdAt: 1000,
-    })
+    }))
     expect(value).not.toHaveProperty('caption')
-    expect(value).not.toHaveProperty('attachmentName')
     expect(formatArtifactReceipt(value)).not.toContain('caption:')
   })
 
-  it('curates a non-image artifact without width/height', () => {
-    const value = artifactReceiptFromArtifact({
-      artifactId: ScienceArtifactId('artifact-1'),
+  it('curates a non-image artifact identically', () => {
+    const value = artifactReceiptFromArtifact(artifactVersionFixture({
       logicalName: 'summary.csv',
-      version: 1,
       title: 'Summary',
       origin: 'model',
-      attachment: { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'text/csv', bytes: 10 },
-      runId: ScienceRunId('run-1'),
-      toolCallId: CallId('call-1'),
-      requestHeaderSeq: 1,
-      environmentRevision: 1,
-      environmentFingerprint: 'a'.repeat(64),
-      createdAt: 1000,
-    })
-    expect(value).not.toHaveProperty('width')
-    expect(value).not.toHaveProperty('height')
+      versionId: ScienceVersionId('store-version-csv'),
+      mediaType: 'text/csv',
+      byteCount: 10,
+    }))
+    expect(value.versionId).toBe('store-version-csv')
     expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1) curated from run run-1\ntitle: Summary\ntext/csv, 10 bytes')
   })
 })
@@ -1462,17 +1469,17 @@ describe('scienceArtifactPresentation', () => {
     expect(scienceArtifactPresentation([])).toBeNull()
   })
 
-  it('tags a single-item list as version 1', () => {
+  it('tags a single-item list as version 2', () => {
     const presentation = scienceArtifactPresentation([{
       artifactId: 'artifact-1', logicalName: 'plot.png', version: 2, title: 'Main plot',
-      attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+      content: { versionId: 'store-version-plot', mediaType: 'image/png', byteCount: 10 },
     }])
     expect(presentation).toEqual({
       kind: 'science/artifact',
-      version: 1,
+      version: 2,
       artifacts: [{
         artifactId: 'artifact-1', logicalName: 'plot.png', version: 2, title: 'Main plot',
-        attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 10, width: 2, height: 2 },
+        content: { versionId: 'store-version-plot', mediaType: 'image/png', byteCount: 10 },
       }],
     })
   })
@@ -1481,11 +1488,11 @@ describe('scienceArtifactPresentation', () => {
     const presentation = scienceArtifactPresentation([
       {
         artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, title: 'summary.csv',
-        attachment: { attachmentId: 'sha256:a', mediaType: 'text/csv', bytes: 4 },
+        content: { versionId: 'store-version-a', mediaType: 'text/csv', byteCount: 4 },
       },
       {
         artifactId: 'artifact-2', logicalName: 'plot.png', version: 1, title: 'plot.png',
-        attachment: { attachmentId: 'sha256:b', mediaType: 'image/png', bytes: 8, width: 4, height: 4 },
+        content: { versionId: 'store-version-b', mediaType: 'image/png', byteCount: 8 },
       },
     ]) as { artifacts: { logicalName: string }[] }
     expect(presentation.artifacts.map(item => item.logicalName)).toEqual(['summary.csv', 'plot.png'])
@@ -1537,8 +1544,8 @@ describe('annotate_artifact', () => {
     expect(value.artifactId).toBeTypeOf('string')
     expect(value).toMatchObject({ version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
     expect(result.meta).toMatchObject({
-      kind: 'science/artifact', version: 1,
-      artifacts: [{ version: 1, title: 'Main plot', attachment: { mediaType: 'image/png' } }],
+      kind: 'science/artifact', version: 2,
+      artifacts: [{ version: 1, title: 'Main plot', content: { mediaType: 'image/png' } }],
     })
   })
 
@@ -1556,36 +1563,18 @@ describe('annotate_artifact', () => {
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceArtifactReceiptValue
-    expect(value).not.toHaveProperty('width')
-    expect(value).not.toHaveProperty('height')
+    expect(value.mediaType).toBe('text/csv')
     expect(result.meta).toMatchObject({
-      kind: 'science/artifact', version: 1,
-      artifacts: [{ logicalName: 'summary.csv', title: 'Result summary', attachment: { mediaType: 'text/csv' } }],
+      kind: 'science/artifact', version: 2,
+      artifacts: [{ logicalName: 'summary.csv', title: 'Result summary', content: { mediaType: 'text/csv' } }],
     })
   })
 
-  it('omits the presentation attachment name when the durable attachment carries none', async () => {
+  it('carries the curated version\'s store content reference in the presentation meta', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-no-name')
     const run = await runSuccessfully(ctx, session, 'science-annotate-no-name-run')
-    const attachment = await ctx.attachments.saveImage({ data: PNG, mediaType: 'image/png' })
-    session.append('science/artifact-saved', {
-      version: 1,
-      artifact: {
-        artifactId: ScienceArtifactId(randomUUID()),
-        logicalName: 'plot.png',
-        version: 1,
-        title: 'plot.png',
-        origin: 'auto',
-        attachment,
-        runId: run.runId,
-        toolCallId: run.toolCallId,
-        requestHeaderSeq: run.requestHeaderSeq,
-        environmentRevision: run.environmentRevision,
-        environmentFingerprint: run.environmentFingerprint,
-        createdAt: Date.now(),
-      },
-    })
+    const seeded = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
     const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-no-name-call')
     const result = await ctx.tools.execute({
       signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
@@ -1593,9 +1582,9 @@ describe('annotate_artifact', () => {
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
-    expect(result.meta).toMatchObject({ artifacts: [{ attachment: { mediaType: 'image/png' } }] })
-    const meta = result.meta as { artifacts: { attachment: Record<string, unknown> }[] }
-    expect(meta.artifacts[0]?.attachment).not.toHaveProperty('name')
+    expect(result.meta).toMatchObject({ artifacts: [{
+      content: { versionId: String(seeded.versionId), mediaType: 'image/png', byteCount: seeded.byteCount },
+    }] })
   })
 
   it('rejects an empty title before it reaches the Runtime', async () => {
@@ -1724,12 +1713,12 @@ describe('scienceEdits submit', () => {
       followup: (message: UserMessage) => { followups.push(message) },
     } as unknown as Agent
     const service = new ScienceEditService(ctx)
-    expect(() => service.submit(agent, { targets: [{
+    await expect(service.submit(agent, { targets: [{
       artifactId: ScienceArtifactId('absent'), version: 1,
       target: { kind: 'spec-path', path: 'mark' } }], instruction: 'change mark',
-    })).toThrow(/does not identify a committed artifact/)
+    })).rejects.toThrow(/does not identify a committed artifact/)
     expect(followups).toHaveLength(0)
-    const receipt = service.submit(agent, { targets: [{
+    const receipt = await service.submit(agent, { targets: [{
       artifactId: artifact.artifactId, version: 1,
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
     }], instruction: 'brighten the selected region' })
@@ -1771,17 +1760,17 @@ describe('scienceEdits submit', () => {
       origin: 'human-edit',
       environmentRevision: parent.environmentRevision,
       environmentFingerprint: parent.environmentFingerprint,
-      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+      mediaType: 'application/vnd.vega-lite+json',
     })
     expect(committed !== undefined && 'runId' in committed).toBe(false)
     expect(committed !== undefined && 'toolCallId' in committed).toBe(false)
     expect(committed !== undefined && 'requestHeaderSeq' in committed).toBe(false)
     if (committed === undefined || committed.origin !== 'human-edit') throw new Error('expected committed human edit')
-    const stored = await ctx.attachments.readText(committed.attachment)
-    expect(new TextDecoder().decode(stored.data)).toBe(spec)
+    const stored = await ctx.scienceArtifactStore.readBlob(committed.projectId, committed.sha256)
+    expect(new TextDecoder().decode(stored)).toBe(spec)
   })
 
-  it('preserves a parent caption when its attachment has no display name', async () => {
+  it('preserves a parent caption through a direct style edit', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-style-optional-fields')
     const run = await runSuccessfully(ctx, session, 'science-style-optional-fields-run')
@@ -1795,14 +1784,12 @@ describe('scienceEdits submit', () => {
     )
     if (captured.origin === 'human-edit') throw new Error('expected run-produced parent')
     const annotateCall = authorizeToolCall(session, 2, 'annotate_artifact', 'science-style-optional-fields-annotate')
-    const { name: _name, ...unnamedAttachment } = captured.attachment
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         ...captured,
         caption: 'Preserved caption',
         origin: 'model',
-        attachment: unnamedAttachment,
         toolCallId: annotateCall,
         requestHeaderSeq: session.events.findLast(event => event.type === 'request/header')!.seq,
         createdAt: Date.now(),
@@ -1816,9 +1803,8 @@ describe('scienceEdits submit', () => {
     })
     expect(replayScience(session.events)?.artifacts.at(-1)).toMatchObject({
       caption: 'Preserved caption',
-      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+      mediaType: 'application/vnd.vega-lite+json',
     })
-    expect(replayScience(session.events)?.artifacts.at(-1)?.attachment).not.toHaveProperty('name')
   })
 
   it('rejects malformed, stale, and non-Vega-Lite style commits', async () => {
@@ -2091,7 +2077,7 @@ describe('get_science_state artifact sanitization', () => {
     expect(value.artifacts[0]).not.toHaveProperty('runId')
   })
 
-  it('omits the internal attachment id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
+  it('omits the internal store version id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-artifact')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
@@ -2128,7 +2114,8 @@ describe('get_science_state artifact sanitization', () => {
     const artifact = value.artifacts[0]
     expect(artifact?.artifactId).toBeTypeOf('string')
     expect(artifact).toMatchObject({ logicalName: 'plot.png', version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
-    expect(artifact).not.toHaveProperty('attachmentId')
+    expect(artifact).not.toHaveProperty('versionId')
+    expect(artifact).not.toHaveProperty('sha256')
     expect(artifact).not.toHaveProperty('toolCallId')
     expect(artifact).not.toHaveProperty('requestHeaderSeq')
     expect(artifact).not.toHaveProperty('environmentFingerprint')

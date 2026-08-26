@@ -2,9 +2,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { assertNever, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -160,7 +161,7 @@ function resolveCurrentArtifact(
       'SCIENCE_EDIT_STALE_VERSION',
     )
   }
-  if (latest.attachment.mediaType !== 'application/vnd.vega-lite+json') {
+  if (latest.mediaType !== 'application/vnd.vega-lite+json') {
     throw new ScienceEditError('Science style edits require a Vega-Lite artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
   }
   return latest
@@ -183,11 +184,10 @@ function parseStyleSpec(spec: string): Record<string, unknown> {
 }
 
 function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEditTarget): void {
-  const image = 'width' in artifact.attachment
-  if (target.kind === 'spec-path' && artifact.attachment.mediaType !== 'application/vnd.vega-lite+json') {
+  if (target.kind === 'spec-path' && artifact.mediaType !== 'application/vnd.vega-lite+json') {
     throw new ScienceEditError('Science spec-path edits require a Vega-Lite artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
   }
-  if (target.kind === 'normalized-region' && !image) {
+  if (target.kind === 'normalized-region' && artifact.mediaType !== 'image/png') {
     throw new ScienceEditError('Science region edits require a raster image artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
   }
 }
@@ -225,11 +225,18 @@ export function renderScienceEditMessage(
 }
 
 /**
- * Construct the durable structured user message for one admitted edit.
+ * Construct the durable structured user message for one admitted edit. A
+ * region target's selected raster rides the message as an ordinary image
+ * attachment (model-visible ⟺ logged), minted by the caller from the store's
+ * bytes and keyed here by the target version's store `versionId`.
  * @param resolved - authoritative artifact and validated request fields.
+ * @param regionImages - message image attachment per region-targeted store version id.
  * @returns user message carrying both the readable instruction and structured source.
  */
-export function createScienceEditMessage(resolved: ResolvedScienceEdit): UserMessage {
+export function createScienceEditMessage(
+  resolved: ResolvedScienceEdit,
+  regionImages: ReadonlyMap<string, ImageAttachmentRef> = new Map(),
+): UserMessage {
   const { targets, instruction } = resolved
   const source: ScienceEditMessageSource = {
     kind: 'science-edit',
@@ -241,13 +248,25 @@ export function createScienceEditMessage(resolved: ResolvedScienceEdit): UserMes
     })),
     instruction,
   }
+  const attachedVersionIds = new Set<string>()
   return createUserMessage({
     source,
     content: [
       { type: 'text', text: renderScienceEditMessage(targets, instruction) },
-      ...targets.flatMap(({ artifact, target }) => target.kind === 'normalized-region'
-        ? [{ type: 'image' as const, attachment: artifact.attachment as Extract<ScienceArtifactVersion['attachment'], { width: number }> }]
-        : []),
+      ...targets.flatMap(({ artifact, target }) => {
+        if (target.kind !== 'normalized-region') return []
+        const key = String(artifact.versionId)
+        if (attachedVersionIds.has(key)) return []
+        attachedVersionIds.add(key)
+        const attachment = regionImages.get(key)
+        if (attachment === undefined) {
+          throw new ScienceEditError(
+            `Science edit region target ${JSON.stringify(artifact.artifactId)}@${String(artifact.version)} has no minted message image`,
+            'SCIENCE_EDIT_INVALID_REQUEST',
+          )
+        }
+        return [{ type: 'image' as const, attachment }]
+      }),
     ],
   })
 }
@@ -265,20 +284,40 @@ export class ScienceEditService extends TypertRemoteService {
   }
 
   /**
-   * Validate exact current artifact selections and queue one structured edit message.
+   * Validate exact current artifact selections and queue one structured edit
+   * message. A region target's raster is read back from the project artifact
+   * store and admitted as an ordinary session message attachment, so the
+   * model-visible image stays reconstructable from the session log alone.
    * @param agent - exact live agent resolved by the Remote lookup policy.
    * @param request - selected versions, targets, and shared user instruction.
    * @returns durable-inbox admission receipt.
    */
   @Remote('submit')
-  submit(agent: Agent, request: ScienceEditRequest): ScienceEditReceipt {
+  async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt> {
     const state = foldScience(agent.session.events)
-    agent.followup(createScienceEditMessage(resolveScienceEdit(state.artifacts, request)))
+    const resolved = resolveScienceEdit(state.artifacts, request)
+    const regionImages = new Map<string, ImageAttachmentRef>()
+    for (const { artifact, target } of resolved.targets) {
+      const key = String(artifact.versionId)
+      if (target.kind !== 'normalized-region' || regionImages.has(key)) continue
+      const data = await this.ctx.scienceArtifactStore.readBlob(artifact.projectId, artifact.sha256)
+      // Verbatim: the message must show the model the exact committed raster,
+      // not a normalized re-encode of it.
+      regionImages.set(key, await this.ctx.attachments.saveImage({
+        data,
+        mediaType: 'image/png',
+        name: artifact.logicalName.split('/').at(-1) ?? artifact.logicalName,
+        normalization: 'verbatim',
+      }))
+    }
+    agent.followup(createScienceEditMessage(resolved, regionImages))
     return { accepted: true }
   }
 
   /**
-   * Validate and commit one complete Vega-Lite working copy as a direct human edit.
+   * Validate and commit one complete Vega-Lite working copy as a direct human
+   * edit: bytes into the owning project's artifact store, then the
+   * store-reference event.
    * @param agent - exact live agent whose Session owns the artifact.
    * @param request - exact current parent and complete edited JSON text.
    * @returns identity and direct-edit provenance of the new contiguous version.
@@ -288,23 +327,33 @@ export class ScienceEditService extends TypertRemoteService {
     const state = foldScience(agent.session.events)
     const parent = resolveCurrentArtifact(state.artifacts, request.artifactId, request.version)
     parseStyleSpec(request.spec)
-    const attachment = await this.ctx.attachments.saveText({
+    const stored = await this.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
+      producerSessionId: agent.session.id,
       data: new TextEncoder().encode(request.spec),
       mediaType: 'application/vnd.vega-lite+json',
-      ...parent.attachment.name === undefined ? {} : { name: parent.attachment.name },
+      origin: 'human-edit',
+      title: parent.title,
+      ...parent.caption === undefined ? {} : { caption: parent.caption },
+      editBaselines: parent.versionId,
+      environmentRevision: String(parent.environmentRevision),
+      environmentFingerprintPreview: parent.environmentFingerprint.slice(0, 12),
     })
     const artifact: ScienceArtifactVersion = {
       artifactId: parent.artifactId,
       logicalName: parent.logicalName,
-      version: parent.version + 1,
+      version: stored.ordinal,
       parent: { artifactId: parent.artifactId, version: parent.version },
       title: parent.title,
       ...parent.caption === undefined ? {} : { caption: parent.caption },
       origin: 'human-edit',
-      attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+      projectId: parent.projectId,
+      versionId: stored.versionId,
+      sha256: stored.sha256,
+      mediaType: 'application/vnd.vega-lite+json',
+      byteCount: stored.byteCount,
       environmentRevision: parent.environmentRevision,
       environmentFingerprint: parent.environmentFingerprint,
-      createdAt: Date.now(),
+      createdAt: stored.createdAt,
     }
     agent.session.append('science/artifact-saved', { version: 1, artifact })
     return { artifactId: artifact.artifactId, version: artifact.version, origin: artifact.origin }

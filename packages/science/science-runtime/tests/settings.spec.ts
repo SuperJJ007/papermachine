@@ -14,7 +14,7 @@ import ScienceRuntime, { SCIENCE_RUNTIME_SETTINGS_NAMESPACE } from '../src/index
 import ScienceRuntimeWithSettings from '../src/with-settings.ts'
 import type { Config } from '../src/config.ts'
 import {
-  ControlledSubprocess, DirectSandbox, createFakePythonPrefix, createScienceSession, mountAttachments,
+  ControlledSubprocess, DirectSandbox, createFakePythonPrefix, createScienceSession, mountArtifactStore,
 } from './harness.ts'
 
 /** The smallest real provider: one in-memory document, always writable. */
@@ -73,7 +73,7 @@ async function boot(
   await ctx.plugin(ScienceSessionInvariant)
   await ctx.plugin(ControlledSubprocess)
   await ctx.plugin(DirectSandbox)
-  await mountAttachments(ctx, root)
+  await mountArtifactStore(ctx, root)
   if (options?.settings !== false) {
     await ctx.plugin(MemorySettings, options?.doc === undefined ? {} : { doc: options.doc })
   }

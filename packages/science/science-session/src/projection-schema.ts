@@ -216,7 +216,8 @@ function validKernel(value: unknown): boolean {
       || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }
 
-const TEXT_ATTACHMENT_MEDIA_TYPES = [
+const ARTIFACT_MEDIA_TYPES = [
+  'image/png',
   'text/csv',
   'application/json',
   'application/vnd.vega-lite+json',
@@ -224,56 +225,33 @@ const TEXT_ATTACHMENT_MEDIA_TYPES = [
   'text/plain',
 ]
 
-function validImageAttachment(candidate: Record<string, unknown>): boolean {
-  const keys = ['attachmentId', 'mediaType', 'bytes', 'width', 'height']
-  if (candidate['name'] !== undefined) keys.push('name')
-  return projectionExactKeys(candidate, keys)
-    && typeof candidate['attachmentId'] === 'string'
-    && candidate['attachmentId'].length > 0
-    && candidate['mediaType'] === 'image/png'
-    && safeInteger(candidate['bytes'], 1)
-    && safeInteger(candidate['width'], 1)
-    && safeInteger(candidate['height'], 1)
-    && (candidate['name'] === undefined || typeof candidate['name'] === 'string')
-}
-
-function validTextAttachment(candidate: Record<string, unknown>): boolean {
-  const keys = ['attachmentId', 'mediaType', 'bytes']
-  if (candidate['name'] !== undefined) keys.push('name')
-  return projectionExactKeys(candidate, keys)
-    && typeof candidate['attachmentId'] === 'string'
-    && candidate['attachmentId'].length > 0
-    && typeof candidate['mediaType'] === 'string'
-    && TEXT_ATTACHMENT_MEDIA_TYPES.includes(candidate['mediaType'])
-    && safeInteger(candidate['bytes'], 1)
-    && (candidate['name'] === undefined || typeof candidate['name'] === 'string')
-}
-
-function validAttachment(value: unknown): boolean {
-  const candidate = projectionRecord(value)
-  if (candidate === undefined) return false
-  return validImageAttachment(candidate) || validTextAttachment(candidate)
-}
-
 function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
   const humanEdit = candidate['origin'] === 'human-edit'
-  const keys = ['artifactId', 'logicalName', 'version', 'title', 'origin', 'attachment',
+  const keys = ['artifactId', 'logicalName', 'version', 'title', 'origin',
+    'versionId', 'sha256', 'mediaType', 'byteCount',
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
   if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq')
   if (candidate['caption'] !== undefined) keys.push('caption')
   if (candidate['parent'] !== undefined) keys.push('parent')
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
+    && candidate['artifactId'].length > 0
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
     && (humanEdit ? validArtifactVersionRef(candidate['parent']) : candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
     && (humanEdit || candidate['origin'] === 'auto' || candidate['origin'] === 'model')
-    && validAttachment(candidate['attachment'])
-    && (!humanEdit || projectionRecord(candidate['attachment'])?.['mediaType'] === 'application/vnd.vega-lite+json')
+    && typeof candidate['versionId'] === 'string'
+    && candidate['versionId'].length > 0
+    && typeof candidate['sha256'] === 'string'
+    && /^[a-f0-9]{64}$/.test(candidate['sha256'])
+    && typeof candidate['mediaType'] === 'string'
+    && ARTIFACT_MEDIA_TYPES.includes(candidate['mediaType'])
+    && (!humanEdit || candidate['mediaType'] === 'application/vnd.vega-lite+json')
+    && safeInteger(candidate['byteCount'], 1)
     && (humanEdit || typeof candidate['runId'] === 'string')
     && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)
     && (humanEdit || safeInteger(candidate['requestHeaderSeq']))

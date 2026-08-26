@@ -1,9 +1,8 @@
 /**
  * `annotate_artifact`: metadata-only curation over an artifact auto-capture
- * already durably saved, through `ctx.scienceRuntime.annotateArtifact`. It
- * never touches the filesystem or the attachment store — the curated
- * version reuses the exact content-addressed attachment of the version it
- * annotates.
+ * already durably saved, through `ctx.scienceRuntime.annotateArtifact`. The
+ * curated version reuses the exact content-addressed store reference of the
+ * version it annotates; no bytes move.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -22,12 +21,11 @@ const artifactReceiptSchema = {
   properties: {
     ...scienceArtifactSchemaProperties,
     runId: { type: 'string', required: true },
-    // Full attachment metadata for the canonical result; `render` deliberately
-    // omits attachmentId from the model-visible text (it is an internal
-    // storage handle, not a fact the model reasons about), while it remains
-    // available here for `presentationMeta` to carry into the Client row.
-    attachmentId: { type: 'string', required: true },
-    attachmentName: { type: 'string' },
+    // Store version reference for the canonical result; `render` deliberately
+    // omits versionId from the model-visible text (it is an internal
+    // storage coordinate, not a fact the model reasons about), while it
+    // remains available here for `presentationMeta` to carry into the Client row.
+    versionId: { type: 'string', required: true },
   },
 } as const
 
@@ -43,19 +41,17 @@ export function artifactReceiptFromArtifact(artifact: ScienceArtifactVersion): S
   if (artifact.origin === 'human-edit') {
     throw new Error('tool-science: annotate_artifact cannot return a human-edited artifact')
   }
-  const { attachment } = artifact
   return {
     ...scienceArtifactValueFields(artifact),
     runId: String(artifact.runId),
-    attachmentId: String(attachment.attachmentId),
-    ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
+    versionId: String(artifact.versionId),
   }
 }
 
 /**
  * Render one artifact receipt as plain text. The model-safe receipt names
- * identity, version, source run, title/caption, and media type/dimensions/
- * byte count — never the internal attachment id and never file bytes.
+ * identity, version, source run, title/caption, and media type/byte count —
+ * never the internal store version id and never file bytes.
  * @param value - the canonical artifact receipt to render.
  * @returns the rendered Native text.
  */
@@ -65,8 +61,7 @@ export function formatArtifactReceipt(value: ScienceArtifactReceiptValue): strin
     `title: ${value.title}`,
   ]
   if (value.caption !== undefined) lines.push(`caption: ${value.caption}`)
-  const dimensions = value.width !== undefined && value.height !== undefined ? `, ${String(value.width)}x${String(value.height)}` : ''
-  lines.push(`${value.mediaType}${dimensions}, ${String(value.bytes)} bytes`)
+  lines.push(`${value.mediaType}, ${String(value.bytes)} bytes`)
   return lines.join('\n')
 }
 
@@ -98,13 +93,10 @@ export function applyAnnotateArtifactTool(ctx: Context): void {
         logicalName: value.logicalName,
         version: value.version,
         title: value.title,
-        attachment: {
-          attachmentId: value.attachmentId,
+        content: {
+          versionId: value.versionId,
           mediaType: value.mediaType,
-          bytes: value.bytes,
-          ...value.width === undefined ? {} : { width: value.width },
-          ...value.height === undefined ? {} : { height: value.height },
-          ...value.attachmentName === undefined ? {} : { name: value.attachmentName },
+          byteCount: value.bytes,
         },
       }]),
     },

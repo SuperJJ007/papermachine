@@ -27,7 +27,7 @@ import {
   authorizePythonRun,
   DirectSandbox,
   kernelAction,
-  mountAttachments,
+  mountArtifactStore,
 } from './harness.ts'
 
 const staticFsFault = vi.hoisted(() => ({
@@ -205,7 +205,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = harness.ctx.sessions.create(SessionId('science-recomposed-session'), {
-      meta: { agentPreset: 'standard' },
+      meta: { agentPreset: 'standard', cwd: mkdtempSync(join(root, 'workspace-')) },
     })
     session.append('agent-preset/selected', { agentPreset: 'science' })
     session.append('science/mode-bound', {
@@ -231,7 +231,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(BrokenProbeSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as BrokenProbeSubprocess).mode = mode
     const session = createScienceSession(ctx, `science-broken-probe-${mode}`)
@@ -366,7 +366,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(FailingRVersionSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { r: { rPrefix: prefix } } })
     const session = createScienceSession(ctx, 'science-bind-r-version-failure')
 
@@ -399,9 +399,11 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome, profiles: { overlap: { pythonPrefix: prefix } } })
-    const session = ctx.sessions.create(SessionId('science-bind-overlap'), { meta: { agentPreset: 'science' } })
+    const session = ctx.sessions.create(SessionId('science-bind-overlap'), {
+      meta: { agentPreset: 'science', cwd: mkdtempSync(join(root, 'workspace-')) },
+    })
     session.append('science/mode-bound', {
       version: 1,
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
@@ -626,7 +628,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(DelayedRVersionSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { both: { pythonPrefix, rPrefix } },
@@ -781,7 +783,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await cleanupContext.plugin(ScienceSessionInvariant)
     await cleanupContext.plugin(ProbeFailureAndCleanupSubprocess)
     await cleanupContext.plugin(ProbeFailureAndCleanupSandbox)
-    await mountAttachments(cleanupContext, root)
+    await mountArtifactStore(cleanupContext, root)
     await cleanupContext.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     const cleanupSession = createScienceSession(cleanupContext, 'science-probe-cleanup-failure')
     const cleanup = cleanupContext.scienceRuntime.bindEnvironment({
@@ -878,7 +880,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     const session = createScienceSession(ctx, 'science-observe-drift')
@@ -900,7 +902,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(RetryPartialSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome, profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     const session = createScienceSession(ctx, 'science-retry-confinement')
@@ -925,7 +927,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ChangingHistorySubprocess)
     await ctx.plugin(RetryPartialSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     ;(ctx.subprocess as ChangingHistorySubprocess).history = history
     ;(ctx.sandbox as RetryPartialSandbox).failRollback = true
@@ -1061,7 +1063,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(FailingPackagesProbeSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
     const session = createScienceSession(ctx, 'science-packages-probe-failure')
     await expect(ctx.scienceRuntime.bindEnvironment({
@@ -1083,7 +1085,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     // Each "中" is one UTF-16 code unit but three UTF-8 bytes: 341 of them
     // plus "v1" cost 1,025 true UTF-8 bytes but only 343 JS string "length"
     // units. The byte cap (the lowest allowed value) sits between the two,
@@ -1137,7 +1139,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
@@ -1172,7 +1174,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     // Two entries at the durable per-field 512-byte name cap, each costing
     // exactly MIN_PACKAGES_MAX_BYTES / 2, sum to exactly MIN_PACKAGES_MAX_BYTES.
     const first = { name: 'a'.repeat(500), version: '1'.repeat(12) }
@@ -1204,7 +1206,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await ctx.plugin(ScienceSessionInvariant)
     await ctx.plugin(ControlledSubprocess)
     await ctx.plugin(DirectSandbox)
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },

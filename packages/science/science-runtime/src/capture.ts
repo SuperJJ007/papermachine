@@ -1,21 +1,25 @@
 /**
  * Auto-capture: walk one terminal run's artifact directory and durably save
- * every eligible file as a versioned Science artifact, with no model
- * involvement. Hooked from `ScienceRuntime.settlePublishedRun` (index.ts)
- * immediately after each of its two `science/run-finished` append sites.
+ * every eligible file as a versioned Science artifact — bytes into the owning
+ * project's artifact store, then one `science/artifact-saved` store-reference
+ * event — with no model involvement. Hooked from
+ * `ScienceRuntime.settlePublishedRun` (index.ts) immediately after each of
+ * its two `science/run-finished` append sites.
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore, TextMediaType } from '@deepseek-ai/dsh-attachment'
-import { applyScienceEvent, foldScience, projectScienceFold, scienceRunsShareTurn, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
+import { applyScienceEvent, foldScience, projectScienceFold } from '@deepseek-ai/dsh-science-session'
 import type {
+  ScienceArtifactMediaType,
   ScienceArtifactVersion,
   ScienceArtifactVersionRef,
   ScienceFoldState,
+  ScienceProjectId,
   ScienceRunTerminal,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { canonicalWithin } from './scratch.ts'
@@ -23,11 +27,10 @@ import { readBoundedFile, walkArtifactFiles } from './artifact-file.ts'
 
 /**
  * Fixed auto-capture extension allowlist, keyed by lower-cased extension.
- * Product scope, not a Loader-exposed knob (mirrors the precedent that
- * `ImageAttachmentLimits.mediaTypes` is a frozen constant): no current
- * deployment needs a narrower or wider captured-file type set.
+ * Product scope, not a Loader-exposed knob: no current deployment needs a
+ * narrower or wider captured-file type set.
  */
-const CAPTURE_MEDIA_TYPE_BY_EXTENSION: ReadonlyMap<string, 'image/png' | TextMediaType> = new Map([
+const CAPTURE_MEDIA_TYPE_BY_EXTENSION: ReadonlyMap<string, ScienceArtifactMediaType> = new Map([
   ['.png', 'image/png'],
   ['.csv', 'text/csv'],
   ['.json', 'application/json'],
@@ -38,7 +41,7 @@ const CAPTURE_MEDIA_TYPE_BY_EXTENSION: ReadonlyMap<string, 'image/png' | TextMed
 const VEGA_LITE_EXTENSION = '.vl.json'
 
 /** Resolve a capture media type, preserving the two-part Vega-Lite suffix before the ordinary last-suffix lookup. */
-function captureMediaType(relativePath: string): 'image/png' | TextMediaType | undefined {
+function captureMediaType(relativePath: string): ScienceArtifactMediaType | undefined {
   const lower = relativePath.toLowerCase()
   if (lower.endsWith(VEGA_LITE_EXTENSION)) return 'application/vnd.vega-lite+json'
   return CAPTURE_MEDIA_TYPE_BY_EXTENSION.get(extname(lower))
@@ -52,9 +55,11 @@ function isCaptureEligible(relativePath: string): boolean {
 
 /** Inputs for one terminal run's auto-capture walk. */
 export interface CaptureRunArtifactsRequest {
-  /** Attachment service that admits and durably stores captured bytes. */
-  readonly attachments: AttachmentStore
-  /** Exact live Session that owns the captured versions. */
+  /** Project artifact store that owns every captured version's bytes and index row. */
+  readonly store: ScienceArtifactStore
+  /** The session's already-resolved owning project. */
+  readonly projectId: ScienceProjectId
+  /** Exact live Session that owns the captured versions' events. */
   readonly session: Session
   /** The source run's canonical, already-verified artifact directory. */
   readonly runArtifacts: string
@@ -74,7 +79,7 @@ export interface CaptureRunArtifactsRequest {
 export interface CaptureRunArtifactsResult {
   /** Versions this walk appended, in capture order. */
   readonly captured: readonly ScienceArtifactVersion[]
-  /** Eligible files skipped for exceeding `captureMaxFileBytes` (by this Runtime's cap or the attachment store's own admission cap). */
+  /** Eligible files skipped for exceeding `captureMaxFileBytes`. */
   readonly skippedOversizedCount: number
   /** Whether more eligible files existed than `captureMaxFilesPerRun` admits; the excess were not attempted. */
   readonly truncatedPerRun: boolean
@@ -88,25 +93,34 @@ export interface CaptureRunArtifactsResult {
   readonly appendFailed: boolean
 }
 
+/** Twelve-character preview the store records beside a full binding fingerprint. */
+function fingerprintPreview(fingerprint: string): string {
+  return fingerprint.slice(0, 12)
+}
+
 /**
- * Walk `request.runArtifacts`, admitting every eligible file as the next
- * version of the logical artifact named by its path relative to that
- * directory. Content-addressed storage makes admission idempotent: an
- * unchanged file's freshly admitted reference compares equal to the latest
- * committed version's own opaque reference, so this walk skips it rather
- * than appending a redundant version. After a direct human edit, a file that
+ * Walk `request.runArtifacts`, admitting every eligible file into the owning
+ * project's artifact store as the next version of the logical artifact named
+ * by its path relative to that directory, then committing the matching
+ * store-reference `science/artifact-saved` event. Content addressing makes
+ * admission idempotent: an unchanged file's checksum equals the latest
+ * committed version's own `sha256`, so this walk skips it rather than
+ * appending a redundant version. After a direct human edit, a file that
  * still matches the latest run-produced ancestor is also skipped unless this
  * run explicitly names that path in `editBaselines`; this prevents an untouched
  * stale workspace file from reverting the human edit while preserving an
  * intentional model edit or revert. Never throws for an oversized file,
  * a per-run/per-session cap, or a Session that detaches mid-walk — each
  * stops capture early (accounted in the returned result) rather than
- * failing the run that already committed its terminal fact.
- * @param request - the source run, its artifact directory, and validated Config bounds.
+ * failing the run that already committed its terminal fact. A store write
+ * whose event append is then vetoed leaves an orphaned store version with no
+ * session reference — accepted provenance decay, symmetric to the
+ * crash-between-commit-and-capture gap this Runtime already accepts.
+ * @param request - the source run, its artifact directory, store coordinates, and validated Config bounds.
  * @returns every version appended, plus accounting for what the walk skipped.
  */
 export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): Promise<CaptureRunArtifactsResult> {
-  const { session, sourceRun } = request
+  const { session, sourceRun, store, projectId } = request
   const eligible = (await walkArtifactFiles(request.runArtifacts)).filter(isCaptureEligible).sort()
   const truncatedPerRun = eligible.length > request.captureMaxFilesPerRun
   const files = eligible.slice(0, request.captureMaxFilesPerRun)
@@ -158,82 +172,78 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       skippedOversizedCount += 1
       continue
     }
-
-    const isImage = mediaType === 'image/png'
-    if (isImage && !request.attachments.imageLimits.mediaTypes.includes('image/png')) continue
-    if (!isImage && !request.attachments.textLimits.mediaTypes.includes(mediaType)) continue
-
-    let attachment
-    try {
-      // Captured images are scientific evidence: verbatim admission stores
-      // the run's exact bytes, so a later read-back compares byte-identical
-      // to what the run wrote (the store's default route normalizes — strips
-      // metadata, may re-encode or downscale — which breaks that contract).
-      attachment = isImage
-        ? await request.attachments.saveImage({ data, mediaType: 'image/png', name: basename(relativePath), normalization: 'verbatim' })
-        : await request.attachments.saveText({ data, mediaType, name: basename(relativePath) })
-    } catch (error) {
-      // The deployment's own image/text byte cap can be narrower than this
-      // Runtime's captureMaxFileBytes; treat that admission rejection the
-      // same as an oversized file rather than failing the run.
-      if (error instanceof AttachmentError) {
-        skippedOversizedCount += 1
-        continue
-      }
-      throw error
-    }
+    const sha256 = createHash('sha256').update(data).digest('hex')
 
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === relativePath)
     const latest = logical.at(-1)
-    if (latest !== undefined && latest.attachment.attachmentId === attachment.attachmentId) continue
+    if (latest !== undefined && latest.sha256 === sha256) continue
     if (latest?.origin === 'human-edit' && request.editBaselines?.has(relativePath) !== true) {
       const latestRunProduced = logical.findLast(candidate => candidate.origin !== 'human-edit')
-      if (latestRunProduced?.attachment.attachmentId === attachment.attachmentId) continue
-    }
-    let version = 1
-    if (latest !== undefined) {
-      if (latest.origin === 'human-edit') {
-        version = latest.version + 1
-      } else {
-        const latestSource = state.runs.find(candidate => candidate.runId === latest.runId)
-        /* v8 ignore next -- strict fold admits every run-produced artifact only after its source run. */
-        if (latestSource === undefined) {
-          throw new Error('science-runtime: latest artifact source run is missing from its strict fold')
-        }
-        version = scienceRunsShareTurn(state, sourceRun, latestSource) ? latest.version : latest.version + 1
-      }
+      if (latestRunProduced?.sha256 === sha256) continue
     }
 
     const parent = request.editBaselines?.get(relativePath)
-    // An edit result opens a new version descending from its named baseline;
-    // superseding the baseline itself would self-parent the committed
-    // version (its own `parent` naming its own `{artifactId, version}`),
-    // which the strict fold's C3 self-parent check rejects on every later
-    // replay. This collides only when the baseline names the very version
-    // the same-turn supersede rule above just computed — an ordinary
-    // same-turn rewrite with no baseline, or a baseline older than the
-    // version being superseded, both still supersede unchanged.
-    if (latest !== undefined && parent !== undefined && parent.artifactId === latest.artifactId && parent.version === version) {
-      version = latest.version + 1
+    let parentVersionId: ScienceVersionId | undefined
+    if (parent !== undefined) {
+      const parentVersion = projection.artifacts.find(candidate =>
+        candidate.artifactId === parent.artifactId && candidate.version === parent.version)
+      /* v8 ignore next 3 -- prepareRunArtifacts validated every baseline against this same projection before the run started */
+      if (parentVersion === undefined) {
+        throw new Error('science-runtime: capture edit baseline no longer identifies a committed artifact version')
+      }
+      parentVersionId = parentVersion.versionId
     }
+
+    const provenance = {
+      producerRunId: String(sourceRun.runId),
+      producerToolCallId: String(sourceRun.toolCallId),
+      producerRequestHeaderSeq: sourceRun.requestHeaderSeq,
+      environmentRevision: String(sourceRun.environmentRevision),
+      environmentFingerprintPreview: fingerprintPreview(sourceRun.environmentFingerprint),
+    }
+    const title = basename(relativePath)
+    // The store row commits before its session event: the event carries the
+    // validated store coordinates as fact (S0's Host-side pre-commit rule).
+    const stored = latest === undefined
+      ? (await store.createArtifact(projectId, {
+        logicalName: relativePath,
+        originSessionId: session.id,
+        data,
+        mediaType,
+        origin: 'auto',
+        title,
+        ...provenance,
+      })).version
+      : await store.appendVersion(projectId, latest.artifactId, {
+        producerSessionId: session.id,
+        data,
+        mediaType,
+        origin: 'auto',
+        title,
+        ...parentVersionId === undefined ? {} : { editBaselines: parentVersionId },
+        ...provenance,
+      })
+
     const artifact: ScienceArtifactVersion = {
-      artifactId: latest?.artifactId ?? ScienceArtifactId(randomUUID()),
+      artifactId: stored.artifactId,
       logicalName: relativePath,
-      // A version is what one request turn produced: rewriting the same file
-      // while still answering the tool-call turn that produced it supersedes that
-      // version rather than opening another one, so the reader's version list
-      // holds results rather than the run-to-run iteration behind them.
-      version,
+      // New content always opens the next version; the store's per-artifact
+      // ordinal is that version number, so the log and the index agree.
+      version: stored.ordinal,
       ...(parent === undefined ? {} : { parent }),
-      title: basename(relativePath),
+      title,
       origin: 'auto',
-      attachment,
+      projectId,
+      versionId: stored.versionId,
+      sha256: stored.sha256,
+      mediaType,
+      byteCount: stored.byteCount,
       runId: sourceRun.runId,
       toolCallId: sourceRun.toolCallId,
       requestHeaderSeq: sourceRun.requestHeaderSeq,
       environmentRevision: sourceRun.environmentRevision,
       environmentFingerprint: sourceRun.environmentFingerprint,
-      createdAt: Date.now(),
+      createdAt: stored.createdAt,
     }
     let appended
     try {
@@ -241,8 +251,8 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     } catch {
       // The Session detached (or otherwise refused the append) between the
       // walk starting and this file's commit: remaining eligible files in
-      // this run stay uncaptured with no automatic retry, symmetric to the
-      // crash-between-commit-and-capture gap this Runtime already accepts.
+      // this run stay uncaptured with no automatic retry, and the store row
+      // just written stays as an orphaned version no event references.
       // `appendFailed` on the returned result is this fact's only signal —
       // the caller (`ScienceRuntime.captureAfterFinish`) logs it.
       appendFailed = true

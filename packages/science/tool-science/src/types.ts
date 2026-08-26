@@ -88,16 +88,13 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 /**
- * Complete attachment metadata carried in one artifact presentation
- * reference (never bytes). Width/height present only for an image attachment.
+ * Store content reference carried in one artifact presentation reference
+ * (never bytes): the version row a session-addressed content read resolves.
  */
-export interface ScienceArtifactPresentationAttachment {
-  readonly attachmentId: string
+export interface ScienceArtifactPresentationContent {
+  readonly versionId: string
   readonly mediaType: string
-  readonly bytes: number
-  readonly width?: number
-  readonly height?: number
-  readonly name?: string
+  readonly byteCount: number
 }
 
 /**
@@ -109,18 +106,19 @@ export interface ScienceArtifactPresentationItem {
   readonly logicalName: string
   readonly version: number
   readonly title: string
-  readonly attachment: ScienceArtifactPresentationAttachment
+  readonly content: ScienceArtifactPresentationContent
 }
 
 /**
  * Replayable presentation value for a `run_python`/`run_r` direct top-level
  * result (one entry per file that call's auto-capture produced, possibly
  * none) or an `annotate_artifact` direct top-level result (exactly the one
- * curated entry).
+ * curated entry). Version 2 replaced the embedded session-attachment
+ * reference with the project-store content reference.
  */
 export interface ScienceArtifactPresentation {
   readonly kind: 'science/artifact'
-  readonly version: 1
+  readonly version: 2
   readonly artifacts: readonly ScienceArtifactPresentationItem[]
 }
 

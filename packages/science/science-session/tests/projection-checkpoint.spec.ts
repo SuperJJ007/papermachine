@@ -10,7 +10,7 @@ import {
   scienceProjectionStateSeq,
   viewScienceProjectionState,
 } from '../src/projection.ts'
-import { replayScience, ScienceArtifactId, ScienceRunId, toClientScienceProjection } from '../src/index.ts'
+import { replayScience, ScienceArtifactId, ScienceRunId, ScienceVersionId, toClientScienceProjection } from '../src/index.ts'
 import type {
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -171,6 +171,8 @@ describe('Science private projection checkpoint', () => {
           logicalName: 'checkpoint-branch.png',
           parent,
           toolCallId: branchCall,
+          versionId: ScienceVersionId('checkpoint-branch-v1'),
+          sha256: '3'.repeat(64),
           createdAt: 179,
         }),
       }),

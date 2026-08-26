@@ -9,7 +9,6 @@ import { dirname, join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
@@ -249,14 +248,10 @@ describe('Science auto-capture', () => {
     const { result } = await runWithFiles(harness, root, session, { 'plots/evidence.png': source })
 
     const captured = result.capture?.captured.at(0)
-    expect(captured).toMatchObject({ logicalName: 'plots/evidence.png', version: 1 })
+    expect(captured).toMatchObject({ logicalName: 'plots/evidence.png', version: 1, mediaType: 'image/png' })
     if (captured === undefined) throw new Error('capture test: expected one captured version')
-    expect('originalDimensions' in captured.attachment).toBe(false)
-    const attachments = harness.ctx.get('attachments')
-    if (attachments === undefined) throw new Error('capture test: no attachments service mounted')
-    if (!('width' in captured.attachment)) throw new Error('capture test: expected an image attachment')
-    const stored = await attachments.readImage(captured.attachment)
-    expect(stored.data).toEqual(source)
+    const stored = await harness.ctx.scienceArtifactStore.readBlob(captured.projectId, captured.sha256)
+    expect(stored).toEqual(source)
   })
 
   it('captures a two-part .vl.json suffix as Vega-Lite while ordinary JSON stays generic', async () => {
@@ -273,10 +268,10 @@ describe('Science auto-capture', () => {
 
     expect(result.capture?.captured).toHaveLength(2)
     expect(result.capture?.captured.find(version => version.logicalName === 'plots/summary.VL.JSON')).toMatchObject({
-      attachment: { mediaType: 'application/vnd.vega-lite+json' },
+      mediaType: 'application/vnd.vega-lite+json',
     })
     expect(result.capture?.captured.find(version => version.logicalName === 'plots/meta.json')).toMatchObject({
-      attachment: { mediaType: 'application/json' },
+      mediaType: 'application/json',
     })
   })
 
@@ -291,11 +286,11 @@ describe('Science auto-capture', () => {
     expect(first.result.capture?.captured).toHaveLength(2)
     expect(first.result.capture?.captured.find(v => v.logicalName === 'summary.csv')).toMatchObject({
       logicalName: 'summary.csv', version: 1, origin: 'auto', title: 'summary.csv',
-      attachment: { mediaType: 'text/csv' },
+      mediaType: 'text/csv',
     })
     expect(first.result.capture?.captured.find(v => v.logicalName === 'plot.png')).toMatchObject({
       logicalName: 'plot.png', version: 1, origin: 'auto', title: 'plot.png',
-      attachment: { mediaType: 'image/png', width: 1, height: 1 },
+      mediaType: 'image/png',
     })
 
     const handle = await harness.runtime.startRun({
@@ -312,7 +307,7 @@ describe('Science auto-capture', () => {
     expect(versions.map(v => v.version)).toEqual([1, 2])
   })
 
-  it('supersedes rather than versions when the same turn rewrites the file: iteration is not a result', async () => {
+  it('opens the next version when the same turn rewrites the file: content history is append-only', async () => {
     const root = tmp('.science-capture-same-turn-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -322,8 +317,9 @@ describe('Science auto-capture', () => {
     const first = await runWithFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
     expect(first.result.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 1 })
 
-    // A second run answering the SAME request: the model rewrote its own
-    // output rather than producing a second result for the reader.
+    // A second run answering the SAME request rewrote the model's own
+    // output. Store version rows are immutable, so the rewrite opens the
+    // next version rather than replacing version 1's content in place.
     const handle = await harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
       ...authorizeRunInTurn(session, 'capture-same-turn-second', 1),
@@ -331,18 +327,15 @@ describe('Science auto-capture', () => {
     })
     await writeArtifact(root, session, handle.runId, 'summary.csv', 'a,b\n3,4\n')
     const second = await handle.done
-    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 1 })
+    expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2 })
 
     const versions = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
-    expect(versions.map(v => v.version)).toEqual([1])
-    // The surviving version is the turn's final content, and it carries the
-    // run that actually produced it.
-    expect(versions.at(0)?.origin).not.toBe('human-edit')
-    const surviving = versions.at(0)
-    if (surviving?.origin === 'human-edit') throw new Error('run capture projected a human edit')
-    expect(surviving?.runId).toBe(handle.runId)
-    expect(versions.at(0)?.attachment.attachmentId).not.toBe(first.result.capture?.captured[0]?.attachment.attachmentId)
-    // Both saves stay in the log; only the projected version list collapses.
+    expect(versions.map(v => v.version)).toEqual([1, 2])
+    expect(versions.at(1)?.origin).not.toBe('human-edit')
+    const latest = versions.at(1)
+    if (latest?.origin === 'human-edit') throw new Error('run capture projected a human edit')
+    expect(latest?.runId).toBe(handle.runId)
+    expect(versions.at(1)?.sha256).not.toBe(first.result.capture?.captured[0]?.sha256)
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
   })
 
@@ -359,10 +352,8 @@ describe('Science auto-capture', () => {
     expect(baseline).toMatchObject({ logicalName: 'summary.csv', version: 1 })
     const parent = { artifactId: baseline.artifactId, version: baseline.version }
 
-    // A second run in the SAME turn names the latest version — the one the
-    // ordinary same-turn supersede rule (above) would otherwise overwrite —
-    // as its own edit baseline. Superseding it would make the committed
-    // version its own parent; this must open version 2 instead.
+    // A second run in the SAME turn names the latest version as its own
+    // edit baseline: the edit opens version 2 descending from version 1.
     const handle = await harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
       editBaselines: { 'summary.csv': parent },
@@ -382,7 +373,7 @@ describe('Science auto-capture', () => {
     expect(versions.at(1)?.parent).toEqual(parent)
   })
 
-  it('still supersedes a same-turn re-run of the same edit: latest v2 parent v1, computed version 2, parent 1', async () => {
+  it('opens another version for a same-turn re-run of the same edit, repeating the named baseline', async () => {
     const root = tmp('.science-capture-same-turn-baseline-rerun-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -409,10 +400,8 @@ describe('Science auto-capture', () => {
 
     // A third run sharing turn 2 with the run that produced v2 re-runs the
     // same edit (e.g. fixing a bug in the same edit's code), naming the same
-    // v1 baseline again. The self-parent guard does not fire — parent (1)
-    // never equals the computed version (2) — so the ordinary same-turn
-    // supersede rule still collapses this into version 2, and the parent it
-    // repeats is identical to the one already on that version.
+    // v1 baseline again. Content history is append-only, so the re-run opens
+    // version 3, repeating the explicitly named v1 parent.
     const thirdHandle = await harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
       editBaselines: { 'summary.csv': parent },
@@ -421,13 +410,13 @@ describe('Science auto-capture', () => {
     })
     await writeArtifact(root, session, thirdHandle.runId, 'summary.csv', 'a,b\n5,6\n')
     const third = await thirdHandle.done
-    expect(third.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2, parent })
+    expect(third.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 3, parent })
 
     const projection = replayScience(session.events)
     const versions = projection?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
-    expect(versions.map(v => v.version)).toEqual([1, 2])
-    expect(versions.at(1)?.parent).toEqual(parent)
-    expect(versions.at(1)?.attachment.attachmentId).not.toBe(second.capture?.captured[0]?.attachment.attachmentId)
+    expect(versions.map(v => v.version)).toEqual([1, 2, 3])
+    expect(versions.at(2)?.parent).toEqual(parent)
+    expect(versions.at(2)?.sha256).not.toBe(second.capture?.captured[0]?.sha256)
   })
 
   it('skips an identical rerun of the same file: no new version, no new event', async () => {
@@ -457,21 +446,28 @@ describe('Science auto-capture', () => {
     const first = await runWithFiles(harness, root, session, { 'chart.vl.json': original })
     const parent = first.result.capture?.captured[0]
     if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite parent')
-    const attachment = await harness.ctx.attachments.saveText({
+    const humanEditV2 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
+      producerSessionId: session.id,
       data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
       mediaType: 'application/vnd.vega-lite+json',
-      name: 'chart.vl.json',
+      origin: 'human-edit',
+      title: parent.title,
+      editBaselines: parent.versionId,
     })
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         artifactId: parent.artifactId,
         logicalName: parent.logicalName,
-        version: 2,
+        version: humanEditV2.ordinal,
         parent: { artifactId: parent.artifactId, version: 1 },
         title: parent.title,
         origin: 'human-edit',
-        attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+        projectId: parent.projectId,
+        versionId: humanEditV2.versionId,
+        sha256: humanEditV2.sha256,
+        mediaType: 'application/vnd.vega-lite+json',
+        byteCount: humanEditV2.byteCount,
         environmentRevision: parent.environmentRevision,
         environmentFingerprint: parent.environmentFingerprint,
         createdAt: Date.now(),
@@ -499,16 +495,28 @@ describe('Science auto-capture', () => {
     })
     const changedVersion = changed.result.capture?.captured[0]
     if (changedVersion === undefined || changedVersion.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite version')
+    const humanEditV4 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
+      producerSessionId: session.id,
+      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      mediaType: 'application/vnd.vega-lite+json',
+      origin: 'human-edit',
+      title: parent.title,
+      editBaselines: changedVersion.versionId,
+    })
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         artifactId: parent.artifactId,
         logicalName: parent.logicalName,
-        version: 4,
+        version: humanEditV4.ordinal,
         parent: { artifactId: parent.artifactId, version: 3 },
         title: parent.title,
         origin: 'human-edit',
-        attachment: { ...attachment, mediaType: 'application/vnd.vega-lite+json' },
+        projectId: parent.projectId,
+        versionId: humanEditV4.versionId,
+        sha256: humanEditV4.sha256,
+        mediaType: 'application/vnd.vega-lite+json',
+        byteCount: humanEditV4.byteCount,
         environmentRevision: parent.environmentRevision,
         environmentFingerprint: parent.environmentFingerprint,
         createdAt: Date.now(),
@@ -615,80 +623,32 @@ describe('Science auto-capture', () => {
     expect(projection?.artifacts).toHaveLength(1)
   })
 
-  it('treats the deployment attachment store rejecting an admission as oversized, never a run failure', async () => {
-    const root = tmp('.science-capture-admission-rejected-')
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
-      ctx.provide('attachments', {
-        imageLimits: {
-          maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 10, maxImagePixels: 1_000_000,
-          mediaTypes: ['image/png'],
-        },
-        textLimits: { maxTextBytes: 10, mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'] },
-        validateImage: async () => {},
-        validateText: async () => {},
-        saveImage: async () => { throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE') },
-        saveText: async () => { throw new AttachmentError('Text exceeds the configured byte limit.', 'TEXT_TOO_LARGE') },
-        readImage: async () => { throw new Error('unexpected readImage call') },
-        readText: async () => { throw new Error('unexpected readText call') },
+  /** Mount a store double whose writes fail with `failure` while `openProject` still resolves a stable project. */
+  function failingStoreOverride(failure: unknown) {
+    return (ctx: Context): void => {
+      ctx.provide('scienceArtifactStore', {
+        openProject: async (workspacePath: string) => ({
+          projectId: 'capture-test-project', storeRoot: workspacePath, workspacePath, outcome: 'created',
+        }),
+        // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.
+        createArtifact: async () => { throw failure },
+        // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.
+        appendVersion: async () => { throw failure },
+        readBlob: async () => { throw new Error('unexpected readBlob call') },
       } as never)
-    })
-    contexts.push(harness.ctx)
-    const session = createScienceSession(harness.ctx, 'science-capture-admission-rejected')
-
-    const { result } = await runWithFiles(harness, root, session, { 'small.txt': 'ok' })
-    expect(result.terminal.status).toBe('success')
-    expect(result.capture?.captured).toEqual([])
-    expect(result.capture?.skippedOversizedCount).toBe(1)
-    expect(replayScience(session.events)?.artifacts).toEqual([])
-  })
-
-  it('silently skips an eligible file whose media type the deployment attachment store does not accept', async () => {
-    const root = tmp('.science-capture-media-type-excluded-')
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
-      ctx.provide('attachments', {
-        imageLimits: {
-          maxImageBytes: 10_000, maxImagesPerMessage: 1, maxMessageImageBytes: 10_000, maxImagePixels: 1_000_000, mediaTypes: [],
-        },
-        textLimits: { maxTextBytes: 10_000, mediaTypes: ['text/csv', 'application/json', 'text/markdown'] },
-        validateImage: async () => {},
-        validateText: async () => {},
-        saveImage: async () => { throw new Error('unexpected saveImage call: image/png is excluded') },
-        saveText: async () => { throw new Error('unexpected saveText call: text/plain is excluded') },
-        readImage: async () => { throw new Error('unexpected readImage call') },
-        readText: async () => { throw new Error('unexpected readText call') },
-      } as never)
-    })
-    contexts.push(harness.ctx)
-    const session = createScienceSession(harness.ctx, 'science-capture-media-type-excluded')
-
-    const { result } = await runWithFiles(harness, root, session, { 'plot.png': 'x', 'excluded.txt': 'y' })
-    expect(result.terminal.status).toBe('success')
-    expect(result.capture?.captured).toEqual([])
-    expect(result.capture?.skippedOversizedCount).toBe(0)
-    expect(replayScience(session.events)?.artifacts).toEqual([])
-  })
+    }
+  }
 
   it('does not fail the run when capture itself throws unexpectedly (a non-Error value), logging at error since it carries no filesystem code', async () => {
     const root = tmp('.science-capture-internal-failure-')
     const prefix = createFakePythonPrefix(root)
     const errors: string[] = []
+    // Deliberately not an Error instance: exercises isCaptureFilesystemFailure's
+    // non-object short circuit, mirroring environment.spec.ts's own
+    // `throw 'injected non-Error static failure'` technique.
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
-      ctx.provide('attachments', {
-        imageLimits: { maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 10, maxImagePixels: 1_000_000, mediaTypes: ['image/png'] },
-        textLimits: { maxTextBytes: 10_000, mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'] },
-        validateImage: async () => {},
-        validateText: async () => {},
-        saveImage: async () => { throw new Error('unexpected saveImage call') },
-        // Deliberately not an Error instance: exercises isCaptureFilesystemFailure's
-        // non-object short circuit, mirroring environment.spec.ts's own
-        // `throw 'injected non-Error static failure'` technique.
-        saveText: async () => { throw 'boom: capture-time infrastructure failure' },
-        readImage: async () => { throw new Error('unexpected readImage call') },
-        readText: async () => { throw new Error('unexpected readText call') },
-      } as never)
+      failingStoreOverride('boom: capture-time infrastructure failure')(ctx)
     })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-internal-failure')
@@ -709,16 +669,7 @@ describe('Science auto-capture', () => {
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
       ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
-      ctx.provide('attachments', {
-        imageLimits: { maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 10, maxImagePixels: 1_000_000, mediaTypes: ['image/png'] },
-        textLimits: { maxTextBytes: 10_000, mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'] },
-        validateImage: async () => {},
-        validateText: async () => {},
-        saveImage: async () => { throw new Error('unexpected saveImage call') },
-        saveText: async () => { throw Object.assign(new Error('disk unavailable'), { code: 'EIO' }) },
-        readImage: async () => { throw new Error('unexpected readImage call') },
-        readText: async () => { throw new Error('unexpected readText call') },
-      } as never)
+      failingStoreOverride(Object.assign(new Error('disk unavailable'), { code: 'EIO' }))(ctx)
     })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-fs-failure')

@@ -51,18 +51,15 @@ const capturedArtifactSchema = {
     version: { type: 'integer', required: true },
     mediaType: { type: 'string', required: true },
     bytes: { type: 'integer', required: true },
-    width: { type: 'integer' },
-    height: { type: 'integer' },
-    // `title` and the attachment identity/name are carried for
-    // `presentationMeta` (below) to build a clickable Client reference per
-    // file; `render()` deliberately omits both from the model-visible
-    // receipt text — `title` duplicates `logicalName` for every
-    // auto-captured file (see capture.ts's `basename` default), and
-    // attachmentId is an internal storage handle, not a fact the model
-    // reasons about — the same split `annotate_artifact`'s own receipt schema uses.
+    // `title` and the store version id are carried for `presentationMeta`
+    // (below) to build a clickable Client reference per file; `render()`
+    // deliberately omits both from the model-visible receipt text — `title`
+    // duplicates `logicalName` for every auto-captured file (see capture.ts's
+    // `basename` default), and versionId is an internal storage coordinate,
+    // not a fact the model reasons about — the same split
+    // `annotate_artifact`'s own receipt schema uses.
     title: { type: 'string', required: true },
-    attachmentId: { type: 'string', required: true },
-    attachmentName: { type: 'string' },
+    versionId: { type: 'string', required: true },
     parent: artifactVersionRefSchema,
   },
 } as const
@@ -127,18 +124,14 @@ function nonEmptyCode(code: string): string {
 
 /** Flatten one captured artifact version into the run result's bounded listing entry. */
 function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typeof capturedArtifactSchema> {
-  const { attachment } = artifact
-  const isImage = 'width' in attachment
   return {
     artifactId: String(artifact.artifactId),
     logicalName: artifact.logicalName,
     version: artifact.version,
-    mediaType: attachment.mediaType,
-    bytes: attachment.bytes,
-    ...isImage ? { width: attachment.width, height: attachment.height } : {},
+    mediaType: artifact.mediaType,
+    bytes: artifact.byteCount,
     title: artifact.title,
-    attachmentId: String(attachment.attachmentId),
-    ...attachment.name === undefined ? {} : { attachmentName: attachment.name },
+    versionId: String(artifact.versionId),
     ...artifact.parent === undefined ? {} : {
       parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
     },
@@ -152,13 +145,10 @@ function capturedArtifactPresentationItem(artifact: InferValue<typeof capturedAr
     logicalName: artifact.logicalName,
     version: artifact.version,
     title: artifact.title,
-    attachment: {
-      attachmentId: artifact.attachmentId,
+    content: {
+      versionId: artifact.versionId,
       mediaType: artifact.mediaType,
-      bytes: artifact.bytes,
-      ...artifact.width === undefined ? {} : { width: artifact.width },
-      ...artifact.height === undefined ? {} : { height: artifact.height },
-      ...artifact.attachmentName === undefined ? {} : { name: artifact.attachmentName },
+      byteCount: artifact.bytes,
     },
   }
 }
@@ -237,13 +227,10 @@ export function formatRunResult(value: ScienceRunValue): string {
   if (value.stderr.truncated) lines.push('(stderr truncated)')
   if (value.capturedArtifacts !== undefined && value.capturedArtifacts.length > 0) {
     const items = value.capturedArtifacts.map((artifact) => {
-      const dimensions = artifact.width !== undefined && artifact.height !== undefined
-        ? `, ${String(artifact.width)}x${String(artifact.height)}`
-        : ''
       const ancestry = artifact.parent === undefined
         ? ''
         : `, edited from ${artifact.parent.artifactId} v${String(artifact.parent.version)}`
-      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.artifactId}; ${artifact.mediaType}${dimensions}, ${formatBytes(artifact.bytes)}${ancestry})`
+      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.artifactId}; ${artifact.mediaType}, ${formatBytes(artifact.bytes)}${ancestry})`
     })
     const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
     lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)

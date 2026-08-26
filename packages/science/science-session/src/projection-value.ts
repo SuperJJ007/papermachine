@@ -146,10 +146,12 @@ function clientRun(run: ScienceRun): ScienceClientRun {
 }
 
 /**
- * Remove the full environment fingerprint from one artifact version.
- * `toolCallId` and `requestHeaderSeq` pass through: the browser already
- * holds both as session-log identities, and they let the client join an
- * artifact version to its authorizing transcript call for provenance.
+ * Remove the full environment fingerprint and the owning `projectId` from one
+ * artifact version — content reads are session-addressed, so the client never
+ * needs the store's project coordinate. `toolCallId` and `requestHeaderSeq`
+ * pass through: the browser already holds both as session-log identities, and
+ * they let the client join an artifact version to its authorizing transcript
+ * call for provenance.
  */
 function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
   const common = {
@@ -158,17 +160,20 @@ function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifact
     version: artifact.version,
     title: artifact.title,
     ...artifact.caption === undefined ? {} : { caption: artifact.caption },
-    attachment: artifact.attachment,
+    versionId: artifact.versionId,
+    sha256: artifact.sha256,
+    byteCount: artifact.byteCount,
     environmentRevision: artifact.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(artifact.environmentFingerprint),
     createdAt: artifact.createdAt,
   }
   return artifact.origin === 'human-edit'
-    ? { ...common, parent: artifact.parent, origin: artifact.origin, attachment: artifact.attachment }
+    ? { ...common, parent: artifact.parent, origin: artifact.origin, mediaType: artifact.mediaType }
     : {
       ...common,
       ...artifact.parent === undefined ? {} : { parent: artifact.parent },
       origin: artifact.origin,
+      mediaType: artifact.mediaType,
       runId: artifact.runId,
       toolCallId: artifact.toolCallId,
       requestHeaderSeq: artifact.requestHeaderSeq,

@@ -1,6 +1,7 @@
 /** Branded identities and format constants for the Science session domain. */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import { ArtifactId, ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 
 /** Payload version shared by the first Science session event vocabulary. */
 export const SCIENCE_EVENT_VERSION = 1 as const
@@ -10,7 +11,7 @@ export const SCIENCE_EVENT_VERSION = 1 as const
  * Bump whenever the state shape or the fold semantics change, per the
  * registry's `stateVersion` rule ([session-projection](../../../session/session-projection/README.md#contract)).
  */
-export const SCIENCE_PROJECTION_STATE_VERSION = 9
+export const SCIENCE_PROJECTION_STATE_VERSION = 10
 
 /** Identifies one Science environment profile inside durable session facts. */
 export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>
@@ -18,8 +19,19 @@ export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>
 /** Identifies one Science run for the lifetime of its owning session. */
 export type ScienceRunId = Branded<'ScienceRunId'>
 
-/** Identifies one logical artifact across its immutable versions. */
-export type ScienceArtifactId = Branded<'ScienceArtifactId'>
+/**
+ * Identifies one project's durable artifact store. The store package owns
+ * the brand ([ids](../../science-artifact-store/src/ids.ts)); durable Science
+ * events record store rows by these shared identities, so the session log and
+ * the store index never need an id mapping between them.
+ */
+export type ScienceProjectId = ProjectId
+
+/** Identifies one logical artifact across its immutable versions; the store package owns the brand. */
+export type ScienceArtifactId = ArtifactId
+
+/** Identifies one immutable artifact version row in the owning project's store; the store package owns the brand. */
+export type ScienceVersionId = VersionId
 
 /** Content-addressed key for one immutable Science scratch source. */
 export type ScienceScratchKey = Branded<'ScienceScratchKey'>
@@ -43,13 +55,25 @@ export function ScienceRunId(value: string): ScienceRunId {
 }
 
 /**
- * Brand a validated artifact identifier.
- * @param value - validated session-local identifier.
- * @returns the same string with its artifact brand.
+ * Brand a validated project identifier.
+ * @param value - validated store project identifier.
+ * @returns the same string with the store's project brand.
  */
-export function ScienceArtifactId(value: string): ScienceArtifactId {
-  return value as ScienceArtifactId
-}
+export const ScienceProjectId: (value: string) => ScienceProjectId = ProjectId
+
+/**
+ * Brand a validated artifact identifier.
+ * @param value - validated store artifact identifier.
+ * @returns the same string with the store's artifact brand.
+ */
+export const ScienceArtifactId: (value: string) => ScienceArtifactId = ArtifactId
+
+/**
+ * Brand a validated artifact version identifier.
+ * @param value - validated store version identifier.
+ * @returns the same string with the store's version brand.
+ */
+export const ScienceVersionId: (value: string) => ScienceVersionId = VersionId
 
 /**
  * Brand a validated scratch content key.

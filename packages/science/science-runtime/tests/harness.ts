@@ -1,10 +1,10 @@
 /** Shared real-session/fake-prefix assembly for Science Runtime behavior tests. */
 
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
@@ -23,6 +23,7 @@ import type {
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import ScienceRuntime from '../src/index.ts'
 import type { Config } from '../src/config.ts'
 import { KernelSet } from '../src/kernel-set.ts'
@@ -36,14 +37,14 @@ export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/ker
 export const KERNEL_ASSETS_DELAYED_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-delayed-ready/', import.meta.url))
 
 /**
- * Mount a real local attachment store at the same Harness home a test's
- * `ScienceRuntime` uses, satisfying the required `attachments` injection for
- * tests that do not themselves exercise chart commit.
+ * Mount a real project artifact store at the same Harness home a test's
+ * `ScienceRuntime` uses, satisfying the required `scienceArtifactStore`
+ * injection.
  * @param ctx - the test context that will also mount `ScienceRuntime`.
  * @param root - the same temp root passed to `ScienceRuntime`'s `dshHome`.
  */
-export async function mountAttachments(ctx: Context, root: string): Promise<void> {
-  await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })
+export async function mountArtifactStore(ctx: Context, root: string): Promise<void> {
+  await ctx.plugin(ScienceArtifactStore, { dshHome: join(root, 'dsh-home') })
 }
 
 /** Full-enforcement test double that preserves direct argv for fake interpreters. */
@@ -347,8 +348,8 @@ export async function createControlledRuntimeHarness(
   root: string,
   profiles: Config['profiles'],
   timeoutMs = 10_000,
-  /** Override the mounted `attachments` service, e.g. a `mediaTypes` allowlist that excludes PNG. */
-  attachmentsOverride?: (ctx: Context) => void,
+  /** Override the mounted `scienceArtifactStore` service with a test double. */
+  storeOverride?: (ctx: Context) => void,
   /** Additional `ScienceRuntime` Config fields (e.g. the `capture*` bounds), merged over the harness's own defaults. */
   configOverrides?: Partial<Config>,
 ): Promise<{
@@ -364,10 +365,10 @@ export async function createControlledRuntimeHarness(
   await ctx.plugin(ScienceSessionInvariant)
   await ctx.plugin(ControlledSubprocess)
   await ctx.plugin(DirectSandbox)
-  if (attachmentsOverride === undefined) {
-    await mountAttachments(ctx, root)
+  if (storeOverride === undefined) {
+    await mountArtifactStore(ctx, root)
   } else {
-    attachmentsOverride(ctx)
+    storeOverride(ctx)
   }
   const runtimeFiber = await ctx.plugin(ScienceRuntime, {
     dshHome: join(root, 'dsh-home'),
@@ -393,9 +394,9 @@ export async function createFastRuntimeHarness(
   return createControlledRuntimeHarness(root, profiles, timeoutMs)
 }
 
-/** Create one live Science session with its required durable mode fact. */
-export function createScienceSession(ctx: Context, id: string): Session {
-  const session = ctx.sessions.create(SessionId(id), { meta: { agentPreset: 'science' } })
+/** Create one live Science session with its required durable mode fact and a private workspace directory as its cwd. */
+export function createScienceSession(ctx: Context, id: string, cwd = mkdtempSync(join(tmpdir(), 'science-workspace-'))): Session {
+  const session = ctx.sessions.create(SessionId(id), { meta: { agentPreset: 'science', cwd } })
   session.append('science/mode-bound', {
     version: 1,
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
@@ -410,7 +411,7 @@ export function attachScienceSession(ctx: Context, id: string, seed?: readonly i
 } {
   const session = ctx.sessions.prepare(SessionId(id), {
     ...(seed === undefined ? {} : { seed: [...seed] }),
-    meta: { agentPreset: 'science' },
+    meta: { agentPreset: 'science', cwd: mkdtempSync(join(tmpdir(), 'science-workspace-')) },
   })
   const detach = ctx.sessions.enter(session)
   ctx.sessions.announce(session)
@@ -562,7 +563,7 @@ export function installTestKernelSet(
  * @param profiles - Runtime profile configuration.
  * @param timeoutMs - operation deadline forwarded to every `ScienceRuntime` call.
  * @param kernelIdleTimeoutMs - overrides the kernel idle deadline for idle-expiry coverage.
- * @param attachmentsOverride - Override the mounted `attachments` service, e.g. a `mediaTypes` allowlist that excludes PNG.
+ * @param storeOverride - Override the mounted `scienceArtifactStore` service with a test double.
  * @param configOverrides - Additional `ScienceRuntime` Config fields (e.g. the `capture*` bounds), merged over the harness's own defaults.
  * @returns the assembled context, the live `ScienceRuntime`, and its Cordis fiber.
  */
@@ -571,7 +572,7 @@ export async function createKernelRuntimeHarness(
   profiles: Config['profiles'],
   timeoutMs = 10_000,
   kernelIdleTimeoutMs = 1_800_000,
-  attachmentsOverride?: (ctx: Context) => void,
+  storeOverride?: (ctx: Context) => void,
   configOverrides?: Partial<Config>,
 ): Promise<{
   readonly ctx: Context
@@ -588,10 +589,10 @@ export async function createKernelRuntimeHarness(
     runnerCommand: [runner],
     runnerFailureSignatures: ['science-runtime fake runner failure'],
   })
-  if (attachmentsOverride === undefined) {
-    await mountAttachments(ctx, root)
+  if (storeOverride === undefined) {
+    await mountArtifactStore(ctx, root)
   } else {
-    attachmentsOverride(ctx)
+    storeOverride(ctx)
   }
   const runtimeFiber = await ctx.plugin(ScienceRuntime, {
     dshHome: join(root, 'dsh-home'),

@@ -1,11 +1,12 @@
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
+  ScienceProjectId,
   ScienceRunId,
   ScienceScratchKey,
+  ScienceVersionId,
 } from '../src/index.ts'
 import type {
   ScienceRunArtifactVersion,
@@ -26,6 +27,11 @@ const CODE_SHA = 'c'.repeat(64)
 const SCRATCH_KEY = ScienceScratchKey('d'.repeat(64))
 export const RUN_ID = ScienceRunId('run-1')
 export const ARTIFACT_ID = ScienceArtifactId('artifact-1')
+export const PROJECT_ID = ScienceProjectId('project-1')
+export const VERSION_ID = ScienceVersionId('version-1')
+export const AUTO_VERSION_ID = ScienceVersionId('version-2')
+export const ARTIFACT_SHA = 'e'.repeat(64)
+export const AUTO_ARTIFACT_SHA = '0'.repeat(64)
 export const RUN_CALL_ID = CallId('call-run')
 export const ARTIFACT_CALL_ID = CallId('call-chart')
 export const OUTCOME_CALL_ID = CallId('call-outcome')
@@ -147,14 +153,11 @@ export const artifact = (
   version: 1,
   title: 'Trend',
   origin: 'model',
-  attachment: {
-    attachmentId: AttachmentId('attachment-1'),
-    mediaType: 'image/png',
-    bytes: 128,
-    width: 16,
-    height: 9,
-    name: 'trend.png',
-  },
+  projectId: PROJECT_ID,
+  versionId: VERSION_ID,
+  sha256: ARTIFACT_SHA,
+  mediaType: 'image/png',
+  byteCount: 128,
   runId: RUN_ID,
   toolCallId: ARTIFACT_CALL_ID,
   requestHeaderSeq: 3,
@@ -171,12 +174,10 @@ export const autoArtifact = (
   logicalName: 'summary.csv',
   title: 'summary.csv',
   origin: 'auto',
-  attachment: {
-    attachmentId: AttachmentId('attachment-2'),
-    mediaType: 'text/csv',
-    bytes: 32,
-    name: 'summary.csv',
-  },
+  versionId: AUTO_VERSION_ID,
+  sha256: AUTO_ARTIFACT_SHA,
+  mediaType: 'text/csv',
+  byteCount: 32,
   toolCallId: RUN_CALL_ID,
   ...overrides,
 })

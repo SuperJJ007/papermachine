@@ -3,7 +3,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
-import { scienceRunsShareTurn } from './fold-state.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
 import type {
   ScienceArtifactVersion,
@@ -14,8 +13,6 @@ import type {
   ScienceLanguage,
   ScienceRun,
   ScienceRunIdentity,
-  ScienceRunInterrupted,
-  ScienceRunStarted,
 } from './types.ts'
 
 function sameArtifactVersionRef(
@@ -224,6 +221,10 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
 function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/artifact-saved' }>): void {
   if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
   const artifact = event.data.artifact
+  const priorProjectId = state.artifacts[0]?.projectId
+  if (priorProjectId !== undefined && artifact.projectId !== priorProjectId) {
+    throw new Error('Science artifacts of one session must name one owning projectId')
+  }
   let parent: ScienceArtifactVersion | undefined
   if (artifact.parent !== undefined) {
     if (artifact.parent.artifactId === artifact.artifactId && artifact.parent.version === artifact.version) {
@@ -231,7 +232,6 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     }
     parent = requireArtifactVersion(state, artifact.parent, 'Science artifact parent')
   }
-  let source: Exclude<ScienceRun, ScienceRunStarted | ScienceRunInterrupted> | undefined
   let consumedToolCallSeq: number | undefined
   if (artifact.origin === 'human-edit') {
     /* v8 ignore next -- the discriminated codec and type require this parent */
@@ -241,7 +241,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (parent.logicalName !== artifact.logicalName) {
       throw new Error('a human-edited Science artifact must retain its parent logical name')
     }
-    if (parent.attachment.mediaType !== 'application/vnd.vega-lite+json') {
+    if (parent.mediaType !== 'application/vnd.vega-lite+json') {
       throw new Error('a human-edited Science artifact parent must be Vega-Lite')
     }
     if (artifact.environmentRevision !== parent.environmentRevision
@@ -256,11 +256,10 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('human-edited Science artifact creation time is outside its parent-to-commit event interval')
     }
   } else {
-    const candidate = state.runs.find(run => run.runId === artifact.runId)
-    if (candidate === undefined || candidate.status === 'running' || candidate.status === 'interrupted') {
+    const source = state.runs.find(run => run.runId === artifact.runId)
+    if (source === undefined || source.status === 'running' || source.status === 'interrupted') {
       throw new Error('Science artifact must reference a run that reached a terminal status')
     }
-    source = candidate
     const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
     // An auto-captured save (origin 'auto') is not a distinct model-issued
     // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
@@ -293,11 +292,11 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('Science artifact creation time is outside its supporting-fact event interval')
     }
   }
-  // A version is what one request turn produced, so a re-save either opens the
-  // next version or supersedes an existing one in place. An auto-capture may
-  // replace changed content only when its source run repeats the target
-  // version's tool-call turn. A model curation is metadata-only and must retain
-  // the target attachment. Any unchanged attachment may be superseded in place.
+  // New content always opens the next contiguous version, whose store row is
+  // fresh; only a model curation (annotate_artifact) supersedes an existing
+  // version in place, and it is metadata-only — the superseded version's
+  // store content reference (versionId/sha256/mediaType/byteCount) is
+  // retained verbatim.
   const logical = state.artifacts.filter(candidate => candidate.logicalName === artifact.logicalName)
   const target = logical.find(candidate => candidate.version === artifact.version)
   if (target === undefined) {
@@ -311,6 +310,9 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       || artifact.createdAt < latest.createdAt) {
       throw new Error('artifact versions must retain artifactId and advance contiguously')
     }
+    if (state.artifacts.some(candidate => candidate.versionId === artifact.versionId)) {
+      throw new Error('a Science artifact versionId cannot back two committed versions')
+    }
     state.artifacts.push(artifact)
     state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
   } else {
@@ -321,19 +323,14 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('a superseding Science artifact cannot rewrite its parent')
     }
     if (target.origin === 'human-edit') throw new Error('annotate_artifact cannot curate a human-edited Science artifact version')
-    const targetSource = state.runs.find(candidate => candidate.runId === target.runId)
-    /* v8 ignore next -- strict replay admits every projected artifact only after its source run, and target came from this exact fold */
-    if (targetSource === undefined) throw new Error('Science artifact target source run is missing')
-    const attachmentUnchanged = artifact.attachment.attachmentId === target.attachment.attachmentId
-    if (artifact.origin === 'model' && !attachmentUnchanged) {
-      throw new Error('a model-curated Science artifact may supersede only with an unchanged attachment')
+    if (artifact.origin !== 'model') {
+      throw new Error('only a model curation may supersede a committed Science artifact version')
     }
-    if (artifact.origin === 'auto' && !attachmentUnchanged) {
-      /* v8 ignore next -- the run-produced branch resolves source before version admission */
-      if (source === undefined) throw new Error('Science artifact source run is missing')
-      if (!scienceRunsShareTurn(state, source, targetSource)) {
-        throw new Error('an auto-captured Science artifact may supersede changed content only from its source run\'s tool-call turn')
-      }
+    if (artifact.versionId !== target.versionId
+      || artifact.sha256 !== target.sha256
+      || artifact.mediaType !== target.mediaType
+      || artifact.byteCount !== target.byteCount) {
+      throw new Error('a model-curated Science artifact must retain the superseded version\'s store content reference')
     }
     state.artifacts[state.artifacts.indexOf(target)] = artifact
     const factIndex = state.artifactFacts.findIndex(candidate =>

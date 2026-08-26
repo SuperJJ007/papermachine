@@ -1,9 +1,10 @@
 /** Artifact-version input and edit-baseline preparation for unpublished runs. */
 
-import type { AttachmentStore, ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
 import type {
   ScienceArtifactVersion,
   ScienceArtifactVersionRef,
+  ScienceProjectId,
   ScienceProjection,
   ScienceRunArtifactInput,
 } from '@deepseek-ai/dsh-science-session'
@@ -83,32 +84,23 @@ function artifactVersion(
   return artifact
 }
 
-/** Read one attachment through the store's checksummed verified read path. */
-async function readArtifact(
-  attachments: AttachmentStore,
-  artifact: ScienceArtifactVersion,
-  signal: AbortSignal,
-): Promise<Uint8Array> {
-  return artifact.attachment.mediaType.startsWith('image/')
-    ? (await attachments.readImage(artifact.attachment as ImageAttachmentRef, signal)).data
-    : (await attachments.readText(artifact.attachment as TextAttachmentRef, signal)).data
-}
-
 /**
  * Validate, resolve, and read every run input before publication, and copy
  * edit-baseline refs so caller mutation cannot alter post-run attribution.
  * @param projection - Current strict Science projection for the exact Session.
- * @param attachments - Attachment provider used for verified immutable reads.
+ * @param store - Project artifact store used for verified content-addressed reads.
+ * @param projectId - The session's already-resolved owning project.
  * @param requestedInputs - Caller-supplied exact versions and destination paths.
  * @param requestedBaselines - Caller-supplied capture paths and exact parents.
  * @param maxFiles - Configured per-run input count bound.
- * @param maxBytes - Configured per-run aggregate attachment byte bound.
+ * @param maxBytes - Configured per-run aggregate input byte bound.
  * @param signal - Fused operation cancellation and timeout signal.
  * @returns Durable input refs, verified bytes, and retained edit baselines.
  */
 export async function prepareRunArtifacts(
   projection: ScienceProjection,
-  attachments: AttachmentStore,
+  store: ScienceArtifactStore,
+  projectId: ScienceProjectId,
   requestedInputs: readonly ScienceRunArtifactInput[] | undefined,
   requestedBaselines: Readonly<Record<string, ScienceArtifactVersionRef>> | undefined,
   maxFiles: number,
@@ -133,7 +125,7 @@ export async function prepareRunArtifacts(
     input,
     artifact: artifactVersion(projection, input, 'INPUT_NOT_FOUND', 'Science artifact input'),
   }))
-  const declaredBytes = resolved.reduce((sum, entry) => sum + entry.artifact.attachment.bytes, 0)
+  const declaredBytes = resolved.reduce((sum, entry) => sum + entry.artifact.byteCount, 0)
   if (declaredBytes > maxBytes) {
     throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxBytes)}-byte bound`)
   }
@@ -142,7 +134,7 @@ export async function prepareRunArtifacts(
   let actualBytes = 0
   for (const entry of resolved) {
     signal.throwIfAborted()
-    const data = await readArtifact(attachments, entry.artifact, signal)
+    const data = await store.readBlob(projectId, entry.artifact.sha256)
     actualBytes += data.byteLength
     if (actualBytes > maxBytes) {
       throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxBytes)}-byte bound`)

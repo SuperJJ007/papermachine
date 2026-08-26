@@ -22,6 +22,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createUserMessage, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
@@ -50,6 +51,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-subprocess-local', LocalSubprocessRuntime],
   ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
   ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
+  ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
   ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
   ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
@@ -106,6 +108,9 @@ async function boot(): Promise<Context> {
     `    runnerCommand: [${JSON.stringify(runner)}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
     "- name: '@deepseek-ai/dsh-attachment-local'",
+    '  config:',
+    `    dshHome: ${JSON.stringify(dshHome)}`,
+    "- name: '@deepseek-ai/dsh-science-artifact-store'",
     '  config:',
     `    dshHome: ${JSON.stringify(dshHome)}`,
     "- name: '@deepseek-ai/dsh-science-runtime'",
@@ -189,7 +194,7 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
     const sessionId = SessionId('tool-science-real-session')
     const handle = await ctx.agents.create({
       sessionId,
-      meta: { agentPreset: 'science' },
+      meta: { agentPreset: 'science', cwd: scratchRoot! },
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     const agent = handle.agent

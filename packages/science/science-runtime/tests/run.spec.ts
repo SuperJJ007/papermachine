@@ -31,7 +31,7 @@ import {
   KERNEL_ASSETS_DELAYED_READY_ROOT,
   KERNEL_ASSETS_NO_READY_ROOT,
   kernelAction,
-  mountAttachments,
+  mountArtifactStore,
   rejectSessionAppend,
 } from './harness.ts'
 
@@ -367,7 +367,7 @@ describe('ScienceRuntime.startRun preflight', () => {
       runnerCommand: [runner],
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
@@ -812,7 +812,7 @@ esac
       runnerCommand: [runner],
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
-    await mountAttachments(ctx, root)
+    await mountArtifactStore(ctx, root)
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },

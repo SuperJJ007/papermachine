@@ -31,6 +31,8 @@ export type ScienceRuntimeErrorCode =
   | 'INVALID_REQUEST'
   /** No Conda prefix is configured for the requested profile id in this deployment. */
   | 'PROFILE_NOT_CONFIGURED'
+  /** The session's owning project cannot be resolved: its header names no workspace directory (cwd). */
+  | 'PROJECT_UNAVAILABLE'
   | 'OPERATION_CANCELLED'
   | 'OPERATION_TIMED_OUT'
   | 'INFRASTRUCTURE_FAILURE'
@@ -182,10 +184,10 @@ export interface ScienceRuntimeService {
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
   /**
-   * Re-commit an existing artifact version's exact attachment reference as a
-   * new curated version, carrying a model-supplied title and optional
-   * caption. Never touches the filesystem or the attachment store: the
-   * content-addressed `attachment` is reused unchanged.
+   * Re-commit an existing artifact version's exact store content reference
+   * as its curated replacement, carrying a model-supplied title and optional
+   * caption. Metadata-only: the store row is curated in place and the
+   * content-addressed reference is reused unchanged.
    * @param request - Exact Session, target logical artifact (and optional
    *   version), title/caption, and cancellation.
    * @returns The durable curated version this operation appended.

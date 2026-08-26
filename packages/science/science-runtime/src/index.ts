@@ -7,16 +7,17 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceLanguage,
+  ScienceProjectId,
   ScienceProjection,
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
@@ -79,7 +80,7 @@ export { KERNEL_ASSETS_ROOT, resolveKernelDriverPath } from './kernel-assets.ts'
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'science-runtime'
 /** Required shared services kept alive through terminal settlement. */
-export const inject = ['attachments', 'sessions', 'subprocess', 'sandbox']
+export const inject = ['scienceArtifactStore', 'sessions', 'subprocess', 'sandbox']
 
 /**
  * Classify a failed `captureRunArtifacts` call for `captureAfterFinish`'s
@@ -289,6 +290,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly kernelStartTimeoutMs: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
+  /** Resolved owning project per exact live Session, cached for its lifetime. */
+  private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -401,6 +404,31 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
+   * Resolve the exact Session's owning project through the project artifact
+   * store, creating the workspace marker on the first Science operation in an
+   * unmarked workspace. The resolution is cached per exact Session object;
+   * a failed open is evicted so the next operation retries it.
+   * @param session - exact live Session whose header cwd names the workspace.
+   * @returns the owning project id.
+   * @throws {@link ScienceRuntimeError} (`PROJECT_UNAVAILABLE`) when the session header carries no cwd.
+   */
+  private sessionProject(session: Session): Promise<ScienceProjectId> {
+    const existing = this.projects.get(session)
+    if (existing !== undefined) return existing
+    const cwd = session.header.cwd
+    if (cwd === undefined) {
+      return Promise.reject(new ScienceRuntimeError(
+        'PROJECT_UNAVAILABLE',
+        'Science project store requires the session\'s workspace directory (session header cwd)',
+      ))
+    }
+    const resolved = this.ctx.scienceArtifactStore.openProject(cwd).then(opened => opened.projectId)
+    this.projects.set(session, resolved)
+    resolved.catch(() => { this.projects.delete(session) })
+    return resolved
+  }
+
+  /**
    * Adopt the restart-scoped `science-runtime` settings namespace as this
    * Runtime's profile map for the whole Host lifecycle, with the Cordis entry
    * configuration as the composition `base`. Reserved for the
@@ -431,6 +459,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     try {
       this.assertPrepublication(request.session, lease.control)
+      // Resolve (and on first use create) the session's owning project before
+      // any environment work: a session that cannot name its workspace
+      // project fails its first Science operation loudly, not its first
+      // capture after a run already executed.
+      await this.sessionProject(request.session)
       const sessionScratch = await planSessionScratch(this.dshHome, request.session)
       await assertProfileRunConfinement(profile, request.session, sessionScratch.root)
       this.assertPrepublication(request.session, lease.control)
@@ -521,9 +554,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
+      const projectId = await this.sessionProject(request.session)
       const preparedArtifacts = await prepareRunArtifacts(
         projection,
-        this.ctx.attachments,
+        this.ctx.scienceArtifactStore,
+        projectId,
         request.artifactInputs,
         request.editBaselines,
         this.inputMaxFilesPerRun,
@@ -563,6 +598,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       const done = this.settlePublishedKernelRun(
         lease,
         request.session,
+        projectId,
         runScratch,
         kernel.process,
         started,
@@ -607,47 +643,44 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Re-commit an existing artifact version's exact attachment reference with
-   * a curated title and caption: metadata-only, so it never reads or writes
-   * the filesystem and never calls the attachment store, and it supersedes
-   * the version it names rather than opening a new one whose bytes would
-   * repeat their predecessor's. A committed event is never rolled back
-   * because a later step fails; there is no later step here that can fail
-   * after the append.
+   * Re-commit an existing artifact version's exact store content reference
+   * with a curated title and caption: metadata-only, so it supersedes the
+   * version it names rather than opening a new one whose bytes would repeat
+   * their predecessor's. The store row's metadata is curated in place first
+   * (`annotateVersion`), then the superseding event commits; a vetoed append
+   * after the store update leaves the store curated with no matching event —
+   * accepted metadata decay, resolved by the fold's own value staying the
+   * projection authority. A committed event is never rolled back because a
+   * later step fails; there is no later step here that can fail after the
+   * append.
    * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
    * @returns The durable curated version this operation committed.
    */
-  annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion> {
-    // Metadata-only: every step below is synchronous, so this avoids `async`
-    // (a function that never awaits) — but every failure, including
-    // `assertSession`'s own, must still reject rather than throw
-    // synchronously, matching every other `ScienceRuntimeService` operation's
-    // calling convention (a caller may `await` this without its own `async`
-    // wrapper already catching a synchronous throw).
+  async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion> {
+    const projection = this.assertSession(request.session)
+    const lease = this.reserve(request.session, request.signal)
     try {
-      const projection = this.assertSession(request.session)
-      const lease = this.reserve(request.session, request.signal)
-      try {
-        this.assertPrepublication(request.session, lease.control)
-        const artifact = this.curatedVersion(projection, request)
-        request.session.append('science/artifact-saved', { version: 1, artifact })
-        return Promise.resolve(artifact)
-      } catch (error) {
-        return Promise.reject(this.prepublicationError(lease.control, error))
-      } finally {
-        this.leases.release(lease)
-      }
+      this.assertPrepublication(request.session, lease.control)
+      const artifact = this.curatedVersion(projection, request)
+      await this.ctx.scienceArtifactStore.annotateVersion(artifact.projectId, artifact.versionId, {
+        title: artifact.title,
+        ...artifact.caption === undefined ? {} : { caption: artifact.caption },
+        origin: 'model',
+      })
+      this.assertPrepublication(request.session, lease.control)
+      request.session.append('science/artifact-saved', { version: 1, artifact })
+      return artifact
     } catch (error) {
-      // assertSession/reserve only ever throw ScienceRuntimeError (extends Error).
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-      return Promise.reject(error)
+      throw this.prepublicationError(lease.control, error)
+    } finally {
+      this.leases.release(lease)
     }
   }
 
   /**
    * Resolve the exact source version `request` names (its exact `version`,
    * or the logical artifact's latest version), then build that same version's
-   * curated replacement, reusing its content-addressed `attachment` and
+   * curated replacement, reusing its store content reference and
    * originating-run provenance unchanged.
    * @param projection - exact live Science projection.
    * @param request - the annotate request naming the target logical artifact.
@@ -694,7 +727,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       title: request.title,
       ...(request.caption === undefined ? {} : { caption: request.caption }),
       origin: 'model',
-      attachment: source.attachment,
+      ...(source.parent === undefined ? {} : { parent: source.parent }),
+      projectId: source.projectId,
+      versionId: source.versionId,
+      sha256: source.sha256,
+      mediaType: source.mediaType,
+      byteCount: source.byteCount,
       runId: source.runId,
       toolCallId: request.toolCallId,
       requestHeaderSeq: request.requestHeaderSeq,
@@ -913,6 +951,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private async settlePublishedKernelRun(
     lease: ReturnType<LeaseRegistry['reserve']>,
     session: StartScienceRunRequest['session'],
+    projectId: ScienceProjectId,
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
     kernel: KernelProcess,
     started: ReturnType<typeof startCandidate>,
@@ -951,7 +990,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           }
           throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
         }
-        const capture = await this.captureAfterFinish(session, runScratch, terminal, preparedArtifacts.editBaselines)
+        const capture = await this.captureAfterFinish(session, projectId, runScratch, terminal, preparedArtifacts.editBaselines)
         return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
       } finally {
         // Retire-vs-rearm derives from `outcome` alone, already settled
@@ -993,6 +1032,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * has no automatic retry, so a logged failure means that run's eligible
    * files stay uncaptured until the next run.
    * @param session - exact live Session that owns the just-finished run.
+   * @param projectId - the session's already-resolved owning project.
    * @param runScratch - the run's private Host scratch, including its artifact directory.
    * @param terminal - the exact terminal record just committed, supplying every captured version's provenance.
    * @param editBaselines - Validated exact parents keyed by capture-relative path.
@@ -1000,6 +1040,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    */
   private async captureAfterFinish(
     session: StartScienceRunRequest['session'],
+    projectId: ScienceProjectId,
     runScratch: Awaited<ReturnType<typeof createRunScratch>>,
     terminal: ScienceRunTerminal,
     editBaselines: PreparedRunArtifacts['editBaselines'],
@@ -1013,7 +1054,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let result: CaptureRunArtifactsResult
     try {
       result = await captureRunArtifacts({
-        attachments: this.ctx.attachments,
+        store: this.ctx.scienceArtifactStore,
+        projectId,
         session,
         runArtifacts: runScratch.artifacts,
         sourceRun: terminal,

@@ -15,10 +15,10 @@
 - text: Summarize the experiment as csv, json, markdown, and a chart. {{clock}}
 - button "Copy":
   - img
-- 'button "Python run {}"':
+- 'button "R run {}"':
   - img
   - img
-  - text: "Python run {}"
+  - text: "R run {}"
 - paragraph: "Files produced this turn: 5"
 - list:
   - listitem "summary.csv v1"
@@ -34,4 +34,4 @@
   - text: Select model
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps Tool call {{duration}} python · epoch 1 · interrupted
+- text: 1 turns · 1 steps Tool call {{duration}} r · epoch 1 · interrupted

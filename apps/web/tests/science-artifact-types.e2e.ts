@@ -1,4 +1,4 @@
-// Web e2e scenario: cold replay of one `run_python` call whose auto-capture
+// Web e2e scenario: cold replay of one `run_r` call whose auto-capture
 // produced one file per accepted text media type plus a PNG, so real
 // Chromium exercises the artifact viewer's full per-media-type content
 // dispatch — a sortable CSV table, a JSON tree, rendered Markdown, and the
@@ -51,7 +51,7 @@ const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
-/** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png/Vega-Lite artifacts. */
+/** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png/Vega-Lite artifacts. */
 function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[]): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
@@ -79,13 +79,13 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
       configuredAt: eventTime(1),
       validatedAt: eventTime(2),
       status: 'applied',
-      python: {
-        language: 'python',
+      r: {
+        language: 'r',
         configuredPrefix: '/private/host/science',
         canonicalPrefix: '/private/host/science',
-        executable: '/private/host/science/bin/python',
+        executable: '/private/host/science/bin/Rscript',
         executableIdentity: 'dev:1-ino:2',
-        languageVersion: '3.13.5',
+        languageVersion: '4.5.0',
         condaHistorySha256: 'a'.repeat(64),
         bindingFingerprint: FINGERPRINT,
         packages: [{ name: 'pip', version: '24.0' }],
@@ -114,7 +114,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     version: 1,
     kernel: {
       kernelEpoch: 1,
-      language: 'python',
+      language: 'r',
       state: 'started',
       environmentRevision: 1,
       environmentFingerprint: FINGERPRINT,
@@ -122,11 +122,11 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     },
   })
   const runCall = session.append('tool/call', {
-    turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_python', arguments: '{}',
+    turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_r', arguments: '{}',
   })
   const run = {
     runId: RUN_ID,
-    language: 'python' as const,
+    language: 'r' as const,
     toolCallId: RUN_CALL_ID,
     requestHeaderSeq: request.seq,
     environmentRevision: 1,
@@ -303,8 +303,16 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await exactOutline.waitFor({ timeout: 10_000 })
     expect((await exactOutline.boundingBox())?.width).toBeGreaterThan(0)
 
-    // The fixed library home plus all five document tabs stay open.
-    expect(await detailsPanel.getByRole('tab').count()).toBe(6)
+    // The R-produced spec uses the same direct style-edit Remote as a
+    // Python-produced spec; origin language never enters viewer admission.
+    await detailsPanel.getByRole('button', { name: 'Mark style', exact: true }).click()
+    await detailsPanel.getByLabel('Color').fill('#ff0000')
+    await detailsPanel.getByRole('button', { name: 'Commit as new version' }).click()
+    await detailsPanel.getByText('Human-edited version committed.', { exact: true }).waitFor({ timeout: 15_000 })
+
+    // All five document tabs stay open while the active chart advances to
+    // the directly edited version.
+    expect(await detailsPanel.getByRole('tab').count()).toBe(5)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')

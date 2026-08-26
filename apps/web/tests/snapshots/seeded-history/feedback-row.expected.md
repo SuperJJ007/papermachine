@@ -14,6 +14,9 @@
   - img
   - img
   - text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- button "Read 2 files 2 steps" [expanded]:
+  - img
+  - text: Read 2 files 2 steps
 - button "Read a.txt":
   - img
   - img

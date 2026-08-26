@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { ToolGroup } from './ToolGroup.tsx'
@@ -226,6 +226,11 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  // Owner currency both flow-row shapes forward unchanged (single seat / group wrapper).
+  const seatProps: ChatNodeOwnerProps & Pick<ChatViewSlotProps, 'useSession' | 'renderSlot' | 't'> = {
+    useSession, selectedCallId, cwd, openFile: requestOpenFile, inspectCall, forkAt,
+    renderMessageImages, fileMentions, openDetailsView, loadImage, renderSlot, t,
+  }
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -441,40 +446,9 @@ export function ChatView({
             </div>
           )}
           {flowEntries.map(entry => entry.kind === 'single' ? (
-            <ChatNodeSeat
-              key={entry.key}
-              nodeKey={entry.key}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              openDetailsView={openDetailsView}
-              loadImage={loadImage}
-              renderSlot={renderSlot}
-              t={t}
-            />
+            <ChatNodeSeat key={entry.key} nodeKey={entry.key} {...seatProps} />
           ) : (
-            <ToolGroup
-              key={entry.groupKey}
-              groupKey={entry.groupKey}
-              keys={entry.keys}
-              useSession={useSession}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              openDetailsView={openDetailsView}
-              loadImage={loadImage}
-              renderSlot={renderSlot}
-              t={t}
-            />
+            <ToolGroup key={entry.groupKey} groupKey={entry.groupKey} keys={entry.keys} {...seatProps} />
           ))}
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would

@@ -120,10 +120,10 @@ vite-entry, workspace-management, turn-tail-actions, skill-tool-row, skill-invoc
 subagent-conversation, workflow-run, cordis-tool-round, code-mode-round, web-search-round,
 pwsh-terminal` (* = refreshed).
 
-### Verification sweep, session 2 (2026-08-26) — 3 failing files identified, 2 resolved, 1 open
+### Verification sweep, session 2 (2026-08-26) — COMPLETE; every follow-up below is closed
 
-A successor agent triaged the "3 failed files / 10 failed tests" from the last batch, then was
-stopped by a coordinator context-budget override before finishing. State as of that stop:
+A successor agent triaged the "3 failed files / 10 failed tests" from the last batch, was briefly
+stopped by a coordinator override, then resumed and finished the whole tail. Final state:
 
 **The 3 failing files are now identified** (2 + 5 + 3 = the 10 failed tests):
 `subagent-interrupt-ui.e2e.ts` (2), `smoke-real.e2e.ts` (5), `seeded-history.e2e.ts` (3).
@@ -137,49 +137,57 @@ Both pass in isolation (4/4 tests) and passed again inside a 22-file batch rerun
 rerun in this session. The captured `inbox.nextTurn toHaveLength(2)` failure never reproduced.
 Verdict: ordering/timing flake from batch execution, not a P3c/P3d regression. Nothing to fix here.
 
-**2. `seeded-history.e2e.ts` — intended P3d output; golden refresh needed (NOT yet done).**
-All 3 tests fail with the identical ARIA diff: the received output adds
+**2. `seeded-history.e2e.ts` — intended P3d output; goldens refreshed and re-verified green.**
+All 3 tests failed with the identical ARIA diff: the received output adds
 `- button "Read 2 files 2 steps" [expanded]` above the two adjacent `read` tool rows — exactly the
 P3d Tool-group header, same class of change as the `message-actions` refresh already committed.
-This is the intended behavior, not a bug. The refresh was NOT run (stop order arrived first).
-Next session: `DSH_SNAPSHOT=refresh pnpm exec vitest run --config vitest.web.config.ts
-apps/web/tests/seeded-history.e2e.ts`, sanity-check `git diff -- apps/web/tests/snapshots/seeded-history/`
-(expect only the group header + indentation), rerun in replay mode to confirm green, commit.
+`DSH_SNAPSHOT=refresh` updated `ui.expected.md`/`command-row.expected.md`/`feedback-row.expected.md`
+(3 lines each, only the group header), and the file passes in replay mode (11 passed, 1 skipped).
 
-**3. `smoke-real.e2e.ts` — OPEN, verdict not reached. This is a REAL-API test.**
-It self-skips without `DEEPSEEK_API_KEY`, but the repo-root `.env` key loads via
-`vitest.web.config.ts`, so session 2's triage runs (one solo run + one batch run) DID hit the real
-API (7/12 tests passed each time, so real model rounds ran). Budget accordingly before rerunning.
-The 5 failures, from the saved solo log:
+**3. `smoke-real.e2e.ts` — verdict: pre-existing environment/frontend issue, NOT attributable to
+d1dcf58fc9.** This is a REAL-API test: it self-skips without `DEEPSEEK_API_KEY`, but the repo-root
+`.env` key loads via `vitest.web.config.ts`, so session 2's triage runs DID hit the real API
+(three solo/batch runs total, 7/12 tests passing each time). Evidence for the verdict:
+- The 5 failures are identical across a stale dist and a freshly rebuilt one. Session 2 rebuilt
+  `build:lib:client` + `build:web` (the dist's CSS-module hash visibly changed,
+  `E5ZPPG_input` → `sZoEXa_input`, proving the new bundle was served) and re-ran once — same 5
+  failures, byte-identical failure mode.
 - 3 tests (`empty-state first send`, `view tabs`, `bash differential rendering`) die inside
   `connectFreshWorkspace` (`apps/web/tests/support.ts:76`): a welcome overlay —
-  `<div role="presentation" class="_root_15u5s_2">` containing the paragraph "We look forward to
-  exploring the limits of intell…" — intercepts pointer events over the "Choose workspace" textarea,
-  so the click/fill retries for 30s and times out **before any model call**.
-- `sidebar drag widens the column`: track stays `280px` after the drag (expected change).
-- `reload recovery`: times out waiting for `WEB_ROUND_DONE` (downstream of the same boot problem).
-Evidence so far: d1dcf58fc9 touches only the ui-science run row and ui-conversation chat grouping —
-neither renders that overlay — so a P3c/P3d cause is implausible but NOT proven. smoke-real is also
-the only sweep file that runs the **built dist** (`requireDist`) instead of source-mode replay, so a
-stale/mismatched `apps/web` frontend build in this worktree is a live hypothesis alongside a
-pre-existing overlay pointer-events bug and an environment quirk. Planned next steps (not executed):
-rebuild the frontend dist (`pnpm --filter @deepseek-ai/dsh-web-frontend run build`), rerun
-`pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/smoke-real.e2e.ts` once; if still
-failing, build + run at the parent commit `3e59f4c29d` in a detached scratch worktree to split
-pre-existing vs regression — both steps spend real API budget, so coordinate first. Failure
-screenshots from session 2's runs are under `.artifacts/`.
+  `<div role="presentation" class="_root_15u5s_2">` containing "We look forward to exploring the
+  limits of intell…" — intercepts pointer events over the "Choose workspace" textarea for the full
+  30s retry window, **before any model call**. `sidebar drag` fails on track geometry (stays
+  `280px`); `reload recovery` times out downstream of the same boot problem.
+- None of these surfaces (welcome overlay, workspace chooser, sidebar geometry, reload boot) are
+  rendered by the P3c/P3d code (`ScienceExecutionRow`, `ToolGroup`, `ChatView` flow rows), so per
+  the triage rule a parent-commit comparison was not warranted and was not run.
+Whoever owns the web welcome screen should reproduce with
+`pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/smoke-real.e2e.ts` (real API
+spend) and look at the overlay's pointer-events/stacking; failure screenshots are under
+`.artifacts/`.
+
+### Gates, session 2
+
+- `npx tsx scripts/run-gates.ts doc-sync` — **29 passed, 0 failed**.
+- `pnpm run duplication` — flagged 9 clones. One was introduced by d1dcf58fc9: the two
+  `flowEntries.map` branches in `ChatView.tsx` passed 12 identical props; fixed by extracting the
+  shared `seatProps` object and spreading it into `ChatNodeSeat`/`ToolGroup` (behavior-neutral —
+  543 ui-conversation unit tests, client typecheck, scoped oxlint, and the seeded-history +
+  message-actions e2e replays all pass unchanged). The remaining **8 clones are pre-existing
+  branch debt**: every pair lives in files d1dcf58fc9 never touched (`turn-deliverables.ts`/
+  `science-turn-artifacts.ts`, `ArtifactContent.tsx` ×2, `ScienceDetailsView.tsx`,
+  `goal`/`science-session` `invariant.ts`, `fold-state.ts`/`projection-fold-codec.ts`,
+  `bash-sandbox`/`pwsh-sandbox` `index.ts`, `gen-config-catalog.ts`), so the gate still exits 1 on
+  that baseline — left for the commits that own those files.
+- `pnpm run hygiene` — not run: no new package and no export surface change; doc-sync and
+  duplication surfaced no published-path change to justify it.
 
 ## Not done at all
 
 - **Acceptance screenshots** — explicitly out of scope for this implementing pass per the task brief
   (a separate step). None taken.
-- `seeded-history` golden refresh and the `smoke-real` verdict — see the session-2 section above.
-- No `pnpm run doc-sync` run (README pairing was re-recorded per-file via
-  `pnpm run verify-translation-pairing --write <path>` and spot-checked with the bare check; the full
-  doc-sync gate covering catalogs/other cross-file doc consistency was not run for time, in either
-  session — session 2 was stopped before reaching it).
-- `pnpm run duplication` / `pnpm run hygiene` — not run in either session; no reason to expect either
-  is affected (no new package, no export surface change), but not verified.
+- The 8 pre-existing duplication clones and the smoke-real welcome-overlay issue (both documented
+  above) belong to other work, not this PR.
 
 ## Commit
 

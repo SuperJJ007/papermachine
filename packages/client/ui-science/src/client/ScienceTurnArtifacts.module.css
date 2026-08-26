@@ -7,3 +7,5 @@
 .meta { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .version { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); }
+.more { margin: 8px 0 0; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 9px; background: transparent; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); cursor: pointer; }
+.more:hover { background: var(--dsw-alias-bg-layer-2); }

@@ -165,3 +165,48 @@ describe('ScienceTurnArtifacts', () => {
     expect(view.container.querySelector('img')).toBeNull()
   })
 })
+
+/** `count` distinct artifacts, sized only for the overflow-rule boundary tests below. */
+function overflowArtifacts(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    artifactId: `a-overflow-${String(index)}`, logicalName: `file-${String(index)}.csv`, version: 1,
+    title: `File ${String(index)}`,
+    attachment: { attachmentId: `sha256:overflow-${String(index)}`, mediaType: 'text/csv', bytes: 10 },
+  }))
+}
+
+function renderTray(count: number) {
+  const store = testScienceSelectionStore()
+  return render(<ScienceTurnArtifacts {...({
+    matched: { artifacts: overflowArtifacts(count) }, actions: store.actions, useStore: store.useStore,
+    loadImage: vi.fn(), openArtifact: vi.fn(), t, sessionId: 'session-1',
+  } as unknown as ScienceTurnArtifactsProps)} />)
+}
+
+describe('ScienceTurnArtifacts turn-tail overflow', () => {
+  it('shows all 5 cards with no "+N more" button below the threshold', () => {
+    renderTray(5)
+    expect(screen.getByText('本轮产出 5 个文件')).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('shows all 6 cards uncollapsed at the exact boundary', () => {
+    renderTray(6)
+    expect(screen.getByText('本轮产出 6 个文件')).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(6)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('collapses 7 cards to 5 plus a "+2 更多" button, and expands to all 7 on click', () => {
+    renderTray(7)
+    expect(screen.getByText('本轮产出 7 个文件')).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    const more = screen.getByRole('button', { name: '+2 更多' })
+    fireEvent.click(more)
+    expect(screen.getAllByRole('listitem')).toHaveLength(7)
+    expect(screen.queryByRole('button')).toBeNull()
+    // The title's count is the total produced this Turn, never the visible slice.
+    expect(screen.getByText('本轮产出 7 个文件')).toBeTruthy()
+  })
+})

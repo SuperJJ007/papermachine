@@ -112,7 +112,7 @@ function issue(ctx: z.RefinementCtx, message: string, path: PropertyKey[] = []):
 
 const scienceModeSchema = z.object({
   modeId: z.literal('science'),
-  presetId: z.literal('science'),
+  presetId: text(MAX_ID_LENGTH),
   modeRevision: text(MAX_ID_LENGTH),
 }).strict()
 

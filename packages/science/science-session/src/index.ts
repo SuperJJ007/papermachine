@@ -35,6 +35,7 @@ export type * from './types.ts'
 export type * from './domain.ts'
 export {
   SCIENCE_EVENT_VERSION,
+  SCIENCE_PRESET_ID,
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceProjectId,

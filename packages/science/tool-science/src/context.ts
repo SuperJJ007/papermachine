@@ -9,7 +9,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
-import { replayScience } from '@deepseek-ai/dsh-science-session'
+import { SCIENCE_PRESET_ID, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding, ScienceKernel, ScienceKernelEndReason, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ResolvedConfig } from './config.ts'
@@ -91,10 +91,10 @@ export function closedKernelFacts(kernel: ScienceKernel): ClosedKernelFacts | un
  * fact `dsh-host-apiproxy` resolves this way for tool visibility, transcript
  * presenters, and resume/adoption.
  * @param session - candidate Session.
- * @returns whether the session's resolved agent preset is `'science'`.
+ * @returns whether the session's resolved agent preset is `SCIENCE_PRESET_ID`.
  */
 export function isScienceSession(session: Session): boolean {
-  return resolveSessionPreset(session) === 'science'
+  return resolveSessionPreset(session) === SCIENCE_PRESET_ID
 }
 
 /** Render one interpreter binding line, omitting source, credentials, and Host paths. */
@@ -161,9 +161,14 @@ export async function ensureScienceBound(
 ): Promise<ScienceProjection> {
   let projection = replayScience(session.events)
   if (projection === null) {
+    // The caller already confirmed `isScienceSession(session)`, so the
+    // resolved preset here is always `SCIENCE_PRESET_ID` today; recording it
+    // rather than a literal keeps this event's `presetId` truthfully "the
+    // preset that bound Science mode" if that ever becomes a different id.
+    const presetId = resolveSessionPreset(session) ?? SCIENCE_PRESET_ID
     session.append('science/mode-bound', {
       version: 1,
-      mode: { modeId: 'science', presetId: 'science', modeRevision: config.modeRevision },
+      mode: { modeId: 'science', presetId, modeRevision: config.modeRevision },
     })
     projection = replayScience(session.events)
     /* v8 ignore next -- append() commits synchronously; a fresh replay observes it immediately */

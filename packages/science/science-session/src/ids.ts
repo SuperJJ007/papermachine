@@ -7,6 +7,19 @@ import { ArtifactId, ProjectId, VersionId } from '@deepseek-ai/dsh-science-artif
 export const SCIENCE_EVENT_VERSION = 1 as const
 
 /**
+ * The shipped Science preset's id. `ScienceModeRef.presetId` records
+ * whichever preset actually bound Science mode rather than a hardcoded
+ * literal, so the fold and `dsh-tool-science`'s own preset check are
+ * self-consistent instead of independently repeating this string — but
+ * today it is the only preset id either recognizes as eligible to bind
+ * Science mode. Recognizing another preset id (a genuinely distinct
+ * discipline preset, or a copy of this one) as Science-family needs a
+ * preset-metadata mechanism this package does not yet consult; until then,
+ * a preset whose id differs from this constant cannot bind Science mode.
+ */
+export const SCIENCE_PRESET_ID = 'science'
+
+/**
  * Persisted-cache invalidation version for the Science projection state.
  * Bump whenever the state shape or the fold semantics change, per the
  * registry's `stateVersion` rule ([session-projection](../../../session/session-projection/README.md#contract)).

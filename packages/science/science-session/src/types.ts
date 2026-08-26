@@ -30,8 +30,12 @@ export type {
 export interface ScienceModeRef {
   /** Stable mode discriminator. */
   readonly modeId: 'science'
-  /** Preset identity required by the Science invariant. */
-  readonly presetId: 'science'
+  /**
+   * The preset that actually bound Science mode, recorded verbatim (today
+   * always `SCIENCE_PRESET_ID` from `./ids.ts`; see its JSDoc for why no
+   * other value is yet accepted).
+   */
+  readonly presetId: string
   /** Deployment-owned revision of the Science mode contract. */
   readonly modeRevision: string
 }

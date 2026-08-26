@@ -7,7 +7,7 @@
 // included) renders inside a group exactly as it would ungrouped. Both the
 // group's open/closed state and each member's own fold state are UI-only:
 // neither is logged or projected into a provider request, and both restore
-// to their defaults (group open, member folded) on every reload.
+// to their defaults (group closed, member folded) on every reload.
 
 import { useState } from 'react'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -26,9 +26,9 @@ interface ToolGroupProps extends Omit<ChatNodeOwnerProps, 'attachedReasoning'> {
   readonly reasoningByKey: ReadonlyMap<string, readonly string[]>
 }
 
-/** One auto-titled group over adjacent Tool call rows, open by default. */
+/** One auto-titled group over adjacent Tool call rows, closed by default. */
 export function ToolGroup({ groupKey, keys, useSession, renderSlot, t, reasoningByKey, ...owner }: ToolGroupProps) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const roots = useSession(snapshot => resolveGroupRoots(keys, snapshot.chat.nodes))
   const summary = summarizeToolGroup(roots, t)
   return (

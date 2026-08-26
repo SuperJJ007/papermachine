@@ -283,6 +283,11 @@ describe('web e2e: seeded history renders through cold resume', () => {
       timeout: 10_000,
     }).toBe(1)
     expect(await page.getByText('Context compacted', { exact: true }).count()).toBe(0)
+    // The two read calls fold into one Tool group, collapsed by default: open
+    // it to reach the member rows this fixture inspects below.
+    const groupHeader = page.getByRole('button', { name: /Read 2 files/u })
+    await groupHeader.waitFor({ timeout: 10_000 })
+    await groupHeader.click()
     // Tool cards render from logged tool/call + tool/result alone (views are
     // host-recomputed per page; the generic card is the documented default).
     const toolRows = page.locator('[data-variant], [data-sample]')

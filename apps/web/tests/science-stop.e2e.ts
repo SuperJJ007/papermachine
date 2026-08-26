@@ -249,6 +249,8 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
     const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u })
     await groupHeader.waitFor({ timeout: 15_000 })
     expect(await page.getByText('2 steps', { exact: true }).count()).toBeGreaterThanOrEqual(1)
+    // The group is collapsed by default; open it to reach the nested member rows.
+    await groupHeader.click()
     expect(await page.locator('[data-tool="science-run"][data-state="success"]').count()).toBeGreaterThanOrEqual(2)
   }, 90_000)
 
@@ -282,6 +284,9 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
     const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u }).last()
     await groupHeader.waitFor({ timeout: 15_000 })
+    // The group is collapsed by default; the attached Think fold is part of a
+    // member row, so it is not mounted until the group opens.
+    await groupHeader.click()
     // Exactly one Think disclosure for this turn: the reasoning attached
     // onto the group instead of also rendering as its own standalone row.
     const thinkRows = page.locator('[data-variant="think"]')

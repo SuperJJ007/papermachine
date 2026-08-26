@@ -441,6 +441,8 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('do the thing')).toBeTruthy()
     expect(view.getByText('running tools')).toBeTruthy()
+    // The two tool calls form a group, collapsed by default; open it to reach the member rows.
+    fireEvent.click(view.getByRole('button', { name: /运行了 2 段代码/u }))
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
     expect(view.getByTestId('tool-seat-b').textContent).toBe('bash:b')
     expect([...view.container.querySelectorAll('[data-chat-flow-key]')].map(row => ({
@@ -1527,33 +1529,41 @@ describe('Tool groups', () => {
     expect(view.queryByRole('button', { name: /段代码|个文件|次|Skill|项操作/u })).toBeNull()
   })
 
-  it('groups two or more adjacent tool-call rows under one generated title, expanded by default', () => {
+  it('groups two or more adjacent tool-call rows under one generated title, collapsed by default', () => {
     const h = makeHarness({ nodes: [toolResult(3, 'a'), toolResult(4, 'b')] })
     const view = render(<h.ChatView {...h.props} />)
     const header = view.getByRole('button', { name: /运行了 2 段代码/u })
-    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(header.getAttribute('aria-expanded')).toBe('false')
     expect(view.getByText('2 步')).toBeTruthy()
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByTestId('tool-seat-a')).toBeTruthy()
     expect(view.getByTestId('tool-seat-b')).toBeTruthy()
   })
 
-  it('collapses and reopens the whole group as one unit, without touching an ungrouped row elsewhere', () => {
+  it('expands and recollapses the whole group as one unit, without touching an ungrouped row elsewhere', () => {
     const h = makeHarness({
       nodes: [toolResult(3, 'a'), toolResult(4, 'b'), user(5, 'thanks'), toolResult(6, 'solo')],
     })
     const view = render(<h.ChatView {...h.props} />)
     const header = view.getByRole('button', { name: /运行了 2 段代码/u })
-    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
-    fireEvent.click(header)
     expect(header.getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByTestId('tool-seat-a')).toBeNull()
     expect(view.queryByTestId('tool-seat-b')).toBeNull()
-    // The ungrouped row is unaffected by a sibling group's own collapse.
+    // The ungrouped row is unaffected by a sibling group's own default collapse.
     expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
     fireEvent.click(header)
     expect(header.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByTestId('tool-seat-a')).toBeTruthy()
     expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
   })
 
   it('splits a tool-call run wherever assistant text interrupts it, and does not group the resulting singletons', () => {
@@ -1562,8 +1572,13 @@ describe('Tool groups', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.queryAllByRole('button', { name: /运行了/u })).toHaveLength(1)
-    expect(view.getByRole('button', { name: /运行了 2 段代码/u })).toBeTruthy()
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    // 'a' precedes the interrupting assistant text as a singleton — never grouped, always mounted.
     expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    expect(view.queryByTestId('tool-seat-c')).toBeNull()
+    fireEvent.click(header)
     expect(view.getByTestId('tool-seat-b')).toBeTruthy()
     expect(view.getByTestId('tool-seat-c')).toBeTruthy()
   })
@@ -1632,11 +1647,14 @@ describe('Think attach', () => {
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.queryAllByRole('button', { name: /运行了|读取了/u })).toHaveLength(1)
-    expect(view.getByRole('button', { name: /读取了 3 个文件/u })).toBeTruthy()
+    const header = view.getByRole('button', { name: /读取了 3 个文件/u })
+    // Group collapsed by default: the fold attaches to a member row, so it is not mounted yet either.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(0)
+    fireEvent.click(header)
     expect(view.getByTestId('tool-seat-read')).toBeTruthy()
     expect(view.getByTestId('tool-seat-glob')).toBeTruthy()
     expect(view.getByTestId('tool-seat-state')).toBeTruthy()
-    // The fold still shows exactly once, ahead of the group's first member.
+    // The fold shows exactly once, ahead of the group's first member, once the group is open.
     expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
   })
 })

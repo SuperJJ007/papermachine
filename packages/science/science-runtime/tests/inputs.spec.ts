@@ -74,7 +74,14 @@ function storeHarness(blobs: Readonly<Record<string, Uint8Array>> = {}) {
     if (sha256 === IMAGE_SHA) return Uint8Array.of(3, 4, 5)
     return Uint8Array.of(9, 9)
   })
-  return { store: { readBlob } as unknown as ScienceArtifactStore, readBlob }
+  // Every fixture artifactId these tests reference is already in `projection`
+  // (this session's own live projection), so the store fallback is never
+  // reached — an empty list here is what makes a genuinely unresolvable
+  // reference (a known artifactId at an uncommitted version) fail with
+  // INPUT_NOT_FOUND rather than a mock crash. The dedicated cross-session
+  // test below mounts its own `listVersions` double.
+  const listVersions = vi.fn(async () => [])
+  return { store: { readBlob, listVersions } as unknown as ScienceArtifactStore, readBlob, listVersions }
 }
 
 function store(blobs: Readonly<Record<string, Uint8Array>> = {}): ScienceArtifactStore {
@@ -190,5 +197,46 @@ describe('prepareRunArtifacts', () => {
       editBaselines: new Map([['shared.txt', { artifactId: TEXT_ID, version: 1 }]]),
     })
     expect(readBlob).toHaveBeenCalledOnce()
+  })
+
+  it('resolves a run input the local live projection has never recorded from the project store (S3 cross-session reference)', async () => {
+    const EXTERNAL_ID = ScienceArtifactId('external-artifact')
+    const EXTERNAL_SHA = '5'.repeat(64)
+    const listVersions = vi.fn(async () => [{
+      versionId: ScienceVersionId('external-v3'),
+      artifactId: EXTERNAL_ID,
+      ordinal: 3,
+      parentVersionId: undefined,
+      sha256: EXTERNAL_SHA,
+      mediaType: 'text/plain',
+      byteCount: 4,
+      origin: 'auto',
+      title: undefined,
+      caption: undefined,
+      producerSessionId: 'other-session',
+      producerRunId: undefined,
+      producerToolCallId: undefined,
+      producerRequestHeaderSeq: undefined,
+      environmentRevision: undefined,
+      environmentFingerprintPreview: undefined,
+      createdAt: 1,
+    }])
+    const readBlob = vi.fn(async () => Uint8Array.of(7, 7, 7, 7))
+    const externalStore = { readBlob, listVersions } as unknown as ScienceArtifactStore
+
+    await expect(prepareRunArtifacts(projection, externalStore, PROJECT_ID, [
+      { artifactId: EXTERNAL_ID, version: 3, path: 'external.txt' },
+    ], undefined, 1, 10, signal)).resolves.toMatchObject({
+      materialized: [{ path: 'external.txt', data: Uint8Array.of(7, 7, 7, 7) }],
+    })
+    expect(listVersions).toHaveBeenCalledWith(PROJECT_ID, EXTERNAL_ID)
+    expect(readBlob).toHaveBeenCalledWith(PROJECT_ID, EXTERNAL_SHA)
+
+    // The same unresolvable-locally artifactId, at an ordinal the store
+    // fallback also does not have, still fails: the fallback is a real
+    // lookup, not a blanket bypass.
+    await expect(prepareRunArtifacts(projection, externalStore, PROJECT_ID, [
+      { artifactId: EXTERNAL_ID, version: 9, path: 'external.txt' },
+    ], undefined, 1, 10, signal)).rejects.toMatchObject({ code: 'INPUT_NOT_FOUND' })
   })
 })

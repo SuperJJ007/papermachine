@@ -13,6 +13,7 @@ import {
   ScienceScratchKey,
 } from '../src/index.ts'
 import {
+  ARTIFACT_ID,
   FINGERPRINT,
   artifact,
   appendFixtureEvents,
@@ -214,6 +215,12 @@ describe('Science stream invariant', () => {
       arguments: '{}',
     })
     const inputSeq = inputSession.seq
+    // ARTIFACT_ID is known to this session's own log (committed by the
+    // `legalEvents().slice(0, 9)` prefix above), so naming it at a version
+    // that was never committed is a same-session inconsistency the fold
+    // still catches — unlike an artifactId this session's log has never
+    // recorded at all, which S3 accepts as a legitimate cross-session
+    // reference (see science-session's fold.spec.ts).
     expect(() => inputSession.append('science/run-started', {
       version: 1,
       run: runStarted({
@@ -221,7 +228,7 @@ describe('Science stream invariant', () => {
         toolCallId: call.data.callId,
         startedAt: call.time,
         runDirectoryRef: 'runs/input-run/',
-        inputs: [{ artifactId: ScienceArtifactId('missing-input'), version: 1, path: 'input.png' }],
+        inputs: [{ artifactId: ARTIFACT_ID, version: 99, path: 'input.png' }],
       }),
     })).toThrow(/does not identify a committed artifact version/)
     expect(inputSession.seq).toBe(inputSeq)

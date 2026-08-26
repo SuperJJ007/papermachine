@@ -70,7 +70,7 @@ function assertNoPathCollisions(
 function artifactVersion(
   projection: ScienceProjection,
   ref: ScienceArtifactVersionRef,
-  code: 'INPUT_NOT_FOUND' | 'ARTIFACT_NOT_FOUND',
+  code: 'ARTIFACT_NOT_FOUND',
   subject: string,
 ): ScienceArtifactVersion {
   const artifact = projection.artifacts.find(candidate =>
@@ -82,6 +82,55 @@ function artifactVersion(
     )
   }
   return artifact
+}
+
+/** The fields a run input actually needs from its resolved artifact version, whichever authority resolved it. */
+interface ResolvedRunInputVersion {
+  readonly sha256: string
+  readonly byteCount: number
+}
+
+/**
+ * Resolve one run input's exact committed version, falling back to the
+ * project store when this session's own live strict projection has never
+ * recorded the referenced artifactId at all. An artifactId this session's
+ * own fold already knows (at some version) is resolved from that
+ * projection only — same-session references need no store round trip and
+ * the projection is already the authority for them. An artifactId the
+ * projection has never recorded is a legitimate cross-session reference
+ * (S3): a second session in the same project reading an artifact a
+ * different session produced. This is the sole point that reference is
+ * verified — the store's own transactions are what actually prove it real
+ * — before the referencing `science/run-started` event commits; the
+ * committed event then carries the reference as fact, which
+ * `science-session`'s fold trusts on pure replay without reaching the store
+ * (see `transition.ts`'s `requireRunInputArtifactVersion`).
+ * @param projection - the requesting session's own live strict projection.
+ * @param store - project artifact store used for the cross-session fallback.
+ * @param projectId - the session's already-resolved owning project.
+ * @param ref - the caller-supplied artifactId/version reference.
+ * @param subject - caller-facing noun used in the stable error message.
+ * @returns the resolved version's content digest and byte count.
+ */
+async function resolveInputArtifactVersion(
+  projection: ScienceProjection,
+  store: ScienceArtifactStore,
+  projectId: ScienceProjectId,
+  ref: ScienceArtifactVersionRef,
+  subject: string,
+): Promise<ResolvedRunInputVersion> {
+  const local = projection.artifacts.find(candidate =>
+    candidate.artifactId === ref.artifactId && candidate.version === ref.version)
+  if (local !== undefined) return local
+  const versions = await store.listVersions(projectId, ref.artifactId)
+  const stored = versions.find(candidate => candidate.ordinal === ref.version)
+  if (stored === undefined) {
+    throw new ScienceRuntimeError(
+      'INPUT_NOT_FOUND',
+      `${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`,
+    )
+  }
+  return stored
 }
 
 /**
@@ -121,10 +170,10 @@ export async function prepareRunArtifacts(
     'Science artifact input paths collide inside the reserved inputs directory',
   )
 
-  const resolved = inputs.map(input => ({
+  const resolved = await Promise.all(inputs.map(async input => ({
     input,
-    artifact: artifactVersion(projection, input, 'INPUT_NOT_FOUND', 'Science artifact input'),
-  }))
+    artifact: await resolveInputArtifactVersion(projection, store, projectId, input, 'Science artifact input'),
+  })))
   const declaredBytes = resolved.reduce((sum, entry) => sum + entry.artifact.byteCount, 0)
   if (declaredBytes > maxBytes) {
     throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxBytes)}-byte bound`)
@@ -151,6 +200,12 @@ export async function prepareRunArtifacts(
     'INVALID_REQUEST',
     'Science edit baseline paths collide under the reserved artifact directory',
   )
+  // Edit baselines stay resolved from this session's own live projection
+  // only, unlike run inputs above: a cross-session baseline would also need
+  // `science-session`'s fold to accept an unresolved `parent` reference on
+  // replay (`transition.ts`'s `applyArtifactSaved`), which stays strict —
+  // out of scope for this slice (S3 covers artifact_inputs, not editBaselines
+  // lineage across sessions).
   const editBaselines = new Map<string, ScienceArtifactVersionRef>()
   for (const { path, ref } of baselines) {
     artifactVersion(projection, ref, 'ARTIFACT_NOT_FOUND', 'Science edit baseline')

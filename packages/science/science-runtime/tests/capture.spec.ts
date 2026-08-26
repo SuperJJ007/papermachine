@@ -623,6 +623,78 @@ describe('Science auto-capture', () => {
     expect(projection?.artifacts).toHaveLength(1)
   })
 
+  it('continues a prior session\'s artifact from a new session in the same project (S3 cross-session capture)', async () => {
+    const root = tmp('.science-capture-cross-session-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    // Both sessions share one workspace `cwd`, so both resolve to the SAME
+    // project — the only thing that makes this a same-project, cross-session
+    // continuation rather than two unrelated projects each with their own
+    // artifact.
+    const workspace = tmp('.science-cross-session-workspace-')
+    const sessionA = createScienceSession(harness.ctx, 'science-cross-session-a', workspace)
+    const sessionB = createScienceSession(harness.ctx, 'science-cross-session-b', workspace)
+
+    const first = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n1,2\n' })
+    const versionA = first.result.capture?.captured.at(0)
+    if (versionA === undefined) throw new Error('cross-session test: expected session A to capture one version')
+    expect(versionA).toMatchObject({ logicalName: 'shared.csv', version: 1, origin: 'auto' })
+
+    // Session B has never seen `shared.csv` in its OWN log — it has to
+    // consult the project store to learn artifactId already owns that
+    // logicalName, rather than forking a second artifact with the same name.
+    const second = await runWithFiles(harness, root, sessionB, { 'shared.csv': 'a,b\n3,4\n' })
+    const versionB = second.result.capture?.captured.at(0)
+    if (versionB === undefined) throw new Error('cross-session test: expected session B to continue the same artifact')
+    expect(versionB).toMatchObject({ artifactId: versionA.artifactId, logicalName: 'shared.csv', version: 2, origin: 'auto' })
+
+    // Files still shows one artifact row for the project, its latest
+    // version now produced by session B.
+    const artifacts = await harness.ctx.scienceArtifactStore.listArtifacts(versionA.projectId)
+    expect(artifacts).toHaveLength(1)
+    const artifactRecord = artifacts[0]
+    if (artifactRecord === undefined) throw new Error('cross-session test: expected exactly one project artifact')
+    expect(artifactRecord.artifactId).toBe(versionA.artifactId)
+    const latest = await harness.ctx.scienceArtifactStore.getVersion(versionA.projectId, artifactRecord.latestVersionId)
+    expect(latest).toMatchObject({ ordinal: 2, producerSessionId: sessionB.id })
+
+    // A THIRD session, its own local fold empty, reproduces session B's
+    // latest bytes byte-for-byte: the store fallback's own dedup check (not
+    // the local-history one, since this session has no local history at
+    // all) still recognizes it and opens no redundant version.
+    const sessionC = createScienceSession(harness.ctx, 'science-cross-session-c', workspace)
+    const third = await runWithFiles(harness, root, sessionC, { 'shared.csv': 'a,b\n3,4\n' })
+    expect(third.result.capture?.captured).toEqual([])
+  })
+
+  it('continues writing to the same on-disk project store across a Host restart (fresh Context/Runtime, same project)', async () => {
+    const root = tmp('.science-capture-restart-')
+    const prefix = createFakePythonPrefix(root)
+    const workspace = tmp('.science-restart-workspace-')
+
+    const before = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    const sessionA = createScienceSession(before.ctx, 'science-restart-a', workspace)
+    const first = await runWithFiles(before, root, sessionA, { 'restart.csv': 'a,b\n1,2\n' })
+    const versionA = first.result.capture?.captured.at(0)
+    if (versionA === undefined) throw new Error('restart test: expected session A to capture one version')
+    // No in-memory state survives a Host restart — only what was durably
+    // committed to disk under the same `dshHome`.
+    await before.ctx.fiber.dispose()
+
+    const after = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(after.ctx)
+    const sessionB = createScienceSession(after.ctx, 'science-restart-b', workspace)
+    const second = await runWithFiles(after, root, sessionB, { 'restart.csv': 'a,b\n3,4\n' })
+    const versionB = second.result.capture?.captured.at(0)
+    if (versionB === undefined) throw new Error('restart test: expected session B to continue the same artifact after restart')
+    expect(versionB).toMatchObject({ artifactId: versionA.artifactId, logicalName: 'restart.csv', version: 2 })
+
+    const artifacts = await after.ctx.scienceArtifactStore.listArtifacts(versionA.projectId)
+    expect(artifacts).toHaveLength(1)
+    expect(artifacts[0]).toMatchObject({ artifactId: versionA.artifactId, originSessionId: sessionA.id })
+  })
+
   /** Mount a store double whose writes fail with `failure` while `openProject` still resolves a stable project. */
   function failingStoreOverride(failure: unknown) {
     return (ctx: Context): void => {
@@ -630,6 +702,7 @@ describe('Science auto-capture', () => {
         openProject: async (workspacePath: string) => ({
           projectId: 'capture-test-project', storeRoot: workspacePath, workspacePath, outcome: 'created',
         }),
+        listArtifacts: async () => [],
         // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.
         createArtifact: async () => { throw failure },
         // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.

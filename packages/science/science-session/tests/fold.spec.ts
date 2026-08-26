@@ -422,13 +422,6 @@ describe('strict Science fold', () => {
     })
     expect(() => foldScience(badEnvironment)).toThrow(/environment revision must be 1/)
 
-    const badChart = legalEvents()
-    badChart[8] = event('science/artifact-saved', 8, 170, {
-      version: 1,
-      artifact: artifact({ version: 2 }),
-    })
-    expect(() => foldScience(badChart)).toThrow(/first logical artifact version must be 1/)
-
     const badOutcome = legalEvents()
     badOutcome[10] = event('science/outcome-published', 10, 180, {
       version: 1,
@@ -456,6 +449,35 @@ describe('strict Science fold', () => {
       environment: environment({ configuredAt: 90, validatedAt: 98 }),
     })
     expect(() => foldScience(backward)).toThrow(/moves time backwards/)
+  })
+
+  it('accepts a first-sighted artifact version above 1 as a cross-session continuation (S3), still rejecting a same-session skip', () => {
+    // This session's own log has never recorded ARTIFACT_ID before this
+    // event: it may be opening a brand-new artifact, or continuing one a
+    // different session in the same project already versioned. The fold
+    // cannot tell those apart without the project store, so it accepts the
+    // reference (the live Runtime validated the true prior ordinal against
+    // the store before this event ever committed).
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+    const state = foldScience(continued)
+    expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 4 })
+
+    // Once this session's own log DOES carry a local version of that
+    // artifactId, a same-session skip ahead is still a same-session
+    // inconsistency the log alone can catch, and still throws.
+    const skipped = continued.slice()
+    skipped.push(
+      toolCall(9, 185, CallId('call-continue-skip'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({ version: 6, toolCallId: CallId('call-continue-skip'), createdAt: 189 }),
+      }),
+    )
+    expect(() => foldScience(skipped)).toThrow(/artifact versions must retain artifactId and advance contiguously/)
   })
 
   it('rejects missing or forward references and terminal whole-value rewrites', () => {
@@ -531,9 +553,22 @@ describe('strict Science fold', () => {
     const missingInput = events.slice()
     missingInput[12] = event('science/run-started', 12, 190, {
       version: 1,
-      run: { ...secondRun, inputs: [{ artifactId: ScienceArtifactId('missing'), version: 1, path: 'missing.png' }] },
+      run: { ...secondRun, inputs: [{ artifactId: branchId, version: 99, path: 'missing.png' }] },
     })
     expect(() => foldScience(missingInput)).toThrow(/run input .* does not identify a committed artifact version/)
+
+    // A run input naming an artifactId this session's own log has never
+    // recorded at all — not even at a different version — is a legitimate
+    // cross-session reference (S3): the live Runtime already validated it
+    // against the project store before this event committed, and pure fold
+    // replay, which cannot reach the store, trusts that committed fact
+    // rather than rejecting an artifactId it simply has no local record of.
+    const crossSessionInput = events.slice()
+    crossSessionInput[12] = event('science/run-started', 12, 190, {
+      version: 1,
+      run: { ...secondRun, inputs: [{ artifactId: ScienceArtifactId('external-artifact'), version: 7, path: 'external.png' }] },
+    })
+    expect(() => foldScience(crossSessionInput)).not.toThrow()
 
     const missingParent = events.slice(0, 10)
     missingParent.push(event('science/artifact-saved', 10, 180, {

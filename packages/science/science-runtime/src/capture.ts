@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ArtifactId, ArtifactRecord, ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
 import { applyScienceEvent, foldScience, projectScienceFold } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactMediaType,
@@ -129,6 +129,14 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   let skippedOversizedCount = 0
   let truncatedPerSession = false
   let appendFailed = false
+  // Populated lazily, at most once per walk, only when a file's logicalName
+  // has no local record: this session's own fold already answers "does an
+  // artifact for this logicalName exist" for every file a prior run of THIS
+  // session captured, so most walks never need it. When needed, it is the
+  // project store's authoritative view of every artifact in the project —
+  // including ones a DIFFERENT session created (S3 cross-session
+  // continuation) — which this session's own fold cannot see.
+  let projectArtifacts: readonly ArtifactRecord[] | undefined
   // Folded once from the complete log, then advanced incrementally per
   // appended `science/artifact-saved` below — replaying the whole log on
   // every one of up to `captureMaxFilesPerRun` iterations would be
@@ -182,6 +190,24 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       if (latestRunProduced?.sha256 === sha256) continue
     }
 
+    // This session's own fold has no local record of this logicalName: a
+    // different session in the same project may already own it (S3
+    // cross-session continuation). Check the project store — the
+    // authoritative project-wide index this session's own fold cannot see —
+    // before deciding to create a brand-new artifact; otherwise a second
+    // session capturing the same-named output would fork a duplicate
+    // artifactId instead of extending the one the project already has.
+    let crossSessionArtifactId: ArtifactId | undefined
+    if (latest === undefined) {
+      projectArtifacts ??= await store.listArtifacts(projectId)
+      const existing = projectArtifacts.find(candidate => candidate.logicalName === relativePath)
+      if (existing !== undefined) {
+        const existingLatest = await store.getVersion(projectId, existing.latestVersionId)
+        if (existingLatest !== undefined && existingLatest.sha256 === sha256) continue
+        crossSessionArtifactId = existing.artifactId
+      }
+    }
+
     const parent = request.editBaselines?.get(relativePath)
     let parentVersionId: ScienceVersionId | undefined
     if (parent !== undefined) {
@@ -202,9 +228,10 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       environmentFingerprintPreview: fingerprintPreview(sourceRun.environmentFingerprint),
     }
     const title = basename(relativePath)
+    const artifactId = latest?.artifactId ?? crossSessionArtifactId
     // The store row commits before its session event: the event carries the
     // validated store coordinates as fact (S0's Host-side pre-commit rule).
-    const stored = latest === undefined
+    const stored = artifactId === undefined
       ? (await store.createArtifact(projectId, {
         logicalName: relativePath,
         originSessionId: session.id,
@@ -214,7 +241,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
         title,
         ...provenance,
       })).version
-      : await store.appendVersion(projectId, latest.artifactId, {
+      : await store.appendVersion(projectId, artifactId, {
         producerSessionId: session.id,
         data,
         mediaType,

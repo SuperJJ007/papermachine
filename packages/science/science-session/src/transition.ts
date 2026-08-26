@@ -33,6 +33,32 @@ function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVer
   return artifact
 }
 
+/**
+ * Validate one `science/run-started` input reference against this session's
+ * own fold-local artifact history, tolerating a reference this session has
+ * never recorded. A run input naming an artifactId this session's own log
+ * already has SOME version of is validated strictly, exactly like
+ * {@link requireArtifactVersion}: the log alone proves or disproves it. A
+ * run input naming an artifactId this session's log has never recorded is a
+ * legitimate cross-session reference (a second session in the same project
+ * reading an artifact a different session produced): the live Runtime
+ * validated it against the project store before the referencing
+ * `science/run-started` event committed (`prepareRunArtifacts` in
+ * `science-runtime`), and pure fold replay — which cannot reach the store —
+ * trusts that already-validated fact instead of re-deriving it. This is
+ * strictly narrower than accepting every unknown reference: a same-session
+ * artifactId at the wrong version still throws.
+ */
+function requireRunInputArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): void {
+  const knownLocally = state.artifacts.some(candidate => candidate.artifactId === ref.artifactId)
+  if (!knownLocally) return
+  const artifact = state.artifacts.find(candidate =>
+    candidate.artifactId === ref.artifactId && candidate.version === ref.version)
+  if (artifact === undefined) {
+    throw new Error(`${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`)
+  }
+}
+
 function requireRequestHeader(state: ScienceFoldState, seq: number): IndexedSessionFact {
   const latest = state.requestHeaders.at(-1)
   if (state.modeBoundSeq === undefined || seq <= state.modeBoundSeq || latest?.seq !== seq) {
@@ -172,7 +198,7 @@ function applyRunStarted(state: ScienceFoldState, event: Extract<DecodedScienceD
   if (state.runs.some(candidate => candidate.status === 'running')) {
     throw new Error('only one Science run may be running in a session')
   }
-  for (const input of run.inputs ?? []) requireArtifactVersion(state, input, 'Science run input')
+  for (const input of run.inputs ?? []) requireRunInputArtifactVersion(state, input, 'Science run input')
   const environment = requireLatestAppliedBinding(state, run.environmentRevision, run.language, run.environmentFingerprint, 'Science run')
   requireOpenKernelEpoch(state, run)
   const requestHeader = requireRequestHeader(state, run.requestHeaderSeq)
@@ -302,7 +328,19 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   if (target === undefined) {
     const latest = logical.at(-1)
     if (latest === undefined) {
-      if (artifact.version !== 1) throw new Error('the first logical artifact version must be 1')
+      // A logicalName this session's own log has never recorded either
+      // opens a brand-new artifact at version 1, or continues one a
+      // different session in the same project already versioned (S3
+      // cross-session append): this session's fold, replaying only its own
+      // log, cannot tell those two apart without the project store, so it
+      // no longer requires exactly version 1 here (the codec's own
+      // POSITIVE_INTEGER schema already rejects anything but a positive
+      // ordinal). The live Runtime is what actually enforced the true prior
+      // ordinal (`store.appendVersion`'s own linearized MAX(ordinal)+1
+      // transaction) before this event ever committed; a same-session
+      // continuation (the `else` branch below) still enforces strict
+      // contiguity, which the log alone can verify without trusting
+      // anything external.
       const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
       if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
     } else if (artifact.artifactId !== latest.artifactId

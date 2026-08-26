@@ -95,6 +95,11 @@ const runOutputSchema = {
     captureSkippedOversizedCount: { type: 'integer' },
     captureTruncatedPerRun: { type: 'boolean' },
     captureTruncatedPerSession: { type: 'boolean' },
+    // Undeclared `.png` paths this run wrote under SCIENCE_ARTIFACT_DIR but
+    // that the 'declared' raster-capture policy left uncaptured — empty
+    // under the 'always' policy, and absent (not an empty array) when
+    // capture did not run synchronously, matching capturedArtifacts' own split.
+    skippedRaster: { type: 'array', items: { type: 'string' } },
   },
 } as const
 
@@ -177,6 +182,7 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
     stderr: result.stderr,
     ...capture === undefined ? {} : {
       capturedArtifacts: capture.captured.map(capturedArtifactValue),
+      ...capture.skippedRasterPaths.length > 0 ? { skippedRaster: [...capture.skippedRasterPaths] } : {},
       ...capture.skippedOversizedCount > 0 ? { captureSkippedOversizedCount: capture.skippedOversizedCount } : {},
       ...capture.truncatedPerRun ? { captureTruncatedPerRun: true } : {},
       ...capture.truncatedPerSession ? { captureTruncatedPerSession: true } : {},
@@ -241,6 +247,10 @@ export function formatRunResult(value: ScienceRunValue): string {
     const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
     lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)
   }
+  if (value.skippedRaster !== undefined && value.skippedRaster.length > 0) {
+    const noun = value.skippedRaster.length === 1 ? 'file' : 'files'
+    lines.push(`(${String(value.skippedRaster.length)} PNG ${noun} not captured, not declared in raster_artifacts: ${value.skippedRaster.join(', ')})`)
+  }
   if (value.captureSkippedOversizedCount !== undefined) {
     lines.push(`(${String(value.captureSkippedOversizedCount)} eligible file(s) skipped: too large to capture)`)
   }
@@ -275,6 +285,11 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
         type: 'array',
         items: runArtifactRefSchema,
         description: 'Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.',
+      },
+      raster_artifacts: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.',
       },
     },
     output: {
@@ -315,6 +330,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
             { artifactId: ScienceArtifactId(edit.artifactId), version: edit.version },
           ])),
         },
+        ...args.raster_artifacts === undefined ? {} : { rasterArtifacts: args.raster_artifacts },
         toolCallId: exec.callId,
         requestHeaderSeq,
         signal: exec.signal,

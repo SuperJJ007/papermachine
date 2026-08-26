@@ -150,6 +150,7 @@ class ScienceMockAdapter extends LlmAdapter {
         edit_of: transfers.map(({ target, output }) => ({
           artifactId: target.artifactId, version: target.version, path: output,
         })),
+        raster_artifacts: transfers.filter(({ method }) => method === 'write_bytes').map(({ output }) => output),
       })
       return
     }
@@ -179,6 +180,7 @@ class ScienceMockAdapter extends LlmAdapter {
             + 'Path(SCIENCE_ARTIFACT_DIR, "chart.vl.json").write_text(\'{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}\')\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "notes.md").write_text("# Notes\\n\\nDeterministic snapshot run.\\n")\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "plot.png").write_bytes(png)',
+          raster_artifacts: ['plot.png'],
         })
         return
       case 2:
@@ -213,6 +215,7 @@ class ScienceMockAdapter extends LlmAdapter {
             + 'Path(os.environ["SCIENCE_ARTIFACT_DIR"], "edited.png").write_bytes(Path("inputs/source.png").read_bytes())',
           artifact_inputs: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'source.png' }],
           edit_of: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'edited.png' }],
+          raster_artifacts: ['edited.png'],
         })
         return
       default: {

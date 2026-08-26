@@ -2427,6 +2427,13 @@ Run Python source against this session's persistent Python kernel: variables, im
           "path"
         ]
       }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [
@@ -2495,6 +2502,13 @@ Run R source against this session's persistent R kernel: variables and loaded pa
           "version",
           "path"
         ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.",
+      "items": {
+        "type": "string"
       }
     }
   },

@@ -1784,6 +1784,14 @@ export interface Config {
    * inventory.
    */
   readonly packagesMaxBytes?: number
+  /**
+   * Whether auto-capture admits a `.png` unconditionally (`'always'`) or
+   * only when the writing run declared it via `raster_artifacts`
+   * (`'declared'`, the default) — an editable Vega-Lite spec stays the
+   * captured deliverable until export, and a model self-inspection render
+   * outside SCIENCE_ARTIFACT_DIR never becomes an artifact at all.
+   */
+  readonly rasterCapture?: RasterCapturePolicy
   /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
   readonly captureMaxFileBytes?: number
   /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
@@ -1816,9 +1824,20 @@ export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/Rscript` or `Scripts/Rscript.exe`. */
   readonly rPrefix?: string
 }
+
+/**
+ * Validated `rasterCapture` Config policy for one run's auto-capture walk.
+ * `'declared'` (the default) captures a `.png` only when the run request
+ * named it in `rasterArtifacts` — an editable Vega-Lite spec stays the
+ * captured deliverable until export, and a self-inspection render the model
+ * writes for its own QA never becomes a redundant artifact. `'always'`
+ * captures every eligible `.png` unconditionally, matching the auto-capture
+ * walk's pre-existing behavior for every other accepted extension.
+ */
+export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:87`](../packages/science/science-runtime/src/config.ts)
+来源：[`packages/science/science-runtime/src/config.ts:91`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

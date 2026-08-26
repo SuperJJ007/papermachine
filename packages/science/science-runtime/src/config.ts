@@ -4,6 +4,10 @@ import { isAbsolute } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceEnvironmentProfileId as ScienceEnvironmentProfileIdType } from '@deepseek-ai/dsh-science-session'
+import type { RasterCapturePolicy } from './capture.ts'
+
+/** Default raster-capture policy: a `.png` is auto-captured only when the run declares it via `raster_artifacts`. */
+export const DEFAULT_RASTER_CAPTURE: RasterCapturePolicy = 'declared'
 
 /** Fixed default timeout for one bind or run operation. */
 export const DEFAULT_TIMEOUT_MS = 120_000
@@ -109,6 +113,14 @@ export interface Config {
    * inventory.
    */
   readonly packagesMaxBytes?: number
+  /**
+   * Whether auto-capture admits a `.png` unconditionally (`'always'`) or
+   * only when the writing run declared it via `raster_artifacts`
+   * (`'declared'`, the default) — an editable Vega-Lite spec stays the
+   * captured deliverable until export, and a model self-inspection render
+   * outside SCIENCE_ARTIFACT_DIR never becomes an artifact at all.
+   */
+  readonly rasterCapture?: RasterCapturePolicy
   /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
   readonly captureMaxFileBytes?: number
   /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
@@ -160,6 +172,7 @@ export const configSchema: z<Config> = z.object({
   packagesMaxBytes: z.number().step(1)
     .min(MIN_PACKAGES_MAX_BYTES).max(MAX_PACKAGES_MAX_BYTES)
     .default(DEFAULT_PACKAGES_MAX_BYTES),
+  rasterCapture: z.union(['declared', 'always'] as const).default(DEFAULT_RASTER_CAPTURE),
   captureMaxFileBytes: z.number().step(1)
     .min(MIN_CAPTURE_MAX_FILE_BYTES).max(MAX_CAPTURE_MAX_FILE_BYTES)
     .default(DEFAULT_CAPTURE_MAX_FILE_BYTES),
@@ -195,6 +208,8 @@ export interface ResolvedConfig {
   readonly packagesMaxEntries: number
   /** Explicitly resolved package-inventory byte bound. */
   readonly packagesMaxBytes: number
+  /** Explicitly resolved raster-capture policy. */
+  readonly rasterCapture: RasterCapturePolicy
   /** Explicitly resolved auto-capture per-file byte bound. */
   readonly captureMaxFileBytes: number
   /** Explicitly resolved auto-capture per-run file-count bound. */
@@ -270,6 +285,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     [
       'dshHome', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
+      'rasterCapture',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
@@ -294,6 +310,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || packagesMaxBytes < MIN_PACKAGES_MAX_BYTES
     || packagesMaxBytes > MAX_PACKAGES_MAX_BYTES) {
     throw new Error(`science-runtime: packagesMaxBytes must be a safe integer from ${String(MIN_PACKAGES_MAX_BYTES)} through ${String(MAX_PACKAGES_MAX_BYTES)}`)
+  }
+  const rasterCapture = config.rasterCapture ?? DEFAULT_RASTER_CAPTURE
+  if (rasterCapture !== 'declared' && rasterCapture !== 'always') {
+    throw new Error('science-runtime: rasterCapture must be "declared" or "always"')
   }
   const captureMaxFileBytes = config.captureMaxFileBytes ?? DEFAULT_CAPTURE_MAX_FILE_BYTES
   if (!Number.isSafeInteger(captureMaxFileBytes)
@@ -344,6 +364,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     timeoutMs,
     packagesMaxEntries,
     packagesMaxBytes,
+    rasterCapture,
     captureMaxFileBytes,
     captureMaxFilesPerRun,
     captureMaxArtifactVersionsPerSession,

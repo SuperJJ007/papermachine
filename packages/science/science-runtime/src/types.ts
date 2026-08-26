@@ -100,6 +100,11 @@ export interface StartScienceRunRequest {
   readonly artifactInputs?: readonly ScienceRunArtifactInput[]
   /** Exact parent version for each named capture-relative output path. */
   readonly editBaselines?: Readonly<Record<string, ScienceArtifactVersionRef>>
+  /**
+   * Capture-relative `.png` paths this run declares for auto-capture under
+   * the `'declared'` raster-capture policy; ignored under `'always'`.
+   */
+  readonly rasterArtifacts?: readonly string[]
   /** Model-issued call already recorded in the Session log. */
   readonly toolCallId: ScienceRunStarted['toolCallId']
   /** Latest Science-era `request/header` event already recorded in the log. */

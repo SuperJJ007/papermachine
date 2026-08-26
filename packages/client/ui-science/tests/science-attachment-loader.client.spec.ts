@@ -48,6 +48,50 @@ describe('createScienceImageLoader', () => {
     await expect(createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)(content()))
       .rejects.toThrow('not-found: gone')
   })
+
+  it('memoizes a settled read by versionId, serving repeat requests without a second store read', async () => {
+    const data = Uint8Array.from([9, 9, 9])
+    const readScienceArtifact = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data },
+    })
+    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const [first, second] = await Promise.all([load(content()), load(content())])
+    expect(second).toBe(first)
+    expect(readScienceArtifact).toHaveBeenCalledTimes(1)
+  })
+
+  it('evicts a rejected read so a retry re-fetches instead of replaying the failure', async () => {
+    const readScienceArtifact = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'not-found', message: 'gone' } })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { versionId: 'version-1', mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(1) },
+      })
+    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    await expect(load(content())).rejects.toThrow('not-found: gone')
+    await expect(load(content())).resolves.toBe(`data:image/png;base64,${Buffer.from([1]).toString('base64')}`)
+    expect(readScienceArtifact).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds the memoized version count, evicting the oldest entry first', async () => {
+    const readScienceArtifact = vi.fn().mockImplementation((versionId: string) => Promise.resolve({
+      ok: true,
+      value: { versionId, mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(1) },
+    }))
+    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const versionIds = Array.from({ length: 65 }, (_, index) => `bounded-${String(index)}`)
+    for (const versionId of versionIds) await load(content({ versionId }))
+    expect(readScienceArtifact).toHaveBeenCalledTimes(65)
+
+    // The most recently inserted entry is still cached.
+    await load(content({ versionId: versionIds.at(-1)! }))
+    expect(readScienceArtifact).toHaveBeenCalledTimes(65)
+
+    // The oldest entry (index 0) was evicted to hold the cache at 64 entries.
+    await load(content({ versionId: versionIds[0]! }))
+    expect(readScienceArtifact).toHaveBeenCalledTimes(66)
+  })
 })
 
 describe('createScienceTextLoader', () => {

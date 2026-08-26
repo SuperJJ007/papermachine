@@ -27,6 +27,7 @@ import {
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { shallowEqual } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ISession, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
@@ -817,7 +818,7 @@ function ArtifactViewer({
     return (
       <div className={css.body}>
         {tabStrip}
-        <ProjectLibrary key={`${libraryPage}:${science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}`}
+        <ProjectLibrary key={science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}
           page={libraryPage}
           loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadImage={loadImage}
           currentSessionId={currentSessionId}
@@ -916,10 +917,21 @@ export function ScienceDetailsView({
   returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, commitStyleEdit, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
-  const sessionTitles = useSessions(state => Object.fromEntries(state.ids.map(id => [id, state.byId[id]?.displayTitle ?? id])))
+  // Session display titles change only when a title or the session list
+  // itself changes, not on every streamed event — shallowEqual over the
+  // derived record keeps the returned reference stable across unrelated frames.
+  const sessionTitles = useSessions(
+    state => Object.fromEntries(state.ids.map(id => [id, state.byId[id]?.displayTitle ?? id])),
+    shallowEqual,
+  )
   const science = useProjection('science')
   const notes = useProjection('scienceArtifactNotes') ?? []
-  const snapshot = useSession(s => s)
+  // ArtifactViewer's subtree reads only `nodes` (artifactTurn, here and in
+  // ScienceArtifactProvenance.tsx) and `chat.nodes` (ScienceArtifactProvenance.tsx's
+  // resolveRunCall) off the session snapshot; comparing just those two fields
+  // keeps the returned snapshot reference stable across unrelated streaming
+  // events (composer, queue, running-call byte updates) instead of on every one.
+  const snapshot = useSession(s => s, (a, b) => a.nodes === b.nodes && a.chat === b.chat)
 
   if (science === undefined) {
     return (

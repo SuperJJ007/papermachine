@@ -1362,6 +1362,16 @@ describe('Science Runtime configuration', () => {
     expect(resolved.packagesMaxBytes).toBe(65_536)
   })
 
+  it('validates the raster-capture policy, defaulting to declared when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, rasterCapture: 'sometimes' as never,
+    })).toThrow(/rasterCapture/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }).rasterCapture).toBe('declared')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, rasterCapture: 'always',
+    }).rasterCapture).toBe('always')
+  })
+
   it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 1_048_575,

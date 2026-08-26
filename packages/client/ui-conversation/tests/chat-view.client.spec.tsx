@@ -95,6 +95,10 @@ const user = (seq: number, text: string): UserMessageNode => ({
 const assistant = (seq: number, text: string, turn = 1): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step: 1, blocks: [{ kind: 'text', text }],
 })
+/** A settled `assistant` Node whose only block is reasoning — a pure-reasoning step (`reasoning-attach.ts`). */
+const think = (seq: number, text: string, turn = 1): AssistantMessageNode => ({
+  kind: 'assistant', seq, time: seq * 1_000, turn, step: 1, blocks: [{ kind: 'reasoning', text }],
+})
 const retry = (seq: number): ModelRetryNode => ({
   kind: 'model-retry', retryId: 'chat-view-retry' as ModelRetryNode['retryId'],
   seq, time: seq * 1_000, turn: 1, step: 0,
@@ -437,6 +441,8 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('do the thing')).toBeTruthy()
     expect(view.getByText('running tools')).toBeTruthy()
+    // The two tool calls form a group, collapsed by default; open it to reach the member rows.
+    fireEvent.click(view.getByRole('button', { name: /运行了 2 段代码/u }))
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
     expect(view.getByTestId('tool-seat-b').textContent).toBe('bash:b')
     expect([...view.container.querySelectorAll('[data-chat-flow-key]')].map(row => ({
@@ -1512,5 +1518,143 @@ describe('ChatView', () => {
     const failedView = render(<failed.ChatView {...failed.props} />)
     expect(failedView.getByText('Compaction cancelled.')).toBeTruthy()
     expect(failedView.container.querySelector('[data-state="error"]')).not.toBeNull()
+  })
+})
+
+describe('Tool groups', () => {
+  it('keeps a single tool call ungrouped — no group title, the row renders exactly as before', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.queryByRole('button', { name: /段代码|个文件|次|Skill|项操作/u })).toBeNull()
+  })
+
+  it('groups two or more adjacent tool-call rows under one generated title, collapsed by default', () => {
+    const h = makeHarness({ nodes: [toolResult(3, 'a'), toolResult(4, 'b')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.getByText('2 步')).toBeTruthy()
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+  })
+
+  it('expands and recollapses the whole group as one unit, without touching an ungrouped row elsewhere', () => {
+    const h = makeHarness({
+      nodes: [toolResult(3, 'a'), toolResult(4, 'b'), user(5, 'thanks'), toolResult(6, 'solo')],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    // The ungrouped row is unaffected by a sibling group's own default collapse.
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-a')).toBeNull()
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    expect(view.getByTestId('tool-seat-solo')).toBeTruthy()
+  })
+
+  it('splits a tool-call run wherever assistant text interrupts it, and does not group the resulting singletons', () => {
+    const h = makeHarness({
+      nodes: [toolResult(3, 'a'), assistant(4, 'checking in'), toolResult(5, 'b'), toolResult(6, 'c')],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryAllByRole('button', { name: /运行了/u })).toHaveLength(1)
+    const header = view.getByRole('button', { name: /运行了 2 段代码/u })
+    // 'a' precedes the interrupting assistant text as a singleton — never grouped, always mounted.
+    expect(view.getByTestId('tool-seat-a')).toBeTruthy()
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByTestId('tool-seat-b')).toBeNull()
+    expect(view.queryByTestId('tool-seat-c')).toBeNull()
+    fireEvent.click(header)
+    expect(view.getByTestId('tool-seat-b')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-c')).toBeTruthy()
+  })
+
+  it('names the failure count from the structured settled result, and mixes categories in the title', () => {
+    const h = makeHarness({
+      nodes: [
+        { ...toolResult(3, 'a', 'write'), isError: true },
+        toolResult(4, 'b'),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('button', { name: /运行了 1 段代码，保存或编辑了 1 个文件/u })).toBeTruthy()
+    expect(view.getByText('2 步 · 1 失败')).toBeTruthy()
+  })
+})
+
+describe('Think attach', () => {
+  it('Think -> tool: no independent Think row, a leading Think disclosure renders ahead of the tool row instead', () => {
+    const h = makeHarness({ nodes: [think(3, '看看有没有别的文件'), toolResult(4, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    // Only one Think disclosure exists, and it precedes the tool row it attached to.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    const html = view.container.innerHTML
+    expect(html.indexOf('data-variant="think"')).toBeLessThan(html.indexOf('tool-seat-a'))
+    // Default collapsed: the row exposes only the summary preview, not the expanded body.
+    const disclosure = screen.getByRole('button', { name: /Think/u })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector('[class*="thinkBody"]')).toBeNull()
+    fireEvent.click(screen.getByText('Think'))
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).toBe('看看有没有别的文件')
+  })
+
+  it('Think -> Think -> tool: two adjacent pure-reasoning steps fold onto the same tool as one disclosure, concatenated', () => {
+    const h = makeHarness({ nodes: [think(3, '第一段'), think(4, '第二段'), toolResult(5, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Think'))
+    const body = view.container.querySelector('[data-variant="think"] [class*="thinkBody"]')
+    expect(body?.textContent).toBe('第一段\n\n第二段')
+  })
+
+  it('Think -> 正文: the reasoning renders through the assistant-step\'s own leading Think summary row, not a second seat', () => {
+    const h = makeHarness({ nodes: [think(3, '先想一下'), assistant(4, '好的，答案是')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    expect(screen.getByText('好的，答案是')).toBeTruthy()
+    fireEvent.click(screen.getByText('Think'))
+    expect(screen.getByText('先想一下')).toBeTruthy()
+  })
+
+  it('Think at the turn end (no successor materialized yet) keeps today\'s standalone Think row', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), think(2, '仍在流式')] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Think'))
+    expect(screen.getByText('仍在流式')).toBeTruthy()
+  })
+
+  it('a Think row folded ahead of a tool no longer breaks an otherwise-adjacent tool-call run apart', () => {
+    const h = makeHarness({
+      nodes: [
+        toolResult(3, 'read', 'read'), think(4, '看看有没有别的文件'), toolResult(5, 'glob', 'glob'), toolResult(6, 'state', 'grep'),
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryAllByRole('button', { name: /运行了|读取了/u })).toHaveLength(1)
+    const header = view.getByRole('button', { name: /读取了 3 个文件/u })
+    // Group collapsed by default: the fold attaches to a member row, so it is not mounted yet either.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(0)
+    fireEvent.click(header)
+    expect(view.getByTestId('tool-seat-read')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-glob')).toBeTruthy()
+    expect(view.getByTestId('tool-seat-state')).toBeTruthy()
+    // The fold shows exactly once, ahead of the group's first member, once the group is open.
+    expect(view.container.querySelectorAll('[data-variant="think"]')).toHaveLength(1)
   })
 })

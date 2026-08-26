@@ -40,13 +40,22 @@ function ArtifactThumbnail({ item, loadImage }: {
     : <img src={src} alt="" />
 }
 
+/** Cards shown before an unexpanded overflow collapses the rest behind the "+N more" button. */
+const OVERFLOW_VISIBLE_COUNT = 5
+/** Total artifact count at or above which the tray collapses to `OVERFLOW_VISIBLE_COUNT` cards. */
+const OVERFLOW_THRESHOLD = 7
+
 /** Render exactly one card per logical artifact, using the last version emitted in this Turn. */
 export function ScienceTurnArtifacts({ matched, actions, loadImage, openArtifact, t }: ScienceTurnArtifactsProps) {
+  const [expanded, setExpanded] = useState(false)
+  const total = matched.artifacts.length
+  const overflowing = total >= OVERFLOW_THRESHOLD
+  const visible = overflowing && !expanded ? matched.artifacts.slice(0, OVERFLOW_VISIBLE_COUNT) : matched.artifacts
   return (
     <section className={css.root} data-science-turn-artifacts>
-      <p className={css.title}>{t('turnArtifacts.title', { count: matched.artifacts.length })}</p>
+      <p className={css.title}>{t('turnArtifacts.title', { count: total })}</p>
       <div className={css.list} role="list">
-        {matched.artifacts.map(item => (
+        {visible.map(item => (
           <button type="button" role="listitem" aria-label={`${item.logicalName} v${String(item.version)}`} className={css.card} key={item.artifactId}
             onClick={() => {
               actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
@@ -58,6 +67,11 @@ export function ScienceTurnArtifacts({ matched, actions, loadImage, openArtifact
           </button>
         ))}
       </div>
+      {overflowing && !expanded && (
+        <button type="button" className={css.more} onClick={() => { setExpanded(true) }}>
+          {t('turnArtifacts.showMore', { count: total - OVERFLOW_VISIBLE_COUNT })}
+        </button>
+      )}
     </section>
   )
 }

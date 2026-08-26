@@ -1,0 +1,179 @@
+/* One run_python/run_r row: a fixed status header plus per-state body
+   material. Colors ride the shared --dsw-alias-state-* tokens, normalized
+   from the RunOutput.dc.html design board rather than copying its literal
+   hex values. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.root[data-state='failed'] {
+  border-color: var(--dsw-alias-state-error-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, var(--dsw-alias-bg-layer-1));
+}
+
+.root[data-state='kernel-died'] {
+  border-color: var(--dsw-alias-state-warn-secondary);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 20px;
+}
+
+.dot {
+  flex: none;
+}
+
+.title {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusError {
+  composes: status;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.statusWarn {
+  composes: status;
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.kernelBadge {
+  flex: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.interrupt {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.staticSummary {
+  overflow: hidden;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-markdown-code-block-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code-block-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.scrollable {
+  max-height: 132px;
+  overflow: auto;
+  white-space: pre;
+}
+
+.foldButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.foldCaret {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  transition: transform 100ms ease;
+}
+
+.foldCaret[data-open] {
+  transform: rotate(90deg);
+}
+
+.errorTail {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-markdown-code-block-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.truncatedNotice {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.explain {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.viewReason {
+  align-self: flex-start;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 13px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 24px;
+  cursor: pointer;
+}

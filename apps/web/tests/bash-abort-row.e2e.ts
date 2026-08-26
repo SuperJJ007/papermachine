@@ -43,6 +43,11 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled Bash row disclosure', () 
     const sessionRow = page.locator('[role="treeitem"]').nth(1)
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
+    // The two Bash calls fold into one Tool group, collapsed by default: open
+    // it to reach the member rows the rest of this fixture addresses.
+    const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u })
+    await groupHeader.waitFor({ timeout: 15_000 })
+    await groupHeader.click()
     await page.locator('[data-sample="bash"]').nth(1).waitFor({ timeout: 15_000 })
   }, 120_000)
 

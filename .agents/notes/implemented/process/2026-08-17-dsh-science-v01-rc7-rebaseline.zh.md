@@ -6,9 +6,9 @@ Status: implemented
 
 ## Problem
 
-自 [R0](../../archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md) 起，DSH Science 开发线就把官方 rc.5（`47f943859bef60e4160492346772ded9b24f765a`）当作固定基线来跟踪，这是刻意的设计：R0 拒绝持续跟随上游，以免第一版尚未成形时，已接受的 overlay 证据反复失效。此后上游打出了 `dsh-v0.1.0-rc.7` 标签（`99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`），比 rc.5 标签多出 111 个提交，其中包括 [`4366528a38`](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)：注册一个 settings 命名空间即等于把它暴露出去，`settings.plugin.item` 也随之变成以命名空间为键的 slot，于是 `packages/host/apiproxy` 不再持有硬编码的暴露白名单，也不再有 `settings-not-exposed` 错误码。
+自 [R0](../../archived/process/2026-08-15-dsh-science-v01-r0-release-baseline-scope.md) 起，DSH Science 开发线就把官方 rc.5（`47f943859bef60e4160492346772ded9b24f765a`）当作固定基线来跟踪，这是刻意的设计：R0 拒绝持续跟随上游，以免第一版尚未成形时，已接受的 overlay 证据反复失效。此后上游打出了 `dsh-v0.1.0-rc.7` 标签（`99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`），比 rc.5 标签多出 111 个提交，其中包括 [`4366528a38`](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.zh.md)：注册一个 settings 命名空间即等于把它暴露出去，`settings.plugin.item` 也随之变成以命名空间为键的 slot，于是 `packages/host/apiproxy` 不再持有硬编码的暴露白名单，也不再有 `settings-not-exposed` 错误码。
 
-proposed 状态的 [R6 settings 与 Details](../feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 计划的第三个检查点 R6c，其目标正是那次删除所移除的架构：一个 Science settings 页面，只有当 `science-runtime` 加入某个本 Science 开发线并不拥有的包内部的白名单后才可达。若把 R6c 原样落地在 rc.5 上，要么在本开发线内 fork `api-proxy` 的暴露清单，要么请求一个共享包的所有者在上游已经构建出通用机制之前，先为 Science 单独承载一条清单项。两个选项都比直接采用上游已通用化的机制成本更高，而 R6a 与 R6b——两个不涉及 settings 暴露的检查点——都不依赖于自己落在哪个基线之上。
+proposed 状态的 [R6 settings 与 Details](../feature/2026-08-17-dsh-science-v01-r6-settings-details.zh.md) 计划的第三个检查点 R6c，其目标正是那次删除所移除的架构：一个 Science settings 页面，只有当 `science-runtime` 加入某个本 Science 开发线并不拥有的包内部的白名单后才可达。若把 R6c 原样落地在 rc.5 上，要么在本开发线内 fork `api-proxy` 的暴露清单，要么请求一个共享包的所有者在上游已经构建出通用机制之前，先为 Science 单独承载一条清单项。两个选项都比直接采用上游已通用化的机制成本更高，而 R6a 与 R6b——两个不涉及 settings 暴露的检查点——都不依赖于自己落在哪个基线之上。
 
 ## Decision
 
@@ -25,11 +25,11 @@ R6a（`f5bbcf0ff2`——Runtime settings 归属）与 R6b（`bb911b9c0c`——�
 
 ## Verification
 
-带日期的[基线迁移证据](../../../../docs/evidence/2026-08-17-dsh-science-v01-rc7-rebaseline.md)拥有全部命令、平台事实与结果；本 Note 只界定什么算已验证。
+带日期的[基线迁移证据](../../../../docs/evidence/2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md)拥有全部命令、平台事实与结果；本 Note 只界定什么算已验证。
 
 源码与文档各项 gate 在记录的 head 上直接通过：`typecheck`、`lint`、`build`、`doc-sync`、对完整合并范围的 `git diff --check`，以及双方都触碰到的每一个生成器的逐字节复现。`hygiene` 只在 `rescope-vendor:check` 处失败，其 26 项问题经一次性对照 worktree 证明与上游 rc.7 上同一检查的结果逐条一致——这是继承自上游的缺口，不是本次迁移引入的缺陷。
 
-范围超出单个包的三个套件——`test`、`test:snapshot`、`test:web`——是按一条明示标准验证的，而不是按一次全绿的运行，因为每个套件都带有并非本开发线引入的失败。一处失败只有在对照修订上被证明集合一致、或其文件单独运行时不复现的情况下才被接受；证据逐条记录了每一处被接受的失败及其成因，且没有为达到该状态手改任何 fixture。今天有两条通道只满足该标准较弱的那一半：`test:snapshot` 与 `test:web` 的既有失败是依据单独重跑与更早的 [R5 记录](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md)论证的，而非依据在 rc.5 合并基点上的一次新对照运行。该对照被推迟，因为这两条通道都会驱动真实浏览器或触达 Host 的原生路径打开器，需要一台桌面空闲的机器。
+范围超出单个包的三个套件——`test`、`test:snapshot`、`test:web`——是按一条明示标准验证的，而不是按一次全绿的运行，因为每个套件都带有并非本开发线引入的失败。一处失败只有在对照修订上被证明集合一致、或其文件单独运行时不复现的情况下才被接受；证据逐条记录了每一处被接受的失败及其成因，且没有为达到该状态手改任何 fixture。今天有两条通道只满足该标准较弱的那一半：`test:snapshot` 与 `test:web` 的既有失败是依据单独重跑与更早的 [R5 记录](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.zh.md)论证的，而非依据在 rc.5 合并基点上的一次新对照运行。该对照被推迟，因为这两条通道都会驱动真实浏览器或触达 Host 的原生路径打开器，需要一台桌面空闲的机器。
 
 对记录 head 的独立评审验收了 R6a、R6b 与本次基线迁移，并通过对全部 539 个上游改动文件的脚本化比对确认：合并没有复活任何上游删除，也没有丢失任何上游新增。`test:e2e` 与真实 Python/R Science 验收为 `NOT-RUN`；后续依赖其中任何一项的检查点都要重新运行，而不是从这里继承任何结果。
 
@@ -43,7 +43,7 @@ R6a（`f5bbcf0ff2`——Runtime settings 归属）与 R6b（`bb911b9c0c`——�
 
 ## Consequences
 
-R6c 只需针对通用机制设计与构建一次，而 `api-proxy` 的暴露行为仍归上游所有。代价付在身份上，而不是代码上：R6a 与 R6b 的提交如今所处的树与它们落地时已不相同，而带日期的 R1–R5 证据绑定的是迁移前的 SHA，因此没有任何更早的记录能凭继承延伸到这棵树上。R6c 的实现基座是 [R6 note](../feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 身份表中记录的那个已验收的迁移后 head。
+R6c 只需针对通用机制设计与构建一次，而 `api-proxy` 的暴露行为仍归上游所有。代价付在身份上，而不是代码上：R6a 与 R6b 的提交如今所处的树与它们落地时已不相同，而带日期的 R1–R5 证据绑定的是迁移前的 SHA，因此没有任何更早的记录能凭继承延伸到这棵树上。R6c 的实现基座是 [R6 note](../feature/2026-08-17-dsh-science-v01-r6-settings-details.zh.md) 身份表中记录的那个已验收的迁移后 head。
 
 本开发线此后新增的每一个 settings 命名空间都是"注册即暴露"，不只是 `science-runtime`。已上线的 `pythonPrefix`/`rPrefix` 字段已经使用 `role('secret')`，而 seam 会同等地对解析值、组合基座与用户层做脱敏，因此今天没有任何路径值会跨越协议。未来任何新增的 Science settings 字段都必须显式携带同样的 role：已经没有白名单能在遗漏标注时兜底把一个未标注字段挡在浏览器之外。
 

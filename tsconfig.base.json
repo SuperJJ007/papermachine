@@ -56,6 +56,7 @@
       "@deepseek-ai/dsh-attachment/types": ["./packages/attachment/attachment/src/types.ts"],
       "@deepseek-ai/dsh-session/types": ["./packages/core/session/src/types.ts"],
       "@deepseek-ai/dsh-session/surface": ["./packages/core/session/src/surface.ts"],
+      "@deepseek-ai/dsh-science-artifact-store/ids": ["./packages/science/science-artifact-store/src/ids.ts"],
       "@deepseek-ai/dsh-science-session": ["./packages/science/science-session/src/index.ts"],
       "@deepseek-ai/dsh-science-session/invariant": ["./packages/science/science-session/src/invariant.ts"],
       "@deepseek-ai/dsh-science-session/types": ["./packages/science/science-session/src/types.ts"],
@@ -64,6 +65,7 @@
       "@deepseek-ai/dsh-science-runtime/types": ["./packages/science/science-runtime/src/types.ts"],
       "@deepseek-ai/dsh-science-runtime/with-settings": ["./packages/science/science-runtime/src/with-settings.ts"],
       "@deepseek-ai/dsh-tool-science": ["./packages/science/tool-science/src/index.ts"],
+      "@deepseek-ai/dsh-tool-science/edit-service": ["./packages/science/tool-science/src/edit-service.ts"],
       "@deepseek-ai/dsh-tool-science/invariant": ["./packages/science/tool-science/src/invariant.ts"],
       "@deepseek-ai/dsh-tool-science/types": ["./packages/science/tool-science/src/types.ts"],
       "@deepseek-ai/dsh-session-projection/types": ["./packages/session/session-projection/src/types.ts"],
@@ -185,6 +187,11 @@
       "@deepseek-ai/dsh-host-directory-picker-native/*": ["./packages/host/directory-picker-native/src/*"],
       "@deepseek-ai/dsh-host-directory-picker-auto": ["./packages/host/directory-picker-auto/src"],
       "@deepseek-ai/dsh-host-directory-picker-auto/*": ["./packages/host/directory-picker-auto/src/*"],
+      // Client-side halves of the directory-picker backends: the host chooser
+      // above mounts these by runtime string, so they never appear as a bare
+      // plugin `name:` in any cordis.yml row for the wildcard below to see.
+      "@deepseek-ai/dsh-client-ui-directory-picker-native": ["./packages/client/ui-directory-picker-native/src"],
+      "@deepseek-ai/dsh-client-ui-directory-picker-browse": ["./packages/client/ui-directory-picker-browse/src"],
       "@deepseek-ai/dsh-host-apiproxy/client": ["./packages/host/apiproxy/src/fetch/client.ts"],
       "@deepseek-ai/dsh-host-apiproxy/*": ["./packages/host/apiproxy/src/*"],
       "@deepseek-ai/dsh-host-webserver": ["./packages/host/webserver/src"],

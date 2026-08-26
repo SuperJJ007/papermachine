@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { ScienceRuntimeError } from '../src/index.ts'
 import type ScienceRuntime from '../src/index.ts'
 import { LeaseRegistry, OperationControl } from '../src/lifecycle.ts'
@@ -124,6 +125,29 @@ describe('ScienceRuntime lifecycle ownership', () => {
     registry.detach(second.session)
     expect(second.control.cause).toBe('session-detached')
     registry.release(second)
+  })
+
+  it('resolves blocking() through the exact-Session map first and the same-ID quarantine map as a fallback', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-blocking-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = attachScienceSession(harness.ctx, 'science-blocking')
+    const registry = new LeaseRegistry()
+    expect(registry.blocking(session.session)).toBeUndefined()
+    const lease = registry.reserve(session.session, new OperationControl(new AbortController().signal, 1_000))
+    expect(registry.blocking(session.session)).toBe(lease)
+    // A distinct exact Session object sharing the same id (e.g. a resumed
+    // successor) is never in `exact`, so `blocking` must fall back to the
+    // same-id quarantine map to find the lease still blocking it. `detach`
+    // first: `prepare` refuses a second live registration for the same id.
+    session.detach()
+    const successor = harness.ctx.sessions.prepare(SessionId('science-blocking'), { seed: [...session.session.events] })
+    expect(registry.blocking(successor)).toBe(lease)
+    registry.release(lease)
+    expect(registry.blocking(session.session)).toBeUndefined()
+    expect(registry.blocking(successor)).toBeUndefined()
   })
 
   it('quarantines a same-ID successor until an in-flight run\'s lease settles', async () => {

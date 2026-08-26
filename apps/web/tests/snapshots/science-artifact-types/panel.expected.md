@@ -14,6 +14,9 @@
   - tab "plot.png" [selected]
   - button "Close plot.png":
     - img
+- button "File library":
+  - img
+  - text: File library
 - text: plot.png
 - button "Previous version" [disabled]:
   - img
@@ -23,10 +26,20 @@
 - button "Provenance"
 - button "Download":
   - img
+- button "Export" [disabled]
+- text: Export will be available in C4
 - button "Expand":
   - img
 - button "Close tab":
   - img
+- term: Format
+- definition: Image
+- term: Version
+- definition: v1
+- term: Source
+- definition: Generation turn not loaded
+- term: Status
+- definition: Read-only
 - 'button "View original: plot.png"':
   - img "plot.png"
-- text: from run run-types-1 1×1, 68 B
+- button "Select region to edit"

@@ -15,6 +15,15 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../../util/byte-size"
     },
     {
@@ -33,6 +42,9 @@
       "path": "../ui-tool"
     },
     {
+      "path": "../ui-trajectory"
+    },
+    {
       "path": "../ui-primitives"
     },
     {
@@ -40,6 +52,9 @@
     },
     {
       "path": "../ui-settings-plugins"
+    },
+    {
+      "path": "../ui-sidebar"
     },
     {
       "path": "../ui-slots"

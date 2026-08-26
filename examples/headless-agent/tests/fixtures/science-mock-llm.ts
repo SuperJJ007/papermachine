@@ -9,6 +9,7 @@ import {
   type GenerateOptions,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
+import type { ScienceEditMessageSource } from '@deepseek-ai/dsh-tool-science/types'
 
 const capturePath = join(process.cwd(), 'science-model-view.json')
 
@@ -37,6 +38,27 @@ function toolResultTexts(options: GenerateOptions): string[] {
       ? [block.content.flatMap(item => item.type === 'text' ? [item.text] : []).join('\n')]
       : []))
 }
+
+/** One deterministic call id per selection kind, doubling as the served-edit marker. */
+function editCallId(source: ScienceEditMessageSource): string {
+  return source.targets[0]?.target.kind === 'spec-path' ? 'science-selected-edit-call' : 'science-region-edit-call'
+}
+
+/** Call ids every earlier tool result in `options` has already answered. */
+function servedCallIds(options: GenerateOptions): Set<string> {
+  return new Set<string>(options.messages.flatMap(message =>
+    message.content.flatMap(block => block.type === 'tool-result' ? [block.toolCallId] : [])))
+}
+
+/** The oldest structured edit message no earlier tool result has answered. */
+function pendingEditSource(options: GenerateOptions, served: Set<string>): ScienceEditMessageSource | undefined {
+  return options.messages
+    .flatMap(message => message.source.kind === 'science-edit' ? [message.source] : [])
+    .find(source => !served.has(editCallId(source)))
+}
+
+/** The deterministic id of the state read pinned right after the direct style-edit branch commits. */
+const POST_STYLE_EDIT_STATE_CALL_ID = 'science-style-edit-state-call'
 
 /**
  * The run the Science runtime context reports as the latest successful one.
@@ -73,11 +95,24 @@ function capturedPlotRef(options: GenerateOptions): { readonly artifactId: strin
 function writeCapture(options: GenerateOptions): void {
   const toolResults = options.messages.flatMap(message =>
     message.content.flatMap(block => block.type === 'tool-result' ? [block] : []))
+  const editMessages = options.messages.filter(message => message.source.kind === 'science-edit')
   writeFileSync(capturePath, `${JSON.stringify({
     guidance: scienceGuidance(options.system),
     tools: options.tools?.filter(tool => SCIENCE_TOOLS.includes(tool.name)),
     filesystemTools: options.tools?.filter(tool => ['read', 'write', 'edit'].includes(tool.name)).map(tool => tool.name),
     runtimeContext: runtimeContext(options),
+    // An image block reaches the provider as rendered image content, not as
+    // its durable handle; record the block's media type and dimensions and
+    // keep the internal attachment id out of the model-facing capture.
+    editMessages: editMessages.map(message => ({
+      source: message.source,
+      content: message.content.map(block => block.type === 'image'
+        ? {
+          type: block.type,
+          attachment: { mediaType: block.attachment.mediaType, width: block.attachment.width, height: block.attachment.height },
+        }
+        : block),
+    })),
     toolResults: toolResults.map(result => ({ toolCallId: result.toolCallId, content: result.content })),
   }, undefined, 2)}\n`)
 }
@@ -94,8 +129,41 @@ function * toolCall(id: string, name: string, args: unknown): Generator<StreamCh
 class ScienceMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     writeCapture(options)
+    const served = servedCallIds(options)
+    const selectedEdit = pendingEditSource(options, served)
+    if (selectedEdit !== undefined) {
+      if (selectedEdit.targets.length === 0) throw new Error('science-mock-llm: edit source has no targets')
+      const transfers = selectedEdit.targets.map((target, index) => {
+        const suffix = selectedEdit.targets.length === 1 ? '' : `-${String(index + 1)}`
+        return target.target.kind === 'spec-path'
+          ? { target, input: `source${suffix}.vl.json`, output: `selected-edit${suffix}.vl.json`, method: 'write_text' }
+          : { target, input: `region-source${suffix}.png`, output: `region-edit${suffix}.png`, method: 'write_bytes' }
+      })
+      const code = ['from pathlib import Path', ...transfers.map(({ input, output, method }) =>
+        `Path(SCIENCE_ARTIFACT_DIR, "${output}").${method}(Path("inputs/${input}").read_${method === 'write_text' ? 'text' : 'bytes'}())`),
+      ].join('\n')
+      yield * toolCall(editCallId(selectedEdit), 'run_python', {
+        code,
+        artifact_inputs: transfers.map(({ target, input }) => ({
+          artifactId: target.artifactId, version: target.version, path: input,
+        })),
+        edit_of: transfers.map(({ target, output }) => ({
+          artifactId: target.artifactId, version: target.version, path: output,
+        })),
+      })
+      return
+    }
+    // The spec-path branch above materializes the direct style edit's own
+    // artifact_inputs/edit_of ancestry once. Immediately after that call
+    // settles — and before the ordinary final reply below — read state once
+    // more so the pinned model view captures how a human-edit artifact
+    // renders (`parent`, no `runId`) once it already exists.
+    if (served.has('science-selected-edit-call') && !served.has(POST_STYLE_EDIT_STATE_CALL_ID)) {
+      yield * toolCall(POST_STYLE_EDIT_STATE_CALL_ID, 'get_science_state', {})
+      return
+    }
     // One step per settled tool result: read state, run code that writes
-    // csv/json/md/png artifacts (auto-captured with no separate save step),
+    // csv/json/vl.json/md/png artifacts (auto-captured with no separate save step),
     // curate the file that best demonstrates the result, publish the cited
     // Outcome, read the sanitized state those facts produced, then run a
     // second time on the same kernel (proving epoch reuse and no restart line).
@@ -108,6 +176,7 @@ class ScienceMockAdapter extends LlmAdapter {
           code: 'from pathlib import Path\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "summary.csv").write_text("metric,value\\naccuracy,0.97\\n")\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "meta.json").write_text(\'{"ok":true}\')\n'
+            + 'Path(SCIENCE_ARTIFACT_DIR, "chart.vl.json").write_text(\'{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}\')\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "notes.md").write_text("# Notes\\n\\nDeterministic snapshot run.\\n")\n'
             + 'Path(SCIENCE_ARTIFACT_DIR, "plot.png").write_bytes(png)',
         })

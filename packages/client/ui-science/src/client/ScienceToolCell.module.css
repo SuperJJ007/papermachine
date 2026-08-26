@@ -1,0 +1,12 @@
+.root { min-width: 0; }
+.row { min-width: 0; }
+.leading { color: var(--dsw-alias-label-tertiary); }
+.title { color: var(--dsw-alias-label-primary); }
+.chevron { color: var(--dsw-alias-label-caption); }
+.summary { min-width: 0; overflow: hidden; color: var(--dsw-alias-label-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.sep { width: 3px; height: 3px; flex: none; border-radius: 50%; background: var(--dsw-alias-label-caption); }
+.body { position: relative; max-height: 360px; overflow: auto; padding: 8px 0 8px 24px; }
+.code, .output { margin: 0 0 8px; overflow-wrap: anywhere; }
+.output { padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-markdown-code-block); color: var(--dsw-alias-label-secondary); white-space: pre-wrap; font: var(--dsw-font-markdown-code-block-small); }
+.root[data-state='error'] .output { color: var(--dsw-alias-state-error-primary); }
+.inspect { position: sticky; right: 8px; bottom: 8px; float: right; padding: 3px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); cursor: pointer; }

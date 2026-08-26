@@ -58,6 +58,9 @@ const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|app
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
+  // The npm package publishes only compiled desktop JavaScript; Electron,
+  // Host, environment declarations, and platform binaries are DMG inputs.
+  '@deepseek-ai/dsh-desktop': ['lib/*.js'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
@@ -160,7 +163,12 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // The independently loadable read-only entry ships beside the root plugin
   // and invariant companion as its own bundle (see tool-fs's tsdown.config.ts).
-  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js'],
+  // index.js and read-only.js share image-reading code, which tsdown emits as
+  // a hashed chunk both entries import.
+  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js', 'lib/read-image-*.js'],
+  // Web mounts the Science viewer-edit Remote in the Host root independently
+  // from the preset-scoped model-facing Consumer.
+  '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js'],
   // The settings-bound Runtime entry ships beside the root plugin and
   // invariant companion. It subclasses the root entry, so the package builds
   // all three from one multi-entry tsdown config: independent bundles would

@@ -10,17 +10,91 @@
  * @module @deepseek-ai/dsh-tool-science/types
  */
 
+import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
+
+/** A Vega-Lite structural target selected in the artifact viewer. */
+export interface ScienceSpecPathTarget {
+  readonly kind: 'spec-path'
+  /** Dot-separated path into the selected Vega-Lite document, such as `mark` or `encoding.color`. */
+  readonly path: string
+}
+
+/** A top-left-origin region normalized against the selected raster version. */
+export interface ScienceNormalizedRegionTarget {
+  readonly kind: 'normalized-region'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** One model-visible edit target selected in the Science artifact viewer. */
+export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget
+
+/** One selected target tied to its exact immutable artifact version. */
+export interface ScienceEditSelection {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly target: ScienceEditTarget
+  /** Optional instruction scoped to this exact element. */
+  readonly comment?: string
+}
+
+/** Browser request to edit one or more exact immutable Science artifact versions. */
+export interface ScienceEditRequest {
+  readonly targets: readonly ScienceEditSelection[]
+  readonly instruction: string
+}
+
+/** Durable source attached to a viewer-originated Science edit message. */
+export interface ScienceEditMessageSource extends ScienceEditRequest {
+  readonly kind: 'science-edit'
+}
+
+/** Receipt returned after the edit message enters the addressed agent's inbox. */
+export interface ScienceEditReceipt {
+  readonly accepted: true
+}
+
+/** Browser request to commit a styled Vega-Lite document over one exact current version. */
+export interface ScienceStyleEditRequest {
+  readonly artifactId: ScienceArtifactId
+  /** Exact parent version being replaced by the edited working copy. */
+  readonly version: number
+  /** Complete edited Vega-Lite JSON text. */
+  readonly spec: string
+}
+
+/** Exact new version committed by a direct style edit. */
+export interface ScienceStyleEditReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly origin: 'human-edit'
+}
+
+/** Stable rejection classes for Science edit-message admission. */
+export type ScienceEditErrorCode =
+  | 'SCIENCE_EDIT_INVALID_REQUEST'
+  | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
+  | 'SCIENCE_EDIT_STALE_VERSION'
+  | 'SCIENCE_EDIT_TARGET_MISMATCH'
+  | 'SCIENCE_EDIT_SPEC_INVALID'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** A user edit gesture over one exact Science artifact version. */
+    'science-edit': ScienceEditMessageSource
+  }
+}
+
 /**
- * Complete attachment metadata carried in one artifact presentation
- * reference (never bytes). Width/height present only for an image attachment.
+ * Store content reference carried in one artifact presentation reference
+ * (never bytes): the version row a session-addressed content read resolves.
  */
-export interface ScienceArtifactPresentationAttachment {
-  readonly attachmentId: string
+export interface ScienceArtifactPresentationContent {
+  readonly versionId: string
   readonly mediaType: string
-  readonly bytes: number
-  readonly width?: number
-  readonly height?: number
-  readonly name?: string
+  readonly byteCount: number
 }
 
 /**
@@ -32,18 +106,19 @@ export interface ScienceArtifactPresentationItem {
   readonly logicalName: string
   readonly version: number
   readonly title: string
-  readonly attachment: ScienceArtifactPresentationAttachment
+  readonly content: ScienceArtifactPresentationContent
 }
 
 /**
  * Replayable presentation value for a `run_python`/`run_r` direct top-level
  * result (one entry per file that call's auto-capture produced, possibly
  * none) or an `annotate_artifact` direct top-level result (exactly the one
- * curated entry).
+ * curated entry). Version 2 replaced the embedded session-attachment
+ * reference with the project-store content reference.
  */
 export interface ScienceArtifactPresentation {
   readonly kind: 'science/artifact'
-  readonly version: 1
+  readonly version: 2
   readonly artifacts: readonly ScienceArtifactPresentationItem[]
 }
 

@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/evidence/2026-08-17-dsh-science-v01-rc7-rebaseline.md
 2026-08-17-dsh-science-v01-rc7-rebaseline.md: 6cfa16815ea88c157f7294aa88052648a0c53e5e
-2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md: 5c5a4610c767661adde8219e24f39abba7aa442b
+2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md: 49840005182f8f783422cf51191a302c954cebca

@@ -7,6 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .preset {
@@ -94,7 +95,7 @@
 
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
@@ -105,6 +106,45 @@
   gap: 2px;
   min-width: 0;
 }
+
+.libraryBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.viewerTitle {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaRail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.metaRail div { min-width: 0; }
+.metaRail dt { color: var(--dsw-alias-label-caption); font-size: 10px; line-height: 15px; }
+.metaRail dd { overflow: hidden; margin: 1px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 
 .toolbarControls {
   display: flex;
@@ -126,6 +166,30 @@
 .toolbarAction:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.toolbarAction:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.toolbarAction[data-unavailable] {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.toolbarAction[data-unavailable]:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .stepper {
@@ -202,6 +266,189 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.vegaLite {
+  width: 100%;
+  min-height: 360px;
+  overflow: auto;
+}
+
+.vegaLite :global(svg) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.specTargets {
+  display: grid;
+  gap: 6px;
+}
+
+.elementPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.elementPanel h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.specTargetRow {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(120px, 1fr) 30px;
+  gap: 6px;
+}
+
+.specComment {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.specAdd {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.specTarget,
+.regionButton {
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.specTarget[aria-pressed='true'],
+.regionButton[aria-pressed='true'] {
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rasterSelector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.rasterCanvas {
+  position: relative;
+  max-width: 100%;
+}
+
+.regionGesture,
+.regionBox {
+  position: absolute;
+  z-index: 2;
+}
+
+.regionGesture {
+  inset: 0;
+  cursor: crosshair;
+}
+
+.regionBox {
+  box-sizing: border-box;
+  border: 2px solid var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
+  pointer-events: none;
+}
+
+.editPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.stylePanel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.styleHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl input {
+  box-sizing: border-box;
+  min-height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.editLabel {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.editInstruction {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.editSubmit {
+  align-self: flex-end;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.editSubmit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* Landing view: gallery of latest chart versions, plus Outcome below it. */
 
 .landing {
@@ -209,9 +456,53 @@
   flex-direction: column;
 }
 
-.chartList {
+.library,
+.librarySection {
   display: flex;
   flex-direction: column;
+}
+
+.library { gap: 18px; }
+.librarySection { gap: 8px; }
+
+.librarySectionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.librarySectionHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.librarySectionHead span {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.libraryEmpty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chartList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -224,19 +515,26 @@
 
 .galleryButton {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   width: 100%;
-  padding: 4px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
   text-align: left;
   cursor: pointer;
 }
 
 .galleryButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-label-caption);
+  background: var(--dsw-alias-bg-base);
+}
+
+.galleryButton > :first-child {
+  align-self: center;
 }
 
 .chartMeta {
@@ -253,6 +551,19 @@
   font-size: 13px;
   line-height: 18px;
   color: var(--dsw-alias-label-primary);
+}
+
+.libraryFacts {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .metaRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .chartLogicalName {

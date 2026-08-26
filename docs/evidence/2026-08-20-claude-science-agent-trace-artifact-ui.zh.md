@@ -67,7 +67,7 @@ flowchart LR
 
 ### 与 DSH 的对应关系
 
-DSH 已经通过通用或 keyed `tool.call.toolview` 路径渲染每个有序工具调用，包括生命周期状态、递归 subcall、可展开输入/输出、专用卡片、文件打开与 Trajectory 检查；该行为由 [ui-tool 包约定](../../packages/client/ui-tool/README.md)负责。DSH 还提供独立的 [Trajectory ledger](../../packages/client/ui-trajectory/README.md)，支持 Turn 与 Request 结构、搜索、折叠、分页、虚拟列表、Inspector 和时间概览；其理由由 [inspection-ledger 决策](../../.agents/notes/implemented/feature/2026-07-27-trajectory-inspection-ledger.md)负责。
+DSH 已经通过通用或 keyed `tool.call.toolview` 路径渲染每个有序工具调用，包括生命周期状态、递归 subcall、可展开输入/输出、专用卡片、文件打开与 Trajectory 检查；该行为由 [ui-tool 包约定](../../packages/client/ui-tool/README.zh.md)负责。DSH 还提供独立的 [Trajectory ledger](../../packages/client/ui-trajectory/README.zh.md)，支持 Turn 与 Request 结构、搜索、折叠、分页、虚拟列表、Inspector 和时间概览；其理由由 [inspection-ledger 决策](../../.agents/notes/implemented/feature/2026-07-27-trajectory-inspection-ledger.zh.md)负责。
 
 因此，Claude Science 模式不要求 DSH 再建立一套 Trace 真源。当前狭窄的展示缺口，是把已经组装好的根工具节点按所属 assistant 步骤投影成 Chat group，并推导 group 标签、子项数量、运行状态和失败数，同时让 `ui-tool` 继续负责原子渲染。独立 Trajectory 继续作为详细检查视图。
 
@@ -110,9 +110,9 @@ Provenance 在 Artifact Viewer 内打开，包含 breadcrumb 与 Code/Review 视
 
 ### 与 DSH 的对应关系
 
-DSH 的 Science 产物是会话范围内的持久化对象。`ScienceArtifactVersion` 携带 `artifactId`、`logicalName`、连续 `version`、标题/说明来源、附件、源 run、`toolCallId`、`requestHeaderSeq`、环境 revision/指纹和提交时间；字段定义由 [Science subsystem 类型](../../packages/science/science-session/src/types.ts)负责。[按请求划分版本的决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.md)把一个可见版本定义为一个请求轮次最终产生的内容；同轮次重写与仅元数据策展会覆盖该可见版本。
+DSH 的 Science 产物是会话范围内的持久化对象。`ScienceArtifactVersion` 携带 `artifactId`、`logicalName`、连续 `version`、标题/说明来源、附件、源 run、`toolCallId`、`requestHeaderSeq`、环境 revision/指纹和提交时间；字段定义由 [Science subsystem 类型](../../packages/science/science-session/src/types.ts)负责。[按请求划分版本的决策](../../.agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.zh.md)把一个可见版本定义为一个请求轮次最终产生的内容；同轮次重写与仅元数据策展会覆盖该可见版本。
 
-[ui-science 包](../../packages/client/ui-science/README.md)渲染 run 引用、策展产物行、Outcome 证据与只读 Details Viewer。它的每会话 [selection store](../../packages/client/ui-science/src/client/selection-store.ts)负责已打开产物标签、当前版本、content/provenance 模式、溯源子标签和 lightbox 状态。Viewer 支持 PNG、CSV、JSON、Markdown 与纯文本；溯源视图解析 code、execution log、Messages/Trajectory 检查和 environment。`ui-science` 与 `ui-trajectory` 都已出现在 [Web app patch](../../packages/bundle/web-app/cordis.patch.yml)定义的 Web 组合中。
+[ui-science 包](../../packages/client/ui-science/README.zh.md)渲染 run 引用、策展产物行、Outcome 证据与只读 Details Viewer。它的每会话 [selection store](../../packages/client/ui-science/src/client/selection-store.ts)负责已打开产物标签、当前版本、content/provenance 模式、溯源子标签和 lightbox 状态。Viewer 支持 PNG、CSV、JSON、Markdown 与纯文本；溯源视图解析 code、execution log、Messages/Trajectory 检查和 environment。`ui-science` 与 `ui-trajectory` 都已出现在 [Web app patch](../../packages/bundle/web-app/cordis.patch.yml)定义的 Web 组合中。
 
 ## 产品对照
 

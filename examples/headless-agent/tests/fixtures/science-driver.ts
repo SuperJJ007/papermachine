@@ -4,6 +4,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
+import { foldScience } from '@deepseek-ai/dsh-science-session'
+import type {} from '@deepseek-ai/dsh-tool-science'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 
 const NAME = 'science-snapshot-driver'
@@ -17,9 +19,14 @@ let ctx: Context | undefined
 try {
   loadEnv(NAME)
   ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  const sessionId = SessionId('science-tools-snapshot')
   await ctx.agents.create({
-    sessionId: SessionId('science-tools-snapshot'),
-    meta: { agentPreset: 'science' },
+    sessionId,
+    // The Science project artifact store keys its store directory by this
+    // workspace path (this driver's own process cwd, already scrubbed from
+    // every snapshot assertion below), required since S2: `bindEnvironment`
+    // and `startRun` both resolve the session's owning project from it.
+    meta: { agentPreset: 'science', cwd: process.cwd() },
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
   const result = await runFixtureTurn(ctx, {
@@ -28,7 +35,60 @@ try {
       process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
     },
   })
-  process.stdout.write(`${JSON.stringify(result)}\n`)
+  const agent = ctx.agents.get(sessionId)
+  if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
+  const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'chart.vl.json')
+  if (chart === undefined) throw new Error(`${NAME}: first turn produced no chart.vl.json artifact`)
+  let editOutput = ''
+  const disposeEditListener = ctx.on('session/event', (session, event) => {
+    if (session !== agent.session) return
+    process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
+    if (event.type === 'assistant/message') {
+      editOutput = event.data.message.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('')
+    }
+  })
+  try {
+    const styled = await ctx.scienceEdits.commitStyleEdit(agent, {
+      artifactId: chart.artifactId,
+      version: chart.version,
+      spec: '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":{"type":"bar","color":"#2455a4","fontSize":16},"encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}',
+    })
+    await ctx.scienceEdits.submit(agent, {
+      targets: [{
+        artifactId: styled.artifactId,
+        version: styled.version,
+        target: { kind: 'spec-path', path: 'encoding.y' },
+        comment: 'Keep the scale readable at small sizes.',
+      }],
+      instruction: 'Use a zero-based quantitative scale.',
+    })
+    await agent.whenIdle()
+    const plot = foldScience(agent.session.events).artifacts.findLast(artifact => artifact.logicalName === 'plot.png')
+    if (plot === undefined) throw new Error(`${NAME}: the run produced no plot.png artifact`)
+    await ctx.scienceEdits.submit(agent, {
+      targets: [
+        {
+          artifactId: plot.artifactId,
+          version: plot.version,
+          target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+        },
+        {
+          artifactId: styled.artifactId,
+          version: styled.version,
+          target: { kind: 'spec-path', path: 'encoding.x' },
+        },
+      ],
+      instruction: 'Brighten the selected region and align the chart encoding.',
+    })
+    await agent.whenIdle()
+  } finally {
+    disposeEditListener()
+  }
+  await ctx.sessions.flush(agent.session)
+  process.stdout.write(`${JSON.stringify({ ...result, output: editOutput })}\n`)
 } catch (error: unknown) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
   process.exitCode = 1

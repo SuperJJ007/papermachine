@@ -1,4 +1,5 @@
 /** Registers the conversation components, shared store, and service callbacks. */
+import { useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -12,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { DetailsViewEntry, ViewTab } from './contract/views.ts'
 import type {
-  ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
+  ApprovalWait, ChatNodeInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
   ComposerChainProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionInjected,
   DetailsInjected,
 } from './contract/slots.ts'
@@ -76,17 +77,32 @@ const ABSENT_MENU_LAUNCHER = {
   subscribe: () => () => {},
 }
 
-const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
-  hooks: {
-    turnData: ({ useSession }, nodeKey) => function useTurnData(key) {
-      return useSession((snapshot) => {
-        const location = snapshot.chat.nodes.get(nodeKey)?.location
-        return location?.kind === 'turn' || location?.kind === 'step'
-          ? location.turn.data.get(key)
-          : undefined
-      })
+/**
+ * Build the slot-level `inject` face every keyed 'conversation.chat.node'
+ * renderer receives, regardless of which package registered its key.
+ * @param ctx - owning root context (closed over so the returned Hooks can
+ * reach the concrete conversation service; components themselves never see ctx).
+ * @returns the Hook factories: Turn data and process-detail visibility.
+ */
+function createChatNodeInject(ctx: Context): ChatNodeInjected {
+  return {
+    hooks: {
+      turnData: ({ useSession }, nodeKey) => function useTurnData(key) {
+        return useSession((snapshot) => {
+          const location = snapshot.chat.nodes.get(nodeKey)?.location
+          return location?.kind === 'turn' || location?.kind === 'step'
+            ? location.turn.data.get(key)
+            : undefined
+        })
+      },
+      processDetailVisible: ({ sessionId }) => function useProcessDetailVisible() {
+        return useSyncExternalStore(
+          callback => concreteConversation(ctx).subscribeTranscriptDetailVisibility(callback),
+          () => concreteConversation(ctx).transcriptDetailVisible(sessionId),
+        )
+      },
     },
-  },
+  }
 }
 
 /** Resolve the session-scoped conversation face (scope-addressed send/cancel), failing loud. */
@@ -151,19 +167,34 @@ export function apply(ctx: Context): void {
   // persisted: a fresh page load keeps the open-jump-to-bottom default.
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
 
-  const viewTabs = (): ViewTab[] => {
+  const viewTabs = (sessionId: SessionId): ViewTab[] => {
     const tabs: ViewTab[] = []
     for (const entry of slots.entries('conversation.view')) {
       /* v8 ignore next -- unreachable: list registration validates id at load. */
       if (entry.options.id === undefined) continue
+      if (!concreteConversation(ctx).viewVisible(sessionId, entry.options.id)) continue
       tabs.push({ id: entry.options.id, label: resolveSlotLabel(entry.options.label) ?? entry.options.id })
     }
     return tabs
   }
   const views = {
     list: viewTabs,
-    subscribe: (fn: () => void) => slots.subscribe('conversation.view', fn),
-    version: () => slots.getVersion('conversation.view'),
+    // Two independent invalidation sources: the slot ledger (a view entry
+    // registers or disposes) and every registered ViewVisibilitySource (a
+    // source's own answer changes for reasons the ledger never sees — a
+    // session list update, a projection update). Either firing must re-list
+    // the tabs, so both feed the same subscription and both terms sit in the
+    // version string useSyncExternalStore compares.
+    subscribe: (fn: () => void) => {
+      const unsubscribeSlots = slots.subscribe('conversation.view', fn)
+      const unsubscribeVisibility = concreteConversation(ctx).subscribeViewVisibility(fn)
+      return () => { unsubscribeSlots(); unsubscribeVisibility() }
+    },
+    // A plain sum, not a pair: both counters only ever increase, so the sum
+    // strictly increases whenever either does — the one property
+    // useSyncExternalStore's snapshot comparison needs, while keeping
+    // `version` a plain number (ConversationSessionInjected's declared type).
+    version: () => slots.getVersion('conversation.view') + concreteConversation(ctx).viewVisibilityVersion(),
   }
 
   const detailsViewEntries = (): DetailsViewEntry[] => {
@@ -225,9 +256,12 @@ export function apply(ctx: Context): void {
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
+      'conversation.page.utilities': { kind: 'list', scope: 'root' },
+      'conversation.input.accessory': { kind: 'list', scope: 'session' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+      toggleDetails: () => { layout.toggleDetails() },
       selectWorkspace: async (workspaceId) => {
         const nextId = await workspaces.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {
@@ -280,15 +314,26 @@ export function apply(ctx: Context): void {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
-    inject: (_sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionHeaderInjected => ({
-      views,
-      open: (id) => { sessions.open(id) },
-      openDetailsView: (id) => {
+    inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ConversationSessionHeaderInjected => {
+      const openDetailsView = (id: string): void => {
         actions.setDetailsView(id)
         layout.openDetails()
-      },
-      toggleDetails: () => { layout.toggleDetails() },
-    }),
+      }
+      ctx.effect(
+        () => concreteConversation(ctx).bindDetailsOpener(sessionId, openDetailsView),
+        `ui-conversation: Details opener for ${sessionId}`,
+      )
+      ctx.effect(
+        () => concreteConversation(ctx).bindViewOpener(sessionId, (id) => { actions.setView(id) }),
+        `ui-conversation: view opener for ${sessionId}`,
+      )
+      return {
+        views,
+        open: (id) => { sessions.open(id) },
+        openDetailsView,
+        toggleDetails: () => { layout.toggleDetails() },
+      }
+    },
   }, ConversationSessionHeader)
 
   // The default composer body: its own single slot inside the composer
@@ -405,7 +450,7 @@ export function apply(ctx: Context): void {
     label: () => t('view.chat'),
     locale: NS,
     children: {
-      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: createChatNodeInject(ctx) },
       'conversation.message.images': { kind: 'single', scope: 'session' },
     },
     store: chatStore,

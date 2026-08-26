@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.md
 2026-08-15-dsh-science-v01-r1-science-session.md: b5d9cb0277f8321a58c5974de6932d34b6aeb79b
-2026-08-15-dsh-science-v01-r1-science-session.zh.md: a4fb045cfcb3667c8e56e3888bb473e02dcf07b4
+2026-08-15-dsh-science-v01-r1-science-session.zh.md: 7af208e47ec489f41dead0d795f98c2ac064e5f3

@@ -5,12 +5,16 @@
 // (the AppFrame role), and the shared store handle rides all strict session
 // entries. Tool composition belongs to ui-tool and its machinery spec.
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, render } from '@testing-library/react'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationController } from '../src/client/service.ts'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
+
+afterEach(() => { cleanup() })
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -69,6 +73,32 @@ describe('apply wiring', () => {
     const nodeSlot = b.slots.spec('conversation.chat.node')
     expect(nodeSlot).toMatchObject({ kind: 'keyed', scope: 'session' })
     expect(nodeSlot?.inject?.hooks?.turnData).toBeTypeOf('function')
+    expect(nodeSlot?.inject?.hooks?.processDetailVisible).toBeTypeOf('function')
+    await b.runtime.dispose()
+  })
+
+  it('the process-detail-visible Hook reads the registered TranscriptDetailVisibilitySource reactively', async () => {
+    const b = await bench()
+    const nodeSlot = b.slots.spec('conversation.chat.node')
+    const factory = nodeSlot?.inject?.hooks?.processDetailVisible as
+      SlotHookFactory<'conversation.chat.node', () => boolean>
+    const useProcessDetailVisible = factory({ sessionId: ROOT } as never, 'probe-key')
+    function Probe() {
+      return <div>{String(useProcessDetailVisible())}</div>
+    }
+    const view = render(<Probe />)
+    // No registrant: the chrome stays shown by default.
+    expect(view.container.textContent).toBe('true')
+
+    const conversation = b.runtime.ctx.get('conversation') as ConversationController
+    const subscribers: (() => void)[] = []
+    conversation.registerTranscriptDetailVisibility({
+      visible: id => id !== ROOT,
+      subscribe: (callback) => { subscribers.push(callback); return () => {} },
+    })
+    // The Hook's own subscription, not a re-render, carries the new answer.
+    act(() => { subscribers[0]?.() })
+    expect(view.container.textContent).toBe('false')
     await b.runtime.dispose()
   })
 

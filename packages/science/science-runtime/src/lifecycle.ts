@@ -128,6 +128,18 @@ export class LeaseRegistry {
   }
 
   /**
+   * The active lease already blocking a `reserve` for `session` (exact
+   * object or same-id quarantine), or `undefined` when reserving `session`
+   * would succeed right now. Lets a queued caller await the exact lease in
+   * its way — {@link RuntimeLease.settlement} — instead of polling `reserve`.
+   * @param session - candidate Session to check.
+   * @returns the blocking lease, if any.
+   */
+  blocking(session: Session): RuntimeLease | undefined {
+    return this.exact.get(session) ?? this.byId.get(String(session.id))
+  }
+
+  /**
    * Cancel all active work and return every known settlement.
    * @returns Settled results after every active operation releases its lease.
    */

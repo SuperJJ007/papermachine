@@ -3,11 +3,11 @@
 import { execFile as execFileCallback } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
@@ -16,6 +16,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
 import ScienceRuntime from '../src/index.ts'
@@ -421,7 +422,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     await context.plugin(SessionStore)
     await context.plugin(InvariantRegistry, { enabled: true })
     await context.plugin(ScienceSessionInvariant)
-    await context.plugin(LocalAttachmentStore, { dshHome })
+    await context.plugin(ScienceArtifactStore, { dshHome })
     await context.plugin(LocalSubprocessRuntime)
     await context.plugin(LocalSandboxProvider)
     await context.plugin(ScienceRuntime, {
@@ -436,8 +437,9 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         real: language === 'python' ? { pythonPrefix: prefix } : { rPrefix: prefix },
       },
     })
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-real-acceptance-'))
     const session = context.sessions.create(SessionId(`science-real-${language}-${randomUUID()}`), {
-      meta: { agentPreset: 'science' },
+      meta: { agentPreset: 'science', cwd: workspace },
     })
     session.append('science/mode-bound', {
       version: 1,
@@ -519,7 +521,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const capturedChart = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.png')
     if (capturedChart === undefined) throw new Error('auto-capture did not produce the real PNG artifact')
-    if (!('width' in capturedChart.attachment)) throw new Error('auto-capture returned a non-image attachment for a PNG file')
+    if (capturedChart.mediaType !== 'image/png') throw new Error('auto-capture returned a non-image artifact for a PNG file')
     checks.push('real PNG artifact auto-capture')
 
     const annotateAuthorization = authorize(session, 'annotate_artifact', 5)
@@ -530,19 +532,18 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       ...annotateAuthorization,
       signal: new AbortController().signal,
     })
-    if (!('width' in chart.attachment)) throw new Error('annotateArtifact returned a non-image attachment')
-    const stored = await context.attachments.readImage(chart.attachment)
-    if (String(stored.ref.attachmentId) !== String(chart.attachment.attachmentId)
-      || !Buffer.from(stored.data).equals(Buffer.from(PNG))) {
-      throw new Error('curated chart attachment did not read back with the exact generated PNG bytes')
+    if (chart.mediaType !== 'image/png') throw new Error('annotateArtifact returned a non-image artifact')
+    const stored = await context.scienceArtifactStore.readBlob(chart.projectId, chart.sha256)
+    if (!Buffer.from(stored).equals(Buffer.from(PNG))) {
+      throw new Error('curated chart artifact did not read back with the exact generated PNG bytes')
     }
-    checks.push('chart curation and attachment readback')
+    checks.push('chart curation and artifact-store readback')
 
     const chartProjection = replayScience(session.events)
     const replayedChart = chartProjection?.artifacts.find(candidate =>
       candidate.artifactId === chart.artifactId && candidate.version === chart.version)
-    if (replayedChart === undefined || String(replayedChart.attachment.attachmentId) !== String(chart.attachment.attachmentId)) {
-      throw new Error('chart event did not replay to the exact committed attachment')
+    if (replayedChart === undefined || replayedChart.versionId !== chart.versionId) {
+      throw new Error('chart event did not replay to the exact committed version')
     }
     checks.push('chart replay')
 
@@ -804,7 +805,7 @@ async function runCoexistence(pythonPrefix: string, rPrefix: string, dshHome: st
     await context.plugin(SessionStore)
     await context.plugin(InvariantRegistry, { enabled: true })
     await context.plugin(ScienceSessionInvariant)
-    await context.plugin(LocalAttachmentStore, { dshHome })
+    await context.plugin(ScienceArtifactStore, { dshHome })
     await context.plugin(LocalSubprocessRuntime)
     await context.plugin(LocalSandboxProvider)
     await context.plugin(ScienceRuntime, {
@@ -812,8 +813,9 @@ async function runCoexistence(pythonPrefix: string, rPrefix: string, dshHome: st
       timeoutMs: TIMEOUT_MS,
       profiles: { real: { pythonPrefix, rPrefix } },
     })
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-real-acceptance-'))
     const session = context.sessions.create(SessionId(`science-real-coexistence-${randomUUID()}`), {
-      meta: { agentPreset: 'science' },
+      meta: { agentPreset: 'science', cwd: workspace },
     })
     session.append('science/mode-bound', {
       version: 1,

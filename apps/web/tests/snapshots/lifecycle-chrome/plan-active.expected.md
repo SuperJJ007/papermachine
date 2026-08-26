@@ -4,6 +4,7 @@
 - button "New session":
   - img
   - text: New Session
+- navigation "Project navigation"
 - text: Workspaces
 - button "Search sessions":
   - img
@@ -38,6 +39,7 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: Details
-- button "Close details"
-- text: Click a tool row in the message flow to view its details
+- text: Artifacts
+- button "Close tab":
+  - img
+- text: Choose a session to see its real data, charts, and documents here.

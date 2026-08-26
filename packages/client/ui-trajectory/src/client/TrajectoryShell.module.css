@@ -1,0 +1,30 @@
+.root {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.switcher {
+  display: flex;
+  gap: 4px;
+  padding: 10px 22px 0;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.tab {
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tab[data-active='true'] {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.panel { min-height: 0; }

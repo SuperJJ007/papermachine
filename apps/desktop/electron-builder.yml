@@ -1,0 +1,27 @@
+appId: com.papermachine.desktop
+productName: PaperMachine
+asar: true
+directories:
+  output: release
+files:
+  - lib/*.js
+  - lib/*.cjs
+  - package.json
+extraResources:
+  - from: resources/environments
+    to: environments
+  - from: resources/bin
+    to: bin
+  - from: resources/onboarding.html
+    to: onboarding.html
+  - from: .stage/host
+    to: host
+mac:
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+dmg:
+  artifactName: PaperMachine-${version}-${arch}.${ext}

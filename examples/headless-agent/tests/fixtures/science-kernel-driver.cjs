@@ -55,12 +55,21 @@ rl.on('line', (line) => {
   const [, runId, , cwd, stdoutPath, stderrPath, artifactDir] = parts
   mkdirSync(artifactDir, { recursive: true })
   // One file per allowlisted auto-capture media type this snapshot pins —
-  // csv, json, md, and png — proving one science/artifact-saved event per file.
+  // csv, json, vl.json, md, and png — proving one science/artifact-saved event per file.
   writeFileSync(join(artifactDir, 'summary.csv'), 'metric,value\naccuracy,0.97\n')
   writeFileSync(join(artifactDir, 'meta.json'), '{"ok":true}\n')
+  writeFileSync(join(artifactDir, 'chart.vl.json'), '{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","data":{"values":[{"metric":"accuracy","value":0.97}]},"mark":"bar","encoding":{"x":{"field":"metric","type":"nominal"},"y":{"field":"value","type":"quantitative"}}}\n')
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'region-source-1.png'))) writeFileSync(join(artifactDir, 'region-edit-1.png'), PNG)
+  if (existsSync(join(cwd, 'inputs', 'source.vl.json'))) {
+    writeFileSync(join(artifactDir, 'selected-edit.vl.json'), '{"mark":"bar","encoding":{"y":{"scale":{"zero":true}}}}\n')
+  }
+  if (existsSync(join(cwd, 'inputs', 'source-2.vl.json'))) {
+    writeFileSync(join(artifactDir, 'selected-edit-2.vl.json'), '{"mark":"bar","encoding":{"x":{"axis":{"labelAngle":0}}}}\n')
+  }
   writeFileSync(stdoutPath, 'science snapshot run output\n')
   writeFileSync(stderrPath, '')
   send(`DONE\t${runId}\tok\t\t`)

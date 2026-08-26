@@ -9,34 +9,6 @@ import type {
   ScienceRun,
 } from './types.ts'
 
-/**
- * Whether two Science runs belong to the same durable tool-call turn.
- * @param state - strict replay state containing the runs' authorized calls.
- * @param left - one run whose authorizing tool call is indexed in `state`.
- * @param right - another run whose authorizing tool call is indexed in `state`.
- * @returns whether both runs were issued in the same conversation turn.
- * @throws when either run lacks exactly one indexed authorizing call.
- */
-export function scienceRunsShareTurn(
-  state: ScienceFoldState,
-  left: Pick<ScienceRun, 'toolCallId'>,
-  right: Pick<ScienceRun, 'toolCallId'>,
-): boolean {
-  const turnFor = (run: Pick<ScienceRun, 'toolCallId'>): number => {
-    const calls = state.toolCalls.filter(call => call.callId === run.toolCallId)
-    if (calls.length !== 1) {
-      throw new Error(`Science run toolCallId ${JSON.stringify(run.toolCallId)} does not identify one indexed tool/call`)
-    }
-    const [call] = calls
-    /* v8 ignore next -- a length-one local array always has its first element. */
-    if (call === undefined) {
-      throw new Error(`Science run toolCallId ${JSON.stringify(run.toolCallId)} does not identify one indexed tool/call`)
-    }
-    return call.turn
-  }
-  return turnFor(left) === turnFor(right)
-}
-
 /** Indexed tool call needed to prove one Science authorization. */
 export interface IndexedToolCall {
   readonly seq: number

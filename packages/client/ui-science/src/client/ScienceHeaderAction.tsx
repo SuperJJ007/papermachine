@@ -3,7 +3,7 @@
 // affordance toggles the routed `science` Details entry through the
 // owner-supplied callback — it never opens a panel of its own.
 
-import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ui-conversation SlotMap merge (the header actions
 // seat and its ConversationHeaderActionOwnerProps.openDetailsView callback).
@@ -15,7 +15,27 @@ export type ScienceHeaderActionProps =
   PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'science'>
 
 /** Details entry id this action opens (matches the entry's own registration). */
-const SCIENCE_DETAILS_ID = 'science'
+export const SCIENCE_DETAILS_ID = 'science'
+
+/**
+ * Render the shared compact Files control used by the root utility placement.
+ * @param props - click handler, active state, and Science translator.
+ * @returns the localized Files button.
+ */
+export function ScienceFilesButton({ onClick, expanded = false, t }: {
+  onClick: () => void
+  expanded?: boolean
+  t: ScienceHeaderActionProps['t']
+}) {
+  return (
+    <button
+      type="button" className={css.iconAction} aria-label={t('details.action')}
+      aria-pressed={expanded} onClick={onClick}
+    >
+      <IconPanelLeftOutline16 className={expanded ? css.panelOpen : css.panelClosed} size={16} />
+    </button>
+  )
+}
 
 /**
  * Render this session's Science details action, which both opens and closes
@@ -25,19 +45,10 @@ const SCIENCE_DETAILS_ID = 'science'
  * @param props - runtime slot currency plus the science namespace translator.
  * @returns the action button, or null when the session names another preset.
  */
-export function ScienceHeaderAction({ sessionId, useSessions, toggleDetailsView, t }: ScienceHeaderActionProps) {
+export function ScienceHeaderAction({ sessionId, useSessions, detailsView, toggleDetailsView, t }: ScienceHeaderActionProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
+  const expanded = detailsView === SCIENCE_DETAILS_ID
   if (preset !== 'science') return null
 
-  return (
-    <button
-      type="button"
-      className={css.action}
-      aria-label={t('details.action')}
-      onClick={() => { toggleDetailsView(SCIENCE_DETAILS_ID) }}
-    >
-      <IconDataOutline16 size={14} />
-      <span>{t('details.label')}</span>
-    </button>
-  )
+  return <ScienceFilesButton expanded={expanded} onClick={() => { toggleDetailsView(SCIENCE_DETAILS_ID) }} t={t} />
 }

@@ -83,7 +83,7 @@ async function captureFiles(
 }
 
 describe('ScienceRuntime.annotateArtifact', () => {
-  it('curates the latest version in place, reusing its attachment and provenance, with origin model', async () => {
+  it('curates the latest version in place, reusing its store content reference and provenance, with origin model', async () => {
     const root = tmp('.science-annotate-latest-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -106,7 +106,12 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(annotated.title).toBe('Result summary')
     expect(annotated.caption).toBe('The final table')
     expect(annotated.origin).toBe('model')
-    expect(annotated.attachment).toEqual(captured?.attachment)
+    expect(annotated.versionId).toBe(captured?.versionId)
+    expect(annotated.sha256).toBe(captured?.sha256)
+    expect(annotated.mediaType).toBe(captured?.mediaType)
+    expect(annotated.byteCount).toBe(captured?.byteCount)
+    expect(annotated.origin).not.toBe('human-edit')
+    if (annotated.origin === 'human-edit') throw new Error('annotate_artifact returned a human edit')
     expect(annotated.runId).toBe(runId)
     expect(annotated.environmentRevision).toBe(captured?.environmentRevision)
     expect(annotated.environmentFingerprint).toBe(captured?.environmentFingerprint)
@@ -115,7 +120,53 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(artifacts?.at(0)?.title).toBe('Result summary')
   })
 
-  it('curates a non-image artifact identically: no width/height required', async () => {
+  it('rejects curation of a direct human-edit version', async () => {
+    const root = tmp('.science-annotate-human-edit-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-human-edit')
+    await captureFiles(harness, root, session, { 'chart.vl.json': '{"mark":"bar"}' })
+    const parent = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.vl.json')
+    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite parent')
+    const stored = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
+      producerSessionId: session.id,
+      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      mediaType: 'application/vnd.vega-lite+json',
+      origin: 'human-edit',
+      title: parent.title,
+      editBaselines: parent.versionId,
+    })
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: parent.artifactId,
+        logicalName: parent.logicalName,
+        version: stored.ordinal,
+        parent: { artifactId: parent.artifactId, version: 1 },
+        title: parent.title,
+        origin: 'human-edit',
+        projectId: parent.projectId,
+        versionId: stored.versionId,
+        sha256: stored.sha256,
+        mediaType: 'application/vnd.vega-lite+json',
+        byteCount: stored.byteCount,
+        environmentRevision: parent.environmentRevision,
+        environmentFingerprint: parent.environmentFingerprint,
+        createdAt: Date.now(),
+      },
+    })
+
+    await expect(harness.runtime.annotateArtifact({
+      session,
+      logicalName: parent.logicalName,
+      title: 'Forbidden curation',
+      ...authorizeAnnotateArtifact(session),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_CURATABLE' })
+  })
+
+  it('curates a non-image artifact identically', async () => {
     const root = tmp('.science-annotate-text-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -127,8 +178,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       session, logicalName: 'report.md', title: 'Final report',
       ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
     })
-    expect(annotated.attachment.mediaType).toBe('text/markdown')
-    expect('width' in annotated.attachment).toBe(false)
+    expect(annotated.mediaType).toBe('text/markdown')
   })
 
   it('curates an exact named version in place, leaving every other version untouched', async () => {
@@ -141,14 +191,19 @@ describe('ScienceRuntime.annotateArtifact', () => {
     await captureFiles(harness, root, session, { 'notes.txt': 'v2' })
     const v1 = replayScience(session.events)?.artifacts.find(a => a.logicalName === 'notes.txt' && a.version === 1)
     expect(v1).toBeDefined()
+    if (v1 === undefined) throw new Error('expected notes.txt v1')
 
     const annotated = await harness.runtime.annotateArtifact({
       session, logicalName: 'notes.txt', version: 1, title: 'Original notes',
       ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
     })
     expect(annotated.version).toBe(1)
-    expect(annotated.attachment).toEqual(v1?.attachment)
-    expect(annotated.runId).toBe(v1?.runId)
+    expect(annotated.versionId).toBe(v1.versionId)
+    expect(annotated.sha256).toBe(v1.sha256)
+    expect(annotated.origin).not.toBe('human-edit')
+    expect(v1.origin).not.toBe('human-edit')
+    if (annotated.origin === 'human-edit' || v1.origin === 'human-edit') throw new Error('expected run-produced versions')
+    expect(annotated.runId).toBe(v1.runId)
     const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'notes.txt')
     expect(artifacts?.map(a => a.version)).toEqual([1, 2])
     expect(artifacts?.at(0)?.title).toBe('Original notes')

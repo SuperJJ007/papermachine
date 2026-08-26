@@ -1,21 +1,24 @@
 /* Session-header Science action: icon plus label, matching the header's
    other interactive-action controls (job list, subagent catalog). */
 
-.action {
+.iconAction {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 16px;
   cursor: pointer;
 }
 
-.action:hover {
+.iconAction:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
+
+.panelClosed { transform: scaleX(-1); }
+.panelOpen { transform: none; }

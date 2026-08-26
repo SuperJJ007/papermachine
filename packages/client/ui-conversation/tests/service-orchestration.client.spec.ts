@@ -51,6 +51,123 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('lets submission handlers claim an empty draft and otherwise keeps it a no-op', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const handler = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
+    const dispose = b.root.registerSubmissionHandler(handler)
+    await expect(b.root.sendSession(sessionId, {} as SessionFace, '', [], 'queue'))
+      .resolves.toEqual({ kind: 'success' })
+    expect(handler).toHaveBeenCalledOnce()
+    dispose()
+    await expect(b.root.sendSession(sessionId, {} as SessionFace, '', [], 'queue'))
+      .resolves.toEqual({ kind: 'success' })
+    expect(b.prompt).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('disposes exact Details opener bindings and ignores unmounted Sessions', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = b.root.bindDetailsOpener(sessionId, first)
+    const disposeSecond = b.root.bindDetailsOpener(sessionId, second)
+    disposeFirst()
+    b.root.openDetailsView(sessionId, 'science')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith('science')
+    disposeSecond()
+    expect(() => { b.root.openDetailsView(sessionId, 'science') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
+  it('routes main-view openings and disposes exact Session visibility predicates', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = b.root.bindViewOpener(sessionId, first)
+    const disposeSecond = b.root.bindViewOpener(sessionId, second)
+    disposeFirst()
+    b.root.openView(sessionId, 'trace')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith('trace')
+    const visibilitySubscribers: (() => void)[] = []
+    const disposeVisibility = b.root.registerViewVisibility('trace', {
+      visible: id => id === sessionId,
+      subscribe: (callback) => { visibilitySubscribers.push(callback); return () => {} },
+    })
+    expect(b.root.viewVisible(sessionId, 'trace')).toBe(true)
+    expect(b.root.viewVisible('other' as never, 'trace')).toBe(false)
+    expect(() => {
+      b.root.registerViewVisibility('trace', { visible: () => true, subscribe: () => () => {} })
+    }).toThrow(/already registered/)
+    // The source's own invalidation reaches subscribeViewVisibility and bumps
+    // the version, independent of anything the slot ledger tracks.
+    const listener = vi.fn()
+    const unsubscribe = b.root.subscribeViewVisibility(listener)
+    const before = b.root.viewVisibilityVersion()
+    visibilitySubscribers[0]?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(b.root.viewVisibilityVersion()).toBeGreaterThan(before)
+    unsubscribe()
+    disposeVisibility()
+    expect(b.root.viewVisible('other' as never, 'trace')).toBe(true)
+    disposeSecond()
+    expect(() => { b.root.openView(sessionId, 'trace') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
+  it('suppresses transcript process-detail chrome only where every registered source agrees', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    // No registrant: every Session keeps the chrome.
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(true)
+
+    const scienceSubscribers: (() => void)[] = []
+    const disposeScience = b.root.registerTranscriptDetailVisibility({
+      visible: id => id !== sessionId,
+      subscribe: (callback) => { scienceSubscribers.push(callback); return () => {} },
+    })
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    expect(b.root.transcriptDetailVisible('other' as never)).toBe(true)
+
+    // A second source narrows further: both must agree for the chrome to show.
+    const disposeOther = b.root.registerTranscriptDetailVisibility({
+      visible: () => false,
+      subscribe: () => () => {},
+    })
+    expect(b.root.transcriptDetailVisible('other' as never)).toBe(false)
+
+    // The source's own invalidation reaches subscribeTranscriptDetailVisibility,
+    // independent of anything the slot ledger tracks.
+    const listener = vi.fn()
+    const unsubscribe = b.root.subscribeTranscriptDetailVisibility(listener)
+    scienceSubscribers[0]?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+
+    disposeScience()
+    // Disposing an already-removed source is a no-op.
+    disposeScience()
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    disposeOther()
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(true)
+    await b.runtime.dispose()
+  })
+
+  it('tears down a still-registered transcript-detail source on service disposal', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    b.root.registerTranscriptDetailVisibility({
+      visible: () => false,
+      subscribe: () => () => {},
+    })
+    expect(b.root.transcriptDetailVisible(sessionId)).toBe(false)
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)

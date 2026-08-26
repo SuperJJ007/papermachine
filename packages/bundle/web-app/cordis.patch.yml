@@ -107,13 +107,30 @@
     - id: session-attachment-index
       name: '@deepseek-ai/dsh-session-attachment-index'
 
-    # The Science domain package named above: registers the
-    # `science/artifact-saved` attachment extractor and the optional `science`
-    # session projection. It publishes no service of its own — every model-
-    # facing Science tool and the Runtime execution service are the science
-    # agent preset's and the Science Runtime row's, not this row's.
+    # The Science domain package named above: registers the optional
+    # `science` session projection. Artifact bytes and their cross-session
+    # index live in the project artifact store row below, not here; this
+    # row publishes no service of its own — every model-facing Science tool
+    # and the Runtime execution service are the science agent preset's and
+    # the Science Runtime row's, not this row's.
     - id: science-session
       name: '@deepseek-ai/dsh-science-session'
+
+    # Process-global admission for artifact-viewer edit gestures. The Remote
+    # receives a session identity and resolves that exact live Science Agent;
+    # it must share the Host root with the Typert API gateway rather than live
+    # inside one agent-preset scope.
+    - id: science-edit-service
+      name: '@deepseek-ai/dsh-tool-science/edit-service'
+
+    # Project-owned Science artifact store: bytes and the artifact/version
+    # index for every project a Science session opens, keyed by the
+    # session's workspace directory. `dshHome` is left unconfigured to
+    # follow the same default (`$DSH_HOME`, then `~/.dsh`) the Science
+    # Runtime row below resolves independently, keeping both rows anchored
+    # to one harness home.
+    - id: science-artifact-store
+      name: '@deepseek-ai/dsh-science-artifact-store'
 
     # The settings-bound Science Runtime: declares `settings` among its
     # Cordis injections, so this row is what makes the `science-runtime`

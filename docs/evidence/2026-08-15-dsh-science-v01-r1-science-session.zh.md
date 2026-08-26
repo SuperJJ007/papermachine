@@ -2,7 +2,7 @@
 
 [English](2026-08-15-dsh-science-v01-r1-science-session.md) | 中文
 
-调查时间为 2026-08-15，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R1 Science Session on RC5](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.md)。
+调查时间为 2026-08-15，平台为 macOS 26.5.2（Darwin 25.5.0，arm64），Node v24.14.0，pnpm 11.7.0。范围授权文档：[DSH Science v0.1 R1 Science Session on RC5](../../.agents/notes/implemented/feature/2026-08-15-dsh-science-v01-r1-science-session.zh.md)。
 
 ## 结果
 
@@ -52,7 +52,7 @@ R1 在 `741ec08af3163475f55ffda3fb6188a801e3ff1a`（分支 `codex/science-v01-r1
 | `delta_id` | 之前状态 | R1 后状态 |
 |---|---|---|
 | `GEN-SESSION-REGISTRY` | 仅在 R1 中 `mapping` | `verified` —— 已添加并覆盖 `checkpointStateSchema`、`checkpointStateSeq`、`viewChanged`；未移植下游 registry 的任何其他能力 |
-| `SCI-SESSION` | `not-started`；R1 的唯一产品切片 | `verified` —— 已在 `741ec08af3163475f55ffda3fb6188a801e3ff1a` 处移植并获得覆盖；其余每一条 overlay 行（`GEN-RUNTIME-CONTEXT`、`SCI-RUNTIME`、`SCI-R-PROBE`、`FS-READONLY`、`FS-READONLY-LOAD-FIX`、`SCI-TOOLS`、`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER`）与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) 中记录的状态完全一致；R1 未触碰其中任何一条 |
+| `SCI-SESSION` | `not-started`；R1 的唯一产品切片 | `verified` —— 已在 `741ec08af3163475f55ffda3fb6188a801e3ff1a` 处移植并获得覆盖；其余每一条 overlay 行（`GEN-RUNTIME-CONTEXT`、`SCI-RUNTIME`、`SCI-R-PROBE`、`FS-READONLY`、`FS-READONLY-LOAD-FIX`、`SCI-TOOLS`、`SCI-PRESET`、`SCI-CHARTS-OUTCOME`、`SCI-SETTINGS-SIDEBAR`、`DESKTOP-CARRIER`）与 [R0 closure evidence](2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md) 中记录的状态完全一致；R1 未触碰其中任何一条 |
 
 ## 受保护状态的保全
 

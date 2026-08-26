@@ -11,7 +11,7 @@ import type { ScienceArtifactPresentation, ScienceArtifactPresentationItem, Scie
 
 export type {
   ScienceArtifactPresentation,
-  ScienceArtifactPresentationAttachment,
+  ScienceArtifactPresentationContent,
   ScienceArtifactPresentationItem,
   ScienceOutcomeEvidencePresentation,
   ScienceOutcomePresentation,
@@ -27,7 +27,7 @@ export type {
  */
 export function scienceArtifactPresentation(artifacts: readonly ScienceArtifactPresentationItem[]): JsonValue {
   if (artifacts.length === 0) return null
-  const presentation: ScienceArtifactPresentation = { kind: 'science/artifact', version: 1, artifacts }
+  const presentation: ScienceArtifactPresentation = { kind: 'science/artifact', version: 2, artifacts }
   return presentation as unknown as JsonValue
 }
 

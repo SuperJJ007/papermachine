@@ -17,7 +17,7 @@ const t: ScienceHeaderActionProps['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-function props(agentPreset: string | undefined, toggleDetailsView = vi.fn()): ScienceHeaderActionProps {
+function props(agentPreset: string | undefined, toggleDetailsView = vi.fn(), detailsView: string | null = null): ScienceHeaderActionProps {
   const state = {
     ids: [SESSION],
     byId: {
@@ -35,7 +35,7 @@ function props(agentPreset: string | undefined, toggleDetailsView = vi.fn()): Sc
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
-  return { sessionId: SESSION, useSessions, toggleDetailsView, t } as unknown as ScienceHeaderActionProps
+  return { sessionId: SESSION, useSessions, detailsView, toggleDetailsView, t } as unknown as ScienceHeaderActionProps
 }
 
 describe('ScienceHeaderAction visibility', () => {
@@ -69,5 +69,12 @@ describe('ScienceHeaderAction activation', () => {
     fireEvent.click(button)
     expect(toggleDetailsView).toHaveBeenCalledTimes(2)
     expect(toggleDetailsView).toHaveBeenLastCalledWith('science')
+  })
+
+  it('reflects whether the Files panel is the selected Details entry', () => {
+    const { rerender } = render(<ScienceHeaderAction {...props('science')} />)
+    expect(screen.getByRole('button', { name: 'Science details' }).getAttribute('aria-pressed')).toBe('false')
+    rerender(<ScienceHeaderAction {...props('science', vi.fn(), 'science')} />)
+    expect(screen.getByRole('button', { name: 'Science details' }).getAttribute('aria-pressed')).toBe('true')
   })
 })

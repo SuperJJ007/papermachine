@@ -14,7 +14,7 @@ export type ConversationRootProps = ConversationSlotProps
 
 export function ConversationRoot({
   sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, toggleDetails, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
@@ -31,6 +31,24 @@ export function ConversationRoot({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
+
+  // `conversation.page.utilities` is an additive list slot that is often
+  // empty (no registrant, or one that renders null for the current Session);
+  // the header only needs its right-clearance while the slot actually
+  // occupies that corner. `renderSlot` always wraps the slot's dispatch
+  // outcome in one constant `[data-slot]` anchor div (the ui-renderer outlet
+  // contract), so the anchor itself is present even when every registrant
+  // renders nothing — presence must be read off the ANCHOR's own children,
+  // not off `pageUtilitiesRef` directly, or an always-present empty anchor
+  // reads as "occupied" forever. The measured-DOM approach mirrors the
+  // composer seat's own ResizeObserver below. The effect has no dependency
+  // array: it is a cheap DOM read that must follow every render (a Session
+  // change, or a registrant's own visibility flipping).
+  const pageUtilitiesRef = useRef<HTMLDivElement>(null)
+  const [hasPageUtilities, setHasPageUtilities] = useState(false)
+  useEffect(() => {
+    setHasPageUtilities((pageUtilitiesRef.current?.firstElementChild?.childElementCount ?? 0) > 0)
+  })
 
   // Publishes the seat's live height as --dsh-composer-height on the scroll
   // body so floating controls (ChatView back-to-bottom) clear the composer as
@@ -148,6 +166,7 @@ export function ConversationRoot({
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
+    accessory: zone === undefined ? null : renderSlot('conversation.input.accessory', zone),
     overlay: renderSlot('conversation.input.overlay', {}),
     leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
     rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),
@@ -184,8 +203,11 @@ export function ConversationRoot({
   )
 
   return (
-    <div className={css.root} data-phase={phase}>
+    <div className={css.root} data-phase={phase} data-page-utilities={hasPageUtilities || undefined}>
       {renderSlot('conversation.session.header', {})}
+      <div className={css.pageUtilities} ref={pageUtilitiesRef}>
+        {renderSlot('conversation.page.utilities', { toggleDetails })}
+      </div>
       <div className={css.scrollBody} data-conversation-scroll="">
         {renderSlot('conversation.session', {})}
         {composerSeat}

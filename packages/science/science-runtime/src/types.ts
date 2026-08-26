@@ -16,6 +16,7 @@ import type {
   ScienceRunTerminal,
 } from '@deepseek-ai/dsh-science-session'
 import type { CaptureRunArtifactsResult } from './capture.ts'
+import type { CallId } from '@deepseek-ai/dsh-llm'
 
 export type { CaptureRunArtifactsResult } from './capture.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -30,6 +31,8 @@ export type ScienceRuntimeErrorCode =
   | 'INVALID_REQUEST'
   /** No Conda prefix is configured for the requested profile id in this deployment. */
   | 'PROFILE_NOT_CONFIGURED'
+  /** The session's owning project cannot be resolved: its header names no workspace directory (cwd). */
+  | 'PROJECT_UNAVAILABLE'
   | 'OPERATION_CANCELLED'
   | 'OPERATION_TIMED_OUT'
   | 'INFRASTRUCTURE_FAILURE'
@@ -37,6 +40,16 @@ export type ScienceRuntimeErrorCode =
   | 'TERMINAL_COMMIT_FAILED'
   /** `annotate_artifact` named a `logical_name` (or an exact `version` of it) that does not exist in this session. */
   | 'ARTIFACT_NOT_FOUND'
+  /**
+   * `annotate_artifact` named an existing version whose `origin` is
+   * `'human-edit'`: curation would either erase the direct-edit
+   * discriminator (by rewriting it onto the `'model'` branch) or claim a
+   * model tool authorization that a direct style edit never carried, so the
+   * version stays uncurated. Editing that chart's content requires a new
+   * run (`run_python`/`run_r` against it as an `edit_of` baseline) or the
+   * viewer's own style editor.
+   */
+  | 'ARTIFACT_NOT_CURATABLE'
   /** A requested run input does not identify a committed artifact version. */
   | 'INPUT_NOT_FOUND'
   /** A requested run input path is unsafe or collides with another input path. */
@@ -137,7 +150,7 @@ export interface AnnotateScienceArtifactRequest {
   /** Optional human-readable artifact caption. */
   readonly caption?: string
   /** Model-issued call already recorded in the Session log. */
-  readonly toolCallId: ScienceArtifactVersion['toolCallId']
+  readonly toolCallId: CallId
   /** Latest Science-era `request/header` event already recorded in the log. */
   readonly requestHeaderSeq: number
   /** Caller-owned cancellation signal. */
@@ -171,10 +184,10 @@ export interface ScienceRuntimeService {
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
   /**
-   * Re-commit an existing artifact version's exact attachment reference as a
-   * new curated version, carrying a model-supplied title and optional
-   * caption. Never touches the filesystem or the attachment store: the
-   * content-addressed `attachment` is reused unchanged.
+   * Re-commit an existing artifact version's exact store content reference
+   * as its curated replacement, carrying a model-supplied title and optional
+   * caption. Metadata-only: the store row is curated in place and the
+   * content-addressed reference is reused unchanged.
    * @param request - Exact Session, target logical artifact (and optional
    *   version), title/caption, and cancellation.
    * @returns The durable curated version this operation appended.

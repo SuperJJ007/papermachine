@@ -1,0 +1,42 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Science desktop development carrier: Electron window and isolated dsh Host lifecycle",
+  "version": "0.1.1-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "type": "module",
+  "main": "lib/main.js",
+  "exports": {
+    ".": "./lib/main.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js"
+  ],
+  "scripts": {
+    "build": "tsc -b && tsdown --config-loader native",
+    "dev": "pnpm run build && electron lib/main.js",
+    "fetch:micromamba": "node --import tsx/esm scripts/fetch-micromamba.ts",
+    "stage:host": "node --import tsx/esm scripts/stage-host.ts",
+    "package:mac": "pnpm -w run build && pnpm run fetch:micromamba darwin-arm64 && pnpm run fetch:micromamba darwin-x64 && pnpm run stage:host && electron-builder --mac dmg && node --import tsx/esm scripts/write-update-metadata.ts",
+    "test": "vitest run --root ../.. apps/desktop/tests"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "electron": "43.4.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "electron-builder": "26.15.3",
+    "js-yaml": "^4.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

@@ -31,7 +31,7 @@
 
 ## 职责
 
-本包承担附件授权 seam 中通用注册表的角色:领域 host 插件(如 `dsh-science-session`)为自己的事件类型贡献带类型的提取器,`dsh-host-apiproxy` 则为实时附件 RPC 与会话 ZIP 导出两处消费该注册表。两侧互不相识。
+本包承担附件授权 seam 中通用注册表的角色:某个领域 host 插件为自己的 extractor-required 事件类型贡献带类型的提取器,`dsh-host-apiproxy` 则为实时附件 RPC 与会话 ZIP 导出两处消费该注册表。两侧互不相识。今天没有任何生产领域注册提取器——Science 的 `science/artifact-saved` 被归类为 `attachment-free`,因为 Science 产物字节归 project artifact store(`dsh-science-artifact-store`)所有,而非本注册表。
 
 ## 模型体验
 

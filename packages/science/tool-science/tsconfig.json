@@ -4,7 +4,9 @@
     "rootDir": "src",
     "outDir": "lib/types"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
     {
       "path": "../../../vendor/cordis"
@@ -14,6 +16,9 @@
     },
     {
       "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
     },
     {
       "path": "../../core/session"
@@ -28,6 +33,9 @@
       "path": "../../core/tools"
     },
     {
+      "path": "../../typert/protocol"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
@@ -38,6 +46,12 @@
     },
     {
       "path": "../science-runtime"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../science-artifact-store"
     }
   ]
 }

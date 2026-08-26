@@ -1,17 +1,19 @@
 // Web e2e scenario: cold Science chart and Outcome replay, plus the Science
 // session-header action and read-only Details entry it opens. A stored
-// Session and attachment fixture enters through the shipped Web composition
-// so real Chromium exercises projection replay, session-scoped attachment
-// reads, dedicated tool rows, reload, lightbox keyboard behavior, and the
-// routed Details column's client-safe environment/run/chart/Outcome
-// rendering.
+// Session fixture citing one project-store-backed chart version and one
+// deliberately unresolvable one enters through the shipped Web composition
+// so real Chromium exercises projection replay, dedicated tool rows, reload,
+// lightbox keyboard behavior, and the routed Details column's client-safe
+// environment/run/chart/Outcome rendering. Artifact-content reads through
+// the project store are wired in a later slice (S4); until then the
+// artifact viewer's per-version content pane stays unverified here.
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
@@ -23,10 +25,13 @@ import type {} from '@deepseek-ai/dsh-session-title'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
+  ScienceProjectId,
   replayScience,
   ScienceRunId,
   ScienceScratchKey,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
   captureStableAria,
   compareOrRefreshGolden,
@@ -56,6 +61,7 @@ const PNG = Uint8Array.from(Buffer.from(
   'base64',
 ))
 const FINGERPRINT = 'b'.repeat(64)
+const PROJECT_ID = ScienceProjectId('project-browser-1')
 const RUN_ID = ScienceRunId('run-browser-1')
 const SECOND_RUN_ID = ScienceRunId('run-browser-2')
 const CANCELLED_RUN_ID = ScienceRunId('run-browser-cancelled')
@@ -91,15 +97,46 @@ function appendToolResult(
   }, { surfaceOp: 'append', sourceEventSeqs: [callSeq] })
 }
 
-/** Build one valid closed Science session around stored and missing attachments. */
-function scienceFixture(stored: ImageAttachmentRef): string {
+/** Store coordinates and content facts one committed Science chart version carries. */
+interface ChartContent {
+  readonly versionId: ReturnType<typeof ScienceVersionId>
+  readonly sha256: string
+  readonly mediaType: ScienceArtifactMediaType
+  readonly byteCount: number
+}
+
+/** Deterministic fixture digest: a real sha256 over a fixed label, not a store-verified content hash. */
+function fixtureDigest(label: string): string {
+  return createHash('sha256').update(label).digest('hex')
+}
+
+/** Build one valid closed Science session around stored and missing chart object versions. */
+function scienceFixture(png: Uint8Array): string {
   const session = Session.create(SessionId('science-browser-source'))
-  const origin = new Date().setHours(12, 0, 0, 0)
+  // `seedSession` materializes each event's envelope time as this fixture's
+  // own creation-time anchor plus that event's delta from the fixture's
+  // first event (see scaffold.ts) — a wall-clock noon origin lands after
+  // that anchor whenever the suite runs before local noon, failing
+  // Science's payload-precedes-event.time invariants (validatedAt,
+  // startedAt, createdAt, publishedAt). Anchoring to `Date.now()` half a
+  // second before `seedSession`'s own anchor keeps every payload timestamp
+  // ordered correctly against both the event it belongs to and the prior
+  // fact it depends on, regardless of time of day.
+  const origin = Date.now() - 60_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
-  const missing: ImageAttachmentRef = {
-    ...stored,
-    attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`),
-    name: 'missing.png',
+  const stored: ChartContent = {
+    versionId: ScienceVersionId(fixtureDigest('observed-series:v1')),
+    sha256: createHash('sha256').update(png).digest('hex'),
+    mediaType: 'image/png',
+    byteCount: png.byteLength,
+  }
+  // A distinct committed version whose bytes the project artifact store
+  // never actually holds, exercising the artifact viewer's load-failure path.
+  const missing: ChartContent = {
+    versionId: ScienceVersionId(fixtureDigest('observed-series:v2-missing')),
+    sha256: fixtureDigest('observed-series:v2-missing-object'),
+    mediaType: 'image/png',
+    byteCount: png.byteLength,
   }
 
   session.append('turn/start', { turn: 1 })
@@ -188,30 +225,23 @@ function scienceFixture(stored: ImageAttachmentRef): string {
   })
   const artifactPresentation = (
     version: number,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     title: string,
   ): JsonValue => ({
     kind: 'science/artifact',
-    version: 1,
+    version: 2,
     artifacts: [{
       artifactId: CHART_ID,
       logicalName: 'observed-series',
       version,
       title,
-      attachment: {
-        attachmentId: attachment.attachmentId,
-        mediaType: attachment.mediaType,
-        bytes: attachment.bytes,
-        width: attachment.width,
-        height: attachment.height,
-        ...attachment.name === undefined ? {} : { name: attachment.name },
-      },
+      content: { versionId: content.versionId, mediaType: content.mediaType, byteCount: content.byteCount },
     }],
   })
 
   const appendCapturedChart = (
     version: number,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     sourceRunId: ReturnType<typeof ScienceRunId>,
     sourceCallId: ReturnType<typeof CallId>,
     sourceCallSeq: number,
@@ -227,7 +257,11 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         version,
         title,
         origin: 'auto',
-        attachment,
+        projectId: PROJECT_ID,
+        versionId: content.versionId,
+        sha256: content.sha256,
+        mediaType: content.mediaType,
+        byteCount: content.byteCount,
         runId: sourceRunId,
         toolCallId: sourceCallId,
         requestHeaderSeq: request.seq,
@@ -236,13 +270,13 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt: eventTime(sourceCallSeq + 3),
       },
     })
-    appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, attachment, title), turn)
+    appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, content, title), turn)
   }
 
   const appendChart = (
     version: number,
     callId: ReturnType<typeof CallId>,
-    attachment: ImageAttachmentRef,
+    content: ChartContent,
     sourceRunId: ReturnType<typeof ScienceRunId>,
     turn: number,
   ): void => {
@@ -260,7 +294,11 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         title,
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
         origin: 'model',
-        attachment,
+        projectId: PROJECT_ID,
+        versionId: content.versionId,
+        sha256: content.sha256,
+        mediaType: content.mediaType,
+        byteCount: content.byteCount,
         runId: sourceRunId,
         toolCallId: callId,
         requestHeaderSeq: request.seq,
@@ -269,7 +307,7 @@ function scienceFixture(stored: ImageAttachmentRef): string {
         createdAt,
       },
     })
-    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, attachment, title), turn)
+    appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, content, title), turn)
   }
 
   const appendOutcome = (
@@ -403,12 +441,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    const stored = await scaffold.ctx.attachments.saveImage({
-      data: PNG,
-      mediaType: 'image/png',
-      name: 'observed.png',
-    })
-    await seedSession(scaffold, scienceFixture(stored), SEED_ID, 'science')
+    await seedSession(scaffold, scienceFixture(PNG), SEED_ID, 'science')
     // A non-Science Session (no agentPreset), seeded alongside the Science
     // one so the header-action test can assert real absence rather than an
     // absence that only holds because no other Session exists yet.
@@ -433,7 +466,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
    * neither the label nor the row's position is a stable selector).
    */
   async function currentSeedIdentity(): Promise<'science' | 'standard' | 'unknown'> {
-    if (await page.getByText('Updated finding', { exact: true }).count() > 0) return 'science'
+    if (await page.getByText('Outcome published · revision 2', { exact: true }).count() > 0) return 'science'
     if (await page.getByText('DONE', { exact: true }).count() > 0) return 'standard'
     return 'unknown'
   }
@@ -468,47 +501,29 @@ describe('web e2e: Science chart and Outcome replay', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-chart-outcome'))
     const openSeed = async (): Promise<void> => {
       await openSessionByTitle(SEED_TITLE)
-      await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     }
 
     await openSeed()
-    await expect.poll(() => page.getByRole('img', { name: 'observed.png' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
-    for (const image of await page.getByRole('img', { name: 'observed.png' }).all()) {
-      expect(await image.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
-    }
-    expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('observed-series', { exact: true }).count()).toBe(4)
-    await expect.poll(() => page.getByRole('button', { name: 'Failed to load, click to retry' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
+    expect(await page.getByText('Outcome published · revision 1', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Outcome published · revision 2', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(0)
+    expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(0)
+    expect(await page.getByRole('listitem', { name: /observed-series v1/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /observed-series v2/u }).count()).toBe(1)
+    expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
     const aria = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-    expect(aria).toContain('Initial finding')
-    expect(aria).toContain('Updated finding')
-    expect(aria).toContain('The missing object is reported without hiding the publication.')
+    expect(aria).toContain('Outcome published · revision 1')
+    expect(aria).toContain('Outcome published · revision 2')
+    expect(aria).not.toContain('The missing object is reported without hiding the publication.')
     expect(aria).not.toContain('/private/host/science')
     expect(aria).not.toContain(FINGERPRINT)
 
-    const opener = page.getByRole('button', { name: 'View original: observed.png' }).first()
-    await opener.click()
-    const dialog = page.getByRole('dialog', { name: 'Original' })
-    await dialog.waitFor({ timeout: 10_000 })
-    await expect.poll(() => page.getByRole('button', { name: 'Close', exact: true })
-      .evaluate(element => element === document.activeElement))
-      .toBe(true)
-    await page.keyboard.press('Escape')
-    await expect.poll(() => dialog.count()).toBe(0)
-    await expect.poll(() => opener.evaluate(element => element === document.activeElement)).toBe(true)
-
     await page.reload({ waitUntil: 'load' })
     await openSeed()
-    await expect.poll(() => page.getByRole('img', { name: 'observed.png' }).count(), {
-      timeout: 15_000,
-    }).toBe(2)
-    expect(await page.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(2)
+    expect(await page.getByRole('listitem', { name: /observed-series v1/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /observed-series v2/u }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
@@ -516,10 +531,11 @@ describe('web e2e: Science chart and Outcome replay', () => {
   it('renders a canonical post-dispatch abort as stopped while replay retains CANCELLED', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-cancelled-run'))
     await openSessionByTitle(SEED_TITLE)
-    await page.getByText('Error: tool call aborted', { exact: true }).waitFor({ timeout: 15_000 })
     const row = page.locator('[data-tool="science-run"][data-state="stopped"]')
     await row.waitFor({ timeout: 15_000 })
     expect(await row.getByText('Run stopped', { exact: true }).count()).toBe(1)
+    expect(await row.getByText('Error: tool call aborted', { exact: true }).count()).toBe(0)
+    await row.getByRole('button').first().click()
     expect(await row.getByText('Error: tool call aborted', { exact: true }).count()).toBe(1)
 
     const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
@@ -539,22 +555,17 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await scienceAction.count()).toBe(0)
 
     // The built-in `science` preset session shows the action; activating it
-    // opens the Details column with no tab open — the landing view (gallery
-    // of latest chart versions, plus the latest Outcome below it).
+    // opens the Details column with no tab open: the latest-artifact gallery.
     await openSessionByTitle(SEED_TITLE)
-    await page.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+    await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
     await detailsPanel.getByText('Science', { exact: true }).waitFor({ timeout: 10_000 })
 
-    // Only the latest accepted chart version renders in the gallery (v2, the
-    // missing object), and the latest Outcome renders below it with its
-    // evidence — the same projection the transcript rows already reused, no
-    // second reader.
+    // Only the latest accepted chart version renders in the gallery (v2, the missing object).
     expect(await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).count()).toBe(1)
     expect(await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).count()).toBe(1)
-    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(1)
-    expect(await detailsPanel.getByText('chart chart-browser-1 v2', { exact: true }).count()).toBe(1)
+    expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(0)
     // No Environment strip or Runs list on the landing view (removed with
     // the dashboard); those facts now live only in the per-artifact
     // Provenance drill-in, checked below.
@@ -604,20 +615,22 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await openSessionByTitle(SEED_TITLE)
     // Scoped to the transcript: an earlier case leaves the Details column
     // open, and the artifact viewer's landing view renders this same title.
-    await centerCol.getByText('Updated finding', { exact: true }).waitFor({ timeout: 15_000 })
+    await centerCol.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
 
-    // Each run result carries its own auto-capture receipt. Its chip opens
-    // the exact durable version, rather than relying on later curation rows.
+    // Execution cells stay folded; exact artifact versions open from their Turn-end cards.
     const runRows = centerCol.locator('[data-tool="science-run"]')
     expect(await runRows.count()).toBe(3)
     const firstRun = runRows.nth(0)
     const secondRun = runRows.nth(1)
-    expect(await firstRun.innerText()).toContain('run complete')
-    expect(await secondRun.innerText()).toContain('revised run complete')
-    await firstRun.getByRole('button', { name: /observed-series.*v1/ }).click()
-    await detailsPanel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
-    await secondRun.getByRole('button', { name: /observed-series.*v2/ }).click()
-    await detailsPanel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await firstRun.innerText()).not.toContain('run complete')
+    expect(await secondRun.innerText()).not.toContain('revised run complete')
+    // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
+    // "Version" definition, which renders the identical "v1"/"v2" text.
+    const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
+    await centerCol.getByRole('listitem', { name: /observed-series v1/u }).click()
+    await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
+    await centerCol.getByRole('listitem', { name: /observed-series v2/u }).click()
+    await stepperLabel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
 
     // The v2 run chip opens its exact version directly in the content view —
     // no intermediate gallery click.

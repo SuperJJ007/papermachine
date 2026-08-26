@@ -2,7 +2,7 @@
 
 [English](2026-08-16-dsh-science-v01-r4-science-preset.md) | 中文
 
-调查与最终复审时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64）。最终修复门禁使用 Codex workspace runtime：Node v24.19.0、pnpm 11.19.0。范围授权文档：[DSH Science v0.1 R4 built-in Science preset on RC5](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md)。
+调查与最终复审时间为 2026-08-16，平台为 macOS 26.5.2（Darwin 25.5.0，arm64）。最终修复门禁使用 Codex workspace runtime：Node v24.19.0、pnpm 11.19.0。范围授权文档：[DSH Science v0.1 R4 built-in Science preset on RC5](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md)。
 
 ## 结果
 
@@ -23,7 +23,7 @@
 | Review 修复 | `ac57329b7a` —— 修复独立 review 发现的 `docs/config-catalog.zh.md` 过期源码行号 |
 | 此前 R4 文档收口 | `b3a7f03a5d0accd899ae7d3067cd70f4c26e5f98` —— 因复制策略仍 fail-open 且一项限制过期而被最终验收否决的 head |
 | 修复后的 R4 行为 candidate | `cda69a9e5f6fb729c4699f70e06dc23745f0788f`，位于 R3 文档收口 head 之上九个 commit |
-| Downstream preset provenance | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01` —— 按本 Note [精确身份](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md#exact-identities)表所述，仅作只读名单/locale/测试输入参考；R4 没有任何一行是从它 cherry-pick 而来 |
+| Downstream preset provenance | `omdsh-dev/dsh-science@fae091e1080e830bed8ad0456e4cbced29101b01` —— 按本 Note [精确身份](../../.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md#exact-identities)表所述，仅作只读名单/locale/测试输入参考；R4 没有任何一行是从它 cherry-pick 而来 |
 
 ## 验证矩阵
 
@@ -66,7 +66,7 @@ R4 是原创组装工作，不是移植。内置 `science` preset 的名单、�
 | `SCI-CHARTS-OUTCOME` | `deferred` | 不变：`deferred` |
 | `SCI-SETTINGS-SIDEBAR` | `deferred` | 不变：`deferred` |
 | `DESKTOP-CARRIER` | `deferred` | 不变：`deferred` |
-| 其余 overlay rows | 与 [R3 closure evidence](2026-08-16-dsh-science-v01-r3-science-tools.md) 中记录的一致 | 不变 |
+| 其余 overlay rows | 与 [R3 closure evidence](2026-08-16-dsh-science-v01-r3-science-tools.zh.md) 中记录的一致 | 不变 |
 
 ## Protected-state preservation
 

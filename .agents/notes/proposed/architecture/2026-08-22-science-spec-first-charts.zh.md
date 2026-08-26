@@ -26,7 +26,7 @@ Spec 格式选 Vega-Lite:一份 JSON 文档、一个维护中的 SVG/canvas 渲�
 
 ### 4. 选择与编辑消息:复用既有的结构化消息与 image block 扩展点
 
-结构化载荷是一条持久、模型可见的 `user/message`:`{artifactId, version, target: specPath | normalizedRegion, instruction}`,不新增事件类型。两个既有扩展点恰好承载这个形状。[`ContentBlockMap`](../../../../packages/llm/llm/src/types.ts) 已经有一个角色中立的 `ImageBlock`(`{type: 'image', attachment}`),在用户内容里合法——这个 block 是 rc.2 合并时建立的,让一条用户消息能携带一个精确的 attachment 引用,[DeepSeek 线协议 adapter](../../../../packages/llm/llm-deepseek/src/types.ts) 会把它转成一个 `image_url` 内容部分;raster 或降级 raster 目标上的选择不加改动地复用它,附上精确选中的那个 Version。[`MessageSourceMap`](../../../../packages/llm/llm/src/message.ts) 被文档记录为"merge-extensible sum type——插件添加自己的 kind",而且已经有若干个包在这样做:[`dsh-skill` 的 `'skill-invocation'` key](../../../../packages/skill/skill/src/index.ts) 是最贴近的先例,一段 `declare module '@deepseek-ai/dsh-llm' { interface MessageSourceMap { 'skill-invocation': SkillInvocationSource } }` 携带生产方专属的结构化数据。`tool-science` 用同样的方式加一个 `'science-edit'` key,在消息的 `source` 上携带持久的 `{artifactId, version, target, instruction}` 伴随数据。经检查,`serialize.ts` 从不读取 `source`——所以这份伴随数据只进持久日志,绝不发给模型;消息的 `content` 用一个模型真正会读到的 `text` block 渲染同样的事实(spec 路径或 region,加上 instruction),这正是这条消息之所以模型可见的原因。对 spec-path 目标,content 只有文本(模型已经在更早的 run 结果里见过该 spec 自己的 JSON,或者可以主动请求它);对 region 目标,content 还会带上 `ImageBlock` 引用,让模型编辑它实际看到的东西,与前一份 note 的 raster 设计完全一致。
+结构化载荷是一条持久、模型可见的 `user/message`:`{targets: readonly {artifactId, version, target: specPath | normalizedRegion}[], instruction}`,不新增事件类型。两个既有扩展点恰好承载这些字段。[`ContentBlockMap`](../../../../packages/llm/llm/src/types.ts) 已有一个用户内容可用的角色中立 `ImageBlock`(`{type: 'image', attachment}`),[DeepSeek 线协议 adapter](../../../../packages/llm/llm-deepseek/src/types.ts) 会把它转成一个 `image_url` 内容部分。[`MessageSourceMap`](../../../../packages/llm/llm/src/message.ts) 是供生产方扩展结构化数据的 merge-extensible sum type,因此 `tool-science` 新增 `'science-edit'` key,携带持久的 `{targets, instruction}` 伴随数据。`serialize.ts` 不把 `source` 发送给模型;消息 `content` 以文本渲染所有被选中的路径或区域、对应确切 artifact 版本以及唯一一条指令。每个 region target 还按 target 顺序贡献其确切选中版本的 `ImageBlock`,而 spec-path target 仍然只有文本。
 
 ### 5. 定稿导出:客户端渲染,派生附件,而非新 Version
 
@@ -55,7 +55,43 @@ S1–S3 的 `artifact_inputs`/`edit_of` 管线与前一份 note 的 raster 框�
 - **Host 侧确定性导出**:维持推迟,并定下具体触发条件——当某个具体的非 Web Client 承诺支持 Science 图表时才建设,此前不建。
 - **人工编辑归属**:不做比 `'human-edit'` origin 更细的粒度。部署本身是匿名单用户的([`dsh-anonymous-user-id`](../../../../packages/identity) 是部署级身份);按人归属的字段没有任何消费方。
 
-结构化编辑消息 `text` block 的确切渲染措辞(决策 4)仍然刻意不锁定——由 C2 连同它的 snapshot 一起决定。
+结构化编辑消息 `text` block 的确切渲染措辞（决策 4）由 C2 的 keyless snapshot 与下文 C2 实现评估锁定。
+
+## C1 依赖评估(2026-08-23)
+
+C1 钉下 `vega-embed@7.1.0`(闭包:`vega@6.4.0`、`vega-lite@6.4.3`)作为 `dsh-client-ui-science` 唯一新增的运行时依赖;`THIRD_PARTY_NOTICES.md` 列出该直接依赖(BSD-3-Clause),闭包由 lockfile 承载。实测成本:`lib/client.js` 增至约 2.0 MB(gzip 约 475 KB),约为次大客户端插件的 4.5 倍,且只要插件挂载就静态加载。对照 maintained-dependency 标准接受进 v1——该渲染器替代的是一整个本要手写的图表面——按需加载记入 ui-science README 的已知限制而非投机性先建。C3 关闭外部加载风险:ui-science 向 `vega-embed` 传入自定义 loader,其 `sanitize` 拒绝 HTTP(S) 与协议相对 URI。`sanitize` 是 Vega 所有资源解析都会经过的入口——`load` 自身的默认实现在发起请求前会先调用它,而图片标记的 `href`/`url` 则直接经它清理,根本不会调用 `load`——因此该限制同时覆盖远程 `data.url`、图片标记与链接。只有数据加载路径的拒绝会从 `embed()` 冒出;远程 `data.url` 会降级为带说明的 JSON tree。图片标记或链接的 `sanitize` 拒绝则由 vega-scenegraph 的 `ResourceLoader` 在内部捕获(`loadImage` 会 resolve 成一张空占位图,`sanitizeURL` 会 resolve 成 `null`)而不是拒绝该 Promise,因此那处引用只是不会被解析,图表照常渲染,只是缺少那一部分。内联值仍可渲染。
+
+## C2 实现评估（2026-08-23）
+
+C2 在 `dsh-tool-science` 新增一个 `scienceEdits` Typert Remote；Web 在与 Typert Gateway 共享的 Host root 挂载其 `./edit-service` 入口，而 agent preset 只挂载面向模型的 Consumer。浏览器提交一个非空有序 target 数组和一条指令，Host 则在准入前解析在线 Agent 并 fold 其完整 session。每个所选版本都必须是对应 artifact 当前已提交版本：引用缺失、目标格式错误、媒体类型不匹配或版本陈旧会标明失败数组位置，并以稳定的 `SCIENCE_EDIT_*` code 拒绝整条请求；没有任何分支替换成 latest 或部分入队。获准的 `user/message` 在 `source.kind: 'science-edit'` 下携带完整请求；其文本列出所有 target、唯一指令，以及必须把每个确切版本作为相应 `artifact_inputs` source 与 `edit_of` parent 的要求。每个 raster target 还按数组顺序附带确切被选中的图像。Keyless Science runnable snapshot 把两种 target 放在一条结构化消息中提交给组装后的 agent，mock model 随后以一致的 `artifact_inputs` 与 `edit_of` 发起 `run_python`。真实 server/model 浏览器 GIF 仍是 C2 最后一项产品验收证据。
+
+C2 的真实 server 流程还暴露了 `dsh-science-runtime` 中一个相邻缺陷：`assertSession` 仍以 session 冻结的创建 header（`header.agentPreset === 'science'`）为准，拒绝所有通过 [per-session preset 设计](../../implemented/architecture/2026-08-03-per-session-agent-presets.zh.md)已交付的 `agent-preset/selected` 机制重组进 science preset 的 Web session。该守卫现在只以持久的 `science/mode-bound` 事实为准：这一事实只由 science preset 自己的 Consumer 追加，所以 Runtime 实际依赖的授权是 mode 绑定而非创建 header，重组后的 session 与原生 science session 在完全相同的条件下获准。记录在此是因为 C2 验收路径是它的第一个消费者；README 与一个 environment 回归测试承载该行为。
+
+## C3 reader 复查(2026-08-23)
+
+开工前要求的复查为 `ScienceArtifactVersion` 的每个 reader 定下如下行为:
+
+| Reader | `human-edit` 行为 |
+|---|---|
+| `science-session` `types.ts` / `codec.ts` | 持久值与 client 值改为严格判别式联合。人工分支要求 `parent`、环境字段与 Vega-Lite 文本,不含 run/tool/request 字段;run 产出分支保持不变。 |
+| `science-session` `fold-state.ts` / `domain.ts` / `invariant.ts` | 这些位置只保留或分发完整 Version,无需 origin 专属策略;invariant 仍在发布前执行同一条严格 transition。 |
+| `science-session` `transition.ts` | 人工编辑必须开出下一个连续 Version,parent 必须解析成同一 artifact 当前已提交的 Vega-Lite Version,新内容也保持 Vega-Lite 媒体类型,环境字段从 parent 复制,提交时间不得早于 parent fact。它不能开出 v1、原地 supersede,也不消费 run/request/tool 溯源。 |
+| `science-session` projection value/schema | 浏览器收到人工分支的确切 parent、attachment、环境预览与提交时间,没有伪造的 run 链接;projection 校验镜像严格持久联合。 |
+| `science-runtime` capture / inputs / public types | Capture 仍只创建 run 产出的 Version。输入与 edit baseline 物化本来就只依赖确切身份和 attachment bytes,因此原样接受人工 Version;共享环境字段让后续 run capture 与 `edit_of` 谱系保持确切。 |
+| `science-runtime` annotation | `annotate_artifact` 拒绝人工 Version:把它转为既有 `model` 分支会抹掉直接编辑判别,保留 `human-edit` 又无法携带 annotation 当前证明的模型 tool 授权。日后若要混合溯源,必须显式设计,不能从祖先 run 推断。 |
+| `tool-science` run / state / artifact schema | Run 回执仍只含 run 产出。模型状态把 `runId` 改为条件字段,为人工 Version 上报 `parent`,并明确直接编辑 origin,不虚构来源 run。 |
+| `tool-science` edit message | 确切版本选择原本就只依赖 artifact 身份、attachment 媒体类型与 target,因此人工 Vega-Lite Version 仍可再选中交给 agent 编辑,不会回退到 latest。 |
+| `publish_outcome` | 图表 evidence 继续从被引用的确切 Version 推导 `environmentRevision`;从 parent 复制的环境让人工 Version 无需特殊分支也能作为 evidence。 |
+| Notebook projection | 当前源码树没有 notebook artifact projection;暂缓的 C5 bundle 因而没有 C3 reader 需要修改。持久/client projection 仍是它未来的输入。 |
+| `tool-cordis` API catalog | 生成声明必须从新的 public union 重新生成;它绝不作为独立 reader 手工编辑。 |
+
+样式子集限制属于 editor UI,而不是 Host 准入。人本来就能要求 agent 运行任意代码,任意 Vega-Lite JSON 也无法由 Host 可靠判定何谓“仅样式”diff;因此 Host 校验 JSON object、大小、确切当前 parent 与媒体类型,面板只暴露有界的 v1 控件。
+
+## C3 实现评估（2026-08-23）
+
+C3 把 `ScienceArtifactVersion` 及其 client 投影实现为按 `origin` 严格判别的联合。run 产出 version 保留既有溯源；直接编辑则使用 `origin: 'human-edit'`，要求确切 parent 与 Vega-Lite 文本，复制 environment 溯源，且不携带 run/tool/request 字段。fold 只接受同一 artifact 当前已提交 Vega-Lite parent 之上的下一个连续 version，并校验 logical name、environment 与 parent-to-commit 时间。Host 的 `scienceEdits.commitStyleEdit` Remote 会先重放这条 fold，再通过 attachment store 准入完整 JSON object spec 并追加事件。Host 刻意不尝试对 JSON 做语义上的“仅样式”diff：Viewer 通过颜色、字号与 axis/legend 标题控件承载工作流限制；Host 准入只负责确切版本并发、JSON 结构、媒体类型与 attachment 上限。
+
+Viewer 修改不可变工作副本，并为实时预览重新 embed；定稿成功后选择返回的 version，展示直接编辑谱系，而非伪造 run。自定义 Vega loader 拒绝 HTTP(S) 与协议相对数据加载，降级为带说明的 JSON tree。组装后的 keyless Science snapshot 经 Remote 提交一个人工 version，证明事件有确切谱系且无 run 字段，再证明下一次模型调用同时在 `artifact_inputs` 与 `edit_of` 使用该 version。该场景暴露了一个陈旧 workspace 边角：后续 run 原本可能把编辑前未变化的文件误捕获为虚假的下一 version。现在，当当前 version 为人工编辑、且该路径没有显式 edit baseline 时，自动捕获会跳过与最近 run 产出祖先相同的字节；显式 baseline 仍允许有意的模型编辑或回滚。
 
 ## Alternatives considered
 

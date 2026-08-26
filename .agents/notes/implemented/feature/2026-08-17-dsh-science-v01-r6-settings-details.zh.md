@@ -16,21 +16,21 @@ R6 以五个检查点交付：Runtime settings 归属（R6a）、通用 Details 
 
 R6 改变设置路径，不改变执行权威。用户通过 settings 卡片为固定 `science` profile 填写既有 Python 与 R Conda 的绝对 prefix，然后重启 Host。Runtime 继续按 R2 规则观察、约束并执行这些 prefix；它不发现、创建、clone、求解、安装、更新、修复或删除环境。Science Details entry 保持只读，从已验收且对 Client 安全的 Session projection 派生 mode、environment summary、runs、charts 与最新 Outcome。
 
-R6a 与 R6b 落地于已验收的 R5 收口 head 之上，早于本开发线合并上游 rc.7。上游 `4366528a38`（[由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)决定）删除了 `api-proxy` 的 settings 暴露白名单，并让 `settings.plugin.item` 成为以命名空间为键的 slot，因此注册一个 namespace 现在默认即被服务。若把 R6c 的卡片落地在 rc.7 之前的白名单架构上，要么在 Science 开发线内 fork 该白名单，要么请求某个共享包的所有者在上游已构建通用机制之前先为 Science 单独承载一条清单项；[rc.7 基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)先合并了上游 rc.7，使 R6c 瞄准的正是交付之后仍然current的那套机制。R6a 与 R6b 在这次合并中改变了树身份——`installSettingsSection` 与 `settings.plugin.item` 注册路径在 rc.5 时就已存在，rc.7 也未触碰两者——因此它们经评审的身份是迁移之后的 head，而不是迁移之前的提交。
+R6a 与 R6b 落地于已验收的 R5 收口 head 之上，早于本开发线合并上游 rc.7。上游 `4366528a38`（[由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.zh.md)决定）删除了 `api-proxy` 的 settings 暴露白名单，并让 `settings.plugin.item` 成为以命名空间为键的 slot，因此注册一个 namespace 现在默认即被服务。若把 R6c 的卡片落地在 rc.7 之前的白名单架构上，要么在 Science 开发线内 fork 该白名单，要么请求某个共享包的所有者在上游已构建通用机制之前先为 Science 单独承载一条清单项；[rc.7 基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md)先合并了上游 rc.7，使 R6c 瞄准的正是交付之后仍然current的那套机制。R6a 与 R6b 在这次合并中改变了树身份——`installSettingsSection` 与 `settings.plugin.item` 注册路径在 rc.5 时就已存在，rc.7 也未触碰两者——因此它们经评审的身份是迁移之后的 head，而不是迁移之前的提交。
 
 ### Exact identities and dependency order
 
 | Subject | Identity or rule | R6 use |
 |---|---|---|
-| 已验收产品基线 | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c` | R6a 与 R6b 在基线迁移之前所依据的基线 |
-| 基线迁移之后的基线 | [rc.7 基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md) head `24971d5f14c8b9dc692658a0bb1cab599a4ed526` | R6c-0、R6c-0b 与 R6c 的唯一实施基线；R6a 与 R6b 迁移前的 SHA 属于历史，不是起步条件 |
-| R6 inventory 行 | [`SCI-SETTINGS-SIDEBAR`](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md) | 唯一产品 delta，由本 Note 关闭 |
-| Runtime authority | [R2 Science Runtime](../../implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.md) | 既有 prefix 观察、执行、约束、lease 与真实 Python/R 验收继续由其归属 |
-| 已交付 composition | [R4 Science preset](../../implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) 加 [R5 charts and Outcome](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.md) | 保留固定 `science` preset identity；R6 增加下述 Host/Client rows |
-| Source base | [由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md)，上游 `4366528a38` | 注册一个 settings namespace 即意味着把它服务出去；`settings.plugin.item` 是以命名空间为键的 slot。R6c 的卡片瞄准这个机制，而不是 ApiProxy 白名单条目 |
+| 已验收产品基线 | [R5 closure](../../../../docs/evidence/2026-08-17-dsh-science-v01-r5-charts-outcome.zh.md) head `16f5ce76abf8483c42bf02214cf15d82a2300b9c` | R6a 与 R6b 在基线迁移之前所依据的基线 |
+| 基线迁移之后的基线 | [rc.7 基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md) head `24971d5f14c8b9dc692658a0bb1cab599a4ed526` | R6c-0、R6c-0b 与 R6c 的唯一实施基线；R6a 与 R6b 迁移前的 SHA 属于历史，不是起步条件 |
+| R6 inventory 行 | [`SCI-SETTINGS-SIDEBAR`](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md) | 唯一产品 delta，由本 Note 关闭 |
+| Runtime authority | [R2 Science Runtime](../../implemented/feature/2026-08-15-dsh-science-v01-r2-science-runtime.zh.md) | 既有 prefix 观察、执行、约束、lease 与真实 Python/R 验收继续由其归属 |
+| 已交付 composition | [R4 Science preset](../../implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.zh.md) 加 [R5 charts and Outcome](../../implemented/feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md) | 保留固定 `science` preset identity；R6 增加下述 Host/Client rows |
+| Source base | [由插件自己拥有的设置表层](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.zh.md)，上游 `4366528a38` | 注册一个 settings namespace 即意味着把它服务出去；`settings.plugin.item` 是以命名空间为键的 slot。R6c 的卡片瞄准这个机制，而不是 ApiProxy 白名单条目 |
 | R6c-0 | `76012736a1`——`SettingsScope`/`SettingsScopeController` 上路径寻址的 `setPath`/`unsetPath` | 卡片两段式字段写入所用的通用写入原语；未改动任何 Science 自有文件 |
 | R6c-0b | `6a994ef4cb`——`SettingsScopeSnapshot.secrets` | 卡片 configured 状态检测所用的通用读取原语；未改动任何 Science 自有文件 |
-| Final head | `e125ce00327e4ffce9cc01f371b9068fd142dfcc` | 本 Note 绑定的 head；[dated R6 evidence](../../../../docs/evidence/2026-08-18-dsh-science-v01-r6-settings-details.md) 记录完整提交链与每条命令结果 |
+| Final head | `e125ce00327e4ffce9cc01f371b9068fd142dfcc` | 本 Note 绑定的 head；[dated R6 evidence](../../../../docs/evidence/2026-08-18-dsh-science-v01-r6-settings-details.zh.md) 记录完整提交链与每条命令结果 |
 
 ### Runtime settings ownership
 
@@ -50,7 +50,7 @@ settings capability 是 `with-settings` 入口声明的 Cordis injection，而�
 
 `@deepseek-ai/dsh-client-ui-conversation` 携带名为 `conversation.details.view` 的 list slot。现有 tool-call body 是内置 `tool` entry，保留其 input/output rendering 与 `conversation.details.tool` child seat。Details shell 拥有 column geometry、close behavior、title chrome、collapsed 时保持 mounted 的 lifecycle 与 fallback behavior。
 
-per-Session conversation store 携带 `detailsView` id 及其选择 action。激活 tool row 时先选择 `tool` 与对应 call，再打开 column。session-header action owner 获得 `toggleDetailsView(id)` callback：它路由到已注册 entry 并打开同一 column，若该 column 已在显示该 entry 则将其关闭（[面板交互](../bug-fix/2026-08-19-details-panel-toggle-and-narrow-viewports.md)）。缺失、已移除或陈旧 id 回退到 `tool`；切换 Session 时继续沿用现有 AppFrame 行为关闭 column。
+per-Session conversation store 携带 `detailsView` id 及其选择 action。激活 tool row 时先选择 `tool` 与对应 call，再打开 column。session-header action owner 获得 `toggleDetailsView(id)` callback：它路由到已注册 entry 并打开同一 column，若该 column 已在显示该 entry 则将其关闭（[面板交互](../bug-fix/2026-08-19-details-panel-toggle-and-narrow-viewports.zh.md)）。缺失、已移除或陈旧 id 回退到 `tool`；切换 Session 时继续沿用现有 AppFrame 行为关闭 column。
 
 Details shell 从 slot registry 派生 labels 与 ordered entries，订阅 registry/locale changes，并且只渲染所选 entry。Registrations 均为 effects；卸载 domain entry 会移除其 label 与 body，并保留内置 tool entry 可用。任何 domain package 都不占用顶层 `details` slot，也不导入 Details shell implementation。
 
@@ -68,7 +68,7 @@ R6c-0 之前，`SettingsScopeController` 的 `set`/`unset`（`packages/client/ui
 
 该卡片通过 `ctx.settingsScope.bind({ namespace: 'science-runtime' })` 绑定 `science-runtime` namespace，只写入 `setPath(['science', 'pythonPrefix'], …)`、`setPath(['science', 'rPrefix'], …)` 与 `unsetPath(['science'])`——绝不写 section root。写入路径的深度由 `attachRuntimeSettings` 决定，它以 `base: config.profiles` 注册该 namespace：section root **就是** profile map 本身，而不是一个 `profiles` 包裹字段，因此 `['science', 'pythonPrefix']` 才是正确坐标，`['profiles', 'science', 'pythonPrefix']` 不是。`redactSecrets` 从同一个 section root 开始遍历（`packages/settings/settings/src/redact.ts`），因此卡片、wire 与 Host 三方一致认同的 secret path 都是这个两段形状；一次真实 Host 运行确认了这一点，把 `science-runtime:\n  science:\n    pythonPrefix: …\n    rPrefix: …` 写入了 settings 文档。没有任何代码路径写入 section root 本身：那样做会用浏览器暂存的这一个 profile 替换掉某个 deployment 声明的每一个 profile，悄悄抹掉被脱敏客户端视图从未见过的那些 profile。
 
-卡片展示 loading、显式只读状态、unconfigured、已配置并生效、saving、Host 拒绝的写入、client 端拦截的无效草稿、pending-restart 以及 reset-to-composition。Host 拒绝的写入（stale revision 或 Host validation failure）在 controller 中是一个不可区分的 `failed` 状态，因为两者都通过 scope 自身的读回以相同方式恢复；此前方案中分别列出的 "stale-revision" 与 "validation-failure" 两个状态收敛为这一个已交付状态。运行中 Host 的绑定状态（`ScienceSettingsCardController.hostState`，取值 `'effective' | 'pendingRestart' | 'notConfigured'`）是对所绑定 scope 的 `effective` 快照字段与其 `value` 字段的一次纯投影——即该 namespace 的 `applies: 'restart'` Science Runtime 入口在自身注册时实际读到的值，与当前已存储的值相比较——而非某个客户端本地标志位，因此它在页面刷新后依然报告同一状态，而不只是在发起保存的那个标签页里、保存后立即报告一次（参见 [Science 产品缺陷 Agent Note](../bug-fix/2026-08-18-science-mode-product-gaps.md)）。当两个字段都处于 dirty 状态时，`failed` 与 `hostState: 'pendingRestart'` 可以同时为 true：Host 接受的字段会清除其暂存草稿并需要重启，Host 拒绝的字段则保留草稿供用户修改。空 replacement inputs 是 no-op；显式 remove-override action 会 unset `['science']`，在没有 composition base 时回到 unconfigured，否则重新显现该 base。其他 deployment profile ids 继续由文件/配置负责，R6 不把它们变成通用 profile manager。共享卡片模型中的 "namespace 缺失" 情形对本卡片不可达，因此未被做成 UI：Plugins 标签页只为 Host 真正提供的每个 namespace 派发一个 slot key，所以卡片只在其 namespace 被提供时才会被挂载，namespace 缺失这一情形在 tab 层渲染为空。
+卡片展示 loading、显式只读状态、unconfigured、已配置并生效、saving、Host 拒绝的写入、client 端拦截的无效草稿、pending-restart 以及 reset-to-composition。Host 拒绝的写入（stale revision 或 Host validation failure）在 controller 中是一个不可区分的 `failed` 状态，因为两者都通过 scope 自身的读回以相同方式恢复；此前方案中分别列出的 "stale-revision" 与 "validation-failure" 两个状态收敛为这一个已交付状态。运行中 Host 的绑定状态（`ScienceSettingsCardController.hostState`，取值 `'effective' | 'pendingRestart' | 'notConfigured'`）是对所绑定 scope 的 `effective` 快照字段与其 `value` 字段的一次纯投影——即该 namespace 的 `applies: 'restart'` Science Runtime 入口在自身注册时实际读到的值，与当前已存储的值相比较——而非某个客户端本地标志位，因此它在页面刷新后依然报告同一状态，而不只是在发起保存的那个标签页里、保存后立即报告一次（参见 [Science 产品缺陷 Agent Note](../bug-fix/2026-08-18-science-mode-product-gaps.zh.md)）。当两个字段都处于 dirty 状态时，`failed` 与 `hostState: 'pendingRestart'` 可以同时为 true：Host 接受的字段会清除其暂存草稿并需要重启，Host 拒绝的字段则保留草稿供用户修改。空 replacement inputs 是 no-op；显式 remove-override action 会 unset `['science']`，在没有 composition base 时回到 unconfigured，否则重新显现该 base。其他 deployment profile ids 继续由文件/配置负责，R6 不把它们变成通用 profile manager。共享卡片模型中的 "namespace 缺失" 情形对本卡片不可达，因此未被做成 UI：Plugins 标签页只为 Host 真正提供的每个 namespace 派发一个 slot key，所以卡片只在其 namespace 被提供时才会被挂载，namespace 缺失这一情形在 tab 层渲染为空。
 
 bundle-purity gate 禁止 Science 卡片以值导入方式引用 `ui-settings-plugins` 的卡片 chrome（`PluginCard`）或其 staged-form model，因此该卡片自行拥有 chrome，也自行拥有 staging/revision fencing。该 chrome 建立在 `@deepseek-ai/dsh-client-ui-primitives` 之上——`Input` 用于两个 prefix 字段，`Pill` 用于 Configured/Not configured 徽章，`Button`（`primary`/`outline`/`ghost` 变体）用于 Save/Discard/Remove override——外加一个手写的、默认折叠的 disclosure header，带 `aria-expanded` 与 "展开设置/收起设置: <name>" 这一寄存器风格的可访问名称。`DisclosureRow`（`@deepseek-ai/dsh-client-ui-primitives`）刻意不是该 header 的基础组件：它是 transcript/tool row 所用的紧凑 24px icon-leading chrome（`ReasoningRow`、`ToolRow`），不供任何 settings 卡片使用，也不提供两行式 name-over-description 的 header 形状；`PluginCard` 本身手写了与本卡片相同的 header-button 模式，原因同上。折叠时，可访问性树中只有 header——每个字段、hint 与操作按钮只在展开后才渲染，与每个同级卡片一致，也消除了该卡片早先始终展开的渲染方式与 Terminal 卡片同名按钮之间的可访问名称冲突。
 
@@ -86,11 +86,11 @@ bundle-purity gate 禁止 Science 卡片以值导入方式引用 `ui-settings-pl
 
 实施更新了 Runtime、`ui-conversation`、`ui-science`、settings、Science subsystem、package group 与 Web composition owners；它们的中文 pairs；受影响的 generated package/config/capability/module references；以及 browser snapshot expectations。仍然 active 的 R2、R4 与已验收 R5 Agent Notes 只在 R6 改变其当前事实的位置被更新，不把 R6 rationale 复制进去。
 
-易变 SHA、commands、platform versions、真实 prefix identities、browser channels 与 pass/fail results 只存在于 dated [R6 evidence triplet](../../../../docs/evidence/2026-08-18-dsh-science-v01-r6-settings-details.md) 中。Source checks、built/packed Web evidence、真实 Python/R acceptance、Desktop、signing、notarization、publication 与 release 在那里分别列出；R6 source 或 packed-Web success 不会提升未运行的层。
+易变 SHA、commands、platform versions、真实 prefix identities、browser channels 与 pass/fail results 只存在于 dated [R6 evidence triplet](../../../../docs/evidence/2026-08-18-dsh-science-v01-r6-settings-details.zh.md) 中。Source checks、built/packed Web evidence、真实 Python/R acceptance、Desktop、signing、notarization、publication 与 release 在那里分别列出；R6 source 或 packed-Web success 不会提升未运行的层。
 
 ### Verification and closure
 
-R6c 按[基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.md)推迟的那项基线对照事项，在同一个检查点内分为一趟源码 pass 与一趟单独出证的有人值守 pass 执行。源码 pass 落地了全部产品改动，配以聚焦、装配级 keyless、无障碍与 snapshot 覆盖，外加 `typecheck`、`lint`、`build`、`hygiene`、`doc-sync` 与空白检查。有人值守 pass 随后记录了需要无人干扰桌面的部分：一份真实 server 的 GIF、真实 Python/R Runtime acceptance、packed Web verification，以及被推迟的基线对照归因。dated evidence 把每一项结果都绑定到上文所记的准确 head。
+R6c 按[基线迁移](../../implemented/process/2026-08-17-dsh-science-v01-rc7-rebaseline.zh.md)推迟的那项基线对照事项，在同一个检查点内分为一趟源码 pass 与一趟单独出证的有人值守 pass 执行。源码 pass 落地了全部产品改动，配以聚焦、装配级 keyless、无障碍与 snapshot 覆盖，外加 `typecheck`、`lint`、`build`、`hygiene`、`doc-sync` 与空白检查。有人值守 pass 随后记录了需要无人干扰桌面的部分：一份真实 server 的 GIF、真实 Python/R Runtime acceptance、packed Web verification，以及被推迟的基线对照归因。dated evidence 把每一项结果都绑定到上文所记的准确 head。
 
 ### Supersession and lifecycle
 
@@ -122,7 +122,7 @@ R6 修订了 R2 的 configuration facts，加入 restart-only user-settings laye
 
 Empty Runtime row 让 service 在可用之前已经存在。settings 卡片点名缺失的 `science` profile，且首次模型调用仍在 provider I/O 之前失败；任何 UI 都不会在持久 binding 报告 capability 之前把 Runtime 标成 ready。Restart-only settings 可能让期待即时生效的用户意外，因此卡片在 save 后持续显示 restart-required state，也从不刷新 live Session 并宣称新 prefix 已 active。
 
-Write-only path fields 减少披露，却让用户无法目视确认已存绝对路径；R6 优先保护 Host 隐私，转而提供 configured/user-override/reset state。注册一个 settings namespace 现在默认即被服务，适用于本开发线加入的每一个 namespace，不仅是 `science-runtime`：不再存在一道会把未标记字段以遗漏方式挡在浏览器之外的白名单兜底，因此未来任何 Science settings 字段都必须显式携带 `role('secret')`，而 redactor 自身对"只能通过 union、intersection 或 transform 抵达的 secret"这一遗留缺口（记录于[由插件自己拥有的设置表层 note](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.md#consequences)）如今影响范围更广——覆盖任何已注册的 schema，而不仅是审计过的那些。
+Write-only path fields 减少披露，却让用户无法目视确认已存绝对路径；R6 优先保护 Host 隐私，转而提供 configured/user-override/reset state。注册一个 settings namespace 现在默认即被服务，适用于本开发线加入的每一个 namespace，不仅是 `science-runtime`：不再存在一道会把未标记字段以遗漏方式挡在浏览器之外的白名单兜底，因此未来任何 Science settings 字段都必须显式携带 `role('secret')`，而 redactor 自身对"只能通过 union、intersection 或 transform 抵达的 secret"这一遗留缺口（记录于[由插件自己拥有的设置表层 note](../../implemented/architecture/2026-08-12-plugin-owned-settings-surface.zh.md#consequences)）如今影响范围更广——覆盖任何已注册的 schema，而不仅是审计过的那些。
 
 右侧 Details column 是一个共享的 routed surface；通用检查点独立于 Science 的 entry 保留了 tool fallback 与 HMR behavior，因此一次 optional domain unload 不会使普通 tool inspection 失效。已交付 Web bundle 拥有 `science-runtime` 这个 row id，若某个 deployment 想在该 id 下换用不同插件——而不只是为同一个 settings-bound 入口提供不同的 `profiles` 配置——就必须禁用该行并在新 id 下插入替代品；同 id 覆盖无法为该 entry 更换插件。
 

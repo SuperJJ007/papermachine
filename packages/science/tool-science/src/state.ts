@@ -154,12 +154,11 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
 }
 
 /**
- * Remove the internal attachment id, full environment fingerprint,
+ * Remove the internal store version id, full environment fingerprint,
  * authorizing tool call, and request-header sequence from one durable
- * artifact version. `width`/`height` are present only for an image
- * attachment. The full `ImageAttachmentRef | TextAttachmentRef` remains
- * available only to the durable projection, authorization, export, and
- * Client presentation paths — never to model state.
+ * artifact version. The store content reference remains available only to
+ * the durable projection, authorization, and Client presentation paths —
+ * never to model state.
  *
  * Reconstructs the shared fields' key order rather than spreading
  * `scienceArtifactValueFields` as one block: this schema's pinned field
@@ -167,7 +166,7 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
  * between `runId` and `mediaType`, which a trailing spread cannot produce.
  */
 function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stateArtifactSchema> {
-  const { artifactId, logicalName, version, title, caption, origin, runId, mediaType, bytes, width, height, createdAt } =
+  const { artifactId, logicalName, version, title, caption, origin, parent, runId, mediaType, bytes, createdAt } =
     scienceArtifactValueFields(artifact)
   return {
     artifactId,
@@ -176,13 +175,12 @@ function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stat
     title,
     ...caption === undefined ? {} : { caption },
     origin,
-    runId,
+    ...parent === undefined ? {} : { parent },
+    ...runId === undefined ? {} : { runId },
     environmentRevision: artifact.environmentRevision,
     environmentFingerprintPreview: scienceFingerprintPreview(artifact.environmentFingerprint),
     mediaType,
     bytes,
-    ...width === undefined ? {} : { width },
-    ...height === undefined ? {} : { height },
     createdAt,
   }
 }

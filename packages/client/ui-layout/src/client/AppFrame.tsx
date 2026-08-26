@@ -20,7 +20,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'details.files' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
 
 /** Center column grid item (session-body building block). */
@@ -91,21 +91,35 @@ export function AppFrame({
   renderSlot,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  const current = useSessions(s => s.current)
   const detailsSession = useSessions((s) => {
-    const current = s.current
-    return current !== undefined && s.byId[current]?.blank === false ? current : undefined
+    const c = s.current
+    return c !== undefined && s.byId[c]?.blank === false ? c : undefined
+  })
+  const scienceSession = useSessions((s) => {
+    const c = s.current
+    return c !== undefined && s.byId[c]?.agentPreset === 'science'
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
 
+  // Session identity for the auto-close, tracked separately from
+  // `detailsSession`: a blank Session (mid-creation, e.g. switching through
+  // the new-session flow) still HAS an id, and the panel deliberately stays
+  // open through that detour — closing belongs to an actual session change
+  // or to no Session at all (the true welcome page), never to the transient
+  // blank state along the way.
   const lastSession = useRef(detailsSession)
   useLayoutEffect(() => {
-    if (detailsSession === undefined) return
-    if (lastSession.current !== undefined && lastSession.current !== detailsSession) {
-      actions.closeDetails()
+    if (current === undefined) {
+      if (lastSession.current !== undefined) actions.closeDetails()
+      lastSession.current = undefined
+      return
     }
+    if (detailsSession === undefined) return // blank-session detour: leave the panel as-is
+    if (lastSession.current !== undefined && lastSession.current !== detailsSession) actions.closeDetails()
     lastSession.current = detailsSession
-  }, [actions, detailsSession])
+  }, [actions, current, detailsSession])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {
@@ -139,7 +153,7 @@ export function AppFrame({
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const cols = computeColumns(viewport, sidebarPreference, panels.details)
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -169,6 +183,7 @@ export function AppFrame({
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
+      data-science-session={scienceSession || undefined}
     >
       <div className={css.sidebarCol}>
         {/* Render-site slot call with live concession output: a closed
@@ -188,7 +203,11 @@ export function AppFrame({
             is session-maybe; the strict details entry naturally renders
             empty while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
+        <DetailsColumn>
+          {detailsSession === undefined
+            ? renderSlot('details.files', { closeDetails: actions.closeDetails })
+            : renderSlot('details', {})}
+        </DetailsColumn>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}

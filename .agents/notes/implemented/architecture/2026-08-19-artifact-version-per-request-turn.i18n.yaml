@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-artifact-version-per-request-turn.md
 2026-08-19-artifact-version-per-request-turn.md: bfd1ad25f89865899dfe664a4226a26010a5490e
-2026-08-19-artifact-version-per-request-turn.zh.md: 370ff4a29c33df29eb4747d852a99cdfb32edc52
+2026-08-19-artifact-version-per-request-turn.zh.md: 1afd462ee9573038e90bbcc9af083b0b667f1f4e

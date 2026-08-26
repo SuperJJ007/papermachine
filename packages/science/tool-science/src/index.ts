@@ -1,7 +1,6 @@
 /**
  * Model-facing Science mode Consumer: first-use mode/environment binding, the
- * `science:environment` dynamic context, and the `get_science_state`,
- * `run_python`, and `run_r` tools. It never spawns a process, writes run
+ * `science:environment` dynamic context, and five Science tools. It never spawns a process, writes run
  * source, classifies termination, manages Conda, or appends Runtime-owned
  * events — those remain owned by `@deepseek-ai/dsh-science-runtime`, called
  * through the optional `ctx.scienceRuntime` service.
@@ -18,6 +17,14 @@ import { applyRunTool } from './run.ts'
 import { applyScienceStateTool } from './state.ts'
 
 export { Config }
+export type * from './types.ts'
+export {
+  createScienceEditMessage,
+  resolveScienceEdit,
+  ScienceEditError,
+  ScienceEditService,
+  renderScienceEditMessage,
+} from './edit-message.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'tool-science'
@@ -32,7 +39,8 @@ const STATIC_GUIDANCE = [
   'A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction.',
   'A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed.',
   'Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run.',
-  'A run\'s eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader.',
+  'For Python charts, prefer Altair and save the Vega-Lite specification as a .vl.json file under SCIENCE_ARTIFACT_DIR. R charts remain raster outputs.',
+  'A run\'s eligible written files (csv/json/vl.json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader.',
   'Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.',
 ].join(' ')
 

@@ -42,7 +42,7 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
 export interface ScienceSelectionState {
   /** Ordered open tabs — one entry per logical chart, never per version. */
   openArtifacts: ScienceOpenArtifact[]
-  /** The active tab's artifact id, or `null` for the no-tab landing view (gallery + Outcome). */
+  /** The active tab's artifact id, or `null` while the library is showing. */
   activeArtifactId: ScienceArtifactId | null
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
@@ -53,6 +53,8 @@ export interface ScienceSelectionState {
 }
 
 type ScienceSelectionActions = {
+  /** Show the artifact library without closing any artifact tabs. */
+  showLibrary: (draft: ScienceSelectionState) => void
   /** Open (or activate, if already open) the named artifact's tab at exactly the given version. */
   openTab: (draft: ScienceSelectionState, selection: { artifactId: ScienceArtifactId; version: number }) => void
   /** Activate an already-open tab by artifact id; an artifact id not in `openArtifacts` is a no-op. */
@@ -86,6 +88,11 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
       openArtifacts: [], activeArtifactId: null, view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     actions: {
+      showLibrary: (draft) => {
+        draft.activeArtifactId = null
+        draft.view = 'content'
+        draft.lightboxOpen = false
+      },
       openTab: (draft, selection) => {
         const existing = draft.openArtifacts.find(tab => tab.artifactId === selection.artifactId)
         if (existing === undefined) draft.openArtifacts.push({ artifactId: selection.artifactId, version: selection.version })

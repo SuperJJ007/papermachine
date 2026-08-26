@@ -613,7 +613,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 #### `science/artifact-saved` — log-only
 
 ```ts persistence-catalog
-/** Records one immutable Science artifact attachment version. */
+/** Records one immutable Science artifact version by project-store reference. */
 'science/artifact-saved': ScienceArtifactSavedEvent
 ```
 

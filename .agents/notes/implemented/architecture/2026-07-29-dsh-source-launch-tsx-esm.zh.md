@@ -18,6 +18,8 @@ Status: implemented
 
 `scripts/tspath-loader.ts` 与 `apps/cli/src/tsconfig-paths-loader.ts` 已删除。随之消失的还有该 loader「仅为已声明运行时依赖映射 workspace import」的运行时规则——tsx 无条件应用 `paths` 映射。声明完整性现在仅由静态门禁保障：配置的裸插件走 `verify-cordis-config`，manifest（元数据清单）走 workspace constraints。（该运行时规则确实发现过真实缺陷：`dsh-plan-mode` 与 `dsh-tool-jobs` 导入 `@deepseek-ai/dsh-llm` 却只声明在 devDependencies；后已修复。）
 
+`verify-cordis-config` 的 source-plane 检查扫描的是从 yml 行收集到的 `pluginReferences`，因此一个只通过运行时字符串挂载、而非通过裸插件 `name:` 行挂载的 package，即便 `tsconfig.base.json` 里没有它的映射，也不会被这项检查看到。`packages/host/directory-picker-auto` 正是以这种方式命名它的四个 backend packages（`CHOOSER_BACKEND_PACKAGES`），于是 `tsconfig.base.json` 缺失 `dsh-client-ui-directory-picker-native`/`-browse` 的映射就一路发布出去；desktop Host 的 tsx 源码启动在 chooser 第一次挂载它们时便以 `Cannot find package` 崩溃——而这发生在一个原本干净、没有 built `lib/` 可回退的 checkout 上。该 source-plane 检查现在还会在挂载它们的 chooser package 出现在某一行时，一并要求 `CHOOSER_BACKEND_PACKAGES` 中的每个 package 都能解析，与该检查里既有的 `missingPluginDependencies` 对同一集合的处理方式保持一致；此后再向这个运行时字符串列表添加 package 却漏配 `tsconfig.base.json` 映射，会直接让门禁失败，而不必等到下一次 desktop 启动才暴露。
+
 node-compat CI 矩阵（Node 22.19 与 26）新增 `dsh-source-launch-smoke`（`apps/cli/tests/source-launch.compat.spec.ts`）：以精确的生产运行时启动向量做 keyless 管道 stdio 启动，断言进程会因 TTY 拒绝而以非零状态退出。未来 Node 对模块钩子或 TypeScript 处理的任何改动都会让该门禁变红，而不是破坏开发者的 `pnpm dsh`。
 
 ## 备选方案

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "social-science",
+  "revision": "2026.08.1",
+  "name": "Social science",
+  "supportedPlatforms": ["darwin-arm64", "darwin-x64"],
+  "channels": ["conda-forge"],
+  "packages": [
+    "python=3.13", "pandas=2.3", "statsmodels=0.14", "matplotlib=3.10", "altair=5.5",
+    "r-base=4.5", "r-tidyverse=2.0", "r-broom=1.0", "r-modelr=0.1"
+  ],
+  "estimatedDownloadBytes": 1250000000,
+  "requiredFreeBytes": 5000000000,
+  "timeoutMs": 1800000,
+  "healthChecks": [
+    { "language": "python", "executable": "python", "args": ["-c", "import pandas,statsmodels,matplotlib,altair"] },
+    { "language": "r", "executable": "Rscript", "args": ["-e", "library(tidyverse);library(broom);library(modelr)"] }
+  ]
+}

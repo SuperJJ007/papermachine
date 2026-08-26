@@ -21,6 +21,58 @@ import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
+/** One composer submission before the default prompt transport claims it. */
+export interface ComposerSubmission {
+  readonly sessionId: SessionId
+  readonly text: string
+  readonly imageIds: readonly DraftAttachmentId[]
+  readonly mode: InputSubmitMode
+  readonly signal: AbortSignal | undefined
+}
+
+/** A domain handler claims a submission by returning its settlement promise. */
+export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
+
+/**
+ * A main-view Session predicate with its own invalidation signal. `visible`
+ * is read fresh on every `viewVisible` query (never cached), and `subscribe`
+ * fires whenever a FUTURE `visible` call could answer differently for any
+ * Session — the source's own state changed, not necessarily the addressed
+ * one — so the tab strip re-lists rather than staying stuck on a stale
+ * answer. A registrant whose predicate depends only on immutable Session
+ * facts already fixed at registration time may return a no-op disposer.
+ */
+export interface ViewVisibilitySource {
+  /** Whether the view is currently available to this Session. */
+  visible(sessionId: SessionId): boolean
+  /**
+   * Subscribe to a change in what `visible` might answer.
+   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
+   * @returns disposer removing this subscription.
+   */
+  subscribe(callback: () => void): () => void
+}
+
+/**
+ * A transcript process-detail Session predicate with its own invalidation
+ * signal, the same shape as {@link ViewVisibilitySource}. A registrant with
+ * its own denser transcript presentation (e.g. Science's folded tool cells
+ * and Turn-end artifact groups) reports `false` for a matching Session to
+ * hide context-injection rows and turn-timing stats from the chat flow; that
+ * detail remains reconstructable from the durable log and, for Session
+ * kinds that render one, the Trajectory detailed subview.
+ */
+export interface TranscriptDetailVisibilitySource {
+  /** Whether transcript process-detail chrome currently shows for this Session. */
+  visible(sessionId: SessionId): boolean
+  /**
+   * Subscribe to a change in what `visible` might answer.
+   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
+   * @returns disposer removing this subscription.
+   */
+  subscribe(callback: () => void): () => void
+}
+
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
  * verbs and the input registry other plugins may reach — and exactly what a
@@ -34,6 +86,21 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /** Register a domain submission handler ahead of the ordinary prompt sink. */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
+  /** Select and reveal one Details entry for an already-mounted Session. */
+  openDetailsView(sessionId: SessionId, id: string): void
+  /** Select one main conversation view for an already-mounted Session. */
+  openView(sessionId: SessionId, id: string): void
+  /** Register a predicate that limits one main view to matching Sessions. */
+  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void
+  /**
+   * Register a predicate that hides transcript process-detail chrome
+   * (context-injection rows, turn-timing stats) for matching Sessions.
+   * Every registered source must answer `visible` for a Session to keep the
+   * chrome shown there; no registrant means it stays shown everywhere.
+   */
+  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -98,6 +165,17 @@ export class ConversationController extends Service implements IConversation {
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
   private readonly createdImageUrls = new Set<string>()
+  private readonly submissionHandlers: ComposerSubmissionHandler[] = []
+  private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly viewVisibility = new Map<string, ViewVisibilitySource>()
+  private readonly viewVisibilityDisposers = new Map<string, () => void>()
+  /** Bumped whenever any registered {@link ViewVisibilitySource} invalidates; the `views` snapshot in apply.ts. */
+  private viewVisibilityVersionCounter = 0
+  private readonly viewVisibilitySubscribers = new Set<() => void>()
+  private readonly detailVisibilitySources: TranscriptDetailVisibilitySource[] = []
+  private readonly detailVisibilityDisposers = new Map<TranscriptDetailVisibilitySource, () => void>()
+  private readonly detailVisibilitySubscribers = new Set<() => void>()
   private disposed = false
 
   /**
@@ -118,6 +196,16 @@ export class ConversationController extends Service implements IConversation {
       this.draftAttachments.clear()
       this.imageUrls.clear()
       this.imageGenerations.clear()
+      this.detailsOpeners.clear()
+      this.viewOpeners.clear()
+      this.viewVisibility.clear()
+      for (const dispose of this.viewVisibilityDisposers.values()) dispose()
+      this.viewVisibilityDisposers.clear()
+      this.viewVisibilitySubscribers.clear()
+      this.detailVisibilitySources.length = 0
+      for (const dispose of this.detailVisibilityDisposers.values()) dispose()
+      this.detailVisibilityDisposers.clear()
+      this.detailVisibilitySubscribers.clear()
     }, 'conversation attachment URL cache')
   }
 
@@ -135,6 +223,7 @@ export class ConversationController extends Service implements IConversation {
 
   /**
    * Submit ordered draft images with text through one host admission.
+   * @param sessionId - target Session id.
    * @param session - target session.
    * @param text - serialized prompt text.
    * @param imageIds - ordered draft-local attachment ids.
@@ -143,12 +232,18 @@ export class ConversationController extends Service implements IConversation {
    * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
+    sessionId: SessionId,
     session: SessionFace,
     text: string,
     imageIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
   ): Promise<SubmitOutcome> {
+    for (const handler of this.submissionHandlers) {
+      const claimed = handler({ sessionId, text, imageIds, mode, signal })
+      if (claimed !== undefined) return claimed
+    }
+    if (text === '' && imageIds.length === 0) return { kind: 'success' }
     const attachments = this.draftImages(imageIds)
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
@@ -159,6 +254,135 @@ export class ConversationController extends Service implements IConversation {
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
     return { kind: 'success' }
+  }
+
+  /** Register one ordered composer submission claimant. */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void {
+    this.submissionHandlers.push(handler)
+    return () => {
+      const index = this.submissionHandlers.indexOf(handler)
+      if (index >= 0) this.submissionHandlers.splice(index, 1)
+    }
+  }
+
+  /**
+   * Bind the current Details router actions for one mounted Session.
+   * @param sessionId - mounted Session.
+   * @param opener - current Details route action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindDetailsOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
+    this.detailsOpeners.set(sessionId, opener)
+    return () => {
+      if (this.detailsOpeners.get(sessionId) === opener) this.detailsOpeners.delete(sessionId)
+    }
+  }
+
+  /** Select one Details route and reveal the column. */
+  openDetailsView(sessionId: SessionId, id: string): void {
+    const open = this.detailsOpeners.get(sessionId)
+    open?.(id)
+  }
+
+  /**
+   * Bind the current main-view router action for one mounted Session.
+   * @param sessionId - mounted Session.
+   * @param opener - current main-view route action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindViewOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
+    this.viewOpeners.set(sessionId, opener)
+    return () => {
+      if (this.viewOpeners.get(sessionId) === opener) this.viewOpeners.delete(sessionId)
+    }
+  }
+
+  /** Select one main conversation view. */
+  openView(sessionId: SessionId, id: string): void {
+    this.viewOpeners.get(sessionId)?.(id)
+  }
+
+  /** Register one main-view Session predicate. */
+  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void {
+    if (this.viewVisibility.has(id)) throw new Error(`conversation view visibility already registered: ${id}`)
+    this.viewVisibility.set(id, source)
+    this.viewVisibilityDisposers.set(id, source.subscribe(() => {
+      this.viewVisibilityVersionCounter += 1
+      for (const callback of this.viewVisibilitySubscribers) callback()
+    }))
+    return () => {
+      if (this.viewVisibility.get(id) !== source) return
+      this.viewVisibility.delete(id)
+      this.viewVisibilityDisposers.get(id)?.()
+      this.viewVisibilityDisposers.delete(id)
+    }
+  }
+
+  /**
+   * Resolve whether one registered main view is available to an addressed Session.
+   * @param sessionId - addressed Session.
+   * @param id - main-view id.
+   * @returns `true` when no predicate rejects the view for this Session.
+   */
+  viewVisible(sessionId: SessionId, id: string): boolean {
+    return this.viewVisibility.get(id)?.visible(sessionId) ?? true
+  }
+
+  /**
+   * Subscribe to every registered {@link ViewVisibilitySource}'s invalidation,
+   * present and future — apply.ts's `views.subscribe` folds this in beside the
+   * `conversation.view` slot ledger, so a tab strip re-lists when a source's
+   * answer changes for reasons the slot ledger itself never sees (a session
+   * list update, a projection update).
+   * @param callback - invoked with no arguments on any source's invalidation.
+   * @returns disposer removing this subscription.
+   */
+  subscribeViewVisibility(callback: () => void): () => void {
+    this.viewVisibilitySubscribers.add(callback)
+    return () => { this.viewVisibilitySubscribers.delete(callback) }
+  }
+
+  /**
+   * Monotonic counter bumped on every registered source's invalidation; part of the `views` snapshot.
+   * @returns the current counter value.
+   */
+  viewVisibilityVersion(): number {
+    return this.viewVisibilityVersionCounter
+  }
+
+  /** Register one transcript process-detail Session predicate. */
+  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void {
+    this.detailVisibilitySources.push(source)
+    this.detailVisibilityDisposers.set(source, source.subscribe(() => {
+      for (const callback of this.detailVisibilitySubscribers) callback()
+    }))
+    return () => {
+      const index = this.detailVisibilitySources.indexOf(source)
+      if (index < 0) return
+      this.detailVisibilitySources.splice(index, 1)
+      this.detailVisibilityDisposers.get(source)?.()
+      this.detailVisibilityDisposers.delete(source)
+    }
+  }
+
+  /**
+   * Resolve whether transcript process-detail chrome shows for an addressed Session.
+   * @param sessionId - addressed Session.
+   * @returns `true` when every registered source answers `visible` (including none registered).
+   */
+  transcriptDetailVisible(sessionId: SessionId): boolean {
+    return this.detailVisibilitySources.every(source => source.visible(sessionId))
+  }
+
+  /**
+   * Subscribe to every registered {@link TranscriptDetailVisibilitySource}'s
+   * invalidation, present and future.
+   * @param callback - invoked with no arguments on any source's invalidation.
+   * @returns disposer removing this subscription.
+   */
+  subscribeTranscriptDetailVisibility(callback: () => void): () => void {
+    this.detailVisibilitySubscribers.add(callback)
+    return () => { this.detailVisibilitySubscribers.delete(callback) }
   }
 
   /**

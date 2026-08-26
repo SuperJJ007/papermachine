@@ -20,6 +20,7 @@
     "apps/web/tests/science-persistent-kernel-test-helpers.ts",
     "apps/web/tests/science-chart-outcome.e2e.ts",
     "apps/web/tests/science-artifact-types.e2e.ts",
+    "apps/web/tests/science-transcript-chrome.e2e.ts",
     "apps/web/tests/message-feedback-protocol.snapshot.ts",
     "apps/web/tests/live-interactions.e2e.ts",
     "apps/web/tests/question-composer.e2e.ts",
@@ -151,6 +152,7 @@
     { "path": "./packages/session/session-persistence-jsonl" },
     { "path": "./packages/session/session-persistence-sqlite" },
     { "path": "./packages/session/session-attachment-index" },
+    { "path": "./packages/science/science-artifact-store" },
     { "path": "./packages/science/science-session" },
     { "path": "./packages/science/science-runtime" },
     { "path": "./packages/science/tool-science" },
@@ -316,6 +318,7 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
-    { "path": "./apps/cli" }
+    { "path": "./apps/cli" },
+    { "path": "./apps/desktop" }
   ]
 }

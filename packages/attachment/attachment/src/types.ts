@@ -79,7 +79,12 @@ export interface StoredImageAttachment {
 }
 
 /** Text formats accepted by the version-one text attachment path. */
-export type TextMediaType = 'text/csv' | 'application/json' | 'text/markdown' | 'text/plain'
+export type TextMediaType =
+  | 'text/csv'
+  | 'application/json'
+  | 'application/vnd.vega-lite+json'
+  | 'text/markdown'
+  | 'text/plain'
 
 /** Durable, serializable metadata for one immutable UTF-8 text object. */
 export interface TextAttachmentRef {

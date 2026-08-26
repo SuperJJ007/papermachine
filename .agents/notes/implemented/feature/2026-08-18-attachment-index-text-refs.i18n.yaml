@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-attachment-index-text-refs.md
 2026-08-18-attachment-index-text-refs.md: ae62a63f8002e1f8ec442b83cde391cd501a2f69
-2026-08-18-attachment-index-text-refs.zh.md: bc21f0967926646afd22722f446411415add3729
+2026-08-18-attachment-index-text-refs.zh.md: 113ab788d316edbd11650d37a4fb35d00254c6e8

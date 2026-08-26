@@ -276,6 +276,19 @@
   max-width: 0;
 }
 
+.destinations {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0 0 8px;
+}
+
+.collapsed .destinations {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 /* Region seat: always mounted so the foot never moves. Its trailing margin
    cancels the wide shell inset so the nested scrollbar can sit at the sidebar
    edge; the browser restores that inset inside its own rows. */
@@ -331,6 +344,7 @@
   .fading > *,
   .railIn .iconButton,
   .railIn .newSession,
+  .railIn .destinations,
   .railIn .footArea,
   .railIn .regionArea {
     transition: none;

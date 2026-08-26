@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-byte-size",
   "description": "Zero-dependency byte-count display formatting: formatBytes (compact B/KB/MB label)",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

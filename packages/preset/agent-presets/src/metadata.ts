@@ -42,10 +42,14 @@ export interface PresetMetadata {
   /**
    * Whether `agentPresets.copy()` may use this preset as a source. Absent
    * defaults to `true`: ordinary presets are copy sources by default, and a
-   * preset that must refuse copying — because its identity is durably bound
-   * to its literal id, as `dsh-tool-science`'s `ScienceModeRef.presetId` binds
-   * to `science` — declares `false` explicitly rather than relying on a
-   * caller to know.
+   * preset that must refuse copying declares `false` explicitly rather than
+   * relying on a caller to know. `dsh-science-session`'s `ScienceModeRef.presetId`
+   * durably records whichever preset actually bound Science mode rather than
+   * a hardcoded literal, but `dsh-tool-science`'s own eligibility check still
+   * recognizes only its one shipped preset id (no preset-metadata mechanism
+   * yet answers "is this copy's differing id still Science-family"), so a
+   * copy of the `science` preset would silently never activate Science mode —
+   * the reason its own metadata declares `false`.
    */
   readonly copyable?: boolean
 }

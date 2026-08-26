@@ -10,9 +10,14 @@ type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
-  node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession,
+  node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession, useProcessDetailVisible,
 }: TurnTailNodeViewProps) {
   const data = node.data
+  // A denser-presentation consumer's own transcript already carries duration,
+  // TTFT, and throughput (e.g. Science's Trajectory detailed subview), so this
+  // row keeps only the plain clock when the process-detail Hook reports the
+  // chrome suppressed for this Session.
+  const showMetrics = useProcessDetailVisible()
   const hasLaterChatNode = useSession(snapshot =>
     snapshot.chat.locations.getTurn(data.turn).at(-1) !== node.key)
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
@@ -38,9 +43,9 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
       <MessageIconActions
         text={assistantText(closing.blocks)}
         time={closing.time}
-        runMs={runMs}
-        ttftMs={data.ttftMs}
-        tokensPerSecond={data.tokensPerSecond}
+        runMs={showMetrics ? runMs : undefined}
+        ttftMs={showMetrics ? data.ttftMs : undefined}
+        tokensPerSecond={showMetrics ? data.tokensPerSecond : undefined}
         clock="end"
         onBranch={() => { forkAt(closing.finalNode.seq) }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}

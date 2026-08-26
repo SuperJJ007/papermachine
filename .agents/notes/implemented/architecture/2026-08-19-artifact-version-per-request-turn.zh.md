@@ -14,7 +14,7 @@ Science 此前把 artifact 版本定义为对某个逻辑文件的一次持久�
 
 ## Decision
 
-一个版本就是某一轮请求所产出的内容。来源 run 的授权 `tool/call.turn` 才是这一轮的锚点；`requestHeaderSeq` 仍是授权来源证明，且可以覆盖多个轮次的调用，因此该规则既不需要新的跟踪状态，也不需要新的事件类型。[持久化内核来源 run 与 abort 展示修复](../bug-fix/2026-08-20-persistent-kernel-artifact-turn-and-abort-presentation.md)修正了这一实现细节，同时保留本条面向读者的规则。
+一个版本就是某一轮请求所产出的内容。来源 run 的授权 `tool/call.turn` 才是这一轮的锚点；`requestHeaderSeq` 仍是授权来源证明，且可以覆盖多个轮次的调用，因此该规则既不需要新的跟踪状态，也不需要新的事件类型。[持久化内核来源 run 与 abort 展示修复](../bug-fix/2026-08-20-persistent-kernel-artifact-turn-and-abort-presentation.zh.md)修正了这一实现细节，同时保留本条面向读者的规则。
 
 `science/artifact-saved` 现在要么开启下一个连续版本，要么就地取代某个既有版本。`applyArtifactSaved`（`packages/science/science-session/src/transition.ts`）只允许 `origin: 'auto'` 在来源 run 与目标版本来源 run 重复同一个 `tool/call.turn` 时用不同字节就地取代；`origin: 'model'` 的策展必须逐字节重复目标 attachment。任一来源都可以在任意轮次就地取代未变化 attachment。
 

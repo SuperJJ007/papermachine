@@ -50,6 +50,14 @@
             name: '@deepseek-ai/dsh-attachment-local'
             config:
               dshHome: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/dsh-home'"
+          # Project artifact store: the Science Runtime's `scienceArtifactStore`
+          # injection. Rooted beside attachment-local and the Runtime's own
+          # `dshHome` below so a session's workspace-derived project resolves
+          # to the same snapshot-scoped harness home every run.
+          - id: science-artifact-store
+            name: '@deepseek-ai/dsh-science-artifact-store'
+            config:
+              dshHome: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/dsh-home'"
           - id: science-session
             name: '@deepseek-ai/dsh-science-session'
           - id: science-session-invariant
@@ -63,6 +71,8 @@
                   pythonPrefix: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/fake-conda'"
           - id: science-runtime-invariant
             name: '@deepseek-ai/dsh-science-runtime/invariant'
+          - id: science-edit-service
+            name: '@deepseek-ai/dsh-tool-science/edit-service'
           - id: tool-science
             name: '@deepseek-ai/dsh-tool-science'
             config:

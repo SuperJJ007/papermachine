@@ -64,4 +64,4 @@ Status: implemented
 
 ## Related
 
-[R6 settings/Details Agent Note](../feature/2026-08-17-dsh-science-v01-r6-settings-details.md) 记录了 settings 卡片最初的 `restartRequired` 机制，现已被 `hostState` 取代；其事实性描述已在本次改动中一并更新。[R3 Science tools Agent Note](../feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 记录了本 note 所取代的、仅凭 header 判断的 `isScienceSession` 检查；其事实性描述已按同样方式更新。
+[R6 settings/Details Agent Note](../feature/2026-08-17-dsh-science-v01-r6-settings-details.zh.md) 记录了 settings 卡片最初的 `restartRequired` 机制，现已被 `hostState` 取代；其事实性描述已在本次改动中一并更新。[R3 Science tools Agent Note](../feature/2026-08-16-dsh-science-v01-r3-science-tools.zh.md) 记录了本 note 所取代的、仅凭 header 判断的 `isScienceSession` 检查；其事实性描述已按同样方式更新。

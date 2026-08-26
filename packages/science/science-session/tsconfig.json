@@ -18,9 +18,6 @@
       "path": "../../preset/agent-presets"
     },
     {
-      "path": "../../session/session-attachment-index"
-    },
-    {
       "path": "../../session/session-projection"
     },
     {
@@ -30,10 +27,10 @@
       "path": "../../llm/llm"
     },
     {
-      "path": "../../attachment/attachment"
+      "path": "../../util/brand"
     },
     {
-      "path": "../../util/brand"
+      "path": "../science-artifact-store"
     }
   ]
 }

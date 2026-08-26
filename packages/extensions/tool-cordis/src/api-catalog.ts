@@ -1201,6 +1201,97 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'scienceArtifactStore',
+    summary: 'The project artifact store service.',
+    description: 'The project artifact store service. Registers as `ctx.scienceArtifactStore`; every method is self-sufficient given a `projectId` (no prior `openProject` call is required in the same process), so a Host restart or a second session in the same project can resume work against a project it already knows the id of.',
+    methods: [
+      {
+        signature: 'openProject(workspacePath: string): Promise<OpenedProject>',
+        description: 'Resolve a workspace directory\'s project identity and ensure its store is open.',
+        parameters: [{ name: 'workspacePath', description: 'the workspace directory to resolve.' }],
+        returns: 'the resolved identity, store root, and how it was resolved.',
+      },
+      {
+        signature: 'createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }>',
+        description: 'Create a new artifact and its first version.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'input', description: 'the first version\'s bytes, media type, origin, and metadata.' }],
+        returns: 'the created artifact and its first version.',
+      },
+      {
+        signature: 'appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord>',
+        description: 'Append a new version onto an existing artifact, linearized against every other concurrent append to the same artifact.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact to append to.' }, { name: 'input', description: 'the new version\'s bytes, media type, origin, and metadata.' }],
+        returns: 'the appended version.',
+      },
+      {
+        signature: 'annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord>',
+        description: 'Apply a metadata-only patch to one version in place.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version to curate.' }, { name: 'patch', description: 'fields to overwrite; an omitted field keeps its current value.' }],
+        returns: 'the updated version.',
+      },
+      {
+        signature: 'getArtifact(projectId: ProjectId, artifactId: ArtifactId): Promise<ArtifactRecord | undefined>',
+        description: 'Look up one artifact by id.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact to look up.' }],
+        returns: 'the artifact, or `undefined` when no such artifact exists.',
+      },
+      {
+        signature: 'getVersion(projectId: ProjectId, versionId: VersionId): Promise<VersionRecord | undefined>',
+        description: 'Look up one version by id.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version to look up.' }],
+        returns: 'the version, or `undefined` when no such version exists.',
+      },
+      {
+        signature: 'getLatestVersion(projectId: ProjectId, artifactId: ArtifactId): Promise<VersionRecord | undefined>',
+        description: 'Look up an artifact\'s current latest version.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact whose latest version to fetch.' }],
+        returns: 'the latest version, or `undefined` when the artifact does not exist.',
+      },
+      {
+        signature: 'listArtifacts(projectId: ProjectId): Promise<readonly ArtifactRecord[]>',
+        description: 'List every artifact in a project, oldest first.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }],
+        returns: 'every artifact currently in the project\'s store.',
+      },
+      {
+        signature: 'listVersions(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly VersionRecord[]>',
+        description: 'List one artifact\'s versions in ordinal order.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact whose versions to list.' }],
+        returns: 'every version of the artifact, oldest first.',
+      },
+      {
+        signature: 'readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>',
+        description: 'Read one version\'s bytes by content address.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'sha256', description: 'the digest from an already-resolved version row.' }],
+        returns: 'the verified bytes.',
+      },
+      {
+        signature: 'deleteProject(projectId: ProjectId): Promise<void>',
+        description: 'Permanently delete a project\'s entire store. The one cascade boundary: session deletion never calls this, and never removes artifact rows.',
+        parameters: [{ name: 'projectId', description: 'the project to delete.' }],
+      },
+    ],
+  },
+  {
+    key: 'scienceEdits',
+    summary: 'Remote service admitting browser edit gestures into the addressed live agent.',
+    description: 'Remote service admitting browser edit gestures into the addressed live agent.',
+    methods: [
+      {
+        signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
+        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone.',
+        parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
+        returns: 'durable-inbox admission receipt.',
+      },
+      {
+        signature: '@Remote(\'commitStyleEdit\') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>',
+        description: 'Validate and commit one complete Vega-Lite working copy as a direct human edit: bytes into the owning project\'s artifact store, then the store-reference event.',
+        parameters: [{ name: 'agent', description: 'exact live agent whose Session owns the artifact.' }, { name: 'request', description: 'exact current parent and complete edited JSON text.' }],
+        returns: 'identity and direct-edit provenance of the new contiguous version.',
+      },
+    ],
+  },
+  {
     key: 'scienceRuntime',
     summary: 'Folded local Science Runtime provider with public types free of Host paths.',
     description: 'Folded local Science Runtime provider with public types free of Host paths.',
@@ -1218,8 +1309,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A handle exposed only after `science/run-started` committed.',
       },
       {
-        signature: 'annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
-        description: 'Re-commit an existing artifact version\'s exact attachment reference with a curated title and caption: metadata-only, so it never reads or writes the filesystem and never calls the attachment store, and it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        signature: 'async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
+        description: 'Re-commit an existing artifact version\'s exact store content reference with a curated title and caption: metadata-only, so it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. The store row\'s metadata is curated in place first (`annotateVersion`), then the superseding event commits; a vetoed append after the store update leaves the store curated with no matching event — accepted metadata decay, resolved by the fold\'s own value staying the projection authority. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
         parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
         returns: 'The durable curated version this operation committed.',
       },
@@ -2981,11 +3072,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnnotateScienceArtifactRequest',
-    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: ScienceArtifactVersion[\'toolCallId\'];\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface AnnotateScienceArtifactRequest {\n    readonly session: Session;\n    readonly logicalName: string;\n    readonly version?: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'AnnotateVersionInput',
+    declaration: 'export interface AnnotateVersionInput {\n    readonly title?: string;\n    readonly caption?: string;\n    readonly origin?: ArtifactVersionOrigin;\n}',
   },
   {
     name: 'ApiKeyRecord',
     declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'AppendVersionInput',
+    declaration: 'export interface AppendVersionInput {\n    readonly producerSessionId: SessionId;\n    readonly data: Uint8Array;\n    readonly mediaType: string;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title?: string;\n    readonly caption?: string;\n    readonly editBaselines?: VersionId;\n    readonly producerRunId?: string;\n    readonly producerToolCallId?: string;\n    readonly producerRequestHeaderSeq?: number;\n    readonly environmentRevision?: string;\n    readonly environmentFingerprintPreview?: string;\n}',
   },
   {
     name: 'ApprovalOutcome',
@@ -3002,6 +3101,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovalService',
     declaration: 'export class ApprovalService extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, public config: Config);\n    setPolicy(agent: Agent, policy: ApprovalPolicy): void;\n    async request(req: ApprovalRequest): Promise<ApprovalOutcome>;\n    overrideOf(session: Session): ApprovalPolicy | undefined;\n}',
+  },
+  {
+    name: 'ArtifactId',
+    declaration: 'export type ArtifactId = Branded<\'ScienceStoreArtifactId\'>;',
+  },
+  {
+    name: 'ArtifactRecord',
+    declaration: 'export interface ArtifactRecord {\n    readonly artifactId: ArtifactId;\n    readonly owningProjectId: ProjectId;\n    readonly originSessionId: SessionId;\n    readonly logicalName: string;\n    readonly latestVersionId: VersionId;\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'ArtifactVersionOrigin',
+    declaration: 'export type ArtifactVersionOrigin = \'auto\' | \'model\' | \'human-edit\';',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -3294,6 +3405,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'CreateArtifactInput',
+    declaration: 'export interface CreateArtifactInput {\n    readonly logicalName: string;\n    readonly originSessionId: SessionId;\n    readonly data: Uint8Array;\n    readonly mediaType: string;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title?: string;\n    readonly caption?: string;\n    readonly producerRunId?: string;\n    readonly producerToolCallId?: string;\n    readonly producerRequestHeaderSeq?: number;\n    readonly environmentRevision?: string;\n    readonly environmentFingerprintPreview?: string;\n}',
   },
   {
     name: 'CreateGoalRequest',
@@ -3920,6 +4035,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'OpenedProject',
+    declaration: 'export interface OpenedProject {\n    readonly projectId: ProjectId;\n    readonly storeRoot: string;\n    readonly workspacePath: string;\n    readonly outcome: ProjectIdentityOutcome;\n}',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -3962,6 +4081,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'ProjectId',
+    declaration: 'export type ProjectId = Branded<\'ScienceProjectId\'>;',
+  },
+  {
+    name: 'ProjectIdentityOutcome',
+    declaration: 'export type ProjectIdentityOutcome = \'created\' | \'reopened\' | \'moved\' | \'copied\';',
   },
   {
     name: 'ProjectionChangeListener',
@@ -4153,19 +4280,31 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceArtifactId',
-    declaration: 'export type ScienceArtifactId = Branded<\'ScienceArtifactId\'>;',
-  },
-  {
-    name: 'ScienceArtifactOrigin',
-    declaration: 'export type ScienceArtifactOrigin = \'auto\' | \'model\';',
+    declaration: 'export type ScienceArtifactId = ArtifactId;',
   },
   {
     name: 'ScienceArtifactVersion',
-    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly title: string;\n    readonly caption?: string;\n    readonly origin: ScienceArtifactOrigin;\n    readonly attachment: ImageAttachmentRef | TextAttachmentRef;\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n    readonly environmentRevision: number;\n    readonly environmentFingerprint: string;\n    readonly createdAt: number;\n}',
+    declaration: 'export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion;',
   },
   {
     name: 'ScienceArtifactVersionRef',
     declaration: 'export interface ScienceArtifactVersionRef {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n}',
+  },
+  {
+    name: 'ScienceEditReceipt',
+    declaration: 'export interface ScienceEditReceipt {\n    readonly accepted: true;\n}',
+  },
+  {
+    name: 'ScienceEditRequest',
+    declaration: 'export interface ScienceEditRequest {\n    readonly targets: readonly ScienceEditSelection[];\n    readonly instruction: string;\n}',
+  },
+  {
+    name: 'ScienceEditSelection',
+    declaration: 'export interface ScienceEditSelection {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly comment?: string;\n}',
+  },
+  {
+    name: 'ScienceEditTarget',
+    declaration: 'export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget;',
   },
   {
     name: 'ScienceEnvironmentBinding',
@@ -4178,6 +4317,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceEnvironmentStatus',
     declaration: 'export type ScienceEnvironmentStatus = \'applied\' | \'invalid\' | \'drifted\';',
+  },
+  {
+    name: 'ScienceHumanEditArtifactVersion',
+    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'application/vnd.vega-lite+json\';\n}',
   },
   {
     name: 'ScienceInterpreterAvailableBinding',
@@ -4208,12 +4351,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
   },
   {
+    name: 'ScienceNormalizedRegionTarget',
+    declaration: 'export interface ScienceNormalizedRegionTarget {\n    readonly kind: \'normalized-region\';\n    readonly x: number;\n    readonly y: number;\n    readonly width: number;\n    readonly height: number;\n}',
+  },
+  {
     name: 'SciencePackage',
     declaration: 'export interface SciencePackage {\n    readonly name: string;\n    readonly version: string;\n}',
   },
   {
+    name: 'ScienceProjectId',
+    declaration: 'export type ScienceProjectId = ProjectId;',
+  },
+  {
     name: 'ScienceRunArtifactInput',
     declaration: 'export interface ScienceRunArtifactInput extends ScienceArtifactVersionRef {\n    readonly path: string;\n}',
+  },
+  {
+    name: 'ScienceRunArtifactVersion',
+    declaration: 'export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly origin: \'auto\' | \'model\';\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n}',
   },
   {
     name: 'ScienceRunHandle',
@@ -4250,6 +4405,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceScratchKey',
     declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
+  },
+  {
+    name: 'ScienceSpecPathTarget',
+    declaration: 'export interface ScienceSpecPathTarget {\n    readonly kind: \'spec-path\';\n    readonly path: string;\n}',
+  },
+  {
+    name: 'ScienceStyleEditReceipt',
+    declaration: 'export interface ScienceStyleEditReceipt {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly origin: \'human-edit\';\n}',
+  },
+  {
+    name: 'ScienceStyleEditRequest',
+    declaration: 'export interface ScienceStyleEditRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly spec: string;\n}',
   },
   {
     name: 'Scoped',
@@ -4969,7 +5136,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TextMediaType',
-    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
+    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'application/vnd.vega-lite+json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'TodoItem',
@@ -5182,6 +5349,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserQuestionProvider',
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
+  },
+  {
+    name: 'VersionId',
+    declaration: 'export type VersionId = Branded<\'ScienceStoreVersionId\'>;',
+  },
+  {
+    name: 'VersionRecord',
+    declaration: 'export interface VersionRecord {\n    readonly versionId: VersionId;\n    readonly artifactId: ArtifactId;\n    readonly ordinal: number;\n    readonly parentVersionId: VersionId | undefined;\n    readonly sha256: string;\n    readonly mediaType: string;\n    readonly byteCount: number;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title: string | undefined;\n    readonly caption: string | undefined;\n    readonly producerSessionId: SessionId;\n    readonly producerRunId: string | undefined;\n    readonly producerToolCallId: string | undefined;\n    readonly producerRequestHeaderSeq: number | undefined;\n    readonly environmentRevision: string | undefined;\n    readonly environmentFingerprintPreview: string | undefined;\n    readonly createdAt: number;\n}',
   },
   {
     name: 'WebBootEntry',

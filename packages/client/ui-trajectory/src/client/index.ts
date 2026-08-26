@@ -18,6 +18,14 @@ import { registerTrajectoryRequestHeaderDefinition } from './trajectory-request-
 import { registerTrajectoryConversationView } from './trajectory-snapshot-builder.ts'
 import { registerTrajectoryToolDefinition } from './trajectory-tool-definition.ts'
 import { TrajectoryView, type TrajectoryViewInjected } from './TrajectoryView.tsx'
+import { TrajectoryShell, type TrajectoryShellInjected } from './TrajectoryShell.tsx'
+import { TrajectorySubviewRegistry } from './trajectory-subviews.ts'
+
+export {
+  TrajectorySubviewRegistry,
+  type TrajectorySubviewEntry,
+  type TrajectoryViewVisibilitySource,
+} from './trajectory-subviews.ts'
 
 /** Required services: the conversation slot, registries, ordinary Session paging, and the locale service. */
 export const inject = ['slots', 'conversationEvents', 'conversationViews', 'sessions', 'locale']
@@ -34,6 +42,8 @@ export function apply(ctx: Context): void {
   // re-registration.
   const t = ctx.locale.bind(NS)
   const duration = createTrajectoryDurationStore()
+  const subviews = new TrajectorySubviewRegistry()
+  ctx.provide('trajectorySubviews', subviews)
   registerTrajectoryMessageDefinitions(ctx)
   registerTrajectoryRequestHeaderDefinition(ctx)
   registerTrajectoryAssistantDefinition(ctx)
@@ -46,6 +56,52 @@ export function apply(ctx: Context): void {
     order: 10,
     locale: NS,
     label: () => t('view.trajectory'),
+    inject: (sessionId: SessionId): TrajectoryShellInjected => {
+      let cachedVersion = ''
+      let cachedViews: ReturnType<TrajectoryShellInjected['hooks']['views']['getSnapshot']> = []
+      return {
+        hooks: {
+          views: {
+            getSnapshot: () => {
+              const version = `${ctx.slots.getVersion('trajectory.view')}:${subviews.version()}:${ctx.locale.getSnapshot().revision}`
+              if (version === cachedVersion) return cachedViews
+              cachedVersion = version
+              cachedViews = ctx.slots.entries('trajectory.view')
+                .filter(entry => entry.options.id !== undefined
+                  && subviews.visible(sessionId, entry.options.id))
+                .map(entry => ({
+                  id: entry.options.id ?? '',
+                  order: entry.options.order ?? 0,
+                  label: typeof entry.options.label === 'function'
+                    ? entry.options.label()
+                    : entry.options.label ?? entry.options.id ?? '',
+                }))
+                .sort((left, right) => left.order - right.order)
+              return cachedViews
+            },
+            subscribe: (listener) => {
+              const disposeSlots = ctx.slots.subscribe('trajectory.view', listener)
+              const disposeVisibility = subviews.subscribe(listener)
+              const disposeLocale = ctx.locale.subscribe(listener)
+              return () => { disposeSlots(); disposeVisibility(); disposeLocale() }
+            },
+          },
+          selection: {
+            getSnapshot: () => subviews.selection(sessionId),
+            subscribe: listener => subviews.subscribe(listener),
+          },
+        },
+        select: (id) => { subviews.select(sessionId, id) },
+      }
+    },
+    children: { 'trajectory.view': { kind: 'list', scope: 'session' } },
+  }, TrajectoryShell))
+  ctx.slots.inject('trajectory.view', () => ctx.slots.register({
+    name: 'trajectory.view',
+    id: 'detailed',
+    order: 10,
+    locale: NS,
+    label: () => t('view.detailed'),
     inject: (sessionId: SessionId): TrajectoryViewInjected => {
       const session = ctx.sessions.binding(sessionId)?.session
       if (session === undefined) {

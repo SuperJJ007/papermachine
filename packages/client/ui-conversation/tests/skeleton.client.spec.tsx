@@ -103,6 +103,14 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /**
+     * Override the content wrapped by `conversation.page.utilities`'s outlet
+     * anchor (default: a non-empty stub). `null` models a registered
+     * entry that renders nothing, matching the real outlet: the
+     * `[data-slot]` anchor div is always present, so the clearance check
+     * must read the anchor's OWN children, not merely the anchor's presence.
+     */
+    pageUtilities?: ReactNode
   } = {},
 ) {
   const root = sid('root')
@@ -160,6 +168,16 @@ function mount(
   let headerActionOwner: { toggleDetailsView: (id: string) => void } | undefined
   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
     slotCalls.push(key)
+    if (key === 'conversation.page.utilities') {
+      // Real outlets always emit the `[data-slot]` anchor div regardless of
+      // registrant content (ui-renderer's outlet contract); this stub
+      // reproduces that wrapper so the clearance check under test exercises
+      // the real DOM shape instead of a flattened stand-in.
+      const content = options.pageUtilities === undefined
+        ? <button type="button">stub</button>
+        : options.pageUtilities
+      return <div data-slot={key} style={{ display: 'contents' }}>{content}</div>
+    }
     if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
       seatOwners.push({ key, owner })
     }
@@ -276,6 +294,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    toggleDetails,
     t,
   }
   const view = render(<ConversationRoot {...props} />)
@@ -303,6 +322,20 @@ describe('Hero chrome', () => {
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+  })
+})
+
+describe('ConversationRoot page-utilities clearance', () => {
+  it('marks the root once conversation.page.utilities renders content, and clears it when the slot is empty', async () => {
+    const withContent = mount(conversationSnapshot())
+    const root = withContent.view.container.firstElementChild as HTMLElement
+    await act(async () => {})
+    expect(root.getAttribute('data-page-utilities')).toBe('true')
+
+    const empty = mount(conversationSnapshot(), undefined, undefined, { pageUtilities: null })
+    const emptyRoot = empty.view.container.firstElementChild as HTMLElement
+    await act(async () => {})
+    expect(emptyRoot.hasAttribute('data-page-utilities')).toBe(false)
   })
 })
 

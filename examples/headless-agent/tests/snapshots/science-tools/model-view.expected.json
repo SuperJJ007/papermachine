@@ -1,6 +1,6 @@
 {
   "guidance": [
-    "Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. A run's eligible written files (csv/json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it."
+    "Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. For Python charts, prefer Altair and save the Vega-Lite specification as a .vl.json file under SCIENCE_ARTIFACT_DIR. R charts remain raster outputs. A run's eligible written files (csv/json/vl.json/md/png/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts; no separate save step is needed. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it."
   ],
   "tools": [
     {
@@ -266,7 +266,75 @@
   "runtimeContext": [
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR."
+  ],
+  "editMessages": [
+    {
+      "source": {
+        "kind": "science-edit",
+        "targets": [
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 2,
+            "target": {
+              "kind": "spec-path",
+              "path": "encoding.y"
+            },
+            "comment": "Keep the scale readable at small sizes."
+          }
+        ],
+        "instruction": "Use a zero-based quantitative scale."
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Edit these Science artifact targets:\n- chart.vl.json v2 · encoding.y:\"Keep the scale readable at small sizes.\"\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2"
+        }
+      ]
+    },
+    {
+      "source": {
+        "kind": "science-edit",
+        "targets": [
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 1,
+            "target": {
+              "kind": "normalized-region",
+              "x": 0.25,
+              "y": 0.25,
+              "width": 0.5,
+              "height": 0.5
+            }
+          },
+          {
+            "artifactId": "{{scienceChartId}}",
+            "version": 2,
+            "target": {
+              "kind": "spec-path",
+              "path": "encoding.x"
+            }
+          }
+        ],
+        "instruction": "Brighten the selected region and align the chart encoding."
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Edit these Science artifact targets:\n- plot.png v1 · region(0.25,0.25,0.5,0.5)\n- chart.vl.json v2 · encoding.x\nInstruction: Brighten the selected region and align the chart encoding.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1\n- {{scienceChartId}} v2"
+        },
+        {
+          "type": "image",
+          "attachment": {
+            "mediaType": "image/png",
+            "width": 1,
+            "height": 1
+          }
+        }
+      ]
+    }
   ],
   "toolResults": [
     {
@@ -283,7 +351,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 4 artifacts: `meta.json` v1 ({{scienceChartId}}; application/json, 12 B), `notes.md` v1 ({{scienceChartId}}; text/markdown, 37 B), `plot.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B), `summary.csv` v1 ({{scienceChartId}}; text/csv, 27 B)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 5 artifacts: `chart.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 227 B), `meta.json` v1 ({{scienceChartId}}; application/json, 12 B), `notes.md` v1 ({{scienceChartId}}; text/markdown, 37 B), `plot.png` v1 ({{scienceChartId}}; image/png, 68 B), `summary.csv` v1 ({{scienceChartId}}; text/csv, 27 B)."
         }
       ]
     },
@@ -292,7 +360,7 @@
       "content": [
         {
           "type": "text",
-          "text": "artifact \"plot.png\" v1 ({{scienceChartId}}) curated from run {{scienceRunId}}\ntitle: Main plot\ncaption: Deterministic snapshot chart\nimage/png, 1x1, 68 bytes"
+          "text": "artifact \"plot.png\" v1 ({{scienceChartId}}) curated from run {{scienceRunId}}\ntitle: Main plot\ncaption: Deterministic snapshot chart\nimage/png, 68 bytes"
         }
       ]
     },
@@ -310,7 +378,7 @@
       "content": [
         {
           "type": "text",
-          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 1,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"origin\": \"model\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"width\": 1,\n      \"height\": 1,\n      \"createdAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"summary.csv\",\n      \"version\": 1,\n      \"title\": \"summary.csv\",\n      \"origin\": \"auto\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"text/csv\",\n      \"bytes\": 27,\n      \"createdAt\": 0\n    }\n  ],\n  \"outcome\": {\n    \"revision\": 1,\n    \"title\": \"Snapshot finding\",\n    \"summaryMarkdown\": \"The deterministic run produced the **cited chart**.\",\n    \"evidence\": [\n      {\n        \"kind\": \"run\",\n        \"runId\": \"{{scienceRunId}}\"\n      },\n      {\n        \"kind\": \"chart\",\n        \"chartId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      }\n    ],\n    \"publishedAt\": 0,\n    \"toolCallId\": \"science-outcome-call\",\n    \"requestHeaderSeq\": 9,\n    \"environmentRevisions\": [\n      1\n    ]\n  },\n  \"metrics\": {\n    \"runCount\": 1,\n    \"successfulRunCount\": 1,\n    \"artifactCount\": 4,\n    \"artifactVersionCount\": 4,\n    \"outcomeRevision\": 1\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 2\n  },\n  \"lastScienceEventSeq\": 53\n}"
+          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 1,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"origin\": \"model\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"createdAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"summary.csv\",\n      \"version\": 1,\n      \"title\": \"summary.csv\",\n      \"origin\": \"auto\",\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"text/csv\",\n      \"bytes\": 27,\n      \"createdAt\": 0\n    }\n  ],\n  \"outcome\": {\n    \"revision\": 1,\n    \"title\": \"Snapshot finding\",\n    \"summaryMarkdown\": \"The deterministic run produced the **cited chart**.\",\n    \"evidence\": [\n      {\n        \"kind\": \"run\",\n        \"runId\": \"{{scienceRunId}}\"\n      },\n      {\n        \"kind\": \"chart\",\n        \"chartId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      }\n    ],\n    \"publishedAt\": 0,\n    \"toolCallId\": \"science-outcome-call\",\n    \"requestHeaderSeq\": 9,\n    \"environmentRevisions\": [\n      1\n    ]\n  },\n  \"metrics\": {\n    \"runCount\": 1,\n    \"successfulRunCount\": 1,\n    \"artifactCount\": 5,\n    \"artifactVersionCount\": 5,\n    \"outcomeRevision\": 1\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 3\n  },\n  \"lastScienceEventSeq\": 54\n}"
         }
       ]
     },
@@ -319,7 +387,34 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `edited.png` v1 ({{scienceChartId}}; image/png, 1x1, 68 B, edited from {{scienceChartId}} v1)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `edited.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1)."
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-selected-edit-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `selected-edit.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 56 B, edited from {{scienceChartId}} v2)."
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-style-edit-state-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call-2\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"inputs\": [\n        {\n          \"artifactId\": \"{{scienceChartId}}\",\n          \"version\": 1,\n          \"path\": \"source.png\"\n        }\n      ],\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    },\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-selected-edit-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"inputs\": [\n        {\n          \"artifactId\": \"{{scienceChartId}}\",\n          \"version\": 2,\n          \"path\": \"source.vl.json\"\n        }\n      ],\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"chart.vl.json\",\n      \"version\": 2,\n      \"title\": \"chart.vl.json\",\n      \"origin\": \"human-edit\",\n      \"parent\": {\n        \"artifactId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      },\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"application/vnd.vega-lite+json\",\n      \"bytes\": 267,\n      \"createdAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"selected-edit.vl.json\",\n      \"version\": 1,\n      \"title\": \"selected-edit.vl.json\",\n      \"origin\": \"auto\",\n      \"parent\": {\n        \"artifactId\": \"{{scienceChartId}}\",\n        \"version\": 2\n      },\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"application/vnd.vega-lite+json\",\n      \"bytes\": 56,\n      \"createdAt\": 0\n    }\n  ],\n  \"outcome\": {\n    \"revision\": 1,\n    \"title\": \"Snapshot finding\",\n    \"summaryMarkdown\": \"The deterministic run produced the **cited chart**.\",\n    \"evidence\": [\n      {\n        \"kind\": \"run\",\n        \"runId\": \"{{scienceRunId}}\"\n      },\n      {\n        \"kind\": \"chart\",\n        \"chartId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      }\n    ],\n    \"publishedAt\": 0,\n    \"toolCallId\": \"science-outcome-call\",\n    \"requestHeaderSeq\": 9,\n    \"environmentRevisions\": [\n      1\n    ]\n  },\n  \"metrics\": {\n    \"runCount\": 3,\n    \"successfulRunCount\": 3,\n    \"artifactCount\": 7,\n    \"artifactVersionCount\": 8,\n    \"outcomeRevision\": 1\n  },\n  \"history\": {\n    \"runsOmitted\": 1,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 6\n  },\n  \"lastScienceEventSeq\": 101\n}"
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-region-edit-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1), `selected-edit-2.vl.json` v1 ({{scienceChartId}}; application/vnd.vega-lite+json, 58 B, edited from {{scienceChartId}} v2)."
         }
       ]
     }

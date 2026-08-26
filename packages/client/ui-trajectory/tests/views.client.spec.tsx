@@ -40,6 +40,7 @@ import { TrajectoryTimeline } from '../src/client/TrajectoryTimeline.tsx'
 import {
   TrajectoryView, type TrajectoryViewInjected,
 } from '../src/client/TrajectoryView.tsx'
+import type { TrajectoryShellInjected } from '../src/client/TrajectoryShell.tsx'
 import { createTrajectoryDurationStore } from '../src/client/duration-store.ts'
 import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
 import { deriveTrajectoryTimeline } from '../src/client/timeline.ts'
@@ -233,28 +234,40 @@ function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES
   // Minimal outlet twin: resolve the ring entry by the `only` filter and
   // render it with the session standard kit (what SlotOutlet does for a
   // list-kind session slot, minus machinery).
-  const renderSlot = ((key: string, _owner: object, opts?: { only?: string }): ReactNode => {
-    const entry = slots.entries('conversation.view').find(e => e.options.id === opts?.only)
+  const renderSlot = ((key: string, owner: object, opts?: { only?: string }): ReactNode => {
+    const entry = slots.entries(key as never).find(e => e.options.id === opts?.only)
     if (entry === undefined) return null
     const View = entry.component as FC<ConvViewProps>
     const injectEntry = entry.inject as ((sessionId: SessionId) => object) | undefined
     const injected = injectEntry === undefined
       ? {}
       : injectEntry(SID)
-    const injectedProps = 'hooks' in injected
+    const injectedProps = 'hooks' in injected && 'views' in (injected.hooks as object)
       ? (() => {
-        const trajectory = injected as TrajectoryViewInjected
+        const trajectory = injected as TrajectoryShellInjected
         return {
-          loadOlder: trajectory.loadOlder,
-          setActualDuration: trajectory.setActualDuration,
-          useDuration: bindSnapshotSelector(trajectory.hooks.duration),
-          t: (key: TrajectoryKey) => zh[key],
+          select: trajectory.select,
+          useViews: bindSnapshotSelector(trajectory.hooks.views),
+          useSelection: bindSnapshotSelector(trajectory.hooks.selection),
+          renderSlot,
+          t: (localeKey: TrajectoryKey) => zh[localeKey],
         }
       })()
-      : injected
+      : 'hooks' in injected
+        ? (() => {
+          const trajectory = injected as TrajectoryViewInjected
+          return {
+            loadOlder: trajectory.loadOlder,
+            setActualDuration: trajectory.setActualDuration,
+            useDuration: bindSnapshotSelector(trajectory.hooks.duration),
+            t: (key: TrajectoryKey) => zh[key],
+          }
+        })()
+        : injected
     return (
       <View
         {...injectedProps}
+        {...owner}
         {...({ sessionId: SID, useSession, useSessions: emptySessions(), useWorkspaces: emptyWorkspaces() } as unknown as ConvViewProps)}
         key={key}
       />
@@ -325,8 +338,8 @@ describe('plugin registration', () => {
 
   it('shares one browser-wide duration preference across session injections', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
+    const entry = b.slots.entries('trajectory.view')
+      .find(candidate => candidate.options.id === 'detailed')
     expect(entry).toBeDefined()
     const injectEntry = entry!.inject as unknown as (
       sessionId: SessionId,
@@ -343,8 +356,8 @@ describe('plugin registration', () => {
 
   it('reports whether loading older history changed the Trajectory snapshot', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.view')
-      .find(candidate => candidate.options.id === 'trajectory')
+    const entry = b.slots.entries('trajectory.view')
+      .find(candidate => candidate.options.id === 'detailed')
     const injectEntry = entry!.inject as unknown as (
       sessionId: SessionId,
     ) => TrajectoryViewInjected

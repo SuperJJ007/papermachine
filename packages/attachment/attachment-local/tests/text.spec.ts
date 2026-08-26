@@ -8,7 +8,7 @@ import { readTextFile, saveTextFile, validateTextFile } from '../src/store.ts'
 
 const LIMITS: TextAttachmentLimits = {
   maxTextBytes: 16,
-  mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'],
+  mediaTypes: ['text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain'],
 }
 
 const roots: string[] = []
@@ -68,6 +68,7 @@ describe('text attachment admission', () => {
   it.each([
     ['text/csv', 'a,b,c\n1,2\n'],
     ['application/json', '{"a":1}'],
+    ['application/vnd.vega-lite+json', '{"mark":"bar"}'],
     ['text/markdown', '# Title\nBody.\n'],
     ['text/plain', 'plain text'],
   ] as const)('admits valid %s content and reads it back', async (mediaType, content) => {
@@ -85,10 +86,10 @@ describe('text attachment admission', () => {
   })
 
   it('trusts the caller-declared media type: admission never inspects content format', async () => {
-    // text/csv, application/json, text/markdown, and text/plain are all
-    // "valid UTF-8 bytes" at the admission layer — there is no byte-level
-    // signature distinguishing them the way a raster header distinguishes
-    // PNG from JPEG, so a JSON-shaped body admits under any declared type.
+    // Every accepted text media type means only "valid UTF-8 bytes" at the
+    // admission layer — there is no byte-level signature distinguishing them
+    // the way a raster header distinguishes PNG from JPEG, so a JSON-shaped
+    // body admits under any declared type.
     const storageRoot = await root()
     const data = new TextEncoder().encode('{"not":"csv"}')
     const ref = await saveTextFile(storageRoot, { data, mediaType: 'text/csv' }, LIMITS)

@@ -30,7 +30,7 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | 被 review 的 closure head | `d1dc9f3d23cdb67f60d530db003a653fa4196194` | Review 失败；已被修复后的 candidate 取代，不再用于提升 |
 | 已验收的修复后 R3 candidate | `9a668331bd54c0d267d982927b2c5f77db6147bc` | 位于 R2 head 之上六个线性 commit；通过最终 independent review 与 exact-SHA gates |
 
-[R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.md#complete-overlay-inventory)负责 source identities 与 dependency order。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.md)负责 durable Science event 与 replay semantics。[R2 Science Runtime decision](2026-08-15-dsh-science-v01-r2-science-runtime.md)负责 environment/run operations、process lifecycle、confinement 与 real-runtime evidence meaning。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md)负责易变的 command output 与 platform facts。
+[R0 overlay inventory](../../../../docs/evidence/2026-08-15-dsh-science-v01-r0-rc5-baseline-closure.zh.md#complete-overlay-inventory)负责 source identities 与 dependency order。[R1 Science Session decision](2026-08-15-dsh-science-v01-r1-science-session.zh.md)负责 durable Science event 与 replay semantics。[R2 Science Runtime decision](2026-08-15-dsh-science-v01-r2-science-runtime.zh.md)负责 environment/run operations、process lifecycle、confinement 与 real-runtime evidence meaning。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.zh.md)负责易变的 command output 与 platform facts。
 
 ### 范围
 
@@ -46,7 +46,7 @@ Session log 继续作为唯一 durable Science authority。`@deepseek-ai/dsh-too
 | OUT | 后续 Science product work | Charts、chart save tools、Outcome publication、persistent kernels、package/environment management、settings、sidebar、Details UI、client rendering 与 Desktop |
 | OUT | Distribution 与 migration | RC6 或 latest-upstream migration、installer、signing、notarization、Authenticode、tag、npm publication、GitHub release 与 release-readiness claims |
 
-原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复分别落在 `be46f69b6e`（review findings）与 `9a668331bd`（sanitization branch coverage）。R3 在最终 closure 后停止；[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) 是下一个 slice。
+原始 implementation slices 分别落在独立 commit 中：`1cf4ef0ddd`（runtime-context restoration）、`35ae6b5399`（filesystem read-only entry）与 `50d5b413e5`（Science Consumer）。Review 修复分别落在 `be46f69b6e`（review findings）与 `9a668331bd`（sanitization branch coverage）。R3 在最终 closure 后停止；[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.zh.md) 是下一个 slice。
 
 ### Generic runtime-context restoration
 
@@ -74,7 +74,7 @@ Package 附带一个 `tsdown.config.ts`，把 `index`、`invariant` 与 `read-on
 
 `@deepseek-ai/dsh-tool-science` 是一个 function plugin，拥有 required `profileId`、`modeRevision` 与 `stateHistoryLimit` configuration。`profileId` 使用 durable Science safe-ID grammar（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符），并选择一个 Runtime allowlist entry。`modeRevision` 会被 trim、非空，且不超过 128 个字符，并持久化到 `ScienceModeRef`。`stateHistoryLimit` 是正 safe integer，分别限制 `get_science_state` 返回的最近 run 与 chart-version 集合。这三个值都没有 default，也不来自 environment discovery；本包不命名 shipped production identity 或 history policy。
 
-Plugin 只 statically inject `tools` 与 `systemPrompt`。它在最早需要 Runtime 的 operation 上——首次使用绑定，以及每次 `run_python`/`run_r` 调用——用 `ctx.get('scienceRuntime')` 读取 optional Host-owned Runtime。Model-facing operations 需要 exact initiating Agent，且其 Session 当前必须解析为 `science` preset identity（`isScienceSession`，即 `@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset`，以创建 header 为基础、被之后任意一条 `agent-preset/selected` 事件覆盖——为何仅凭 header 不够，参见 [Science 产品缺陷 Agent Note](../bug-fix/2026-08-18-science-mode-product-gaps.md)）。没有 Agent 与 turn signal 的 diagnostic prompt assembly 不执行 Host I/O，并原样 delegate。
+Plugin 只 statically inject `tools` 与 `systemPrompt`。它在最早需要 Runtime 的 operation 上——首次使用绑定，以及每次 `run_python`/`run_r` 调用——用 `ctx.get('scienceRuntime')` 读取 optional Host-owned Runtime。Model-facing operations 需要 exact initiating Agent，且其 Session 当前必须解析为 `science` preset identity（`isScienceSession`，即 `@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset`，以创建 header 为基础、被之后任意一条 `agent-preset/selected` 事件覆盖——为何仅凭 header 不够，参见 [Science 产品缺陷 Agent Note](../bug-fix/2026-08-18-science-mode-product-gaps.zh.md)）。没有 Agent 与 turn signal 的 diagnostic prompt assembly 不执行 Host I/O，并原样 delegate。
 
 #### 首个 model request
 
@@ -86,7 +86,7 @@ Context providers 会在 assembly waterfall 完成前 render。Binding 之后，
 
 #### Context 与 tool contracts
 
-一个静态的 `tool:science` prompt section 为每种语言陈述持久化与 kernel 重启语义——归 [persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.md) 所有，该决策同时陈述了 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 当前的角色——此外还陈述 terminal program failure 是需要检查的 result，而 infrastructure failure 表示不存在 trustworthy run result。Deterministic 的 `science:environment` dynamic context 只包含 durable mode/environment identity 与 status、interpreter capability/version 与一段截断后的 fingerprint、file-based state rule，以及 bounded latest-run summary。它省略 Runtime-owned free-text reason、source、stdout、stderr、credentials 与 Host path/identity field，并在 Science mode 之外或没有 initiating Agent 时渲染为 `''`。
+一个静态的 `tool:science` prompt section 为每种语言陈述持久化与 kernel 重启语义——归 [persistent-kernel 决策](../architecture/2026-08-20-science-persistent-kernel.zh.md) 所有，该决策同时陈述了 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR` 当前的角色——此外还陈述 terminal program failure 是需要检查的 result，而 infrastructure failure 表示不存在 trustworthy run result。Deterministic 的 `science:environment` dynamic context 只包含 durable mode/environment identity 与 status、interpreter capability/version 与一段截断后的 fingerprint、file-based state rule，以及 bounded latest-run summary。它省略 Runtime-owned free-text reason、source、stdout、stderr、credentials 与 Host path/identity field，并在 Science mode 之外或没有 initiating Agent 时渲染为 `''`。
 
 Package 准确注册 `get_science_state`、`run_python` 与 `run_r`，使用 generic render intent，且没有 editor locations。`get_science_state` 不接受 arguments，并返回 sanitized、bounded view：model-safe environment facts、最近的 runs 与 chart versions、遗漏计数、outcome、总量 metrics、mode 与最后一条 Science event sequence。Host prefix、executable path 与 identity、Conda history hash、environment reason 与 run `failureMessage` 都不会进入 tool result；chart 与 Outcome prose 仍是 model-authored durable content。每个 run tool 只接受一个 non-empty `code` string，要求最新的 `request/header` 与 exact tool call ID，把 tool cancellation signal 转发给 `startRun()`，并 await returned handle。
 
@@ -100,13 +100,13 @@ R3 source evidence 包括 filesystem 与 Science source 的 focused per-file 100
 
 Product-visible Consumer 有两项 assembled check。`packages/science/tool-science/tests/loader-composition.spec.ts` 通过 Loader 启动 test-only `cordis.yml`，其中包含真实 agent loop、Session store、Science Session invariant、Science Runtime、persistence、tool pipeline 与 Consumer；它覆盖 first-request context、durable ordering、三个 schemas、run execution、无重复 binding 的 resume，以及 Standard-session negative path。Keyless runnable example `examples/headless-agent/science-tools.cordis.snapshot.yml` 还会 snapshot 实际 model-facing guidance、Science schemas、sanitized bounded state result、structured durable run terminal、rendered `run_python` tool result，以及 durable Science event ordering。同一条真实 Loader request 只暴露 `@deepseek-ai/dsh-tool-fs/read-only` 的 filesystem `read` roster，不暴露 `write` 或 `edit`。
 
-针对明确授权的既有 Conda prefixes 的真实 Python 与 R Consumer acceptance，在 R3 中保持 `NOT-RUN`，与本 keyless evidence 分开追踪。Preset、Web、browser、Desktop、provider credentials、signing、publication 与 release 保持 `NOT-RUN`。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.md)把每项 result 与 exception 绑定到已验收的 candidate SHA。
+针对明确授权的既有 Conda prefixes 的真实 Python 与 R Consumer acceptance，在 R3 中保持 `NOT-RUN`，与本 keyless evidence 分开追踪。Preset、Web、browser、Desktop、provider credentials、signing、publication 与 release 保持 `NOT-RUN`。[dated R3 evidence record](../../../../docs/evidence/2026-08-16-dsh-science-v01-r3-science-tools.zh.md)把每项 result 与 exception 绑定到已验收的 candidate SHA。
 
 ### Supersession 与 lifecycle
 
 R3 不 supersede R1 Science Session 或 R2 Science Runtime decisions。它消费二者的 public responsibilities，并用 model-facing Consumer 完成当前 Runtime capability。Generic runtime-context correction 扩展 active system-prompt/session mechanism，read-only entry 扩展当前 filesystem package；它们的既有 decisions 继续独立有用并保持 active。
 
-Downstream Phase 3 proposal 是 excluded lineage 的 provenance，未被复制到 active tree。[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.md) 完成了这个随产品交付的应用层；在 product UI、artifact 与 release layers 通过各自 decision/evidence 之前，project documentation 不得宣称 Science Mode 已 release-ready。
+Downstream Phase 3 proposal 是 excluded lineage 的 provenance，未被复制到 active tree。[R4 built-in Science preset 及其 shipped CLI/Web composition](2026-08-16-dsh-science-v01-r4-science-preset.zh.md) 完成了这个随产品交付的应用层；在 product UI、artifact 与 release layers 通过各自 decision/evidence 之前，project documentation 不得宣称 Science Mode 已 release-ready。
 
 ## 考虑过的替代方案
 

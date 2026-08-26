@@ -11,11 +11,26 @@ import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import SessionAttachmentIndex from '@deepseek-ai/dsh-session-attachment-index'
 import ApiProxyService, { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+
+// Test-owned extractor-required event type: no production domain registers
+// an attachment extractor any more (the project artifact store owns Science
+// artifact bytes, and `science/artifact-saved` is classified `attachment-free`
+// in `session-attachment-index`'s static policy table), so the
+// missing-registration failure path below is exercised against a locally
+// merged event type instead of a real domain's, mirroring
+// `session-attachment-index`'s own suite.
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Test-only media event carrying one optional attachment reference. */
+    'test/export-media-saved': { readonly media?: { readonly attachment?: ImageAttachmentRef } }
+  }
+}
 
 const sid = (id: string): SessionId => id as SessionId
 
@@ -734,21 +749,29 @@ describe('session.export download endpoint', () => {
   })
 
   it('fails the whole export (no partial ZIP) when a known extractor-required event has no registered extractor', async () => {
-    const root = artifact('session-root', undefined, [
-      '{"type":"session","version":0,"id":"session-root","createdAt":1000}',
-      // A real known extractor-required type (dsh-science-session's producer
-      // registers it in a full composition); this suite mounts only the
-      // generic registry, so the type has no live extractor.
-      '{"type":"science/artifact-saved","seq":1,"time":1000,"data":{}}',
-    ].join('\n') + '\n')
-    const api = await buildApi({ 'session-root': root })
-    const response = await toFetchHandler(api).fetch(
-      new Request('http://host/api/session.export?sessionId=session-root'),
-    )
-    // The failure surfaces while scanning the root artifact, before any zip
-    // entry is produced, so the stream errors rather than completing with a
-    // shorter or wrong archive.
-    expect(response.status).toBe(200)
-    await expect(response.arrayBuffer()).rejects.toThrow(/extractor-required/)
+    // No production domain registers an extractor today, so this suite's own
+    // test-owned type joins the known set for the test's lifetime instead of
+    // relying on a real domain event ever landing outside its classified
+    // built-in/attachment-free buckets.
+    (KNOWN_SESSION_EVENT_TYPES as Set<string>).add('test/export-media-saved')
+    try {
+      const root = artifact('session-root', undefined, [
+        '{"type":"session","version":0,"id":"session-root","createdAt":1000}',
+        // This suite mounts only the generic registry, so the type has no
+        // live extractor.
+        '{"type":"test/export-media-saved","seq":1,"time":1000,"data":{}}',
+      ].join('\n') + '\n')
+      const api = await buildApi({ 'session-root': root })
+      const response = await toFetchHandler(api).fetch(
+        new Request('http://host/api/session.export?sessionId=session-root'),
+      )
+      // The failure surfaces while scanning the root artifact, before any zip
+      // entry is produced, so the stream errors rather than completing with a
+      // shorter or wrong archive.
+      expect(response.status).toBe(200)
+      await expect(response.arrayBuffer()).rejects.toThrow(/extractor-required/)
+    } finally {
+      (KNOWN_SESSION_EVENT_TYPES as Set<string>).delete('test/export-media-saved')
+    }
   })
 })

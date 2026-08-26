@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   decodeScienceArtifact,
@@ -10,8 +9,9 @@ import {
   decodeScienceRunStarted,
   decodeScienceRunTerminal,
   ScienceArtifactId,
+  ScienceProjectId,
   ScienceRunId,
-  scienceRunsShareTurn,
+  ScienceVersionId,
 } from '../src/index.ts'
 import { isScienceDomainEventType } from '../src/codec.ts'
 import { foldScience } from '../src/fold.ts'
@@ -58,17 +58,6 @@ describe('strict Science fold', () => {
     expect(state.settledToolCallSeqs).toEqual([])
     expect(state.messageFacts).toEqual([])
     expect(state.consumedToolCallSeqs).toEqual([4, 7, 9])
-  })
-
-  it('requires each source run to identify exactly one indexed tool call when comparing turns', () => {
-    const state = foldScience(legalEvents())
-    expect(() => scienceRunsShareTurn(state, { toolCallId: CallId('missing-call') }, runTerminal()))
-      .toThrow(/does not identify one indexed tool\/call/)
-
-    const call = state.toolCalls[0]!
-    state.toolCalls.push({ ...call, seq: 99 })
-    expect(() => scienceRunsShareTurn(state, runTerminal(), runTerminal()))
-      .toThrow(/does not identify one indexed tool\/call/)
   })
 
   it('folds an auto-captured text artifact that carries its source run\'s own toolCallId, consuming no fresh tool call', () => {
@@ -237,7 +226,39 @@ describe('strict Science fold', () => {
     expect(isScienceDomainEventType('science/future-event')).toBe(false)
   })
 
-  it('supersedes a version in place when a later model curation retains its attachment', () => {
+  it('decodes the human-edit artifact branch without run provenance and rejects branch mixing', () => {
+    const source = artifact()
+    const { runId: _runId, toolCallId: _toolCallId, requestHeaderSeq: _requestHeaderSeq, ...base } = source
+    const human = {
+      ...base,
+      version: 2,
+      parent: { artifactId: source.artifactId, version: 1 },
+      origin: 'human-edit' as const,
+      versionId: ScienceVersionId('version-human'),
+      sha256: 'd'.repeat(64),
+      mediaType: 'application/vnd.vega-lite+json' as const,
+      byteCount: 64,
+      createdAt: source.createdAt + 1,
+    }
+    expect(decodeScienceArtifact(human)).toEqual(human)
+    expect(() => decodeScienceArtifact({ ...human, parent: undefined })).toThrow()
+    expect(() => decodeScienceArtifact({ ...human, runId: RUN_ID })).toThrow()
+    expect(() => decodeScienceArtifact({ ...human, mediaType: 'text/plain' })).toThrow()
+    expect(() => decodeScienceArtifact({ ...source, origin: 'human-edit' })).toThrow()
+  })
+
+  it('rejects the pre-store embedded-attachment value with a clear error', () => {
+    const embedded = {
+      ...artifact(),
+      attachment: { attachmentId: 'attachment-1', mediaType: 'image/png', bytes: 128, width: 16, height: 9 },
+    }
+    expect(() => decodeScienceArtifact(embedded)).toThrow(/embeds a session attachment.*rejected outright/)
+    const events = legalEvents()
+    events[8] = event('science/artifact-saved', 8, 170, { version: 1, artifact: embedded })
+    expect(() => foldScience(events)).toThrow(/embeds a session attachment.*rejected outright/)
+  })
+
+  it('supersedes a version in place when a later model curation retains its store content reference', () => {
     const events = legalEvents().slice(0, 9)
     events.push(
       toolCall(9, 180, CallId('second-annotate-call'), 'annotate_artifact'),
@@ -256,49 +277,64 @@ describe('strict Science fold', () => {
     // One result the reader asked for, holding the content that turn ended on.
     expect(state.artifacts).toHaveLength(1)
     expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Trend, redrawn' })
-    expect(state.artifacts.at(0)?.attachment.attachmentId).toBe('attachment-1')
+    expect(state.artifacts.at(0)?.versionId).toBe('version-1')
     // The retained fact follows the superseding event, so evidence cited
     // against this version is dated by the save that produced what it holds.
     expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 10, time: 190 }])
   })
 
-  it('rejects changed bytes that reuse a shared request header across source-run turns', () => {
-    const secondRunId = ScienceRunId('run-2')
-    const secondRunCall = CallId('call-run-second-turn')
+  it('rejects any auto-captured supersede and opens the next version for changed bytes', () => {
     const first = autoArtifact({ createdAt: 160 })
-    const secondStart = runStarted({
-      runId: secondRunId,
-      toolCallId: secondRunCall,
-      requestHeaderSeq: 3,
-      startedAt: 180,
-      runDirectoryRef: 'runs/run-2/',
-    })
-    const second = runTerminal({ ...secondStart, status: 'success', finishedAt: 190 })
-    const events = [
+    const resave = autoArtifact({ createdAt: 170 })
+    expect(() => foldScience([
       ...legalEvents().slice(0, 7),
       event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
-      toolCall(8, 170, secondRunCall, 'run_python', { turn: 2, step: 1 }),
-      event('science/run-started', 9, 180, { version: 1, run: secondStart }),
-      event('science/run-finished', 10, 190, { version: 1, run: second }),
-    ]
-    const unchanged = autoArtifact({
-      runId: secondRunId,
-      toolCallId: secondRunCall,
-      requestHeaderSeq: 3,
-      createdAt: 200,
-    })
-    expect(foldScience([...events, event('science/artifact-saved', 11, 200, { version: 1, artifact: unchanged })]).artifacts)
-      .toHaveLength(1)
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: resave }),
+    ])).toThrow(/only a model curation may supersede a committed Science artifact version/)
 
-    const changed = autoArtifact({
-      ...unchanged,
-      attachment: { attachmentId: AttachmentId('attachment-3'), mediaType: 'text/csv', bytes: 48, name: 'summary.csv' },
+    const next = autoArtifact({
+      version: 2,
+      versionId: ScienceVersionId('version-next'),
+      sha256: '1'.repeat(64),
+      byteCount: 48,
+      createdAt: 170,
     })
-    expect(() => foldScience([...events, event('science/artifact-saved', 11, 200, { version: 1, artifact: changed })]))
-      .toThrow(/auto-captured Science artifact may supersede changed content only from its source run's tool-call turn/)
+    const state = foldScience([
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: next }),
+    ])
+    expect(state.artifacts).toEqual([first, next])
   })
 
-  it('rejects a later model curation that changes the target attachment', () => {
+  it('rejects a version that reuses another committed version\'s store versionId or another session project', () => {
+    const first = autoArtifact({ createdAt: 160 })
+    const reusedVersionId = autoArtifact({
+      version: 2,
+      sha256: '1'.repeat(64),
+      createdAt: 170,
+    })
+    expect(() => foldScience([
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: reusedVersionId }),
+    ])).toThrow(/versionId cannot back two committed versions/)
+
+    const foreignProject = autoArtifact({
+      artifactId: ScienceArtifactId('artifact-foreign'),
+      logicalName: 'foreign.csv',
+      projectId: ScienceProjectId('project-2'),
+      versionId: ScienceVersionId('version-foreign'),
+      createdAt: 170,
+    })
+    expect(() => foldScience([
+      ...legalEvents().slice(0, 7),
+      event('science/artifact-saved', 7, 160, { version: 1, artifact: first }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: foreignProject }),
+    ])).toThrow(/must name one owning projectId/)
+  })
+
+  it('rejects a later model curation that changes the target store content reference', () => {
     const events = legalEvents().slice(0, 9)
     events.push(
       toolCall(9, 180, CallId('changed-annotate-call'), 'annotate_artifact'),
@@ -306,20 +342,14 @@ describe('strict Science fold', () => {
         version: 1,
         artifact: artifact({
           toolCallId: CallId('changed-annotate-call'),
-          attachment: {
-            attachmentId: AttachmentId('attachment-3'),
-            mediaType: 'image/png',
-            bytes: 256,
-            width: 16,
-            height: 9,
-            name: 'trend.png',
-          },
+          sha256: '2'.repeat(64),
+          byteCount: 256,
           createdAt: 185,
         }),
       }),
     )
 
-    expect(() => foldScience(events)).toThrow(/model-curated Science artifact may supersede only with an unchanged attachment/)
+    expect(() => foldScience(events)).toThrow(/must retain the superseded version's store content reference/)
   })
 
   it('rejects a supersede that renames the artifact or walks its content backwards in time', () => {
@@ -344,7 +374,7 @@ describe('strict Science fold', () => {
     expect(() => foldScience(backdated)).toThrow(/must retain artifactId and advance contiguously/)
   })
 
-  it('allows later model curation only when it retains the target attachment', () => {
+  it('allows later model curation only when it retains the target store content reference', () => {
     const curated = legalEvents().slice(0, 9)
     curated.push(
       event('request/header', 9, 178, {
@@ -370,25 +400,18 @@ describe('strict Science fold', () => {
     expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Titled a turn later' })
 
     // Curation belongs to a later call and still names the original source
-    // run, but its metadata-only durable form cannot replace attachment bytes.
+    // run, but its metadata-only durable form cannot replace content bytes.
     const rewritten = curated.slice()
     rewritten[11] = event('science/artifact-saved', 11, 190, {
       version: 1,
       artifact: artifact({
         toolCallId: CallId('later-annotate-call'),
         requestHeaderSeq: 9,
-        attachment: {
-          attachmentId: AttachmentId('attachment-3'),
-          mediaType: 'image/png',
-          bytes: 256,
-          width: 16,
-          height: 9,
-          name: 'trend.png',
-        },
+        versionId: ScienceVersionId('version-3'),
         createdAt: 185,
       }),
     })
-    expect(() => foldScience(rewritten)).toThrow(/model-curated Science artifact may supersede only with an unchanged attachment/)
+    expect(() => foldScience(rewritten)).toThrow(/must retain the superseded version's store content reference/)
   })
 
   it('rejects discontinuous revisions, duplicate identities, and backward Science time', () => {
@@ -398,13 +421,6 @@ describe('strict Science fold', () => {
       environment: environment({ revision: 2 }),
     })
     expect(() => foldScience(badEnvironment)).toThrow(/environment revision must be 1/)
-
-    const badChart = legalEvents()
-    badChart[8] = event('science/artifact-saved', 8, 170, {
-      version: 1,
-      artifact: artifact({ version: 2 }),
-    })
-    expect(() => foldScience(badChart)).toThrow(/first logical artifact version must be 1/)
 
     const badOutcome = legalEvents()
     badOutcome[10] = event('science/outcome-published', 10, 180, {
@@ -433,6 +449,106 @@ describe('strict Science fold', () => {
       environment: environment({ configuredAt: 90, validatedAt: 98 }),
     })
     expect(() => foldScience(backward)).toThrow(/moves time backwards/)
+  })
+
+  it('accepts a first-sighted artifact version above 1 as a cross-session continuation (S3)', () => {
+    // This session's own log has never recorded ARTIFACT_ID before this
+    // event: it may be opening a brand-new artifact, or continuing one a
+    // different session in the same project already versioned. The fold
+    // cannot tell those apart without the project store, so it accepts the
+    // reference (the live Runtime validated the true prior ordinal against
+    // the store before this event ever committed).
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+    const state = foldScience(continued)
+    expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 4 })
+  })
+
+  it('accepts a later artifact-saved version beyond this session\'s own local maximum, still rejecting an in-range mismatch (S3 interleaving)', () => {
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+
+    // A save beyond this session's own local maximum (4) for that
+    // artifactId is trusted even though it is not exactly the next
+    // contiguous version: a concurrent session's own interleaved append may
+    // have landed in between in store-serialized order before this event
+    // ever committed, exactly like the store-validated first-sighted case
+    // above trusts any positive ordinal.
+    const gapAhead = continued.slice()
+    gapAhead.push(
+      toolCall(9, 185, CallId('call-continue-ahead'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({
+          version: 7,
+          toolCallId: CallId('call-continue-ahead'),
+          createdAt: 189,
+          versionId: ScienceVersionId('version-continue-ahead'),
+        }),
+      }),
+    )
+    const advanced = foldScience(gapAhead)
+    expect(advanced.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 7 })
+
+    // A value at or below that local maximum which does not exactly match a
+    // locally recorded version is a same-session inconsistency the log
+    // alone can catch (a regression, or a gap inside the locally-seen
+    // range), and still throws.
+    const belowRange = continued.slice()
+    belowRange.push(
+      toolCall(9, 185, CallId('call-continue-below'), 'annotate_artifact'),
+      event('science/artifact-saved', 10, 190, {
+        version: 1,
+        artifact: artifact({ version: 2, toolCallId: CallId('call-continue-below'), createdAt: 189 }),
+      }),
+    )
+    expect(() => foldScience(belowRange)).toThrow(/must retain artifactId and advance beyond the locally committed version/)
+  })
+
+  it('accepts a run input version beyond this session\'s own local maximum, still rejecting an in-range mismatch (S3 interleaving)', () => {
+    const continued = legalEvents().slice(0, 9)
+    continued[8] = event('science/artifact-saved', 8, 170, {
+      version: 1,
+      artifact: artifact({ version: 4 }),
+    })
+
+    const runCall = CallId('call-run-continue')
+    const run = runStarted({
+      runId: ScienceRunId('run-continue'),
+      toolCallId: runCall,
+      startedAt: 189,
+      runDirectoryRef: 'runs/run-continue/',
+      inputs: [{ artifactId: ARTIFACT_ID, version: 6, path: 'ahead.png' }],
+    })
+    const aheadOfLocalMax = [
+      ...continued,
+      toolCall(9, 185, runCall, 'run_python'),
+      event('science/run-started', 10, 190, { version: 1, run }),
+    ]
+    // A run input naming a version strictly ahead of this session's own
+    // locally-recorded maximum (4) is trusted for the same reason a save
+    // beyond that maximum is: the live Runtime already validated the
+    // reference against the project store before this event committed.
+    expect(() => foldScience(aheadOfLocalMax)).not.toThrow()
+
+    const inRangeMismatch = [
+      ...continued,
+      toolCall(9, 185, runCall, 'run_python'),
+      event('science/run-started', 10, 190, {
+        version: 1,
+        run: { ...run, inputs: [{ artifactId: ARTIFACT_ID, version: 2, path: 'between.png' }] },
+      }),
+    ]
+    // A value at or below that local maximum which does not exactly match a
+    // locally recorded version is still fully verifiable from the log
+    // alone, and throws.
+    expect(() => foldScience(inRangeMismatch)).toThrow(/run input .* does not identify a committed artifact version/)
   })
 
   it('rejects missing or forward references and terminal whole-value rewrites', () => {
@@ -472,7 +588,7 @@ describe('strict Science fold', () => {
     }))).toThrow()
   })
 
-  it('accepts committed artifact ancestry and run inputs, and rejects unresolved or self references', () => {
+  it('accepts committed artifact ancestry and run inputs, and rejects unresolved parent or self references', () => {
     const branchCall = CallId('call-branch')
     const branchId = ScienceArtifactId('artifact-branch')
     const parent = { artifactId: ARTIFACT_ID, version: 1 }
@@ -481,6 +597,8 @@ describe('strict Science fold', () => {
       logicalName: 'branch.png',
       parent,
       toolCallId: branchCall,
+      versionId: ScienceVersionId('version-branch'),
+      sha256: '3'.repeat(64),
       createdAt: 179,
     })
     const secondRunCall = CallId('call-run-with-input')
@@ -503,12 +621,32 @@ describe('strict Science fold', () => {
     expect(state.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
     expect(state.runs.at(-1)).toMatchObject({ runId: secondRun.runId, inputs: secondRun.inputs })
 
-    const missingInput = events.slice()
-    missingInput[12] = event('science/run-started', 12, 190, {
+    // A run input naming a version strictly ahead of this session's own
+    // locally-recorded maximum for a KNOWN artifactId (branchId is locally
+    // known only at version 1) is trusted the same way an entirely unknown
+    // artifactId is trusted below: the live Runtime already validated the
+    // reference against the project store before this event committed, and
+    // a concurrent session may have advanced the artifact past this
+    // session's own local knowledge of it (S3 interleaving).
+    const aheadOfLocalMax = events.slice()
+    aheadOfLocalMax[12] = event('science/run-started', 12, 190, {
       version: 1,
-      run: { ...secondRun, inputs: [{ artifactId: ScienceArtifactId('missing'), version: 1, path: 'missing.png' }] },
+      run: { ...secondRun, inputs: [{ artifactId: branchId, version: 99, path: 'ahead.png' }] },
     })
-    expect(() => foldScience(missingInput)).toThrow(/run input .* does not identify a committed artifact version/)
+    expect(() => foldScience(aheadOfLocalMax)).not.toThrow()
+
+    // A run input naming an artifactId this session's own log has never
+    // recorded at all — not even at a different version — is a legitimate
+    // cross-session reference (S3): the live Runtime already validated it
+    // against the project store before this event committed, and pure fold
+    // replay, which cannot reach the store, trusts that committed fact
+    // rather than rejecting an artifactId it simply has no local record of.
+    const crossSessionInput = events.slice()
+    crossSessionInput[12] = event('science/run-started', 12, 190, {
+      version: 1,
+      run: { ...secondRun, inputs: [{ artifactId: ScienceArtifactId('external-artifact'), version: 7, path: 'external.png' }] },
+    })
+    expect(() => foldScience(crossSessionInput)).not.toThrow()
 
     const missingParent = events.slice(0, 10)
     missingParent.push(event('science/artifact-saved', 10, 180, {
@@ -539,9 +677,23 @@ describe('strict Science fold', () => {
   it('accepts sibling versions from one baseline, preserves a parent on replacement, and rejects another parent', () => {
     const parent = { artifactId: ARTIFACT_ID, version: 1 }
     const versionTwoCall = CallId('call-version-two')
-    const versionTwo = artifact({ version: 2, parent, toolCallId: versionTwoCall, createdAt: 179 })
+    const versionTwo = artifact({
+      version: 2,
+      parent,
+      toolCallId: versionTwoCall,
+      versionId: ScienceVersionId('version-two'),
+      sha256: '4'.repeat(64),
+      createdAt: 179,
+    })
     const versionThreeCall = CallId('call-version-three')
-    const versionThree = artifact({ version: 3, parent, toolCallId: versionThreeCall, createdAt: 189 })
+    const versionThree = artifact({
+      version: 3,
+      parent,
+      toolCallId: versionThreeCall,
+      versionId: ScienceVersionId('version-three'),
+      sha256: '5'.repeat(64),
+      createdAt: 189,
+    })
     const siblings = [
       ...legalEvents().slice(0, 9),
       toolCall(9, 175, versionTwoCall, 'annotate_artifact'),

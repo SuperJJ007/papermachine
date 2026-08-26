@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { replayScience, ScienceArtifactId, ScienceRunId, toClientScienceProjection } from '../src/index.ts'
+import { replayScience, ScienceArtifactId, ScienceRunId, ScienceVersionId, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   ARTIFACT_CALL_ID,
@@ -82,6 +82,8 @@ describe('Science projection replay', () => {
           logicalName: 'projection-branch.png',
           parent,
           toolCallId: branchCall,
+          versionId: ScienceVersionId('projection-branch-v1'),
+          sha256: '3'.repeat(64),
           createdAt: 179,
         }),
       }),
@@ -102,6 +104,47 @@ describe('Science projection replay', () => {
     expect(client.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
     expect(client.runs.at(-1)).toMatchObject({ inputs })
     expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
+  })
+
+  it('projects direct edits with ancestry and without run provenance', () => {
+    const events = legalEvents().slice(0, 9)
+    const source = artifact({
+      logicalName: 'projection-chart.vl.json',
+      versionId: ScienceVersionId('projection-chart-v1'),
+      sha256: '6'.repeat(64),
+      mediaType: 'application/vnd.vega-lite+json',
+      byteCount: 64,
+    })
+    events[8] = event('science/artifact-saved', 8, 170, { version: 1, artifact: source })
+    events.push(event('science/artifact-saved', 9, 180, {
+      version: 1,
+      artifact: {
+        artifactId: source.artifactId,
+        logicalName: source.logicalName,
+        version: 2,
+        parent: { artifactId: source.artifactId, version: 1 },
+        title: source.title,
+        origin: 'human-edit',
+        projectId: source.projectId,
+        versionId: ScienceVersionId('projection-chart-v2'),
+        sha256: '7'.repeat(64),
+        mediaType: 'application/vnd.vega-lite+json',
+        byteCount: 72,
+        environmentRevision: source.environmentRevision,
+        environmentFingerprint: source.environmentFingerprint,
+        createdAt: 179,
+      },
+    }))
+
+    const directEdit = toClientScienceProjection(replayScience(events))!.artifacts.at(-1)!
+    expect(directEdit).toMatchObject({
+      version: 2,
+      origin: 'human-edit',
+      parent: { artifactId: source.artifactId, version: 1 },
+    })
+    expect(directEdit).not.toHaveProperty('runId')
+    expect(directEdit).not.toHaveProperty('toolCallId')
+    expect(directEdit).not.toHaveProperty('requestHeaderSeq')
   })
 
   it('retains a legacy run whose durable events predate artifact inputs', () => {

@@ -744,9 +744,14 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * knowledge of bucket hashing, filename encoding, or compression, and
  * malformed session events fail loud at seed time. The fixture's tokenized identity
  * ({{sessionId}}/{{cwd}}) is realized for this world before parsing. Event
- * times are materialized from event order against the fixture header's
- * creation time, or the seeded creation time when normalization replaced the
- * header value with zero.
+ * times are materialized against the fixture header's creation time, or the
+ * seeded creation time when normalization replaced the header value with
+ * zero: each event's time is that anchor plus its delta from the fixture's
+ * first event, floored to strictly exceed the previous event's materialized
+ * time. A fixture with meaningful embedded gaps keeps those gaps; a fixture
+ * with identical or absent event times (every committed recording strips
+ * them) falls through the floor to one order-preserving millisecond per
+ * event, matching prior behavior.
  * @param scaffold - the target scaffold.
  * @param fixtureText - raw recorded session.jsonl contents.
  * @param id - the seeded session id (stable for deterministic goldens).
@@ -835,7 +840,13 @@ export async function seedSession(
     throw new Error('seed fixture requires a numeric createdAt header')
   }
   const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
-  const materializedEvents = events.map((event, index) => ({ ...event, time: timeAnchor + index }))
+  const firstEventTime = events[0]!.time
+  let previousTime = timeAnchor - 1
+  const materializedEvents = events.map((event) => {
+    const time = Math.max(timeAnchor + (event.time - firstEventTime), previousTime + 1)
+    previousTime = time
+    return { ...event, time }
+  })
   await persistSeedSession(scaffold, meta, materializedEvents)
   return meta.id
 }

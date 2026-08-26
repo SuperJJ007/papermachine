@@ -12,12 +12,17 @@ export const scienceArtifactSchemaProperties = {
   version: { type: 'integer', required: true },
   title: { type: 'string', required: true },
   caption: { type: 'string' },
-  origin: { type: 'string', enum: ['auto', 'model'], required: true },
-  runId: { type: 'string', required: true },
+  origin: { type: 'string', enum: ['auto', 'model', 'human-edit'], required: true },
+  parent: {
+    type: 'object', additionalProperties: false,
+    properties: {
+      artifactId: { type: 'string', required: true },
+      version: { type: 'integer', required: true },
+    },
+  },
+  runId: { type: 'string' },
   mediaType: { type: 'string', required: true },
   bytes: { type: 'integer', required: true },
-  width: { type: 'integer' },
-  height: { type: 'integer' },
   createdAt: { type: 'integer', required: true },
 } as const
 
@@ -29,11 +34,10 @@ export interface ScienceArtifactValueFields {
   readonly title: string
   readonly caption?: string
   readonly origin: ScienceArtifactVersion['origin']
-  readonly runId: string
+  readonly parent?: { readonly artifactId: string; readonly version: number }
+  readonly runId?: string
   readonly mediaType: string
   readonly bytes: number
-  readonly width?: number
-  readonly height?: number
   readonly createdAt: number
 }
 
@@ -42,14 +46,12 @@ export interface ScienceArtifactValueFields {
  * media fields, matching `scienceArtifactSchemaProperties` field-for-field.
  * The artifact-receipt (`annotate-artifact.ts`) and state (`state.ts`) value
  * builders each spread this and add their own remaining fields —
- * `attachmentId`/`attachmentName` for the receipt, `environmentRevision`/
+ * `versionId` for the receipt, `environmentRevision`/
  * `environmentFingerprintPreview` for state.
  * @param artifact - the durable artifact version to flatten.
- * @returns the shared value fields, `width`/`height` present only for an image attachment.
+ * @returns the shared value fields.
  */
 export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): ScienceArtifactValueFields {
-  const { attachment } = artifact
-  const isImage = 'width' in attachment
   return {
     artifactId: String(artifact.artifactId),
     logicalName: artifact.logicalName,
@@ -57,10 +59,12 @@ export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): Sc
     title: artifact.title,
     ...artifact.caption === undefined ? {} : { caption: artifact.caption },
     origin: artifact.origin,
-    runId: String(artifact.runId),
-    mediaType: attachment.mediaType,
-    bytes: attachment.bytes,
-    ...isImage ? { width: attachment.width, height: attachment.height } : {},
+    ...artifact.parent === undefined ? {} : {
+      parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
+    },
+    ...artifact.origin === 'human-edit' ? {} : { runId: String(artifact.runId) },
+    mediaType: artifact.mediaType,
+    bytes: artifact.byteCount,
     createdAt: artifact.createdAt,
   }
 }

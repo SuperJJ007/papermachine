@@ -1,0 +1,35 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science transcript chrome" [disabled]
+  - img
+  - text: Science mode
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Science details":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Summarize the dataset. {{clock}}
+- button "Copy":
+  - img
+- paragraph: SCIENCE_CHROME_DONE
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}}
+- textbox "Message the agent"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}}

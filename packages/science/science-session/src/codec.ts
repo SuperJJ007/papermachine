@@ -1,7 +1,6 @@
 /** Strict decoders for the durable Science event vocabulary. */
 
 import { Buffer } from 'node:buffer'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
@@ -9,8 +8,10 @@ import {
   SCIENCE_EVENT_VERSION,
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
+  ScienceProjectId,
   ScienceRunId,
   ScienceScratchKey,
+  ScienceVersionId,
 } from './ids.ts'
 import type {
   ScienceArtifactSavedEvent,
@@ -111,7 +112,7 @@ function issue(ctx: z.RefinementCtx, message: string, path: PropertyKey[] = []):
 
 const scienceModeSchema = z.object({
   modeId: z.literal('science'),
-  presetId: z.literal('science'),
+  presetId: text(MAX_ID_LENGTH),
   modeRevision: text(MAX_ID_LENGTH),
 }).strict()
 
@@ -284,45 +285,61 @@ const kernelStateSchema = z.object({
   }
 })
 
-const attachmentNameSchema = text(MAX_LABEL_LENGTH).refine(value => !/[\\/]/.test(value), {
-  message: 'attachment name must not contain a path separator',
-}).optional()
+/** Every media type an artifact version may carry: a PNG image, or admitted UTF-8 text. */
+const ARTIFACT_MEDIA_TYPES = [
+  'image/png',
+  'text/csv',
+  'application/json',
+  'application/vnd.vega-lite+json',
+  'text/markdown',
+  'text/plain',
+] as const
 
-const imageAttachmentSchema = z.object({
-  attachmentId: text(MAX_ID_LENGTH).transform(value => AttachmentId(value)),
-  mediaType: z.literal('image/png'),
-  bytes: POSITIVE_INTEGER,
-  width: POSITIVE_INTEGER,
-  height: POSITIVE_INTEGER,
-  name: attachmentNameSchema,
-}).strict()
-
-const textAttachmentSchema = z.object({
-  attachmentId: text(MAX_ID_LENGTH).transform(value => AttachmentId(value)),
-  mediaType: z.enum(['text/csv', 'application/json', 'text/markdown', 'text/plain']),
-  bytes: POSITIVE_INTEGER,
-  name: attachmentNameSchema,
-}).strict()
-
-/** Every media type an artifact version's `attachment` may carry: an image, or admitted UTF-8 text. */
-const artifactAttachmentSchema = z.union([imageAttachmentSchema, textAttachmentSchema])
-
-const artifactSchema = z.object({
+const artifactBaseSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
   logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
-  parent: artifactVersionRefSchema.optional(),
   title: text(MAX_LABEL_LENGTH),
   caption: text(MAX_REASON_LENGTH).optional(),
-  origin: z.enum(['auto', 'model']),
-  attachment: artifactAttachmentSchema,
-  runId: SAFE_ID.transform(value => ScienceRunId(value)),
-  toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
-  requestHeaderSeq: SAFE_INTEGER,
+  projectId: SAFE_ID.transform(value => ScienceProjectId(value)),
+  versionId: SAFE_ID.transform(value => ScienceVersionId(value)),
+  sha256: SHA256,
+  mediaType: z.enum(ARTIFACT_MEDIA_TYPES),
+  byteCount: POSITIVE_INTEGER,
   environmentRevision: POSITIVE_INTEGER,
   environmentFingerprint: SHA256,
   createdAt: SAFE_INTEGER,
-}).strict()
+})
+
+const artifactSchema = z.discriminatedUnion('origin', [
+  artifactBaseSchema.extend({
+    parent: artifactVersionRefSchema.optional(),
+    origin: z.enum(['auto', 'model']),
+    runId: SAFE_ID.transform(value => ScienceRunId(value)),
+    toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
+    requestHeaderSeq: SAFE_INTEGER,
+  }).strict(),
+  artifactBaseSchema.extend({
+    parent: artifactVersionRefSchema,
+    origin: z.literal('human-edit'),
+    mediaType: z.literal('application/vnd.vega-lite+json'),
+  }).strict(),
+])
+
+/**
+ * Reject the pre-store `science/artifact-saved` value shape outright, with a
+ * message naming the actual break instead of a generic unknown-key error.
+ * Pre-release stance: embedded-attachment session logs are not readable and
+ * there is no compatibility shim.
+ */
+function rejectEmbeddedAttachmentArtifact(value: unknown): void {
+  if (typeof value === 'object' && value !== null && 'attachment' in value) {
+    throw new Error(
+      'science/artifact-saved value embeds a session attachment; artifact bytes now live in the'
+      + ' project artifact store, and pre-store session logs are rejected outright (pre-release, no compatibility shim)',
+    )
+  }
+}
 
 const evidenceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('run'), runId: SAFE_ID.transform(value => ScienceRunId(value)) }).strict(),
@@ -433,6 +450,7 @@ export function decodeScienceRunTerminal(value: unknown): ScienceRunTerminal {
  * @returns the strict artifact-version value.
  */
 export function decodeScienceArtifact(value: unknown): ScienceArtifactVersion {
+  rejectEmbeddedAttachmentArtifact(value)
   return artifactSchema.parse(value) as ScienceArtifactVersion
 }
 
@@ -494,6 +512,8 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
       return { type: event.type, seq: event.seq, time: event.time, data }
     }
     case 'science/artifact-saved': {
+      const candidate = event.data as { readonly artifact?: unknown } | null
+      rejectEmbeddedAttachmentArtifact(candidate?.artifact)
       const data = artifactSavedEventSchema.parse(event.data) as ScienceArtifactSavedEvent
       return { type: event.type, seq: event.seq, time: event.time, data }
     }

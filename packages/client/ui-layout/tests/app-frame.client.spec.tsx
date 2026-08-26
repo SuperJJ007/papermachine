@@ -24,6 +24,7 @@ import type {
 // Session selection controls for the SessionProvider and useSessions stubs.
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
+const selectedSessionPreset = { current: undefined as string | undefined }
 const baselinesReady = { current: true }
 
 // Render-prop contract stub fed through the standard seat prop (the renderer
@@ -70,7 +71,10 @@ function mountFrame() {
       ids: current === undefined ? [] : [current],
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : { [current]: {
+          id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1,
+          ...(selectedSessionPreset.current === undefined ? {} : { agentPreset: selectedSessionPreset.current }),
+        } },
       current,
       phase: 'ready',
     } as SessionListState
@@ -114,6 +118,7 @@ beforeEach(() => {
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
+  selectedSessionPreset.current = undefined
   baselinesReady.current = true
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
@@ -140,6 +145,15 @@ describe('AppFrame', () => {
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('marks the complete shell for the Science light workbench palette only', () => {
+    selectedSessionPreset.current = 'science'
+    const { frame, rerenderFrame } = mountFrame()
+    expect(frame.getAttribute('data-science-session')).toBe('true')
+    selectedSessionPreset.current = 'standard'
+    rerenderFrame()
+    expect(frame.hasAttribute('data-science-session')).toBe(false)
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {
@@ -177,7 +191,7 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 0])
 
     act(() => { instance.actions.openDetails() })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
 
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
@@ -187,18 +201,30 @@ describe('AppFrame', () => {
     selectedSession.current = 's-blank' as SessionId
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().details).toBe(420)
+    expect(tracks(frame)).toEqual([280, 820])
+    expect(instance.getSnapshot().details).toBe('default')
 
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
 
+    // Genuinely no Session (the true welcome page) closes immediately, unlike
+    // the blank-session detour above.
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
     selectedSession.current = 's-test' as SessionId
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('closes details the moment the welcome page has no Session at all', () => {
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 820])
+
+    selectedSession.current = undefined
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
   })
@@ -231,7 +257,7 @@ describe('AppFrame', () => {
     act(() => { instance.actions.openDetails() })
     const handles = frame.querySelectorAll('[class*="handle"]')
     drag(handles[1]!, 1560, 1500)
-    expect(tracks(frame)[1]).toBe(480)
+    expect(tracks(frame)[1]).toBe(880)
   })
 
   it('drag base is the rendered (concession-clamped) width, not the preference', () => {
@@ -269,7 +295,7 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 380])
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([280, 420])
+    expect(tracks(frame)).toEqual([280, 820])
   })
 
   it('drag handles disappear for collapsed columns', () => {

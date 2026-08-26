@@ -50,10 +50,13 @@
 # ── science ─────────────────────────────────────────────────────────────────
 
 # The model-facing Science Consumer: durable mode/environment binding,
-# `science:environment` runtime context, and all five Science tools
-# (run_python, run_r, get_science_state, annotate_artifact, publish_outcome). These
-# values are explicit preset policy — not package defaults, not environment
-# discovery — and changing any of them changes model-visible output.
+# `science:environment` runtime context, all five Science tools
+# (run_python, run_r, get_science_state, annotate_artifact, publish_outcome).
+# The viewer-edit Remote is a Host-owned Web row because the Typert Gateway
+# resolves services from the Host root; this preset contributes no service.
+# These values are explicit preset policy — not package defaults, not
+# environment discovery — and changing any of them changes model-visible
+# output.
 - id: tool-science
   name: '@deepseek-ai/dsh-tool-science'
   config:

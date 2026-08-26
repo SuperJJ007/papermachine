@@ -68,7 +68,7 @@ export function ConversationSessionHeader({
   renderSlot, views, open, openDetailsView, toggleDetails, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list()
+  const tabs = views.list(sessionId)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   // The panel's selected entry is the header's own store read, so header
@@ -144,11 +144,11 @@ export function ConversationSessionHeader({
                 {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
               </nav>
               <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', { toggleDetailsView })}
+                {renderSlot('conversation.session.header.actions', { detailsView, toggleDetailsView })}
               </div>
             </div>
             <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', { toggleDetailsView })}
+              {renderSlot('conversation.session.header.utilities', { detailsView, toggleDetailsView })}
             </div>
           </div>
           {tabs.length > 1 && (
@@ -184,7 +184,7 @@ export function ConversationSession({
   renderSlot, views, bindDraftMirror, releaseSessionImages,
 }: ConversationSessionProps) {
   useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list()
+  const tabs = views.list(sessionId)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
   const composerPhase = useSession(s => s.composerPhase)

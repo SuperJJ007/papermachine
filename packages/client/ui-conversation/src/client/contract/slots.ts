@@ -118,7 +118,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: ChatNodeOwnerProps
       keyProps: { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }
       hookContext: string
-      inject: ChatNodeTurnDataInjected
+      inject: ChatNodeInjected
     }
     /** Optional renderer for one consecutive group of durable message images. */
     'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
@@ -210,6 +210,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the next one rather than applied to a current one.
      */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    /** Page-level utilities that remain available with or without a Session. */
+    'conversation.page.utilities': { kind: 'list'; scope: 'root'; owner: ConversationPageUtilitiesOwnerProps }
+    /** Structured context chips rendered above the main composer textarea. */
+    'conversation.input.accessory': { kind: 'list'; scope: 'session'; owner: InputZone }
     // 'conversation.input.overlay' merges in ui-input-trigger (the dependency
     // direction is the hard constraint — ui-input-trigger cannot import
     // this package, while this package's input contract already imports
@@ -337,6 +341,8 @@ export interface ConversationSessionOwnerProps {
 
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {
+  /** Selected Details entry id, or `null` while the column is closed. */
+  detailsView: string | null
   /**
    * Toggle a registered `conversation.details.view` entry from the session
    * header: the panel opens on `id` when it is closed or showing another
@@ -445,10 +451,20 @@ export type UseChatNodeTurnData = <Key extends Extract<keyof ConversationTurnDat
   key: Key,
 ) => Readonly<ConversationTurnDataMap[Key]> | undefined
 
-/** Slot-level Hook factory used by renderers reading their Node's Turn data. */
-export interface ChatNodeTurnDataInjected {
+/**
+ * Slot-level Hook factories every keyed 'conversation.chat.node' renderer
+ * receives, regardless of which package registered its key: reading the
+ * owning Node's Turn data, and whether transcript process-detail chrome
+ * (context-injection rows, turn-timing stats) currently shows for this
+ * Session. A denser-presentation consumer (e.g. Science) registers a
+ * {@link TranscriptDetailVisibilitySource} through
+ * `IConversation.registerTranscriptDetailVisibility` to suppress it for
+ * matching Sessions without this package knowing that consumer exists.
+ */
+export interface ChatNodeInjected {
   hooks: {
     turnData: SlotHookFactory<'conversation.chat.node', UseChatNodeTurnData>
+    processDetailVisible: SlotHookFactory<'conversation.chat.node', () => boolean>
   }
 }
 
@@ -558,13 +574,21 @@ export interface ConversationInjected {
    * the root renders as the inert composer's placeholder.
    */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  /** Toggle the shared Details column from a root-scoped utility. */
+  toggleDetails: () => void
+}
+
+/** Owner share for root-scoped conversation utilities. */
+export interface ConversationPageUtilitiesOwnerProps {
+  /** Toggle the shared Details column. */
+  toggleDetails: () => void
 }
 
 /** Business callbacks injected into the strict Session body seat. */
 export interface ConversationSessionInjected {
   /** Views projected from the `conversation.view` slot ledger. */
   views: {
-    list: () => readonly ViewTab[]
+    list: (sessionId: SessionId) => readonly ViewTab[]
     subscribe: (fn: () => void) => () => void
     version: () => number
   }
@@ -578,7 +602,7 @@ export interface ConversationSessionInjected {
 export interface ConversationSessionHeaderInjected {
   /** Views projected from the `conversation.view` slot ledger. */
   views: {
-    list: () => readonly ViewTab[]
+    list: (sessionId: SessionId) => readonly ViewTab[]
     subscribe: (fn: () => void) => () => void
     version: () => number
   }
@@ -733,6 +757,8 @@ export type ConversationSlotProps =
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
+    | 'conversation.page.utilities'
+    | 'conversation.input.accessory'
   >
   & InjectFace<ConversationInjected>
   & PropsLocale<'conversation'>

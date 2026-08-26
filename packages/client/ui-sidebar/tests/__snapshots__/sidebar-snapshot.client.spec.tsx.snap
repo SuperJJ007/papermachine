@@ -60,6 +60,15 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         xmlns="http://www.w3.org/2000/svg"
       />
     </button>
+    <nav
+      aria-label="Project navigation"
+      class="destinations"
+    >
+      <div
+        data-slot="sidebar.destinations"
+        style="display: contents;"
+      />
+    </nav>
     <div
       class="regionArea"
     >
@@ -186,6 +195,15 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         New Session
       </span>
     </button>
+    <nav
+      aria-label="Project navigation"
+      class="destinations"
+    >
+      <div
+        data-slot="sidebar.destinations"
+        style="display: contents;"
+      />
+    </nav>
     <div
       class="regionArea"
     >
@@ -312,6 +330,15 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         新会话
       </span>
     </button>
+    <nav
+      aria-label="项目导航"
+      class="destinations"
+    >
+      <div
+        data-slot="sidebar.destinations"
+        style="display: contents;"
+      />
+    </nav>
     <div
       class="regionArea"
     >

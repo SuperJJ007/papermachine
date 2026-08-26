@@ -6,16 +6,33 @@
  * collection).
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionAttachmentIndex, { SessionAttachmentIndexError } from '../src/index.ts'
 
+// The extractor-required paths fire only for a KNOWN event type outside the
+// static policy lists. No production domain registers an extractor today, so
+// the test key joins the known set for this suite's lifetime.
+beforeAll(() => { (KNOWN_SESSION_EVENT_TYPES as Set<string>).add('test/media-saved') })
+afterAll(() => { (KNOWN_SESSION_EVENT_TYPES as Set<string>).delete('test/media-saved') })
+
+// Test-owned extractor-required event type: no production domain registers an
+// attachment extractor any more, so the registration surface is exercised
+// against a locally merged event type instead of a real domain's.
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /** Test-only media event carrying one optional attachment reference. */
+    'test/media-saved': { readonly media?: { readonly attachment?: ImageAttachmentRef } }
+  }
+}
+
 declare module '@deepseek-ai/dsh-session-attachment-index/types' {
   interface SessionAttachmentExtractorMap {
-    'science/artifact-saved': true
+    'test/media-saved': true
   }
 }
 
@@ -40,12 +57,12 @@ function userMessageEvent(id: string): SessionEvent {
   } as unknown as SessionEvent
 }
 
-function artifactSavedEvent(id: string | undefined): SessionEvent {
+function mediaSavedEvent(id: string | undefined): SessionEvent {
   return {
-    type: 'science/artifact-saved',
+    type: 'test/media-saved',
     seq: 2,
     time: 1,
-    data: id === undefined ? {} : { artifact: { attachment: ref(id) } },
+    data: id === undefined ? {} : { media: { attachment: ref(id) } },
   } as unknown as SessionEvent
 }
 
@@ -76,9 +93,9 @@ describe('SessionAttachmentIndex', () => {
 
   it('fails loud for a known extractor-required type with no live registration', async () => {
     const ctx = await harness()
-    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:a'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:a'))).toThrow(SessionAttachmentIndexError)
     try {
-      ctx.sessionAttachments.extract(artifactSavedEvent('sha256:a'))
+      ctx.sessionAttachments.extract(mediaSavedEvent('sha256:a'))
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(SessionAttachmentIndexError)
@@ -88,49 +105,49 @@ describe('SessionAttachmentIndex', () => {
 
   it('delegates to a live registered extractor for its exact event type', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
-      const artifact = (event.data as { artifact?: { attachment?: ImageAttachmentRef } }).artifact
-      if (artifact?.attachment === undefined) throw new Error('malformed artifact-saved event')
-      return [artifact.attachment]
+    ctx.sessionAttachments.register('test/media-saved', (event) => {
+      const media = (event.data as { media?: { attachment?: ImageAttachmentRef } }).media
+      if (media?.attachment === undefined) throw new Error('malformed media-saved event')
+      return [media.attachment]
     })
-    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:b')).map(r => String(r.attachmentId)))
+    expect(ctx.sessionAttachments.extract(mediaSavedEvent('sha256:b')).map(r => String(r.attachmentId)))
       .toEqual(['sha256:b'])
   })
 
   it('propagates a registered extractor throwing on malformed data rather than degrading to empty', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
-      const artifact = (event.data as { artifact?: { attachment?: ImageAttachmentRef } }).artifact
-      if (artifact?.attachment === undefined) throw new Error('malformed artifact-saved event')
-      return [artifact.attachment]
+    ctx.sessionAttachments.register('test/media-saved', (event) => {
+      const media = (event.data as { media?: { attachment?: ImageAttachmentRef } }).media
+      if (media?.attachment === undefined) throw new Error('malformed media-saved event')
+      return [media.attachment]
     })
-    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent(undefined))).toThrow('malformed artifact-saved event')
+    expect(() => ctx.sessionAttachments.extract(mediaSavedEvent(undefined))).toThrow('malformed media-saved event')
   })
 
   it('removes a registration through its own returned disposer', async () => {
     const ctx = await harness()
-    const unregister = ctx.sessionAttachments.register('science/artifact-saved', event =>
-      [(event.data as { artifact: { attachment: ImageAttachmentRef } }).artifact.attachment])
-    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c')).length).toBe(1)
+    const unregister = ctx.sessionAttachments.register('test/media-saved', event =>
+      [(event.data as { media: { attachment: ImageAttachmentRef } }).media.attachment])
+    expect(ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c')).length).toBe(1)
     unregister()
-    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 
   it('removes a registration when its owning fiber is disposed (HMR safety)', async () => {
     const ctx = await harness()
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      inner.sessionAttachments.register('science/artifact-saved', event =>
-        [(event.data as { artifact: { attachment: ImageAttachmentRef } }).artifact.attachment])
+      inner.sessionAttachments.register('test/media-saved', event =>
+        [(event.data as { media: { attachment: ImageAttachmentRef } }).media.attachment])
     }, { inject: ['sessionAttachments'] }))
-    expect(ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c')).length).toBe(1)
+    expect(ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c')).length).toBe(1)
     await fiber.dispose()
-    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 
   it('rejects a second live registration for the same key', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/artifact-saved', () => [])
-    expect(() => ctx.sessionAttachments.register('science/artifact-saved', () => []))
+    ctx.sessionAttachments.register('test/media-saved', () => [])
+    expect(() => ctx.sessionAttachments.register('test/media-saved', () => []))
       .toThrow(/already registered/)
   })
 
@@ -164,13 +181,13 @@ describe('SessionAttachmentIndex', () => {
 
   it('finds and collects text references, filtering out image references extracted from the same event stream', async () => {
     const ctx = await harness()
-    ctx.sessionAttachments.register('science/artifact-saved', (event) => {
+    ctx.sessionAttachments.register('test/media-saved', (event) => {
       const id = (event.data as { id?: string }).id
       if (id === undefined) throw new Error('malformed mixed-media event')
       return [ref(`sha256:image-${id}`), textRef(`sha256:text-${id}`)]
     })
     const mixedEvent = (id: string): SessionEvent =>
-      ({ type: 'science/artifact-saved', seq: 2, time: 1, data: { id } } as unknown as SessionEvent)
+      ({ type: 'test/media-saved', seq: 2, time: 1, data: { id } } as unknown as SessionEvent)
     const events = [mixedEvent('a'), mixedEvent('b'), mixedEvent('a')]
 
     expect(ctx.sessionAttachments.findReferencedText(events, 'sha256:text-b')?.mediaType).toBe('text/plain')
@@ -186,13 +203,13 @@ describe('SessionAttachmentIndex', () => {
   it('removes a text-returning registration when its owning fiber is disposed (HMR safety)', async () => {
     const ctx = await harness()
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      inner.sessionAttachments.register('science/artifact-saved', () => [textRef('sha256:d')])
+      inner.sessionAttachments.register('test/media-saved', () => [textRef('sha256:d')])
     }, { inject: ['sessionAttachments'] }))
     expect(ctx.sessionAttachments.findReferencedText(
-      [{ type: 'science/artifact-saved', seq: 2, time: 1, data: {} } as unknown as SessionEvent],
+      [{ type: 'test/media-saved', seq: 2, time: 1, data: {} } as unknown as SessionEvent],
       'sha256:d',
     )?.mediaType).toBe('text/plain')
     await fiber.dispose()
-    expect(() => ctx.sessionAttachments.extract(artifactSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+    expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
   })
 })

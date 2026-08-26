@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-18-attachment-text-family.md
 2026-08-18-attachment-text-family.md: 1081b505a02f9f95e0ef621037de9871c87549a2
-2026-08-18-attachment-text-family.zh.md: f975c1731c175b23cfb321495c3ec12179870f4b
+2026-08-18-attachment-text-family.zh.md: 7056c020e7a6fef720e76965eb2ef336e9ad637e

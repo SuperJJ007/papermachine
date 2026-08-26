@@ -5,6 +5,7 @@
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -14,8 +15,9 @@ import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
+  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
   captureStableAria,
   compareOrRefreshGolden,
@@ -28,6 +30,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const PANEL_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/panel.expected.md', import.meta.url))
+const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/transcript.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-artifact-types-web-e2e'
 const SEED_TITLE = 'Science artifact types'
@@ -41,13 +44,28 @@ const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
+const PROJECT_ID = ScienceProjectId('project-types-1')
+
+/** Deterministic fixture digest: a real sha256 over a fixed label, not a store-verified content hash. */
+function fixtureDigest(label: string): string {
+  return createHash('sha256').update(label).digest('hex')
+}
 
 /** Build one closed Science session: a single `run_python` call whose auto-capture produced csv/json/md/png artifacts. */
 function scienceFixture(
   csv: TextAttachmentRef, json: TextAttachmentRef, markdown: TextAttachmentRef, png: ImageAttachmentRef,
 ): string {
   const session = Session.create(SessionId('science-browser-types-source'))
-  const origin = new Date().setHours(12, 0, 0, 0)
+  // `seedSession` materializes each event's envelope time as this fixture's
+  // own creation-time anchor plus that event's delta from the fixture's
+  // first event (see scaffold.ts) — a wall-clock noon origin lands after
+  // that anchor whenever the suite runs before local noon, failing
+  // Science's payload-precedes-event.time invariants (validatedAt,
+  // startedAt, createdAt). Anchoring to `Date.now()` half a second before
+  // `seedSession`'s own anchor keeps every payload timestamp ordered
+  // correctly against both the event it belongs to and the prior fact it
+  // depends on, regardless of time of day.
+  const origin = Date.now() - 60_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
 
   session.append('turn/start', { turn: 1 })
@@ -132,25 +150,29 @@ function scienceFixture(
 
   const artifact = (
     artifactId: ReturnType<typeof ScienceArtifactId>, logicalName: string,
-    attachment: TextAttachmentRef | ImageAttachmentRef,
+    mediaType: ScienceArtifactMediaType, source: TextAttachmentRef | ImageAttachmentRef,
   ) => {
     const createdAt = eventTime(runCall.seq + 3)
+    const versionId = ScienceVersionId(fixtureDigest(`${logicalName}:version`))
+    const sha256 = fixtureDigest(logicalName)
+    const byteCount = source.bytes
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
-        artifactId, logicalName, version: 1, title: logicalName, origin: 'auto', attachment,
+        artifactId, logicalName, version: 1, title: logicalName, origin: 'auto',
+        projectId: PROJECT_ID, versionId, sha256, mediaType, byteCount,
         runId: RUN_ID, toolCallId: RUN_CALL_ID, requestHeaderSeq: request.seq,
         environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt,
       },
     })
-    return { artifactId, logicalName, version: 1, title: logicalName, attachment }
+    return { artifactId, logicalName, version: 1, title: logicalName, versionId, mediaType, byteCount }
   }
 
   const items = [
-    artifact(ScienceArtifactId('artifact-csv'), 'summary.csv', csv),
-    artifact(ScienceArtifactId('artifact-json'), 'metrics.json', json),
-    artifact(ScienceArtifactId('artifact-md'), 'report.md', markdown),
-    artifact(ScienceArtifactId('artifact-png'), 'plot.png', png),
+    artifact(ScienceArtifactId('artifact-csv'), 'summary.csv', 'text/csv', csv),
+    artifact(ScienceArtifactId('artifact-json'), 'metrics.json', 'application/json', json),
+    artifact(ScienceArtifactId('artifact-md'), 'report.md', 'text/markdown', markdown),
+    artifact(ScienceArtifactId('artifact-png'), 'plot.png', 'image/png', png),
   ]
 
   session.append('tool/result', {
@@ -163,15 +185,10 @@ function scienceFixture(
     }),
     meta: {
       kind: 'science/artifact',
-      version: 1,
+      version: 2,
       artifacts: items.map(item => ({
         artifactId: item.artifactId, logicalName: item.logicalName, version: item.version, title: item.title,
-        attachment: {
-          attachmentId: item.attachment.attachmentId,
-          mediaType: item.attachment.mediaType,
-          bytes: item.attachment.bytes,
-          ...'width' in item.attachment ? { width: item.attachment.width, height: item.attachment.height } : {},
-        },
+        content: { versionId: item.versionId, mediaType: item.mediaType, byteCount: item.byteCount },
       })),
     },
   }, { surfaceOp: 'append', sourceEventSeqs: [runCall.seq] })
@@ -226,15 +243,24 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await scaffold?.close()
   })
 
-  it('renders a sortable CSV table, a JSON tree, rendered Markdown, and the existing image path, all reached from the run\'s reference chips', async () => {
+  it('renders each media type from the Turn-end artifact group', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-types'))
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
 
-    await centerCol.getByText('Captured 4 artifacts', { exact: false }).waitFor({ timeout: 15_000 })
+    await centerCol.getByText('Files produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await centerCol.getByText('Captured 4 artifacts', { exact: false }).count()).toBe(0)
+    await compareOrRefreshGolden(
+      TRANSCRIPT_EXPECTED,
+      [
+        '## Center column — collapsed Science transcript cells and Turn-end artifacts',
+        await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+      ].join('\n'),
+      MODE,
+    )
 
-    // Each reference chip opens its artifact's tab directly in the content view.
-    await centerCol.getByRole('button', { name: /summary\.csv/ }).click()
+    // Each Turn-end card opens its artifact's tab directly in the content view.
+    await centerCol.getByRole('listitem', { name: /summary\.csv/ }).click()
     const table = detailsPanel.getByRole('table', { name: 'summary.csv' })
     await table.waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByRole('columnheader', { name: /name/i }).count()).toBe(1)
@@ -247,15 +273,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     const rowsAscending = await table.locator('tbody tr').allInnerTexts()
     expect(rowsAscending[0]).toContain('bob')
 
-    await centerCol.getByRole('button', { name: /metrics\.json/ }).click()
+    await centerCol.getByRole('listitem', { name: /metrics\.json/ }).click()
     await detailsPanel.getByRole('tree').waitFor({ timeout: 10_000 })
     expect(await detailsPanel.innerText()).toContain('accuracy')
 
-    await centerCol.getByRole('button', { name: /report\.md/ }).click()
+    await centerCol.getByRole('listitem', { name: /report\.md/ }).click()
     await detailsPanel.getByRole('heading', { name: 'Result' }).waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('converged', { exact: false }).count()).toBeGreaterThan(0)
 
-    await centerCol.getByRole('button', { name: /plot\.png/ }).click()
+    await centerCol.getByRole('listitem', { name: /plot\.png/ }).click()
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
     // All four tabs stayed open across the chip clicks above.

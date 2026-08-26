@@ -13,6 +13,7 @@ describe('artifactExtensionLabel', () => {
   it.each([
     ['text/csv', 'CSV'],
     ['application/json', 'JSON'],
+    ['application/vnd.vega-lite+json', 'VL'],
     ['text/markdown', 'MD'],
     ['text/plain', 'TXT'],
   ])('labels %s as %s', (mediaType, label) => {
@@ -29,9 +30,15 @@ describe('artifactExtensionLabel', () => {
 })
 
 describe('ArtifactFileTile', () => {
-  it('renders the extension label and stays hidden from the accessibility tree', () => {
-    const view = render(<ArtifactFileTile mediaType="text/csv" />)
-    expect(view.container.textContent).toBe('CSV')
+  it.each([
+    ['application/vnd.vega-lite+json', 'chart', 'VL'],
+    ['text/csv', 'table', 'CSV'],
+    ['application/json', 'json', 'JSON'],
+    ['text/markdown', 'document', 'MD'],
+  ])('renders the %s icon and stays hidden from the accessibility tree', (mediaType, kind, label) => {
+    const view = render(<ArtifactFileTile mediaType={mediaType} />)
+    expect(view.container.textContent).toBe(label)
+    expect(view.container.firstElementChild?.getAttribute('data-kind')).toBe(kind)
     expect(view.container.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })
 })

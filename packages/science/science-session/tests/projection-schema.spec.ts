@@ -31,7 +31,24 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     if (currentRun.status !== 'success') throw new Error('fixture run is not successful')
     const currentChart = state.artifacts[0]!
-    const { name: _attachmentName, ...attachmentWithoutName } = currentChart.attachment
+    if (currentChart.origin === 'human-edit') throw new Error('fixture chart must be run-produced')
+    const {
+      runId: _chartRunId,
+      toolCallId: _chartToolCallId,
+      requestHeaderSeq: _chartRequestHeaderSeq,
+      ...humanChartBase
+    } = currentChart
+    const humanChart = {
+      ...humanChartBase,
+      version: 2,
+      parent: { artifactId: currentChart.artifactId, version: 1 },
+      origin: 'human-edit' as const,
+      versionId: 'version-human',
+      sha256: '8'.repeat(64),
+      mediaType: 'application/vnd.vega-lite+json' as const,
+      byteCount: 64,
+      createdAt: currentChart.createdAt + 1,
+    }
     const rRunningState = {
       ...runningState,
       environment: {
@@ -43,6 +60,7 @@ describe('Science projection wire schema', () => {
     const secondChart = {
       ...state.artifacts[0]!,
       version: 2,
+      versionId: 'version-second',
       createdAt: 179,
     }
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
@@ -85,7 +103,6 @@ describe('Science projection wire schema', () => {
         artifacts: [{
           ...currentChart,
           caption: 'Visible caption',
-          attachment: attachmentWithoutName,
         }],
       },
       {
@@ -95,9 +112,23 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
+        artifacts: [state.artifacts[0], humanChart],
+        metrics: { ...state.metrics, artifactVersionCount: 2 },
+      },
+      {
+        ...state,
         artifacts: [{
           ...currentChart,
-          attachment: { attachmentId: currentChart.attachment.attachmentId, mediaType: 'text/csv', bytes: 32, name: 'summary.csv' },
+          mediaType: 'text/csv',
+          byteCount: 32,
+        }],
+      },
+      {
+        ...state,
+        artifacts: [{
+          ...currentChart,
+          mediaType: 'application/vnd.vega-lite+json',
+          byteCount: 64,
         }],
       },
       {
@@ -157,6 +188,24 @@ describe('Science projection wire schema', () => {
     const { python: _python, ...environmentWithoutPython } = currentEnvironment
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
+    if (currentChart.origin === 'human-edit') throw new Error('fixture chart must be run-produced')
+    const {
+      runId: _chartRunId,
+      toolCallId: _chartToolCallId,
+      requestHeaderSeq: _chartRequestHeaderSeq,
+      ...humanChartBase
+    } = currentChart
+    const humanChart = {
+      ...humanChartBase,
+      version: 2,
+      parent: { artifactId: currentChart.artifactId, version: 1 },
+      origin: 'human-edit',
+      versionId: 'version-human',
+      sha256: '8'.repeat(64),
+      mediaType: 'application/vnd.vega-lite+json',
+      byteCount: 64,
+      createdAt: currentChart.createdAt + 1,
+    }
     const interruptedRun = interruptedState.runs[0]!
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
     // (open): exit it, then start a fresh epoch 2, whose still-open record
@@ -236,8 +285,13 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: {} },
       { ...state, artifacts: [null] },
       { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
-      { ...state, artifacts: [{ ...currentChart, attachment: null }] },
-      { ...state, artifacts: [{ ...state.artifacts[0], attachment: { mediaType: 'text/plain' } }] },
+      { ...state, artifacts: [{ ...currentChart, versionId: 1 }] },
+      { ...state, artifacts: [{ ...currentChart, sha256: 'short' }] },
+      { ...state, artifacts: [{ ...currentChart, mediaType: 'application/zip' }] },
+      { ...state, artifacts: [{ ...currentChart, byteCount: 0 }] },
+      { ...state, artifacts: [{ ...humanChart, parent: undefined }] },
+      { ...state, artifacts: [{ ...humanChart, runId: currentRun.runId }] },
+      { ...state, artifacts: [{ ...humanChart, mediaType: 'text/plain' }] },
       { ...kernelState, kernels: {} },
       { ...kernelState, kernels: [null] },
       { ...kernelState, kernels: [{}] },

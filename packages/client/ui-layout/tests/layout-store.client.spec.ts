@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import {
-  DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
+  DETAILS_MAX, DETAILS_MIN,
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
@@ -77,7 +77,7 @@ describe('createLayoutStore', () => {
   it('openDetails uses the contract default, preserves an open width, and closeDetails zeroes', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
-    expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
+    expect(store.getSnapshot().details).toBe('default')
     actions.setDetails(500)
     actions.openDetails()
     expect(store.getSnapshot().details).toBe(500)

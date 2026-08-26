@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
+import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionPlugin from '@deepseek-ai/dsh-science-session'
@@ -48,7 +48,7 @@ function baseModules(): Map<string, unknown> {
     ['@deepseek-ai/dsh-science-session/invariant', ScienceSessionInvariant],
     ['@deepseek-ai/dsh-science-runtime/test-subprocess', ControlledSubprocess],
     ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
-    ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
+    ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
     ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
     ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ])
@@ -107,7 +107,7 @@ async function loadRuntime(): Promise<Context> {
     '  config:',
     `    runnerCommand: [${quote(runner)}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
-    "- name: '@deepseek-ai/dsh-attachment-local'",
+    "- name: '@deepseek-ai/dsh-science-artifact-store'",
     '  config:',
     `    dshHome: ${quote(dshHome)}`,
     "- name: '@deepseek-ai/dsh-science-runtime'",
@@ -152,7 +152,7 @@ async function loadSettingsRestartRuntime(
     '  config:',
     `    runnerCommand: [${quote(runner)}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
-    "- name: '@deepseek-ai/dsh-attachment-local'",
+    "- name: '@deepseek-ai/dsh-science-artifact-store'",
     '  config:',
     `    dshHome: ${quote(dshHome)}`,
     "- name: '@deepseek-ai/dsh-settings-file'",
@@ -183,7 +183,7 @@ describe('Science Runtime real Loader composition', () => {
     expect(loaded.subprocess).toBeInstanceOf(ControlledSubprocess)
     expect(loaded.sandbox).toBeInstanceOf(LocalSandboxProvider)
     expect(loaded.scienceRuntime).toBeInstanceOf(ScienceRuntime)
-    const session = loaded.sessions.create(SessionId('science-loader-composed'), { meta: { agentPreset: 'science' } })
+    const session = loaded.sessions.create(SessionId('science-loader-composed'), { meta: { agentPreset: 'science', cwd: root! } })
     session.append('science/mode-bound', {
       version: 1,
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-loader-test' },

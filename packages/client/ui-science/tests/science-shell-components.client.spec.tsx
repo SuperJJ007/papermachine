@@ -1,0 +1,169 @@
+// @vitest-environment jsdom
+/** Science workbench shell components and composer selection behavior. */
+
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
+import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
+import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
+import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
+import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
+import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
+import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
+import { en } from '../src/client/locales.ts'
+
+const SESSION = 'session-1' as SessionId
+const t = makeTranslate(en)
+
+afterEach(cleanup)
+
+function sessionState(current: SessionId | undefined): SessionListState {
+  return {
+    ids: current === undefined ? [] : [current],
+    byId: current === undefined ? {} : {
+      [current]: { id: current, displayTitle: 'Session', running: false, blank: false, updatedAt: 1, agentPreset: 'science' },
+    },
+    current,
+    phase: 'ready',
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  }
+}
+
+describe('ScienceDestinations', () => {
+  it('renders the Files destination and opens it for the current Session', () => {
+    const openScience = vi.fn()
+    render(<ScienceDestinations {...({
+      wide: true,
+      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(SESSION))),
+      openScience,
+      t,
+    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
+    expect(screen.queryByRole('button', { name: 'Sessions' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }))
+    expect(screen.queryByRole('button', { name: 'Outcomes' })).toBeNull()
+    expect(openScience).toHaveBeenCalledWith(SESSION)
+  })
+
+  it('renders no Science destinations without a current Science Session', () => {
+    const openScience = vi.fn()
+    render(<ScienceDestinations {...({
+      wide: false,
+      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(undefined))),
+      openScience,
+      t,
+    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
+    expect(screen.queryByRole('button', { name: 'Files' })).toBeNull()
+    expect(openScience).not.toHaveBeenCalled()
+  })
+
+  it('renders compact rail destinations with localized titles', () => {
+    render(<ScienceDestinations {...({
+      wide: false,
+      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(SESSION))),
+      openScience: vi.fn(),
+      t,
+    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
+    expect(screen.getByRole('button', { name: 'Files' }).getAttribute('title')).toBe('Files')
+    expect(screen.queryByText('Files')).toBeNull()
+  })
+})
+
+describe('ScienceEmptyDetails', () => {
+  it('explains the empty project and closes through the owner action', () => {
+    const closeDetails = vi.fn()
+    render(<ScienceEmptyDetails {...({ closeDetails, t } as unknown as Parameters<typeof ScienceEmptyDetails>[0])} />)
+    expect(screen.getByText(en['details.artifacts.chooseSession'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
+    expect(closeDetails).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ScienceGlobalToggle', () => {
+  it('renders the Files button unconditionally and toggles the shared Details column', () => {
+    const toggleDetails = vi.fn()
+    render(<ScienceGlobalToggle {...({ toggleDetails, t } as unknown as Parameters<typeof ScienceGlobalToggle>[0])} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Science details' }))
+    expect(toggleDetails).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ScienceKernelStatus', () => {
+  function view(projection: ScienceClientProjection | null | undefined) {
+    return render(<ScienceKernelStatus {...({
+      useProjection: () => projection,
+      t,
+    } as unknown as Parameters<typeof ScienceKernelStatus>[0])} />)
+  }
+
+  it('renders nothing for unsupported, unbound, or kernel-free projections', () => {
+    expect(view(undefined).container.firstChild).toBeNull()
+    cleanup()
+    expect(view(null).container.firstChild).toBeNull()
+    cleanup()
+    expect(view({ kernels: [] } as unknown as ScienceClientProjection).container.firstChild).toBeNull()
+  })
+
+  it('shows only each language latest lifecycle state', () => {
+    view({ kernels: [
+      { language: 'python', kernelEpoch: 1, state: 'started' },
+      { language: 'python', kernelEpoch: 2, state: 'exited' },
+      { language: 'r', kernelEpoch: 1, state: 'interrupted' },
+    ] } as unknown as ScienceClientProjection)
+    expect(screen.queryByText(/python · epoch 1/)).toBeNull()
+    expect(screen.getByText('python · epoch 2 · exited')).toBeTruthy()
+    expect(screen.getByText('r · epoch 1 · interrupted')).toBeTruthy()
+    cleanup()
+    view({ kernels: [{ language: 'python', kernelEpoch: 3, state: 'started' }] } as unknown as ScienceClientProjection)
+    expect(screen.getByText('python · epoch 3 · live')).toBeTruthy()
+  })
+})
+
+describe('Science composer targets', () => {
+  const spec: ScienceEditSelection = {
+    artifactId: ScienceArtifactId('chart-1'), version: 1,
+    target: { kind: 'spec-path', path: 'encoding.y' },
+  }
+  const commented: ScienceEditSelection = { ...spec, comment: 'make it blue' }
+  const region: ScienceEditSelection = {
+    artifactId: ScienceArtifactId('image-1'), version: 2,
+    target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+  }
+
+  it('renders nothing when empty and removes both structural and region chips', () => {
+    const selections = createSnapshotStore<readonly ScienceEditSelection[]>([])
+    const remove = vi.fn()
+    const view = render(<ScienceComposerChips selections={selections} remove={remove} t={t} />)
+    expect(view.container.firstChild).toBeNull()
+    act(() => { selections.set([commented, region]) })
+    expect(screen.getByText('chart-1 v1 · encoding.y: make it blue')).toBeTruthy()
+    expect(screen.getByText('image-1 v2 · region 10%,20%')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · encoding.y: make it blue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image-1 v2 · region 10%,20%' }))
+    expect(remove.mock.calls).toEqual([[0], [1]])
+  })
+
+  it('deduplicates exact selections, preserves distinct versions and targets, removes, and clears per Session', () => {
+    const selections = new ScienceComposerSelections()
+    expect(selections.store(SESSION)).toBe(selections.store(SESSION))
+    selections.add(SESSION, [spec, spec])
+    selections.add(SESSION, [
+      { ...spec, version: 2 },
+      { ...spec, artifactId: ScienceArtifactId('chart-2') },
+      { ...spec, target: { kind: 'spec-path', path: 'mark' } },
+    ])
+    expect(selections.store(SESSION).getSnapshot()).toHaveLength(4)
+    selections.removeSelection(SESSION, { ...spec, target: { kind: 'spec-path', path: 'mark' } })
+    expect(selections.store(SESSION).getSnapshot()).toHaveLength(3)
+    selections.remove(SESSION, 1)
+    expect(selections.store(SESSION).getSnapshot()).toHaveLength(2)
+    selections.clear(SESSION)
+    expect(selections.store(SESSION).getSnapshot()).toEqual([])
+  })
+})

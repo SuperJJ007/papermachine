@@ -755,9 +755,7 @@ describe('Science auto-capture', () => {
           projectId: 'capture-test-project', storeRoot: workspacePath, workspacePath, outcome: 'created',
         }),
         listArtifacts: async () => [],
-        // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.
         createArtifact: async () => { throw failure },
-        // oxlint-disable-next-line no-throw-literal -- the injected failure may deliberately be a non-Error value.
         appendVersion: async () => { throw failure },
         readBlob: async () => { throw new Error('unexpected readBlob call') },
       } as never)

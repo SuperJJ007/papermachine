@@ -9,6 +9,7 @@ import { ScienceTurnArtifacts } from '../src/client/ScienceTurnArtifacts.tsx'
 import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from '../src/client/science-turn-artifacts.ts'
 import type { ScienceTurnArtifactsProps } from '../src/client/ScienceTurnArtifacts.tsx'
 import { zh } from '../src/client/locales.ts'
+import type { ScienceImageLoader } from '../src/client/science-attachment-loader.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
 const reader: Parameters<typeof scienceTurnArtifactsDefinition.start>[2] = { previous: () => undefined }
@@ -55,13 +56,14 @@ describe('scienceTurnArtifactsDefinition', () => {
   })
 
   it('claims turn/start and an appended tool/result, and declines every other event', () => {
-    const { match } = scienceTurnArtifactsDefinition
-    expect(match({ type: 'turn/start', data: { turn: 4 } } as never)).toEqual({ id: '4', role: 'start' })
-    expect(match({ type: 'tool/result', surfaceOp: 'append', data: { turn: 4 } } as never))
+    expect(scienceTurnArtifactsDefinition.match({ type: 'turn/start', data: { turn: 4 } } as never))
+      .toEqual({ id: '4', role: 'start' })
+    expect(scienceTurnArtifactsDefinition.match({ type: 'tool/result', surfaceOp: 'append', data: { turn: 4 } } as never))
       .toEqual({ id: '4', role: 'update' })
-    expect(match({ type: 'tool/result', surfaceOp: { op: 'replace', start: 1, end: 1 }, data: { turn: 4 } } as never))
-      .toBeNull()
-    expect(match({ type: 'turn/end', data: { turn: 4 } } as never)).toBeNull()
+    expect(scienceTurnArtifactsDefinition.match(
+      { type: 'tool/result', surfaceOp: { op: 'replace', start: 1, end: 1 }, data: { turn: 4 } } as never,
+    )).toBeNull()
+    expect(scienceTurnArtifactsDefinition.match({ type: 'turn/end', data: { turn: 4 } } as never)).toBeNull()
   })
 
   it('leaves state untouched for every malformed presentation shape', () => {
@@ -95,12 +97,11 @@ describe('scienceTurnArtifactsDefinition', () => {
   })
 
   it('publishes Turn Location data only inside the turn scope, and only once state exists', () => {
-    const { buildLocationData } = scienceTurnArtifactsDefinition
-    if (buildLocationData === undefined) throw new Error('expected buildLocationData')
+    if (scienceTurnArtifactsDefinition.buildLocationData === undefined) throw new Error('expected buildLocationData')
     const state = { turn: 4, artifacts: [v1] }
-    expect(buildLocationData({ state } as never, 'step')).toBeNull()
-    expect(buildLocationData({ state: undefined } as never, 'turn')).toBeNull()
-    expect(buildLocationData({ state } as never, 'turn')).toEqual({
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'step')).toBeNull()
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state: undefined } as never, 'turn')).toBeNull()
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'turn')).toEqual({
       kind: 'turn', turn: 4, key: 'science-turn-artifacts', value: { artifacts: [v1] },
     })
   })
@@ -139,7 +140,7 @@ describe('ScienceTurnArtifacts', () => {
     const store = testScienceSelectionStore()
     const chart = { artifactId: 'a-3', logicalName: 'plot.png', version: 1, title: 'Plot',
       content: { versionId: 'version-d', mediaType: 'image/png', byteCount: 30 } }
-    const loadImage = vi.fn().mockResolvedValue('blob:fake-url')
+    const loadImage = vi.fn<ScienceImageLoader>().mockResolvedValue('blob:fake-url')
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,
       loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1',
@@ -153,7 +154,7 @@ describe('ScienceTurnArtifacts', () => {
     const store = testScienceSelectionStore()
     const chart = { artifactId: 'a-4', logicalName: 'plot2.png', version: 1, title: 'Plot 2',
       content: { versionId: 'version-e', mediaType: 'image/png', byteCount: 30 } }
-    const loadImage = vi.fn().mockRejectedValue(new Error('load failed'))
+    const loadImage = vi.fn<ScienceImageLoader>().mockRejectedValue(new Error('load failed'))
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,
       loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1',
@@ -161,7 +162,9 @@ describe('ScienceTurnArtifacts', () => {
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
     // The component's own .catch() is chained onto this same promise ahead of
     // ours, so once ours settles the fallback tile has already been kept.
-    await loadImage.mock.results[0]?.value.catch(() => {})
+    const loadImageResult = loadImage.mock.results[0]
+    if (loadImageResult?.type !== 'return') throw new Error('expected loadImage to return a rejected promise')
+    await loadImageResult.value.catch(() => {})
     expect(view.container.querySelector('img')).toBeNull()
   })
 })

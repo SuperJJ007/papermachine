@@ -28,6 +28,7 @@ export const BUILT_IN_CARRIER_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent/inbox/spliced',
   'assistant/chunk',
   'assistant/message',
+  'team/message/queued',
   'tool/result',
   'user/message',
 ])
@@ -51,6 +52,11 @@ export const BUILT_IN_CARRIER_EVENT_TYPES: ReadonlySet<string> = new Set([
  * consequence would be a broken image plus an omission from Session ZIP
  * export, with no test turning red.
  */
+// This list is, by design, most of the generated KNOWN_SESSION_EVENT_TYPES
+// (packages/core/session/src/known-event-types.ts) minus the small built-in-
+// carrier and extractor-required subsets — a hand-maintained closed subset of
+// an exhaustive generated list necessarily reads as a near-duplicate of it.
+/* jscpd:ignore-start */
 export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent-preset/selected',
   'approval/asked',
@@ -74,6 +80,8 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'request/header',
   'sandbox/mode',
   'schedule/change',
+  'science/artifact-note-added',
+  'science/artifact-note-removed',
   'science/artifact-saved',
   'science/environment-bound',
   'science/kernel-state',
@@ -87,6 +95,9 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'step/end',
   'step/start',
   'subagent/descriptor',
+  'team/member',
+  'team/message/delivered',
+  'team/task',
   'todo/write',
   'tool-workflow/agent-end',
   'tool-workflow/agent-start',
@@ -99,6 +110,7 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn/start',
   'web/deepseek-search-llm-request',
 ])
+/* jscpd:ignore-end */
 
 /**
  * Static classification for one event type, or `undefined` when the type is

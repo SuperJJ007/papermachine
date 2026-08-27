@@ -136,6 +136,10 @@ describe('terminal card assembly', () => {
       bashResult(4, 'c-fallback', { call: { name: 'fx-bash', argsRaw: '{"command":"ls -la"}' } }),
     ])
     const view = runtime.renderRoot()
+    // Two adjacent tool-call rows fold into one Tool group, collapsed by
+    // default (CS-TURN-RENDERING-SPEC.md §2/3): open it before a member row
+    // can be found in the DOM.
+    fireEvent.click(view.container.querySelector('[data-tool-group] button')!)
 
     // Keyed BashRow: collapsed by default, the whole summary row is the toggle.
     const keyedRow = view.container.querySelector('[data-sample="bash"]')

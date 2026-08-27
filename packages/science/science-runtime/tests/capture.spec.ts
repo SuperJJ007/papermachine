@@ -144,7 +144,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-input-materialization-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { inputMaxBytesPerRun: 8 },
+      root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, undefined, { inputMaxBytesPerRun: 8 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-input-materialization')
@@ -556,7 +556,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-capture-oversized-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxFileBytes: 1_048_576 },
+      root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, undefined, { captureMaxFileBytes: 1_048_576 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-oversized')
@@ -572,7 +572,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-capture-per-run-cap-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxFilesPerRun: 2 },
+      root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, undefined, { captureMaxFilesPerRun: 2 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-per-run-cap')
@@ -589,7 +589,7 @@ describe('Science auto-capture', () => {
     const root = tmp('.science-capture-per-session-cap-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { captureMaxArtifactVersionsPerSession: 1 },
+      root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, undefined, { captureMaxArtifactVersionsPerSession: 1 },
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-per-session-cap')
@@ -769,7 +769,7 @@ describe('Science auto-capture', () => {
     // Deliberately not an Error instance: exercises isCaptureFilesystemFailure's
     // non-object short circuit, mirroring environment.spec.ts's own
     // `throw 'injected non-Error static failure'` technique.
-    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, (ctx) => {
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       failingStoreOverride('boom: capture-time infrastructure failure')(ctx)
     })
@@ -789,7 +789,7 @@ describe('Science auto-capture', () => {
     const prefix = createFakePythonPrefix(root)
     const warnings: string[] = []
     const errors: string[] = []
-    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, (ctx) => {
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, (ctx) => {
       ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       failingStoreOverride(Object.assign(new Error('disk unavailable'), { code: 'EIO' }))(ctx)

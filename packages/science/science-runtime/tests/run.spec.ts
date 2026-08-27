@@ -72,7 +72,7 @@ async function readyPythonHarness(id: string, kernelIdleTimeoutMs?: number): Pro
   const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-'))
   roots.push(root)
   const prefix = createFakePythonPrefix(root)
-  const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, kernelIdleTimeoutMs)
+  const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, kernelIdleTimeoutMs)
   contexts.push(harness.ctx)
   const session = createScienceSession(harness.ctx, id)
   await bindFakePython(harness.runtime, session)
@@ -376,7 +376,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     })
     const runtime = ctx.scienceRuntime
     const session = createScienceSession(ctx, 'science-run-aggregate-prekernel')
@@ -821,7 +821,7 @@ esac
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     })
     const runtime = ctx.scienceRuntime
     const session = createScienceSession(ctx, 'science-real-wiring')

@@ -301,8 +301,11 @@ describe('SessionProjectionCache cold read', () => {
     const snapshot = await cache.coldSnapshot(SessionId('malformed'))
 
     expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
-    expect(persistence.readFrom).toHaveBeenNthCalledWith(1, SessionId('malformed'), 1, undefined)
-    expect(persistence.readFrom).toHaveBeenNthCalledWith(2, SessionId('malformed'), 0, undefined)
+    // stateSchema admission (the registry's checkpointStateSchema fallback)
+    // catches the malformed row at the floor stage, like the version
+    // mismatch above: one full read from 0, no second pass needed.
+    expect(persistence.readFrom).toHaveBeenCalledTimes(1)
+    expect(persistence.readFrom).toHaveBeenCalledWith(SessionId('malformed'), 0, undefined)
   })
 
   it('write-back failure is contained: the snapshot is still served', async () => {

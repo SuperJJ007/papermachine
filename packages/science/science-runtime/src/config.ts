@@ -237,6 +237,18 @@ function assertKnownKeys(value: unknown, allowed: readonly string[], label: stri
 }
 
 /**
+ * Require that a value is a valid raster-capture policy. Takes `unknown`
+ * rather than the already-narrow `RasterCapturePolicy` field type so the
+ * comparison below validates a cordis.yml-sourced runtime value that may not
+ * match its static type, instead of a provably exhaustive literal check.
+ */
+function assertRasterCapture(value: unknown): asserts value is RasterCapturePolicy {
+  if (value !== 'declared' && value !== 'always') {
+    throw new Error('science-runtime: rasterCapture must be "declared" or "always"')
+  }
+}
+
+/**
  * Validate runtime-owned profile rules that are not expressible in the Loader schema.
  * An empty map is a valid explicit unconfigured state, not a validation failure —
  * every declared entry still uses the safe-id grammar, requires at least one
@@ -311,10 +323,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || packagesMaxBytes > MAX_PACKAGES_MAX_BYTES) {
     throw new Error(`science-runtime: packagesMaxBytes must be a safe integer from ${String(MIN_PACKAGES_MAX_BYTES)} through ${String(MAX_PACKAGES_MAX_BYTES)}`)
   }
-  const rasterCapture = config.rasterCapture ?? DEFAULT_RASTER_CAPTURE
-  if (rasterCapture !== 'declared' && rasterCapture !== 'always') {
-    throw new Error('science-runtime: rasterCapture must be "declared" or "always"')
-  }
+  const rasterCapture: unknown = config.rasterCapture ?? DEFAULT_RASTER_CAPTURE
+  assertRasterCapture(rasterCapture)
   const captureMaxFileBytes = config.captureMaxFileBytes ?? DEFAULT_CAPTURE_MAX_FILE_BYTES
   if (!Number.isSafeInteger(captureMaxFileBytes)
     || captureMaxFileBytes < MIN_CAPTURE_MAX_FILE_BYTES

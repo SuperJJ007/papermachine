@@ -27,7 +27,12 @@ import type { KernelExecuteRequest, KernelProcessServices } from '../src/kernel-
 import { createKernelScratch, ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { ScienceRuntimeError } from '../src/types.ts'
-import { createFakeSandboxRunner } from './harness.ts'
+import { TEST_KERNEL_START_TIMEOUT_MS, createFakeSandboxRunner } from './harness.ts'
+
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const DRIVER_PATH = join(FIXTURES, 'fake-kernel-driver.mjs')
@@ -206,7 +211,7 @@ function startKernel(
     binding: fakeBinding(language, prefix),
     driverPath: overrides.driverPath ?? DRIVER_PATH,
     index: overrides.index ?? 0,
-    kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? 5_000,
+    kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? TEST_KERNEL_START_TIMEOUT_MS,
   })
 }
 
@@ -310,7 +315,7 @@ describe('KernelProcess', () => {
       binding: fakeBinding('python', overlappingPrefix),
       driverPath: DRIVER_PATH,
       index: 0,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
     })).rejects.toThrow(ScienceRuntimeError)
     // Retry at the SAME index (the same response-FIFO path) with a valid
     // prefix: `mkfifo` must not fail with "File exists" against a FIFO the
@@ -371,7 +376,7 @@ describe('KernelProcess', () => {
     const subprocess = harness.services.subprocess as KernelStdinFaultSubprocess
     subprocess.fault = 'missing'
     await expect(startKernel(harness, 'python')).rejects.toThrow(/stdin pipe/)
-  }, 15_000)
+  }, 30_000)
 
   it('rejects one execute synchronously when the stdin write itself throws, preserving a real Error and wrapping a non-Error alike', async () => {
     const harness = await createHarness('kernel-stdin-write-failure', { subprocess: KernelStdinFaultSubprocess })
@@ -388,7 +393,7 @@ describe('KernelProcess', () => {
       .rejects.toThrow('injected non-error stdin write failure')
     subprocess.writeError = undefined
     await kernel.end('test-teardown')
-  }, 15_000)
+  }, 30_000)
 
   it('rejects an R kernel whose scratch TMPDIR would contain an ASCII space', async () => {
     const harness = await createHarness('kernel-r-space', { rootPrefix: '.science runtime-kernel-r-space-' })
@@ -514,7 +519,7 @@ describe('KernelProcess', () => {
     await expect(kernel.execute(await prepareRun(harness.root, 'run-close-fifo', { action: 'close-fifo' })))
       .rejects.toThrow(KernelProtocolError)
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
-  }, 10_000)
+  }, 30_000)
 
   it('fails an in-flight execute distinctly when the kernel exits uncommanded', async () => {
     const harness = await createHarness('kernel-crash')
@@ -552,7 +557,7 @@ describe('KernelProcess', () => {
     await kernel.end('run-escalation')
     await expect(pending).rejects.toThrow(KernelExitedError)
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
-  }, 15_000)
+  }, 30_000)
 
   it('EXIT teardown removes the FIFO, settles exited with cause commanded, and rejects a later execute as already exited', async () => {
     const harness = await createHarness('kernel-exit-teardown')

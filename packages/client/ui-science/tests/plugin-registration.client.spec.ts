@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import type { TrajectorySubviewRegistry } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { apply, inject } from '../src/client/index.ts'
 import { ScienceAnnotationRow } from '../src/client/ScienceAnnotationRow.tsx'
@@ -116,22 +117,27 @@ function setup(sessionsOverride?: unknown) {
     } }),
     list: { getSnapshot: () => ({ ids: ['s1'], byId: { s1: { agentPreset: 'science' } } }), subscribe: () => () => {} },
   } as never)
-  // conversationCancel is returned as its own plain local below (not read back
-  // via ctx.get(...).cancel) so an assertion against it never trips the
+  // conversationCancel, conversationOpenDetailsView, trajectoryRegisterVisibility,
+  // and trajectorySelect are returned as their own plain locals below (not read
+  // back via ctx.get(...).<method>) so an assertion against one never trips the
   // unbound-method lint rule that a real interface-typed method reference would.
   const conversationCancel = vi.fn(() => Promise.resolve())
+  const conversationOpenDetailsView = vi.fn()
   const conversation = {
-    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: vi.fn(), openView: vi.fn(), openChatAt: vi.fn(),
+    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: conversationOpenDetailsView, openView: vi.fn(), openChatAt: vi.fn(),
     registerTranscriptDetailVisibility: vi.fn(() => () => {}), cancel: conversationCancel,
   }
   ctx.provide('conversation', conversation as never)
   ctx.provide('conversationEvents', { register: vi.fn() } as never)
+  const trajectoryRegisterVisibility = vi.fn<TrajectorySubviewRegistry['registerVisibility']>(() => () => {})
+  const trajectorySelect = vi.fn()
   ctx.provide('trajectorySubviews', {
-    registerVisibility: vi.fn(() => () => {}), select: vi.fn(),
+    registerVisibility: trajectoryRegisterVisibility, select: trajectorySelect,
   } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   return {
-    ctx, slots, scienceEdits, conversation, conversationCancel,
+    ctx, slots, scienceEdits, conversation, conversationCancel, conversationOpenDetailsView,
+    trajectoryRegisterVisibility, trajectorySelect,
     readScienceLibrary, readWorkspaceFiles, readWorkspaceFile,
   }
 }
@@ -187,13 +193,13 @@ describe('ui-science apply', () => {
   })
 
   it('the sidebar destination opens the Files details entry for its addressed session', async () => {
-    const { ctx, slots } = setup()
+    const { ctx, slots, conversationOpenDetailsView } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('sidebar.destinations')[0]
     if (entry?.inject === undefined) throw new Error('expected an injected sidebar destination')
     ;(entry.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
-    expect(must(ctx.get('conversation')).openDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
     await fiber.dispose()
   })
 
@@ -294,16 +300,16 @@ describe('ui-science apply', () => {
   })
 
   it('the swimlane\'s own trajectory.view entry opens the artifact viewer and selects the detailed subview', async () => {
-    const { ctx, slots } = setup()
+    const { ctx, slots, conversationOpenDetailsView, trajectorySelect } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('trajectory.view')[0]
     if (entry?.inject === undefined) throw new Error('expected the injected swimlane entry')
     const injected = (entry.inject as (sessionId: SessionId) => { openArtifact: () => void; selectDetailed: () => void })(SID)
     injected.openArtifact()
-    expect(must(ctx.get('conversation')).openDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
     injected.selectDetailed()
-    expect(must(ctx.get('trajectorySubviews')).select).toHaveBeenCalledWith(SID, 'detailed')
+    expect(trajectorySelect).toHaveBeenCalledWith(SID, 'detailed')
     await fiber.dispose()
   })
 
@@ -366,11 +372,10 @@ describe('ui-science apply', () => {
       byId: { preset: { agentPreset: 'science' }, projected: {}, neither: { agentPreset: 'other' } },
       faces: { projected: makeFace({}) },
     })
-    const { ctx } = setup(sessionsFake.api)
+    const { ctx, trajectoryRegisterVisibility } = setup(sessionsFake.api)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const registerVisibility = must(ctx.get('trajectorySubviews')).registerVisibility as ReturnType<typeof vi.fn>
-    const source = registerVisibility.mock.calls[0]?.[1] as { visible: (id: SessionId) => boolean }
+    const source = trajectoryRegisterVisibility.mock.calls[0]?.[1] as { visible: (id: SessionId) => boolean }
 
     expect(source.visible('preset' as SessionId)).toBe(true)
     expect(source.visible('projected' as SessionId)).toBe(true)
@@ -389,11 +394,10 @@ describe('ui-science apply', () => {
       byId: { bound: {}, unbound: {} },
       faces: { bound: staleFace },
     })
-    const { ctx } = setup(sessionsFake.api)
+    const { ctx, trajectoryRegisterVisibility } = setup(sessionsFake.api)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const registerVisibility = must(ctx.get('trajectorySubviews')).registerVisibility as ReturnType<typeof vi.fn>
-    const source = registerVisibility.mock.calls[0]?.[1] as {
+    const source = trajectoryRegisterVisibility.mock.calls[0]?.[1] as {
       subscribe: (callback: () => void) => () => void
     }
 

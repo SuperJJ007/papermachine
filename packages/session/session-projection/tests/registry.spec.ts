@@ -512,11 +512,18 @@ describe('SessionProjectionRegistry drive', () => {
   })
 
   it('viewChanged explicitly returning true still notifies a reference change', async () => {
+    // Uses a wired unit (marksUnit), not the host-only countUnit above:
+    // onChanged fires only for a client-visible unit's own view (README,
+    // "one call per client-visible unit"), and the notification path reads
+    // `wire.view`/`wire.viewSchema` unconditionally once it decides to fire
+    // — a host-only unit has neither, so viewChanged narrows an
+    // already-wired unit's notification and can never promote a host-only
+    // one into the change feed.
     const { ctx, session } = await harness()
-    ctx.sessionProjections.register({ ...countUnit(), viewChanged: () => true })
+    ctx.sessionProjections.register({ ...marksUnit(), viewChanged: () => true })
     const seen: string[] = []
     ctx.sessionProjections.onChanged((_session, key) => { seen.push(key) })
-    session.append('turn/start', { turn: 1 })
-    expect(seen).toEqual(['test/count'])
+    mark(session, ['a'])
+    expect(seen).toEqual(['test/marks'])
   })
 })

@@ -45,10 +45,10 @@ function setDom(): void {
   `
 }
 
-function requireElement<T extends Element>(selector: string): T {
+function requireElement(selector: string): Element {
   const element = document.querySelector(selector)
   if (element === null) throw new Error(`onboarding spec: missing ${selector}`)
-  return element as T
+  return element
 }
 
 /** Every `<label class="choice">` radio value and its rendered version text, in DOM order, None first. */
@@ -69,7 +69,7 @@ function checkedValue(containerSelector: string): string {
 
 /** Select `value` in a rendered group by dispatching the same `change` event a real click produces. */
 function choose(containerSelector: string, value: string): void {
-  const input = requireElement<HTMLInputElement>(`${containerSelector} input[value="${value}"]`)
+  const input = requireElement(`${containerSelector} input[value="${value}"]`) as HTMLInputElement
   input.checked = true
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
@@ -137,7 +137,7 @@ describe('onboarding renderGroup', () => {
     choose('#python-choices', '/env/b')
     expect(checkedValue('#python-choices')).toBe('/env/b')
 
-    requireElement<HTMLButtonElement>('#redetect').click()
+    ;(requireElement('#redetect') as HTMLButtonElement).click()
     await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
     await vi.waitFor(() => { expect(checkedValue('#python-choices')).toBe('/env/b') })
   })
@@ -151,7 +151,7 @@ describe('onboarding renderGroup', () => {
     choose('#python-choices', '/env/b')
     expect(checkedValue('#python-choices')).toBe('/env/b')
 
-    requireElement<HTMLButtonElement>('#redetect').click()
+    ;(requireElement('#redetect') as HTMLButtonElement).click()
     await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
     await vi.waitFor(() => { expect(checkedValue('#python-choices')).toBe('/env/a') })
   })
@@ -159,9 +159,9 @@ describe('onboarding renderGroup', () => {
   it('shows the nothing-detected message and disables Bind when detection finds no candidate', async () => {
     await loadOnboarding(makeBridge(vi.fn(async () => [])))
 
-    expect(requireElement<HTMLDivElement>('#guidance').hidden).toBe(false)
-    expect(requireElement<HTMLParagraphElement>('#guidance-message').textContent).toBe(NOTHING_DETECTED_MESSAGE)
-    expect(requireElement<HTMLButtonElement>('#bind').disabled).toBe(true)
+    expect((requireElement('#guidance') as HTMLDivElement).hidden).toBe(false)
+    expect((requireElement('#guidance-message') as HTMLParagraphElement).textContent).toBe(NOTHING_DETECTED_MESSAGE)
+    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('resets to the error state on a detection failure, distinct from nothing-detected', async () => {
@@ -171,17 +171,17 @@ describe('onboarding renderGroup', () => {
       throw new Error('boom')
     })
     await loadOnboarding(makeBridge(detect))
-    expect(requireElement<HTMLButtonElement>('#bind').disabled).toBe(false)
+    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(false)
 
-    requireElement<HTMLButtonElement>('#redetect').click()
+    ;(requireElement('#redetect') as HTMLButtonElement).click()
     await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
 
     await vi.waitFor(() => {
-      expect(requireElement<HTMLParagraphElement>('#guidance-message').textContent).toBe(DETECTION_FAILED_MESSAGE)
+      expect((requireElement('#guidance-message') as HTMLParagraphElement).textContent).toBe(DETECTION_FAILED_MESSAGE)
     })
-    expect(requireElement<HTMLDivElement>('#guidance').hidden).toBe(false)
-    expect(requireElement<HTMLButtonElement>('#bind').disabled).toBe(true)
-    expect(requireElement<HTMLElement>('#python-section').hidden).toBe(true)
-    expect(requireElement<HTMLDivElement>('#python-choices').childElementCount).toBe(0)
+    expect((requireElement('#guidance') as HTMLDivElement).hidden).toBe(false)
+    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(true)
+    expect((requireElement('#python-section') as HTMLElement).hidden).toBe(true)
+    expect((requireElement('#python-choices') as HTMLDivElement).childElementCount).toBe(0)
   })
 })

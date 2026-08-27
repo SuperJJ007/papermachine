@@ -25,13 +25,19 @@ interface ProjectionDefinition<
 > {
   /** The projection key this unit owns (its `SessionProjectionStateMap` entry). */
   key: K
-  /** Validates persisted state before it seeds a fold. */
+  /**
+   * Validates persisted state before it seeds a fold. Also the default
+   * admission schema for a checkpoint row's private state when
+   * `checkpointStateSchema` is omitted.
+   */
   stateSchema: ZodType<S>
   /**
-   * Admits persisted private state read back from a checkpoint row. Omitted
-   * for a unit whose state needs no admission beyond the outer row shape.
-   * Parsing is validation-only: a transform whose output is not deeply equal
-   * to its input rejects the row rather than silently migrating it.
+   * Admits persisted private state read back from a checkpoint row, in place
+   * of `stateSchema`, for a unit whose checkpoint representation needs
+   * different validation. Omitted for a unit whose checkpoint state needs no
+   * admission beyond `stateSchema` itself. Parsing is validation-only: a
+   * transform whose output is not deeply equal to its input rejects the row
+   * rather than silently migrating it.
    */
   checkpointStateSchema?: ZodType<S>
   /**

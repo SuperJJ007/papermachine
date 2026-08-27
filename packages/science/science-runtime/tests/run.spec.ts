@@ -35,6 +35,11 @@ import {
   rejectSessionAppend,
 } from './harness.ts'
 
+// Every startRun case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
 const roots: string[] = []
@@ -67,7 +72,7 @@ async function readyPythonHarness(id: string, kernelIdleTimeoutMs?: number): Pro
   const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-'))
   roots.push(root)
   const prefix = createFakePythonPrefix(root)
-  const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, kernelIdleTimeoutMs)
+  const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, kernelIdleTimeoutMs)
   contexts.push(harness.ctx)
   const session = createScienceSession(harness.ctx, id)
   await bindFakePython(harness.runtime, session)
@@ -371,7 +376,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     })
     const runtime = ctx.scienceRuntime
     const session = createScienceSession(ctx, 'science-run-aggregate-prekernel')
@@ -630,7 +635,7 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     })
     await expect(rejection).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
     await expect(rejection).rejects.toThrow(/the kernel process could not be started/)
-  }, 15_000)
+  }, 30_000)
 
   it('classifies a settleKernelExecution rejection as TERMINAL_COMMIT_FAILED (interrupt() itself throws)', async () => {
     // The interrupt-first path calls kernel.interrupt() with no try/catch
@@ -816,7 +821,7 @@ esac
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: prefix } },
-      timeoutMs: 10_000,
+      timeoutMs: 30_000,
     })
     const runtime = ctx.scienceRuntime
     const session = createScienceSession(ctx, 'science-real-wiring')
@@ -1022,7 +1027,7 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'cancelled', failureCode: 'CANCELLED' } })
     await vi.waitFor(() => {
       expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
-    }, { timeout: 10_000 })
+    }, { timeout: 30_000 })
     const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
     const next = await runtime.startRun({
@@ -1032,7 +1037,7 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
     await expect(next.done).resolves.toMatchObject({ terminal: { status: 'success' } })
     const started = session.events.filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
-  }, 15_000)
+  }, 30_000)
 
   it('retires the kernel when SIGINT lands on an effectively idle kernel (taint-retirement)', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-taint', 500)
@@ -1094,7 +1099,7 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'timed-out', failureCode: 'TIMEOUT' } })
-  }, 15_000)
+  }, 30_000)
 })
 
 describe('ScienceRuntime.startRun capture and replay', () => {

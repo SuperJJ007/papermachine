@@ -27,6 +27,11 @@ import {
   rejectSessionAppend,
 } from './harness.ts'
 
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const timeoutFault = vi.hoisted(() => ({ delayMs: 0 }))
 
 vi.mock('../src/environment.ts', async (importOriginal) => {

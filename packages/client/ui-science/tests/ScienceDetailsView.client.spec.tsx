@@ -384,7 +384,7 @@ describe('ScienceDetailsView: session snapshot selection', () => {
 
     // Same `nodes`/`chat` references from a re-render: the equality check
     // must report no change (the flicker fix's "unrelated event" case).
-    view.rerender(<ScienceDetailsView {...props(baseProjection(), { snapshot: { ...snapshotA } as ConversationSnapshot })} />)
+    view.rerender(<ScienceDetailsView {...props(baseProjection(), { snapshot: { ...snapshotA } })} />)
 
     // A new `chat` reference with the same `nodes`: the equality check must report a change.
     const snapshotB = { nodes, chat: { ...chat } } as unknown as ConversationSnapshot
@@ -625,7 +625,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     await screen.findByRole('navigation', { name: 'Project file path' })
     act(() => { store.actions.setLibraryPage('artifacts') })
 
-    expect((screen.getByRole('textbox', { name: 'Search' }) as HTMLInputElement).value).toBe('z.png')
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Search' }).value).toBe('z.png')
     expect(screen.queryByText('v1 · image/png · unknown-session')).toBeTruthy()
     expect(screen.queryByText('Alpha')).toBeNull()
   })

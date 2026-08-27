@@ -31,7 +31,12 @@ import {
 import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
 import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
-import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
+import { TEST_KERNEL_START_TIMEOUT_MS, attachScienceSession, createFakeSandboxRunner } from './harness.ts'
+
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
@@ -237,7 +242,7 @@ async function createHarness(options: { readonly kernelIdleTimeoutMs?: number } 
     sandbox: ctx.sandbox,
     assetsRoot: ASSETS_ROOT,
     kernelIdleTimeoutMs: options.kernelIdleTimeoutMs ?? 1_800_000,
-    kernelStartTimeoutMs: 5_000,
+    kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
     nextEpoch: epochAllocator.fn,
     onKernelStarted: (session, fact) => { started.push({ session, fact }) },
     onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
@@ -560,7 +565,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: () => {},
       onKernelEnded: () => {},
@@ -612,7 +617,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
@@ -652,7 +657,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: () => {},
       onKernelEnded: () => {},
@@ -687,7 +692,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       // Throws only on the first call: the second (retry) call must reach
       // onKernelStarted and succeed normally for this test's "the failed
@@ -719,7 +724,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (_session, fact) => {
         // Also make the fresh kernel's own discard-time teardown fail: its
@@ -757,7 +762,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: () => (facts.at(-1)?.kernelEpoch ?? 0) + 1,
       onKernelStarted: (_session, fact) => {
         calls += 1
@@ -789,7 +794,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: (session) => {
@@ -883,7 +888,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: () => {},
@@ -955,7 +960,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
@@ -995,7 +1000,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
@@ -1064,7 +1069,7 @@ describe('KernelSet', () => {
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
       kernelIdleTimeoutMs: 1_800_000,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
       onKernelStarted: (session, fact) => { started.push({ session, fact }) },
       onKernelEnded: (session, fact) => { ended.push({ session, fact }) },

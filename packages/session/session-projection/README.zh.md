@@ -18,7 +18,7 @@
 
 - `SessionProjectionMap`——协议块与客户端钩子共享的 merge-extensible client view 表。值是协议层 JSON 全量值；渲染归 slot 体系管，永远不归本层。
 - `SessionProjectionStateMap`——merge-extensible host 折叠状态表。每个 client-visible key 同时出现在两个表中；host-only key 只出现在这里。
-- `ProjectionDefinition<K, S>`——`{ key, stateSchema, checkpointStateSchema?, checkpointStateSeq?(state), init(), apply(state, event), wire?, viewChanged?(previous, next), stateVersion }`：由若干纯同步函数外加声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。`wire` 提供 `viewSchema` 与 `view`；省略它即为 host-only 单元。其余可选成员把单元的私有状态绑定到持久 checkpoint 面：`checkpointStateSchema` admits 一行已持久化状态（仅做校验——若某次 parse 的输出与输入不深度相等，该行即被拒绝，而非被迁移）；`checkpointStateSeq` 要求注册表写入或从某行 admit 的每一份状态都精确报告该行的外层 `seq`；`viewChanged` 在 `apply` 已返回不同引用之后进一步收窄公开变更通知（它不能把同引用的 no-op 变成一次变更）。三者均可省略；省略的单元保持注册表原有的无条件行为。
+- `ProjectionDefinition<K, S>`——`{ key, stateSchema, checkpointStateSchema?, checkpointStateSeq?(state), init(), apply(state, event), wire?, viewChanged?(previous, next), stateVersion }`：由若干纯同步函数外加声明构成的状态驱动计算单元（state-driven computation unit），绝不是一个不透明的 getter。`wire` 提供 `viewSchema` 与 `view`；省略它即为 host-only 单元。`stateSchema` 在某状态种子化一次 fold 之前校验它，同时也是某 checkpoint 行私有状态的默认 admission schema。其余可选成员把单元的私有状态绑定到持久 checkpoint 面：`checkpointStateSchema` 取代 `stateSchema` admit 一行已持久化状态，供 checkpoint 表示形式需要不同校验的单元使用（仅做校验——若某次 parse 的输出与输入不深度相等，该行即被拒绝，而非被迁移）；`checkpointStateSeq` 要求注册表写入或从某行 admit 的每一份状态都精确报告该行的外层 `seq`；`viewChanged` 在 `apply` 已返回不同引用之后进一步收窄公开变更通知（它不能把同引用的 no-op 变成一次变更）。三者均可省略；省略的单元分别回退为以 `stateSchema` admission、无条件水位匹配、无条件通知。
 
 ## 约定
 

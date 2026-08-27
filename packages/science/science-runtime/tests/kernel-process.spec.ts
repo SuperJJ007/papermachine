@@ -27,7 +27,7 @@ import type { KernelExecuteRequest, KernelProcessServices } from '../src/kernel-
 import { createKernelScratch, ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { ScienceRuntimeError } from '../src/types.ts'
-import { createFakeSandboxRunner } from './harness.ts'
+import { TEST_KERNEL_START_TIMEOUT_MS, createFakeSandboxRunner } from './harness.ts'
 
 // Every case here spawns a real kernel subprocess through
 // LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
@@ -211,7 +211,7 @@ function startKernel(
     binding: fakeBinding(language, prefix),
     driverPath: overrides.driverPath ?? DRIVER_PATH,
     index: overrides.index ?? 0,
-    kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? 5_000,
+    kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? TEST_KERNEL_START_TIMEOUT_MS,
   })
 }
 
@@ -315,7 +315,7 @@ describe('KernelProcess', () => {
       binding: fakeBinding('python', overlappingPrefix),
       driverPath: DRIVER_PATH,
       index: 0,
-      kernelStartTimeoutMs: 5_000,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
     })).rejects.toThrow(ScienceRuntimeError)
     // Retry at the SAME index (the same response-FIFO path) with a valid
     // prefix: `mkfifo` must not fail with "File exists" against a FIFO the

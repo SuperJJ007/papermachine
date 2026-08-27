@@ -29,6 +29,11 @@ import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { ScienceRuntimeError } from '../src/types.ts'
 import { createFakeSandboxRunner } from './harness.ts'
 
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const DRIVER_PATH = join(FIXTURES, 'fake-kernel-driver.mjs')
 const NO_READY_DRIVER_PATH = join(FIXTURES, 'fake-kernel-driver-no-ready.mjs')

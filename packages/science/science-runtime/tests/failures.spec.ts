@@ -22,6 +22,11 @@ import {
 } from './harness.ts'
 import { sessionScratchKey } from '../src/scratch.ts'
 
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const roots: string[] = []
 const contexts: Context[] = []
 

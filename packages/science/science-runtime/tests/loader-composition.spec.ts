@@ -3,7 +3,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -28,6 +28,11 @@ import {
   installTestKernelSet,
   kernelAction,
 } from './harness.ts'
+
+// Every scenario here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
 
 let root: string | undefined
 let context: Context | undefined

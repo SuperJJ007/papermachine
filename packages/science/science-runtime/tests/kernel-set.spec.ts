@@ -33,6 +33,11 @@ import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { attachScienceSession, createFakeSandboxRunner } from './harness.ts'
 
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
 const DELAYED_READY_ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets-delayed-ready')

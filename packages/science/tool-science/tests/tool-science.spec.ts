@@ -42,6 +42,12 @@ import { formatRunResult, kernelRestartReason, latestRequestHeaderSeq, requireSc
 import { stateValueFromProjection } from '../src/state.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
+// `setup()` mounts a real LocalSubprocessRuntime/LocalSandboxProvider and the
+// run_python/run_r/get_science_state cases spawn a real kernel subprocess
+// through it; under full-suite concurrency, spawn and pipe I/O contend for
+// the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 /** Minimal valid `ScienceProjection` fixture; callers override only what they test. */
 function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceProjection {
   return {

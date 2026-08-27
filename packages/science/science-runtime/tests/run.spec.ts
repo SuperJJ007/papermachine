@@ -35,6 +35,11 @@ import {
   rejectSessionAppend,
 } from './harness.ts'
 
+// Every startRun case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
 const roots: string[] = []

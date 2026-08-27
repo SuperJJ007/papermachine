@@ -30,6 +30,11 @@ import {
   mountArtifactStore,
 } from './harness.ts'
 
+// Several cases here spawn a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
 const staticFsFault = vi.hoisted(() => ({
   history: '', executable: '', nonObject: '', cleanupPath: '',
 }))

@@ -7,7 +7,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { crc32 } from 'node:zlib'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
@@ -133,6 +133,11 @@ function pngWithMetadata(): Uint8Array {
     PNG.subarray(0, iendOffset), length, type, payload, crc, PNG.subarray(iendOffset),
   ]))
 }
+
+// Every case here spawns a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
 
 describe('Science auto-capture', () => {
   it('materializes verified artifact inputs byte-exactly and records the complete mapping', async () => {

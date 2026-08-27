@@ -46,13 +46,19 @@ export interface ProjectionDefinition<
 > {
   /** The projection key this unit owns (its `SessionProjectionStateMap` entry). */
   key: K
-  /** Validates persisted state before it seeds a fold. */
+  /**
+   * Validates persisted state before it seeds a fold. Also the default
+   * admission schema for a checkpoint row's private state when
+   * `checkpointStateSchema` is omitted.
+   */
   stateSchema: ZodType<S>
   /**
-   * Admits persisted private state read back from a checkpoint row. Omitted
-   * for a unit whose state needs no admission beyond the outer row shape.
-   * Parsing is validation-only: a transform whose output is not deeply equal
-   * to its input rejects the row rather than silently migrating it.
+   * Admits persisted private state read back from a checkpoint row, in place
+   * of `stateSchema`, for a unit whose checkpoint representation needs
+   * different validation. Omitted for a unit whose checkpoint state needs no
+   * admission beyond `stateSchema` itself. Parsing is validation-only: a
+   * transform whose output is not deeply equal to its input rejects the row
+   * rather than silently migrating it.
    */
   checkpointStateSchema?: ZodType<S>
   /**
@@ -155,7 +161,7 @@ export type ProjectionCheckpoint = Record<string, ProjectionCheckpointRow>
 /** Type-erased unit view the drive machinery works with (the registration contract already proved the typed form). */
 interface ErasedDefinition {
   key: string
-  stateSchema: { parse(value: unknown): unknown }
+  stateSchema: { safeParse(value: unknown): { success: true; data: unknown } | { success: false } }
   checkpointStateSchema?: { safeParse(value: unknown): { success: true; data: unknown } | { success: false } }
   checkpointStateSeq?(state: unknown): number
   init(): unknown
@@ -517,22 +523,23 @@ export class SessionProjectionRegistry extends Service {
 
   /**
    * Admit one persisted checkpoint row's private state against its unit's
-   * optional `checkpointStateSchema` and `checkpointStateSeq`. A unit without
-   * the schema admits the row's `val` unchanged; the schema is
-   * validation-only, so a parse whose output is not deeply equal to its
-   * input rejects the row. A unit that also supplies `checkpointStateSeq`
-   * additionally requires the admitted state's own encoded watermark to
-   * equal the row's outer `seq`, so a valid-but-differently-watermarked
-   * state can never be served under this row's seq.
+   * `checkpointStateSchema` when supplied, or its baseline `stateSchema`
+   * otherwise, plus the optional `checkpointStateSeq`. Every row's state is
+   * validated against one of the two schemas — an unvalidated row would
+   * reach `wire.view` with whatever shape a stale or corrupted persisted
+   * value carries. Parsing is validation-only: a parse whose output is not
+   * deeply equal to its input rejects the row rather than silently migrating
+   * it. A unit that also supplies `checkpointStateSeq` additionally requires
+   * the admitted state's own encoded watermark to equal the row's outer
+   * `seq`, so a valid-but-differently-watermarked state can never be served
+   * under this row's seq.
    * @param def - active type-erased unit definition.
    * @param row - persisted checkpoint row for this unit's key.
    * @returns the admitted state, or rejection.
    */
   private admitCheckpointState(def: ErasedDefinition, row: ProjectionCheckpointRow): CheckpointStateAdmission {
-    if (def.checkpointStateSchema === undefined) {
-      return this.checkpointStateMatchesSeq(def, row.val, row.seq) ? { valid: true, state: row.val } : { valid: false }
-    }
-    const result = def.checkpointStateSchema.safeParse(row.val)
+    const schema = def.checkpointStateSchema ?? def.stateSchema
+    const result = schema.safeParse(row.val)
     if (!result.success || !isDeepStrictEqual(result.data, row.val)) return { valid: false }
     if (!this.checkpointStateMatchesSeq(def, result.data, row.seq)) return { valid: false }
     return { valid: true, state: result.data }

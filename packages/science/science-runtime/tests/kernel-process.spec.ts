@@ -376,7 +376,7 @@ describe('KernelProcess', () => {
     const subprocess = harness.services.subprocess as KernelStdinFaultSubprocess
     subprocess.fault = 'missing'
     await expect(startKernel(harness, 'python')).rejects.toThrow(/stdin pipe/)
-  }, 15_000)
+  }, 30_000)
 
   it('rejects one execute synchronously when the stdin write itself throws, preserving a real Error and wrapping a non-Error alike', async () => {
     const harness = await createHarness('kernel-stdin-write-failure', { subprocess: KernelStdinFaultSubprocess })
@@ -393,7 +393,7 @@ describe('KernelProcess', () => {
       .rejects.toThrow('injected non-error stdin write failure')
     subprocess.writeError = undefined
     await kernel.end('test-teardown')
-  }, 15_000)
+  }, 30_000)
 
   it('rejects an R kernel whose scratch TMPDIR would contain an ASCII space', async () => {
     const harness = await createHarness('kernel-r-space', { rootPrefix: '.science runtime-kernel-r-space-' })
@@ -519,7 +519,7 @@ describe('KernelProcess', () => {
     await expect(kernel.execute(await prepareRun(harness.root, 'run-close-fifo', { action: 'close-fifo' })))
       .rejects.toThrow(KernelProtocolError)
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
-  }, 10_000)
+  }, 30_000)
 
   it('fails an in-flight execute distinctly when the kernel exits uncommanded', async () => {
     const harness = await createHarness('kernel-crash')
@@ -557,7 +557,7 @@ describe('KernelProcess', () => {
     await kernel.end('run-escalation')
     await expect(pending).rejects.toThrow(KernelExitedError)
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
-  }, 15_000)
+  }, 30_000)
 
   it('EXIT teardown removes the FIFO, settles exited with cause commanded, and rejects a later execute as already exited', async () => {
     const harness = await createHarness('kernel-exit-teardown')

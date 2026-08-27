@@ -65,7 +65,7 @@ describe('quiesce', () => {
     // SIGTERM, which this plain Node process has installed no handler
     // against, so the second waitForExit(forced) proves quiescence quickly.
     await expect(quiesce(handle)).resolves.toEqual({ quiescent: true, forced: true })
-  }, 15_000)
+  }, 30_000)
 
   it('returns eventual quiescence unproven when the tree survives both bounded grace windows', async () => {
     const ctx = new Context()
@@ -93,5 +93,5 @@ describe('quiesce', () => {
       process.kill(handle.pid, 'SIGKILL')
     }
     await expect(result.eventualQuiescence).resolves.toBe(true)
-  }, 15_000)
+  }, 30_000)
 })

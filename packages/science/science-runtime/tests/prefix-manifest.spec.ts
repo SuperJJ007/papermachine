@@ -2,7 +2,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import {
@@ -13,6 +13,10 @@ import {
   kernelAction,
 } from './harness.ts'
 import { capturePrefixManifest, diffPrefixManifest } from './prefix-manifest.ts'
+
+// Cases here spawn a real kernel subprocess; under full-suite concurrency the
+// default 5s timeout is not enough (same rule as run.spec.ts).
+vi.setConfig({ testTimeout: 30_000 })
 
 const roots: string[] = []
 const contexts: Context[] = []

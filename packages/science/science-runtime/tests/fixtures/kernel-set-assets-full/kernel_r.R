@@ -44,6 +44,7 @@ if (fifoPath === undefined) {
 let fifoFd = openSync(fifoPath, 'w')
 let fifoClosed = false
 const runActions = new Map()
+const chartApplyCalls = new Map()
 
 function send(frame) {
   if (fifoClosed) return
@@ -90,8 +91,10 @@ rl.on('line', (line) => {
   }
   if (cmd === 'CHART_APPLY') {
     const action = runActions.get(parts[1])
+    const call = (chartApplyCalls.get(parts[1]) ?? 0) + 1
+    chartApplyCalls.set(parts[1], call)
     if (action?.chartApplyStatus === 'hang') return
-    if (action?.chartApplyStatus === 'not_registered') {
+    if (action?.chartApplyStatus === 'not_registered' || (action?.chartApplyStatus === 'not_registered_once' && call === 1)) {
       send(`CHART\t${parts[1]}\terror\tnot_registered`)
       return
     }

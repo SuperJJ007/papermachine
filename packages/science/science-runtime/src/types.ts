@@ -7,6 +7,7 @@
 import type {
   ScienceArtifactVersionRef,
   ScienceArtifactVersion,
+  ScienceChartOp,
   ScienceEnvironmentBinding,
   ScienceEnvironmentProfileId,
   ScienceLanguage,
@@ -60,6 +61,10 @@ export type ScienceRuntimeErrorCode =
   | 'KERNEL_START_FAILED'
   /** Kernel execution requires darwin or linux; rejected pre-publication on every other platform. */
   | 'KERNEL_UNSUPPORTED_PLATFORM'
+  | 'CHART_STALE_VERSION'
+  | 'CHART_NOT_ADDRESSABLE'
+  | 'CHART_ELEMENT_NOT_FOUND'
+  | 'CHART_OP_INVALID'
 
 /** Typed error for a Runtime operation that cannot return a durable value. */
 export class ScienceRuntimeError extends Error {
@@ -172,6 +177,29 @@ export interface ScienceRunHandle {
   cancel(): void
 }
 
+/** Inputs for one direct edit of the exact current addressable PNG version. */
+export interface ScienceChartEditRequest {
+  readonly session: Session
+  readonly artifactId: ScienceArtifactVersion['artifactId']
+  readonly version: number
+  readonly ops: readonly ScienceChartOp[]
+  readonly signal: AbortSignal
+  readonly toolCallId?: CallId
+  readonly requestHeaderSeq?: number
+}
+
+/** One operation the chart adapter could not resolve against the live figure. */
+export interface ScienceChartFailedOp {
+  readonly index: number
+  readonly reason: string
+}
+
+/** Committed direct-edit version and per-request operations that were not applied. */
+export interface ScienceChartEditResult {
+  readonly artifact: ScienceArtifactVersion
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
 /** Service definition consumed by a future model-facing Science package. */
 export interface ScienceRuntimeService {
   /**
@@ -188,6 +216,12 @@ export interface ScienceRuntimeService {
    * @returns The published run handle; its `done` owns terminal settlement.
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
+  /**
+   * Apply validated operations to the exact current addressable chart and append one direct-edit PNG version.
+   * @param request - Exact artifact version, operations, live Session, and cancellation.
+   * @returns The committed version and operations whose element targets were absent.
+   */
+  applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
   /**
    * Re-commit an existing artifact version's exact store content reference
    * as its curated replacement, carrying a model-supplied title and optional

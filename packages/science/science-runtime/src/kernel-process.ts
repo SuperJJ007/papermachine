@@ -1,6 +1,6 @@
 /**
  * One confined persistent Science kernel subprocess speaking the kernel wire
- * protocol (`stdin` RUN/CHART_EXTRACT/EXIT request frames, response-FIFO READY/DONE/CHART frames): spawn
+ * protocol (`stdin` RUN/CHART_EXTRACT/CHART_APPLY/EXIT request frames, response-FIFO READY/DONE/CHART frames): spawn
  * sequence, execute-serialization, cooperative interrupt passthrough, and
  * teardown. Session-scoped lifecycle is out of scope here: this module knows
  * nothing about session events, kernel epochs, idle timers, or durable end
@@ -123,6 +123,9 @@ export interface KernelChartExtractRequest {
   /** Bound for the complete CHART_EXTRACT/CHART exchange. */
   readonly timeoutMs: number
 }
+
+/** One private-file chart operation request. */
+export interface KernelChartApplyRequest extends KernelChartExtractRequest {}
 
 /** Parsed CHART response for one extraction request. */
 export interface KernelChartFrame {
@@ -477,6 +480,38 @@ export class KernelProcess {
       timeout = setTimeout(() => {
         this.failProtocol(new KernelProtocolError(
           `science-runtime: kernel did not finish chart extraction within ${String(request.timeoutMs)}ms`,
+        ))
+      }, request.timeoutMs)
+    } catch (error) {
+      this.pending = undefined
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    return resolvers.promise.finally(() => { clearTimeout(timeout) })
+  }
+
+  /**
+   * Write one CHART_APPLY frame and await its matching CHART response.
+   * A timeout retires the protocol-faulted kernel through the owning KernelSet.
+   * @param request - source run id, private request/result paths, and deadline.
+   * @returns the matching CHART response.
+   */
+  applyChart(request: KernelChartApplyRequest): Promise<KernelChartFrame> {
+    if (this.pending !== undefined) {
+      throw new Error('science-runtime: KernelProcess.applyChart called while another request is still pending')
+    }
+    if (this.protocolFault !== undefined) return Promise.reject(this.protocolFault)
+    if (this.exitSettled) return Promise.reject(new KernelExitedError('science-runtime: kernel process has already exited'))
+    assertNoFrameDelimiters(request.runId, 'CHART_APPLY runId')
+    assertNoFrameDelimiters(request.requestPath, 'CHART_APPLY requestPath')
+    assertNoFrameDelimiters(request.resultPath, 'CHART_APPLY resultPath')
+    const resolvers = Promise.withResolvers<KernelChartFrame>()
+    this.pending = { kind: 'chart', runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
+    let timeout: NodeJS.Timeout | undefined
+    try {
+      this.stdin.write(`CHART_APPLY\t${request.runId}\t${request.requestPath}\t${request.resultPath}\n`)
+      timeout = setTimeout(() => {
+        this.failProtocol(new KernelProtocolError(
+          `science-runtime: kernel did not finish chart application within ${String(request.timeoutMs)}ms`,
         ))
       }, request.timeoutMs)
     } catch (error) {

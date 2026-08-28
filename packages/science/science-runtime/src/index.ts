@@ -6,19 +6,28 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { readFile, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
-import { decodeScienceChartState, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import {
+  decodeScienceChartState,
+  MAX_CHART_OPS,
+  ScienceEnvironmentProfileId,
+  ScienceRunId,
+  replayScience,
+} from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactVersion,
+  ScienceChartOp,
   ScienceChartState,
   ScienceEnvironmentBinding,
   ScienceLanguage,
   ScienceProjectId,
   ScienceProjection,
   ScienceRunTerminal,
+  ScienceRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
@@ -51,6 +60,7 @@ import {
   createRunScratch,
   materializeRunInputs,
   materializeSessionScratch,
+  planRunScratch,
   planSessionScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
@@ -60,6 +70,9 @@ import { ScienceRuntimeError } from './types.ts'
 import type {
   AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
+  ScienceChartEditRequest,
+  ScienceChartEditResult,
+  ScienceChartFailedOp,
   ScienceRunHandle,
   ScienceRunResult,
   ScienceRuntimeService,
@@ -69,6 +82,9 @@ import type {
 export type {
   AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
+  ScienceChartEditRequest,
+  ScienceChartEditResult,
+  ScienceChartFailedOp,
   ScienceRunHandle,
   ScienceRunOutput,
   ScienceRunResult,
@@ -662,6 +678,221 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         )
       }
       throw this.prepublicationError(lease.control, error)
+    }
+  }
+
+  /** Apply one direct-edit request and commit its successful operations as a new PNG version. */
+  async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult> {
+    if (request.ops.length === 0 || request.ops.length > MAX_CHART_OPS) {
+      throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations must contain between 1 and 100 entries')
+    }
+    this.assertSession(request.session)
+    this.assertHostLocal()
+    const lease = await this.reserveQueued(request.session, request.signal)
+    let replayScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
+    let sessionScratch: ScienceSessionScratch | undefined
+    let editLanguage: ScienceLanguage | undefined
+    try {
+      this.assertPrepublication(request.session, lease.control)
+      const projection = this.assertSession(request.session)
+      const versions = projection.artifacts.filter(candidate => candidate.artifactId === request.artifactId)
+      const parent = versions.at(-1)
+      if (parent === undefined || parent.version !== request.version) {
+        throw new ScienceRuntimeError('CHART_STALE_VERSION', 'Chart edit must name the current artifact version')
+      }
+      if (parent.mediaType !== 'image/png' || parent.chart === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart edit target is not an addressable PNG version')
+      }
+      try {
+        decodeScienceChartState({ ...parent.chart, ops: [...parent.chart.ops, ...request.ops] })
+      } catch (error) {
+        throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations are invalid or exceed chart state bounds', { cause: error })
+      }
+      const source = versions.find(candidate => candidate.origin !== 'human-edit'
+        && candidate.chart?.figureKey === parent.chart?.figureKey) as ScienceRunArtifactVersion | undefined
+      if (source === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const sourceRun = projection.runs.find(candidate => candidate.runId === source.runId)
+      const environment = projection.environment
+      if (sourceRun === undefined || environment === null || environment.status !== 'applied') {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const language: ScienceLanguage = parent.chart.runtime === 'matplotlib' ? 'python' : 'r'
+      editLanguage = language
+      if (sourceRun.language !== language) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart runtime does not match its source run language')
+      }
+      const scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
+      sessionScratch = scratchPreparation.scratch
+      const projectId = parent.projectId
+      const kernel = await this.acquireKernel(request.session, language, environment, sessionScratch, lease.control)
+      this.kernels.disarmIdleTimer(request.session, language)
+
+      let application = await this.applyChartInKernel(
+        kernel.process,
+        source.runId,
+        parent.chart.figureKey,
+        request.ops,
+        parent.chart.png.dpi,
+        planRunScratch(sessionScratch, source.runId, language).directory,
+      )
+      let failedOffset = 0
+      if (application.kind === 'not-registered') {
+        const sourceScratch = planRunScratch(sessionScratch, source.runId, language)
+        let sourceBytes: Uint8Array
+        try {
+          sourceBytes = await readFile(sourceScratch.source)
+        } catch (error) {
+          throw new ScienceRuntimeError(
+            'CHART_NOT_ADDRESSABLE',
+            'Chart source scratch is unavailable; rerun the code to regenerate this figure',
+            { cause: error },
+          )
+        }
+        const prepared = await prepareRunArtifacts(
+          projection,
+          this.ctx.scienceArtifactStore,
+          projectId,
+          sourceRun.inputs,
+          undefined,
+          undefined,
+          this.inputMaxFilesPerRun,
+          this.inputMaxBytesPerRun,
+          lease.control.signal,
+        )
+        replayScratch = await createRunScratch(
+          sessionScratch,
+          ScienceRunId(`replay-${randomUUID()}`),
+          language,
+          sourceBytes,
+        )
+        await materializeRunInputs(replayScratch, prepared.materialized)
+        const replayFrame = await kernel.process.execute({
+          runId: source.runId,
+          sourcePath: replayScratch.source,
+          cwd: replayScratch.directory,
+          stdoutPath: replayScratch.stdout,
+          stderrPath: replayScratch.stderr,
+          artifactDir: replayScratch.artifacts,
+          inputDir: replayScratch.inputs,
+        })
+        if (replayFrame.status !== 'ok') {
+          throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source replay failed; rerun the code to regenerate this figure')
+        }
+        failedOffset = parent.chart.ops.length
+        application = await this.applyChartInKernel(
+          kernel.process,
+          source.runId,
+          parent.chart.figureKey,
+          [...parent.chart.ops, ...request.ops],
+          parent.chart.png.dpi,
+          replayScratch.directory,
+        )
+      }
+      if (application.kind === 'not-registered') {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source replay did not register the figure')
+      }
+      const failedOps = application.failedOps
+        .filter(failed => failed.index >= failedOffset)
+        .map(failed => ({ index: failed.index - failedOffset, reason: failed.reason }))
+      const failedIndices = new Set(failedOps.map(failed => failed.index))
+      const successfulOps = request.ops.filter((_, index) => !failedIndices.has(index))
+      if (successfulOps.length === 0) {
+        throw new ScienceRuntimeError('CHART_ELEMENT_NOT_FOUND', 'No chart edit operation resolved an addressable element')
+      }
+      const chart = decodeScienceChartState({
+        ...application.chart,
+        figureKey: parent.chart.figureKey,
+        ops: [...parent.chart.ops, ...successfulOps],
+      })
+      const stored = await this.ctx.scienceArtifactStore.appendVersion(projectId, parent.artifactId, {
+        producerSessionId: request.session.id,
+        data: application.png,
+        mediaType: 'image/png',
+        origin: 'human-edit',
+        title: parent.title,
+        ...parent.caption === undefined ? {} : { caption: parent.caption },
+        editBaselines: parent.versionId,
+        environmentRevision: String(parent.environmentRevision),
+        environmentFingerprintPreview: parent.environmentFingerprint.slice(0, 12),
+      })
+      const artifact: ScienceArtifactVersion = {
+        artifactId: parent.artifactId,
+        producerSessionId: stored.producerSessionId,
+        logicalName: parent.logicalName,
+        version: stored.ordinal,
+        parent: { artifactId: parent.artifactId, version: parent.version },
+        title: parent.title,
+        ...parent.caption === undefined ? {} : { caption: parent.caption },
+        origin: 'human-edit',
+        projectId,
+        versionId: stored.versionId,
+        sha256: stored.sha256,
+        mediaType: 'image/png',
+        byteCount: stored.byteCount,
+        environmentRevision: parent.environmentRevision,
+        environmentFingerprint: parent.environmentFingerprint,
+        createdAt: stored.createdAt,
+        chart,
+      }
+      this.assertPrepublication(request.session, lease.control)
+      request.session.append('science/artifact-saved', { version: 1, artifact })
+      return { artifact, failedOps }
+    } catch (error) {
+      if (error instanceof KernelProtocolError || error instanceof KernelExitedError) {
+        if (editLanguage !== undefined) await this.kernels.retireForEscalation(request.session, editLanguage)
+      }
+      throw error instanceof ScienceRuntimeError ? error : this.prepublicationError(lease.control, error)
+    } finally {
+      if (sessionScratch !== undefined && replayScratch !== undefined) {
+        await removeUnpublishedRunScratch(sessionScratch, replayScratch)
+      }
+      if (editLanguage !== undefined) this.kernels.resetIdleTimer(request.session, editLanguage)
+      this.leases.release(lease)
+    }
+  }
+
+  /** Exchange one chart request through private files and decode its exact result fields. */
+  private async applyChartInKernel(
+    kernel: KernelProcess,
+    runId: ScienceRunId,
+    figureKey: string,
+    ops: readonly ScienceChartOp[],
+    dpi: number,
+    directory: string,
+  ): Promise<
+    | { readonly kind: 'not-registered' }
+    | { readonly kind: 'applied'; readonly chart: Record<string, unknown>; readonly failedOps: readonly ScienceChartFailedOp[]; readonly png: Uint8Array }
+  > {
+    const token = randomUUID()
+    const requestPath = join(directory, `chart-apply-${token}-request.json`)
+    const resultPath = join(directory, `chart-apply-${token}-result.json`)
+    const outputPath = join(directory, `chart-apply-${token}.png`)
+    try {
+      await writeFile(requestPath, JSON.stringify({ figureKey, ops, outputPath, dpi }), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      const frame = await kernel.applyChart({ runId, requestPath, resultPath, timeoutMs: this.chartExtractTimeoutMs })
+      if (frame.status === 'error' && frame.detail === 'not_registered') return { kind: 'not-registered' }
+      if (frame.status === 'error') throw new Error(`science-runtime: chart application failed: ${frame.detail}`)
+      const root = plainRecord(JSON.parse(await readFile(resultPath, 'utf8')))
+      const chart = root === undefined ? undefined : plainRecord(root['chart'])
+      const failed = root?.['failedOps']
+      if (root === undefined || chart === undefined || !Array.isArray(failed)
+        || Object.keys(root).sort().join(',') !== 'chart,failedOps') {
+        throw new Error('science-runtime: chart application result must contain exact chart and failedOps fields')
+      }
+      const failedOps = failed.map((value) => {
+        const candidate = plainRecord(value)
+        if (candidate === undefined || Object.keys(candidate).sort().join(',') !== 'index,reason'
+          || !Number.isSafeInteger(candidate['index']) || (candidate['index'] as number) < 0
+          || typeof candidate['reason'] !== 'string') {
+          throw new Error('science-runtime: chart application failedOps entry is invalid')
+        }
+        return { index: candidate['index'] as number, reason: candidate['reason'] }
+      })
+      return { kind: 'applied', chart, failedOps, png: await readFile(outputPath) }
+    } finally {
+      await Promise.allSettled([requestPath, resultPath, outputPath].map(path => unlink(path)))
     }
   }
 

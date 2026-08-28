@@ -57,6 +57,7 @@ send <- function(frame) {
   if (is.null(.dsh_active_run_id)) return(invisible(NULL))
   filename <- get0("filename", envir = frame, inherits = TRUE)
   plot <- get0("plot", envir = frame, inherits = TRUE)
+  if (is.list(plot) && length(plot) == 1L && inherits(plot[[1]], "ggplot")) plot <- plot[[1]]
   dpi <- get0("dpi", envir = frame, inherits = TRUE)
   artifact_dir <- Sys.getenv("SCIENCE_ARTIFACT_DIR", unset = "")
   if (!is.character(filename) || length(filename) != 1L || artifact_dir == "" || is.null(plot)) return(invisible(NULL))
@@ -127,8 +128,8 @@ send <- function(frame) {
   if (!is.finite(request$retainRuns) || request$retainRuns < 1L) stop("retainRuns must be positive")
   root <- normalizePath(request$artifactDir, mustWork = FALSE)
   registered <- if (exists(run_id, envir = .dsh_charts, inherits = FALSE)) get(run_id, envir = .dsh_charts) else list()
-  charts <- list()
-  errors <- list()
+  charts <- structure(list(), names = character())
+  errors <- structure(list(), names = character())
   for (relative in names(registered)) {
     if (!is.null(request$allow) && !(relative %in% request$allow)) next
     target <- normalizePath(file.path(root, relative), mustWork = FALSE)

@@ -269,7 +269,14 @@ def extract_chart(entry, path):
     elements = extract_elements(entry["fig"])
     expected = (round(entry["size_in"][0] * entry["dpi"]), round(entry["size_in"][1] * entry["dpi"]))
     available = expected == (width, height)
-    hitmap = compute_hitmap(entry["fig"], elements, entry["dpi"], width, height) if available else []
+    if available:
+        try:
+            hitmap = compute_hitmap(entry["fig"], elements, entry["dpi"], width, height)
+        except Exception:
+            available = False
+            hitmap = []
+    else:
+        hitmap = []
     return {"runtime": "matplotlib", "png": {"width": width, "height": height, "dpi": entry["dpi"]},
             "elements": elements, "hitmap": hitmap,
             "hitmapStatus": "ok" if available else "unavailable"}

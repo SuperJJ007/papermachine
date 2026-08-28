@@ -12,8 +12,18 @@
 install_ggsave_hook <- function(register) {
   install_now <- function(...) {
     if (.dsh_chart_state$traced || !("ggplot2" %in% loadedNamespaces())) return(invisible(NULL))
-    register_exit <- function() register(parent.frame())
-    trace("ggsave", exit = register_exit, print = FALSE, where = asNamespace("ggplot2"))
+    target <- get("ggsave", envir = asNamespace("ggplot2"))
+    expressions <- as.list(body(target))
+    return_index <- which(vapply(expressions, function(value) {
+      is.call(value) && identical(value[[1]], as.name("invisible")) && identical(value[[2]], as.name("filename"))
+    }, logical(1)))
+    if (length(return_index) != 1L) stop("ggsave return expression unavailable")
+    register_exit <- substitute(callback(environment()), list(callback = register))
+    # ggplot2 4 replaces the exit handler installed by trace(), so the final
+    # expression tracer provides the same post-render registration there.
+    # Repeated registration is harmless on releases whose exit tracer runs.
+    trace("ggsave", tracer = register_exit, exit = register_exit, at = return_index,
+          print = FALSE, where = asNamespace("ggplot2"))
     .dsh_chart_state$traced <- TRUE
     invisible(NULL)
   }
@@ -68,11 +78,13 @@ extract_elements <- function(plot) {
     }
   }
   grid <- tryCatch(ggplot2::calc_element("panel.grid", theme), error = function(e) NULL)
-  add("grid", "grid", NULL, NULL, !inherits(grid, "element_blank"))
+  grid_visible <- !inherits(grid, "element_blank")
+  if (panels == 1L) add("grid", "grid", NULL, NULL, grid_visible)
   for (index in seq_len(panels)) {
     panel <- panel_params[[index]]
     prefix <- if (panels > 1L) paste0("axes[", index - 1L, "].") else ""
     axes <- if (panels > 1L) index - 1L else NULL
+    if (panels > 1L) add(paste0(prefix, "grid"), "grid", axes, NULL, grid_visible)
     add(paste0(prefix, "axis_range"), "axis_range", axes, NULL,
         list(x = as.numeric(panel$x$continuous_range), y = as.numeric(panel$y$continuous_range)))
     scale_name <- function(value) {

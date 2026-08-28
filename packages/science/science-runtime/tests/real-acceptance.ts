@@ -11,7 +11,14 @@ import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceEnvironmentBinding, ScienceKernelState, ScienceLanguage, ScienceOutcomePublication } from '@deepseek-ai/dsh-science-session'
+import type {
+  ScienceChartState,
+  ScienceEnvironmentBinding,
+  ScienceKernelState,
+  ScienceLanguage,
+  ScienceOutcomePublication,
+  ScienceRunArtifactVersion,
+} from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -20,6 +27,7 @@ import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
 import ScienceRuntime from '../src/index.ts'
+import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
 import type { ScienceRunResult } from '../src/types.ts'
 import { capturePrefixManifest, diffPrefixManifest } from './prefix-manifest.ts'
 import type { PrefixManifestEntry } from './prefix-manifest.ts'
@@ -323,6 +331,150 @@ const R_PROBE_LIBRARY_SOURCE = [
   '',
 ].join('\n')
 
+/** Read PNG IHDR dimensions from exact captured bytes. */
+function pngDimensions(bytes: Uint8Array): { readonly width: number; readonly height: number } {
+  const buffer = Buffer.from(bytes)
+  if (buffer.byteLength < 24 || buffer.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
+    || buffer.subarray(12, 16).toString('ascii') !== 'IHDR') {
+    throw new Error('captured chart is not a PNG IHDR')
+  }
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
+}
+
+/** Require one captured PNG to carry a live chart for the expected runtime. */
+function expectLiveChart(
+  result: ScienceRunResult,
+  logicalName: string,
+  runtime: ScienceChartState['runtime'],
+): { readonly artifact: ScienceRunArtifactVersion; readonly chart: ScienceChartState } {
+  const artifact = result.capture?.captured.find(candidate => candidate.logicalName === logicalName)
+  if (artifact === undefined || artifact.origin === 'human-edit') {
+    throw new Error(`run did not capture ${JSON.stringify(logicalName)}`)
+  }
+  const chart = artifact.chart
+  if (chart === undefined || chart.runtime !== runtime) {
+    throw new Error(`${JSON.stringify(logicalName)} did not carry a ${runtime} chart`)
+  }
+  return { artifact, chart }
+}
+
+/** Require an exact set of catalog kinds and internally valid hit references. */
+function expectChartCatalog(chart: ScienceChartState, kinds: readonly ScienceChartState['elements'][number]['kind'][]): void {
+  const present = new Set(chart.elements.map(element => element.kind))
+  for (const kind of kinds) {
+    if (!present.has(kind)) throw new Error(`chart catalog omitted ${kind}`)
+  }
+  const ids = new Set(chart.elements.map(element => element.id))
+  for (const hit of chart.hitmap) {
+    if (!ids.has(hit.id)) throw new Error(`chart hit references missing element ${JSON.stringify(hit.id)}`)
+  }
+}
+
+/** Matplotlib source cases, each confined to a function so the first case can prove global namespace neutrality. */
+function matplotlibChartSource(caseName: 'basic' | 'tight' | 'closed' | 'figure' | 'two' | 'undeclared' | 'outside'): string {
+  const saveTarget = (name: string): string => `os.path.join(os.environ["SCIENCE_ARTIFACT_DIR"], ${JSON.stringify(name)})`
+  if (caseName === 'basic') return [
+    '_before = set(globals())',
+    'def _draw():',
+    '    import os',
+    '    import matplotlib.pyplot as plt',
+    '    fig, ax = plt.subplots(figsize=(4, 3))',
+    '    ax.bar(["A", "B"], [1, 2], label="treatment")',
+    '    fig.suptitle("Trial")',
+    '    ax.set_xlabel("Group")',
+    '    ax.set_ylabel("Response")',
+    '    ax.legend()',
+    '    ax.grid(True)',
+    `    fig.savefig(${saveTarget('mpl-basic.png')}, dpi=120)`,
+    '_draw()',
+    'del _draw',
+    'assert set(globals()) == _before | {"_before"}',
+    'del _before',
+    '',
+  ].join('\n')
+  if (caseName === 'figure') return [
+    'def _draw():',
+    '    import os',
+    '    from matplotlib.figure import Figure',
+    '    fig = Figure(figsize=(3, 2))',
+    '    ax = fig.subplots()',
+    '    ax.plot([0, 1], [0, 1], label="direct")',
+    `    fig.savefig(${saveTarget('mpl-figure.png')}, dpi=100)`,
+    '_draw()',
+    'del _draw',
+    '',
+  ].join('\n')
+  if (caseName === 'two') return [
+    'def _draw():',
+    '    import os',
+    '    import matplotlib.pyplot as plt',
+    '    for name, value in (("mpl-one.png", 1), ("mpl-two.png", 2)):',
+    '        fig, ax = plt.subplots(figsize=(2, 2))',
+    '        ax.plot([0, 1], [0, value], label=name)',
+    '        fig.savefig(os.path.join(os.environ["SCIENCE_ARTIFACT_DIR"], name), dpi=100)',
+    '_draw()',
+    'del _draw',
+    '',
+  ].join('\n')
+  const filename = caseName === 'tight' ? 'mpl-tight.png'
+    : caseName === 'closed' ? 'mpl-closed.png'
+      : caseName === 'undeclared' ? 'mpl-undeclared.png' : 'mpl-outside.png'
+  return [
+    'def _draw():',
+    '    import os',
+    '    import matplotlib.pyplot as plt',
+    '    fig, ax = plt.subplots(figsize=(3, 2))',
+    '    ax.plot([0, 1], [0, 1], label="line")',
+    '    ax.set_title("Evidence")',
+    caseName === 'outside'
+      ? `    target = os.path.join(os.getcwd(), ${JSON.stringify(filename)})`
+      : `    target = ${saveTarget(filename)}`,
+    caseName === 'tight' ? '    fig.savefig(target, dpi=100, bbox_inches="tight")' : '    fig.savefig(target, dpi=100)',
+    caseName === 'closed' ? '    plt.close("all")' : '',
+    '_draw()',
+    'del _draw',
+    '',
+  ].filter(Boolean).join('\n')
+}
+
+/** ggplot2 source cases, with the first case proving `.GlobalEnv` neutrality. */
+function ggplotChartSource(caseName: 'basic' | 'device' | 'base' | 'facet'): string {
+  const filename = `r-${caseName}.png`
+  const target = `file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), ${JSON.stringify(filename)})`
+  if (caseName === 'base') return `grDevices::png(${target}, width = 400, height = 300)\nplot(1:3, 1:3)\ngrDevices::dev.off()\n`
+  if (caseName === 'device') return [
+    'local({',
+    '  library(ggplot2)',
+    '  p <- ggplot(mtcars, aes(wt, mpg)) + geom_point()',
+    `  grDevices::png(${target}, width = 400, height = 300)`,
+    '  print(p)',
+    '  grDevices::dev.off()',
+    '})',
+    '',
+  ].join('\n')
+  if (caseName === 'facet') return [
+    'local({',
+    '  library(ggplot2)',
+    '  p <- ggplot(mtcars, aes(wt, mpg, colour = factor(am))) + geom_point() + facet_wrap(~gear) +',
+    '    labs(title = "Facets", x = "Weight", y = "Mileage", colour = "Transmission")',
+    `  ggsave(${target}, plot = p, width = 5, height = 3, units = "in", dpi = 150)`,
+    '})',
+    '',
+  ].join('\n')
+  return [
+    '.before <- ls(envir = .GlobalEnv, all.names = TRUE)',
+    'local({',
+    '  library(ggplot2)',
+    '  p <- ggplot(mtcars, aes(factor(cyl), mpg, fill = factor(am))) + geom_col(position = "dodge") +',
+    '    labs(title = "Cars", x = "Cylinders", y = "Mileage", fill = "Transmission")',
+    `  ggsave(${target}, plot = p, width = 4, height = 3, units = "in", dpi = 150)`,
+    '})',
+    'stopifnot(setequal(ls(envir = .GlobalEnv, all.names = TRUE), c(.before, ".before")))',
+    'rm(.before)',
+    '',
+  ].join('\n')
+}
+
 /** Require one terminal value to carry the expected post-start classification. */
 function expectTerminal(result: ScienceRunResult, status: string, failureCode?: string): void {
   if (result.terminal.status !== status || result.terminal.failureCode !== failureCode) {
@@ -445,6 +597,8 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       version: 1,
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-real-acceptance' },
     })
+    let turn = 0
+    const authorizeNext = (name: string) => authorize(session, name, turn += 1)
     const environment = await context.scienceRuntime.bindEnvironment({
       session,
       profileId: ScienceEnvironmentProfileId('real'),
@@ -471,7 +625,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       language,
       code: successSource(language, canonicalPrefix),
       rasterArtifacts: ['real-chart.png'],
-      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 1),
+      ...authorizeNext(language === 'python' ? 'run_python' : 'run_r'),
       signal: new AbortController().signal,
     })
     const successResult = await success.done
@@ -481,11 +635,108 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     }
     checks.push('non-ASCII direct source/output', 'scrubbed environment and owned cwd')
 
+    const toolName = language === 'python' ? 'run_python' : 'run_r'
+    const runChartSource = async (code: string, rasterArtifacts: readonly string[]): Promise<ScienceRunResult> => {
+      const handle = await context.scienceRuntime.startRun({
+        session,
+        language,
+        code,
+        rasterArtifacts,
+        ...authorizeNext(toolName),
+        signal: new AbortController().signal,
+      })
+      const result = await handle.done
+      if (result.terminal.status !== 'success') {
+        throw new Error(`chart source failed: ${result.stderr.text || result.terminal.failureCode || result.terminal.status}`)
+      }
+      const scratch = planRunScratch(await planSessionScratch(dshHome, session), handle.runId, language)
+      if (await readFile(scratch.source, 'utf8') !== code) throw new Error('chart extraction changed the persisted run source bytes')
+      return result
+    }
+
+    if (language === 'python') {
+      const basic = await runChartSource(matplotlibChartSource('basic'), ['mpl-basic.png'])
+      const basicLive = expectLiveChart(basic, 'mpl-basic.png', 'matplotlib')
+      expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series', 'grid', 'axis_range'])
+      if (basicLive.chart.hitmapStatus !== 'ok' || basicLive.chart.hitmap.length === 0) {
+        throw new Error('ordinary matplotlib save did not produce a usable hitmap')
+      }
+      const basicPng = pngDimensions(await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256))
+      if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
+        || basicLive.chart.png.dpi !== 120) throw new Error('matplotlib chart PNG metadata disagreed with captured bytes')
+      checks.push('chart matplotlib basic savefig dpi=120: catalog, PNG grid, hitmap, namespace, source bytes')
+
+      const tight = await runChartSource(matplotlibChartSource('tight'), ['mpl-tight.png'])
+      const tightChart = expectLiveChart(tight, 'mpl-tight.png', 'matplotlib').chart
+      if (tightChart.elements.length === 0 || tightChart.hitmapStatus !== 'unavailable' || tightChart.hitmap.length !== 0) {
+        throw new Error('tight matplotlib save did not preserve catalog with an unavailable hitmap')
+      }
+      checks.push('chart matplotlib bbox_inches=tight preserves catalog without hitmap')
+
+      const closed = await runChartSource(matplotlibChartSource('closed'), ['mpl-closed.png'])
+      expectLiveChart(closed, 'mpl-closed.png', 'matplotlib')
+      checks.push('chart matplotlib strong registration survives pyplot close')
+
+      const direct = await runChartSource(matplotlibChartSource('figure'), ['mpl-figure.png'])
+      expectLiveChart(direct, 'mpl-figure.png', 'matplotlib')
+      checks.push('chart matplotlib Figure.savefig works without pyplot')
+
+      const two = await runChartSource(matplotlibChartSource('two'), ['mpl-one.png', 'mpl-two.png'])
+      expectLiveChart(two, 'mpl-one.png', 'matplotlib')
+      expectLiveChart(two, 'mpl-two.png', 'matplotlib')
+      if (two.capture?.chartUnavailablePaths.length !== 0) throw new Error('two registered matplotlib figures lost chart state')
+      checks.push('chart matplotlib extracts two saved figures independently')
+
+      const undeclared = await runChartSource(matplotlibChartSource('undeclared'), [])
+      if (undeclared.capture?.captured.some(artifact => artifact.logicalName === 'mpl-undeclared.png') === true
+        || !undeclared.capture?.skippedRasterPaths.includes('mpl-undeclared.png')
+        || undeclared.capture?.chartUnavailablePaths.length !== 0) {
+        throw new Error('undeclared matplotlib PNG was captured or was not reported as skipped')
+      }
+      checks.push('chart matplotlib undeclared PNG is neither captured nor extracted')
+
+      const outside = await runChartSource(matplotlibChartSource('outside'), ['mpl-outside.png'])
+      if (outside.capture?.captured.some(artifact => artifact.logicalName === 'mpl-outside.png') === true) {
+        throw new Error('matplotlib save outside SCIENCE_ARTIFACT_DIR was captured')
+      }
+      if (outside.capture?.chartUnavailablePaths.length !== 0) {
+        throw new Error('matplotlib save outside SCIENCE_ARTIFACT_DIR was reported as unavailable')
+      }
+      checks.push('chart matplotlib save outside artifact directory is not registered')
+    } else {
+      const basic = await runChartSource(ggplotChartSource('basic'), ['r-basic.png'])
+      const basicLive = expectLiveChart(basic, 'r-basic.png', 'ggplot2')
+      expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series'])
+      const basicPng = pngDimensions(await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256))
+      if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
+        || basicLive.chart.png.dpi !== 150) throw new Error('ggplot2 chart PNG metadata disagreed with captured bytes')
+      checks.push('chart ggplot2 ggsave dpi=150: catalog, PNG grid, namespace, source bytes')
+
+      for (const caseName of ['device', 'base'] as const) {
+        const filename = `r-${caseName}.png`
+        const result = await runChartSource(ggplotChartSource(caseName), [filename])
+        const artifact = result.capture?.captured.find(candidate => candidate.logicalName === filename)
+        if (artifact === undefined || artifact.chart !== undefined
+          || !result.capture?.chartUnavailablePaths.includes(filename)) {
+          throw new Error(`${caseName} R graphics unexpectedly became addressable`)
+        }
+      }
+      checks.push('chart R print-to-device and base graphics remain unaddressable')
+
+      const facet = await runChartSource(ggplotChartSource('facet'), ['r-facet.png'])
+      const facetChart = expectLiveChart(facet, 'r-facet.png', 'ggplot2').chart
+      if (!facetChart.elements.some(element => element.id.startsWith('axes['))
+        || facetChart.elements.filter(element => element.kind === 'x_label').length !== 1) {
+        throw new Error('ggplot2 facet catalog did not retain panel prefixes and one shared x label')
+      }
+      checks.push('chart ggplot2 facet catalog uses panel prefixes and shared labels')
+    }
+
     const cancelled = await context.scienceRuntime.startRun({
       session,
       language,
       code: waitingSource(language),
-      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 2),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     setTimeout(() => {
@@ -498,7 +749,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: waitingSource(language),
-      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 3),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectTerminal(await timedOut.done, 'timed-out', 'TIMEOUT')
@@ -509,7 +760,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       session,
       language,
       code: deniedWriteSource(language, deniedTarget),
-      ...authorize(session, language === 'python' ? 'run_python' : 'run_r', 4),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     // Kernel runs have no per-run exit code or signal to classify a denied
@@ -525,7 +776,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     if (capturedChart.mediaType !== 'image/png') throw new Error('auto-capture returned a non-image artifact for a PNG file')
     checks.push('real PNG artifact auto-capture')
 
-    const annotateAuthorization = authorize(session, 'annotate_artifact', 5)
+    const annotateAuthorization = authorizeNext('annotate_artifact')
     const chart = await context.scienceRuntime.annotateArtifact({
       session,
       logicalName: 'real-chart.png',
@@ -548,7 +799,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     }
     checks.push('chart replay')
 
-    const outcomeAuthorization = authorize(session, 'publish_outcome', 6)
+    const outcomeAuthorization = authorizeNext('publish_outcome')
     const outcome: ScienceOutcomePublication = {
       revision: 1,
       title: `${language} real acceptance outcome`,
@@ -575,13 +826,12 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     // state persistence and interrupt survival on epoch 1, then a fresh
     // epoch each time timeout escalation, environment-rebound, and idle
     // expiry replace it, losing `x` every time.
-    const toolName = language === 'python' ? 'run_python' : 'run_r'
     const epoch1 = successResult.terminal.kernelEpoch
 
     if (language === 'r') {
       const bareValue = await context.scienceRuntime.startRun({
         session, language, code: R_BARE_VALUE_SOURCE,
-        ...authorize(session, toolName, 7),
+        ...authorizeNext(toolName),
         signal: new AbortController().signal,
       })
       const bareValueResult = await bareValue.done
@@ -594,14 +844,14 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const assignX = await context.scienceRuntime.startRun({
       session, language, code: assignSource(language, 'x', 1),
-      ...authorize(session, toolName, 8),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectTerminal(await assignX.done, 'success')
 
     const printX1 = await context.scienceRuntime.startRun({
       session, language, code: printSource(language, 'x'),
-      ...authorize(session, toolName, 9),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const printX1Result = await printX1.done
@@ -612,7 +862,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const interrupted = await context.scienceRuntime.startRun({
       session, language, code: waitingSource(language),
-      ...authorize(session, toolName, 10),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     setTimeout(() => { interrupted.cancel() }, 100)
@@ -620,7 +870,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const printX2 = await context.scienceRuntime.startRun({
       session, language, code: printSource(language, 'x'),
-      ...authorize(session, toolName, 11),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const printX2Result = await printX2.done
@@ -631,14 +881,14 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const escalated = await context.scienceRuntime.startRun({
       session, language, code: taintingSleepSource(language),
-      ...authorize(session, toolName, 12),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectEpoch(expectTerminalReturning(await escalated.done, 'timed-out', 'TIMEOUT'), epoch1)
 
     const printXAfterEscalation = await context.scienceRuntime.startRun({
       session, language, code: printSource(language, 'x'),
-      ...authorize(session, toolName, 13),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const printXAfterEscalationResult = await printXAfterEscalation.done
@@ -650,7 +900,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const assignXAgain = await context.scienceRuntime.startRun({
       session, language, code: assignSource(language, 'x', 42),
-      ...authorize(session, toolName, 14),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectEpoch(expectTerminalReturning(await assignXAgain.done, 'success'), epoch2)
@@ -665,7 +915,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const printXAfterRebind = await context.scienceRuntime.startRun({
       session, language, code: printSource(language, 'x'),
-      ...authorize(session, toolName, 15),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const printXAfterRebindResult = await printXAfterRebind.done
@@ -677,7 +927,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const assignXForIdle = await context.scienceRuntime.startRun({
       session, language, code: assignSource(language, 'x', 7),
-      ...authorize(session, toolName, 16),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectEpoch(expectTerminalReturning(await assignXForIdle.done, 'success'), epoch3)
@@ -686,7 +936,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const printXAfterIdle = await context.scienceRuntime.startRun({
       session, language, code: printSource(language, 'x'),
-      ...authorize(session, toolName, 17),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const printXAfterIdleResult = await printXAfterIdle.done
@@ -707,7 +957,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const install = await context.scienceRuntime.startRun({
       session, language, code: installSource,
-      ...authorize(session, toolName, 18),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     expectEpoch(expectTerminalReturning(await install.done, 'success'), installEpoch)
@@ -716,7 +966,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     const importSource = language === 'python' ? PYTHON_PROBE_IMPORT_SOURCE : R_PROBE_LIBRARY_SOURCE
     const importSameKernel = await context.scienceRuntime.startRun({
       session, language, code: importSource,
-      ...authorize(session, toolName, 19),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const importSameKernelResult = await importSameKernel.done
@@ -737,7 +987,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const importAfterRestart = await context.scienceRuntime.startRun({
       session, language, code: importSource,
-      ...authorize(session, toolName, 20),
+      ...authorizeNext(toolName),
       signal: new AbortController().signal,
     })
     const importAfterRestartResult = await importAfterRestart.done

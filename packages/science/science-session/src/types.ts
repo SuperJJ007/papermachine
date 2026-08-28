@@ -331,6 +331,58 @@ export type ScienceArtifactMediaType =
   | 'text/markdown'
   | 'text/plain'
 
+/** Runtime-independent fields available to every addressable chart implementation. */
+export interface ScienceChartStateBase {
+  /** Addressable chart elements and their current JSON values. */
+  readonly elements: readonly ScienceChartElement[]
+  /** Applied chart operations; T1 persists an empty list for later protocol expansion. */
+  readonly ops: readonly ScienceChartOp[]
+}
+
+/** An addressable live figure retained by a supported language kernel. */
+export interface ScienceLiveFigureChartState extends ScienceChartStateBase {
+  /** Figure implementation that owns the live object. */
+  readonly runtime: 'matplotlib' | 'ggplot2'
+  /** Kernel-private handle: the run-relative path used when the figure was saved. */
+  readonly figureKey: string
+  /** Exact saved PNG raster and resolved export density. */
+  readonly png: { readonly width: number; readonly height: number; readonly dpi: number }
+  /** Pixel-space targets for elements whose rendered coordinates match the saved PNG. */
+  readonly hitmap: readonly ScienceChartHit[]
+  /** Whether {@link hitmap} is valid for the saved PNG pixel grid. */
+  readonly hitmapStatus: 'ok' | 'unavailable'
+}
+
+/** Closed set of addressable chart implementations persisted by Science. */
+export type ScienceChartState = ScienceLiveFigureChartState
+
+/** One addressable semantic element extracted from a chart. */
+export interface ScienceChartElement {
+  /** Stable chart-local path without control characters. */
+  readonly id: string
+  /** Supported element category. */
+  readonly kind: 'title' | 'subtitle' | 'x_label' | 'y_label' | 'tick_labels' | 'legend' | 'series' | 'grid' | 'axis_range' | 'axis_scale' | 'figure_size' | 'font' | 'annotation'
+  /** Zero-based axes index, or `null` for figure-wide elements. */
+  readonly axes: number | null
+  /** Human-readable series or annotation label when one exists. */
+  readonly label: string | null
+  /** Current JSON value, serialized to at most 1 KiB. */
+  readonly current: unknown
+}
+
+/** One pixel-space hit target for an extracted chart element. */
+export interface ScienceChartHit {
+  /** Element id referenced by this target. */
+  readonly id: string
+  /** Inclusive pixel-space bounds `[x0, y0, x1, y1]`. */
+  readonly bbox: readonly [number, number, number, number]
+  /** Painter-order priority used to resolve overlapping targets. */
+  readonly z: number
+}
+
+/** Reserved chart operation union; T1 accepts no operations. */
+export type ScienceChartOp = never
+
 /**
  * Fields carried by every immutable Science artifact version. The bytes live
  * in the owning project's artifact store; the event pins them by store
@@ -378,6 +430,8 @@ interface ScienceArtifactVersionBase {
 
 /** Artifact version produced by a model-issued run or metadata-curation call. */
 export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {
+  /** Addressable state for a PNG produced through a supported figure save API. */
+  readonly chart?: ScienceChartState
   /** Exact baseline version this content descends from, when an operation named one. */
   readonly parent?: ScienceArtifactVersionRef
   /** Whether this version's current title and caption are capture-derived or model-curated. */
@@ -392,6 +446,8 @@ export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {
 
 /** PNG version committed directly by a person through an artifact editor. */
 export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {
+  /** Addressable state inherited or produced by the direct PNG editor. */
+  readonly chart?: ScienceChartState
   /** Exact prior PNG version that was edited. */
   readonly parent: ScienceArtifactVersionRef
   /** Direct-editor provenance; no run, tool call, or model request authorized this version. */
@@ -630,6 +686,7 @@ interface ScienceClientArtifactVersionBase {
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
   readonly createdAt: number
+  readonly chart?: ScienceChartState
 }
 
 /** Browser-safe run-produced artifact version with transcript provenance. */

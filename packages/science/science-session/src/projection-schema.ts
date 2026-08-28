@@ -3,7 +3,7 @@
 import { isJsonValue } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import type { ZodType } from 'zod'
-import { decodeScienceMode } from './codec.ts'
+import { decodeScienceChartState, decodeScienceMode } from './codec.ts'
 import type { ScienceClientProjection, ScienceKernelEndReason } from './types.ts'
 
 /**
@@ -234,6 +234,18 @@ function validArtifact(value: unknown): boolean {
   if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq')
   if (candidate['caption'] !== undefined) keys.push('caption')
   if (candidate['parent'] !== undefined) keys.push('parent')
+  if (candidate['chart'] !== undefined) keys.push('chart')
+  let validChart = true
+  if (candidate['chart'] !== undefined) {
+    if (candidate['mediaType'] !== 'image/png') validChart = false
+    else {
+      try {
+        decodeScienceChartState(candidate['chart'])
+      } catch {
+        validChart = false
+      }
+    }
+  }
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && candidate['artifactId'].length > 0
@@ -260,6 +272,7 @@ function validArtifact(value: unknown): boolean {
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
     && safeInteger(candidate['createdAt'])
+    && validChart
 }
 
 function validEvidence(value: unknown): boolean {

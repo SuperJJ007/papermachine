@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The Science Session domain: durable required-on-read Session events, strict deterministic Host replay, a pre-commit invariant, and the optional client-safe `science` Session projection. This package exposes no mutation service, starts no process, observes no interpreter, registers no model-facing tool or prompt, and renders no client UI. Artifact bytes live in the owning project's artifact store (`@deepseek-ai/dsh-science-artifact-store`); this package's own `science/artifact-saved` durable event carries only that store's coordinates. `@deepseek-ai/dsh-science-runtime` appends environment, run, and artifact events; `@deepseek-ai/dsh-tool-science` binds mode and publishes Outcomes.
+The Science Session domain: durable required-on-read Session events, strict deterministic Host replay, a pre-commit invariant, and the optional client-safe `science` Session projection. This package exposes no mutation service, starts no process, observes no interpreter, registers no model-facing tool or prompt, and renders no client UI. Artifact bytes live in the owning project's artifact store (`@deepseek-ai/dsh-science-artifact-store`); this package's own `science/artifact-saved` durable event carries that store's coordinates and may carry bounded addressable chart state for a PNG version. `@deepseek-ai/dsh-science-runtime` appends environment, run, and artifact events; `@deepseek-ai/dsh-tool-science` binds mode and publishes Outcomes.
 
 ## Durable vocabulary
 

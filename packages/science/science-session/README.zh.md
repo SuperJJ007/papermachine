@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-Science Session 领域：持久化的 required-on-read Session 事件、严格确定性的 Host 重放、一个 pre-commit invariant，以及可选且客户端安全的 `science` Session projection。本包不暴露变更服务，不启动进程，不观测解释器，不注册面向模型的工具或提示词，也不渲染客户端 UI。Artifact 字节存放在其所属 project 的 artifact store 中(`@deepseek-ai/dsh-science-artifact-store`)；本包自己的 `science/artifact-saved` 持久化事件只携带该 store 的坐标。`@deepseek-ai/dsh-science-runtime` 追加 environment、run 与 artifact 事件；`@deepseek-ai/dsh-tool-science` 绑定 mode 并发布 Outcome。
+Science Session 领域：持久化的 required-on-read Session 事件、严格确定性的 Host 重放、一个 pre-commit invariant，以及可选且客户端安全的 `science` Session projection。本包不暴露变更服务，不启动进程，不观测解释器，不注册面向模型的工具或提示词，也不渲染客户端 UI。Artifact 字节存放在其所属 project 的 artifact store 中(`@deepseek-ai/dsh-science-artifact-store`)；本包自己的 `science/artifact-saved` 持久化事件携带该 store 的坐标，也可为 PNG 版本携带有固定上限、可寻址的 chart 状态。`@deepseek-ai/dsh-science-runtime` 追加 environment、run 与 artifact 事件；`@deepseek-ai/dsh-tool-science` 绑定 mode 并发布 Outcome。
 
 ## 持久化词汇
 

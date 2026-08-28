@@ -2,6 +2,7 @@
 
 import { Buffer } from 'node:buffer'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { isJsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
@@ -25,6 +26,7 @@ import type {
 } from './domain.ts'
 import type {
   ScienceArtifactVersion,
+  ScienceChartState,
   ScienceEnvironmentBinding,
   ScienceKernelEndReason,
   ScienceKernelState,
@@ -52,6 +54,14 @@ const MAX_ARTIFACT_INPUTS = 4096
  * can produce.
  */
 const MAX_PACKAGES_ENTRIES = 50_000
+/** Maximum extracted elements persisted in one chart state. */
+export const MAX_CHART_ELEMENTS = 200
+/** Maximum pixel hit targets persisted in one chart state. */
+export const MAX_CHART_HITS = 400
+/** Maximum UTF-8 JSON size of one complete chart state. */
+export const MAX_CHART_STATE_BYTES = 65_536
+const MAX_CHART_ELEMENT_ID_LENGTH = 200
+const MAX_CHART_CURRENT_BYTES = 1024
 const SAFE_INTEGER = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
 const POSITIVE_INTEGER = SAFE_INTEGER.min(1)
 const SHA256 = z.string().regex(/^[a-f0-9]{64}$/)
@@ -82,6 +92,82 @@ const artifactVersionRefSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
   version: POSITIVE_INTEGER,
 }).strict()
+
+const chartElementIdSchema = z.string()
+  .min(1)
+  .max(MAX_CHART_ELEMENT_ID_LENGTH)
+  .refine(value => !/[\u0000-\u001f\u007f-\u009f]/.test(value), {
+    message: 'chart element id must not contain control characters',
+  })
+
+const chartElementSchema = z.object({
+  id: chartElementIdSchema,
+  kind: z.enum([
+    'title',
+    'subtitle',
+    'x_label',
+    'y_label',
+    'tick_labels',
+    'legend',
+    'series',
+    'grid',
+    'axis_range',
+    'axis_scale',
+    'figure_size',
+    'font',
+    'annotation',
+  ]),
+  axes: SAFE_INTEGER.nullable(),
+  label: text(MAX_LABEL_LENGTH).nullable(),
+  current: z.unknown().refine(isJsonValue, { message: 'chart element current must be JSON' }).refine(
+    value => Buffer.byteLength(JSON.stringify(value), 'utf8') <= MAX_CHART_CURRENT_BYTES,
+    { message: `chart element current must be at most ${String(MAX_CHART_CURRENT_BYTES)} UTF-8 JSON bytes` },
+  ),
+}).strict()
+
+const chartPngSchema = z.object({
+  width: POSITIVE_INTEGER,
+  height: POSITIVE_INTEGER,
+  dpi: z.number().positive(),
+}).strict()
+
+const chartHitSchema = z.object({
+  id: chartElementIdSchema,
+  bbox: z.tuple([
+    z.number().nonnegative(),
+    z.number().nonnegative(),
+    z.number().nonnegative(),
+    z.number().nonnegative(),
+  ]),
+  z: z.number(),
+}).strict()
+
+const chartStateSchema: z.ZodType<ScienceChartState> = z.object({
+  runtime: z.enum(['matplotlib', 'ggplot2']),
+  figureKey: SAFE_LOGICAL_NAME,
+  png: chartPngSchema,
+  elements: z.array(chartElementSchema).max(MAX_CHART_ELEMENTS),
+  ops: z.array(z.never()),
+  hitmap: z.array(chartHitSchema).max(MAX_CHART_HITS),
+  hitmapStatus: z.enum(['ok', 'unavailable']),
+}).strict().superRefine((chart, ctx) => {
+  const elementIds = new Set(chart.elements.map(element => element.id))
+  if (elementIds.size !== chart.elements.length) issue(ctx, 'chart element ids must be unique', ['elements'])
+  for (const [index, hit] of chart.hitmap.entries()) {
+    if (!elementIds.has(hit.id)) issue(ctx, 'chart hit id must reference an element', ['hitmap', index, 'id'])
+    const [x0, y0, x1, y1] = hit.bbox
+    if (x0 > x1 || y0 > y1) issue(ctx, 'chart hit bbox coordinates must be ordered', ['hitmap', index, 'bbox'])
+    if (x1 > chart.png.width || y1 > chart.png.height) {
+      issue(ctx, 'chart hit bbox must be within the PNG pixel bounds', ['hitmap', index, 'bbox'])
+    }
+  }
+  if (chart.hitmapStatus === 'unavailable' && chart.hitmap.length !== 0) {
+    issue(ctx, 'an unavailable chart hitmap must be empty', ['hitmap'])
+  }
+  if (Buffer.byteLength(JSON.stringify(chart), 'utf8') > MAX_CHART_STATE_BYTES) {
+    issue(ctx, `chart state must be at most ${String(MAX_CHART_STATE_BYTES)} UTF-8 JSON bytes`, [])
+  }
+})
 
 const runArtifactInputSchema = artifactVersionRefSchema.extend({
   path: RUN_INPUT_PATH,
@@ -309,6 +395,7 @@ const artifactBaseSchema = z.object({
   environmentRevision: POSITIVE_INTEGER,
   environmentFingerprint: SHA256,
   createdAt: SAFE_INTEGER,
+  chart: chartStateSchema.optional(),
 })
 
 const artifactSchema = z.discriminatedUnion('origin', [
@@ -324,7 +411,11 @@ const artifactSchema = z.discriminatedUnion('origin', [
     origin: z.literal('human-edit'),
     mediaType: z.literal('image/png'),
   }).strict(),
-])
+]).superRefine((artifact, ctx) => {
+  if (artifact.chart !== undefined && artifact.mediaType !== 'image/png') {
+    issue(ctx, 'only image/png artifact versions may carry chart state', ['chart'])
+  }
+})
 
 /**
  * Reject the pre-store `science/artifact-saved` value shape outright, with a
@@ -452,6 +543,15 @@ export function decodeScienceRunTerminal(value: unknown): ScienceRunTerminal {
 export function decodeScienceArtifact(value: unknown): ScienceArtifactVersion {
   rejectEmbeddedAttachmentArtifact(value)
   return artifactSchema.parse(value) as ScienceArtifactVersion
+}
+
+/**
+ * Decode one complete addressable chart state.
+ * @param value - untrusted persisted or kernel-produced value.
+ * @returns the bounded chart state with validated element and pixel references.
+ */
+export function decodeScienceChartState(value: unknown): ScienceChartState {
+  return chartStateSchema.parse(value)
 }
 
 /**

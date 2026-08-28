@@ -114,6 +114,15 @@ describe('Science projection replay', () => {
       sha256: '6'.repeat(64),
       mediaType: 'image/png',
       byteCount: 64,
+      chart: {
+        runtime: 'matplotlib',
+        figureKey: 'projection-chart.png',
+        png: { width: 1, height: 1, dpi: 100 },
+        elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Evidence' }],
+        ops: [],
+        hitmap: [],
+        hitmapStatus: 'unavailable',
+      },
     })
     events[8] = event('science/artifact-saved', 8, 170, { version: 1, artifact: source })
     events.push(event('science/artifact-saved', 9, 180, {

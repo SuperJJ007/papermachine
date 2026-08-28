@@ -63,6 +63,15 @@ describe('Science projection wire schema', () => {
       versionId: 'version-second',
       createdAt: 179,
     }
+    const chartState = {
+      runtime: 'matplotlib' as const,
+      figureKey: 'chart.png',
+      png: { width: 1, height: 1, dpi: 100 },
+      elements: [{ id: 'title', kind: 'title' as const, axes: null, label: null, current: 'Evidence' }],
+      ops: [],
+      hitmap: [],
+      hitmapStatus: 'unavailable' as const,
+    }
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
     // (open): exit it, then start a fresh epoch 2 so this scenario models a
     // realistic restart rather than a rejected duplicate open epoch.
@@ -104,6 +113,10 @@ describe('Science projection wire schema', () => {
           ...currentChart,
           caption: 'Visible caption',
         }],
+      },
+      {
+        ...state,
+        artifacts: [{ ...currentChart, chart: chartState }],
       },
       {
         ...state,
@@ -198,6 +211,15 @@ describe('Science projection wire schema', () => {
       byteCount: 64,
       createdAt: currentChart.createdAt + 1,
     }
+    const chartState = {
+      runtime: 'matplotlib',
+      figureKey: 'chart.png',
+      png: { width: 1, height: 1, dpi: 100 },
+      elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Evidence' }],
+      ops: [],
+      hitmap: [],
+      hitmapStatus: 'unavailable',
+    }
     const interruptedRun = interruptedState.runs[0]!
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
     // (open): exit it, then start a fresh epoch 2, whose still-open record
@@ -281,6 +303,8 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [{ ...currentChart, sha256: 'short' }] },
       { ...state, artifacts: [{ ...currentChart, mediaType: 'application/zip' }] },
       { ...state, artifacts: [{ ...currentChart, byteCount: 0 }] },
+      { ...state, artifacts: [{ ...currentChart, mediaType: 'text/plain', chart: chartState }] },
+      { ...state, artifacts: [{ ...currentChart, chart: { ...chartState, runtime: 'unknown' } }] },
       { ...state, artifacts: [{ ...humanChart, parent: undefined }] },
       { ...state, artifacts: [{ ...humanChart, runId: currentRun.runId }] },
       { ...state, artifacts: [{ ...humanChart, mediaType: 'text/plain' }] },

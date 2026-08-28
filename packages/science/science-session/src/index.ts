@@ -2,7 +2,8 @@
  * Science Session Domain: typed durable facts, strict replay validation, and
  * the optional `science` session projection. Artifact bytes live in the
  * project artifact store (`@deepseek-ai/dsh-science-artifact-store`);
- * `science/artifact-saved` carries store references only. This package
+ * `science/artifact-saved` carries store references and optional bounded
+ * PNG chart state. This package
  * exposes no mutation service of its own and performs no environment
  * or process work; `@deepseek-ai/dsh-science-runtime` and
  * `@deepseek-ai/dsh-tool-science` own every durable append.
@@ -37,6 +38,7 @@ export type * from './types.ts'
 export type * from './domain.ts'
 export {
   SCIENCE_EVENT_VERSION,
+  SCIENCE_PROJECTION_STATE_VERSION,
   SCIENCE_PRESET_ID,
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -45,9 +47,11 @@ export {
   ScienceScratchKey,
   ScienceVersionId,
 } from './ids.ts'
+export { MAX_CHART_ELEMENTS, MAX_CHART_HITS, MAX_CHART_STATE_BYTES } from './codec.ts'
 export {
   applyScienceEvent,
   decodeScienceArtifact,
+  decodeScienceChartState,
   decodeScienceDomainEvent,
   decodeScienceEnvironment,
   decodeScienceKernelState,
@@ -72,7 +76,7 @@ export const inject: readonly string[] = []
 /**
  * Register the Science projection when the host composes the projection
  * registry. No attachment extractor exists any more: `science/artifact-saved`
- * carries store references, and the project artifact store — not the
+ * carries no artifact bytes, and the project artifact store — not the
  * session-scoped attachment store — owns artifact bytes.
  * @param ctx - host context that may carry `ctx.sessionProjections`.
  */

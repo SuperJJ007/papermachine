@@ -189,6 +189,7 @@ function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArt
     environmentRevision: artifact.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(artifact.environmentFingerprint),
     createdAt: artifact.createdAt,
+    ...artifact.chart === undefined ? {} : { chart: artifact.chart },
   }
   return artifact.origin === 'human-edit'
     ? { ...common, parent: artifact.parent, origin: artifact.origin, mediaType: artifact.mediaType }

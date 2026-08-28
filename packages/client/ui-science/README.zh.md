@@ -54,6 +54,7 @@ viewer 以 id `science` 注册进 `conversation.details.view`。它的 keyed `co
 - **标签栏** — artifact tab 与 workspace file tab 共用同一条二级可关闭标签栏；没有打开文档时完全不渲染。文件库主页没有自己的文档 tab。点击任一一级页签会让活跃文档返回所选文件库页，但不关闭任何已打开 tab。点击会话记录 artifact 会打开其精确版本，工具栏返回键回到上次选择的文件库页，关闭最后一个文档也会自动回到那里。
 - **工具栏** — 面向活跃标签页的内容视图：artifact 的标题与逻辑名、一个版本步进器（‹ v*n* ›，在两侧相邻的持久化版本间切换），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化 project-store 媒体类型分派：`image/png` 经本包的 `ScienceArtifactImage` 渲染；文本媒体类型通过 `loadText` 取得并解码字节后再次分派——`text/csv` 渲染为可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。JSON 与纯文本在渲染前应用 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000），CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行。这些固定的浏览器呈现上限（`format.ts`）不是 `Config` 字段，也不改变部署的持久化文件准入上限。
+- **图表编辑**（`ScienceChartEditPanel.tsx`）— 对 `chart` 可寻址的 `image/png` 版本，在 raster 内容下方挂一个面板：`hitmapStatus: 'ok'` 时在同一张 PNG 上叠加可点击的命中矩形（`z` 最高者靠普通 DOM 层叠自然胜出，不做手写的点在矩形内判断）；`'unavailable'` 时改为一个纯元素列表，仍可编辑。选中一个 `ScienceChartElement` 后，按其 `kind` 出一个专门设计的属性控件——`title`/`subtitle`/`x_label`/`y_label` 是文本框，`series` 是预设加原生取色器，`tick_labels` 是 4–72 字号滑块，`legend` 是封闭六值分段控件，`grid` 是加参考线控件，其余五种（`axis_range`/`axis_scale`/`figure_size`/`font`/`annotation`，不在 v1 操作集内）只读展示当前值。改动在组件本地态里累积为待存 `ScienceChartOp`——全程不经模型、不进 session log——直到 Save 经注入的 `applyChartOps`（`scienceEdits.applyChartOps`）提交，产出新的 `origin: 'human-edit'` 版本并把已打开标签步进到该版本；Discard 清空待存列表。回执里非空的 `failedOps` 会按下标与原因逐条列出未生效的操作。
 - **编辑选择** — raster 的可选归一化拖拽层会画出一个人工样式区域，一旦区域画出，就提供备注加 `+`/`−` 控件。单纯画出区域不会暂存任何东西；显式控件才会把确切 target 及其可选备注暂存到主 composer。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id 加版本），已暂存 target 的备注变化会立即同步。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本和每条可选 target 备注；任一缺失、媒体类型不匹配、格式错误或版本陈旧的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
@@ -109,6 +110,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 ## 已知限制与暂缓事项
 
+- **图表编辑面板没有实时预览** — 每个控件的改动只会暂存一条待存操作，不会重绘画布；只有 Save 之后，落盘的 `origin: 'human-edit'` 新版本替换旧图，屏幕才显示内核的真实输出。带防抖的预览往返是暂缓工作。
 - **运行中行的执行摘要是静态的，不是实时 tail** — Runtime 与浏览器之间尚无 stdout 增量通道，因此运行中的 `run_python`/`run_r` 行显示固定的「正在执行…」，而不是画板设想的最新 stdout 行预览，直到该通道存在为止。
 - **内核退出行的「查看退出原因」跳转到失败调用，而非其自身的 `kernel-state` 事件** — 该行复用与其他状态相同的调用级轨迹 `inspect`；跳转到精确的 `science/kernel-state` 事实是后续导航工作。
 - **不支持内存 DataFrame 提升** — 一次只产生内存值（画板中的「df — …」行）的 `run_python`/`run_r` 结果，在 Notebook/Compute 数据地基阶段落地前，没有可提升的产物式 chip。

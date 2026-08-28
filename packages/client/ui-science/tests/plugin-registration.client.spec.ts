@@ -101,6 +101,7 @@ function setup(sessionsOverride?: unknown) {
     ),
     addArtifactNote: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
     removeArtifactNote: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
+    applyChartOps: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
   }
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
@@ -268,6 +269,7 @@ describe('ui-science apply', () => {
       loadWorkspaceFile: (path: string) => Promise<unknown>
       addArtifactNote: (request: unknown) => Promise<unknown>
       removeArtifactNote: (request: unknown) => Promise<unknown>
+      applyChartOps: (request: unknown) => Promise<unknown>
     })(SID)
     injected.returnToConversation('assistant-anchor')
     expect(conversation.openChatAt).toHaveBeenCalledWith(SID, 'assistant-anchor')
@@ -281,6 +283,7 @@ describe('ui-science apply', () => {
 
     await expect(injected.addArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.removeArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
+    await expect(injected.applyChartOps({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await fiber.dispose()
   })
 

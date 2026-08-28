@@ -13,11 +13,12 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceChartOp, ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
+import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
 import {
@@ -299,7 +300,7 @@ function BoundedPreText({ text, truncated, total, t }: {
  */
 export function ArtifactContent({
   chart, loadImage, loadText, selectionTarget, onSelectTarget, isTargetAdded,
-  targetComment, onAddTarget, onRemoveTarget, t,
+  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, t,
 }: {
   chart: ScienceClientArtifactVersion
   loadImage: ScienceImageLoader
@@ -310,6 +311,8 @@ export function ArtifactContent({
   targetComment: (target: ScienceEditTarget) => string
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
+  /** Apply pending chart operations through the caller's `applyChartOps` Remote, already scoped to this artifact/version. */
+  onSaveChartOps: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
   t: TranslateNS<'science'>
 }) {
   const isImage = chart.mediaType === 'image/png'
@@ -317,12 +320,19 @@ export function ArtifactContent({
     <div className={css.content}>
       {isImage
         ? (
-          <RasterArtifact
-            chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
-            loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
-            isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
-            t={t}
-          />
+          <>
+            <RasterArtifact
+              chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
+              loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
+              isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+              t={t}
+            />
+            {chart.chart !== undefined && (
+              <ScienceChartEditPanel
+                version={chart.version} chart={chart.chart} content={chart} loadImage={loadImage} onSave={onSaveChartOps} t={t}
+              />
+            )}
+          </>
         )
         : (
           <TextArtifactBody

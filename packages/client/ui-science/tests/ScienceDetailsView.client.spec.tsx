@@ -163,6 +163,7 @@ function props(
     returnToConversation?: Props['returnToConversation']
     addArtifactNote?: Props['addArtifactNote']
     removeArtifactNote?: Props['removeArtifactNote']
+    applyChartOps?: Props['applyChartOps']
     displayTitle?: string
     includeUnknownSession?: boolean
   } = {},
@@ -227,6 +228,9 @@ function props(
     returnToConversation: over.returnToConversation ?? vi.fn(),
     addArtifactNote: over.addArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     removeArtifactNote: over.removeArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
+    applyChartOps: over.applyChartOps ?? vi.fn().mockResolvedValue({
+      ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit', failedOps: [] },
+    }),
     t,
   } as unknown as Props
 }
@@ -1051,6 +1055,97 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.click(retry)
     await waitFor(() => { expect(screen.getByText('ok text')).toBeTruthy() })
     expect(loadText).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('ScienceDetailsView: chart edit panel', () => {
+  function addressableChart(hitmapStatus: 'ok' | 'unavailable' = 'ok') {
+    return chart({
+      version: 2,
+      chart: {
+        runtime: 'matplotlib',
+        figureKey: 'fig',
+        png: { width: 200, height: 100, dpi: 150 },
+        hitmapStatus,
+        hitmap: hitmapStatus === 'ok' ? [{ id: 'title', bbox: [0, 0, 40, 10], z: 1 }] : [],
+        elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Loss' }],
+        ops: [],
+      },
+    })
+  }
+
+  it('has no edit panel and keeps only region-select for an artifact with no chart state', async () => {
+    const science = baseProjection({ artifacts: [chart({ version: 2 })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(screen.queryByRole('button', { name: 'Commit as new version' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
+  })
+
+  it('mounts the panel with a clickable hitmap overlay alongside the existing region-select', async () => {
+    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+    expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'title' }))
+    expect(screen.getByLabelText('Enter text')).toBeTruthy()
+  })
+
+  it('degrades to an element list when the hitmap is unavailable, still editable', async () => {
+    const science = baseProjection({ artifacts: [addressableChart('unavailable')] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+    fireEvent.click(screen.getByRole('button', { name: 'title' }))
+    expect(screen.getByLabelText('Enter text')).toBeTruthy()
+  })
+
+  it('Save submits pending ops through applyChartOps for the exact artifact/version and steps the tab to the committed version', async () => {
+    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const applyChartOps = vi.fn().mockResolvedValue({
+      ok: true, value: { artifactId: 'chart-1', version: 3, origin: 'human-edit', failedOps: [] },
+    })
+    render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
+    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+
+    fireEvent.click(screen.getByRole('button', { name: 'title' }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+
+    await waitFor(() => { expect(applyChartOps).toHaveBeenCalledOnce() })
+    expect(applyChartOps).toHaveBeenCalledWith({
+      artifactId: 'chart-1', version: 2, ops: [{ op: 'set_title', axes: null, text: 'New title' }],
+    })
+    await waitFor(() => {
+      const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
+      expect(openTab).toMatchObject({ version: 3 })
+    })
+  })
+
+  it('a rejected applyChartOps call leaves the tab on its current version and surfaces the rejection', async () => {
+    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const applyChartOps = vi.fn().mockResolvedValue({ ok: false, error: { message: 'stale version' } })
+    render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
+    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+
+    fireEvent.click(screen.getByRole('button', { name: 'title' }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+
+    expect(await screen.findByText('Commit failed: stale version')).toBeTruthy()
+    const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
+    expect(openTab).toMatchObject({ version: 2 })
   })
 })
 

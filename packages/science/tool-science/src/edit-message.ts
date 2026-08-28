@@ -6,10 +6,13 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
+import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
 import { applyScienceArtifactNotes, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  ScienceChartEditReceipt,
+  ScienceChartEditRequest,
   ScienceEditErrorCode,
   ScienceArtifactNoteAddRequest,
   ScienceArtifactNoteReceipt,
@@ -257,6 +260,45 @@ export class ScienceEditService extends TypertRemoteService {
     }
     agent.followup(createScienceEditMessage(resolved, regionImages))
     return { accepted: true }
+  }
+
+  /**
+   * Apply deterministic operations to one exact current addressable chart.
+   * @param agent - Agent whose session owns the chart.
+   * @param request - Exact chart version and ordered operations.
+   * @param signal - Client-owned cancellation for the Runtime operation.
+   * @returns the committed direct-edit version and unresolved operation targets.
+   */
+  @Remote('applyChartOps')
+  async applyChartOps(
+    agent: Agent,
+    request: ScienceChartEditRequest,
+    signal: AbortSignal,
+  ): Promise<ScienceChartEditReceipt> {
+    try {
+      const result = await this.ctx.scienceRuntime.applyChartEdit({
+        session: agent.session,
+        artifactId: request.artifactId,
+        version: request.version,
+        ops: request.ops,
+        signal,
+      })
+      return {
+        artifactId: result.artifact.artifactId,
+        version: result.artifact.version,
+        origin: 'human-edit',
+        failedOps: result.failedOps,
+      }
+    } catch (error: unknown) {
+      if (!(error instanceof ScienceRuntimeError)) throw error
+      switch (error.code) {
+        case 'CHART_STALE_VERSION': throw new ScienceEditError(error.message, 'CHART_STALE')
+        case 'CHART_NOT_ADDRESSABLE': throw new ScienceEditError(error.message, 'CHART_NOT_ADDRESSABLE')
+        case 'CHART_ELEMENT_NOT_FOUND':
+        case 'CHART_OP_INVALID': throw new ScienceEditError(error.message, 'CHART_OP_INVALID')
+        default: throw error
+      }
+    }
   }
 
   /**

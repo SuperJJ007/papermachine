@@ -10,7 +10,7 @@ import { ScienceEditService } from './edit-message.ts'
 export const name = 'science-edit-service'
 
 /** Services required by the Host commit path: the store owns artifact bytes; message-image admission still uses the attachment store. */
-export const inject = ['attachments', 'scienceArtifactStore']
+export const inject = ['attachments', 'scienceArtifactStore', 'scienceRuntime']
 
 /**
  * Register the process-global Remote where the Host Typert Gateway can resolve it.

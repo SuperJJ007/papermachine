@@ -13,7 +13,7 @@ import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek
 import { latestRequestHeaderSeq, requireScienceSession } from './run.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
-import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import { formatScienceArtifactEdits, scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
 
 const artifactReceiptSchema = {
   type: 'object',
@@ -62,6 +62,8 @@ export function formatArtifactReceipt(value: ScienceArtifactReceiptValue): strin
   ]
   if (value.caption !== undefined) lines.push(`caption: ${value.caption}`)
   lines.push(`${value.mediaType}, ${String(value.bytes)} bytes`)
+  const edits = formatScienceArtifactEdits(value.edits ?? [])
+  if (edits !== undefined) lines.push(edits)
   return lines.join('\n')
 }
 

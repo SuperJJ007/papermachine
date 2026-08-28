@@ -3,7 +3,21 @@
  * values, common to `annotate_artifact` and `get_science_state`.
  */
 
-import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartOp } from '@deepseek-ai/dsh-science-session'
+
+/** Model-safe identity of one applied chart operation and its addressed element. */
+export interface ScienceArtifactEditSummary {
+  readonly op: ScienceChartOp['op']
+  readonly target: string
+}
+
+const chartEditSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size', 'add_reference_line'], required: true },
+    target: { type: 'string', required: true },
+  },
+} as const
 
 /** Identity, curation, source, and media fields shared by the artifact-receipt and state schemas. */
 export const scienceArtifactSchemaProperties = {
@@ -24,6 +38,8 @@ export const scienceArtifactSchemaProperties = {
   mediaType: { type: 'string', required: true },
   bytes: { type: 'integer', required: true },
   createdAt: { type: 'integer', required: true },
+  edits: { type: 'array', items: chartEditSchema },
+  editCount: { type: 'integer' },
 } as const
 
 /** Value shape `scienceArtifactValueFields` returns, matching `scienceArtifactSchemaProperties` field-for-field. */
@@ -39,6 +55,39 @@ export interface ScienceArtifactValueFields {
   readonly mediaType: ScienceArtifactMediaType
   readonly bytes: number
   readonly createdAt: number
+  readonly edits?: ScienceArtifactEditSummary[]
+  readonly editCount?: number
+}
+
+function axesTarget(axes: number | null, element: string): string {
+  return axes === null ? element : `axes[${String(axes)}].${element}`
+}
+
+function chartEditTarget(op: ScienceChartOp): string {
+  switch (op.op) {
+    case 'set_title': return axesTarget(op.axes, 'title')
+    case 'set_axis_label': return axesTarget(op.axes, `${op.axis}_label`)
+    case 'set_series_color': return axesTarget(op.axes, `series[${op.label}]`)
+    case 'set_legend_position': return axesTarget(op.axes, 'legend')
+    case 'set_tick_font_size': return axesTarget(op.axes, 'tick_labels')
+    case 'add_reference_line': return axesTarget(op.axes, 'annotation')
+    default: return assertNever(op)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`tool-science: unsupported chart operation ${JSON.stringify(value)}`)
+}
+
+/** Reduce chart operations to model-safe operation and element identities. */
+export function scienceArtifactEdits(artifact: ScienceArtifactVersion): ScienceArtifactEditSummary[] {
+  return artifact.chart?.ops.map(op => ({ op: op.op, target: chartEditTarget(op) })) ?? []
+}
+
+/** Render the model-visible direct-edit suffix for one artifact version. */
+export function formatScienceArtifactEdits(edits: readonly ScienceArtifactEditSummary[]): string | undefined {
+  if (edits.length === 0) return undefined
+  return `${String(edits.length)} direct edits: ${edits.map(edit => `${edit.op} (${edit.target})`).join(', ')}.`
 }
 
 /**
@@ -52,6 +101,7 @@ export interface ScienceArtifactValueFields {
  * @returns the shared value fields.
  */
 export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): ScienceArtifactValueFields {
+  const edits = scienceArtifactEdits(artifact)
   return {
     artifactId: String(artifact.artifactId),
     logicalName: artifact.logicalName,
@@ -66,5 +116,6 @@ export function scienceArtifactValueFields(artifact: ScienceArtifactVersion): Sc
     mediaType: artifact.mediaType,
     bytes: artifact.byteCount,
     createdAt: artifact.createdAt,
+    ...edits.length === 0 ? {} : { edits, editCount: edits.length },
   }
 }

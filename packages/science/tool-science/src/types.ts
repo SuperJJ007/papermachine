@@ -10,7 +10,7 @@
  * @module @deepseek-ai/dsh-tool-science/types
  */
 
-import type { ScienceArtifactId, ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceChartOp } from '@deepseek-ai/dsh-science-session/types'
 
 /** A top-left-origin region normalized against the selected raster version. */
 export interface ScienceNormalizedRegionTarget {
@@ -49,6 +49,27 @@ export interface ScienceEditReceipt {
   readonly accepted: true
 }
 
+/** Browser request to apply deterministic operations to one exact chart version. */
+export interface ScienceChartEditRequest {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly ops: readonly ScienceChartOp[]
+}
+
+/** One requested chart operation whose target was absent from the live figure. */
+export interface ScienceChartFailedOp {
+  readonly index: number
+  readonly reason: string
+}
+
+/** Exact new version committed after a direct chart edit. */
+export interface ScienceChartEditReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly origin: 'human-edit'
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
 /** Browser request to add a user-only note to one logical artifact. */
 export interface ScienceArtifactNoteAddRequest {
   readonly artifactId: ScienceArtifactId
@@ -73,6 +94,9 @@ export type ScienceEditErrorCode =
   | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
   | 'SCIENCE_EDIT_STALE_VERSION'
   | 'SCIENCE_EDIT_TARGET_MISMATCH'
+  | 'CHART_STALE'
+  | 'CHART_NOT_ADDRESSABLE'
+  | 'CHART_OP_INVALID'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {

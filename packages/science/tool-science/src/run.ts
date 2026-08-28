@@ -19,6 +19,7 @@ import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './con
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
 import type { ScienceArtifactPresentationItem } from './presentation.ts'
+import { formatScienceArtifactEdits, scienceArtifactEdits } from './artifact-schema.ts'
 
 const outputStreamSchema = {
   type: 'object',
@@ -67,6 +68,16 @@ const capturedArtifactSchema = {
     title: { type: 'string', required: true },
     versionId: { type: 'string', required: true },
     parent: artifactVersionRefSchema,
+    edits: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size', 'add_reference_line'], required: true },
+          target: { type: 'string', required: true },
+        },
+      },
+    },
+    editCount: { type: 'integer' },
   },
 } as const
 
@@ -135,6 +146,7 @@ function nonEmptyCode(code: string): string {
 
 /** Flatten one captured artifact version into the run result's bounded listing entry. */
 function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typeof capturedArtifactSchema> {
+  const edits = scienceArtifactEdits(artifact)
   return {
     artifactId: String(artifact.artifactId),
     logicalName: artifact.logicalName,
@@ -146,6 +158,7 @@ function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typ
     ...artifact.parent === undefined ? {} : {
       parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
     },
+    ...edits.length === 0 ? {} : { edits, editCount: edits.length },
   }
 }
 
@@ -246,6 +259,10 @@ export function formatRunResult(value: ScienceRunValue): string {
     })
     const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
     lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)
+    for (const artifact of value.capturedArtifacts) {
+      const summary = formatScienceArtifactEdits(artifact.edits ?? [])
+      if (summary !== undefined) lines.push(summary)
+    }
   }
   if (value.skippedRaster !== undefined && value.skippedRaster.length > 0) {
     const noun = value.skippedRaster.length === 1 ? 'file' : 'files'

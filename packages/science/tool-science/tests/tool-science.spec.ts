@@ -19,6 +19,7 @@ import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
+import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
@@ -711,6 +712,27 @@ describe('runValueFromResult / formatRunResult', () => {
     })
     expect(withoutSkips).not.toHaveProperty('skippedRaster')
     expect(formatRunResult(withoutSkips)).not.toContain('not captured')
+  })
+
+  it('renders direct-edit operation and target identities for a captured artifact', () => {
+    const edited = artifactVersionFixture({
+      chart: {
+        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
+        hitmap: [], hitmapStatus: 'unavailable', elements: [],
+        ops: [{ op: 'set_series_color', axes: 0, label: 'control', color: '#123456' }],
+      },
+    })
+    const value = runValueFromResult({
+      terminal: successTerminal(),
+      stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false },
+      capture: {
+        captured: [edited], skippedRasterPaths: [], skippedOversizedCount: 0,
+        truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
+      },
+    })
+    expect(formatRunResult(value)).toContain('1 direct edits: set_series_color (axes[0].series[control]).')
+    expect(formatRunResult(value)).not.toContain('#123456')
   })
 
   it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', () => {
@@ -1534,6 +1556,19 @@ describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
     expect(value.versionId).toBe('store-version-csv')
     expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1) curated from run run-1\ntitle: Summary\ntext/csv, 10 bytes')
   })
+
+  it('renders cumulative chart edit identities without operation values', () => {
+    const value = artifactReceiptFromArtifact(artifactVersionFixture({
+      origin: 'model',
+      chart: {
+        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
+        hitmap: [], hitmapStatus: 'unavailable', elements: [],
+        ops: [{ op: 'set_title', axes: null, text: 'Hidden value' }],
+      },
+    }))
+    expect(formatArtifactReceipt(value)).toContain('1 direct edits: set_title (title).')
+    expect(formatArtifactReceipt(value)).not.toContain('Hidden value')
+  })
 })
 
 describe('scienceArtifactPresentation', () => {
@@ -1774,6 +1809,44 @@ describe('annotate_artifact', () => {
 })
 
 describe('scienceEdits submit', () => {
+  it('commits chart operations and translates stable Runtime chart rejections', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-chart-remote')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const artifact = humanArtifactFixture()
+    const apply = vi.spyOn(ctx.scienceRuntime, 'applyChartEdit').mockResolvedValue({
+      artifact,
+      failedOps: [{ index: 1, reason: 'series missing' }],
+    })
+    const request = {
+      artifactId: artifact.artifactId,
+      version: 1,
+      ops: [{ op: 'set_title' as const, axes: null, text: 'New title' }],
+    }
+    await expect(service.applyChartOps(agent, request, testSignal)).resolves.toEqual({
+      artifactId: artifact.artifactId,
+      version: 2,
+      origin: 'human-edit',
+      failedOps: [{ index: 1, reason: 'series missing' }],
+    })
+    expect(apply).toHaveBeenCalledWith({ session, ...request, signal: testSignal })
+
+    for (const [runtimeCode, remoteCode] of [
+      ['CHART_STALE_VERSION', 'CHART_STALE'],
+      ['CHART_NOT_ADDRESSABLE', 'CHART_NOT_ADDRESSABLE'],
+      ['CHART_ELEMENT_NOT_FOUND', 'CHART_OP_INVALID'],
+      ['CHART_OP_INVALID', 'CHART_OP_INVALID'],
+    ] as const) {
+      apply.mockRejectedValueOnce(new ScienceRuntimeError(runtimeCode, runtimeCode))
+      await expect(service.applyChartOps(agent, request, testSignal))
+        .rejects.toMatchObject({ code: remoteCode, message: runtimeCode })
+    }
+    const infrastructure = new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'kernel failed')
+    apply.mockRejectedValueOnce(infrastructure)
+    await expect(service.applyChartOps(agent, request, testSignal)).rejects.toBe(infrastructure)
+  })
+
   it('adds and removes ignorable user-only notes without queuing model input', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-notes')
@@ -2100,6 +2173,35 @@ describe('publish_outcome', () => {
 })
 
 describe('get_science_state artifact sanitization', () => {
+  it('renders cumulative direct edits as operation and target identities without values', () => {
+    const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture({
+      chart: {
+        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
+        hitmap: [], hitmapStatus: 'unavailable', elements: [],
+        ops: [
+          { op: 'set_title', axes: null, text: 'Secret title' },
+          { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Secret label' },
+          { op: 'set_series_color', axes: 0, label: 'treatment', color: '#ff0000' },
+          { op: 'set_legend_position', axes: null, position: 'upper right' },
+          { op: 'set_tick_font_size', axes: 1, size: 14 },
+          { op: 'add_reference_line', axes: 0, orientation: 'h', value: 2.5 },
+        ],
+      },
+    })] }), 20)
+    expect(value.artifacts[0]).toMatchObject({
+      editCount: 6,
+      edits: [
+        { op: 'set_title', target: 'title' },
+        { op: 'set_axis_label', target: 'axes[0].x_label' },
+        { op: 'set_series_color', target: 'axes[0].series[treatment]' },
+        { op: 'set_legend_position', target: 'legend' },
+        { op: 'set_tick_font_size', target: 'axes[1].tick_labels' },
+        { op: 'add_reference_line', target: 'axes[0].annotation' },
+      ],
+    })
+    expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret|#ff0000|2\.5|14/)
+  })
+
   it('keeps direct-edit ancestry and omits run provenance', () => {
     const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture()] }), 20)
     expect(value.artifacts).toEqual([expect.objectContaining({

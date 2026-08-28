@@ -41,6 +41,7 @@ describe('Science edit-message admission', () => {
     try {
       await ctx.plugin(LocalAttachmentStore, { dshHome })
       await ctx.plugin(ScienceArtifactStore, { dshHome })
+      ctx.provide('scienceRuntime', {} as never)
       const fiber = await ctx.plugin(EditService)
       expect(ctx.get('scienceEdits')).toBeInstanceOf(ScienceEditService)
       await fiber.dispose()

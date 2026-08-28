@@ -3,6 +3,7 @@ import {
   decodeScienceArtifact,
   decodeScienceChartState,
   MAX_CHART_ELEMENTS,
+  MAX_CHART_OPS,
 } from '../src/index.ts'
 import type { ScienceChartElement, ScienceChartState } from '../src/index.ts'
 import { artifact } from './fixtures.ts'
@@ -31,6 +32,62 @@ describe('Science chart codec', () => {
     const value = chart()
     expect(decodeScienceChartState(value)).toEqual(value)
     expect(decodeScienceArtifact(artifact({ chart: value }))).toMatchObject({ chart: value })
+  })
+
+  it('decodes every supported chart operation', () => {
+    const ops = [
+      { op: 'set_title', axes: null, text: 'Updated title' },
+      { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Treatment' },
+      { op: 'set_series_color', axes: 0, label: 'control', color: '#12aBcD' },
+      { op: 'set_legend_position', axes: null, position: 'upper right' },
+      { op: 'set_tick_font_size', axes: 1, size: 12 },
+      { op: 'add_reference_line', axes: 0, orientation: 'h', value: 1.5 },
+    ] as const
+    expect(decodeScienceChartState(chart({ ops })).ops).toEqual(ops)
+    expect(decodeScienceChartState(chart({
+      ops: [{ op: 'set_series_color', axes: null, label: 'control', color: 'rebeccapurple' }],
+    })).ops).toHaveLength(1)
+  })
+
+  it('rejects invalid operation operands and unknown operations', () => {
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_series_color', axes: null, label: 'control', color: 'not-a-color' }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_tick_font_size', axes: null, size: 3 }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_title', axes: -1, text: 'Title' }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_title', axes: null, text: 'bad\u0000text' }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_series_color', axes: null, label: 'x'.repeat(201), color: 'red' }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'add_reference_line', axes: null, orientation: 'v', value: Number.POSITIVE_INFINITY }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'unknown', axes: null } as never],
+    }))).toThrow()
+  })
+
+  it('rejects too many operations and operation data above the complete-state byte ceiling', () => {
+    expect(() => decodeScienceChartState(chart({
+      ops: Array.from({ length: MAX_CHART_OPS + 1 }, () => ({ op: 'set_title', axes: null, text: 'x' })),
+    }))).toThrow(/100/)
+    expect(() => decodeScienceChartState(chart({
+      ops: Array.from({ length: MAX_CHART_OPS }, () => ({
+        op: 'set_title' as const,
+        axes: null,
+        text: 'x'.repeat(500),
+      })),
+      elements: Array.from({ length: MAX_CHART_ELEMENTS }, (_, index) => (
+        element(`title.${String(index)}`, 'x'.repeat(100))
+      )),
+      hitmap: [],
+    }))).toThrow(/65536/)
   })
 
   it('rejects too many elements', () => {

@@ -47,7 +47,13 @@ export {
   ScienceScratchKey,
   ScienceVersionId,
 } from './ids.ts'
-export { MAX_CHART_ELEMENTS, MAX_CHART_HITS, MAX_CHART_STATE_BYTES } from './codec.ts'
+export {
+  CHART_COLOR_NAMES,
+  MAX_CHART_ELEMENTS,
+  MAX_CHART_HITS,
+  MAX_CHART_OPS,
+  MAX_CHART_STATE_BYTES,
+} from './codec.ts'
 export {
   applyScienceEvent,
   decodeScienceArtifact,

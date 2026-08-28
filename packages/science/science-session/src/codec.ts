@@ -27,6 +27,7 @@ import type {
 import type {
   ScienceArtifactVersion,
   ScienceChartState,
+  ScienceChartOp,
   ScienceEnvironmentBinding,
   ScienceKernelEndReason,
   ScienceKernelState,
@@ -60,6 +61,29 @@ export const MAX_CHART_ELEMENTS = 200
 export const MAX_CHART_HITS = 400
 /** Maximum UTF-8 JSON size of one complete chart state. */
 export const MAX_CHART_STATE_BYTES = 65_536
+/** Maximum successful direct-edit operations retained by one chart version. */
+export const MAX_CHART_OPS = 100
+/** Closed CSS Color Level 4 names accepted by chart color operations. */
+export const CHART_COLOR_NAMES = [
+  'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige', 'bisque', 'black', 'blanchedalmond',
+  'blue', 'blueviolet', 'brown', 'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral', 'cornflowerblue',
+  'cornsilk', 'crimson', 'cyan', 'darkblue', 'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgreen', 'darkgrey',
+  'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred', 'darksalmon',
+  'darkseagreen', 'darkslateblue', 'darkslategray', 'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
+  'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick', 'floralwhite', 'forestgreen', 'fuchsia',
+  'gainsboro', 'ghostwhite', 'gold', 'goldenrod', 'gray', 'green', 'greenyellow', 'grey', 'honeydew', 'hotpink',
+  'indianred', 'indigo', 'ivory', 'khaki', 'lavender', 'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue',
+  'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen', 'lightgrey', 'lightpink',
+  'lightsalmon', 'lightseagreen', 'lightskyblue', 'lightslategray', 'lightslategrey', 'lightsteelblue',
+  'lightyellow', 'lime', 'limegreen', 'linen', 'magenta', 'maroon', 'mediumaquamarine', 'mediumblue',
+  'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise',
+  'mediumvioletred', 'midnightblue', 'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace',
+  'olive', 'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod', 'palegreen', 'paleturquoise',
+  'palevioletred', 'papayawhip', 'peachpuff', 'peru', 'pink', 'plum', 'powderblue', 'purple', 'rebeccapurple',
+  'red', 'rosybrown', 'royalblue', 'saddlebrown', 'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna',
+  'silver', 'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen', 'steelblue', 'tan', 'teal',
+  'thistle', 'tomato', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke', 'yellow', 'yellowgreen',
+] as const
 const MAX_CHART_ELEMENT_ID_LENGTH = 200
 const MAX_CHART_CURRENT_BYTES = 1024
 const SAFE_INTEGER = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
@@ -142,12 +166,52 @@ const chartHitSchema = z.object({
   z: z.number(),
 }).strict()
 
+const chartAxesSchema = SAFE_INTEGER.nullable()
+const chartOpTextSchema = z.string().max(500).refine(value => !/[\u0000-\u001f\u007f-\u009f]/.test(value), {
+  message: 'chart operation text must not contain control characters',
+})
+const chartOpLabelSchema = z.string().max(200).refine(value => !/[\u0000-\u001f\u007f-\u009f]/.test(value), {
+  message: 'chart operation label must not contain control characters',
+})
+const chartColorNameSchema = z.enum(CHART_COLOR_NAMES)
+const chartColorSchema = z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), chartColorNameSchema])
+const chartOpSchema: z.ZodType<ScienceChartOp> = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('set_title'), axes: chartAxesSchema, text: chartOpTextSchema }).strict(),
+  z.object({
+    op: z.literal('set_axis_label'),
+    axes: chartAxesSchema,
+    axis: z.enum(['x', 'y']),
+    text: chartOpTextSchema,
+  }).strict(),
+  z.object({
+    op: z.literal('set_series_color'),
+    axes: chartAxesSchema,
+    label: chartOpLabelSchema,
+    color: chartColorSchema,
+  }).strict(),
+  z.object({
+    op: z.literal('set_legend_position'),
+    axes: chartAxesSchema,
+    position: z.enum([
+      'best', 'upper left', 'upper right', 'lower left', 'lower right', 'right', 'center left', 'center right',
+      'upper center', 'lower center', 'center',
+    ]),
+  }).strict(),
+  z.object({ op: z.literal('set_tick_font_size'), axes: chartAxesSchema, size: z.number().min(4).max(72) }).strict(),
+  z.object({
+    op: z.literal('add_reference_line'),
+    axes: chartAxesSchema,
+    orientation: z.enum(['h', 'v']),
+    value: z.number(),
+  }).strict(),
+])
+
 const chartStateSchema: z.ZodType<ScienceChartState> = z.object({
   runtime: z.enum(['matplotlib', 'ggplot2']),
   figureKey: SAFE_LOGICAL_NAME,
   png: chartPngSchema,
   elements: z.array(chartElementSchema).max(MAX_CHART_ELEMENTS),
-  ops: z.array(z.never()),
+  ops: z.array(chartOpSchema).max(MAX_CHART_OPS),
   hitmap: z.array(chartHitSchema).max(MAX_CHART_HITS),
   hitmapStatus: z.enum(['ok', 'unavailable']),
 }).strict().superRefine((chart, ctx) => {

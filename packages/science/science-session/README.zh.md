@@ -26,7 +26,7 @@ Artifact parent 与其它来源证明一样，只能指向该 session 自身 log
 
 run 产出的 artifact 投影保留生产它的 Session、授权 run、tool call 与 request header identity。人工编辑投影保留生产 Session、确切 parent 和直接编辑来源，不伪造 run 链接。独立的 `scienceArtifactNotes` 投影按 store `ScienceArtifactId` 折叠可忽略的用户侧添加/删除事件；它是持久化 UI 状态，绝不生成模型消息。
 
-run 产出的 artifact 投影保留其授权 run、tool-call 与 request-header 身份。人工编辑版本的投影则保留确切 parent 与直接编辑 origin，不伪造 run 链接；每个确切 artifact version 仍可作为 run input、edit parent 与 Outcome chart evidence。
+run 产出的 artifact 投影保留其授权 run、tool-call 与 request-header 身份。人工编辑版本的投影则保留确切 parent 与直接编辑 origin，不伪造 run 链接；每个确切 artifact version 仍可作为 run input、edit parent 与 Outcome chart evidence。可寻址 PNG 版本按源码重放顺序携带最多 100 条经校验的直接编辑操作；封闭操作集合包含标题、坐标轴标签、系列颜色、图例位置、刻度字号和参考线。
 
 ## Session 附件注册表
 

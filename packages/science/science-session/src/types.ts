@@ -335,7 +335,7 @@ export type ScienceArtifactMediaType =
 export interface ScienceChartStateBase {
   /** Addressable chart elements and their current JSON values. */
   readonly elements: readonly ScienceChartElement[]
-  /** Applied chart operations; T1 persists an empty list for later protocol expansion. */
+  /** Successful direct-edit operations in source-run replay order. */
   readonly ops: readonly ScienceChartOp[]
 }
 
@@ -380,8 +380,14 @@ export interface ScienceChartHit {
   readonly z: number
 }
 
-/** Reserved chart operation union; T1 accepts no operations. */
-export type ScienceChartOp = never
+/** Deterministic operation supported by both live-figure runtimes. */
+export type ScienceChartOp =
+  | { readonly op: 'set_title'; readonly axes: number | null; readonly text: string }
+  | { readonly op: 'set_axis_label'; readonly axes: number | null; readonly axis: 'x' | 'y'; readonly text: string }
+  | { readonly op: 'set_series_color'; readonly axes: number | null; readonly label: string; readonly color: string }
+  | { readonly op: 'set_legend_position'; readonly axes: number | null; readonly position: 'best' | 'upper left' | 'upper right' | 'lower left' | 'lower right' | 'right' | 'center left' | 'center right' | 'upper center' | 'lower center' | 'center' }
+  | { readonly op: 'set_tick_font_size'; readonly axes: number | null; readonly size: number }
+  | { readonly op: 'add_reference_line'; readonly axes: number | null; readonly orientation: 'h' | 'v'; readonly value: number }
 
 /**
  * Fields carried by every immutable Science artifact version. The bytes live

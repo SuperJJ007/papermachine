@@ -136,15 +136,15 @@ describe('Science composer targets', () => {
     target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
   }
 
-  it('renders nothing when empty and removes both structural and region chips', () => {
+  it('renders nothing when empty and removes region chips', () => {
     const selections = createSnapshotStore<readonly ScienceEditSelection[]>([])
     const remove = vi.fn()
     const view = render(<ScienceComposerChips selections={selections} remove={remove} t={t} />)
     expect(view.container.firstChild).toBeNull()
     act(() => { selections.set([commented, region]) })
-    expect(screen.getByText('chart-1 v1 · encoding.y: make it blue')).toBeTruthy()
+    expect(screen.getByText('chart-1 v1 · region 10%,20%: make it blue')).toBeTruthy()
     expect(screen.getByText('image-1 v2 · region 10%,20%')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · encoding.y: make it blue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · region 10%,20%: make it blue' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove image-1 v2 · region 10%,20%' }))
     expect(remove.mock.calls).toEqual([[0], [1]])
   })

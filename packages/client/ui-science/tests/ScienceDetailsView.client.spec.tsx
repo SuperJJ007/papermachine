@@ -18,184 +18,39 @@ import type {
   ScienceClientArtifactVersion, ScienceClientHumanEditArtifactVersion, ScienceClientProjection,
   ScienceClientRun, ScienceClientRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import {
   ScienceDetailsView,
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
-import { MAX_ARTIFACT_TEXT_CHARACTERS, MAX_VEGA_LITE_SPEC_CHARACTERS } from '../src/client/format.ts'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
-const { embedMock, finalizeMock, loaderLoadMock, loaderSanitizeMock } = vi.hoisted(() => ({
-  embedMock: vi.fn(), finalizeMock: vi.fn(), loaderLoadMock: vi.fn(), loaderSanitizeMock: vi.fn(),
-}))
-vi.mock('vega-embed', () => ({
-  default: embedMock,
-  vega: {
-    loader: () => ({
-      load: loaderLoadMock,
-      sanitize: loaderSanitizeMock,
-      http: vi.fn(),
-      file: vi.fn(),
-    }),
-  },
-}))
-
 type Props = ScienceDetailsViewProps
-interface LegacyStyleEditRequest { readonly artifactId: string; readonly version: number; readonly spec: string }
-interface LegacyStyleEditReceipt { readonly artifactId: string; readonly version: number; readonly origin: 'human-edit' }
-type CommitStyleEdit = (request: LegacyStyleEditRequest) => Promise<
-  | { readonly ok: true; readonly value: LegacyStyleEditReceipt }
-  | { readonly ok: false; readonly error: { readonly message: string } }
->
-declare function applyStyle(document: object, path: string, field: string, value: string | number): unknown
-declare function selectableSpecPaths(document: object): string[]
-declare function specPathLabel(path: string, translate: Props['t']): string
-declare function vegaSelectionOutline(
-  frame: HTMLElement,
-  chart: HTMLElement,
-  path: string,
-): { readonly left: number; readonly top: number; readonly width: number; readonly height: number; readonly mode: string } | undefined
-declare const restrictedVegaLoader: {
-  sanitize: (uri: string, options: { readonly context: string }) => Promise<unknown>
-}
 
 const SESSION = 'session-1' as SessionId
 const t: Props['t'] = makeTranslate(en)
 
-interface LegacyArtifactContent {
+interface ArtifactContentFixture {
   readonly attachmentId: string
-  readonly mediaType: ScienceClientArtifactVersion['mediaType'] | 'application/vnd.vega-lite+json'
+  readonly mediaType: ScienceClientArtifactVersion['mediaType']
   readonly bytes: number
   readonly width?: number
   readonly height?: number
 }
 
 type RunChartOverrides = Omit<Partial<ScienceClientRunArtifactVersion>, 'mediaType' | 'byteCount'> & {
-  readonly attachment?: LegacyArtifactContent
+  readonly attachment?: ArtifactContentFixture
 }
 type HumanChartOverrides = Omit<Partial<ScienceClientHumanEditArtifactVersion>, 'mediaType' | 'byteCount'> & {
-  readonly attachment?: LegacyArtifactContent
+  readonly attachment?: ArtifactContentFixture
 }
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  embedMock.mockReset()
-  finalizeMock.mockReset()
-  loaderLoadMock.mockReset()
-  loaderSanitizeMock.mockReset()
 })
 
-describe.skip('Vega-Lite style helpers', () => {
-  it('maps unique top-level Vega roles exactly and falls ambiguous or nested paths back to the whole SVG', () => {
-    const frame = document.createElement('div')
-    const chart = document.createElement('div')
-    chart.innerHTML = `<svg>
-      <g class="role-title"></g>
-      <g class="role-mark"></g>
-      <g class="role-axis" aria-label="X-axis titled Category"></g>
-      <g class="role-axis" aria-label="Y-axis titled Value"></g>
-      <g class="role-axis"></g>
-      <g class="role-legend"></g>
-    </svg>`
-    frame.append(chart)
-    frame.scrollLeft = 5
-    frame.scrollTop = 7
-    vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
-      x: 10, y: 20, left: 10, top: 20, right: 410, bottom: 320, width: 400, height: 300, toJSON: () => ({}),
-    })
-    const svg = chart.querySelector('svg') as SVGSVGElement
-    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
-      x: 20, y: 40, left: 20, top: 40, right: 320, bottom: 240, width: 300, height: 200, toJSON: () => ({}),
-    })
-    for (const [index, element] of [...svg.querySelectorAll('g')].entries()) {
-      vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
-        x: 30 + index, y: 50 + index, left: 30 + index, top: 50 + index,
-        right: 130 + index, bottom: 90 + index, width: 100, height: 40, toJSON: () => ({}),
-      })
-    }
-
-    expect(vegaSelectionOutline(frame, chart, 'title')).toEqual({ left: 25, top: 37, width: 100, height: 40, mode: 'exact' })
-    expect(vegaSelectionOutline(frame, chart, 'mark')?.mode).toBe('exact')
-    expect(vegaSelectionOutline(frame, chart, 'encoding.x')?.mode).toBe('exact')
-    expect(vegaSelectionOutline(frame, chart, 'encoding.y')?.mode).toBe('exact')
-    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('exact')
-    expect(vegaSelectionOutline(frame, chart, 'layer.0.mark')).toEqual({
-      left: 15, top: 27, width: 300, height: 200, mode: 'chart',
-    })
-
-    svg.append(svg.querySelector('.role-legend')!.cloneNode())
-    expect(vegaSelectionOutline(frame, chart, 'encoding.color')?.mode).toBe('chart')
-    expect(vegaSelectionOutline(frame, document.createElement('div'), 'mark')).toBeUndefined()
-  })
-
-  it('delegates local sanitize requests to the underlying loader and blocks protocol-relative/HTTP(S) URIs before they reach it', async () => {
-    loaderSanitizeMock.mockResolvedValue({ href: 'local data' })
-    await expect(restrictedVegaLoader.sanitize('data/values.csv', { context: 'href' })).resolves.toEqual({ href: 'local data' })
-    expect(loaderSanitizeMock).toHaveBeenCalledWith('data/values.csv', { context: 'href' })
-    await expect(restrictedVegaLoader.sanitize('//data.example/values.csv', { context: 'href' }))
-      .rejects.toThrow(/external Vega-Lite resource URLs are disabled/)
-    // `context: 'image'` is exactly how vega-scenegraph's ResourceLoader
-    // sanitizes an image mark's `href`/`url` before setting `img.src` — this
-    // proves the restriction reaches that path, not only `load()`'s own data
-    // fetches.
-    await expect(restrictedVegaLoader.sanitize('https://data.example/logo.png', { context: 'image' }))
-      .rejects.toThrow(/external Vega-Lite resource URLs are disabled/)
-    expect(loaderSanitizeMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('enumerates every supported composition operator and ignores non-spec members', () => {
-    expect(selectableSpecPaths({
-      title: 'Chart title',
-      layer: [{ mark: 'bar' }, null],
-      hconcat: [{ encoding: { x: { field: 'x' } } }],
-      concat: [{ mark: 'point' }],
-      spec: [],
-    })).toEqual(['title', 'layer.0.mark', 'hconcat.0.encoding.x', 'concat.0.mark'])
-  })
-
-  it('localizes the bounded target labels and preserves an unknown nested path', () => {
-    expect(['title', 'encoding.y', 'encoding.x', 'mark', 'encoding.color', 'layer.0.mark'].map(path => specPathLabel(path, t)))
-      .toEqual(['Title', 'Y axis', 'X axis', 'Mark style', 'Color / legend', 'layer.0.mark'])
-  })
-
-  it('immutably applies every bounded style field and leaves invalid structural paths unchanged', () => {
-    const source = {
-      layer: [{ mark: 'bar' }],
-      mark: { type: 'text' },
-      encoding: {
-        x: { field: 'x', axis: { title: 'X' } },
-        y: { field: 'y', axis: null },
-        color: { field: 'group', scale: { domain: ['a'] }, legend: { title: 'Group' } },
-        size: [],
-      },
-    }
-    expect(applyStyle(source, 'mark', 'font-size', 14)).toMatchObject({ mark: { type: 'text', fontSize: 14 } })
-    expect(applyStyle({ title: 'Before' }, 'title', 'label', 'After')).toEqual({ title: 'After' })
-    expect(applyStyle({ title: { text: 'Before' } }, 'title', 'label', 'After')).toEqual({ title: { text: 'After' } })
-    expect(applyStyle({ title: 'Before' }, 'title', 'font-size', 18)).toEqual({ title: { text: 'Before', fontSize: 18 } })
-    expect(applyStyle({ title: { text: 'Before' } }, 'title', 'color', '#fff')).toEqual({ title: { text: 'Before', color: '#fff' } })
-    expect(applyStyle({ title: 7 }, 'title', 'color', '#fff')).toEqual({ title: { color: '#fff' } })
-    expect(applyStyle({ title: [] }, 'title', 'label', 'After')).toEqual({ title: { text: 'After' } })
-    expect(applyStyle({ title: null }, 'title', 'font-size', 18)).toEqual({ title: { fontSize: 18 } })
-    expect(applyStyle({ title: [] }, 'title', 'color', '#fff')).toEqual({ title: { color: '#fff' } })
-    expect(applyStyle({ mark: 7 }, 'mark', 'color', '#fff')).toEqual({ mark: { color: '#fff' } })
-    expect(applyStyle(source, 'encoding.x', 'label', 'Axis')).toMatchObject({ encoding: { x: { title: 'Axis' } } })
-    expect(applyStyle(source, 'encoding.color', 'color', '#f00')).toMatchObject({ encoding: { color: { scale: { domain: ['a'], range: ['#f00'] } } } })
-    expect(applyStyle(source, 'encoding.size', 'color', '#0f0')).toMatchObject({ encoding: { size: { scale: { range: ['#0f0'] } } } })
-    expect(applyStyle(source, 'encoding.x', 'font-size', 12)).toMatchObject({ encoding: { x: { axis: { title: 'X', labelFontSize: 12 } } } })
-    expect(applyStyle(source, 'encoding.y', 'font-size', 13)).toMatchObject({ encoding: { y: { axis: { labelFontSize: 13 } } } })
-    expect(applyStyle(source, 'encoding.color', 'font-size', 15)).toMatchObject({ encoding: { color: { legend: { title: 'Group', labelFontSize: 15 } } } })
-    expect(applyStyle(source, 'layer.0.mark', 'color', '#00f')).toMatchObject({ layer: [{ mark: { type: 'bar', color: '#00f' } }] })
-    expect(applyStyle(source, 'layer.bad.mark', 'color', '#000')).toEqual(source)
-    expect(applyStyle(source, 'layer.-1.mark', 'color', '#000')).toEqual(source)
-    expect(applyStyle(source, 'layer.9.mark', 'color', '#000')).toEqual(source)
-    expect(applyStyle({ layer: null }, 'layer.0.mark', 'color', '#000')).toEqual({ layer: null })
-  })
-})
 
 function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
   return {
@@ -223,7 +78,7 @@ function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
     origin: 'model',
     versionId: `version:${content.attachmentId}` as never,
     sha256: content.attachmentId,
-    mediaType: content.mediaType as ScienceClientRunArtifactVersion['mediaType'],
+    mediaType: content.mediaType,
     byteCount: content.bytes,
     runId: 'run-1' as never,
     toolCallId: 'call-chart-1' as never,
@@ -243,9 +98,9 @@ function humanEditChart(over: HumanChartOverrides = {}): ScienceClientHumanEditA
   return {
     artifactId: 'chart-1' as never,
     producerSessionId: SESSION,
-    logicalName: 'summary.vl.json',
+    logicalName: 'summary.png',
     version: 2,
-    title: 'summary.vl.json',
+    title: 'summary.png',
     origin: 'human-edit',
     parent: { artifactId: 'chart-1' as never, version: 1 },
     versionId: `version:${content.attachmentId}` as never,
@@ -300,7 +155,6 @@ function props(
     addToConversation?: Props['addToConversation']
     removeFromConversation?: Props['removeFromConversation']
     composerSelections?: Props['composerSelections']
-    commitStyleEdit?: CommitStyleEdit
     store?: ReturnType<typeof testScienceSelectionStore>
     inspectCall?: (callId: string) => void
     selectDetailed?: () => void
@@ -373,9 +227,6 @@ function props(
     returnToConversation: over.returnToConversation ?? vi.fn(),
     addArtifactNote: over.addArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     removeArtifactNote: over.removeArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
-    commitStyleEdit: over.commitStyleEdit ?? vi.fn().mockResolvedValue({
-      ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit' },
-    }),
     t,
   } as unknown as Props
 }
@@ -487,7 +338,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
     expect(await screen.findByText('v1 · image/png · This session')).toBeTruthy()
-    expect(screen.getByText('v2 · application/vnd.vega-lite+json · This session')).toBeTruthy()
+    expect(screen.getByText('v2 · image/png · This session')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -964,7 +815,7 @@ describe('ScienceDetailsView: content dispatch', () => {
   })
 
   function textArtifact(
-    mediaType: TextMediaType | 'application/vnd.vega-lite+json', over: Partial<ScienceClientRunArtifactVersion> = {},
+    mediaType: TextMediaType, over: Partial<ScienceClientRunArtifactVersion> = {},
   ): { science: ScienceClientProjection; store: ReturnType<typeof testScienceSelectionStore> } {
     const science = baseProjection({
       artifacts: [chart({ logicalName: 'data.txt', attachment: { attachmentId: 'sha256:txt', mediaType, bytes: 20 }, ...over })],
@@ -1026,342 +877,6 @@ describe('ScienceDetailsView: content dispatch', () => {
     await waitFor(() => { expect(screen.getByText('5').tagName).toBe('PRE') })
   })
 
-  it('renders a Vega-Lite attachment as SVG and finalizes the renderer on unmount', async () => {
-    embedMock.mockImplementation(async (element: HTMLElement) => {
-      element.innerHTML = '<svg aria-label="Rendered Vega-Lite chart"></svg>'
-      return { view: { finalize: finalizeMock } }
-    })
-    const loadText = vi.fn().mockResolvedValue('{"$schema":"https://vega.github.io/schema/vega-lite/v6.json","mark":"bar"}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy() })
-    expect(embedMock).toHaveBeenCalledTimes(1)
-    const embedCall = embedMock.mock.calls[0] as unknown[] | undefined
-    expect(embedCall?.[0]).toBeInstanceOf(HTMLElement)
-    expect(embedCall?.[1]).toMatchObject({ mark: 'bar' })
-    expect(embedCall?.[2]).toMatchObject({ actions: false, mode: 'vega-lite', renderer: 'svg' })
-    expect((embedCall?.[2] as { loader?: unknown } | undefined)?.loader).toBeDefined()
-    view.unmount()
-    expect(finalizeMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('parses and renders a valid Vega-Lite specification beyond the raw-text display limit', async () => {
-    embedMock.mockImplementation(async (element: HTMLElement) => {
-      element.innerHTML = '<svg aria-label="Rendered large Vega-Lite chart"></svg>'
-      return { view: { finalize: finalizeMock } }
-    })
-    const text = JSON.stringify({
-      mark: 'bar',
-      description: 'x'.repeat(MAX_ARTIFACT_TEXT_CHARACTERS + 1),
-      data: { values: [{ category: 'A', value: 1 }] },
-    })
-    const loadText = vi.fn().mockResolvedValue(text)
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'large.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByLabelText('Rendered large Vega-Lite chart')).toBeTruthy() })
-    expect(embedMock.mock.calls[0]?.[1]).toMatchObject({ mark: 'bar' })
-    expect(screen.queryByText(/Showing first/)).toBeNull()
-  })
-
-  it('does not parse or render a Vega-Lite specification beyond its safety limit', async () => {
-    const text = JSON.stringify({ mark: 'bar', description: 'x'.repeat(MAX_VEGA_LITE_SPEC_CHARACTERS) })
-    const loadText = vi.fn().mockResolvedValue(text)
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'too-large.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    const note = await screen.findByRole('note')
-    expect(note.textContent).toContain(`exceeds ${String(MAX_VEGA_LITE_SPEC_CHARACTERS)} characters`)
-    expect(screen.getByRole('status').textContent).toContain(`Showing first ${String(MAX_ARTIFACT_TEXT_CHARACTERS)}`)
-    expect(embedMock).not.toHaveBeenCalled()
-  })
-
-  it('adds the selected Vega-Lite structural path and exact open version to the main composer', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"x":{"field":"name"},"color":{"field":"group"}}}')
-    const addToConversation = vi.fn<Props['addToConversation']>()
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json', version: 3 })
-    store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
-    render(<ScienceDetailsView {...props(science, { store, loadText, addToConversation })} />)
-
-    const comment = await screen.findByRole('textbox', { name: 'Edit note for Color / legend' })
-    fireEvent.change(comment, { target: { value: 'make it blue' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add Color / legend to the conversation' }))
-
-    await waitFor(() => {
-      expect(addToConversation).toHaveBeenCalledWith([{
-        artifactId: 'chart-1', version: 3,
-        target: { kind: 'spec-path', path: 'encoding.color' },
-        comment: 'make it blue',
-      }])
-    })
-  })
-
-  it('opens the human style panel when the rendered chart is activated', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"y":{"field":"value"}}}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    const chartButton = await screen.findByRole('button', { name: 'Open chart style editor' })
-    fireEvent.keyDown(chartButton, { key: 'a' })
-    expect(screen.queryByRole('region', { name: 'Style' })).toBeNull()
-    fireEvent.keyDown(chartButton, { key: ' ' })
-    expect(screen.getByRole('region', { name: 'Style' })).toBeTruthy()
-    fireEvent.click(chartButton)
-  })
-
-  it('draws an exact SVG-subtree outline, recomputes it after resize and content render, and falls nested paths back to the chart', async () => {
-    let resize: (() => void) | undefined
-    const disconnect = vi.fn()
-    class ResizeObserverStub {
-      constructor(callback: ResizeObserverCallback) {
-        resize = () => { callback([], this as unknown as ResizeObserver) }
-      }
-      observe(): void {}
-      disconnect(): void { disconnect() }
-    }
-    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
-    embedMock.mockImplementation(async (element: HTMLElement) => {
-      element.innerHTML = `<svg>
-        <g class="role-axis" aria-label="X-axis titled Category"></g>
-        <g class="role-mark"></g>
-      </svg>`
-      return { view: { finalize: finalizeMock } }
-    })
-    const loadText = vi.fn().mockResolvedValue(JSON.stringify({
-      encoding: { x: { field: 'category' } },
-      layer: [{ mark: 'bar' }],
-    }))
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'X axis' }))
-    await waitFor(() => {
-      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
-    })
-    act(() => { resize?.() })
-    expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText('Title text'), { target: { value: 'Category label' } })
-    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(2) })
-    await waitFor(() => {
-      expect(view.container.querySelector('[data-vega-selection-outline="exact"]')).toBeTruthy()
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: 'layer.0.mark' }))
-    await waitFor(() => {
-      expect(view.container.querySelector('[data-vega-selection-outline="chart"]')).toBeTruthy()
-    })
-    view.unmount()
-    expect(disconnect).toHaveBeenCalled()
-  })
-
-  it('does not expose chart-selection handlers when a spec has no structural targets', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"data":{"values":[]}}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
-    expect(screen.queryByRole('button', { name: 'Open chart style editor' })).toBeNull()
-  })
-
-  it('removes an element from the composer through the row minus control', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const selection: ScienceEditSelection = {
-      artifactId: 'chart-1' as never, version: 1, target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
-    }
-    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([selection])
-    const removeFromConversation = vi.fn<Props['removeFromConversation']>()
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    render(<ScienceDetailsView {...props(science, {
-      store, loadText, composerSelections, removeFromConversation,
-    })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove Mark style' }))
-    expect(removeFromConversation).toHaveBeenCalledWith(selection)
-  })
-
-  it('keeps each element row synchronized with removals from the main composer', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"y":{"field":"value"}}}')
-    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([])
-    const addToConversation: Props['addToConversation'] = (targets) => { composerSelections.set(targets) }
-    const removeFromConversation: Props['removeFromConversation'] = () => { composerSelections.set([]) }
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'chart.vl.json', version: 5 })
-    store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 5 })
-    render(<ScienceDetailsView {...props(science, {
-      store, loadText, composerSelections, addToConversation, removeFromConversation,
-    })} />)
-
-    const add = await screen.findByRole('button', { name: 'Add Y axis to the conversation' })
-    fireEvent.click(add)
-    expect(await screen.findByRole('button', { name: 'Remove Y axis' })).toBeTruthy()
-    act(() => { composerSelections.set([]) })
-    expect(await screen.findByRole('button', { name: 'Add Y axis to the conversation' })).toBeTruthy()
-  })
-
-  it('never pre-fills one artifact\'s typed comment from another artifact sharing the same spec path (scenario A)', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const science = baseProjection({
-      artifacts: [
-        chart({
-          artifactId: 'chart-1' as never, logicalName: 'a.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:a', mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
-        }),
-        chart({
-          artifactId: 'chart-2' as never, logicalName: 'b.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:b', mediaType: 'application/vnd.vega-lite+json', bytes: 10 },
-        }),
-      ],
-    })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 })
-    act(() => { store.actions.activateTab('chart-1') })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    const commentA = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
-    fireEvent.change(commentA, { target: { value: 'artifact A note' } })
-    expect(commentA.value).toBe('artifact A note')
-
-    act(() => { store.actions.activateTab('chart-2') })
-    const commentB = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
-    expect(commentB.value).toBe('')
-
-    act(() => { store.actions.activateTab('chart-1') })
-    const commentAAgain = await screen.findByRole('textbox', { name: 'Edit note for Mark style' }) as HTMLInputElement
-    expect(commentAAgain.value).toBe('')
-  })
-
-  it('updates the already-staged selection as the comment is edited further, keeping the store in sync (scenario B)', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const composerSelections = createSnapshotStore<readonly ScienceEditSelection[]>([])
-    const addToConversation: Props['addToConversation'] = (targets) => { composerSelections.set(targets) }
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'chart.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText, composerSelections, addToConversation })} />)
-
-    const comment = await screen.findByRole('textbox', { name: 'Edit note for Mark style' })
-    fireEvent.change(comment, { target: { value: 'first note' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add Mark style to the conversation' }))
-    expect(composerSelections.getSnapshot()).toEqual([{
-      artifactId: 'chart-1', version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: 'first note',
-    }])
-
-    // No further Add click: editing while staged must still reach the store,
-    // or the chip and the outgoing science-edit message keep the stale text.
-    fireEvent.change(comment, { target: { value: 'revised note' } })
-    expect(composerSelections.getSnapshot()).toEqual([{
-      artifactId: 'chart-1', version: 1, target: { kind: 'spec-path', path: 'mark' }, comment: 'revised note',
-    }])
-  })
-
-  it('previews safe style controls and commits a human-edited next version', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","encoding":{"color":{"field":"group"}}}')
-    const commitStyleEdit = vi.fn<CommitStyleEdit>().mockResolvedValue({
-      ok: true, value: { artifactId: 'chart-1' as never, version: 4, origin: 'human-edit' },
-    })
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { version: 3 })
-    store.actions.setTabVersion({ artifactId: 'chart-1' as never, version: 3 })
-    render(<ScienceDetailsView {...props(science, { store, loadText, commitStyleEdit })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Color / legend' }))
-    fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#ff0000' } })
-    fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '200' } })
-    fireEvent.change(screen.getByLabelText('Title text'), { target: { value: 'Group' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-
-    await waitFor(() => { expect(commitStyleEdit).toHaveBeenCalledTimes(1) })
-    const request = commitStyleEdit.mock.calls[0]?.[0]
-    expect(request).toMatchObject({ artifactId: 'chart-1', version: 3 })
-    expect(JSON.parse(request?.spec ?? '{}')).toMatchObject({
-      encoding: { color: { title: 'Group', scale: { range: ['#ff0000'] }, legend: { labelFontSize: 96 } } },
-    })
-    expect(store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 4 })
-  })
-
-  it('shows the style commit success status once the committed version is live', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const commitStyleEdit = vi.fn<CommitStyleEdit>().mockResolvedValue({
-      ok: true, value: { artifactId: 'chart-1' as never, version: 2, origin: 'human-edit' },
-    })
-    const science = baseProjection({
-      artifacts: [
-        chart({
-          logicalName: 'summary.vl.json', version: 1,
-          attachment: { attachmentId: 'sha256:v1', mediaType: 'application/vnd.vega-lite+json', bytes: 30 },
-        }),
-        humanEditChart({ version: 2 }),
-      ],
-    })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    render(<ScienceDetailsView {...props(science, { store, loadText, commitStyleEdit })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-
-    await waitFor(() => { expect(screen.getByText('Human-edited version committed.')).toBeTruthy() })
-    expect(store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 2 })
-  })
-
-  it('renders Host style-commit failures and rejected calls without changing versions', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const failedCommit = vi.fn<CommitStyleEdit>().mockResolvedValue({ ok: false, error: { message: 'style version is stale' } })
-    const first = textArtifact('application/vnd.vega-lite+json')
-    const failedView = render(<ScienceDetailsView {...props(first.science, {
-      store: first.store, loadText, commitStyleEdit: failedCommit,
-    })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('style version is stale')
-    expect(first.store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 1 })
-    failedView.unmount()
-
-    const rejectedCommit = vi.fn<CommitStyleEdit>().mockRejectedValue('offline')
-    const second = textArtifact('application/vnd.vega-lite+json')
-    const rejectedView = render(<ScienceDetailsView {...props(second.science, {
-      store: second.store, loadText, commitStyleEdit: rejectedCommit,
-    })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('offline')
-    expect(second.store.instance.getSnapshot().openArtifacts[0]).toMatchObject({ kind: 'artifact', version: 1 })
-    rejectedView.unmount()
-
-    const errorCommit = vi.fn<CommitStyleEdit>().mockRejectedValue(new Error('commit transport failed'))
-    const third = textArtifact('application/vnd.vega-lite+json')
-    render(<ScienceDetailsView {...props(third.science, {
-      store: third.store, loadText, commitStyleEdit: errorCommit,
-    })} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Mark style' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect((await screen.findByRole('alert')).textContent).toContain('commit transport failed')
-  })
-
-  it('offers structural targets inside concatenated and faceted compositions', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadText = vi.fn().mockResolvedValue(JSON.stringify({
-      vconcat: [
-        { mark: 'bar', encoding: { x: { field: 'name' } } },
-        { facet: { row: { field: 'group' } }, spec: { mark: 'line', encoding: { y: { field: 'value' } } } },
-      ],
-    }))
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    expect(await screen.findByRole('button', { name: 'vconcat.0.mark' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'vconcat.0.encoding.x' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'vconcat.1.spec.mark' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'vconcat.1.spec.encoding.y' })).toBeDefined()
-  })
-
   it('normalizes a raster drag into a drawn region, without auto-staging an AI edit', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 2 })] })
     const store = testScienceSelectionStore()
@@ -1383,7 +898,13 @@ describe('ScienceDetailsView: content dispatch', () => {
     // The drawn region now offers its own staging control — a comment field
     // and an explicit Add button — rather than the dead end this drag used
     // to be with no way to reach the composer at all.
-    expect(screen.getByRole('button', { name: 'Add region 10%,20% to the conversation' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add region 10%,20% to the conversation' }))
+    expect(addToConversation).toHaveBeenCalledOnce()
+    const selection = addToConversation.mock.calls[0]![0][0]!
+    expect(selection).toMatchObject({ artifactId: 'chart-1', version: 2,
+      target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.5 } })
+    expect(selection.target.kind === 'normalized-region' && selection.target.height).toBeCloseTo(0.5)
+    expect(selection).not.toHaveProperty('comment')
   })
 
   it('stages a drawn region with its typed comment, and un-stages it through the same control', () => {
@@ -1443,137 +964,6 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.mouseMove(gesture, { clientX: 40, clientY: 40 })
     fireEvent.mouseLeave(gesture)
     expect(screen.getByRole('button', { name: 'Cancel region selection' }).getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('finalizes a Vega-Lite view that resolves after unmount', async () => {
-    let resolveEmbed: ((result: { view: { finalize: typeof finalizeMock } }) => void) | undefined
-    embedMock.mockImplementation(() => new Promise((resolve) => { resolveEmbed = resolve }))
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
-    view.unmount()
-    await act(async () => { resolveEmbed?.({ view: { finalize: finalizeMock } }) })
-    expect(finalizeMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('discards a Vega-Lite rejection that arrives after unmount', async () => {
-    let rejectEmbed: ((reason: Error) => void) | undefined
-    embedMock.mockImplementation(() => new Promise((_resolve, reject) => { rejectEmbed = reject }))
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json')
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(embedMock).toHaveBeenCalledTimes(1) })
-    view.unmount()
-    await act(async () => { rejectEmbed?.(new Error('late rejection')) })
-    expect(finalizeMock).not.toHaveBeenCalled()
-  })
-
-  it('falls back to bounded source text when Vega-Lite rejects a parsed document', async () => {
-    embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
-    const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('could not be rendered') })
-    expect(screen.queryByRole('tree')).toBeNull()
-    expect(screen.getByText('{"mark":"not-a-mark","data":{"values":[]}}').tagName).toBe('PRE')
-    expect(view.container.textContent).toContain('not-a-mark')
-  })
-
-  it('blocks external Vega-Lite data URLs through the embed loader\'s sanitize seam and explains the source fallback', async () => {
-    // `load()`'s real implementation (unmocked in production) calls
-    // `this.sanitize` before fetching a `data.url`'s bytes; this models that
-    // call directly since `vega-embed`/`vega.loader` are fully mocked here.
-    embedMock.mockImplementation(async (_element: HTMLElement, _document: object, options: {
-      loader: { sanitize: (uri: string, opts: { context: string }) => Promise<{ href: string }> }
-    }) => {
-      await options.loader.sanitize('https://data.example/values.csv', { context: 'href' })
-      return { view: { finalize: finalizeMock } }
-    })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar","data":{"url":"https://data.example/values.csv"}}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'external.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
-    expect(screen.queryByRole('tree')).toBeNull()
-    expect(screen.getByText('{"mark":"bar","data":{"url":"https://data.example/values.csv"}}').tagName).toBe('PRE')
-    expect(loaderLoadMock).not.toHaveBeenCalled()
-    expect(loaderSanitizeMock).not.toHaveBeenCalled()
-  })
-
-  it('rejects an external Vega-Lite image mark through the embed loader\'s sanitize seam (never reaching `load`, which image marks never call)', async () => {
-    // vega-scenegraph's `ResourceLoader.loadImage` calls
-    // `sanitize(uri, {context: 'image'})` directly and never calls `load()`
-    // at all — an image mark is exactly the bypass this restriction closes.
-    // Driving that rejection out through `embed()` here (as production's
-    // `ResourceLoader.loadImage` does not: it catches the rejection and
-    // resolves to an empty placeholder image instead of rejecting) is a
-    // testing simplification that isolates the one property this test
-    // exists to prove — `sanitize` itself rejects a `context: 'image'`
-    // request for a blocked URI — without reproducing that catch. The
-    // JSON-tree fallback this produces below is this test's own artifact,
-    // not what a real image mark renders: in production the image mark
-    // simply fails to load and the rest of the chart renders normally.
-    embedMock.mockImplementation(async (_element: HTMLElement, _document: object, options: {
-      loader: { sanitize: (uri: string, opts: { context: string }) => Promise<{ href: string }> }
-    }) => {
-      await options.loader.sanitize('https://data.example/logo.png', { context: 'image' })
-      return { view: { finalize: finalizeMock } }
-    })
-    const loadText = vi.fn().mockResolvedValue(
-      '{"mark":"image","encoding":{"url":{"value":"https://data.example/logo.png"}}}',
-    )
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'image-mark.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('disabled external resource') })
-    expect(screen.queryByRole('tree')).toBeNull()
-    expect(screen.getByText('{"mark":"image","encoding":{"url":{"value":"https://data.example/logo.png"}}}').tagName).toBe('PRE')
-    expect(loaderLoadMock).not.toHaveBeenCalled()
-    expect(loaderSanitizeMock).not.toHaveBeenCalled()
-  })
-
-  it('falls back to raw text without loading Vega for malformed .vl.json bytes', async () => {
-    const loadText = vi.fn().mockResolvedValue('{not valid Vega-Lite')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
-    render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByText('{not valid Vega-Lite').tagName).toBe('PRE') })
-    expect(embedMock).not.toHaveBeenCalled()
-  })
-
-  it('does not re-embed the same Vega-Lite spec on a parent re-render', async () => {
-    embedMock.mockImplementation(async (element: HTMLElement) => {
-      element.innerHTML = '<svg aria-label="Rendered Vega-Lite chart"></svg>'
-      return { view: { finalize: finalizeMock } }
-    })
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'summary.vl.json' })
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy() })
-    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
-    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
-    expect(embedMock).toHaveBeenCalledTimes(1)
-    expect(finalizeMock).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Rendered Vega-Lite chart')).toBeTruthy()
-  })
-
-  it('keeps the bounded source fallback alive across a re-render after the renderer rejected the spec', async () => {
-    embedMock.mockRejectedValue(new Error('invalid Vega-Lite specification'))
-    const loadText = vi.fn().mockResolvedValue('{"mark":"not-a-mark","data":{"values":[]}}')
-    const { science, store } = textArtifact('application/vnd.vega-lite+json', { logicalName: 'invalid.vl.json' })
-    const view = render(<ScienceDetailsView {...props(science, { store, loadText })} />)
-
-    await waitFor(() => { expect(screen.getByRole('note').textContent).toContain('could not be rendered') })
-    expect(screen.getByTestId('vega-lite-view').hidden).toBe(true)
-    view.rerender(<ScienceDetailsView {...props(science, { store, loadText })} />)
-    expect(screen.queryByRole('tree')).toBeNull()
-    expect(screen.getByText('{"mark":"not-a-mark","data":{"values":[]}}').tagName).toBe('PRE')
-    expect(view.container.textContent).toContain('not-a-mark')
   })
 
   it('discards a text load that resolves after the component already unmounted', async () => {
@@ -1735,7 +1125,7 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
 })
 
 describe('ScienceDetailsView: download', () => {
-  function withOneTab(attachmentOver: Partial<LegacyArtifactContent> = {}) {
+  function withOneTab(attachmentOver: Partial<ArtifactContentFixture> = {}) {
     const science = baseProjection({
       artifacts: [chart({ attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100, width: 10, height: 10, ...attachmentOver } })],
     })
@@ -1791,26 +1181,6 @@ describe('ScienceDetailsView: download', () => {
     expect(created[0]?.href).toBe(`data:text/csv;charset=utf-8,${encodeURIComponent('a,b\n1,2\n')}`)
     expect(created[0]?.download).toBe('summary-v1.csv')
     expect(loadImage).not.toHaveBeenCalled()
-    clickSpy.mockRestore()
-  })
-
-  it('inserts the version ahead of the whole .vl.json two-part suffix, not inside it', async () => {
-    embedMock.mockResolvedValue({ view: { finalize: finalizeMock } })
-    const loadImage = vi.fn()
-    const loadText = vi.fn().mockResolvedValue('{"mark":"bar"}')
-    const science = baseProjection({
-      artifacts: [chart({ logicalName: 'summary.vl.json', attachment: { attachmentId: 'sha256:vl', mediaType: 'application/vnd.vega-lite+json', bytes: 14 } })],
-    })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    const created: HTMLAnchorElement[] = []
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      created.push(this)
-    })
-    render(<ScienceDetailsView {...props(science, { store, loadImage, loadText })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
-    await waitFor(() => { expect(clickSpy).toHaveBeenCalledTimes(1) })
-    expect(created[0]?.download).toBe('summary-v1.vl.json')
     clickSpy.mockRestore()
   })
 
@@ -1910,10 +1280,10 @@ describe('ScienceDetailsView: provenance drill-in', () => {
 
   it('shows direct-edit ancestry without a source run and lets the breadcrumb return to content', () => {
     const parent = chart({
-      logicalName: 'chart.vl.json',
+      logicalName: 'chart.png',
       attachment: {
         attachmentId: 'sha256:parent',
-        mediaType: 'application/vnd.vega-lite+json',
+        mediaType: 'image/png',
         bytes: 40,
       },
     })

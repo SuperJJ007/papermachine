@@ -300,14 +300,13 @@ function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): numbe
 function artifactType(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
   // Captured so the switch narrows this single literal-union binding.
   const mediaType = chart.mediaType
-  switch (mediaType as string) {
-    case 'application/vnd.vega-lite+json': return t('details.artifact.typeChart')
+  switch (mediaType) {
     case 'text/csv': return t('details.artifact.typeDataset')
     case 'application/json': return t('details.artifact.typeJson')
     case 'image/png': return t('details.artifact.typeImage')
     case 'text/markdown': case 'text/plain': return t('details.artifact.typeDocument')
     /* v8 ignore next -- closed media-type union */
-    default: return assertNever(mediaType as never)
+    default: return assertNever(mediaType)
   }
 }
 
@@ -332,8 +331,7 @@ function ArtifactMetaRail({ chart, snapshot, t }: {
         : turn === undefined
           ? t('details.artifact.sourcePending')
           : t('details.artifact.generationSource', { turn })}</dd></div>
-      <div><dt>{t('details.artifact.status')}</dt><dd>{String(chart.mediaType) === 'application/vnd.vega-lite+json'
-        ? t('details.artifact.editable') : t('details.artifact.readOnly')}</dd></div>
+      <div><dt>{t('details.artifact.status')}</dt><dd>{t('details.artifact.readOnly')}</dd></div>
     </dl>
   )
 }
@@ -464,8 +462,8 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
   )
 }
 
-const PREVIEW_MEDIA = new Set<string>([
-  'image/png', 'text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain',
+const PREVIEW_MEDIA = new Set<ScienceArtifactMediaType>([
+  'image/png', 'text/csv', 'application/json', 'text/markdown', 'text/plain',
 ])
 
 function isPreviewMediaType(value: string): value is ScienceArtifactMediaType {

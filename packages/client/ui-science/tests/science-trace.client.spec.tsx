@@ -72,22 +72,22 @@ function fixture() {
       environmentFingerprintPreview: 'abc', at: 1 }], outcome: null, lastScienceEventSeq: 50,
     runs: [...calls.map((callId, index) => run(callId, index + 1)), run('repair-1', 9, 'failed'), run('repair-2', 10)],
     artifacts: [
-      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.vl.json', version: 1, title: 'Chart',
-        attachment: { kind: 'text', attachmentId: 'a1', mediaType: 'application/vnd.vega-lite+json' },
+      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 1, title: 'Chart',
+        attachment: { kind: 'image', attachmentId: 'a1', mediaType: 'image/png' },
         environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 9_000,
         origin: 'model', runId: ScienceRunId('run-8'), toolCallId: 'attempt-8', requestHeaderSeq: 8 },
-      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.vl.json', version: 1, title: 'Curated chart',
-        attachment: { kind: 'text', attachmentId: 'a1', mediaType: 'application/vnd.vega-lite+json' },
+      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 1, title: 'Curated chart',
+        attachment: { kind: 'image', attachmentId: 'a1', mediaType: 'image/png' },
         environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 9_500,
         origin: 'model', runId: ScienceRunId('run-8'), toolCallId: 'attempt-8', requestHeaderSeq: 8 },
-      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.vl.json', version: 2, title: 'Chart',
+      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 2, title: 'Chart',
         parent: { artifactId: ScienceArtifactId('chart-1'), version: 1 },
-        attachment: { kind: 'text', attachmentId: 'a2', mediaType: 'application/vnd.vega-lite+json' },
+        attachment: { kind: 'image', attachmentId: 'a2', mediaType: 'image/png' },
         environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 19_000,
         origin: 'model', runId: ScienceRunId('run-10'), toolCallId: 'repair-2', requestHeaderSeq: 10 },
-      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.vl.json', version: 3, title: 'Chart',
+      { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 3, title: 'Chart',
         parent: { artifactId: ScienceArtifactId('chart-1'), version: 2 },
-        attachment: { kind: 'text', attachmentId: 'a3', mediaType: 'application/vnd.vega-lite+json' },
+        attachment: { kind: 'image', attachmentId: 'a3', mediaType: 'image/png' },
         environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 19_500, origin: 'human-edit' },
     ],
     metrics: { runCount: 10, successfulRunCount: 9, artifactCount: 1, artifactVersionCount: 3, kernelCount: 0,
@@ -124,11 +124,11 @@ describe('Science semantic trace', () => {
     expect(model.groups).toHaveLength(2)
     expect(model.groups[0]?.runs).toHaveLength(8)
     expect(model.dialogues.some(item => item.text === 'The chart is ready.')).toBe(false)
-    expect(model.groups[0]?.title).toEqual({ kind: 'generate', name: 'chart.vl.json', count: 2 })
+    expect(model.groups[0]?.title).toEqual({ kind: 'generate', name: 'chart.png', count: 2 })
     expect(model.groups[0]?.artifacts.map(item => item.action)).toEqual(['created', 'curated'])
     expect(model.groups[1]?.failedCount).toBe(1)
     expect(model.groups[1]).toMatchObject({ miscToolCount: 1, delegatedCallIds: ['subagent-child'] })
-    expect(model.groups[1]?.title).toEqual({ kind: 'selected-edit', name: 'chart.vl.json' })
+    expect(model.groups[1]?.title).toEqual({ kind: 'selected-edit', name: 'chart.png' })
     expect(model.humanEdits).toMatchObject([{ actor: 'user', turn: 2, anchor: 'artifact:chart-1@3' }])
     expect(model.dialogues.find(item => item.seq === 21)?.turn).toBe(2)
   })
@@ -229,7 +229,7 @@ describe('Science semantic trace', () => {
     fireEvent.click(failed)
     expect(selectDetailed).toHaveBeenCalledTimes(1)
     expect(inspectCall).toHaveBeenCalledWith('repair-1')
-    const chip = screen.getByRole('button', { name: /chart.vl.json v2/ })
+    const chip = screen.getByRole('button', { name: /chart.png v2/ })
     expect(chip.getAttribute('data-anchor')).toBe('artifact:chart-1@2')
     fireEvent.click(chip)
     expect(openTab).toHaveBeenCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })

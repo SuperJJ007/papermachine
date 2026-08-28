@@ -303,29 +303,6 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.vegaFrame {
-  position: relative;
-  width: 100%;
-  min-height: 360px;
-  overflow: auto;
-}
-
-.vegaLite {
-  width: 100%;
-  min-height: 360px;
-}
-
-.vegaLite :global(svg) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-}
-
-.vegaSelectionOutline {
-  position: absolute;
-  z-index: 2;
-}
-
 .specTargets {
   display: grid;
   gap: 6px;
@@ -447,8 +424,7 @@
   cursor: crosshair;
 }
 
-.regionBox,
-.vegaSelectionOutline {
+.regionBox {
   box-sizing: border-box;
   border: 2px solid var(--dsw-alias-label-primary);
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);

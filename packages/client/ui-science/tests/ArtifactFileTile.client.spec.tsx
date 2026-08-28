@@ -13,7 +13,6 @@ describe('artifactExtensionLabel', () => {
   it.each([
     ['text/csv', 'CSV'],
     ['application/json', 'JSON'],
-    ['application/vnd.vega-lite+json', 'VL'],
     ['text/markdown', 'MD'],
     ['text/plain', 'TXT'],
   ])('labels %s as %s', (mediaType, label) => {
@@ -31,7 +30,6 @@ describe('artifactExtensionLabel', () => {
 
 describe('ArtifactFileTile', () => {
   it.each([
-    ['application/vnd.vega-lite+json', 'chart', 'VL'],
     ['text/csv', 'table', 'CSV'],
     ['application/json', 'json', 'JSON'],
     ['text/markdown', 'document', 'MD'],

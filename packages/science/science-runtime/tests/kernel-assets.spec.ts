@@ -54,6 +54,8 @@ describe('resolveKernelDriverPath', () => {
     const content = readFileSync(path, 'utf8')
     expect(content.length).toBeGreaterThan(0)
     expect(content.split('\n')[0]).toBe('#!/usr/bin/env python3')
+    expect(content).toContain('CHART_APPLY')
+    expect(readFileSync(resolveKernelChartAdapterPath(KERNEL_ASSETS_ROOT, 'python'), 'utf8')).toContain('def apply_ops(')
   })
 
   it('ships a non-empty R driver starting with its header comment', () => {
@@ -61,5 +63,7 @@ describe('resolveKernelDriverPath', () => {
     const content = readFileSync(path, 'utf8')
     expect(content.length).toBeGreaterThan(0)
     expect(content.split('\n')[0]).toBe('# Persistent Science kernel driver for run_r. Executes source in the global')
+    expect(content).toContain('CHART_APPLY')
+    expect(readFileSync(resolveKernelChartAdapterPath(KERNEL_ASSETS_ROOT, 'r'), 'utf8')).toContain('apply_ops <- function(')
   })
 })

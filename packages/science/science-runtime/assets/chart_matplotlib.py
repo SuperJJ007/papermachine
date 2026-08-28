@@ -280,3 +280,79 @@ def extract_chart(entry, path):
     return {"runtime": "matplotlib", "png": {"width": width, "height": height, "dpi": entry["dpi"]},
             "elements": elements, "hitmap": hitmap,
             "hitmapStatus": "ok" if available else "unavailable"}
+
+
+def _selected_axes(fig, index):
+    axes = fig.get_axes()
+    if index is None:
+        return axes
+    if index >= len(axes):
+        raise LookupError("axes_not_found")
+    return [axes[index]]
+
+
+def _set_series_color(axis, label, color):
+    for candidate, artist in _labeled_artists(axis):
+        if candidate != label:
+            continue
+        patches = getattr(artist, "patches", None)
+        if patches is not None:
+            for patch in patches:
+                patch.set_facecolor(color)
+        else:
+            artist.set_color(color)
+        return True
+    return False
+
+
+def _set_legend_position(axis, position):
+    legend = axis.get_legend()
+    if legend is None:
+        return False
+    handles = getattr(legend, "legend_handles", None) or getattr(legend, "legendHandles", None)
+    labels = [text.get_text() for text in legend.get_texts()]
+    title = legend.get_title().get_text()
+    legend.remove()
+    axis.legend(handles, labels, title=title or None, loc=position)
+    return True
+
+
+def apply_ops(fig, ops):
+    """Apply validated operations and return indices that could not resolve a target."""
+    failed = []
+    for index, operation in enumerate(ops):
+        try:
+            name = operation["op"]
+            axes = _selected_axes(fig, operation["axes"])
+            applied = False
+            if name == "set_title":
+                if operation["axes"] is None:
+                    fig.suptitle(operation["text"])
+                    applied = True
+                else:
+                    axes[0].set_title(operation["text"])
+                    applied = True
+            elif name == "set_axis_label":
+                for axis in axes:
+                    (axis.set_xlabel if operation["axis"] == "x" else axis.set_ylabel)(operation["text"])
+                    applied = True
+            elif name == "set_series_color":
+                applied = any(_set_series_color(axis, operation["label"], operation["color"]) for axis in axes)
+            elif name == "set_legend_position":
+                applied = any(_set_legend_position(axis, operation["position"]) for axis in axes)
+            elif name == "set_tick_font_size":
+                for axis in axes:
+                    axis.tick_params(axis="both", labelsize=operation["size"])
+                    applied = True
+            elif name == "add_reference_line":
+                for axis in axes:
+                    method = axis.axhline if operation["orientation"] == "h" else axis.axvline
+                    method(operation["value"], color="darkorange", linestyle=":", linewidth=1.5)
+                    applied = True
+            else:
+                raise ValueError("unknown_op")
+            if not applied:
+                failed.append({"index": index, "reason": "element_not_found"})
+        except (KeyError, LookupError, TypeError, ValueError) as error:
+            failed.append({"index": index, "reason": str(error) or type(error).__name__})
+    return failed

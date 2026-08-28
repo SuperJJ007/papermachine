@@ -7,12 +7,11 @@
 # Frame grammar (single line, tab-separated, newline-terminated):
 #   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
 #   host -> kernel:  CHART_EXTRACT\t<runId>\t<requestPath>\t<resultPath>
+#   host -> kernel:  CHART_APPLY\t<runId>\t<requestPath>\t<resultPath>
 #   host -> kernel:  EXIT
 #   kernel -> host:  READY\t<protocolVersion=2>\t<pid>
 #   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>
 #   kernel -> host:  CHART\t<runId>\t<status:ok|error>\t<detail>
-#
-# CHART_APPLY is reserved for a later protocol revision and is not implemented.
 #
 # flags is a possibly-empty comma-separated token list. This driver emits the
 # token capture-degraded when a run's output-capture unwind could not be
@@ -123,6 +122,89 @@ send <- function(frame) {
   list(artifactDir = artifact_dir, allow = allow, retainRuns = retain_runs)
 }
 
+.dsh_from_json <- function(path) {
+  text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "")
+  cursor <- new.env(parent = emptyenv())
+  cursor$index <- 1L
+  skip <- function() {
+    while (cursor$index <= nchar(text) && grepl("\\s", substr(text, cursor$index, cursor$index))) {
+      cursor$index <- cursor$index + 1L
+    }
+  }
+  string <- function() {
+    if (substr(text, cursor$index, cursor$index) != '"') stop("invalid JSON string")
+    cursor$index <- cursor$index + 1L
+    result <- ""
+    repeat {
+      char <- substr(text, cursor$index, cursor$index)
+      if (char == '"') { cursor$index <- cursor$index + 1L; return(result) }
+      if (char == "\\") {
+        cursor$index <- cursor$index + 1L
+        escape <- substr(text, cursor$index, cursor$index)
+        mapped <- c('"' = '"', "\\" = "\\", "/" = "/", b = "\b", f = "\f", n = "\n", r = "\r", t = "\t")
+        if (escape == "u") {
+          hex <- substr(text, cursor$index + 1L, cursor$index + 4L)
+          result <- paste0(result, intToUtf8(strtoi(hex, 16L)))
+          cursor$index <- cursor$index + 5L
+          next
+        }
+        if (!(escape %in% names(mapped))) stop("invalid JSON escape")
+        result <- paste0(result, mapped[[escape]])
+      } else result <- paste0(result, char)
+      cursor$index <- cursor$index + 1L
+    }
+  }
+  value <- NULL
+  value <- function() {
+    skip()
+    char <- substr(text, cursor$index, cursor$index)
+    if (char == '"') return(string())
+    if (char == "[") {
+      cursor$index <- cursor$index + 1L
+      result <- list()
+      skip()
+      if (substr(text, cursor$index, cursor$index) == "]") { cursor$index <- cursor$index + 1L; return(result) }
+      repeat {
+        result[[length(result) + 1L]] <- value()
+        skip()
+        separator <- substr(text, cursor$index, cursor$index)
+        cursor$index <- cursor$index + 1L
+        if (separator == "]") return(result)
+        if (separator != ",") stop("invalid JSON array")
+      }
+    }
+    if (char == "{") {
+      cursor$index <- cursor$index + 1L
+      result <- list()
+      skip()
+      if (substr(text, cursor$index, cursor$index) == "}") { cursor$index <- cursor$index + 1L; return(result) }
+      repeat {
+        skip()
+        key <- string()
+        skip()
+        if (substr(text, cursor$index, cursor$index) != ":") stop("invalid JSON object")
+        cursor$index <- cursor$index + 1L
+        parsed <- value()
+        if (!is.null(parsed)) result[[key]] <- parsed
+        skip()
+        separator <- substr(text, cursor$index, cursor$index)
+        cursor$index <- cursor$index + 1L
+        if (separator == "}") return(result)
+        if (separator != ",") stop("invalid JSON object")
+      }
+    }
+    rest <- substring(text, cursor$index)
+    if (startsWith(rest, "null")) { cursor$index <- cursor$index + 4L; return(NULL) }
+    if (startsWith(rest, "true")) { cursor$index <- cursor$index + 4L; return(TRUE) }
+    if (startsWith(rest, "false")) { cursor$index <- cursor$index + 5L; return(FALSE) }
+    token <- regmatches(rest, regexpr("^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", rest, perl = TRUE))
+    if (length(token) != 1L || token == "") stop("invalid JSON value")
+    cursor$index <- cursor$index + nchar(token)
+    as.numeric(token)
+  }
+  value()
+}
+
 .dsh_extract_charts <- function(run_id, request_path, result_path) {
   request <- .dsh_parse_request(request_path)
   if (!is.finite(request$retainRuns) || request$retainRuns < 1L) stop("retainRuns must be positive")
@@ -144,6 +226,23 @@ send <- function(frame) {
     if (exists(old, envir = .dsh_charts, inherits = FALSE)) rm(list = old, envir = .dsh_charts)
   }
   writeLines(.dsh_to_json(list(charts = charts, errors = errors)), con = result_path, useBytes = TRUE)
+}
+
+.dsh_apply_chart <- function(run_id, request_path, result_path) {
+  request <- .dsh_from_json(request_path)
+  if (!exists(run_id, envir = .dsh_charts, inherits = FALSE)) return("not_registered")
+  registered <- get(run_id, envir = .dsh_charts, inherits = FALSE)
+  entry <- registered[[request$figureKey]]
+  if (is.null(entry)) return("not_registered")
+  applied <- .dsh_chart_env$apply_ops(entry$plot, request$ops)
+  entry$plot <- applied$plot
+  entry$dpi <- request$dpi
+  registered[[request$figureKey]] <- entry
+  assign(run_id, registered, envir = .dsh_charts)
+  ggplot2::ggsave(filename = request$outputPath, plot = entry$plot, dpi = request$dpi)
+  chart <- .dsh_chart_env$extract_chart(entry, request$outputPath)
+  writeLines(.dsh_to_json(list(chart = chart, failedOps = applied$failedOps)), con = result_path, useBytes = TRUE)
+  NULL
 }
 
 send(sprintf("READY\t%d\t%d", PROTOCOL_VERSION, Sys.getpid()))
@@ -328,6 +427,16 @@ repeat {
     result_path <- parts[4]
     outcome <- tryCatch({ .dsh_extract_charts(run_id, request_path, result_path); list(status = "ok", detail = "") },
                         error = function(e) list(status = "error", detail = class(e)[1]))
+    send(sprintf("CHART\t%s\t%s\t%s", run_id, outcome$status, outcome$detail))
+  }
+  if (cmd == "CHART_APPLY") {
+    run_id <- parts[2]
+    request_path <- parts[3]
+    result_path <- parts[4]
+    outcome <- tryCatch({
+      detail <- .dsh_apply_chart(run_id, request_path, result_path)
+      list(status = if (is.null(detail)) "ok" else "error", detail = if (is.null(detail)) "" else detail)
+    }, error = function(e) list(status = "error", detail = class(e)[1]))
     send(sprintf("CHART\t%s\t%s\t%s", run_id, outcome$status, outcome$detail))
   }
   # Unknown commands are ignored, keeping the driver forward-tolerant of

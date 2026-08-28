@@ -72,6 +72,21 @@ rl.on('line', (line) => {
     send(`CHART\t${parts[1]}\tok\t`)
     return
   }
+  if (cmd === 'CHART_APPLY') {
+    const request = JSON.parse(readFileSync(parts[2], 'utf8'))
+    if (request.testAction === 'hang') return
+    if (request.testAction === 'not_registered') {
+      send(`CHART\t${parts[1]}\terror\tnot_registered`)
+      return
+    }
+    writeFileSync(request.outputPath, Buffer.from(request.testPngBase64 ?? 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
+    writeFileSync(parts[3], JSON.stringify(request.testResult ?? {
+      chart: { runtime: 'matplotlib', png: { width: 1, height: 1, dpi: request.dpi }, elements: [], hitmap: [], hitmapStatus: 'ok' },
+      failedOps: [],
+    }))
+    send(`CHART\t${parts[1]}\tok\t`)
+    return
+  }
   if (cmd !== 'RUN') return
   const runId = parts[1]
   const sourcePath = parts[2]

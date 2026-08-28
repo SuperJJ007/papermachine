@@ -88,6 +88,19 @@ rl.on('line', (line) => {
     send(`CHART\t${parts[1]}\tok\t`)
     return
   }
+  if (cmd === 'CHART_APPLY') {
+    const action = runActions.get(parts[1])
+    if (action?.chartApplyStatus === 'hang') return
+    if (action?.chartApplyStatus === 'not_registered') {
+      send(`CHART\t${parts[1]}\terror\tnot_registered`)
+      return
+    }
+    const request = JSON.parse(readFileSync(parts[2], 'utf8'))
+    writeFileSync(request.outputPath, TINY_PNG)
+    writeFileSync(parts[3], JSON.stringify(action?.chartApplyResult ?? { chart: { runtime: 'matplotlib', png: { width: 1, height: 1, dpi: request.dpi }, elements: [], hitmap: [], hitmapStatus: 'ok' }, failedOps: [] }))
+    send(`CHART\t${parts[1]}\tok\t`)
+    return
+  }
   if (cmd !== 'RUN') return
   handleRun(parts[1], parts[2], parts[4], parts[5], parts[6])
 })

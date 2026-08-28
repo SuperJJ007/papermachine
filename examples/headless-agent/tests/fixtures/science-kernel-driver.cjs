@@ -12,7 +12,7 @@
 //
 // Usage: node science-kernel-driver.cjs <fifoPath>
 
-const { closeSync, existsSync, mkdirSync, openSync, writeFileSync, writeSync } = require('node:fs')
+const { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
@@ -73,6 +73,26 @@ rl.on('line', (line) => {
         },
       },
       errors: {},
+    }))
+    send(`CHART\t${runId}\tok\t`)
+    return
+  }
+  if (parts[0] === 'CHART_APPLY') {
+    const [, runId, requestPath, resultPath] = parts
+    const request = JSON.parse(readFileSync(requestPath, 'utf8'))
+    writeFileSync(request.outputPath, PNG)
+    writeFileSync(resultPath, JSON.stringify({
+      chart: {
+        runtime: 'matplotlib',
+        png: { width: 1, height: 1, dpi: request.dpi },
+        elements: [
+          { id: 'figure.title', kind: 'title', axes: null, label: null, current: 'Edited chart' },
+          { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: 'Edited input' },
+        ],
+        hitmap: [],
+        hitmapStatus: 'ok',
+      },
+      failedOps: [],
     }))
     send(`CHART\t${runId}\tok\t`)
     return

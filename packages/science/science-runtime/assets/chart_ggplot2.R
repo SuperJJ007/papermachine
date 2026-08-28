@@ -177,3 +177,53 @@ extract_chart <- function(entry, path) {
        hitmap = if (is.null(hitmap)) list() else hitmap,
        hitmapStatus = if (is.null(hitmap)) "unavailable" else "ok")
 }
+
+.dsh_axes_available <- function(plot, axes) {
+  panels <- length(ggplot2::ggplot_build(plot)$layout$panel_params)
+  is.null(axes) || (axes >= 0L && axes < panels)
+}
+
+apply_ops <- function(plot, ops) {
+  failed <- list()
+  current <- plot
+  for (index in seq_along(ops)) {
+    operation <- ops[[index]]
+    outcome <- tryCatch({
+      if (!.dsh_axes_available(current, operation$axes)) stop("axes_not_found")
+      name <- operation$op
+      if (name == "set_title") {
+        current <- current + ggplot2::labs(title = operation$text)
+      } else if (name == "set_axis_label") {
+        current <- if (operation$axis == "x") current + ggplot2::labs(x = operation$text) else current + ggplot2::labs(y = operation$text)
+      } else if (name == "set_series_color") {
+        built <- ggplot2::ggplot_build(current)
+        scale <- built$plot$scales$get_scales("fill")
+        if (is.null(scale)) scale <- built$plot$scales$get_scales("colour")
+        if (is.null(scale) || !(operation$label %in% scale$get_labels())) stop("element_not_found")
+        labels <- scale$get_labels()
+        breaks <- scale$get_breaks()
+        colors <- scale$map(breaks)
+        colors[labels == operation$label] <- operation$color
+        values <- stats::setNames(colors, breaks)
+        current <- if (scale$aesthetics[1] == "fill") {
+          current + ggplot2::scale_fill_manual(values = values, breaks = breaks, labels = labels)
+        } else {
+          current + ggplot2::scale_colour_manual(values = values, breaks = breaks, labels = labels)
+        }
+      } else if (name == "set_legend_position") {
+        current <- current + ggplot2::theme(legend.position = operation$position)
+      } else if (name == "set_tick_font_size") {
+        current <- current + ggplot2::theme(axis.text = ggplot2::element_text(size = operation$size))
+      } else if (name == "add_reference_line") {
+        current <- if (operation$orientation == "h") {
+          current + ggplot2::geom_hline(yintercept = operation$value, color = "darkorange", linetype = "dotted", linewidth = 1)
+        } else {
+          current + ggplot2::geom_vline(xintercept = operation$value, color = "darkorange", linetype = "dotted", linewidth = 1)
+        }
+      } else stop("unknown_op")
+      NULL
+    }, error = function(error) conditionMessage(error))
+    if (!is.null(outcome)) failed[[length(failed) + 1L]] <- list(index = index - 1L, reason = outcome)
+  }
+  list(plot = current, failedOps = failed)
+}

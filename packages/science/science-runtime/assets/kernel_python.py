@@ -8,12 +8,11 @@ Invocation: python3 -B -u -X utf8 kernel_python.py <fifoPath>
 Frame grammar (single line, tab-separated, newline-terminated):
   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
   host -> kernel:  CHART_EXTRACT\t<runId>\t<requestPath>\t<resultPath>
+  host -> kernel:  CHART_APPLY\t<runId>\t<requestPath>\t<resultPath>
   host -> kernel:  EXIT
   kernel -> host:  READY\t<protocolVersion=2>\t<pid>
   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>
   kernel -> host:  CHART\t<runId>\t<status:ok|error>\t<detail>
-
-CHART_APPLY is reserved for a later protocol revision and is not implemented.
 
 flags is a possibly-empty comma-separated token list. This driver always
 emits an empty flags field: its fd-level output redirection has no degraded-
@@ -200,6 +199,30 @@ def extract_charts(run_id, request_path, result_path):
         json.dump({"charts": charts, "errors": errors}, stream, ensure_ascii=False, separators=(",", ":"))
 
 
+def apply_chart(run_id, request_path, result_path):
+    """Apply operations to one registered figure, export it, and re-extract its chart state."""
+    with open(request_path, "r", encoding="utf-8") as stream:
+        request = json.load(stream)
+    entry = _dsh_charts.get(run_id, {}).get(request["figureKey"])
+    if entry is None:
+        return "not_registered"
+    adapter = _load_chart_module()
+    failed = adapter.apply_ops(entry["fig"], request["ops"])
+    output_path = request["outputPath"]
+    dpi = float(request["dpi"])
+    entry["fig"].savefig(output_path, dpi=dpi)
+    extraction_entry = {
+        "fig": entry["fig"],
+        "dpi": dpi,
+        "size_in": tuple(float(value) for value in entry["fig"].get_size_inches()),
+        "tight": False,
+    }
+    chart = adapter.extract_chart(extraction_entry, output_path)
+    with open(result_path, "w", encoding="utf-8") as stream:
+        json.dump({"chart": chart, "failedOps": failed}, stream, ensure_ascii=False, separators=(",", ":"))
+    return None
+
+
 def ensure_user_site_importable():
     # PYTHONUSERBASE is set only for this persistent kernel (never for an
     # interpreter probe): under sandbox confinement the Conda prefix's own
@@ -264,6 +287,13 @@ def main():
                 extract_charts(run_id, request_path, result_path)
                 send(resp, "CHART\t%s\tok\t" % run_id)
             except BaseException as error:  # noqa: BLE001 - extraction never kills the kernel
+                send(resp, "CHART\t%s\terror\t%s" % (run_id, type(error).__name__))
+        if cmd == "CHART_APPLY":
+            run_id, request_path, result_path = parts[1:4]
+            try:
+                detail = apply_chart(run_id, request_path, result_path)
+                send(resp, "CHART\t%s\t%s\t%s" % (run_id, "error" if detail else "ok", detail or ""))
+            except Exception as error:
                 send(resp, "CHART\t%s\terror\t%s" % (run_id, type(error).__name__))
         # Unknown commands are ignored, keeping the driver forward-tolerant
         # of later protocol additions the host may send.

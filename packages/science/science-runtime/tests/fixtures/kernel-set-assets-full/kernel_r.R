@@ -32,7 +32,7 @@ const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require(
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 
 const fifoPath = process.argv[2]
@@ -72,6 +72,11 @@ rl.on('line', (line) => {
   if (cmd === 'EXIT') {
     closeFifo()
     process.exit(0)
+  }
+  if (cmd === 'CHART_EXTRACT') {
+    writeFileSync(parts[3], '{"charts":{},"errors":{}}')
+    send(`CHART\t${parts[1]}\tok\t`)
+    return
   }
   if (cmd !== 'RUN') return
   handleRun(parts[1], parts[2], parts[4], parts[5], parts[6])

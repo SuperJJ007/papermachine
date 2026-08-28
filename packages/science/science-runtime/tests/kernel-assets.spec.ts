@@ -9,7 +9,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { KERNEL_ASSETS_ROOT, resolveKernelDriverPath } from '../src/kernel-assets.ts'
+import {
+  KERNEL_ASSETS_ROOT,
+  resolveKernelChartAdapterPath,
+  resolveKernelDriverPath,
+} from '../src/kernel-assets.ts'
 
 describe('resolveKernelDriverPath', () => {
   it('resolves the Python driver under the real package assets root', () => {
@@ -25,10 +29,23 @@ describe('resolveKernelDriverPath', () => {
   it('rejects a language whose driver is missing under the given root, naming the path', () => {
     const missingRoot = join(tmpdir(), 'dsh-science-runtime-kernel-assets-missing-root-df3a1b2c')
     expect(() => resolveKernelDriverPath(missingRoot, 'python')).toThrow(
-      `science-runtime: kernel driver asset missing at ${join(missingRoot, 'kernel_python.py')} (language: "python")`,
+      `science-runtime: kernel driver (language: "python") asset missing at ${join(missingRoot, 'kernel_python.py')}`,
     )
     expect(() => resolveKernelDriverPath(missingRoot, 'r')).toThrow(
-      `science-runtime: kernel driver asset missing at ${join(missingRoot, 'kernel_r.R')} (language: "r")`,
+      `science-runtime: kernel driver (language: "r") asset missing at ${join(missingRoot, 'kernel_r.R')}`,
+    )
+  })
+
+  it('resolves both private chart adapters and rejects an incomplete asset root', () => {
+    expect(resolveKernelChartAdapterPath(KERNEL_ASSETS_ROOT, 'python')).toBe(
+      join(KERNEL_ASSETS_ROOT, 'chart_matplotlib.py'),
+    )
+    expect(resolveKernelChartAdapterPath(KERNEL_ASSETS_ROOT, 'r')).toBe(
+      join(KERNEL_ASSETS_ROOT, 'chart_ggplot2.R'),
+    )
+    const missingRoot = join(tmpdir(), 'dsh-science-runtime-chart-assets-missing-root-df3a1b2c')
+    expect(() => resolveKernelChartAdapterPath(missingRoot, 'python')).toThrow(
+      `science-runtime: chart adapter (language: "python") asset missing at ${join(missingRoot, 'chart_matplotlib.py')}`,
     )
   })
 

@@ -33,7 +33,7 @@ import type { ScienceEnvironmentBinding, ScienceKernelEndReason, ScienceLanguage
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { selectBinding } from './execution.ts'
-import { resolveKernelDriverPath } from './kernel-assets.ts'
+import { resolveKernelChartAdapterPath, resolveKernelDriverPath } from './kernel-assets.ts'
 import { KernelProcess } from './kernel-process.ts'
 import type { KernelExitFact } from './kernel-process.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
@@ -571,6 +571,7 @@ export class KernelSet {
     if (kernelEpoch <= entry.epochSeen) {
       throw new KernelEpochRegressionError(String(entry.session.id), kernelEpoch, entry.epochSeen)
     }
+    resolveKernelChartAdapterPath(this.assetsRoot, language)
     const process = await KernelProcess.start({
       services: { subprocess: this.subprocess, sandbox: this.sandbox, session: entry.session, sessionScratch },
       binding,

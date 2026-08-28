@@ -8,10 +8,10 @@
 //
 // Usage: node kernel_python.py <fifoPath>
 
-const { closeSync, openSync, readFileSync, writeSync } = require('node:fs')
+const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
 const { createInterface } = require('node:readline')
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 const READY_DELAY_MS = 300
 
 const fifoPath = process.argv[2]
@@ -48,6 +48,11 @@ rl.on('line', (line) => {
   if (cmd === 'EXIT') {
     closeFifo()
     process.exit(0)
+  }
+  if (cmd === 'CHART_EXTRACT') {
+    writeFileSync(parts[3], '{"charts":{},"errors":{}}')
+    send(`CHART\t${parts[1]}\tok\t`)
+    return
   }
   if (cmd !== 'RUN') return
   handleRun(parts[1], parts[2])

@@ -7,9 +7,13 @@ Invocation: python3 -B -u -X utf8 kernel_python.py <fifoPath>
 
 Frame grammar (single line, tab-separated, newline-terminated):
   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
+  host -> kernel:  CHART_EXTRACT\t<runId>\t<requestPath>\t<resultPath>
   host -> kernel:  EXIT
-  kernel -> host:  READY\t<protocolVersion=1>\t<pid>
+  kernel -> host:  READY\t<protocolVersion=2>\t<pid>
   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>
+  kernel -> host:  CHART\t<runId>\t<status:ok|error>\t<detail>
+
+CHART_APPLY is reserved for a later protocol revision and is not implemented.
 
 flags is a possibly-empty comma-separated token list. This driver always
 emits an empty flags field: its fd-level output redirection has no degraded-
@@ -17,12 +21,43 @@ capture case to report. The field is still present on every DONE frame for
 arity parity with the R driver, which uses it to report degraded capture.
 """
 import os
+import importlib.util
+import json
 import signal
 import site
 import sys
 import traceback
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+
+_chart_module = None
+_dsh_charts = {}
+_active_run_id = None
+
+
+def _load_chart_module():
+    global _chart_module
+    if _chart_module is None:
+        path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "chart_matplotlib.py")
+        spec = importlib.util.spec_from_file_location("_dsh_chart_matplotlib", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("chart adapter spec unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _chart_module = module
+    return _chart_module
+
+
+def _register_chart(relative_path, fig, dpi, size_in, tight):
+    if _active_run_id is None:
+        return
+    run_charts = _dsh_charts.setdefault(_active_run_id, {})
+    run_charts[relative_path] = {
+        "fig": fig,
+        "dpi": dpi,
+        "size_in": size_in,
+        "tight": tight,
+    }
 
 
 def send(resp, frame):
@@ -49,7 +84,8 @@ def rebind_std_streams():
     sys.stderr = os.fdopen(2, "w", encoding="utf-8", closefd=False)
 
 
-def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir):
+def execute_run(global_ns, run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir):
+    global _active_run_id
     orig_cwd = os.getcwd()
     orig_tmpdir = os.environ.get("TMPDIR")
     orig_artifact = os.environ.get("SCIENCE_ARTIFACT_DIR")
@@ -59,6 +95,9 @@ def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_
     os.environ["TMPDIR"] = cwd
     os.environ["SCIENCE_ARTIFACT_DIR"] = artifact_dir
     os.environ["SCIENCE_INPUT_DIR"] = input_dir
+    _active_run_id = run_id
+    _dsh_charts.setdefault(run_id, {})
+    _load_chart_module().install_savefig_hook(_register_chart)
 
     stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
@@ -126,8 +165,39 @@ def execute_run(global_ns, source_path, cwd, stdout_path, stderr_path, artifact_
             os.environ.pop("SCIENCE_INPUT_DIR", None)
         else:
             os.environ["SCIENCE_INPUT_DIR"] = orig_input
+        _active_run_id = None
 
     return status, detail
+
+
+def extract_charts(run_id, request_path, result_path):
+    """Extract registered charts for one run and prune strong references by run age."""
+    with open(request_path, "r", encoding="utf-8") as stream:
+        request = json.load(stream)
+    artifact_dir = os.path.realpath(request["artifactDir"])
+    allow = request["allow"]
+    if allow is not None:
+        allow = set(allow)
+    retain_runs = int(request["retainRuns"])
+    if retain_runs < 1:
+        raise ValueError("retainRuns must be positive")
+    charts = {}
+    errors = {}
+    adapter = _load_chart_module()
+    for relative_path, entry in _dsh_charts.get(run_id, {}).items():
+        if allow is not None and relative_path not in allow:
+            continue
+        target = os.path.realpath(os.path.join(artifact_dir, relative_path))
+        try:
+            if os.path.commonpath([target, artifact_dir]) != artifact_dir:
+                continue
+            charts[relative_path] = adapter.extract_chart(entry, target)
+        except Exception as error:
+            errors[relative_path] = type(error).__name__
+    while len(_dsh_charts) > retain_runs:
+        del _dsh_charts[next(iter(_dsh_charts))]
+    with open(result_path, "w", encoding="utf-8") as stream:
+        json.dump({"charts": charts, "errors": errors}, stream, ensure_ascii=False, separators=(",", ":"))
 
 
 def ensure_user_site_importable():
@@ -185,9 +255,16 @@ def main():
         if cmd == "RUN":
             run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir = parts[1:8]
             status, detail = execute_run(
-                global_ns, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir
+                global_ns, run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir
             )
             send(resp, "DONE\t%s\t%s\t%s\t%s" % (run_id, status, detail, ""))
+        if cmd == "CHART_EXTRACT":
+            run_id, request_path, result_path = parts[1:4]
+            try:
+                extract_charts(run_id, request_path, result_path)
+                send(resp, "CHART\t%s\tok\t" % run_id)
+            except BaseException as error:  # noqa: BLE001 - extraction never kills the kernel
+                send(resp, "CHART\t%s\terror\t%s" % (run_id, type(error).__name__))
         # Unknown commands are ignored, keeping the driver forward-tolerant
         # of later protocol additions the host may send.
 

@@ -13,6 +13,7 @@ import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-sci
 import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { StartScienceRunRequest } from '../src/types.ts'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
 import {
   attachScienceSession,
@@ -65,6 +66,7 @@ async function captureFiles(
   root: string,
   session: Session,
   files: Readonly<Record<string, Uint8Array | string>>,
+  options: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'> = {},
 ): Promise<ScienceRunId> {
   if (replayScience(session.events)?.environment === null) {
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
@@ -75,6 +77,7 @@ async function captureFiles(
   // before auto-capture walks the artifact directory after DONE.
   const handle = await harness.runtime.startRun({
     session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
+    ...options,
     ...authorizePythonRun(session, `annotate-capture-${String(captureCallCounter)}`),
     signal: new AbortController().signal,
   })
@@ -130,12 +133,12 @@ describe('ScienceRuntime.annotateArtifact', () => {
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-human-edit')
-    await captureFiles(harness, root, session, { 'chart.vl.json': '{"mark":"bar"}' })
-    const parent = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.vl.json')
-    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite parent')
+    await captureFiles(harness, root, session, { 'chart.png': 'PNG original' }, { rasterArtifacts: ['chart.png'] })
+    const parent = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
+    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced PNG parent')
     const stored = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
-      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      data: new TextEncoder().encode('PNG human edit'),
       mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
@@ -193,14 +196,22 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-exact-version')
     await captureFiles(harness, root, session, { 'notes.txt': 'v1' })
-    await captureFiles(harness, root, session, { 'notes.txt': 'v2' })
     const v1 = replayScience(session.events)?.artifacts.find(a => a.logicalName === 'notes.txt' && a.version === 1)
     expect(v1).toBeDefined()
     if (v1 === undefined) throw new Error('expected notes.txt v1')
+    await captureFiles(harness, root, session, { 'notes.txt': 'v2' }, {
+      editBaselines: { 'notes.txt': { artifactId: v1.artifactId, version: 1 } },
+    })
+
+    const annotatedLatest = await harness.runtime.annotateArtifact({
+      session, logicalName: 'notes.txt', version: 2, title: 'Current notes',
+      ...authorizeAnnotateArtifact(session, 'science-annotate-exact-version-call-2'), signal: new AbortController().signal,
+    })
+    expect(annotatedLatest.parent).toEqual({ artifactId: v1.artifactId, version: 1 })
 
     const annotated = await harness.runtime.annotateArtifact({
       session, logicalName: 'notes.txt', version: 1, title: 'Original notes',
-      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+      ...authorizeAnnotateArtifact(session, 'science-annotate-exact-version-call-1'), signal: new AbortController().signal,
     })
     expect(annotated.version).toBe(1)
     expect(annotated.versionId).toBe(v1.versionId)
@@ -212,7 +223,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'notes.txt')
     expect(artifacts?.map(a => a.version)).toEqual([1, 2])
     expect(artifacts?.at(0)?.title).toBe('Original notes')
-    expect(artifacts?.at(1)?.origin).toBe('auto')
+    expect(artifacts?.at(1)).toMatchObject({ title: 'Current notes', origin: 'model' })
   })
 
   it('supports a curation chain: repeated annotate calls retitle the same version', async () => {

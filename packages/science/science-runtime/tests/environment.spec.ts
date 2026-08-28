@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
-import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, ScienceProjectId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -692,6 +692,40 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await expect(harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('requires a workspace cwd and retries project resolution after an open failure', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-project-resolution-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    let opens = 0
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, 1_800_000, (ctx) => {
+      ctx.provide('scienceArtifactStore', {
+        openProject: async (workspacePath: string) => {
+          opens += 1
+          if (opens === 1) throw new Error('injected project open failure')
+          return { projectId: ScienceProjectId('project-retry'), storeRoot: workspacePath, workspacePath, outcome: 'created' }
+        },
+      } as never)
+    })
+    contexts.push(harness.ctx)
+
+    const noWorkspace = harness.ctx.sessions.create(SessionId('science-project-no-cwd'), { meta: { agentPreset: 'science' } })
+    noWorkspace.append('science/mode-bound', {
+      version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
+    })
+    await expect(harness.runtime.bindEnvironment({
+      session: noWorkspace, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'PROJECT_UNAVAILABLE' })
+
+    const retry = createScienceSession(harness.ctx, 'science-project-retry')
+    await expect(harness.runtime.bindEnvironment({
+      session: retry, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+    await expect(harness.runtime.bindEnvironment({
+      session: retry, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
+    expect(opens).toBe(2)
   })
 
   it('records static invalid observations without probing malformed history or interpreter entries', async () => {

@@ -220,7 +220,6 @@ function kernelStartCauseClass(error: unknown): string {
  * @param signal - the queued caller's cancellation signal.
  */
 function raceSettlementOrAbort(settlement: Promise<void>, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const onAbort = (): void => { resolve() }
     signal.addEventListener('abort', onAbort, { once: true })

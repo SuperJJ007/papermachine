@@ -48,16 +48,16 @@ const projection = {
   artifacts: [
     artifact(TEXT_ID, 'text.txt', 'text/plain', TEXT_SHA, 2),
     artifact(IMAGE_ID, 'image.png', 'image/png', IMAGE_SHA, 3),
-    artifact(STYLE_ID, 'style.vl.json', 'application/json', STYLE_SHA, 2),
+    artifact(STYLE_ID, 'style.png', 'image/png', STYLE_SHA, 2),
     {
       artifactId: STYLE_ID,
-      logicalName: 'style.vl.json',
+      logicalName: 'style.png',
       version: 2,
       parent: { artifactId: STYLE_ID, version: 1 },
-      title: 'style.vl.json',
+      title: 'style.png',
       origin: 'human-edit',
       projectId: PROJECT_ID,
-      versionId: ScienceVersionId('style.vl.json-v2'),
+      versionId: ScienceVersionId('style.png-v2'),
       sha256: '4'.repeat(64),
       mediaType: 'image/png',
       byteCount: 2,
@@ -118,12 +118,12 @@ describe('prepareRunArtifacts', () => {
 
   it('admits a human-edited version as both an artifact input and an edit baseline', async () => {
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, [
-      { artifactId: STYLE_ID, version: 2, path: 'source.vl.json' },
+      { artifactId: STYLE_ID, version: 2, path: 'source.png' },
     ], {
-      'result.vl.json': { artifactId: STYLE_ID, version: 2 },
+      'result.png': { artifactId: STYLE_ID, version: 2 },
     }, undefined, 1, 2, signal)).resolves.toMatchObject({
-      inputs: [{ artifactId: STYLE_ID, version: 2, path: 'source.vl.json' }],
-      editBaselines: new Map([['result.vl.json', { artifactId: STYLE_ID, version: 2 }]]),
+      inputs: [{ artifactId: STYLE_ID, version: 2, path: 'source.png' }],
+      editBaselines: new Map([['result.png', { artifactId: STYLE_ID, version: 2 }]]),
     })
   })
 

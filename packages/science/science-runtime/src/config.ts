@@ -116,9 +116,8 @@ export interface Config {
   /**
    * Whether auto-capture admits a `.png` unconditionally (`'always'`) or
    * only when the writing run declared it via `raster_artifacts`
-   * (`'declared'`, the default) — an editable Vega-Lite spec stays the
-   * captured deliverable until export, and a model self-inspection render
-   * outside SCIENCE_ARTIFACT_DIR never becomes an artifact at all.
+   * (`'declared'`, the default). A model self-inspection render outside
+   * SCIENCE_ARTIFACT_DIR never becomes an artifact.
    */
   readonly rasterCapture?: RasterCapturePolicy
   /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */

@@ -146,8 +146,6 @@ function successSource(language: ScienceLanguage, prefix: string): string {
     // Reserved but not always materialized (only created when a run requests inputs), so only its presence is checked here.
     'stopifnot(nzchar(Sys.getenv("SCIENCE_INPUT_DIR")))',
     `writeBin(as.raw(c(${[...PNG].join(',')})), file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), "real-chart.png"))`,
-    'spec <- list(`$schema` = "https://vega.github.io/schema/vega-lite/v6.json", data = list(values = data.frame(name = c("Ada", "Bob"), score = c(10, 20))), mark = "bar", encoding = list(x = list(field = "name", type = "nominal"), y = list(field = "score", type = "quantitative")))',
-    'jsonlite::write_json(spec, file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), "real-chart.vl.json"), auto_unbox = TRUE, digits = NA)',
     'cat("dsh-real-运行-✓\\n")',
     '',
   ].join('\n')
@@ -526,20 +524,6 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     if (capturedChart === undefined) throw new Error('auto-capture did not produce the real PNG artifact')
     if (capturedChart.mediaType !== 'image/png') throw new Error('auto-capture returned a non-image artifact for a PNG file')
     checks.push('real PNG artifact auto-capture')
-
-    if (language === 'r') {
-      const capturedSpec = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.vl.json')
-      if (capturedSpec === undefined) throw new Error('auto-capture did not produce the R-authored Vega-Lite artifact')
-      if (capturedSpec.mediaType !== 'application/json') {
-        throw new Error('R-authored .vl.json did not retain the Vega-Lite media type')
-      }
-      const specBytes = await context.scienceArtifactStore.readBlob(capturedSpec.projectId, capturedSpec.sha256)
-      const spec = JSON.parse(Buffer.from(specBytes).toString('utf8')) as { mark?: unknown; data?: { values?: unknown } }
-      if (spec.mark !== 'bar' || !Array.isArray(spec.data?.values)) {
-        throw new Error('R jsonlite output did not preserve scalar Vega-Lite fields and inline data values')
-      }
-      checks.push('R list/jsonlite Vega-Lite auto-capture')
-    }
 
     const annotateAuthorization = authorize(session, 'annotate_artifact', 5)
     const chart = await context.scienceRuntime.annotateArtifact({

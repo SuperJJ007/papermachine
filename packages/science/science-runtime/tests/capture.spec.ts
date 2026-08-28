@@ -261,20 +261,20 @@ describe('Science auto-capture', () => {
     expect(stored).toEqual(source)
   })
 
-  it('captures a two-part .vl.json suffix as Vega-Lite while ordinary JSON stays generic', async () => {
-    const root = tmp('.science-capture-vega-lite-')
+  it('captures JSON case-insensitively with the generic JSON media type', async () => {
+    const root = tmp('.science-capture-json-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
-    const session = createScienceSession(harness.ctx, 'science-capture-vega-lite')
+    const session = createScienceSession(harness.ctx, 'science-capture-json')
 
     const { result } = await runWithFiles(harness, root, session, {
-      'plots/summary.VL.JSON': '{"mark":"bar"}',
+      'plots/summary.JSON': '{"rows":1}',
       'plots/meta.json': '{"rows":2}',
     })
 
     expect(result.capture?.captured).toHaveLength(2)
-    expect(result.capture?.captured.find(version => version.logicalName === 'plots/summary.VL.JSON')).toMatchObject({
+    expect(result.capture?.captured.find(version => version.logicalName === 'plots/summary.JSON')).toMatchObject({
       mediaType: 'application/json',
     })
     expect(result.capture?.captured.find(version => version.logicalName === 'plots/meta.json')).toMatchObject({
@@ -450,14 +450,16 @@ describe('Science auto-capture', () => {
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-human-edit')
-    const original = '{"mark":"bar"}'
+    const original = 'PNG original'
 
-    const first = await runWithFiles(harness, root, session, { 'chart.vl.json': original })
+    const first = await runWithFiles(
+      harness, root, session, { 'chart.png': original }, 'ok', false, { rasterArtifacts: ['chart.png'] },
+    )
     const parent = first.result.capture?.captured[0]
-    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite parent')
+    if (parent === undefined || parent.origin === 'human-edit') throw new Error('expected run-produced PNG parent')
     const humanEditV2 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
-      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      data: new TextEncoder().encode('PNG human edit'),
       mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
@@ -484,30 +486,33 @@ describe('Science auto-capture', () => {
       },
     })
 
-    const untouched = await runWithFiles(harness, root, session, { 'chart.vl.json': original }, 'ok', true)
+    const untouched = await runWithFiles(
+      harness, root, session, { 'chart.png': original }, 'ok', true, { rasterArtifacts: ['chart.png'] },
+    )
     expect(untouched.result.capture?.captured).toEqual([])
-    expect(replayScience(session.events)?.artifacts.filter(artifact => artifact.logicalName === 'chart.vl.json'))
+    expect(replayScience(session.events)?.artifacts.filter(artifact => artifact.logicalName === 'chart.png'))
       .toHaveLength(2)
 
     const changed = await runWithFiles(
       harness,
       root,
       session,
-      { 'chart.vl.json': '{"mark":{"type":"bar","color":"blue"}}' },
+      { 'chart.png': 'PNG model edit' },
       'ok',
       true,
+      { rasterArtifacts: ['chart.png'] },
     )
     expect(changed.result.capture?.captured[0]).toMatchObject({
       artifactId: parent.artifactId,
-      logicalName: 'chart.vl.json',
+      logicalName: 'chart.png',
       version: 3,
       origin: 'auto',
     })
     const changedVersion = changed.result.capture?.captured[0]
-    if (changedVersion === undefined || changedVersion.origin === 'human-edit') throw new Error('expected run-produced Vega-Lite version')
+    if (changedVersion === undefined || changedVersion.origin === 'human-edit') throw new Error('expected run-produced PNG version')
     const humanEditV4 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
-      data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
+      data: new TextEncoder().encode('PNG second human edit'),
       mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
@@ -538,14 +543,14 @@ describe('Science auto-capture', () => {
       harness,
       root,
       session,
-      { 'chart.vl.json': original },
+      { 'chart.png': original },
       'ok',
       true,
-      { editBaselines: { 'chart.vl.json': { artifactId: parent.artifactId, version: 4 } } },
+      { editBaselines: { 'chart.png': { artifactId: parent.artifactId, version: 4 } }, rasterArtifacts: ['chart.png'] },
     )
     expect(intentional.result.capture?.captured[0]).toMatchObject({
       artifactId: parent.artifactId,
-      logicalName: 'chart.vl.json',
+      logicalName: 'chart.png',
       version: 5,
       parent: { artifactId: parent.artifactId, version: 4 },
       origin: 'auto',

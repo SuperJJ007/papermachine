@@ -38,12 +38,9 @@ const CAPTURE_MEDIA_TYPE_BY_EXTENSION: ReadonlyMap<string, ScienceArtifactMediaT
   ['.txt', 'text/plain'],
 ])
 
-const VEGA_LITE_EXTENSION = '.vl.json'
-
-/** Resolve a capture media type, preserving the two-part Vega-Lite suffix before the ordinary last-suffix lookup. */
+/** Resolve a capture media type from the path's final suffix. */
 function captureMediaType(relativePath: string): ScienceArtifactMediaType | undefined {
   const lower = relativePath.toLowerCase()
-  if (lower.endsWith(VEGA_LITE_EXTENSION)) return 'application/json'
   return CAPTURE_MEDIA_TYPE_BY_EXTENSION.get(extname(lower))
 }
 
@@ -56,9 +53,8 @@ function isCaptureEligible(relativePath: string): boolean {
 /**
  * Validated `rasterCapture` Config policy for one run's auto-capture walk.
  * `'declared'` (the default) captures a `.png` only when the run request
- * named it in `rasterArtifacts` — an editable Vega-Lite spec stays the
- * captured deliverable until export, and a self-inspection render the model
- * writes for its own QA never becomes a redundant artifact. `'always'`
+ * named it in `rasterArtifacts`; a self-inspection render the model writes
+ * for its own QA never becomes a redundant artifact. `'always'`
  * captures every eligible `.png` unconditionally, matching the auto-capture
  * walk's pre-existing behavior for every other accepted extension.
  */

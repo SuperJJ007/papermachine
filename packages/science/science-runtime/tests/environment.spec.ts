@@ -1411,6 +1411,30 @@ describe('Science Runtime configuration', () => {
     }).rasterCapture).toBe('always')
   })
 
+  it('validates chart extraction timeout and live-run retention bounds', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartExtractTimeoutMs: 0,
+    })).toThrow(/chartExtractTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartExtractTimeoutMs: 600_001,
+    })).toThrow(/chartExtractTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartLiveRunsRetained: 0,
+    })).toThrow(/chartLiveRunsRetained/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartLiveRunsRetained: 101,
+    })).toThrow(/chartLiveRunsRetained/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })).toMatchObject({
+      chartExtractTimeoutMs: 5_000,
+      chartLiveRunsRetained: 4,
+    })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } },
+      chartExtractTimeoutMs: 1,
+      chartLiveRunsRetained: 100,
+    })).toMatchObject({ chartExtractTimeoutMs: 1, chartLiveRunsRetained: 100 })
+  })
+
   it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 1_048_575,

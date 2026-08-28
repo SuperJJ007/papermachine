@@ -1,6 +1,6 @@
 /**
  * One confined persistent Science kernel subprocess speaking the kernel wire
- * protocol (`stdin` RUN/EXIT request frames, response-FIFO READY/DONE frames): spawn
+ * protocol (`stdin` RUN/CHART_EXTRACT/EXIT request frames, response-FIFO READY/DONE/CHART frames): spawn
  * sequence, execute-serialization, cooperative interrupt passthrough, and
  * teardown. Session-scoped lifecycle is out of scope here: this module knows
  * nothing about session events, kernel epochs, idle timers, or durable end
@@ -112,6 +112,28 @@ export interface KernelDoneFrame {
   readonly captureDegraded: boolean
 }
 
+/** One private-file chart extraction request following a completed run. */
+export interface KernelChartExtractRequest {
+  /** Run whose registered figures may be extracted. */
+  readonly runId: ScienceRunId
+  /** Host-written request JSON path. */
+  readonly requestPath: string
+  /** Kernel-written result JSON path. */
+  readonly resultPath: string
+  /** Bound for the complete CHART_EXTRACT/CHART exchange. */
+  readonly timeoutMs: number
+}
+
+/** Parsed CHART response for one extraction request. */
+export interface KernelChartFrame {
+  /** Run identity from the matching request. */
+  readonly runId: ScienceRunId
+  /** Kernel-side extraction status. */
+  readonly status: 'ok' | 'error'
+  /** Stable exception/condition class on error; empty on success. */
+  readonly detail: string
+}
+
 /** How this kernel process's own subprocess lifetime ended. */
 export type KernelExitCause =
   /** `end()` sent EXIT (or attempted to) and awaited quiesce. */
@@ -132,10 +154,20 @@ export interface KernelExitFact {
 }
 
 interface PendingExecute {
+  readonly kind: 'execute'
   readonly runId: ScienceRunId
   readonly resolve: (frame: KernelDoneFrame) => void
   readonly reject: (error: Error) => void
 }
+
+interface PendingChart {
+  readonly kind: 'chart'
+  readonly runId: ScienceRunId
+  readonly resolve: (frame: KernelChartFrame) => void
+  readonly reject: (error: Error) => void
+}
+
+type PendingRequest = PendingExecute | PendingChart
 
 /** Reject a host-minted field that must never carry frame delimiters. */
 function assertNoFrameDelimiters(value: string, label: string): void {
@@ -288,7 +320,7 @@ export class KernelProcess {
   private readonly stdin: Writable
   private readonly readyWaiter: ReturnType<typeof Promise.withResolvers<void>>
   private phase: 'starting' | 'ready' = 'starting'
-  private pending: PendingExecute | undefined
+  private pending: PendingRequest | undefined
   private protocolFault: KernelProtocolError | undefined
   private commandedReason: string | undefined
   private exitSettled = false
@@ -395,7 +427,7 @@ export class KernelProcess {
    */
   execute(request: KernelExecuteRequest): Promise<KernelDoneFrame> {
     if (this.pending !== undefined) {
-      throw new Error('science-runtime: KernelProcess.execute called while a previous execute is still pending')
+      throw new Error('science-runtime: KernelProcess.execute called while another request is still pending')
     }
     if (this.protocolFault !== undefined) return Promise.reject(this.protocolFault)
     if (this.exitSettled) return Promise.reject(new KernelExitedError('science-runtime: kernel process has already exited'))
@@ -411,7 +443,7 @@ export class KernelProcess {
       request.artifactDir, request.inputDir,
     ].join('\t')
     const resolvers = Promise.withResolvers<KernelDoneFrame>()
-    this.pending = { runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
+    this.pending = { kind: 'execute', runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
     try {
       this.stdin.write(`${frame}\n`)
     } catch (error) {
@@ -419,6 +451,39 @@ export class KernelProcess {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)))
     }
     return resolvers.promise
+  }
+
+  /**
+   * Write one CHART_EXTRACT frame and await its matching CHART response.
+   * A timeout is a protocol fault: the unresponsive kernel is terminated and
+   * the owning KernelSet must retire it before reuse.
+   * @param request - run id, private request/result paths, and extraction deadline.
+   * @returns the matching CHART response.
+   */
+  extractCharts(request: KernelChartExtractRequest): Promise<KernelChartFrame> {
+    if (this.pending !== undefined) {
+      throw new Error('science-runtime: KernelProcess.extractCharts called while another request is still pending')
+    }
+    if (this.protocolFault !== undefined) return Promise.reject(this.protocolFault)
+    if (this.exitSettled) return Promise.reject(new KernelExitedError('science-runtime: kernel process has already exited'))
+    assertNoFrameDelimiters(request.runId, 'CHART_EXTRACT runId')
+    assertNoFrameDelimiters(request.requestPath, 'CHART_EXTRACT requestPath')
+    assertNoFrameDelimiters(request.resultPath, 'CHART_EXTRACT resultPath')
+    const resolvers = Promise.withResolvers<KernelChartFrame>()
+    this.pending = { kind: 'chart', runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
+    let timeout: NodeJS.Timeout | undefined
+    try {
+      this.stdin.write(`CHART_EXTRACT\t${request.runId}\t${request.requestPath}\t${request.resultPath}\n`)
+      timeout = setTimeout(() => {
+        this.failProtocol(new KernelProtocolError(
+          `science-runtime: kernel did not finish chart extraction within ${String(request.timeoutMs)}ms`,
+        ))
+      }, request.timeoutMs)
+    } catch (error) {
+      this.pending = undefined
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    return resolvers.promise.finally(() => { clearTimeout(timeout) })
   }
 
   /** Deliver a cooperative SIGINT request to the kernel process; a pure {@link SubprocessHandle.interrupt} passthrough. */
@@ -505,7 +570,7 @@ export class KernelProcess {
   private handleReadyLine(line: string): void {
     const fields = line.split('\t')
     const [tag, protocolVersion, pid, extra] = fields
-    if (tag !== 'READY' || protocolVersion !== '1' || pid === undefined || extra !== undefined) {
+    if (tag !== 'READY' || protocolVersion !== '2' || pid === undefined || extra !== undefined) {
       this.failProtocol(new KernelProtocolError(`science-runtime: kernel sent an unexpected line before READY: ${JSON.stringify(line)}`))
       return
     }
@@ -515,11 +580,22 @@ export class KernelProcess {
 
   private handleRunLine(line: string): void {
     const fields = line.split('\t')
-    const [tag, runId, status, detail, flags, extra] = fields
     const pending = this.pending
+    if (pending?.kind === 'chart') {
+      const [tag, runId, status, detail, extra] = fields
+      if (tag !== 'CHART' || runId === undefined || (status !== 'ok' && status !== 'error')
+        || detail === undefined || extra !== undefined || runId !== pending.runId) {
+        this.failProtocol(new KernelProtocolError(`science-runtime: kernel sent an unexpected frame: ${JSON.stringify(line)}`))
+        return
+      }
+      this.pending = undefined
+      pending.resolve({ runId: pending.runId, status, detail })
+      return
+    }
+    const [tag, runId, status, detail, flags, extra] = fields
     if (
       tag !== 'DONE' || runId === undefined || status === undefined || detail === undefined || flags === undefined
-      || extra !== undefined || !isDoneStatus(status) || pending === undefined || runId !== pending.runId
+      || extra !== undefined || !isDoneStatus(status) || pending?.kind !== 'execute' || runId !== pending.runId
     ) {
       this.failProtocol(new KernelProtocolError(`science-runtime: kernel sent an unexpected frame: ${JSON.stringify(line)}`))
       return
@@ -591,7 +667,7 @@ export class KernelProcess {
     this.pending = undefined
     if (pending === undefined) return
     pending.reject(this.protocolFault ?? new KernelExitedError(
-      `science-runtime: kernel process exited (${cause}) before RUN ${pending.runId} completed`,
+      `science-runtime: kernel process exited (${cause}) before ${pending.kind === 'execute' ? 'RUN' : 'CHART_EXTRACT'} ${pending.runId} completed`,
     ))
   }
 }

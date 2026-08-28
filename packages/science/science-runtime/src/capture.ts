@@ -16,6 +16,7 @@ import type {
   ScienceArtifactMediaType,
   ScienceArtifactVersion,
   ScienceArtifactVersionRef,
+  ScienceChartState,
   ScienceFoldState,
   ScienceProjectId,
   ScienceRunTerminal,
@@ -70,6 +71,26 @@ function isRasterCaptureAllowed(
   return mediaType !== 'image/png' || rasterCapture === 'always' || rasterArtifacts.has(relativePath)
 }
 
+/**
+ * List existing PNG paths admitted by the same rules as auto-capture.
+ * @param runArtifacts - canonical run artifact directory.
+ * @param rasterCapture - configured PNG capture policy.
+ * @param rasterArtifacts - validated declared PNG paths.
+ * @returns sorted capture-relative PNG paths eligible for capture.
+ */
+export async function capturablePngPaths(
+  runArtifacts: string,
+  rasterCapture: RasterCapturePolicy,
+  rasterArtifacts: ReadonlySet<string>,
+): Promise<readonly string[]> {
+  const walked = (await walkArtifactFiles(runArtifacts)).filter(isCaptureEligible).sort()
+  return walked.filter((relativePath) => {
+    const mediaType = captureMediaType(relativePath)
+    return mediaType === 'image/png'
+      && isRasterCaptureAllowed(relativePath, mediaType, rasterCapture, rasterArtifacts)
+  })
+}
+
 /** Inputs for one terminal run's auto-capture walk. */
 export interface CaptureRunArtifactsRequest {
   /** Project artifact store that owns every captured version's bytes and index row. */
@@ -88,6 +109,8 @@ export interface CaptureRunArtifactsRequest {
   readonly rasterCapture: RasterCapturePolicy
   /** Validated capture-relative `.png` paths this run declared for capture; consulted only under the `'declared'` policy. */
   readonly rasterArtifacts: ReadonlySet<string>
+  /** Validated chart state keyed by capture-relative PNG path. */
+  readonly charts?: ReadonlyMap<string, ScienceChartState>
   /** Validated Runtime config bound on one captured file's encoded bytes. */
   readonly captureMaxFileBytes: number
   /** Validated Runtime config bound on eligible files captured from one run. */
@@ -118,6 +141,8 @@ export interface CaptureRunArtifactsResult {
    * file was attempted.
    */
   readonly appendFailed: boolean
+  /** Captured PNG paths that had no valid extracted chart state. */
+  readonly chartUnavailablePaths: readonly string[]
 }
 
 /** Twelve-character preview the store records beside a full binding fingerprint. */
@@ -160,6 +185,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   const files = eligible.slice(0, request.captureMaxFilesPerRun)
 
   const captured: ScienceArtifactVersion[] = []
+  const chartUnavailablePaths: string[] = []
   let skippedOversizedCount = 0
   let truncatedPerSession = false
   let appendFailed = false
@@ -285,6 +311,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
         ...provenance,
       })
 
+    const chart = mediaType === 'image/png' ? request.charts?.get(relativePath) : undefined
     const artifact: ScienceArtifactVersion = {
       artifactId: stored.artifactId,
       producerSessionId: stored.producerSessionId,
@@ -306,6 +333,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       environmentRevision: sourceRun.environmentRevision,
       environmentFingerprint: sourceRun.environmentFingerprint,
       createdAt: stored.createdAt,
+      ...(chart === undefined ? {} : { chart }),
     }
     let appended
     try {
@@ -326,7 +354,16 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     // between iterations of one synchronous walk.
     applyScienceEvent(state, appended)
     captured.push(artifact)
+    if (mediaType === 'image/png' && artifact.chart === undefined) chartUnavailablePaths.push(relativePath)
   }
 
-  return { captured, skippedRasterPaths, skippedOversizedCount, truncatedPerRun, truncatedPerSession, appendFailed }
+  return {
+    captured,
+    skippedRasterPaths,
+    skippedOversizedCount,
+    truncatedPerRun,
+    truncatedPerSession,
+    appendFailed,
+    chartUnavailablePaths,
+  }
 }

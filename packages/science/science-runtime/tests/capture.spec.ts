@@ -67,6 +67,8 @@ async function startHeldRun(
   status: 'ok' | 'error' = 'ok',
   bound = false,
   artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'>,
+  chartResult?: unknown,
+  chartStatus?: 'error' | 'hang' | 'missing-result' | 'crash',
 ): Promise<Awaited<ReturnType<typeof harness.runtime.startRun>>> {
   if (!bound) {
     await harness.runtime.bindEnvironment({
@@ -75,7 +77,7 @@ async function startHeldRun(
   }
   callCounter += 1
   return harness.runtime.startRun({
-    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status }),
+    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status, chartResult, chartStatus }),
     ...artifacts,
     ...authorizePythonRun(session, `capture-run-${String(callCounter)}`),
     signal: new AbortController().signal,
@@ -301,6 +303,7 @@ describe('Science auto-capture', () => {
       logicalName: 'plot.png', version: 1, origin: 'auto', title: 'plot.png',
       mediaType: 'image/png',
     })
+    expect(first.result.capture?.chartUnavailablePaths).toEqual(['plot.png'])
 
     const handle = await harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
@@ -314,6 +317,155 @@ describe('Science auto-capture', () => {
     const projection = replayScience(session.events)
     const versions = projection?.artifacts.filter(candidate => candidate.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2])
+  })
+
+  it('attaches validated chart state only to an allowed captured PNG', async () => {
+    const root = tmp('.science-capture-chart-state-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-chart-state')
+    const chart = {
+      runtime: 'matplotlib',
+      png: { width: 1, height: 1, dpi: 100 },
+      elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Evidence' }],
+      hitmap: [],
+      hitmapStatus: 'unavailable',
+    }
+    const handle = await startHeldRun(
+      harness,
+      session,
+      'ok',
+      false,
+      { rasterArtifacts: ['plot.png'] },
+      { charts: { 'plot.png': chart, 'undeclared.png': chart, 'table.csv': chart }, errors: { 'missed.png': 'not registered' } },
+    )
+    await writeArtifact(root, session, handle.runId, 'plot.png', PNG)
+    await writeArtifact(root, session, handle.runId, 'table.csv', 'value\n1\n')
+    const result = await handle.done
+    expect(result.capture?.captured).toHaveLength(2)
+    expect(result.capture?.captured.find(version => version.logicalName === 'plot.png')).toMatchObject({
+      logicalName: 'plot.png',
+      chart: { runtime: 'matplotlib', figureKey: 'plot.png', ops: [], hitmapStatus: 'unavailable' },
+    })
+    expect(result.capture?.captured.find(version => version.logicalName === 'table.csv')).not.toHaveProperty('chart')
+    expect(result.capture?.chartUnavailablePaths).toEqual([])
+  })
+
+  it('keeps PNG capture when the kernel rejects chart extraction or returns invalid JSON data', async () => {
+    const root = tmp('.science-capture-chart-failure-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-chart-failure')
+
+    const rejected = await startHeldRun(
+      harness, session, 'ok', false, { rasterArtifacts: ['rejected.png'] }, undefined, 'error',
+    )
+    await writeArtifact(root, session, rejected.runId, 'rejected.png', PNG)
+    const rejectedResult = await rejected.done
+    expect(rejectedResult.capture?.captured[0]).not.toHaveProperty('chart')
+    expect(rejectedResult.capture?.chartUnavailablePaths).toEqual(['rejected.png'])
+
+    const invalid = await startHeldRun(
+      harness, session, 'ok', true, { rasterArtifacts: ['invalid.png'] }, 'not-an-object',
+    )
+    await writeArtifact(root, session, invalid.runId, 'invalid.png', PNG)
+    const invalidResult = await invalid.done
+    expect(invalidResult.capture?.captured[0]).not.toHaveProperty('chart')
+    expect(invalidResult.capture?.chartUnavailablePaths).toEqual(['invalid.png'])
+
+    const invalidChart = await startHeldRun(
+      harness, session, 'ok', true, { rasterArtifacts: ['invalid-chart.png'] },
+      { charts: { 'invalid-chart.png': { runtime: 'unknown' } }, errors: {} },
+    )
+    await writeArtifact(root, session, invalidChart.runId, 'invalid-chart.png', PNG)
+    expect((await invalidChart.done).capture?.chartUnavailablePaths).toEqual(['invalid-chart.png'])
+
+    const invalidError = await startHeldRun(
+      harness, session, 'ok', true, { rasterArtifacts: ['invalid-error.png'] },
+      { charts: {}, errors: { 'invalid-error.png': 1 } },
+    )
+    await writeArtifact(root, session, invalidError.runId, 'invalid-error.png', PNG)
+    expect((await invalidError.done).capture?.chartUnavailablePaths).toEqual(['invalid-error.png'])
+
+    const missingResult = await startHeldRun(
+      harness, session, 'ok', true, { rasterArtifacts: ['missing-result.png'] }, undefined, 'missing-result',
+    )
+    await writeArtifact(root, session, missingResult.runId, 'missing-result.png', PNG)
+    expect((await missingResult.done).capture?.chartUnavailablePaths).toEqual(['missing-result.png'])
+  })
+
+  it('extracts every eligible PNG under the always policy and retires a kernel that exits during extraction', async () => {
+    const root = tmp('.science-capture-chart-always-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, undefined, { rasterCapture: 'always' },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-chart-always')
+    const exited = await startHeldRun(harness, session, 'ok', false, undefined, undefined, 'crash')
+    await writeArtifact(root, session, exited.runId, 'plot.png', PNG)
+    expect((await exited.done).capture?.chartUnavailablePaths).toEqual(['plot.png'])
+
+    const next = await startHeldRun(harness, session, 'ok', true)
+    await next.done
+    const starts = session.events.filter(event => event.type === 'science/run-started')
+    expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
+  })
+
+  it('retires a kernel after chart extraction times out while preserving ordinary PNG capture', async () => {
+    const root = tmp('.science-capture-chart-timeout-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root,
+      { fake: { pythonPrefix: prefix } },
+      30_000,
+      undefined,
+      undefined,
+      { chartExtractTimeoutMs: 20 },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-chart-timeout')
+    const first = await startHeldRun(
+      harness, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
+    )
+    await writeArtifact(root, session, first.runId, 'plot.png', PNG)
+    const firstResult = await first.done
+    expect(firstResult.capture?.captured[0]).not.toHaveProperty('chart')
+    expect(firstResult.capture?.chartUnavailablePaths).toEqual(['plot.png'])
+
+    const next = await startHeldRun(harness, session, 'ok', true)
+    await next.done
+    const starts = session.events.filter(event => event.type === 'science/run-started')
+    expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
+  })
+
+  it('skips chart extraction when run settlement already requires kernel retirement', async () => {
+    const root = tmp('.science-capture-chart-retiring-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root,
+      { fake: { pythonPrefix: prefix } },
+      30_000,
+      undefined,
+      undefined,
+      { chartExtractTimeoutMs: 10_000 },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-capture-chart-retiring')
+    const handle = await startHeldRun(
+      harness, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
+    )
+    await writeArtifact(root, session, handle.runId, 'plot.png', PNG)
+    handle.cancel()
+    const settled = await Promise.race([
+      handle.done,
+      new Promise<'timed-out'>(resolve => setTimeout(() => { resolve('timed-out') }, 1_000)),
+    ])
+    expect(settled).not.toBe('timed-out')
+    if (settled === 'timed-out') throw new Error('chart extraction ran for a retiring kernel')
+    expect(settled.capture?.chartUnavailablePaths).toEqual(['plot.png'])
   })
 
   it('opens the next version when the same turn rewrites the file: content history is append-only', async () => {

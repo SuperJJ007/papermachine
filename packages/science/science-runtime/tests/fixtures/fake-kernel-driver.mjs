@@ -20,10 +20,10 @@
 //        the process survives it and keeps sleeping (Node's default SIGINT
 //        disposition would otherwise terminate the process).
 
-import { closeSync, openSync, readFileSync, writeSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 
 const fifoPath = process.argv[2]
 if (fifoPath === undefined) {
@@ -56,6 +56,21 @@ rl.on('line', (line) => {
   if (cmd === 'EXIT') {
     closeFifo()
     process.exit(0)
+  }
+  if (cmd === 'CHART_EXTRACT') {
+    const request = JSON.parse(readFileSync(parts[2], 'utf8'))
+    if (request.testAction === 'hang') return
+    if (request.testAction === 'wrong-frame') {
+      send(`DONE\t${parts[1]}\tok\t\t`)
+      return
+    }
+    if (request.testAction === 'error') {
+      send(`CHART\t${parts[1]}\terror\tChartError`)
+      return
+    }
+    writeFileSync(parts[3], JSON.stringify(request.testResult ?? { charts: {}, errors: {} }))
+    send(`CHART\t${parts[1]}\tok\t`)
+    return
   }
   if (cmd !== 'RUN') return
   const runId = parts[1]

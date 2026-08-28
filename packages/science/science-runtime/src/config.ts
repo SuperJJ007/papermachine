@@ -79,6 +79,20 @@ export const MIN_KERNEL_START_TIMEOUT_MS = 1_000
 /** Highest accepted configured kernel spawn-to-READY deadline. */
 export const MAX_KERNEL_START_TIMEOUT_MS = 600_000
 
+/** Default deadline for one post-run chart extraction exchange. */
+export const DEFAULT_CHART_EXTRACT_TIMEOUT_MS = 5_000
+/** Lowest accepted chart extraction deadline. */
+export const MIN_CHART_EXTRACT_TIMEOUT_MS = 1
+/** Highest accepted chart extraction deadline. */
+export const MAX_CHART_EXTRACT_TIMEOUT_MS = 600_000
+
+/** Default number of recent runs whose live figures remain strongly referenced per kernel. */
+export const DEFAULT_CHART_LIVE_RUNS_RETAINED = 4
+/** Lowest accepted live-figure run retention count. */
+export const MIN_CHART_LIVE_RUNS_RETAINED = 1
+/** Highest accepted live-figure run retention count. */
+export const MAX_CHART_LIVE_RUNS_RETAINED = 100
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -143,6 +157,10 @@ export interface Config {
    * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
    */
   readonly kernelStartTimeoutMs?: number
+  /** Deadline for post-run live-figure extraction; a timeout retires the kernel. */
+  readonly chartExtractTimeoutMs?: number
+  /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
+  readonly chartLiveRunsRetained?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -193,6 +211,12 @@ export const configSchema: z<Config> = z.object({
   kernelStartTimeoutMs: z.number().step(1)
     .min(MIN_KERNEL_START_TIMEOUT_MS).max(MAX_KERNEL_START_TIMEOUT_MS)
     .default(DEFAULT_KERNEL_START_TIMEOUT_MS),
+  chartExtractTimeoutMs: z.number().step(1)
+    .min(MIN_CHART_EXTRACT_TIMEOUT_MS).max(MAX_CHART_EXTRACT_TIMEOUT_MS)
+    .default(DEFAULT_CHART_EXTRACT_TIMEOUT_MS),
+  chartLiveRunsRetained: z.number().step(1)
+    .min(MIN_CHART_LIVE_RUNS_RETAINED).max(MAX_CHART_LIVE_RUNS_RETAINED)
+    .default(DEFAULT_CHART_LIVE_RUNS_RETAINED),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -223,6 +247,10 @@ export interface ResolvedConfig {
   readonly kernelIdleTimeoutMs: number
   /** Explicitly resolved persistent-kernel spawn-to-READY deadline. */
   readonly kernelStartTimeoutMs: number
+  /** Explicitly resolved chart extraction deadline. */
+  readonly chartExtractTimeoutMs: number
+  /** Explicitly resolved strong-reference retention count. */
+  readonly chartLiveRunsRetained: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -300,6 +328,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
+      'chartExtractTimeoutMs', 'chartLiveRunsRetained',
     ],
     'config',
   )
@@ -367,6 +396,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || kernelStartTimeoutMs > MAX_KERNEL_START_TIMEOUT_MS) {
     throw new Error(`science-runtime: kernelStartTimeoutMs must be a safe integer from ${String(MIN_KERNEL_START_TIMEOUT_MS)} through ${String(MAX_KERNEL_START_TIMEOUT_MS)}`)
   }
+  const chartExtractTimeoutMs = config.chartExtractTimeoutMs ?? DEFAULT_CHART_EXTRACT_TIMEOUT_MS
+  if (!Number.isSafeInteger(chartExtractTimeoutMs)
+    || chartExtractTimeoutMs < MIN_CHART_EXTRACT_TIMEOUT_MS
+    || chartExtractTimeoutMs > MAX_CHART_EXTRACT_TIMEOUT_MS) {
+    throw new Error(`science-runtime: chartExtractTimeoutMs must be a safe integer from ${String(MIN_CHART_EXTRACT_TIMEOUT_MS)} through ${String(MAX_CHART_EXTRACT_TIMEOUT_MS)}`)
+  }
+  const chartLiveRunsRetained = config.chartLiveRunsRetained ?? DEFAULT_CHART_LIVE_RUNS_RETAINED
+  if (!Number.isSafeInteger(chartLiveRunsRetained)
+    || chartLiveRunsRetained < MIN_CHART_LIVE_RUNS_RETAINED
+    || chartLiveRunsRetained > MAX_CHART_LIVE_RUNS_RETAINED) {
+    throw new Error(`science-runtime: chartLiveRunsRetained must be a safe integer from ${String(MIN_CHART_LIVE_RUNS_RETAINED)} through ${String(MAX_CHART_LIVE_RUNS_RETAINED)}`)
+  }
   return {
     dshHome: config.dshHome,
     profiles: parseProfiles(config.profiles),
@@ -381,5 +422,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     inputMaxBytesPerRun,
     kernelIdleTimeoutMs,
     kernelStartTimeoutMs,
+    chartExtractTimeoutMs,
+    chartLiveRunsRetained,
   }
 }

@@ -43,6 +43,7 @@ if (fifoPath === undefined) {
 
 let fifoFd = openSync(fifoPath, 'w')
 let fifoClosed = false
+const runActions = new Map()
 
 function send(frame) {
   if (fifoClosed) return
@@ -74,7 +75,16 @@ rl.on('line', (line) => {
     process.exit(0)
   }
   if (cmd === 'CHART_EXTRACT') {
-    writeFileSync(parts[3], '{"charts":{},"errors":{}}')
+    const action = runActions.get(parts[1])
+    if (action?.chartStatus === 'hang') return
+    if (action?.chartStatus === 'crash') process.exit(1)
+    if (action?.chartStatus === 'error') {
+      send(`CHART\t${parts[1]}\terror\tChartError`)
+      return
+    }
+    if (action?.chartStatus !== 'missing-result') {
+      writeFileSync(parts[3], JSON.stringify(action?.chartResult ?? { charts: {}, errors: {} }))
+    }
     send(`CHART\t${parts[1]}\tok\t`)
     return
   }
@@ -91,6 +101,7 @@ function handleRun(runId, sourcePath, stdoutPath, stderrPath, artifactDir) {
     return
   }
   const kind = action.action || 'reply'
+  runActions.set(runId, action)
   const status = action.status || 'ok'
   const detail = action.detail || ''
   const flags = action.flags || ''

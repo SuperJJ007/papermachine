@@ -657,7 +657,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stderr: { text: '', bytes: 0, truncated: false },
       capture: {
         captured: [image, csv], skippedRasterPaths: ['debug/preview.png'],
-        skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false,
+        skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false, chartUnavailablePaths: [],
       },
     })
     expect(value.capturedArtifacts).toEqual([
@@ -694,7 +694,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stderr: { text: '', bytes: 0, truncated: false },
       capture: {
         captured: [csv], skippedRasterPaths: ['a.png', 'b.png'],
-        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
     })
     expect(value.skippedRaster).toEqual(['a.png', 'b.png'])
@@ -706,7 +706,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stderr: { text: '', bytes: 0, truncated: false },
       capture: {
         captured: [csv], skippedRasterPaths: [],
-        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
     })
     expect(withoutSkips).not.toHaveProperty('skippedRaster')
@@ -728,7 +728,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stderr: { text: '', bytes: 0, truncated: false },
       capture: {
         captured: [large], skippedRasterPaths: [],
-        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
     })
     expect(value).not.toHaveProperty('captureSkippedOversizedCount')
@@ -747,7 +747,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stderr: { text: '', bytes: 0, truncated: false },
       capture: {
         captured: [], skippedRasterPaths: [],
-        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false,
+        skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
     })
     expect(value.capturedArtifacts).toEqual([])

@@ -233,6 +233,25 @@ async function prepareRun(root: string, runId: string, action: Record<string, un
   }
 }
 
+/** Flush one private CHART_EXTRACT request for the fake driver. */
+async function prepareChartRequest(
+  root: string,
+  runId: string,
+  value: unknown = {},
+  timeoutMs = 1_000,
+) {
+  const directory = join(root, 'chart-requests', runId)
+  await mkdir(directory, { recursive: true })
+  const requestPath = join(directory, 'request.json')
+  await writeFile(requestPath, JSON.stringify(value))
+  return {
+    runId: ScienceRunId(runId),
+    requestPath,
+    resultPath: join(directory, 'result.json'),
+    timeoutMs,
+  }
+}
+
 describe('KernelProcess', () => {
   it('completes the READY handshake', async () => {
     const harness = await createHarness('kernel-handshake')
@@ -391,6 +410,12 @@ describe('KernelProcess', () => {
     subprocess.writeError = 'injected non-error stdin write failure'
     await expect(kernel.execute(await prepareRun(harness.root, 'run-write-error-2', { status: 'ok' })))
       .rejects.toThrow('injected non-error stdin write failure')
+    subprocess.writeError = writeError
+    await expect(kernel.extractCharts(await prepareChartRequest(harness.root, 'chart-write-error')))
+      .rejects.toBe(writeError)
+    subprocess.writeError = 'injected non-error chart write failure'
+    await expect(kernel.extractCharts(await prepareChartRequest(harness.root, 'chart-write-error-2')))
+      .rejects.toThrow('injected non-error chart write failure')
     subprocess.writeError = undefined
     await kernel.end('test-teardown')
   }, 30_000)
@@ -438,6 +463,69 @@ describe('KernelProcess', () => {
     const second = await kernel.execute(await prepareRun(harness.root, 'run-2', { status: 'error', detail: 'Boom' }))
     expect(second).toEqual({ runId: ScienceRunId('run-2'), status: 'error', detail: 'Boom', captureDegraded: false })
     await kernel.end('test-teardown')
+  })
+
+  it('routes CHART_EXTRACT success and kernel-declared error responses', async () => {
+    const harness = await createHarness('kernel-chart-frames')
+    const kernel = await startKernel(harness, 'python')
+    const success = await kernel.extractCharts(await prepareChartRequest(harness.root, 'run-chart-ok'))
+    expect(success).toEqual({ runId: ScienceRunId('run-chart-ok'), status: 'ok', detail: '' })
+    const failed = await kernel.extractCharts(await prepareChartRequest(
+      harness.root,
+      'run-chart-error',
+      { testAction: 'error' },
+    ))
+    expect(failed).toEqual({ runId: ScienceRunId('run-chart-error'), status: 'error', detail: 'ChartError' })
+    await kernel.end('test-teardown')
+  })
+
+  it('shares one pending slot between RUN and CHART_EXTRACT', async () => {
+    const harness = await createHarness('kernel-chart-pending')
+    const kernel = await startKernel(harness, 'python')
+    const pending = kernel.execute(await prepareRun(harness.root, 'run-chart-pending', {
+      action: 'sleep', sleepMs: 5_000, trapSigint: true,
+    }))
+    expect(() => kernel.extractCharts({
+      runId: ScienceRunId('run-chart-second'),
+      requestPath: '/request',
+      resultPath: '/result',
+      timeoutMs: 1_000,
+    })).toThrow(/still pending/)
+    await new Promise(resolve => setTimeout(resolve, 300))
+    kernel.interrupt()
+    await expect(pending).resolves.toMatchObject({ status: 'interrupted' })
+    await kernel.end('test-teardown')
+  })
+
+  it('faults a kernel whose chart extraction times out or replies out of order', async () => {
+    const timeoutHarness = await createHarness('kernel-chart-timeout')
+    const timeoutKernel = await startKernel(timeoutHarness, 'python')
+    await expect(timeoutKernel.extractCharts(await prepareChartRequest(
+      timeoutHarness.root,
+      'run-chart-timeout',
+      { testAction: 'hang' },
+      20,
+    ))).rejects.toThrow(KernelProtocolError)
+    await expect(timeoutKernel.exited).resolves.toMatchObject({ cause: 'protocol' })
+    await expect(timeoutKernel.extractCharts(await prepareChartRequest(
+      timeoutHarness.root, 'run-chart-after-protocol-fault',
+    ))).rejects.toThrow(KernelProtocolError)
+
+    const frameHarness = await createHarness('kernel-chart-wrong-frame')
+    const frameKernel = await startKernel(frameHarness, 'python')
+    await expect(frameKernel.extractCharts(await prepareChartRequest(
+      frameHarness.root,
+      'run-chart-wrong-frame',
+      { testAction: 'wrong-frame' },
+    ))).rejects.toThrow(KernelProtocolError)
+    await expect(frameKernel.exited).resolves.toMatchObject({ cause: 'protocol' })
+
+    const endedHarness = await createHarness('kernel-chart-after-exit')
+    const endedKernel = await startKernel(endedHarness, 'python')
+    await endedKernel.end('test-teardown')
+    await expect(endedKernel.extractCharts(await prepareChartRequest(
+      endedHarness.root, 'run-chart-after-exit',
+    ))).rejects.toThrow(KernelExitedError)
   })
 
   it('forwards the RUN frame\'s own reserved inputDir distinctly from cwd and artifactDir', async () => {

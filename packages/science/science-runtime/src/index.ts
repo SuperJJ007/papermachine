@@ -6,11 +6,14 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
-import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { decodeScienceChartState, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactVersion,
+  ScienceChartState,
   ScienceEnvironmentBinding,
   ScienceLanguage,
   ScienceProjectId,
@@ -22,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
-import { captureRunArtifacts } from './capture.ts'
+import { capturablePngPaths, captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
@@ -30,7 +33,7 @@ import { assertProfileRunConfinement, observeProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
 import { KERNEL_ASSETS_ROOT } from './kernel-assets.ts'
-import { KernelProtocolError } from './kernel-process.ts'
+import { KernelExitedError, KernelProtocolError } from './kernel-process.ts'
 import type { KernelDoneFrame, KernelExecuteRequest, KernelProcess } from './kernel-process.ts'
 import {
   KernelEpochRegressionError,
@@ -98,6 +101,17 @@ export const inject = ['scienceArtifactStore', 'sessions', 'subprocess', 'sandbo
 function isCaptureFilesystemFailure(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false
   return typeof (error as { readonly code?: unknown }).code === 'string'
+}
+
+function plainRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+interface ExtractedChartsResult {
+  readonly charts: ReadonlyMap<string, ScienceChartState>
+  readonly retireKernel: boolean
 }
 
 /** Terminal classification for one settled kernel execution, independent of durable identity fields. */
@@ -289,6 +303,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly kernelIdleTimeoutMs: number
   /** Configured persistent-kernel spawn-to-READY deadline. */
   private readonly kernelStartTimeoutMs: number
+  /** Configured post-run chart extraction deadline. */
+  private readonly chartExtractTimeoutMs: number
+  /** Configured recent-run live-figure retention count. */
+  private readonly chartLiveRunsRetained: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
@@ -318,6 +336,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.inputMaxBytesPerRun = resolved.inputMaxBytesPerRun
     this.kernelIdleTimeoutMs = resolved.kernelIdleTimeoutMs
     this.kernelStartTimeoutMs = resolved.kernelStartTimeoutMs
+    this.chartExtractTimeoutMs = resolved.chartExtractTimeoutMs
+    this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -980,6 +1000,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         }
         throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal value could not be prepared after kernel settlement', { cause: error })
       }
+      let retireAfterChartExtraction = false
       try {
         const [stdout, stderr] = await Promise.all([readCaptureTail(runScratch.stdout), readCaptureTail(runScratch.stderr)])
         const terminal = kernelRunTerminal(started, stdout, stderr, outcome.status, outcome.failureCode, outcome.outputDegraded)
@@ -994,18 +1015,28 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           }
           throw new ScienceRuntimeError('TERMINAL_COMMIT_FAILED', 'Science terminal fact could not be committed', { cause: error })
         }
+        const extracted = outcome.retireKernel
+          ? { charts: new Map<string, ScienceChartState>(), retireKernel: false }
+          : await this.extractChartsAfterFinish(kernel, runScratch, terminal, preparedArtifacts.rasterArtifacts)
+        retireAfterChartExtraction = extracted.retireKernel
         const capture = await this.captureAfterFinish(
-          session, projectId, runScratch, terminal, preparedArtifacts.editBaselines, preparedArtifacts.rasterArtifacts,
+          session,
+          projectId,
+          runScratch,
+          terminal,
+          preparedArtifacts.editBaselines,
+          preparedArtifacts.rasterArtifacts,
+          extracted.charts,
         )
         return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
       } finally {
-        // Retire-vs-rearm derives from `outcome` alone, already settled
-        // above, so it must run on every exit from this block — including a
+        // Retire-vs-rearm derives from the settled run and chart protocol
+        // outcomes, so it must run on every exit from this block — including a
         // thrown `readCaptureTail` or a vetoed `run-finished` append: a
         // tainted kernel left unretired stays live with an
         // unknown post-interrupt state for the next run to reuse, and a
         // non-tainted kernel left unrearmed can never end `idle`.
-        if (outcome.retireKernel) {
+        if (outcome.retireKernel || retireAfterChartExtraction) {
           // Fire-and-forget: never blocks this run's own settlement — a
           // subsequent acquire() for this session drains any still-in-flight
           // teardown internally (KernelSet.drain).
@@ -1018,6 +1049,85 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
     } finally {
       this.leases.release(lease)
+    }
+  }
+
+  /**
+   * Ask a healthy kernel to extract chart state before the artifact walk.
+   * Every failure leaves the run terminal and ordinary capture intact.
+   * Protocol failure or timeout additionally retires the kernel because its
+   * request stream can no longer be trusted.
+   */
+  private async extractChartsAfterFinish(
+    kernel: KernelProcess,
+    runScratch: Awaited<ReturnType<typeof createRunScratch>>,
+    terminal: ScienceRunTerminal,
+    rasterArtifacts: PreparedRunArtifacts['rasterArtifacts'],
+  ): Promise<ExtractedChartsResult> {
+    let pngPaths: readonly string[]
+    try {
+      pngPaths = await capturablePngPaths(runScratch.artifacts, this.rasterCapture, rasterArtifacts)
+    } catch (error) {
+      /* v8 ignore start -- walkArtifactFiles absorbs per-directory filesystem failures and returns its safe partial result */
+      const message = `science-runtime: chart discovery failed for run "${terminal.runId}": ${String(error)}`
+      if (isCaptureFilesystemFailure(error)) this.ctx.logger.warn(message)
+      else this.ctx.logger.error(message)
+      return { charts: new Map(), retireKernel: false }
+      /* v8 ignore stop */
+    }
+    if (pngPaths.length === 0) return { charts: new Map(), retireKernel: false }
+
+    const requestPath = join(runScratch.directory, 'chart-extract-request.json')
+    const resultPath = join(runScratch.directory, 'chart-extract-result.json')
+    try {
+      await writeFile(requestPath, JSON.stringify({
+        artifactDir: runScratch.artifacts,
+        allow: this.rasterCapture === 'always' ? null : [...rasterArtifacts],
+        retainRuns: this.chartLiveRunsRetained,
+      }), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      const frame = await kernel.extractCharts({
+        runId: terminal.runId,
+        requestPath,
+        resultPath,
+        timeoutMs: this.chartExtractTimeoutMs,
+      })
+      if (frame.status === 'error') {
+        this.ctx.logger.warn(`science-runtime: chart extraction failed for run "${terminal.runId}": ${frame.detail}`)
+        return { charts: new Map(), retireKernel: false }
+      }
+      const decoded: unknown = JSON.parse(await readFile(resultPath, 'utf8'))
+      const root = plainRecord(decoded)
+      const chartValues = root === undefined ? undefined : plainRecord(root['charts'])
+      const errors = root === undefined ? undefined : plainRecord(root['errors'])
+      if (root === undefined || chartValues === undefined || errors === undefined
+        || Object.keys(root).sort().join(',') !== 'charts,errors') {
+        throw new Error('chart result must contain exact charts and errors records')
+      }
+      for (const [path, detail] of Object.entries(errors)) {
+        if (typeof detail !== 'string') throw new Error('chart result errors must contain string values')
+        this.ctx.logger.warn(`science-runtime: chart ${JSON.stringify(path)} was not extracted for run "${terminal.runId}": ${detail}`)
+      }
+      const allowed = new Set(pngPaths)
+      const charts = new Map<string, ScienceChartState>()
+      for (const [path, extraction] of Object.entries(chartValues)) {
+        if (!allowed.has(path)) continue
+        try {
+          charts.set(path, decodeScienceChartState({
+            ...plainRecord(extraction),
+            figureKey: path,
+            ops: [],
+          }))
+        } catch (error) {
+          this.ctx.logger.warn(`science-runtime: chart ${JSON.stringify(path)} was invalid for run "${terminal.runId}": ${String(error)}`)
+        }
+      }
+      return { charts, retireKernel: false }
+    } catch (error) {
+      const retireKernel = error instanceof KernelProtocolError || error instanceof KernelExitedError
+      const message = `science-runtime: chart extraction failed for run "${terminal.runId}": ${String(error)}`
+      if (isCaptureFilesystemFailure(error)) this.ctx.logger.warn(message)
+      else this.ctx.logger.error(message)
+      return { charts: new Map(), retireKernel }
     }
   }
 
@@ -1043,6 +1153,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @param terminal - the exact terminal record just committed, supplying every captured version's provenance.
    * @param editBaselines - Validated exact parents keyed by capture-relative path.
    * @param rasterArtifacts - Validated capture-relative `.png` paths this run declared for capture.
+   * @param charts - Validated chart state keyed by capture-relative PNG path.
    * @returns capture accounting, or `undefined` when the Session detached or capture itself failed.
    */
   private async captureAfterFinish(
@@ -1052,6 +1163,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     terminal: ScienceRunTerminal,
     editBaselines: PreparedRunArtifacts['editBaselines'],
     rasterArtifacts: PreparedRunArtifacts['rasterArtifacts'],
+    charts: ReadonlyMap<string, ScienceChartState>,
   ): Promise<CaptureRunArtifactsResult | undefined> {
     // The caller already re-verified liveness immediately before the
     // run-finished append this method follows; only a detach racing that
@@ -1070,6 +1182,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         editBaselines,
         rasterCapture: this.rasterCapture,
         rasterArtifacts,
+        charts,
         captureMaxFileBytes: this.captureMaxFileBytes,
         captureMaxFilesPerRun: this.captureMaxFilesPerRun,
         captureMaxArtifactVersionsPerSession: this.captureMaxArtifactVersionsPerSession,

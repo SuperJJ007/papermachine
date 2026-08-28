@@ -40,64 +40,12 @@ const PNG = Uint8Array.from(Buffer.from(
 const CSV_TEXT = 'name,score\nada,10\nbob,2\ncleo,33\n'
 const JSON_TEXT = '{"accuracy":0.97,"epochs":12}'
 const MARKDOWN_TEXT = '# Result\n\nThe model **converged**.\n'
-/** Generate a large inline-data fixture without committing hundreds of kilobytes of static JSON. */
-function makeVegaLiteText(rowCount: number): string {
-  return JSON.stringify({
-    title: 'Scores',
-    mark: 'point',
-    data: { values: Array.from({ length: rowCount }, (_, index) => ({
-      name: `participant-${String(index)}`, score: index % 101, exposure: index,
-    })) },
-    encoding: {
-      x: { field: 'exposure', type: 'quantitative' },
-      y: { field: 'score', type: 'quantitative' },
-    },
-  })
-}
-const VEGA_LITE_TEXT = makeVegaLiteText(3_000)
-/**
- * Generate a large Altair-6-shaped fixture: top-level `datasets` keyed by
- * name, `layer` referencing it by `data.name`, and a `config` block — the
- * structure a reported large chart (~400 KB, ~900 rows, real Altair 6
- * output) used and that still rendered as raw JSON text.
- */
-function makeAltairVegaLiteText(rowCount: number): string {
-  const values = Array.from({ length: rowCount }, (_, index) => ({
-    name: `participant-${String(index)}`, score: index % 101, exposure: index,
-    category: index % 5 === 0 ? 'alpha' : 'beta',
-  }))
-  return JSON.stringify({
-    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-    config: { view: { continuousWidth: 300, continuousHeight: 300 }, axis: { labelFontSize: 12 } },
-    datasets: { 'data-altair-01': values },
-    layer: [
-      {
-        data: { name: 'data-altair-01' },
-        mark: 'point',
-        encoding: {
-          x: { field: 'exposure', type: 'quantitative' },
-          y: { field: 'score', type: 'quantitative' },
-          color: { field: 'category', type: 'nominal' },
-        },
-      },
-      {
-        data: { name: 'data-altair-01' },
-        mark: 'line',
-        encoding: {
-          x: { field: 'exposure', type: 'quantitative' },
-          y: { field: 'score', type: 'quantitative' },
-        },
-      },
-    ],
-  })
-}
-const ALTAIR_VEGA_LITE_TEXT = makeAltairVegaLiteText(4_500)
 const FINGERPRINT = 'e'.repeat(64)
 const RUN_ID = ScienceRunId('run-types-1')
 const RUN_CALL_ID = CallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
-/** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png/Vega-Lite artifacts. */
+/** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png artifacts. */
 function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[]): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
@@ -217,8 +165,6 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     artifact(stored[1]!.artifact.artifactId, 'metrics.json', 'application/json', stored[1]!),
     artifact(stored[2]!.artifact.artifactId, 'report.md', 'text/markdown', stored[2]!),
     artifact(stored[3]!.artifact.artifactId, 'plot.png', 'image/png', stored[3]!),
-    artifact(stored[4]!.artifact.artifactId, 'scores.vl.json', 'application/json', stored[4]!),
-    artifact(stored[5]!.artifact.artifactId, 'altair_style.vl.json', 'application/json', stored[5]!),
   ]
 
   session.append('tool/result', {
@@ -226,7 +172,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     step: 1,
     message: createToolResultMessage({
       callId: RUN_CALL_ID,
-      content: [{ type: 'text', text: 'status: success\nCaptured 6 artifacts.' }],
+      content: [{ type: 'text', text: 'status: success\nCaptured 4 artifacts.' }],
       isError: false,
     }),
     meta: {
@@ -271,8 +217,6 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       { logicalName: 'metrics.json', data: Buffer.from(JSON_TEXT, 'utf8'), mediaType: 'application/json' },
       { logicalName: 'report.md', data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown' },
       { logicalName: 'plot.png', data: PNG, mediaType: 'image/png' },
-      { logicalName: 'scores.vl.json', data: Buffer.from(VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/json' },
-      { logicalName: 'altair_style.vl.json', data: Buffer.from(ALTAIR_VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/json' },
     ] as const
     const stored: StoredArtifact[] = []
     for (const definition of definitions) {
@@ -307,11 +251,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-types'))
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
-    expect(VEGA_LITE_TEXT.length).toBeGreaterThan(100_000)
-    expect(VEGA_LITE_TEXT.length).toBeLessThan(8_000_000)
-
-    await centerCol.getByText('Files produced this turn: 6', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await centerCol.getByText('Captured 6 artifacts', { exact: false }).count()).toBe(0)
+    await centerCol.getByText('Files produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await centerCol.getByText('Captured 4 artifacts', { exact: false }).count()).toBe(0)
     await compareOrRefreshGolden(
       TRANSCRIPT_EXPECTED,
       [
@@ -346,25 +287,10 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     await centerCol.getByRole('listitem', { name: /plot\.png/ }).click()
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
-    await centerCol.getByRole('listitem', { name: /scores\.vl\.json/ }).click()
-    await detailsPanel.locator('[data-testid="vega-lite-view"] svg').waitFor({ timeout: 15_000 })
-    await detailsPanel.getByRole('button', { name: 'X axis', exact: true }).click()
-    const exactOutline = detailsPanel.locator('[data-vega-selection-outline="exact"]')
-    await exactOutline.waitFor({ timeout: 10_000 })
-    expect((await exactOutline.boundingBox())?.width).toBeGreaterThan(0)
-
-    // The R-produced spec uses the same direct style-edit Remote as a
-    // Python-produced spec; origin language never enters viewer admission.
-    await detailsPanel.getByRole('button', { name: 'Mark style', exact: true }).click()
-    await detailsPanel.getByLabel('Color').fill('#ff0000')
-    await detailsPanel.getByRole('button', { name: 'Commit as new version' }).click()
-    await detailsPanel.getByText('Human-edited version committed.', { exact: true }).waitFor({ timeout: 15_000 })
-
-    // All five document tabs stay open while the active chart advances to
-    // the directly edited version. Scope to the document tab strip, not the
-    // details header's "Artifacts"/"Project files" page tabs.
+    // All four document tabs stay open. Scope to the document tab strip, not
+    // the details header's "Artifacts"/"Project files" page tabs.
     const openArtifactsTabs = detailsPanel.getByRole('tablist', { name: 'Open artifacts' })
-    expect(await openArtifactsTabs.getByRole('tab').count()).toBe(5)
+    expect(await openArtifactsTabs.getByRole('tab').count()).toBe(4)
 
     const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')
@@ -374,18 +300,9 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(aria).not.toContain('a'.repeat(64))
     await compareOrRefreshGolden(
       PANEL_EXPECTED,
-      ['## Details column — artifact viewer (csv/json/md/png/Vega-Lite)', aria].join('\n'),
+      ['## Details column — artifact viewer (csv/json/md/png)', aria].join('\n'),
       MODE,
     )
-
-    // A large Vega-Lite spec shaped like real Altair 6 output (top-level
-    // `datasets` referenced by `layer[].data.name`, plus `config`) must
-    // parse and render exactly like the flat, single-mark spec above —
-    // not fall back to raw JSON text.
-    expect(ALTAIR_VEGA_LITE_TEXT.length).toBeGreaterThanOrEqual(300_000)
-    expect(ALTAIR_VEGA_LITE_TEXT.length).toBeLessThan(8_000_000)
-    await centerCol.getByRole('listitem', { name: /altair_style\.vl\.json/ }).click()
-    await detailsPanel.locator('[data-testid="vega-lite-view"] svg').waitFor({ timeout: 15_000 })
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])

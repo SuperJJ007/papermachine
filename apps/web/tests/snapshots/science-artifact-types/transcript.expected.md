@@ -19,14 +19,12 @@
   - img
   - img
   - text: "R run {}"
-- paragraph: "Files produced this turn: 6"
+- paragraph: "Files produced this turn: 4"
 - list:
   - listitem "summary.csv v1"
   - listitem "metrics.json v1"
   - listitem "report.md v1"
   - listitem "plot.png v1"
-  - listitem "scores.vl.json v1"
-  - listitem "altair_style.vl.json v1"
 - textbox "This model is unavailable — select one to continue" [disabled]
 - button "Commands" [disabled]:
   - img

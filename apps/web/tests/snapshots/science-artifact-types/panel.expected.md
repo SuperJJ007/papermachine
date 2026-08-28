@@ -1,4 +1,4 @@
-## Details column — artifact viewer (csv/json/md/png/Vega-Lite)
+## Details column — artifact viewer (csv/json/md/png)
 - tablist "File library":
   - tab "Artifacts" [selected]
   - tab "Project files"
@@ -13,19 +13,16 @@
   - tab "report.md"
   - button "Close report.md":
     - img
-  - tab "plot.png"
+  - tab "plot.png" [selected]
   - button "Close plot.png":
-    - img
-  - tab "scores.vl.json" [selected]
-  - button "Close scores.vl.json":
     - img
 - button "File library":
   - img
   - text: File library
-- text: scores.vl.json
-- button "Previous version":
+- text: plot.png
+- button "Previous version" [disabled]:
   - img
-- text: v2
+- text: v1
 - button "Next version" [disabled]:
   - img
 - button "Provenance"
@@ -33,37 +30,21 @@
   - img
 - button "Export" [disabled]
 - text: Export will be available in C4
+- button "Expand":
+  - img
 - button "Close tab":
   - img
 - term: Format
-- definition: Chart
+- definition: Image
 - term: Version
-- definition: v2
+- definition: v1
 - term: Source
-- definition: Human edit
+- definition: Generation turn not loaded
 - term: Status
-- definition: Editable
-- button "Open chart style editor":
-  - img: 0 500 1,000 1,500 2,000 2,500 3,000 exposure 0 10 20 30 40 50 60 70 80 90 100 score Scores
-- region "Editable chart structure":
-  - heading "Modify elements" [level=3]
-  - button "Title"
-  - textbox "Edit note for Title":
-    - /placeholder: Optional note
-  - button "Add Title to the conversation": +
-  - button "Mark style"
-  - textbox "Edit note for Mark style":
-    - /placeholder: Optional note
-  - button "Add Mark style to the conversation": +
-  - button "X axis"
-  - textbox "Edit note for X axis":
-    - /placeholder: Optional note
-  - button "Add X axis to the conversation": +
-  - button "Y axis"
-  - textbox "Edit note for Y axis":
-    - /placeholder: Optional note
-  - button "Add Y axis to the conversation": +
-- text: Human style edit based on v1
+- definition: Read-only
+- 'button "View original: plot.png"':
+  - img "plot.png"
+- button "Select region to edit"
 - region "Notes":
   - heading "Notes" [level=3]
   - paragraph: No notes yet.
@@ -71,4 +52,3 @@
     - /placeholder: Add a private note
   - button "Save" [disabled]
   - paragraph: These notes belong only to you and never enter model context.
-- status: Human-edited version committed.

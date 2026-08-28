@@ -337,7 +337,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Exact-version Science artifact edits',
     mode: 'core',
     consumers: ['ui-science'],
-    note: 'The Host provider validates exact live-Agent artifact selections, commits bounded direct Vega-Lite style versions, or queues structured model edit messages; the browser consumer never mutates the projection itself.',
+    note: 'The Host provider validates exact live-Agent raster-region selections and queues structured model edit messages; the browser consumer never mutates the projection itself.',
   },
   {
     key: 'sessionAttachments',

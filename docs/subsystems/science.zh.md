@@ -139,16 +139,6 @@ Remote service admitting browser edit gestures into the addressed live agent.
 @Remote('submit') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>
 
 /**
- * Validate and commit one complete Vega-Lite working copy as a direct human
- * edit: bytes into the owning project's artifact store, then the
- * store-reference event.
- * @param agent - exact live agent whose Session owns the artifact.
- * @param request - exact current parent and complete edited JSON text.
- * @returns identity and direct-edit provenance of the new contiguous version.
- */
-@Remote('commitStyleEdit') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>
-
-/**
  * Add one user-only note after validating its exact visible artifact version.
  * @param agent - Agent whose session owns the artifact.
  * @param request - Exact artifact version and plain note text.

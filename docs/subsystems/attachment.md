@@ -147,7 +147,6 @@ The text family mirrors the image family field-for-field but admits by byte cap 
 type TextMediaType =
   | 'text/csv'
   | 'application/json'
-  | 'application/vnd.vega-lite+json'
   | 'text/markdown'
   | 'text/plain'
 ```

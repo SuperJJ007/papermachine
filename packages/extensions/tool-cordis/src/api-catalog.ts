@@ -1284,12 +1284,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'durable-inbox admission receipt.',
       },
       {
-        signature: '@Remote(\'commitStyleEdit\') async commitStyleEdit(agent: Agent, request: ScienceStyleEditRequest): Promise<ScienceStyleEditReceipt>',
-        description: 'Validate and commit one complete Vega-Lite working copy as a direct human edit: bytes into the owning project\'s artifact store, then the store-reference event.',
-        parameters: [{ name: 'agent', description: 'exact live agent whose Session owns the artifact.' }, { name: 'request', description: 'exact current parent and complete edited JSON text.' }],
-        returns: 'identity and direct-edit provenance of the new contiguous version.',
-      },
-      {
         signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
         description: 'Add one user-only note after validating its exact visible artifact version.',
         parameters: [{ name: 'agent', description: 'Agent whose session owns the artifact.' }, { name: 'request', description: 'Exact artifact version and plain note text.' }],
@@ -4328,7 +4322,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceEditTarget',
-    declaration: 'export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget;',
+    declaration: 'export type ScienceEditTarget = ScienceNormalizedRegionTarget;',
   },
   {
     name: 'ScienceEnvironmentBinding',
@@ -4344,7 +4338,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceHumanEditArtifactVersion',
-    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'application/vnd.vega-lite+json\';\n}',
+    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'image/png\';\n}',
   },
   {
     name: 'ScienceInterpreterAvailableBinding',
@@ -4429,18 +4423,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceScratchKey',
     declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
-  },
-  {
-    name: 'ScienceSpecPathTarget',
-    declaration: 'export interface ScienceSpecPathTarget {\n    readonly kind: \'spec-path\';\n    readonly path: string;\n}',
-  },
-  {
-    name: 'ScienceStyleEditReceipt',
-    declaration: 'export interface ScienceStyleEditReceipt {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly origin: \'human-edit\';\n}',
-  },
-  {
-    name: 'ScienceStyleEditRequest',
-    declaration: 'export interface ScienceStyleEditRequest {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly spec: string;\n}',
   },
   {
     name: 'Scoped',
@@ -5160,7 +5142,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TextMediaType',
-    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'application/vnd.vega-lite+json\' | \'text/markdown\' | \'text/plain\';',
+    declaration: 'export type TextMediaType = \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'TodoItem',

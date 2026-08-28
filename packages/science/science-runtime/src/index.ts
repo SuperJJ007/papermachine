@@ -715,6 +715,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const sourceRun = projection.runs.find(candidate => candidate.runId === source.runId)
       const environment = projection.environment
+      // The durable Science invariant requires every run-origin artifact to reference a terminal
+      // run under an applied environment revision.
+      /* v8 ignore next 3 */
       if (sourceRun === undefined || environment === null || environment.status !== 'applied') {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
@@ -841,6 +844,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       return { artifact, failedOps }
     } catch (error) {
       if (error instanceof KernelProtocolError || error instanceof KernelExitedError) {
+        // applyChartInKernel is reached only after editLanguage is assigned.
+        /* v8 ignore next */
         if (editLanguage !== undefined) await this.kernels.retireForEscalation(request.session, editLanguage)
       }
       throw error instanceof ScienceRuntimeError ? error : this.prepublicationError(lease.control, error)

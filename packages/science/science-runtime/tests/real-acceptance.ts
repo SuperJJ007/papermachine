@@ -28,6 +28,7 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
 import ScienceRuntime from '../src/index.ts'
 import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
+import { ScienceRuntimeError } from '../src/types.ts'
 import type { ScienceRunResult } from '../src/types.ts'
 import { capturePrefixManifest, diffPrefixManifest } from './prefix-manifest.ts'
 import type { PrefixManifestEntry } from './prefix-manifest.ts'
@@ -437,6 +438,22 @@ function matplotlibChartSource(caseName: 'basic' | 'tight' | 'closed' | 'figure'
   ].filter(Boolean).join('\n')
 }
 
+/** Matplotlib source for a uniquely named chart used to force live-registry eviction. */
+function matplotlibReplaySource(filename: string): string {
+  return [
+    'def _draw_replay_chart():',
+    '    import os',
+    '    import matplotlib.pyplot as plt',
+    '    fig, ax = plt.subplots(figsize=(3, 2))',
+    '    ax.plot([0, 1, 2], [0, 2, 1], label="replay-series")',
+    '    ax.legend()',
+    `    fig.savefig(os.path.join(os.environ["SCIENCE_ARTIFACT_DIR"], ${JSON.stringify(filename)}), dpi=100)`,
+    '_draw_replay_chart()',
+    'del _draw_replay_chart',
+    '',
+  ].join('\n')
+}
+
 /** ggplot2 source cases, with the first case proving `.GlobalEnv` neutrality. */
 function ggplotChartSource(caseName: 'basic' | 'device' | 'base' | 'facet'): string {
   const filename = `r-${caseName}.png`
@@ -585,6 +602,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       // near the 30-minute default; every other check in this sequence
       // settles well within it.
       kernelIdleTimeoutMs: MIN_KERNEL_IDLE_TIMEOUT_MS,
+      chartLiveRunsRetained: 1,
       profiles: {
         real: language === 'python' ? { pythonPrefix: prefix } : { rPrefix: prefix },
       },
@@ -654,7 +672,35 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       return result
     }
 
+    const namespaceProbe = async (phase: 'begin' | 'end'): Promise<void> => {
+      const code = language === 'python'
+        ? phase === 'begin'
+          ? '_dsh_chart_namespace = set(globals())\n'
+          : 'assert set(globals()) == _dsh_chart_namespace | {"_dsh_chart_namespace"}\ndel _dsh_chart_namespace\n'
+        : phase === 'begin'
+          ? '.dsh_chart_namespace <- ls(envir = .GlobalEnv, all.names = TRUE)\n'
+          : 'stopifnot(setequal(ls(envir = .GlobalEnv, all.names = TRUE), c(.dsh_chart_namespace, ".dsh_chart_namespace")))\nrm(.dsh_chart_namespace)\n'
+      const handle = await context.scienceRuntime.startRun({
+        session, language, code, ...authorizeNext(toolName), signal: new AbortController().signal,
+      })
+      expectTerminal(await handle.done, 'success')
+    }
+
+    const expectChartError = async (
+      code: 'CHART_STALE_VERSION' | 'CHART_NOT_ADDRESSABLE',
+      operation: Promise<unknown>,
+    ): Promise<void> => {
+      try {
+        await operation
+      } catch (error) {
+        if (error instanceof ScienceRuntimeError && error.code === code) return
+        throw error
+      }
+      throw new Error(`chart edit did not reject with ${code}`)
+    }
+
     if (language === 'python') {
+      await namespaceProbe('begin')
       const basic = await runChartSource(matplotlibChartSource('basic'), ['mpl-basic.png'])
       const basicLive = expectLiveChart(basic, 'mpl-basic.png', 'matplotlib')
       expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series', 'grid', 'axis_range'])
@@ -665,6 +711,78 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
         || basicLive.chart.png.dpi !== 120) throw new Error('matplotlib chart PNG metadata disagreed with captured bytes')
       checks.push('chart matplotlib basic savefig dpi=120: catalog, PNG grid, hitmap, namespace, source bytes')
+
+      const basicParentBytes = await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256)
+      const titled = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: 1,
+        ops: [
+          { op: 'set_title', axes: null, text: 'Directly edited trial' },
+          { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited group' },
+        ],
+        signal: new AbortController().signal,
+      })
+      const titledBytes = await context.scienceArtifactStore.readBlob(titled.artifact.projectId, titled.artifact.sha256)
+      if (titled.artifact.version !== 2 || titled.artifact.origin !== 'human-edit'
+        || titled.artifact.chart?.ops.length !== 2 || titled.failedOps.length !== 0
+        || Buffer.from(titledBytes).equals(Buffer.from(basicParentBytes))) {
+        throw new Error('matplotlib title and axis-label apply did not commit a changed human-edit v2 with two operations')
+      }
+      const colored = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: titled.artifact.artifactId, version: 2,
+        ops: [{ op: 'set_series_color', axes: 0, label: 'treatment', color: '#cc3366' }],
+        signal: new AbortController().signal,
+      })
+      if (colored.artifact.version !== 3 || colored.artifact.chart?.ops.length !== 3 || colored.failedOps.length !== 0) {
+        throw new Error('matplotlib series-color apply did not preserve three cumulative operations in v3')
+      }
+      const referenced = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: colored.artifact.artifactId, version: 3,
+        ops: [{ op: 'add_reference_line', axes: 0, orientation: 'h', value: 1.5 }],
+        signal: new AbortController().signal,
+      })
+      if (referenced.artifact.version !== 4 || referenced.artifact.chart?.ops.length !== 4 || referenced.failedOps.length !== 0) {
+        throw new Error('matplotlib reference-line apply did not preserve four cumulative operations in v4')
+      }
+      await namespaceProbe('end')
+      checks.push('chart apply matplotlib warm title/axis/color/reference: changed PNG, human-edit versions, cumulative ops, namespace')
+
+      await expectChartError('CHART_STALE_VERSION', context.scienceRuntime.applyChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: 1,
+        ops: [{ op: 'set_title', axes: null, text: 'stale' }],
+        signal: new AbortController().signal,
+      }))
+      const unaddressable = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.png')
+      if (unaddressable === undefined) throw new Error('missing unaddressable PNG fixture')
+      await expectChartError('CHART_NOT_ADDRESSABLE', context.scienceRuntime.applyChartEdit({
+        session, artifactId: unaddressable.artifactId, version: unaddressable.version,
+        ops: [{ op: 'set_title', axes: null, text: 'not addressable' }],
+        signal: new AbortController().signal,
+      }))
+      checks.push('chart apply rejects stale version and PNG without live chart state')
+
+      await namespaceProbe('begin')
+      const replayTargetResult = await runChartSource(matplotlibReplaySource('mpl-replay-target.png'), ['mpl-replay-target.png'])
+      const replayTarget = expectLiveChart(replayTargetResult, 'mpl-replay-target.png', 'matplotlib').artifact
+      for (const suffix of ['one', 'two']) {
+        const filename = `mpl-replay-filler-${suffix}.png`
+        await runChartSource(matplotlibReplaySource(filename), [filename])
+      }
+      const eventsBeforeReplay = session.events.length
+      const replayed = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: replayTarget.artifactId, version: replayTarget.version,
+        ops: [{ op: 'set_title', axes: null, text: 'Recovered by replay' }],
+        signal: new AbortController().signal,
+      })
+      if (replayed.artifact.version !== 2 || replayed.artifact.origin !== 'human-edit'
+        || replayed.artifact.chart?.ops.length !== 1 || replayed.failedOps.length !== 0) {
+        throw new Error('matplotlib replay apply did not commit the recovered chart edit')
+      }
+      const replayEvents = session.events.slice(eventsBeforeReplay)
+      if (replayEvents.some(event => event.type === 'science/run-started' || event.type === 'science/run-finished')) {
+        throw new Error('matplotlib chart replay leaked an internal run event')
+      }
+      await namespaceProbe('end')
+      checks.push('chart replay matplotlib after chartLiveRunsRetained+1 producing runs: success, cumulative ops, no run events, namespace')
 
       const tight = await runChartSource(matplotlibChartSource('tight'), ['mpl-tight.png'])
       const tightChart = expectLiveChart(tight, 'mpl-tight.png', 'matplotlib').chart
@@ -704,6 +822,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       }
       checks.push('chart matplotlib save outside artifact directory is not registered')
     } else {
+      await namespaceProbe('begin')
       const basic = await runChartSource(ggplotChartSource('basic'), ['r-basic.png'])
       const basicLive = expectLiveChart(basic, 'r-basic.png', 'ggplot2')
       expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series'])
@@ -711,6 +830,21 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
         || basicLive.chart.png.dpi !== 150) throw new Error('ggplot2 chart PNG metadata disagreed with captured bytes')
       checks.push('chart ggplot2 ggsave dpi=150: catalog, PNG grid, namespace, source bytes')
+
+      const edited = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: 1,
+        ops: [
+          { op: 'set_title', axes: null, text: 'Edited cars' },
+          { op: 'set_legend_position', axes: null, position: 'lower right' },
+        ],
+        signal: new AbortController().signal,
+      })
+      if (edited.artifact.version !== 2 || edited.artifact.origin !== 'human-edit'
+        || edited.artifact.chart?.ops.length !== 2 || edited.failedOps.length !== 0) {
+        throw new Error('ggplot2 title and legend apply did not commit human-edit v2 with cumulative operations')
+      }
+      await namespaceProbe('end')
+      checks.push('chart apply ggplot2 ggsave title/legend: human-edit v2, cumulative ops, namespace')
 
       for (const caseName of ['device', 'base'] as const) {
         const filename = `r-${caseName}.png`
@@ -723,13 +857,26 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       }
       checks.push('chart R print-to-device and base graphics remain unaddressable')
 
+      await namespaceProbe('begin')
       const facet = await runChartSource(ggplotChartSource('facet'), ['r-facet.png'])
-      const facetChart = expectLiveChart(facet, 'r-facet.png', 'ggplot2').chart
+      const facetLive = expectLiveChart(facet, 'r-facet.png', 'ggplot2')
+      const facetChart = facetLive.chart
       if (!facetChart.elements.some(element => element.id.startsWith('axes['))
         || facetChart.elements.filter(element => element.kind === 'x_label').length !== 1) {
         throw new Error('ggplot2 facet catalog did not retain panel prefixes and one shared x label')
       }
       checks.push('chart ggplot2 facet catalog uses panel prefixes and shared labels')
+      const facetEdited = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: facetLive.artifact.artifactId, version: 1,
+        ops: [{ op: 'set_axis_label', axes: 0, axis: 'x', text: 'Panel weight' }],
+        signal: new AbortController().signal,
+      })
+      if (facetEdited.artifact.version !== 2 || facetEdited.artifact.origin !== 'human-edit'
+        || facetEdited.artifact.chart?.ops.length !== 1 || facetEdited.failedOps.length !== 0) {
+        throw new Error('ggplot2 facet axes[0] label apply did not commit human-edit v2')
+      }
+      await namespaceProbe('end')
+      checks.push('chart apply ggplot2 facet set_axis_label axes[0]: human-edit v2, namespace')
     }
 
     const cancelled = await context.scienceRuntime.startRun({

@@ -1845,6 +1845,9 @@ describe('scienceEdits submit', () => {
     const infrastructure = new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'kernel failed')
     apply.mockRejectedValueOnce(infrastructure)
     await expect(service.applyChartOps(agent, request, testSignal)).rejects.toBe(infrastructure)
+    const unexpected = new Error('unexpected chart edit failure')
+    apply.mockRejectedValueOnce(unexpected)
+    await expect(service.applyChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
   })
 
   it('adds and removes ignorable user-only notes without queuing model input', async () => {

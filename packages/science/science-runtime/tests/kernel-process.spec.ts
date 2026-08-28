@@ -252,6 +252,26 @@ async function prepareChartRequest(
   }
 }
 
+/** Flush one private CHART_APPLY request for the fake driver. */
+async function prepareChartApplyRequest(
+  root: string,
+  runId: string,
+  value: Record<string, unknown> = {},
+  timeoutMs = 1_000,
+) {
+  const directory = join(root, 'chart-apply-requests', runId)
+  await mkdir(directory, { recursive: true })
+  const requestPath = join(directory, 'request.json')
+  const outputPath = join(directory, 'output.png')
+  await writeFile(requestPath, JSON.stringify({ outputPath, dpi: 120, ...value }))
+  return {
+    runId: ScienceRunId(runId),
+    requestPath,
+    resultPath: join(directory, 'result.json'),
+    timeoutMs,
+  }
+}
+
 describe('KernelProcess', () => {
   it('completes the READY handshake', async () => {
     const harness = await createHarness('kernel-handshake')
@@ -416,6 +436,12 @@ describe('KernelProcess', () => {
     subprocess.writeError = 'injected non-error chart write failure'
     await expect(kernel.extractCharts(await prepareChartRequest(harness.root, 'chart-write-error-2')))
       .rejects.toThrow('injected non-error chart write failure')
+    subprocess.writeError = writeError
+    await expect(kernel.applyChart(await prepareChartApplyRequest(harness.root, 'chart-apply-write-error')))
+      .rejects.toBe(writeError)
+    subprocess.writeError = 'injected non-error chart-apply write failure'
+    await expect(kernel.applyChart(await prepareChartApplyRequest(harness.root, 'chart-apply-write-error-2')))
+      .rejects.toThrow('injected non-error chart-apply write failure')
     subprocess.writeError = undefined
     await kernel.end('test-teardown')
   }, 30_000)
@@ -477,6 +503,43 @@ describe('KernelProcess', () => {
     ))
     expect(failed).toEqual({ runId: ScienceRunId('run-chart-error'), status: 'error', detail: 'ChartError' })
     await kernel.end('test-teardown')
+  })
+
+  it('routes CHART_APPLY success and guards its shared pending, faulted, and exited states', async () => {
+    const harness = await createHarness('kernel-chart-apply-frames')
+    const kernel = await startKernel(harness, 'python')
+    await expect(kernel.applyChart(await prepareChartApplyRequest(harness.root, 'run-chart-apply-ok')))
+      .resolves.toEqual({ runId: ScienceRunId('run-chart-apply-ok'), status: 'ok', detail: '' })
+
+    const pending = kernel.execute(await prepareRun(harness.root, 'run-chart-apply-pending', {
+      action: 'sleep', sleepMs: 5_000, trapSigint: true,
+    }))
+    expect(() => kernel.applyChart({
+      runId: ScienceRunId('run-chart-apply-second'),
+      requestPath: '/request',
+      resultPath: '/result',
+      timeoutMs: 1_000,
+    })).toThrow(/still pending/)
+    await new Promise(resolve => setTimeout(resolve, 300))
+    kernel.interrupt()
+    await expect(pending).resolves.toMatchObject({ status: 'interrupted' })
+    await kernel.end('test-teardown')
+
+    const faultHarness = await createHarness('kernel-chart-apply-fault')
+    const faultKernel = await startKernel(faultHarness, 'python')
+    await expect(faultKernel.extractCharts(await prepareChartRequest(
+      faultHarness.root, 'run-chart-apply-fault', { testAction: 'hang' }, 20,
+    ))).rejects.toThrow(KernelProtocolError)
+    await expect(faultKernel.applyChart(await prepareChartApplyRequest(
+      faultHarness.root, 'run-chart-apply-after-fault',
+    ))).rejects.toThrow(KernelProtocolError)
+
+    const endedHarness = await createHarness('kernel-chart-apply-exited')
+    const endedKernel = await startKernel(endedHarness, 'python')
+    await endedKernel.end('test-teardown')
+    await expect(endedKernel.applyChart(await prepareChartApplyRequest(
+      endedHarness.root, 'run-chart-apply-after-exit',
+    ))).rejects.toThrow(KernelExitedError)
   })
 
   it('shares one pending slot between RUN and CHART_EXTRACT', async () => {

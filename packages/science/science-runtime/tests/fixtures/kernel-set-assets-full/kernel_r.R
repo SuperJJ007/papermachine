@@ -98,6 +98,10 @@ rl.on('line', (line) => {
       send(`CHART\t${parts[1]}\terror\tnot_registered`)
       return
     }
+    if (action?.chartApplyStatus === 'error') {
+      send(`CHART\t${parts[1]}\terror\tChartError`)
+      return
+    }
     const request = JSON.parse(readFileSync(parts[2], 'utf8'))
     writeFileSync(request.outputPath, TINY_PNG)
     writeFileSync(parts[3], JSON.stringify(action?.chartApplyResult ?? { chart: { runtime: 'matplotlib', png: { width: 1, height: 1, dpi: request.dpi }, elements: [], hitmap: [], hitmapStatus: 'ok' }, failedOps: [] }))

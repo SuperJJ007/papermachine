@@ -1,14 +1,15 @@
 /** Direct chart editing through the assembled Runtime and fake persistent kernel. */
 
-import { mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
-import type { ScienceChartOp } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, ScienceVersionId, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceChartOp, ScienceHumanEditArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
 import {
+  authorizeAnnotateArtifact,
   authorizePythonRun,
   createFakePythonPrefix,
   createKernelRuntimeHarness,
@@ -92,6 +93,30 @@ function chart(session: Session) {
   return artifact
 }
 
+function appendHumanEdit(
+  session: Session,
+  parent: ReturnType<typeof chart>,
+  overrides: Partial<ScienceHumanEditArtifactVersion>,
+): void {
+  if (parent.origin === 'human-edit') throw new Error('synthetic edit parent must be run-origin')
+  if (parent.mediaType !== 'image/png') throw new Error('synthetic edit parent must be a PNG')
+  const { runId: _runId, toolCallId: _toolCallId, requestHeaderSeq: _requestHeaderSeq, ...common } = parent
+  const artifact: ScienceHumanEditArtifactVersion = {
+    ...common,
+    version: parent.version + 1,
+    versionId: ScienceVersionId(`${String(parent.versionId)}-synthetic-${String(parent.version + 1)}`),
+    parent: { artifactId: parent.artifactId, version: parent.version },
+    origin: 'human-edit',
+    mediaType: 'image/png',
+    createdAt: Date.now(),
+    ...overrides,
+  }
+  session.append('science/artifact-saved', {
+    version: 1,
+    artifact,
+  })
+}
+
 describe('ScienceRuntime.applyChartEdit', () => {
   it('commits one warm human-edit version with cumulative successful operations', async () => {
     const { runtime, session } = await harness('chart-edit-warm')
@@ -148,6 +173,97 @@ describe('ScienceRuntime.applyChartEdit', () => {
       session: unresolved.session, artifactId: unresolvedParent.artifactId, version: unresolvedParent.version,
       ops: [titleOp], signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CHART_ELEMENT_NOT_FOUND' })
+  })
+
+  it('rejects cumulative overflow and mismatched source provenance', async () => {
+    const overflow = await harness('chart-edit-overflow')
+    const overflowParent = chart(overflow.session)
+    appendHumanEdit(overflow.session, overflowParent, {
+      chart: { ...overflowParent.chart!, ops: [titleOp] },
+    })
+    await expect(overflow.runtime.applyChartEdit({
+      session: overflow.session, artifactId: overflowParent.artifactId, version: 2,
+      ops: Array.from({ length: 100 }, () => titleOp), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_OP_INVALID' })
+
+    const noSource = await harness('chart-edit-no-source')
+    const noSourceParent = chart(noSource.session)
+    appendHumanEdit(noSource.session, noSourceParent, {
+      chart: { ...noSourceParent.chart!, figureKey: 'missing.png' },
+    })
+    await expect(noSource.runtime.applyChartEdit({
+      session: noSource.session, artifactId: noSourceParent.artifactId, version: 2,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+
+    const mismatch = await harness('chart-edit-language-mismatch')
+    const mismatchParent = chart(mismatch.session)
+    appendHumanEdit(mismatch.session, mismatchParent, {
+      chart: { ...mismatchParent.chart!, runtime: 'ggplot2' },
+    })
+    await expect(mismatch.runtime.applyChartEdit({
+      session: mismatch.session, artifactId: mismatchParent.artifactId, version: 2,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+  }, 90_000)
+
+  it('rejects failed and still-unregistered source replay', async () => {
+    const failedReplay = await harness('chart-edit-failed-replay', { chartApplyStatus: 'not_registered_once' })
+    const failedReplayParent = chart(failedReplay.session)
+    const failedRun = replayScience(failedReplay.session.events)?.runs[0]
+    if (failedRun === undefined) throw new Error('source run was not recorded')
+    const failedScratch = await planSessionScratch(join(failedReplay.root, 'dsh-home'), failedReplay.session)
+    writeFileSync(planRunScratch(failedScratch, failedRun.runId, failedRun.language).source, kernelAction({ status: 'error' }))
+    await expect(failedReplay.runtime.applyChartEdit({
+      session: failedReplay.session, artifactId: failedReplayParent.artifactId, version: failedReplayParent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+
+    const unregistered = await harness('chart-edit-unregistered-replay', { chartApplyStatus: 'not_registered' })
+    const unregisteredParent = chart(unregistered.session)
+    await expect(unregistered.runtime.applyChartEdit({
+      session: unregistered.session, artifactId: unregisteredParent.artifactId, version: unregisteredParent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+  }, 60_000)
+
+  it('rejects malformed chart-apply result envelopes and failed-op entries', async () => {
+    for (const [id, chartApplyResult] of [
+      ['root', []],
+      ['failed-op', { chart: editExtraction, failedOps: [{ index: -1, reason: 'invalid' }] }],
+    ] as const) {
+      const malformed = await harness(`chart-edit-malformed-${id}`, { chartApplyResult })
+      const malformedParent = chart(malformed.session)
+      await expect(malformed.runtime.applyChartEdit({
+        session: malformed.session, artifactId: malformedParent.artifactId, version: malformedParent.version,
+        ops: [titleOp], signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+    }
+
+    const failed = await harness('chart-edit-kernel-error', { chartApplyStatus: 'error' })
+    const failedParent = chart(failed.session)
+    await expect(failed.runtime.applyChartEdit({
+      session: failed.session, artifactId: failedParent.artifactId, version: failedParent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+  }, 60_000)
+
+  it('preserves a curated caption on the stored and projected human-edit version', async () => {
+    const { runtime, session } = await harness('chart-edit-caption')
+    const parent = chart(session)
+    await runtime.annotateArtifact({
+      session,
+      logicalName: parent.logicalName,
+      title: parent.title,
+      caption: 'Curated caption',
+      ...authorizeAnnotateArtifact(session),
+      signal: new AbortController().signal,
+    })
+    const result = await runtime.applyChartEdit({
+      session, artifactId: parent.artifactId, version: parent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })
+    expect(result.artifact.caption).toBe('Curated caption')
   })
 
   it('commits partial success and reports the failed request index', async () => {

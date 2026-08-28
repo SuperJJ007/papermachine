@@ -71,10 +71,12 @@ function chartEditTarget(op: ScienceChartOp): string {
     case 'set_legend_position': return axesTarget(op.axes, 'legend')
     case 'set_tick_font_size': return axesTarget(op.axes, 'tick_labels')
     case 'add_reference_line': return axesTarget(op.axes, 'annotation')
+    /* v8 ignore next -- exhaustive over the closed ScienceChartOp union; unreachable through the typed API. */
     default: return assertNever(op)
   }
 }
 
+/* v8 ignore next 3 -- only the ignored closed-union default arm calls this guard. */
 function assertNever(value: never): never {
   throw new Error(`tool-science: unsupported chart operation ${JSON.stringify(value)}`)
 }

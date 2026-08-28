@@ -433,10 +433,10 @@ repeat {
     run_id <- parts[2]
     request_path <- parts[3]
     result_path <- parts[4]
-    outcome <- tryCatch({
-      detail <- .dsh_apply_chart(run_id, request_path, result_path)
-      list(status = if (is.null(detail)) "ok" else "error", detail = if (is.null(detail)) "" else detail)
-    }, error = function(e) list(status = "error", detail = class(e)[1]))
+    outcome <- tryCatch(local({
+      apply_detail <- .dsh_apply_chart(run_id, request_path, result_path)
+      list(status = if (is.null(apply_detail)) "ok" else "error", detail = if (is.null(apply_detail)) "" else apply_detail)
+    }), error = function(e) list(status = "error", detail = class(e)[1]))
     send(sprintf("CHART\t%s\t%s\t%s", run_id, outcome$status, outcome$detail))
   }
   # Unknown commands are ignored, keeping the driver forward-tolerant of

@@ -165,7 +165,9 @@ export async function ensureScienceBound(
     // resolved preset here is always `SCIENCE_PRESET_ID` today; recording it
     // rather than a literal keeps this event's `presetId` truthfully "the
     // preset that bound Science mode" if that ever becomes a different id.
-    const presetId = resolveSessionPreset(session) ?? SCIENCE_PRESET_ID
+    // The caller already confirmed isScienceSession(session), whose predicate
+    // requires this same resolver to name the Science preset.
+    const presetId = resolveSessionPreset(session) as typeof SCIENCE_PRESET_ID
     session.append('science/mode-bound', {
       version: 1,
       mode: { modeId: 'science', presetId, modeRevision: config.modeRevision },

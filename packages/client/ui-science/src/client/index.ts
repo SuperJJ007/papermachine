@@ -320,7 +320,6 @@ export function apply(ctx: ClientContext): void {
         selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
         addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
         removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
-        commitStyleEdit: request => ctx.remote.scienceEdits.commitStyleEdit(sessionId, request),
       }
     },
   }, ScienceDetailsView))

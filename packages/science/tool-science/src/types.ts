@@ -12,13 +12,6 @@
 
 import type { ScienceArtifactId, ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
-/** A Vega-Lite structural target selected in the artifact viewer. */
-export interface ScienceSpecPathTarget {
-  readonly kind: 'spec-path'
-  /** Dot-separated path into the selected Vega-Lite document, such as `mark` or `encoding.color`. */
-  readonly path: string
-}
-
 /** A top-left-origin region normalized against the selected raster version. */
 export interface ScienceNormalizedRegionTarget {
   readonly kind: 'normalized-region'
@@ -29,7 +22,7 @@ export interface ScienceNormalizedRegionTarget {
 }
 
 /** One model-visible edit target selected in the Science artifact viewer. */
-export type ScienceEditTarget = ScienceSpecPathTarget | ScienceNormalizedRegionTarget
+export type ScienceEditTarget = ScienceNormalizedRegionTarget
 
 /** One selected target tied to its exact immutable artifact version. */
 export interface ScienceEditSelection {
@@ -56,22 +49,6 @@ export interface ScienceEditReceipt {
   readonly accepted: true
 }
 
-/** Browser request to commit a styled Vega-Lite document over one exact current version. */
-export interface ScienceStyleEditRequest {
-  readonly artifactId: ScienceArtifactId
-  /** Exact parent version being replaced by the edited working copy. */
-  readonly version: number
-  /** Complete edited Vega-Lite JSON text. */
-  readonly spec: string
-}
-
-/** Exact new version committed by a direct style edit. */
-export interface ScienceStyleEditReceipt {
-  readonly artifactId: ScienceArtifactId
-  readonly version: number
-  readonly origin: 'human-edit'
-}
-
 /** Browser request to add a user-only note to one logical artifact. */
 export interface ScienceArtifactNoteAddRequest {
   readonly artifactId: ScienceArtifactId
@@ -96,7 +73,6 @@ export type ScienceEditErrorCode =
   | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
   | 'SCIENCE_EDIT_STALE_VERSION'
   | 'SCIENCE_EDIT_TARGET_MISMATCH'
-  | 'SCIENCE_EDIT_SPEC_INVALID'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {

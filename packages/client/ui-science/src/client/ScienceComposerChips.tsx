@@ -15,11 +15,9 @@ export interface ScienceComposerChipsProps {
 }
 
 function targetLabel(selection: ScienceEditSelection, t: TranslateNS<'science'>): string {
-  const target = selection.target.kind === 'spec-path'
-    ? selection.target.path
-    : t('edit.regionTarget', {
-      x: Math.round(selection.target.x * 100), y: Math.round(selection.target.y * 100),
-    })
+  const target = t('edit.regionTarget', {
+    x: Math.round(selection.target.x * 100), y: Math.round(selection.target.y * 100),
+  })
   return `${selection.artifactId} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
 }
 

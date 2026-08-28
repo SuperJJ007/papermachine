@@ -289,7 +289,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
       raster_artifacts: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. PNG is for charts Vega-Lite cannot express; declare it here to capture it — otherwise a PNG this run writes is left uncaptured so an editable Vega-Lite chart stays the deliverable until export.',
+        description: 'Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.',
       },
     },
     output: {

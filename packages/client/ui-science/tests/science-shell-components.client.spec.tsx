@@ -128,7 +128,7 @@ describe('ScienceKernelStatus', () => {
 describe('Science composer targets', () => {
   const spec: ScienceEditSelection = {
     artifactId: ScienceArtifactId('chart-1'), version: 1,
-    target: { kind: 'spec-path', path: 'encoding.y' },
+    target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
   }
   const commented: ScienceEditSelection = { ...spec, comment: 'make it blue' }
   const region: ScienceEditSelection = {
@@ -156,10 +156,10 @@ describe('Science composer targets', () => {
     selections.add(SESSION, [
       { ...spec, version: 2 },
       { ...spec, artifactId: ScienceArtifactId('chart-2') },
-      { ...spec, target: { kind: 'spec-path', path: 'mark' } },
+      { ...spec, target: { kind: 'normalized-region', x: 0.2, y: 0.2, width: 0.3, height: 0.4 } },
     ])
     expect(selections.store(SESSION).getSnapshot()).toHaveLength(4)
-    selections.removeSelection(SESSION, { ...spec, target: { kind: 'spec-path', path: 'mark' } })
+    selections.removeSelection(SESSION, { ...spec, target: { kind: 'normalized-region', x: 0.2, y: 0.2, width: 0.3, height: 0.4 } })
     expect(selections.store(SESSION).getSnapshot()).toHaveLength(3)
     selections.remove(SESSION, 1)
     expect(selections.store(SESSION).getSnapshot()).toHaveLength(2)

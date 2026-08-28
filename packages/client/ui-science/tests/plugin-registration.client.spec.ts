@@ -236,7 +236,7 @@ describe('ui-science apply', () => {
 
     // Stage one target through the Details column's own injected face.
     const target: ScienceEditSelection = {
-      artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: '$.mark' },
+      artifactId: 'chart-1' as never, version: 1, target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
     }
     const injected = (details.inject as (sessionId: SessionId) => {
       addToConversation: (targets: readonly ScienceEditSelection[]) => void
@@ -329,7 +329,7 @@ describe('ui-science apply', () => {
       composerSelections: { getSnapshot: () => readonly ScienceEditSelection[] }
     })(SID)
     const target: ScienceEditSelection = {
-      artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: '$.mark' },
+      artifactId: 'chart-1' as never, version: 1, target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
     }
     injected.addToConversation([target])
 
@@ -355,7 +355,7 @@ describe('ui-science apply', () => {
       composerSelections: { getSnapshot: () => readonly ScienceEditSelection[] }
     })(SID)
     const target: ScienceEditSelection = {
-      artifactId: 'chart-1' as never, version: 1, target: { kind: 'spec-path', path: '$.mark' },
+      artifactId: 'chart-1' as never, version: 1, target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
     }
     injected.addToConversation([target])
 

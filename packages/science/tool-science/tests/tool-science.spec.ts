@@ -101,7 +101,7 @@ function humanArtifactFixture(
   return {
     artifactId: ScienceArtifactId('artifact-1'),
     producerSessionId: SessionId('session-1'),
-    logicalName: 'chart.vl.json',
+    logicalName: 'chart.png',
     version: 2,
     parent: { artifactId: ScienceArtifactId('artifact-1'), version: 1 },
     title: 'Chart',
@@ -1851,7 +1851,7 @@ describe('scienceEdits submit', () => {
     const service = new ScienceEditService(ctx)
     await expect(service.submit(agent, { targets: [{
       artifactId: ScienceArtifactId('absent'), version: 1,
-      target: { kind: 'spec-path', path: 'mark' } }], instruction: 'change mark',
+      target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 } }], instruction: 'change region',
     })).rejects.toThrow(/does not identify a committed artifact/)
     expect(followups).toHaveLength(0)
     const receipt = await service.submit(agent, { targets: [
@@ -1874,118 +1874,6 @@ describe('scienceEdits submit', () => {
     expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(1)
   })
 
-  it('commits one complete Vega-Lite working copy as a contiguous human-edit version', async () => {
-    const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-style-commit')
-    const run = await runSuccessfully(ctx, session, 'science-style-commit-run')
-    const parent = await seedAutoArtifact(
-      ctx,
-      session,
-      run,
-      'plot.vl.json',
-      new TextEncoder().encode('{"mark":{"type":"bar","color":"#336699"}}'),
-      'image/png',
-    )
-    const spec = '{"mark":{"type":"bar","color":"#cc3300"}}'
-    const service = new ScienceEditService(ctx)
-    const receipt = await service.commitStyleEdit(fakeAgent(session), {
-      artifactId: parent.artifactId,
-      version: parent.version,
-      spec,
-    })
-
-    expect(receipt).toEqual({ artifactId: parent.artifactId, version: 2, origin: 'human-edit' })
-    const committed = replayScience(session.events)?.artifacts.at(-1)
-    expect(committed).toMatchObject({
-      artifactId: parent.artifactId,
-      logicalName: parent.logicalName,
-      version: 2,
-      parent: { artifactId: parent.artifactId, version: 1 },
-      origin: 'human-edit',
-      environmentRevision: parent.environmentRevision,
-      environmentFingerprint: parent.environmentFingerprint,
-      mediaType: 'image/png',
-    })
-    expect(committed !== undefined && 'runId' in committed).toBe(false)
-    expect(committed !== undefined && 'toolCallId' in committed).toBe(false)
-    expect(committed !== undefined && 'requestHeaderSeq' in committed).toBe(false)
-    if (committed === undefined || committed.origin !== 'human-edit') throw new Error('expected committed human edit')
-    const stored = await ctx.scienceArtifactStore.readBlob(committed.projectId, committed.sha256)
-    expect(new TextDecoder().decode(stored)).toBe(spec)
-  })
-
-  it('preserves a parent caption through a direct style edit', async () => {
-    const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-style-optional-fields')
-    const run = await runSuccessfully(ctx, session, 'science-style-optional-fields-run')
-    const captured = await seedAutoArtifact(
-      ctx,
-      session,
-      run,
-      'optional.vl.json',
-      new TextEncoder().encode('{"mark":"bar"}'),
-      'image/png',
-    )
-    if (captured.origin === 'human-edit') throw new Error('expected run-produced parent')
-    const annotateCall = authorizeToolCall(session, 2, 'annotate_artifact', 'science-style-optional-fields-annotate')
-    session.append('science/artifact-saved', {
-      version: 1,
-      artifact: {
-        ...captured,
-        caption: 'Preserved caption',
-        origin: 'model',
-        toolCallId: annotateCall,
-        requestHeaderSeq: session.events.findLast(event => event.type === 'request/header')!.seq,
-        createdAt: Date.now(),
-      },
-    })
-    const service = new ScienceEditService(ctx)
-    await service.commitStyleEdit(fakeAgent(session), {
-      artifactId: captured.artifactId,
-      version: 1,
-      spec: '{"mark":{"type":"bar","color":"green"}}',
-    })
-    expect(replayScience(session.events)?.artifacts.at(-1)).toMatchObject({
-      caption: 'Preserved caption',
-      mediaType: 'image/png',
-    })
-  })
-
-  it('rejects malformed, stale, and non-Vega-Lite style commits', async () => {
-    const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-style-rejections')
-    const run = await runSuccessfully(ctx, session, 'science-style-rejections-run')
-    const chart = await seedAutoArtifact(
-      ctx,
-      session,
-      run,
-      'plot.vl.json',
-      new TextEncoder().encode('{"mark":"bar"}'),
-      'image/png',
-    )
-    const imageArtifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
-    const service = new ScienceEditService(ctx)
-
-    await expect(service.commitStyleEdit(fakeAgent(session), {
-      artifactId: ScienceArtifactId('missing-style-target'), version: 1, spec: '{"mark":"bar"}',
-    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' })
-
-    for (const spec of ['', '[]', 'null', '{', '{"title":"\u0000"}']) {
-      await expect(service.commitStyleEdit(fakeAgent(session), {
-        artifactId: chart.artifactId, version: 1, spec,
-      })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_SPEC_INVALID' })
-    }
-    await expect(service.commitStyleEdit(fakeAgent(session), {
-      artifactId: imageArtifact.artifactId, version: 1, spec: '{"mark":"bar"}',
-    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' })
-
-    await service.commitStyleEdit(fakeAgent(session), {
-      artifactId: chart.artifactId, version: 1, spec: '{"mark":{"type":"bar","color":"red"}}',
-    })
-    await expect(service.commitStyleEdit(fakeAgent(session), {
-      artifactId: chart.artifactId, version: 1, spec: '{"mark":"line"}',
-    })).rejects.toMatchObject({ code: 'SCIENCE_EDIT_STALE_VERSION' })
-  })
 })
 
 describe('publish_outcome', () => {

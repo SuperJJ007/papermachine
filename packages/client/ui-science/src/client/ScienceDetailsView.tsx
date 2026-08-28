@@ -37,7 +37,7 @@ import type {
   ScienceClientArtifactVersion, ScienceClientProjection,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
-  ScienceArtifactNoteReceipt, ScienceEditSelection, ScienceEditTarget, ScienceStyleEditReceipt, ScienceStyleEditRequest,
+  ScienceArtifactNoteReceipt, ScienceEditSelection, ScienceEditTarget,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
@@ -80,11 +80,6 @@ export interface ScienceDetailsInjected {
     | { readonly ok: true; readonly value: ScienceArtifactNoteReceipt }
     | { readonly ok: false; readonly error: { readonly message: string } }
   >
-  /** Commit a complete styled Vega-Lite working copy over one exact current version. */
-  commitStyleEdit: (request: ScienceStyleEditRequest) => Promise<
-    | { readonly ok: true; readonly value: ScienceStyleEditReceipt }
-    | { readonly ok: false; readonly error: { readonly message: string } }
-  >
 }
 
 /** Full props for the Science Details entry. */
@@ -109,15 +104,9 @@ function workspaceFileName(path: string): string {
 }
 
 /**
- * Filename base without its extension, plus the extension (including the
- * dot). Splits on the last dot, except the two-part `.vl.json` suffix, which
- * stays whole so a version insertion never breaks the suffix the Vega-Lite
- * capture rule keys on.
+ * Filename base without its extension, plus the extension (including the dot).
  */
 function splitExtension(name: string): { stem: string; ext: string } {
-  if (name.toLowerCase().endsWith('.vl.json') && name.length > '.vl.json'.length) {
-    return { stem: name.slice(0, -'.vl.json'.length), ext: name.slice(-'.vl.json'.length) }
-  }
   const dot = name.lastIndexOf('.')
   return dot === -1 ? { stem: name, ext: '' } : { stem: name.slice(0, dot), ext: name.slice(dot) }
 }
@@ -518,8 +507,7 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
     onAddTarget={() => {}}
     /* v8 ignore next -- read-only previews cannot remove targets */
     onRemoveTarget={() => {}}
-    /* v8 ignore next -- read-only previews reject the style editor's write hook */
-    onCommitStyle={() => Promise.resolve({ ok: false, error: t('details.artifact.readOnly') })} t={t}
+    t={t}
   />
 }
 
@@ -607,7 +595,7 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
 function ArtifactTab({
   science, artifacts, chart, notes, currentSessionId, sourceSessionTitle, view, provenanceSubTab, snapshot, loadImage, loadText,
   addToConversation, removeFromConversation, composerSelections, returnToConversation, selectDetailed,
-  addArtifactNote, removeArtifactNote, commitStyleEdit, useStore, actions, inspectCall, t,
+  addArtifactNote, removeArtifactNote, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -627,7 +615,6 @@ function ArtifactTab({
   selectDetailed: ScienceDetailsInjected['selectDetailed']
   addArtifactNote: ScienceDetailsInjected['addArtifactNote']
   removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
-  commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -642,21 +629,12 @@ function ArtifactTab({
     /* v8 ignore next -- the browser-only Science viewer has no server render path. */
     () => composerSelections.getSnapshot(),
   )
-  // The version a style commit just produced, not reset by the
-  // artifactId/version effect below: a successful commit itself changes
-  // `chart.version` to this same value, and the effect would otherwise wipe
-  // the flag in the same render pass that is supposed to show it. Equality
-  // with the current `chart.version` is what stops showing it once the
-  // reader steps to a different version instead.
-  const [committedVersion, setCommittedVersion] = useState<number | undefined>(undefined)
-
   useEffect(() => {
     setTarget(undefined)
   }, [chart.artifactId, chart.version])
 
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
-    setCommittedVersion(undefined)
   }
   const selectionFor = (next: ScienceEditTarget): ScienceEditSelection | undefined => staged.find(selection =>
     selection.artifactId === chart.artifactId && selection.version === chart.version
@@ -718,7 +696,7 @@ function ArtifactTab({
       <ArtifactMetaRail chart={chart} snapshot={snapshot} t={t} />
       <ArtifactContent
         // Keyed by exact artifact identity: forces a full remount (comment
-        // drafts, the Vega-Lite working document, an in-progress raster
+        // drafts and an in-progress raster
         // drag) on every tab switch or version step, so a typed-but-unstaged
         // comment for one artifact/version never pre-fills another's field
         // that happens to share the same spec path or region coordinates.
@@ -741,17 +719,9 @@ function ArtifactTab({
           /* v8 ignore next -- ArtifactContent only offers Remove for a target that is already staged. */
           if (selection !== undefined) removeFromConversation(selection)
         }}
-        onCommitStyle={async (spec) => {
-          const result = await commitStyleEdit({ artifactId: chart.artifactId, version: chart.version, spec })
-          if (!result.ok) return { ok: false, error: result.error.message }
-          actions.setTabVersion({ artifactId: result.value.artifactId, version: result.value.version })
-          setCommittedVersion(result.value.version)
-          return { ok: true }
-        }}
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
-      {committedVersion === chart.version && <p className={css.notice} role="status">{t('style.committed')}</p>}
       {chart.mediaType === 'image/png' && (
         <ArtifactLightbox
           chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
@@ -769,7 +739,7 @@ function ArtifactViewer({
   science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText,
   loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, addToConversation, removeFromConversation,
   composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote,
-  commitStyleEdit, useStore, actions, inspectCall, t,
+  useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   notes: ScienceArtifactNotesProjection
@@ -788,7 +758,6 @@ function ArtifactViewer({
   selectDetailed: ScienceDetailsInjected['selectDetailed']
   addArtifactNote: ScienceDetailsInjected['addArtifactNote']
   removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
-  commitStyleEdit: ScienceDetailsInjected['commitStyleEdit']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -892,7 +861,6 @@ function ArtifactViewer({
             selectDetailed={selectDetailed}
             addArtifactNote={addArtifactNote}
             removeArtifactNote={removeArtifactNote}
-            commitStyleEdit={commitStyleEdit}
             useStore={useStore}
             actions={actions}
             inspectCall={inspectCall}
@@ -914,7 +882,7 @@ export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
   inspectCall, loadImage, loadText, loadLibrary, loadWorkspaceFiles, loadWorkspaceFile,
   addToConversation, removeFromConversation, composerSelections,
-  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, commitStyleEdit, t,
+  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   // Session display titles change only when a title or the session list
@@ -955,7 +923,7 @@ export function ScienceDetailsView({
       science={science} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
       snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadWorkspaceFile={loadWorkspaceFile}
-      addToConversation={addToConversation} commitStyleEdit={commitStyleEdit}
+      addToConversation={addToConversation}
       removeFromConversation={removeFromConversation} composerSelections={composerSelections} returnToConversation={returnToConversation}
       selectDetailed={selectDetailed}
       addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote}

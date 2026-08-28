@@ -681,7 +681,12 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
   }
 
-  /** Apply one direct-edit request and commit its successful operations as a new PNG version. */
+  /**
+   * Apply one direct-edit request and commit its successful operations as a new PNG version.
+   *
+   * @param request - The exact chart version, operations, and cancellation context.
+   * @returns The committed artifact and any operations whose targets could not be resolved.
+   */
   async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult> {
     if (request.ops.length === 0 || request.ops.length > MAX_CHART_OPS) {
       throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations must contain between 1 and 100 entries')

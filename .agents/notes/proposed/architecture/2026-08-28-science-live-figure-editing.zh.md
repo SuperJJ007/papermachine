@@ -16,7 +16,7 @@ Science 需要一种图表编辑方式：保留研究者已经使用的绘图库
 
 三项所有权决策约束这一底座。每次保存沿用 matplotlib 或 ggplot2 选定的 DPI；Runtime 不把不同绘图库统一到同一种 export density。只有被拦截的 `Figure.savefig()`/`pyplot.savefig()` 与 `ggsave()` 调用才会登记，因此 R device-level 输出与 base graphics 保持普通 PNG。`chart` 投影属于 `science/artifact-saved` 与 Session projection，而不属于 project artifact store；后者继续持久化原样图片字节与普通版本元数据。
 
-直接编辑对活图对象施加经过校验的操作，以已配置 DPI 导出 PNG，重新抽取目录与命中表，再追加一个携带累计操作的 `origin: 'human-edit'` artifact version。如果活图对象已经消失，runtime 会以物化输入重放源 run，再重放操作来恢复它。图对象与 runtime 私有句柄都不进入 session log 或模型命名空间。
+直接编辑会先要求当前语言 kernel 把经过校验的操作施加到已登记活图对象。登记缺失时触发私有恢复：Runtime 以物化输入重新执行确切源 run，重放该 version 的先前操作日志，再施加新操作，且不记录一条额外 scientific run。随后按保存时的 DPI 导出，重新抽取目录与命中表，并追加一个 `origin: 'human-edit'` artifact version；其操作日志只按重放顺序包含成功操作。部分 target 失败会连同请求索引返回；没有任何操作成功的请求会被拒绝。图对象、恢复 run 与 runtime 私有句柄都不进入 session log 或模型命名空间。
 
 持久 artifact record 增加可选 `chart` 字段：
 
@@ -34,7 +34,7 @@ interface ScienceChartState {
 
 该字段由 `science/artifact-saved` 携带并投影给 viewer。按照 pre-release 策略，`SESSION_FORMAT_VERSION` 保持 `0`。通过不受支持路径生成的 PNG，包括 base R `plot()` 与绕过 `ggsave()` 的 R graphics device，不带 `chart` 字段并保留普通 raster 行为。若 raster 尺寸不匹配，已抽取 elements 会保留，但 `hitmapStatus` 设为 `'unavailable'` 且 `hitmap` 必须为空；consumer 绝不使用 pixel grid 与保存 PNG 不一致的命中坐标。
 
-直接编辑不进入模型上下文。当模型之后编辑同一个 artifact 时，`get_science_state` 与 run receipt 会把当前操作和确切的 `edit_of` version 一起暴露，避免模型代码悄悄丢弃人工修改。变更图型、facet 或源数据等结构性修改仍由模型修改代码。代码变化后，已存操作按元素身份重新校验；无法再解析目标的操作会被报告，而不是猜测新目标。
+直接编辑不会排入一次模型回合。当模型之后看到同一个 artifact 时，`get_science_state` 与 artifact receipt 会把累计编辑数量以及每项操作的名称和元素 target 连同确切 version 一起公开，同时省略文本、颜色、字号、坐标及其他参数值。变更图型、facet 或源数据等结构性修改仍由模型修改代码。代码变化后，已存操作按元素身份重新校验；无法再解析目标的操作会被报告，而不是猜测新目标。
 
 ### 封闭元素目录
 

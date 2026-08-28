@@ -10,7 +10,9 @@ Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science
 
 `bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, resolves optional artifact-version inputs through verified attachment reads, materializes them below the reserved `inputs/` directory, appends the complete mapping on `science/run-started`, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. Optional edit baselines assign exact `parent` refs during the post-terminal capture walk, including stale and cross-artifact branches. `commitChart` accepts one successful run started locally in the exact Session, resolves a regular non-symlink PNG inside its artifact directory, persists it through `ctx.attachments`, and appends the next immutable logical artifact version with `origin: 'model'` without publishing a Host path. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
 
-An `image/png` artifact version may carry `ScienceChartState`: its `runtime`, capture-relative `figureKey`, saved pixel dimensions and DPI, bounded `elements`, empty `ops`, `hitmap`, and `hitmapStatus`. The Python and R kernels produce this projection only for captured paths registered through matplotlib savefig or ggplot2 ggsave. A missing or unavailable chart projection never invalidates the PNG; `hitmapStatus: 'unavailable'` requires an empty hit map while preserving any extracted elements. Chart state belongs to the Session event and client projection, while the project artifact store retains the PNG bytes and ordinary version metadata.
+An `image/png` artifact version may carry `ScienceChartState`: its `runtime`, capture-relative `figureKey`, saved pixel dimensions and DPI, bounded `elements`, cumulative `ops`, `hitmap`, and `hitmapStatus`. The Python and R kernels produce this projection only for captured paths registered through matplotlib savefig or ggplot2 ggsave. A missing or unavailable chart projection never invalidates the PNG; `hitmapStatus: 'unavailable'` requires an empty hit map while preserving any extracted elements. Chart state belongs to the Session event and client projection, while the project artifact store retains the PNG bytes and ordinary version metadata.
+
+`applyChartEdit` applies typed operations to an exact current addressable version and appends a child `origin: 'human-edit'` PNG. It uses the live figure when registered; otherwise it privately replays the source run, exact materialized inputs, and prior operations without appending run events. Successful operations accumulate on the new chart state, partial target failures return as indexed `failedOps`, and stale, unaddressable, invalid, or wholly unresolved requests retain distinct stable error codes. The `scienceEdits.applyChartOps` Remote translates the chart-specific Runtime errors for browser clients. `get_science_state` and artifact receipts expose only each operation name and element target plus the edit count, never operation values.
 
 The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history with exact artifact-version inputs when recorded, artifact attachment references with optional exact parent identities, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures. The strict fold and pre-commit invariant require every recorded parent and input to resolve to an earlier committed artifact version; self-parenting and terminal rewrites of start-owned inputs fail loud.
 
@@ -141,6 +143,15 @@ Remote service admitting browser edit gestures into the addressed live agent.
 @Remote('submit') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>
 
 /**
+ * Apply deterministic operations to one exact current addressable chart.
+ * @param agent - Agent whose session owns the chart.
+ * @param request - Exact chart version and ordered operations.
+ * @param signal - Client-owned cancellation for the Runtime operation.
+ * @returns the committed direct-edit version and unresolved operation targets.
+ */
+@Remote('applyChartOps') async applyChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<ScienceChartEditReceipt>
+
+/**
  * Add one user-only note after validating its exact visible artifact version.
  * @param agent - Agent whose session owns the artifact.
  * @param request - Exact artifact version and plain note text.
@@ -185,6 +196,14 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
+
+/**
+ * Apply one direct-edit request and commit its successful operations as a new PNG version.
+ *
+ * @param request - The exact chart version, operations, and cancellation context.
+ * @returns The committed artifact and any operations whose targets could not be resolved.
+ */
+async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
 
 /**
  * Re-commit an existing artifact version's exact store content reference

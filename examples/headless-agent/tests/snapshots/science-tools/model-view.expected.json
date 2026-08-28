@@ -291,7 +291,7 @@
         "targets": [
           {
             "artifactId": "{{scienceChartId}}",
-            "version": 1,
+            "version": 2,
             "target": {
               "kind": "normalized-region",
               "x": 0.1,
@@ -307,7 +307,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Edit these Science artifact targets:\n- plot.png v1 · region(0.1,0.1,0.8,0.8):\"Keep the scale readable at small sizes.\"\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1"
+          "text": "Edit these Science artifact targets:\n- plot.png v2 · region(0.1,0.1,0.8,0.8):\"Keep the scale readable at small sizes.\"\nInstruction: Use a zero-based quantitative scale.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2"
         },
         {
           "type": "image",
@@ -325,7 +325,7 @@
         "targets": [
           {
             "artifactId": "{{scienceChartId}}",
-            "version": 1,
+            "version": 2,
             "target": {
               "kind": "normalized-region",
               "x": 0.25,
@@ -351,7 +351,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Edit these Science artifact targets:\n- plot.png v1 · region(0.25,0.25,0.5,0.5)\n- region-edit.png v1 · region(0,0,0.5,0.5)\nInstruction: Brighten both selected regions and align their styling.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v1\n- {{scienceChartId}} v1"
+          "text": "Edit these Science artifact targets:\n- plot.png v2 · region(0.25,0.25,0.5,0.5)\n- region-edit.png v1 · region(0,0,0.5,0.5)\nInstruction: Brighten both selected regions and align their styling.\nUse exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:\n- {{scienceChartId}} v2\n- {{scienceChartId}} v1"
         },
         {
           "type": "image",
@@ -428,11 +428,20 @@
       ]
     },
     {
+      "toolCallId": "science-direct-edit-state-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    },\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call-2\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"inputs\": [\n        {\n          \"artifactId\": \"{{scienceChartId}}\",\n          \"version\": 1,\n          \"path\": \"source.png\"\n        }\n      ],\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 28,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"edited.png\",\n      \"version\": 1,\n      \"title\": \"edited.png\",\n      \"origin\": \"auto\",\n      \"parent\": {\n        \"artifactId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      },\n      \"runId\": \"{{scienceRunId}}\",\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"createdAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 2,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"origin\": \"human-edit\",\n      \"parent\": {\n        \"artifactId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      },\n      \"environmentRevision\": 1,\n      \"environmentFingerprintPreview\": \"<preview>\",\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"createdAt\": 0,\n      \"edits\": [\n        {\n          \"op\": \"set_title\",\n          \"target\": \"title\"\n        },\n        {\n          \"op\": \"set_axis_label\",\n          \"target\": \"axes[0].x_label\"\n        }\n      ],\n      \"editCount\": 2\n    }\n  ],\n  \"outcome\": {\n    \"revision\": 1,\n    \"title\": \"Snapshot finding\",\n    \"summaryMarkdown\": \"The deterministic run produced the **cited chart**.\",\n    \"evidence\": [\n      {\n        \"kind\": \"run\",\n        \"runId\": \"{{scienceRunId}}\"\n      },\n      {\n        \"kind\": \"chart\",\n        \"chartId\": \"{{scienceChartId}}\",\n        \"version\": 1\n      }\n    ],\n    \"publishedAt\": 0,\n    \"toolCallId\": \"science-outcome-call\",\n    \"requestHeaderSeq\": 9,\n    \"environmentRevisions\": [\n      1\n    ]\n  },\n  \"metrics\": {\n    \"runCount\": 2,\n    \"successfulRunCount\": 2,\n    \"artifactCount\": 5,\n    \"artifactVersionCount\": 6,\n    \"outcomeRevision\": 1\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 4\n  },\n  \"lastScienceEventSeq\": 86\n}"
+        }
+      ]
+    },
+    {
       "toolCallId": "science-selected-edit-call",
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `region-edit.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png)"
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `region-edit.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v2).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png)"
         }
       ]
     },
@@ -441,7 +450,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1), `region-edit-2.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png)"
+          "text": "status: success\n--- stdout ---\nscience snapshot run output\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v2), `region-edit-2.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from {{scienceChartId}} v1).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png)"
         }
       ]
     }

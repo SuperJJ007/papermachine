@@ -42,6 +42,30 @@ try {
   if (chart.chart === undefined || chart.chart.ops.length !== 0) {
     throw new Error(`${NAME}: first-turn plot.png did not preserve its initial chart state`)
   }
+  const directReceipt = await ctx.scienceEdits.applyChartOps(agent, {
+    artifactId: chart.artifactId,
+    version: chart.version,
+    ops: [
+      { op: 'set_title', axes: null, text: 'Directly edited chart' },
+      { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited input' },
+    ],
+  }, new AbortController().signal)
+  const directChart = foldScience(agent.session.events).artifacts.find(artifact =>
+    artifact.artifactId === directReceipt.artifactId && artifact.version === directReceipt.version)
+  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 2) {
+    throw new Error(`${NAME}: direct chart edit did not preserve its two cumulative operations`)
+  }
+  const directEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'
+    && event.data.artifact.artifactId === directChart.artifactId
+    && event.data.artifact.version === directChart.version)
+  if (directEvent === undefined) throw new Error(`${NAME}: direct chart edit committed no artifact event`)
+  process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event: directEvent })}\n`)
+  await runFixtureTurn(ctx, {
+    task: 'Inspect the direct chart edit state.',
+    onEvent: (sessionId: string, event: SessionEvent) => {
+      process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
+    },
+  })
   let editOutput = ''
   const disposeEditListener = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
@@ -56,8 +80,8 @@ try {
   try {
     await ctx.scienceEdits.submit(agent, {
       targets: [{
-        artifactId: chart.artifactId,
-        version: chart.version,
+        artifactId: directChart.artifactId,
+        version: directChart.version,
         target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
         comment: 'Keep the scale readable at small sizes.',
       }],
@@ -69,8 +93,8 @@ try {
     await ctx.scienceEdits.submit(agent, {
       targets: [
         {
-          artifactId: chart.artifactId,
-          version: chart.version,
+          artifactId: directChart.artifactId,
+          version: directChart.version,
           target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
         },
         {

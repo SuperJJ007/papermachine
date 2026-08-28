@@ -39,6 +39,16 @@ function toolResultTexts(options: GenerateOptions): string[] {
       : []))
 }
 
+function requestsDirectEditState(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.source.kind === 'user'
+    && message.content.some(block => block.type === 'text' && block.text === 'Inspect the direct chart edit state.'))
+}
+
+function answeredDirectEditState(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.role === 'assistant'
+    && message.content.some(block => block.type === 'text' && block.text === 'SCIENCE_DIRECT_EDIT_STATE_OK'))
+}
+
 /** One deterministic call id per selection count, doubling as the served-edit marker. */
 function editCallId(source: ScienceEditMessageSource): string {
   return source.targets.length === 1 ? 'science-selected-edit-call' : 'science-region-edit-call'
@@ -127,6 +137,18 @@ class ScienceMockAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     writeCapture(options)
     const served = servedCallIds(options)
+    if (requestsDirectEditState(options) && !answeredDirectEditState(options)) {
+      if (!served.has('science-direct-edit-state-call')) {
+        yield * toolCall('science-direct-edit-state-call', 'get_science_state', {})
+        return
+      }
+      const reply = 'SCIENCE_DIRECT_EDIT_STATE_OK'
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: reply }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     const selectedEdit = pendingEditSource(options, served)
     if (selectedEdit !== undefined) {
       if (selectedEdit.targets.length === 0) throw new Error('science-mock-llm: edit source has no targets')

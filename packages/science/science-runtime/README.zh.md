@@ -59,6 +59,12 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 每个 kernel 为最新的 `chartLiveRunsRetained` 个 run id 保留登记，并在抽取后清理更早的 run。同一次 run 内对同一相对路径重复保存会替换该路径的登记，因此抽取得到最后一次保存的 figure 与 export settings。
 
+##### 直接编辑
+
+`applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。
+
+确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；文本、颜色、字号和参考线坐标等参数值不会进入净化后的 state 与 receipt 摘要。
+
 当该 session 自身的实时 projection 里没有某个被捕获路径的逻辑名记录时，遍历会去检查所属 project 的 artifact store——而不只是该 session 自身的历史——再决定是否创建新 artifact:同一 project 中的另一个 session 可能已经拥有那个逻辑名(第二个 session 接手第一个 session 的分析)。若在 store 中找到，就沿用其既有 artifactId，把该 session 记为新版本的 producer,而不是在同一名字下分叉出第二个 artifact;与该跨 session latest 字节相同的匹配同样会被跳过,如同同一 session 内重跑一样。与直接人工编辑自身祖先链的去重(见下文)仍只限定在该 session 自身的实时 projection 内。
 
 每个 `editBaselines` 键都是经过校验的 capture-relative output path，值则命名一个精确且已提交的 artifact version。若该路径被捕获，新版本会携带所命名的值作为 `parent`：既有 logical name 照常推进自身 artifact，新 logical name 创建一个首版本带跨 artifact parent 的新 artifact，而命名较旧版本会记录可见分支，不会静默改基线为 latest。缺失 baseline 会在发布前以 `ARTIFACT_NOT_FOUND` 拒绝。没有 baseline 的 output 保留普通捕获行为，内容未变化时仍会跳过。

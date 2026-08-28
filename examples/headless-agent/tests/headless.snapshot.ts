@@ -398,6 +398,11 @@ describe('headless stream-json snapshots', () => {
       // no image bytes; the Client reads those from the durable event instead.
       expect(modelView).not.toContain('attachmentId')
       expect(modelView).not.toContain(PNG_BASE64)
+      expect(modelView).toContain('\\"editCount\\": 2')
+      expect(modelView).toContain('\\"target\\": \\"title\\"')
+      expect(modelView).toContain('\\"target\\": \\"axes[0].x_label\\"')
+      expect(modelView).not.toContain('Directly edited chart')
+      expect(modelView).not.toContain('Edited input')
       const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
       expect(captured.filesystemTools).toEqual(['read'])
 
@@ -406,10 +411,10 @@ describe('headless stream-json snapshots', () => {
       if (refreshing) await writeFile(streamExpected, stream)
       expect(stream).toBe(await readFile(streamExpected, 'utf8'))
       expect(stream).not.toContain(PNG_BASE64)
-      // Four initial auto-captures, one curated re-save reusing the PNG id,
-      // one ordinary edited branch, one single-target edit, and two outputs
-      // from the multi-target edit.
-      expect(ids.chartIds).toHaveLength(9)
+      // Four initial auto-captures, one curated re-save and one direct edit
+      // reusing the PNG id, one ordinary edited branch, one single-target
+      // edit, and two outputs from the multi-target edit.
+      expect(ids.chartIds).toHaveLength(10)
       expect(new Set(ids.chartIds).size).toBe(8)
       // Both the plot's own id and the edited branch's own id normalize to the
       // same {{scienceChartId}} placeholder, so a renderer that echoed its own
@@ -439,7 +444,7 @@ describe('headless stream-json snapshots', () => {
       if (selectedRun === undefined) throw new Error(`science snapshot stream carries no selected-edit run; stdout:\n${result.stdout}`)
       const selectedRunValue = ((selectedRun.event as JsonObject).data as JsonObject).run as JsonObject
       expect(selectedRunValue.inputs).toEqual([{
-        artifactId: ids.chartIds[2], version: 1, path: 'region-source.png',
+        artifactId: ids.chartIds[2], version: 2, path: 'region-source.png',
       }])
       const selectedSaved = parseJsonl(result.stdout).find((record) => {
         if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
@@ -453,7 +458,7 @@ describe('headless stream-json snapshots', () => {
       const selectedParent = selectedArtifact.parent as JsonObject | undefined
       if (selectedParent === undefined) throw new Error('region-edit.png carries no parent reference')
       expect(selectedParent.artifactId).toBe(ids.chartIds[2])
-      expect(selectedParent.version).toBe(1)
+      expect(selectedParent.version).toBe(2)
       const regionSaved = parseJsonl(result.stdout).find((record) => {
         if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
         const event = record.event as JsonObject
@@ -466,7 +471,7 @@ describe('headless stream-json snapshots', () => {
       const regionParent = regionArtifact.parent as JsonObject | undefined
       if (regionParent === undefined) throw new Error('region-edit.png carries no parent reference')
       expect(regionParent.artifactId).toBe(ids.chartIds[2])
-      expect(regionParent.version).toBe(1)
+      expect(regionParent.version).toBe(2)
       expect(regionParent.artifactId).not.toBe(regionArtifact.artifactId)
       const secondRegionSaved = parseJsonl(result.stdout).find((record) => {
         if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false

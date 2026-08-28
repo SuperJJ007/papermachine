@@ -81,12 +81,20 @@ function assertNever(value: never): never {
   throw new Error(`tool-science: unsupported chart operation ${JSON.stringify(value)}`)
 }
 
-/** Reduce chart operations to model-safe operation and element identities. */
+/**
+ * Reduce chart operations to model-safe operation and element identities.
+ * @param artifact - artifact version whose direct edits are summarized.
+ * @returns operation and addressed-element identities in application order.
+ */
 export function scienceArtifactEdits(artifact: ScienceArtifactVersion): ScienceArtifactEditSummary[] {
   return artifact.chart?.ops.map(op => ({ op: op.op, target: chartEditTarget(op) })) ?? []
 }
 
-/** Render the model-visible direct-edit suffix for one artifact version. */
+/**
+ * Render the model-visible direct-edit suffix for one artifact version.
+ * @param edits - operation and addressed-element identities to render.
+ * @returns the suffix, or `undefined` when the artifact has no direct edits.
+ */
 export function formatScienceArtifactEdits(edits: readonly ScienceArtifactEditSummary[]): string | undefined {
   if (edits.length === 0) return undefined
   return `${String(edits.length)} direct edits: ${edits.map(edit => `${edit.op} (${edit.target})`).join(', ')}.`

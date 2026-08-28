@@ -1284,6 +1284,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'durable-inbox admission receipt.',
       },
       {
+        signature: '@Remote(\'applyChartOps\') async applyChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<ScienceChartEditReceipt>',
+        description: 'Apply deterministic operations to one exact current addressable chart.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the chart.' }, { name: 'request', description: 'Exact chart version and ordered operations.' }, { name: 'signal', description: 'Client-owned cancellation for the Runtime operation.' }],
+        returns: 'the committed direct-edit version and unresolved operation targets.',
+      },
+      {
         signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
         description: 'Add one user-only note after validating its exact visible artifact version.',
         parameters: [{ name: 'agent', description: 'Agent whose session owns the artifact.' }, { name: 'request', description: 'Exact artifact version and plain note text.' }],
@@ -1313,6 +1319,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve and materialize exact artifact inputs, acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact and baseline-attributed capture walk.',
         parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.' }],
         returns: 'A handle exposed only after `science/run-started` committed.',
+      },
+      {
+        signature: 'async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>',
+        description: 'Apply one direct-edit request and commit its successful operations as a new PNG version.',
+        parameters: [{ name: 'request', description: 'The exact chart version, operations, and cancellation context.' }],
+        returns: 'The committed artifact and any operations whose targets could not be resolved.',
       },
       {
         signature: 'async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
@@ -4309,6 +4321,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ScienceArtifactVersionRef {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n}',
   },
   {
+    name: 'ScienceChartEditReceipt',
+    declaration: 'export interface ScienceChartEditReceipt {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly origin: \'human-edit\';\n    readonly failedOps: readonly ScienceChartFailedOp[];\n}',
+  },
+  {
+    name: 'ScienceChartEditResult',
+    declaration: 'export interface ScienceChartEditResult {\n    readonly artifact: ScienceArtifactVersion;\n    readonly failedOps: readonly ScienceChartFailedOp[];\n}',
+  },
+  {
     name: 'ScienceChartElement',
     declaration: 'export interface ScienceChartElement {\n    readonly id: string;\n    readonly kind: \'title\' | \'subtitle\' | \'x_label\' | \'y_label\' | \'tick_labels\' | \'legend\' | \'series\' | \'grid\' | \'axis_range\' | \'axis_scale\' | \'figure_size\' | \'font\' | \'annotation\';\n    readonly axes: number | null;\n    readonly label: string | null;\n    readonly current: unknown;\n}',
   },
@@ -4318,7 +4338,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceChartOp',
-    declaration: 'export type ScienceChartOp = never;',
+    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_series_color\';\n    readonly axes: number | null;\n    readonly label: string;\n    readonly color: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'set_tick_font_size\';\n    readonly axes: number | null;\n    readonly size: number;\n} | {\n    readonly op: \'add_reference_line\';\n    readonly axes: number | null;\n    readonly orientation: \'h\' | \'v\';\n    readonly value: number;\n};',
   },
   {
     name: 'ScienceChartState',

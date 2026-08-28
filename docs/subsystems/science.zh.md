@@ -10,7 +10,9 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 `bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，通过经过校验的附件读取解析可选的 artifact-version input，把它们物化到保留的 `inputs/` 目录下，在 `science/run-started` 上追加完整映射，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。可选 edit baseline 会在 terminal 之后的捕获遍历中指定精确 `parent` 引用，包括陈旧分支与跨 artifact 分支。`commitChart` 只接受由精确 Session 本地启动且已成功的 run，解析其 artifact directory 内的普通非 symlink PNG，通过 `ctx.attachments` 持久化，并在不公开 Host path 的前提下追加带有 `origin: 'model'` 的下一条不可变 logical artifact version。同一活 Session 上的第二项 Runtime 操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。
 
-一个 `image/png` artifact version 可以携带 `ScienceChartState`：其 `runtime`、捕获相对 `figureKey`、保存时的像素尺寸与 DPI、有界 `elements`、空 `ops`、`hitmap` 及 `hitmapStatus`。Python 与 R kernel 只为经 matplotlib savefig 或 ggplot2 ggsave 登记且被捕获的路径生成此投影。缺失或不可用的 chart 投影绝不会使 PNG 无效；`hitmapStatus: 'unavailable'` 要求空 hit map，同时保留已抽取的 elements。chart 状态归 Session event 与 client projection 所有，project artifact store 只保留 PNG 字节与普通版本元数据。
+一个 `image/png` artifact version 可以携带 `ScienceChartState`：其 `runtime`、捕获相对 `figureKey`、保存时的像素尺寸与 DPI、有界 `elements`、累计 `ops`、`hitmap` 及 `hitmapStatus`。Python 与 R kernel 只为经 matplotlib savefig 或 ggplot2 ggsave 登记且被捕获的路径生成此投影。缺失或不可用的 chart 投影绝不会使 PNG 无效；`hitmapStatus: 'unavailable'` 要求空 hit map，同时保留已抽取的 elements。chart 状态归 Session event 与 client projection 所有，project artifact store 只保留 PNG 字节与普通版本元数据。
+
+`applyChartEdit` 把有类型的操作施加到确切的当前可寻址 version，并追加一个 `origin: 'human-edit'` 的子 PNG。图对象仍有登记时直接使用活对象；否则会私下重放源 run、确切物化输入与先前操作，且不追加 run event。成功操作累计到新 chart 状态，部分 target 失败以带索引的 `failedOps` 返回，陈旧、不可寻址、无效或全部无法解析的请求保留各自稳定错误码。`scienceEdits.applyChartOps` Remote 为 browser client 转换 chart 专用 Runtime 错误。`get_science_state` 与 artifact receipt 只公开每项操作的名称、元素 target 与编辑数量，绝不公开操作值。
 
 注册给客户端的 projection 与完整 Host replay 分离。它保留无 path 的 environment 摘要、run status/history（包括存在时的精确 artifact-version input）、带可选精确 parent identity 的 artifact 附件引用、最新 Outcome 与 metrics，同时省略 prefix/executable path、完整 fingerprint、source/scratch fact、授权 request identity，以及 Runtime free-text failure。严格 fold 与 pre-commit invariant 要求每个已记录的 parent 和 input 都解析到更早提交的 artifact version；自 parent 与 terminal 对 start-owned input 的改写会明确失败。
 
@@ -141,6 +143,15 @@ Remote service admitting browser edit gestures into the addressed live agent.
 @Remote('submit') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>
 
 /**
+ * Apply deterministic operations to one exact current addressable chart.
+ * @param agent - Agent whose session owns the chart.
+ * @param request - Exact chart version and ordered operations.
+ * @param signal - Client-owned cancellation for the Runtime operation.
+ * @returns the committed direct-edit version and unresolved operation targets.
+ */
+@Remote('applyChartOps') async applyChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<ScienceChartEditReceipt>
+
+/**
  * Add one user-only note after validating its exact visible artifact version.
  * @param agent - Agent whose session owns the artifact.
  * @param request - Exact artifact version and plain note text.
@@ -185,6 +196,14 @@ async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEn
  * @returns A handle exposed only after `science/run-started` committed.
  */
 async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
+
+/**
+ * Apply one direct-edit request and commit its successful operations as a new PNG version.
+ *
+ * @param request - The exact chart version, operations, and cancellation context.
+ * @returns The committed artifact and any operations whose targets could not be resolved.
+ */
+async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
 
 /**
  * Re-commit an existing artifact version's exact store content reference

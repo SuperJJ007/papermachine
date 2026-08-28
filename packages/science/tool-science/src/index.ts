@@ -41,6 +41,7 @@ const STATIC_GUIDANCE = [
   'A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed.',
   'Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run.',
   'Make charts with matplotlib (Python) or ggplot2 (R), save each one as a PNG under SCIENCE_ARTIFACT_DIR, and name it in raster_artifacts so it is captured. Do not use Altair or Vega-Lite.',
+  'Save matplotlib figures with fig.savefig()/plt.savefig() and ggplot2 charts with ggsave(); figures saved that way stay addressable for direct edits in the viewer.',
   'A run\'s eligible written files (csv/json/md/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts, and a PNG only when named in raster_artifacts; no separate save step is needed otherwise. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader.',
   'Write a render, preview, or debug dump meant only for your own inspection outside SCIENCE_ARTIFACT_DIR (for example a temp directory), never into it, so it is never captured as an artifact.',
   'Do not open a new artifact version to reconcile a cosmetic difference the user did not ask for; mention the difference in your reply instead.',

@@ -16,7 +16,7 @@ const { closeSync, existsSync, mkdirSync, openSync, writeFileSync, writeSync } =
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 
 // The exact PNG bytes `headless.snapshot.ts` also pins as `SCIENCE_PNG`.
 const PNG = Buffer.from(
@@ -50,6 +50,32 @@ rl.on('line', (line) => {
     fifoClosed = true
     closeSync(fifoFd)
     process.exit(0)
+  }
+  if (parts[0] === 'CHART_EXTRACT') {
+    const [, runId, , resultPath] = parts
+    writeFileSync(resultPath, JSON.stringify({
+      charts: {
+        'plot.png': {
+          runtime: 'matplotlib',
+          png: { width: 1, height: 1, dpi: 120 },
+          elements: [
+            { id: 'figure.title', kind: 'title', axes: null, label: null, current: 'Deterministic chart' },
+            { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: 'Input' },
+            { id: 'axes[0].y_label', kind: 'y_label', axes: 0, label: null, current: 'Output' },
+            { id: 'axes[0].series[0]', kind: 'series', axes: 0, label: 'observed', current: { color: '#1f77b4' } },
+            { id: 'axes[0].grid', kind: 'grid', axes: 0, label: null, current: true },
+          ],
+          hitmap: [
+            { id: 'figure.title', bbox: [0, 0, 1, 1], z: 2 },
+            { id: 'axes[0].series[0]', bbox: [0, 0, 1, 1], z: 1 },
+          ],
+          hitmapStatus: 'ok',
+        },
+      },
+      errors: {},
+    }))
+    send(`CHART\t${runId}\tok\t`)
+    return
   }
   if (parts[0] !== 'RUN') return
   const [, runId, , cwd, stdoutPath, stderrPath, artifactDir] = parts

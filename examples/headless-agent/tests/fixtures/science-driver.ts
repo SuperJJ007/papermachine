@@ -39,6 +39,9 @@ try {
   if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
   const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'plot.png')
   if (chart === undefined) throw new Error(`${NAME}: first turn produced no plot.png artifact`)
+  if (chart.chart === undefined || chart.chart.ops.length !== 0) {
+    throw new Error(`${NAME}: first-turn plot.png did not preserve its initial chart state`)
+  }
   let editOutput = ''
   const disposeEditListener = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return

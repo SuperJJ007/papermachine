@@ -66,7 +66,9 @@ async function captureFiles(
   root: string,
   session: Session,
   files: Readonly<Record<string, Uint8Array | string>>,
-  options: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'> = {},
+  options: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'> & {
+    readonly chartResult?: unknown
+  } = {},
 ): Promise<ScienceRunId> {
   if (replayScience(session.events)?.environment === null) {
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
@@ -75,9 +77,10 @@ async function captureFiles(
   // The fake driver's `sleep` action holds DONE until `sleepMs` elapses, so
   // the test can write the artifact files under the run's own real `runId`
   // before auto-capture walks the artifact directory after DONE.
+  const { chartResult, ...runOptions } = options
   const handle = await harness.runtime.startRun({
-    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok' }),
-    ...options,
+    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status: 'ok', chartResult }),
+    ...runOptions,
     ...authorizePythonRun(session, `annotate-capture-${String(captureCallCounter)}`),
     signal: new AbortController().signal,
   })
@@ -172,6 +175,36 @@ describe('ScienceRuntime.annotateArtifact', () => {
       ...authorizeAnnotateArtifact(session),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_CURATABLE' })
+  })
+
+  it('preserves addressable chart state while curating PNG metadata', async () => {
+    const root = tmp('.science-annotate-chart-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-chart')
+    const chart = {
+      runtime: 'matplotlib',
+      png: { width: 1, height: 1, dpi: 120 },
+      elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Evidence' }],
+      hitmap: [{ id: 'title', bbox: [0, 0, 1, 1], z: 1 }],
+      hitmapStatus: 'ok',
+    }
+    await captureFiles(harness, root, session, { 'chart.png': 'PNG' }, {
+      rasterArtifacts: ['chart.png'],
+      chartResult: { charts: { 'chart.png': chart }, errors: {} },
+    })
+    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
+    expect(captured?.chart).toBeDefined()
+
+    const annotated = await harness.runtime.annotateArtifact({
+      session, logicalName: 'chart.png', title: 'Addressable evidence',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+
+    expect(annotated.chart).toEqual(captured?.chart)
+    expect(replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')?.chart)
+      .toEqual(captured?.chart)
   })
 
   it('curates a non-image artifact identically', async () => {

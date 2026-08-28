@@ -757,6 +757,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       sha256: source.sha256,
       mediaType: source.mediaType,
       byteCount: source.byteCount,
+      ...(source.chart === undefined ? {} : { chart: source.chart }),
       runId: source.runId,
       toolCallId: request.toolCallId,
       requestHeaderSeq: request.requestHeaderSeq,

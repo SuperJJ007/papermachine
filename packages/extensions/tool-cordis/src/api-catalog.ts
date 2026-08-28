@@ -3246,7 +3246,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CaptureRunArtifactsResult',
-    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedRasterPaths: readonly string[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n}',
+    declaration: 'export interface CaptureRunArtifactsResult {\n    readonly captured: readonly ScienceArtifactVersion[];\n    readonly skippedRasterPaths: readonly string[];\n    readonly skippedOversizedCount: number;\n    readonly truncatedPerRun: boolean;\n    readonly truncatedPerSession: boolean;\n    readonly appendFailed: boolean;\n    readonly chartUnavailablePaths: readonly string[];\n}',
   },
   {
     name: 'ClientResponse',
@@ -4309,6 +4309,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ScienceArtifactVersionRef {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n}',
   },
   {
+    name: 'ScienceChartElement',
+    declaration: 'export interface ScienceChartElement {\n    readonly id: string;\n    readonly kind: \'title\' | \'subtitle\' | \'x_label\' | \'y_label\' | \'tick_labels\' | \'legend\' | \'series\' | \'grid\' | \'axis_range\' | \'axis_scale\' | \'figure_size\' | \'font\' | \'annotation\';\n    readonly axes: number | null;\n    readonly label: string | null;\n    readonly current: unknown;\n}',
+  },
+  {
+    name: 'ScienceChartHit',
+    declaration: 'export interface ScienceChartHit {\n    readonly id: string;\n    readonly bbox: readonly [\n        number,\n        number,\n        number,\n        number\n    ];\n    readonly z: number;\n}',
+  },
+  {
+    name: 'ScienceChartOp',
+    declaration: 'export type ScienceChartOp = never;',
+  },
+  {
+    name: 'ScienceChartState',
+    declaration: 'export type ScienceChartState = ScienceLiveFigureChartState;',
+  },
+  {
+    name: 'ScienceChartStateBase',
+    declaration: 'export interface ScienceChartStateBase {\n    readonly elements: readonly ScienceChartElement[];\n    readonly ops: readonly ScienceChartOp[];\n}',
+  },
+  {
     name: 'ScienceEditReceipt',
     declaration: 'export interface ScienceEditReceipt {\n    readonly accepted: true;\n}',
   },
@@ -4338,7 +4358,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceHumanEditArtifactVersion',
-    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'image/png\';\n}',
+    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly chart?: ScienceChartState;\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'image/png\';\n}',
   },
   {
     name: 'ScienceInterpreterAvailableBinding',
@@ -4369,6 +4389,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
   },
   {
+    name: 'ScienceLiveFigureChartState',
+    declaration: 'export interface ScienceLiveFigureChartState extends ScienceChartStateBase {\n    readonly runtime: \'matplotlib\' | \'ggplot2\';\n    readonly figureKey: string;\n    readonly png: {\n        readonly width: number;\n        readonly height: number;\n        readonly dpi: number;\n    };\n    readonly hitmap: readonly ScienceChartHit[];\n    readonly hitmapStatus: \'ok\' | \'unavailable\';\n}',
+  },
+  {
     name: 'ScienceNormalizedRegionTarget',
     declaration: 'export interface ScienceNormalizedRegionTarget {\n    readonly kind: \'normalized-region\';\n    readonly x: number;\n    readonly y: number;\n    readonly width: number;\n    readonly height: number;\n}',
   },
@@ -4386,7 +4410,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunArtifactVersion',
-    declaration: 'export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly origin: \'auto\' | \'model\';\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n}',
+    declaration: 'export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {\n    readonly chart?: ScienceChartState;\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly origin: \'auto\' | \'model\';\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n}',
   },
   {
     name: 'ScienceRunHandle',

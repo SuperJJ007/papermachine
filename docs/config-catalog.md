@@ -1812,6 +1812,10 @@ export interface Config {
    * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
    */
   readonly kernelStartTimeoutMs?: number
+  /** Deadline for post-run live-figure extraction; a timeout retires the kernel. */
+  readonly chartExtractTimeoutMs?: number
+  /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
+  readonly chartLiveRunsRetained?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1833,7 +1837,7 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:91`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:105`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

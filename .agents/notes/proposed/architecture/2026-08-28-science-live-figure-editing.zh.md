@@ -14,6 +14,8 @@ Science 需要一种图表编辑方式：保留研究者已经使用的绘图库
 
 图表底座采用活图对象加持久操作日志。模型继续编写 matplotlib 或 ggplot2 代码，并在 `SCIENCE_ARTIFACT_DIR` 下保存 `image/png`。run 结束时，内核 adapter 将每个被拦截的 `savefig` 或 `ggsave` 路径与其活图对象关联，抽取封闭元素目录与像素命中表，并把该投影存到 artifact version。屏幕显示的就是捕获的 PNG。
 
+三项所有权决策约束这一底座。每次保存沿用 matplotlib 或 ggplot2 选定的 DPI；Runtime 不把不同绘图库统一到同一种 export density。只有被拦截的 `Figure.savefig()`/`pyplot.savefig()` 与 `ggsave()` 调用才会登记，因此 R device-level 输出与 base graphics 保持普通 PNG。`chart` 投影属于 `science/artifact-saved` 与 Session projection，而不属于 project artifact store；后者继续持久化原样图片字节与普通版本元数据。
+
 直接编辑对活图对象施加经过校验的操作，以已配置 DPI 导出 PNG，重新抽取目录与命中表，再追加一个携带累计操作的 `origin: 'human-edit'` artifact version。如果活图对象已经消失，runtime 会以物化输入重放源 run，再重放操作来恢复它。图对象与 runtime 私有句柄都不进入 session log 或模型命名空间。
 
 持久 artifact record 增加可选 `chart` 字段：
@@ -21,14 +23,16 @@ Science 需要一种图表编辑方式：保留研究者已经使用的绘图库
 ```ts ignore-check
 interface ScienceChartState {
   runtime: 'matplotlib' | 'ggplot2'
-  figure: { runId: ScienceRunId; key: string }
+  figureKey: string
+  png: { width: number; height: number; dpi: number }
   elements: readonly ScienceChartElement[]
   hitmap: readonly ScienceChartHit[]
-  ops: readonly ScienceChartOperation[]
+  hitmapStatus: 'ok' | 'unavailable'
+  ops: readonly ScienceChartOp[]
 }
 ```
 
-该字段由 `science/artifact-saved` 携带并投影给 viewer。按照 pre-release 策略，`SESSION_FORMAT_VERSION` 保持 `0`。通过不受支持路径生成的 PNG，包括 base R `plot()` 与没有经过被拦截 pyplot 保存路径的 matplotlib `Figure`，不带 `chart` 字段并保留普通 raster 行为。
+该字段由 `science/artifact-saved` 携带并投影给 viewer。按照 pre-release 策略，`SESSION_FORMAT_VERSION` 保持 `0`。通过不受支持路径生成的 PNG，包括 base R `plot()` 与绕过 `ggsave()` 的 R graphics device，不带 `chart` 字段并保留普通 raster 行为。若 raster 尺寸不匹配，已抽取 elements 会保留，但 `hitmapStatus` 设为 `'unavailable'` 且 `hitmap` 必须为空；consumer 绝不使用 pixel grid 与保存 PNG 不一致的命中坐标。
 
 直接编辑不进入模型上下文。当模型之后编辑同一个 artifact 时，`get_science_state` 与 run receipt 会把当前操作和确切的 `edit_of` version 一起暴露，避免模型代码悄悄丢弃人工修改。变更图型、facet 或源数据等结构性修改仍由模型修改代码。代码变化后，已存操作按元素身份重新校验；无法再解析目标的操作会被报告，而不是猜测新目标。
 

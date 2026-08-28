@@ -14,6 +14,8 @@ Raster-region selection remains useful when a chart or image has no addressable 
 
 The chart foundation is a live figure object plus a durable operation log. Models continue to author matplotlib or ggplot2 code and save an `image/png` under `SCIENCE_ARTIFACT_DIR`. At run completion, the kernel adapter associates each intercepted `savefig` or `ggsave` path with its live figure, extracts a closed element catalog and pixel hit map, and stores that projection on the artifact version. The displayed image is the captured PNG itself.
 
+Three ownership decisions constrain this foundation. Each save keeps the DPI selected by matplotlib or ggplot2; the Runtime does not normalize different libraries to one export density. Intercepted `Figure.savefig()`/`pyplot.savefig()` and `ggsave()` calls are the only registration entry points, so device-level R output and base graphics remain ordinary PNGs. The `chart` projection belongs to `science/artifact-saved` and the Session projection rather than the project artifact store, which continues to persist exact image bytes and ordinary version metadata.
+
 A direct edit applies a validated operation to the live figure, exports a PNG at the configured DPI, re-extracts its catalog and hit map, and appends an `origin: 'human-edit'` artifact version with the cumulative operations. If the live figure is gone, the runtime restores it by replaying the source run with its materialized inputs and then replaying the operations. The figure object and private runtime handle never enter the session log or model namespace.
 
 The durable artifact record gains an optional `chart` field:
@@ -21,14 +23,16 @@ The durable artifact record gains an optional `chart` field:
 ```ts ignore-check
 interface ScienceChartState {
   runtime: 'matplotlib' | 'ggplot2'
-  figure: { runId: ScienceRunId; key: string }
+  figureKey: string
+  png: { width: number; height: number; dpi: number }
   elements: readonly ScienceChartElement[]
   hitmap: readonly ScienceChartHit[]
-  ops: readonly ScienceChartOperation[]
+  hitmapStatus: 'ok' | 'unavailable'
+  ops: readonly ScienceChartOp[]
 }
 ```
 
-The field is carried by `science/artifact-saved` and projected to the viewer. `SESSION_FORMAT_VERSION` remains `0` under the pre-release policy. A PNG produced through an unsupported route, including base R `plot()` and a matplotlib `Figure` that never reaches the intercepted pyplot save path, has no `chart` field and keeps ordinary raster behavior.
+The field is carried by `science/artifact-saved` and projected to the viewer. `SESSION_FORMAT_VERSION` remains `0` under the pre-release policy. A PNG produced through an unsupported route, including base R `plot()` and an R graphics device that bypasses `ggsave()`, has no `chart` field and keeps ordinary raster behavior. A raster-size mismatch preserves extracted elements but sets `hitmapStatus: 'unavailable'` and requires an empty `hitmap`; consumers never apply hit coordinates whose pixel grid does not match the saved PNG.
 
 Direct edits do not enter model context. When a later model run edits the same artifact, `get_science_state` and the run receipt expose the current operations alongside the exact `edit_of` version so model code does not silently discard human changes. Structural changes such as changing chart type, facets, or source data remain model-authored code changes. After code changes, stored operations are revalidated by element identity; operations whose targets no longer resolve are reported rather than guessed.
 

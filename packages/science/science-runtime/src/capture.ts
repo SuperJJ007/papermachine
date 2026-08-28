@@ -43,7 +43,7 @@ const VEGA_LITE_EXTENSION = '.vl.json'
 /** Resolve a capture media type, preserving the two-part Vega-Lite suffix before the ordinary last-suffix lookup. */
 function captureMediaType(relativePath: string): ScienceArtifactMediaType | undefined {
   const lower = relativePath.toLowerCase()
-  if (lower.endsWith(VEGA_LITE_EXTENSION)) return 'application/vnd.vega-lite+json'
+  if (lower.endsWith(VEGA_LITE_EXTENSION)) return 'application/json'
   return CAPTURE_MEDIA_TYPE_BY_EXTENSION.get(extname(lower))
 }
 

@@ -220,7 +220,6 @@ const ARTIFACT_MEDIA_TYPES = [
   'image/png',
   'text/csv',
   'application/json',
-  'application/vnd.vega-lite+json',
   'text/markdown',
   'text/plain',
 ]
@@ -252,7 +251,7 @@ function validArtifact(value: unknown): boolean {
     && /^[a-f0-9]{64}$/.test(candidate['sha256'])
     && typeof candidate['mediaType'] === 'string'
     && ARTIFACT_MEDIA_TYPES.includes(candidate['mediaType'])
-    && (!humanEdit || candidate['mediaType'] === 'application/vnd.vega-lite+json')
+    && (!humanEdit || candidate['mediaType'] === 'image/png')
     && safeInteger(candidate['byteCount'], 1)
     && (humanEdit || typeof candidate['runId'] === 'string')
     && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)

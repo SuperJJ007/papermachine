@@ -8,7 +8,7 @@
 
 `admitEncodedImages(attachments, images)` 是每个接受浏览器上传的 RPC 端点（会话 prompt 端点与命令执行器）共用的 wire 入口：它对每个成员强制执行规范 base64，随后把批量准入——限额、校验、有序提交——委托给 `saveImages`。base64 上传形式为 `EncodedImageAttachment`，从 `@deepseek-ai/dsh-attachment/types` 导出，供 wire 契约引用。
 
-文本系列(`validateText`、`saveText`、`readText`、`textLimits`)逐字段镜像图片系列，但只按字节上限与 UTF-8 合法性准入——不做内容格式校验，因为 `TextMediaType`(`text/csv`、`application/json`、`application/vnd.vega-lite+json`、`text/markdown`、`text/plain`)不像 raster 头部那样携带字节级签名；调用方声明的媒体类型不会与内容交叉校验，原样透传。这里没有 `saveTexts` 批量入口：目前没有调用方像 `saveImages` 批量处理一条聊天消息的图片那样批量上传文本文件。`TextAdmissionErrorCode`(`INVALID_TEXT`、`TEXT_TOO_LARGE`)标记可由调用方修正的文本输入失败，与 `ImageAdmissionErrorCode` 对称。
+文本系列(`validateText`、`saveText`、`readText`、`textLimits`)逐字段镜像图片系列，但只按字节上限与 UTF-8 合法性准入——不做内容格式校验，因为 `TextMediaType`(`text/csv`、`application/json`、`text/markdown`、`text/plain`)不像 raster 头部那样携带字节级签名；调用方声明的媒体类型不会与内容交叉校验，原样透传。这里没有 `saveTexts` 批量入口：目前没有调用方像 `saveImages` 批量处理一条聊天消息的图片那样批量上传文本文件。`TextAdmissionErrorCode`(`INVALID_TEXT`、`TEXT_TOO_LARGE`)标记可由调用方修正的文本输入失败，与 `ImageAdmissionErrorCode` 对称。
 
 ## 模型体验
 

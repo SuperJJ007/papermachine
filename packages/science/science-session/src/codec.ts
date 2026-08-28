@@ -290,7 +290,6 @@ const ARTIFACT_MEDIA_TYPES = [
   'image/png',
   'text/csv',
   'application/json',
-  'application/vnd.vega-lite+json',
   'text/markdown',
   'text/plain',
 ] as const
@@ -323,7 +322,7 @@ const artifactSchema = z.discriminatedUnion('origin', [
   artifactBaseSchema.extend({
     parent: artifactVersionRefSchema,
     origin: z.literal('human-edit'),
-    mediaType: z.literal('application/vnd.vega-lite+json'),
+    mediaType: z.literal('image/png'),
   }).strict(),
 ])
 

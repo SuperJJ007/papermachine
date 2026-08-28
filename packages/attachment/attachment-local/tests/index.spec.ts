@@ -41,7 +41,7 @@ describe('local attachment service', () => {
     expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
     expect(service.textLimits).toEqual({
       maxTextBytes: DEFAULT_MAX_TEXT_BYTES,
-      mediaTypes: ['text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain'],
+      mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'],
     })
   })
 

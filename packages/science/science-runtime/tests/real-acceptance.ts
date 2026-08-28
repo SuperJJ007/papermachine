@@ -530,7 +530,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     if (language === 'r') {
       const capturedSpec = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.vl.json')
       if (capturedSpec === undefined) throw new Error('auto-capture did not produce the R-authored Vega-Lite artifact')
-      if (capturedSpec.mediaType !== 'application/vnd.vega-lite+json') {
+      if (capturedSpec.mediaType !== 'application/json') {
         throw new Error('R-authored .vl.json did not retain the Vega-Lite media type')
       }
       const specBytes = await context.scienceArtifactStore.readBlob(capturedSpec.projectId, capturedSpec.sha256)

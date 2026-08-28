@@ -48,7 +48,7 @@ const projection = {
   artifacts: [
     artifact(TEXT_ID, 'text.txt', 'text/plain', TEXT_SHA, 2),
     artifact(IMAGE_ID, 'image.png', 'image/png', IMAGE_SHA, 3),
-    artifact(STYLE_ID, 'style.vl.json', 'application/vnd.vega-lite+json', STYLE_SHA, 2),
+    artifact(STYLE_ID, 'style.vl.json', 'application/json', STYLE_SHA, 2),
     {
       artifactId: STYLE_ID,
       logicalName: 'style.vl.json',
@@ -59,7 +59,7 @@ const projection = {
       projectId: PROJECT_ID,
       versionId: ScienceVersionId('style.vl.json-v2'),
       sha256: '4'.repeat(64),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       byteCount: 2,
       environmentRevision: 1,
       environmentFingerprint: 'fingerprint',

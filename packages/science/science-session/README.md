@@ -10,7 +10,7 @@ Seven `science/*` Session events, each `version: 1`, lossless JSON, carrying a c
 
 ### Direct human-edit versions
 
-In addition to the two run-produced origins above, `origin: 'human-edit'` is a third strict branch rather than a run with missing fields. It requires an exact parent and a Vega-Lite text attachment, copies the parent's environment revision and fingerprint, and carries no `runId`, `toolCallId`, or `requestHeaderSeq`. The fold admits it only as a version beyond this session's own locally committed maximum for the same artifact, over that artifact's current committed Vega-Lite parent, after the parent fact and before its own save event; it cannot open version 1 or supersede a version in place.
+In addition to the two run-produced origins above, `origin: 'human-edit'` is a third strict branch rather than a run with missing fields. It requires an exact PNG parent, copies the parent's environment revision and fingerprint, and carries no `runId`, `toolCallId`, or `requestHeaderSeq`. The fold admits it only as a version beyond this session's own locally committed maximum for the same artifact, over that artifact's current committed PNG parent, after the parent fact and before its own save event; it cannot open version 1 or supersede a version in place.
 
 ## Strict fold and invariant
 

@@ -20,7 +20,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 
-`session.textAttachment` 返回通过鉴权的文本引用及其 UTF-8 明文数据；响应 schema 接受附件包固定的 `TextMediaType` 集合，包括 `application/vnd.vega-lite+json`，因此浏览器客户端收到的媒体类型与附件存储准入的类型一致。
+`session.textAttachment` 返回通过鉴权的文本引用及其 UTF-8 明文数据；响应 schema 接受附件包固定的 `TextMediaType` 集合，因此浏览器客户端收到的媒体类型与附件存储准入的类型一致。
 
 `session.scienceArtifact({ sessionId, versionId })` 只有在具名 Session 通过本地 fold、经确认的跨 Session input ordinal，或其持久 header `cwd` 推导出的 project 中的精确成员关系证明版本后，才返回 base64 编码字节和 store 元数据。`sessions.scienceLibrary` 使用同一个推导出的 project，为每个 artifact 返回一条最新记录。`sessions.workspaceFiles` 与 `sessions.workspaceFile` 提供经过规范路径 containment check 的 workspace 只读视图：单层目录最多 2,000 个条目，单个 base64 文件最多 2 MiB。这些请求都不接受浏览器提供的 `projectId` 或绝对文件系统路径。
 

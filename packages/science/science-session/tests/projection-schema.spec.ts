@@ -45,7 +45,7 @@ describe('Science projection wire schema', () => {
       origin: 'human-edit' as const,
       versionId: 'version-human',
       sha256: '8'.repeat(64),
-      mediaType: 'application/vnd.vega-lite+json' as const,
+      mediaType: 'image/png' as const,
       byteCount: 64,
       createdAt: currentChart.createdAt + 1,
     }
@@ -125,14 +125,6 @@ describe('Science projection wire schema', () => {
       },
       {
         ...state,
-        artifacts: [{
-          ...currentChart,
-          mediaType: 'application/vnd.vega-lite+json',
-          byteCount: 64,
-        }],
-      },
-      {
-        ...state,
         runs: [state.runs[0], state.runs[0]],
         metrics: {
           ...state.metrics,
@@ -202,7 +194,7 @@ describe('Science projection wire schema', () => {
       origin: 'human-edit',
       versionId: 'version-human',
       sha256: '8'.repeat(64),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       byteCount: 64,
       createdAt: currentChart.createdAt + 1,
     }

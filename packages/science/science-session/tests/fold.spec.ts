@@ -236,7 +236,7 @@ describe('strict Science fold', () => {
       origin: 'human-edit' as const,
       versionId: ScienceVersionId('version-human'),
       sha256: 'd'.repeat(64),
-      mediaType: 'application/vnd.vega-lite+json' as const,
+      mediaType: 'image/png' as const,
       byteCount: 64,
       createdAt: source.createdAt + 1,
     }

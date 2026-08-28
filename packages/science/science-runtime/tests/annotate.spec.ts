@@ -136,7 +136,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     const stored = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
       data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
       editBaselines: parent.versionId,
@@ -154,7 +154,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
         projectId: parent.projectId,
         versionId: stored.versionId,
         sha256: stored.sha256,
-        mediaType: 'application/vnd.vega-lite+json',
+        mediaType: 'image/png',
         byteCount: stored.byteCount,
         environmentRevision: parent.environmentRevision,
         environmentFingerprint: parent.environmentFingerprint,

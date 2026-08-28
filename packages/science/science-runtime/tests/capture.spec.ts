@@ -275,7 +275,7 @@ describe('Science auto-capture', () => {
 
     expect(result.capture?.captured).toHaveLength(2)
     expect(result.capture?.captured.find(version => version.logicalName === 'plots/summary.VL.JSON')).toMatchObject({
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'application/json',
     })
     expect(result.capture?.captured.find(version => version.logicalName === 'plots/meta.json')).toMatchObject({
       mediaType: 'application/json',
@@ -458,7 +458,7 @@ describe('Science auto-capture', () => {
     const humanEditV2 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
       data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
       editBaselines: parent.versionId,
@@ -476,7 +476,7 @@ describe('Science auto-capture', () => {
         projectId: parent.projectId,
         versionId: humanEditV2.versionId,
         sha256: humanEditV2.sha256,
-        mediaType: 'application/vnd.vega-lite+json',
+        mediaType: 'image/png',
         byteCount: humanEditV2.byteCount,
         environmentRevision: parent.environmentRevision,
         environmentFingerprint: parent.environmentFingerprint,
@@ -508,7 +508,7 @@ describe('Science auto-capture', () => {
     const humanEditV4 = await harness.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: session.id,
       data: new TextEncoder().encode('{"mark":{"type":"bar","color":"red"}}'),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
       editBaselines: changedVersion.versionId,
@@ -526,7 +526,7 @@ describe('Science auto-capture', () => {
         projectId: parent.projectId,
         versionId: humanEditV4.versionId,
         sha256: humanEditV4.sha256,
-        mediaType: 'application/vnd.vega-lite+json',
+        mediaType: 'image/png',
         byteCount: humanEditV4.byteCount,
         environmentRevision: parent.environmentRevision,
         environmentFingerprint: parent.environmentFingerprint,

@@ -109,7 +109,7 @@ function humanArtifactFixture(
     projectId: ScienceProjectId('project-1'),
     versionId: ScienceVersionId('store-version-2'),
     sha256: 'b'.repeat(64),
-    mediaType: 'application/vnd.vega-lite+json',
+    mediaType: 'image/png',
     byteCount: 64,
     environmentRevision: 1,
     environmentFingerprint: 'a'.repeat(64),
@@ -1884,7 +1884,7 @@ describe('scienceEdits submit', () => {
       run,
       'plot.vl.json',
       new TextEncoder().encode('{"mark":{"type":"bar","color":"#336699"}}'),
-      'application/vnd.vega-lite+json',
+      'image/png',
     )
     const spec = '{"mark":{"type":"bar","color":"#cc3300"}}'
     const service = new ScienceEditService(ctx)
@@ -1904,7 +1904,7 @@ describe('scienceEdits submit', () => {
       origin: 'human-edit',
       environmentRevision: parent.environmentRevision,
       environmentFingerprint: parent.environmentFingerprint,
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
     })
     expect(committed !== undefined && 'runId' in committed).toBe(false)
     expect(committed !== undefined && 'toolCallId' in committed).toBe(false)
@@ -1924,7 +1924,7 @@ describe('scienceEdits submit', () => {
       run,
       'optional.vl.json',
       new TextEncoder().encode('{"mark":"bar"}'),
-      'application/vnd.vega-lite+json',
+      'image/png',
     )
     if (captured.origin === 'human-edit') throw new Error('expected run-produced parent')
     const annotateCall = authorizeToolCall(session, 2, 'annotate_artifact', 'science-style-optional-fields-annotate')
@@ -1947,7 +1947,7 @@ describe('scienceEdits submit', () => {
     })
     expect(replayScience(session.events)?.artifacts.at(-1)).toMatchObject({
       caption: 'Preserved caption',
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
     })
   })
 
@@ -1961,7 +1961,7 @@ describe('scienceEdits submit', () => {
       run,
       'plot.vl.json',
       new TextEncoder().encode('{"mark":"bar"}'),
-      'application/vnd.vega-lite+json',
+      'image/png',
     )
     const imageArtifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
     const service = new ScienceEditService(ctx)

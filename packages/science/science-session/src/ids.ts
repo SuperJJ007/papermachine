@@ -24,7 +24,7 @@ export const SCIENCE_PRESET_ID = 'science'
  * Bump whenever the state shape or the fold semantics change, per the
  * registry's `stateVersion` rule ([session-projection](../../../session/session-projection/README.md#contract)).
  */
-export const SCIENCE_PROJECTION_STATE_VERSION = 10
+export const SCIENCE_PROJECTION_STATE_VERSION = 11
 
 /** Identifies one Science environment profile inside durable session facts. */
 export type ScienceEnvironmentProfileId = Branded<'ScienceEnvironmentProfileId'>

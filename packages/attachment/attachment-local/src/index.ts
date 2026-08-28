@@ -142,7 +142,6 @@ class SharedRequest<T> {
 const TEXT_MEDIA_TYPES = Object.freeze([
   'text/csv',
   'application/json',
-  'application/vnd.vega-lite+json',
   'text/markdown',
   'text/plain',
 ] as const)

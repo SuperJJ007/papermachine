@@ -109,10 +109,10 @@ describe('Science projection replay', () => {
   it('projects direct edits with ancestry and without run provenance', () => {
     const events = legalEvents().slice(0, 9)
     const source = artifact({
-      logicalName: 'projection-chart.vl.json',
+      logicalName: 'projection-chart.png',
       versionId: ScienceVersionId('projection-chart-v1'),
       sha256: '6'.repeat(64),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       byteCount: 64,
     })
     events[8] = event('science/artifact-saved', 8, 170, { version: 1, artifact: source })
@@ -129,7 +129,7 @@ describe('Science projection replay', () => {
         projectId: source.projectId,
         versionId: ScienceVersionId('projection-chart-v2'),
         sha256: '7'.repeat(64),
-        mediaType: 'application/vnd.vega-lite+json',
+        mediaType: 'image/png',
         byteCount: 72,
         environmentRevision: source.environmentRevision,
         environmentFingerprint: source.environmentFingerprint,

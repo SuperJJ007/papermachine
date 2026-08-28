@@ -555,7 +555,7 @@ function TextArtifactBody({
     )
   }
 
-  switch (content.mediaType) {
+  switch (content.mediaType as string) {
     case 'text/csv':
       return (
         <ArtifactTable
@@ -595,7 +595,7 @@ function TextArtifactBody({
       return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
     }
     /* v8 ignore next -- closed TextMediaType union; every current member has a case above */
-    default: return assertNever(content.mediaType)
+    default: return assertNever(content.mediaType as never)
   }
 }
 

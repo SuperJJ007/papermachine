@@ -57,7 +57,7 @@ const t: Props['t'] = makeTranslate(en)
 
 interface LegacyArtifactContent {
   readonly attachmentId: string
-  readonly mediaType: ScienceClientArtifactVersion['mediaType']
+  readonly mediaType: ScienceClientArtifactVersion['mediaType'] | 'application/vnd.vega-lite+json'
   readonly bytes: number
   readonly width?: number
   readonly height?: number
@@ -213,7 +213,7 @@ function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
     origin: 'model',
     versionId: `version:${content.attachmentId}` as never,
     sha256: content.attachmentId,
-    mediaType: content.mediaType,
+    mediaType: content.mediaType as ScienceClientRunArtifactVersion['mediaType'],
     byteCount: content.bytes,
     runId: 'run-1' as never,
     toolCallId: 'call-chart-1' as never,
@@ -228,7 +228,7 @@ function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
 function humanEditChart(over: HumanChartOverrides = {}): ScienceClientHumanEditArtifactVersion {
   const { attachment, ...fields } = over
   const content = attachment ?? {
-    attachmentId: 'sha256:human', mediaType: 'application/vnd.vega-lite+json' as const, bytes: 40,
+    attachmentId: 'sha256:human', mediaType: 'image/png' as const, bytes: 40,
   }
   return {
     artifactId: 'chart-1' as never,
@@ -240,7 +240,7 @@ function humanEditChart(over: HumanChartOverrides = {}): ScienceClientHumanEditA
     parent: { artifactId: 'chart-1' as never, version: 1 },
     versionId: `version:${content.attachmentId}` as never,
     sha256: content.attachmentId,
-    mediaType: 'application/vnd.vega-lite+json',
+    mediaType: 'image/png',
     byteCount: content.bytes,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
@@ -954,7 +954,7 @@ describe('ScienceDetailsView: content dispatch', () => {
   })
 
   function textArtifact(
-    mediaType: TextMediaType, over: Partial<ScienceClientRunArtifactVersion> = {},
+    mediaType: TextMediaType | 'application/vnd.vega-lite+json', over: Partial<ScienceClientRunArtifactVersion> = {},
   ): { science: ScienceClientProjection; store: ReturnType<typeof testScienceSelectionStore> } {
     const science = baseProjection({
       artifacts: [chart({ logicalName: 'data.txt', attachment: { attachmentId: 'sha256:txt', mediaType, bytes: 20 }, ...over })],
@@ -1915,7 +1915,7 @@ describe('ScienceDetailsView: provenance drill-in', () => {
       origin: 'human-edit',
       versionId: 'version:sha256:human' as never,
       sha256: 'sha256:human',
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       byteCount: 48,
       createdAt: 600,
     }

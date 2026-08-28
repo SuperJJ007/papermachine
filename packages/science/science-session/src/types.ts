@@ -328,7 +328,6 @@ export type ScienceArtifactMediaType =
   | 'image/png'
   | 'text/csv'
   | 'application/json'
-  | 'application/vnd.vega-lite+json'
   | 'text/markdown'
   | 'text/plain'
 
@@ -391,14 +390,14 @@ export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {
   readonly requestHeaderSeq: number
 }
 
-/** Vega-Lite version committed directly by a person through the style editor. */
+/** PNG version committed directly by a person through an artifact editor. */
 export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {
-  /** Exact prior Vega-Lite version whose style was edited. */
+  /** Exact prior PNG version that was edited. */
   readonly parent: ScienceArtifactVersionRef
   /** Direct-editor provenance; no run, tool call, or model request authorized this version. */
   readonly origin: 'human-edit'
-  /** Vega-Lite source saved by the direct editor. */
-  readonly mediaType: 'application/vnd.vega-lite+json'
+  /** PNG bytes saved by the direct editor. */
+  readonly mediaType: 'image/png'
 }
 
 /** One immutable version of a logical Science artifact. */
@@ -646,7 +645,7 @@ export interface ScienceClientRunArtifactVersion extends ScienceClientArtifactVe
 export interface ScienceClientHumanEditArtifactVersion extends ScienceClientArtifactVersionBase {
   readonly parent: ScienceArtifactVersionRef
   readonly origin: 'human-edit'
-  readonly mediaType: 'application/vnd.vega-lite+json'
+  readonly mediaType: 'image/png'
 }
 
 /** Browser-safe Science artifact version. */

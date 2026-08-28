@@ -82,7 +82,6 @@ export interface StoredImageAttachment {
 export type TextMediaType =
   | 'text/csv'
   | 'application/json'
-  | 'application/vnd.vega-lite+json'
   | 'text/markdown'
   | 'text/plain'
 

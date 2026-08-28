@@ -8,7 +8,7 @@ import { readTextFile, saveTextFile, validateTextFile } from '../src/store.ts'
 
 const LIMITS: TextAttachmentLimits = {
   maxTextBytes: 16,
-  mediaTypes: ['text/csv', 'application/json', 'application/vnd.vega-lite+json', 'text/markdown', 'text/plain'],
+  mediaTypes: ['text/csv', 'application/json', 'text/markdown', 'text/plain'],
 }
 
 const roots: string[] = []
@@ -68,7 +68,6 @@ describe('text attachment admission', () => {
   it.each([
     ['text/csv', 'a,b,c\n1,2\n'],
     ['application/json', '{"a":1}'],
-    ['application/vnd.vega-lite+json', '{"mark":"bar"}'],
     ['text/markdown', '# Title\nBody.\n'],
     ['text/plain', 'plain text'],
   ] as const)('admits valid %s content and reads it back', async (mediaType, content) => {

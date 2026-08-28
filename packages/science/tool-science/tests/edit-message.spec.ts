@@ -49,7 +49,7 @@ function vega(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifact
     logicalName: 'loss.vl.json',
     versionId: ScienceVersionId('store-version-vega'),
     sha256: 'c'.repeat(64),
-    mediaType: 'application/vnd.vega-lite+json',
+    mediaType: 'image/png',
     byteCount: 200,
     ...over,
   })

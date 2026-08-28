@@ -34,12 +34,13 @@ import {
 } from './fixtures.ts'
 
 describe('strict Science fold transitions', () => {
-  const vegaParent = (): ScienceArtifactVersion => artifact({
-    logicalName: 'trend.vl.json',
-    versionId: ScienceVersionId('version-vega-1'),
+  const pngParent = (overrides: Partial<ScienceRunArtifactVersion> = {}): ScienceArtifactVersion => artifact({
+    logicalName: 'trend.png',
+    versionId: ScienceVersionId('version-png-1'),
     sha256: '7'.repeat(64),
-    mediaType: 'application/vnd.vega-lite+json',
+    mediaType: 'image/png',
     byteCount: 128,
+    ...overrides,
   })
 
   const humanEdit = (
@@ -47,15 +48,15 @@ describe('strict Science fold transitions', () => {
   ): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> => ({
     artifactId: ARTIFACT_ID,
     producerSessionId: artifact().producerSessionId,
-    logicalName: 'trend.vl.json',
+    logicalName: 'trend.png',
     version: 2,
     parent: { artifactId: ARTIFACT_ID, version: 1 },
     title: 'Trend',
     origin: 'human-edit',
     projectId: PROJECT_ID,
-    versionId: ScienceVersionId('version-vega-2'),
+    versionId: ScienceVersionId('version-png-2'),
     sha256: '8'.repeat(64),
-    mediaType: 'application/vnd.vega-lite+json',
+    mediaType: 'image/png',
     byteCount: 144,
     environmentRevision: 1,
     environmentFingerprint: 'b'.repeat(64),
@@ -63,13 +64,13 @@ describe('strict Science fold transitions', () => {
     ...overrides,
   })
 
-  const vegaHistory = (): SessionEvent[] => legalEvents().slice(0, 9).map((candidate, index) => index === 8
-    ? event('science/artifact-saved', 8, 170, { version: 1, artifact: vegaParent() })
+  const pngHistory = (): SessionEvent[] => legalEvents().slice(0, 9).map((candidate, index) => index === 8
+    ? event('science/artifact-saved', 8, 170, { version: 1, artifact: pngParent() })
     : candidate)
 
-  it('admits a direct Vega-Lite edit without run provenance and retains exact ancestry', () => {
+  it('admits a direct PNG edit without run provenance and retains exact ancestry', () => {
     const state = foldScience([
-      ...vegaHistory(),
+      ...pngHistory(),
       event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit() }),
     ])
     expect(state.artifacts[1]).toEqual(humanEdit())
@@ -82,7 +83,7 @@ describe('strict Science fold transitions', () => {
     const invalidCases: Array<readonly [ScienceArtifactVersion, RegExp]> = [
       [humanEdit({ parent: { artifactId: ARTIFACT_ID, version: 99 } }), /does not identify a committed artifact version/],
       [humanEdit({ artifactId: ScienceArtifactId('other') }), /parent must be the current committed version/],
-      [humanEdit({ logicalName: 'other.vl.json' }), /retain its parent logical name/],
+      [humanEdit({ logicalName: 'other.png' }), /retain its parent logical name/],
       [humanEdit({ environmentRevision: 2 }), /copy its parent environment provenance/],
       [humanEdit({ createdAt: 169 }), /parent-to-commit event interval/],
       [humanEdit({ createdAt: 181 }), /parent-to-commit event interval/],
@@ -90,21 +91,26 @@ describe('strict Science fold transitions', () => {
     ]
     for (const [candidate, expected] of invalidCases) {
       expect(() => foldScience([
-        ...vegaHistory(),
+        ...pngHistory(),
         event('science/artifact-saved', 9, 180, { version: 1, artifact: candidate }),
       ])).toThrow(expected)
     }
 
     expect(() => foldScience([
-      ...legalEvents().slice(0, 9),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ logicalName: 'trend' }) }),
-    ])).toThrow(/parent must be Vega-Lite/)
+      ...legalEvents().slice(0, 9).map((candidate, index) => index === 8
+        ? event('science/artifact-saved', 8, 170, {
+          version: 1,
+          artifact: pngParent({ mediaType: 'application/json' }),
+        })
+        : candidate),
+      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit() }),
+    ])).toThrow(/parent must be a PNG/)
   })
 
   it('requires each direct edit to name the current committed parent, but not necessarily the immediate next version', () => {
     const v2 = humanEdit()
     const history = [
-      ...vegaHistory(),
+      ...pngHistory(),
       event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
     ]
     expect(() => foldScience([
@@ -114,7 +120,7 @@ describe('strict Science fold transitions', () => {
         artifact: humanEdit({
           version: 3,
           parent: { artifactId: ARTIFACT_ID, version: 1 },
-          versionId: ScienceVersionId('version-vega-3'),
+          versionId: ScienceVersionId('version-png-3'),
           sha256: '9'.repeat(64),
           createdAt: 189,
         }),
@@ -127,7 +133,7 @@ describe('strict Science fold transitions', () => {
     // own transaction already proved that ordinal real (a concurrent
     // session's own interleaved append may have taken version 2).
     const state = foldScience([
-      ...vegaHistory(),
+      ...pngHistory(),
       event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ version: 3 }) }),
     ])
     expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 3 })
@@ -137,7 +143,7 @@ describe('strict Science fold transitions', () => {
     const v2 = humanEdit()
     const annotationCall = CallId('call-annotate-human-edit')
     expect(() => foldScience([
-      ...vegaHistory(),
+      ...pngHistory(),
       event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
       toolCall(10, 185, annotationCall, 'annotate_artifact'),
       event('science/artifact-saved', 11, 190, {

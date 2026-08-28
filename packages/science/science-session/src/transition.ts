@@ -273,8 +273,8 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (parent.logicalName !== artifact.logicalName) {
       throw new Error('a human-edited Science artifact must retain its parent logical name')
     }
-    if (parent.mediaType !== 'application/vnd.vega-lite+json') {
-      throw new Error('a human-edited Science artifact parent must be Vega-Lite')
+    if (parent.mediaType !== 'image/png') {
+      throw new Error('a human-edited Science artifact parent must be a PNG')
     }
     if (artifact.environmentRevision !== parent.environmentRevision
       || artifact.environmentFingerprint !== parent.environmentFingerprint) {

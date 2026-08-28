@@ -10,7 +10,7 @@
 
 文本的写入准入只检查字节上限与 UTF-8 合法性——不做类似光栅解码的处理，也不做内容格式校验——读取会重新校验摘要与字节长度。字节和像素限制属于写入时的准入策略，因此后续收紧限制不会导致已经接纳的历史记录变得不可读。
 
-`DSH_HOME` 按共享路径策略解析：显式配置、`$DSH_HOME`，最后是 `~/.dsh`。会话日志只包含引用和经过校验的元数据，绝不包含这个宿主路径。`readImage` 与 `readText` 会把可选取消信号传入文件系统读取、在校验前后观察该信号，并保留取消语义，而不会将其包装成 `ATTACHMENT_READ_FAILED`。`Config.maxTextBytes`(默认 `DEFAULT_MAX_TEXT_BYTES`，5 MiB，与 `DEFAULT_MAX_IMAGE_BYTES` 一致)是文本准入唯一的界限；被接受的 `TextMediaType` 集合(`text/csv`、`application/json`、`application/vnd.vega-lite+json`、`text/markdown`、`text/plain`)是固定常量，不是 Loader 暴露的可配置项，与 `imageLimits.mediaTypes` 对称。
+`DSH_HOME` 按共享路径策略解析：显式配置、`$DSH_HOME`，最后是 `~/.dsh`。会话日志只包含引用和经过校验的元数据，绝不包含这个宿主路径。`readImage` 与 `readText` 会把可选取消信号传入文件系统读取、在校验前后观察该信号，并保留取消语义，而不会将其包装成 `ATTACHMENT_READ_FAILED`。`Config.maxTextBytes`(默认 `DEFAULT_MAX_TEXT_BYTES`，5 MiB，与 `DEFAULT_MAX_IMAGE_BYTES` 一致)是文本准入唯一的界限；被接受的 `TextMediaType` 集合(`text/csv`、`application/json`、`text/markdown`、`text/plain`)是固定常量，不是 Loader 暴露的可配置项，与 `imageLimits.mediaTypes` 对称。
 
 ## 模型体验
 
@@ -26,4 +26,4 @@
 - 本地后端假定宿主与提供方适配器共享同一个文件系统服务。
 - 动态 GIF 源图只保留首帧；动画在版本一图片契约之外。
 - 规范化和请求版本编码器由安装的 sharp/libvips 构建钉定；编码器或变换策略版本升级会让未来的规范化附件或请求变体产生新地址，已有对象保持有效。
-- 文本文件声明的 `mediaType` 从不与其内容交叉校验：`text/csv`、`application/json`、`application/vnd.vega-lite+json`、`text/markdown` 和 `text/plain` 都不像 raster 头部那样携带可区分的字节级签名，因此准入信任调用方的声明。
+- 文本文件声明的 `mediaType` 从不与其内容交叉校验：`text/csv`、`application/json`、`text/markdown` 和 `text/plain` 都不像 raster 头部那样携带可区分的字节级签名，因此准入信任调用方的声明。

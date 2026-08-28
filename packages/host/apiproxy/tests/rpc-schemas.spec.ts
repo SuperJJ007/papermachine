@@ -135,16 +135,16 @@ describe('rpcReceiptSchema', () => {
 })
 
 describe('sessions domain schemas', () => {
-  it('accepts Vega-Lite text attachments on the browser wire', () => {
+  it('accepts JSON text attachments on the browser wire', () => {
     expect(sessionTextAttachmentValueSchema.parse({
       attachment: {
-        attachmentId: 'sha256:vl',
-        mediaType: 'application/vnd.vega-lite+json',
+        attachmentId: 'sha256:json',
+        mediaType: 'application/json',
         bytes: 2,
-        name: 'chart.vl.json',
+        name: 'chart.json',
       },
       data: '{}',
-    }).attachment.mediaType).toBe('application/vnd.vega-lite+json')
+    }).attachment.mediaType).toBe('application/json')
     expect(() => sessionTextAttachmentValueSchema.parse({
       attachment: { attachmentId: 'sha256:vl', mediaType: 'application/vnd.vega+json', bytes: 2 },
       data: '{}',

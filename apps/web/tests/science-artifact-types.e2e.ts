@@ -217,8 +217,8 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     artifact(stored[1]!.artifact.artifactId, 'metrics.json', 'application/json', stored[1]!),
     artifact(stored[2]!.artifact.artifactId, 'report.md', 'text/markdown', stored[2]!),
     artifact(stored[3]!.artifact.artifactId, 'plot.png', 'image/png', stored[3]!),
-    artifact(stored[4]!.artifact.artifactId, 'scores.vl.json', 'application/vnd.vega-lite+json', stored[4]!),
-    artifact(stored[5]!.artifact.artifactId, 'altair_style.vl.json', 'application/vnd.vega-lite+json', stored[5]!),
+    artifact(stored[4]!.artifact.artifactId, 'scores.vl.json', 'application/json', stored[4]!),
+    artifact(stored[5]!.artifact.artifactId, 'altair_style.vl.json', 'application/json', stored[5]!),
   ]
 
   session.append('tool/result', {
@@ -271,8 +271,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       { logicalName: 'metrics.json', data: Buffer.from(JSON_TEXT, 'utf8'), mediaType: 'application/json' },
       { logicalName: 'report.md', data: Buffer.from(MARKDOWN_TEXT, 'utf8'), mediaType: 'text/markdown' },
       { logicalName: 'plot.png', data: PNG, mediaType: 'image/png' },
-      { logicalName: 'scores.vl.json', data: Buffer.from(VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/vnd.vega-lite+json' },
-      { logicalName: 'altair_style.vl.json', data: Buffer.from(ALTAIR_VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/vnd.vega-lite+json' },
+      { logicalName: 'scores.vl.json', data: Buffer.from(VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/json' },
+      { logicalName: 'altair_style.vl.json', data: Buffer.from(ALTAIR_VEGA_LITE_TEXT, 'utf8'), mediaType: 'application/json' },
     ] as const
     const stored: StoredArtifact[] = []
     for (const definition of definitions) {

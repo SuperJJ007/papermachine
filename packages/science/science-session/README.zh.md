@@ -12,7 +12,7 @@ Artifact version 可选的 `parent: { artifactId, version }` 指名其内容所�
 
 ### 直接人工编辑版本
 
-除上文两个 run 产出 origin 外，`origin: 'human-edit'` 是第三个严格分支，而不是缺少字段的 run。它要求一个确切 parent 与 Vega-Lite 文本附件，复制 parent 的 environment revision 与 fingerprint，且不携带 `runId`、`toolCallId` 或 `requestHeaderSeq`。fold 只允许它在同一 artifact 当前已提交的 Vega-Lite parent 之上、开启一个高于该 session 自身本地已提交最高版本的 version，提交时间须晚于 parent fact 且不晚于自身保存事件；它不能开启 version 1，也不能原地取代一个 version。
+除上文两个 run 产出 origin 外，`origin: 'human-edit'` 是第三个严格分支，而不是缺少字段的 run。它要求一个确切 PNG parent，复制 parent 的 environment revision 与 fingerprint，且不携带 `runId`、`toolCallId` 或 `requestHeaderSeq`。fold 只允许它在同一 artifact 当前已提交的 PNG parent 之上、开启一个高于该 session 自身本地已提交最高版本的 version，提交时间须晚于 parent fact 且不晚于自身保存事件；它不能开启 version 1，也不能原地取代一个 version。
 
 ## 严格 fold 与 invariant
 

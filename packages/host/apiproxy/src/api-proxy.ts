@@ -131,7 +131,6 @@ class WorkspaceReadError extends Error {
 
 /** Browser preview media types intentionally match ui-science's content dispatch. */
 function workspaceMediaType(path: string): string {
-  if (path.endsWith('.vl.json')) return 'application/vnd.vega-lite+json'
   switch (extname(path).toLowerCase()) {
     case '.csv': return 'text/csv'
     case '.json': return 'application/json'
@@ -145,7 +144,7 @@ function workspaceMediaType(path: string): string {
 /** Narrow durable store metadata to the media set the Science library can render. */
 function scienceArtifactMediaType(value: string): ScienceArtifactMediaType {
   switch (value) {
-    case 'image/png': case 'text/csv': case 'application/json': case 'application/vnd.vega-lite+json': case 'text/markdown': case 'text/plain': return value
+    case 'image/png': case 'text/csv': case 'application/json': case 'text/markdown': case 'text/plain': return value
     default: throw new Error(`Science artifact store returned unsupported media type ${JSON.stringify(value)}`)
   }
 }

@@ -164,7 +164,7 @@ function resolveCurrentArtifact(
       'SCIENCE_EDIT_STALE_VERSION',
     )
   }
-  if (latest.mediaType !== 'application/vnd.vega-lite+json') {
+  if (latest.mediaType !== 'image/png') {
     throw new ScienceEditError('Science style edits require a Vega-Lite artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
   }
   return latest
@@ -187,7 +187,7 @@ function parseStyleSpec(spec: string): Record<string, unknown> {
 }
 
 function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEditTarget): void {
-  if (target.kind === 'spec-path' && artifact.mediaType !== 'application/vnd.vega-lite+json') {
+  if (target.kind === 'spec-path' && artifact.mediaType !== 'image/png') {
     throw new ScienceEditError('Science spec-path edits require a Vega-Lite artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
   }
   if (target.kind === 'normalized-region' && artifact.mediaType !== 'image/png') {
@@ -333,7 +333,7 @@ export class ScienceEditService extends TypertRemoteService {
     const stored = await this.ctx.scienceArtifactStore.appendVersion(parent.projectId, parent.artifactId, {
       producerSessionId: agent.session.id,
       data: new TextEncoder().encode(request.spec),
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       origin: 'human-edit',
       title: parent.title,
       ...parent.caption === undefined ? {} : { caption: parent.caption },
@@ -341,7 +341,7 @@ export class ScienceEditService extends TypertRemoteService {
       environmentRevision: String(parent.environmentRevision),
       environmentFingerprintPreview: parent.environmentFingerprint.slice(0, 12),
     })
-    const artifact: ScienceArtifactVersion = {
+    const artifact = {
       artifactId: parent.artifactId,
       producerSessionId: stored.producerSessionId,
       logicalName: parent.logicalName,
@@ -353,12 +353,12 @@ export class ScienceEditService extends TypertRemoteService {
       projectId: parent.projectId,
       versionId: stored.versionId,
       sha256: stored.sha256,
-      mediaType: 'application/vnd.vega-lite+json',
+      mediaType: 'image/png',
       byteCount: stored.byteCount,
       environmentRevision: parent.environmentRevision,
       environmentFingerprint: parent.environmentFingerprint,
       createdAt: stored.createdAt,
-    }
+    } satisfies ScienceArtifactVersion
     agent.session.append('science/artifact-saved', { version: 1, artifact })
     return { artifactId: artifact.artifactId, version: artifact.version, origin: artifact.origin }
   }

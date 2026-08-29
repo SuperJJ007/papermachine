@@ -148,9 +148,14 @@ def extract_elements(fig):
                                      "current": suptitle.get_text()})
     _safe_add(elements, lambda: {"id": "figure_size", "kind": "figure_size", "axes": None, "label": None,
                                  "current": [float(value) for value in fig.get_size_inches()]})
+    def font_current():
+        from matplotlib import font_manager
+        available = sorted({item.name for item in font_manager.fontManager.ttflist})
+        return {"family": list(matplotlib.rcParams["font.family"]),
+                "size": float(matplotlib.rcParams["font.size"]),
+                "available": available[:300], "truncated": len(available) > 300}
     _safe_add(elements, lambda: {"id": "font", "kind": "font", "axes": None, "label": None,
-                                 "current": {"family": list(matplotlib.rcParams["font.family"]),
-                                             "size": float(matplotlib.rcParams["font.size"])}})
+                                 "current": font_current()})
     for index, axis in enumerate(axes):
         title = axis.get_title()
         if title:
@@ -366,6 +371,33 @@ def apply_ops(fig, ops):
                     method = axis.axhline if operation["orientation"] == "h" else axis.axvline
                     method(operation["value"], color="darkorange", linestyle=":", linewidth=1.5)
                     applied = True
+            elif name == "set_figure_size":
+                fig.set_size_inches(operation["width"], operation["height"], forward=True)
+                applied = True
+            elif name == "set_axis_range":
+                for axis in axes:
+                    method = axis.set_xlim if operation["axis"] == "x" else axis.set_ylim
+                    method(operation["min"], operation["max"])
+                    applied = True
+            elif name == "set_axis_scale":
+                for axis in axes:
+                    method = axis.set_xscale if operation["axis"] == "x" else axis.set_yscale
+                    method(operation["scale"])
+                    applied = True
+            elif name == "toggle_grid":
+                for axis in axes:
+                    axis.grid(operation["visible"])
+                    applied = True
+            elif name == "set_font":
+                import matplotlib
+                from matplotlib.text import Text
+                matplotlib.rcParams["font.family"] = [operation["family"]]
+                matplotlib.rcParams["font.size"] = operation["size"]
+                targets = fig.findobj(match=Text) if operation["axes"] is None else axes[0].findobj(match=Text)
+                for text in targets:
+                    text.set_fontfamily(operation["family"])
+                    text.set_fontsize(operation["size"])
+                applied = True
             else:
                 raise ValueError("unknown_op")
             if not applied:

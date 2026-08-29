@@ -204,6 +204,23 @@ const chartOpSchema: z.ZodType<ScienceChartOp> = z.discriminatedUnion('op', [
     orientation: z.enum(['h', 'v']),
     value: z.number(),
   }).strict(),
+  z.object({
+    op: z.literal('set_figure_size'), axes: z.null(),
+    width: z.number().min(1).max(100), height: z.number().min(1).max(100),
+  }).strict(),
+  z.object({
+    op: z.literal('set_axis_range'), axes: chartAxesSchema, axis: z.enum(['x', 'y']),
+    min: z.number(), max: z.number(),
+  }).strict().refine(value => value.min < value.max, { message: 'axis range min must be less than max' }),
+  z.object({
+    op: z.literal('set_axis_scale'), axes: chartAxesSchema,
+    axis: z.enum(['x', 'y']), scale: z.enum(['linear', 'log']),
+  }).strict(),
+  z.object({ op: z.literal('toggle_grid'), axes: chartAxesSchema, visible: z.boolean() }).strict(),
+  z.object({
+    op: z.literal('set_font'), axes: chartAxesSchema,
+    family: chartOpLabelSchema.min(1), size: z.number().min(4).max(72),
+  }).strict(),
 ])
 
 const chartStateSchema: z.ZodType<ScienceChartState> = z.object({

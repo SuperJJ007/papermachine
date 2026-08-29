@@ -36,13 +36,15 @@ The field is carried by `science/artifact-saved` and projected to the viewer. `S
 
 A direct edit does not enqueue a model turn. When a later model run sees the same artifact, `get_science_state` and artifact receipts expose the cumulative edit count plus each operation name and element target alongside the exact version, while omitting text, colors, sizes, coordinates, and other operand values. Structural changes such as changing chart type, facets, or source data remain model-authored code changes. After code changes, stored operations are revalidated by element identity; operations whose targets no longer resolve are reported rather than guessed.
 
+The viewer sends debounced pending operations through the same warm-or-replay path for preview. A preview writes only private run-scratch request, result, and PNG files, returns the extracted chart and PNG bytes, and appends no artifact version or Session event. Save applies the accumulated operations again and is the only browser action that appends a human-edit version; Discard restores the persisted version's PNG.
+
 ### Closed element catalog
 
 Version one recognizes exactly these 13 element families: `title`, `subtitle`, `x_label`, `y_label`, `tick_labels`, `legend`, `series[<label>]`, `grid`, `axis_range`, `axis_scale`, `figure_size`, `font`, and `annotation`. Subplots and facets use an `axes[i]` prefix. Unlabelled fitted lines, per-mark hits, individual legend swatches, and ggplot2 facet-local colors are not addressable in version one.
 
 ### Closed operation set
 
-Version one accepts exactly six operations: `set_title`, `set_axis_label`, `set_series_color`, `set_legend_position`, `set_tick_font_size`, and `add_reference_line`. Operations carry typed operands and an element identity where applicable. Axis range, axis scale, grid toggling, whole-figure fonts, and figure size are candidates for a later version because their matplotlib and ggplot2 behavior is not yet symmetric.
+The closed operation set is `set_title`, `set_axis_label`, `set_series_color`, `set_legend_position`, `set_tick_font_size`, `add_reference_line`, `set_figure_size`, `set_axis_range`, `set_axis_scale`, `toggle_grid`, and `set_font`. Operations carry typed operands and an element identity where applicable. Matplotlib exposes and supports figure size. ggplot2 does not expose a figure-size element and returns an explicit failed operation if a forged request includes `set_figure_size`. Both runtimes expose installed font families in the font element, sorted, deduplicated, capped at 300 entries, and marked when truncated.
 
 ### Runtime ownership
 
@@ -65,10 +67,10 @@ Warm operation round trips measured about 12 ms for matplotlib and 65–96 ms fo
 ## Acceptance criteria
 
 - Captured matplotlib and ggplot2 PNGs produced through supported save paths carry a bounded element catalog, hit map, and empty operation log; unsupported PNGs remain valid without chart metadata.
-- All 13 element families and six version-one operations have shared codecs, strict validation, and adapter coverage for each supported runtime or an explicit unsupported result.
+- All 13 element families and 11 operations have shared codecs, strict validation, and adapter coverage for each supported runtime or an explicit unsupported result.
 - Applying operations creates a new PNG artifact version with exact parentage and cumulative operations; no direct edit mutates an existing version.
 - A dead kernel is restored by replaying the exact source run, materialized inputs, and operation log, and deterministic fixtures reproduce the edited PNG with zero pixel difference.
-- The viewer lists every extracted chart element with the control allowed for that element's kind, requires no PNG click-to-select step, and saves a new version only through explicit user action; live preview through the runtime remains deferred work.
+- The viewer lists every editable extracted chart element, omits annotations that have no deterministic editor, previews each pending parameter change through the kernel, and saves a new version only through explicit user action.
 - Model-authored structural edits receive the exact current version and operation context; invalidated operations are reported after revalidation.
 - Keyless snapshots cover extraction, apply, replay, receipts, and model-visible operation context; browser coverage pins selection and save behavior.
 

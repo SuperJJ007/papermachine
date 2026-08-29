@@ -36,13 +36,15 @@ interface ScienceChartState {
 
 直接编辑不会排入一次模型回合。当模型之后看到同一个 artifact 时，`get_science_state` 与 artifact receipt 会把累计编辑数量以及每项操作的名称和元素 target 连同确切 version 一起公开，同时省略文本、颜色、字号、坐标及其他参数值。变更图型、facet 或源数据等结构性修改仍由模型修改代码。代码变化后，已存操作按元素身份重新校验；无法再解析目标的操作会被报告，而不是猜测新目标。
 
+Viewer 会把经过 debounce 的待定操作送入同一条 warm-or-replay 路径预览。预览只在私有 run scratch 中写请求、结果与 PNG 文件，返回重新抽取的 chart 与 PNG 字节，不追加 artifact version 或 Session event。Save 会再次应用累计操作，并且是浏览器中唯一会追加 human-edit version 的动作；Discard 恢复已持久化 version 的 PNG。
+
 ### 封闭元素目录
 
 版本一只识别以下 13 类元素：`title`、`subtitle`、`x_label`、`y_label`、`tick_labels`、`legend`、`series[<label>]`、`grid`、`axis_range`、`axis_scale`、`figure_size`、`font` 与 `annotation`。subplot 与 facet 使用 `axes[i]` 前缀。没有 label 的拟合线、逐 mark 命中、单个图例色块与 ggplot2 facet 局部颜色在版本一中不可寻址。
 
 ### 封闭操作集合
 
-版本一只接受六种操作：`set_title`、`set_axis_label`、`set_series_color`、`set_legend_position`、`set_tick_font_size` 与 `add_reference_line`。操作携带有类型的参数，并在适用时携带元素身份。轴范围、轴 scale、grid 开关、全图字体与图尺寸是后续版本候选，因为它们在 matplotlib 与 ggplot2 中的行为尚不对称。
+封闭操作集合为 `set_title`、`set_axis_label`、`set_series_color`、`set_legend_position`、`set_tick_font_size`、`add_reference_line`、`set_figure_size`、`set_axis_range`、`set_axis_scale`、`toggle_grid` 与 `set_font`。操作携带有类型的参数，并在适用时携带元素身份。Matplotlib 暴露并支持图尺寸。ggplot2 不暴露图尺寸元素；伪造请求若包含 `set_figure_size`，会返回显式失败操作。两个 runtime 都在字体元素中暴露本机字体族：排序、去重、最多 300 项，并在截断时标记。
 
 ### Runtime 所有权
 
@@ -65,10 +67,10 @@ Warm 操作往返耗时：matplotlib 约 12 ms，ggplot2 为 65–96 ms。Cold �
 ## 验收标准
 
 - 通过受支持保存路径捕获的 matplotlib 与 ggplot2 PNG 携带有界元素目录、命中表与空操作日志；不受支持的 PNG 在没有 chart metadata 时仍然有效。
-- 13 类元素与六种版本一操作拥有共享 codec、严格校验，以及每个受支持 runtime 的 adapter coverage 或显式 unsupported 结果。
+- 13 类元素与 11 种操作拥有共享 codec、严格校验，以及每个受支持 runtime 的 adapter coverage 或显式 unsupported 结果。
 - 应用操作会创建带确切 parent 与累计操作的新 PNG artifact version；直接编辑绝不修改既有 version。
 - 内核退出后，以确切 source run、物化输入与操作日志恢复；确定性 fixture 重现编辑后 PNG 时像素差为零。
-- Viewer 列出每个已抽取的图表元素，各自展示其 kind 允许的控件，不需要在 PNG 上点选，并且只在用户显式操作后保存新 version；经 runtime 的实时预览仍是暂缓工作。
+- Viewer 列出每个可编辑的已抽取图表元素，省略没有确定性编辑器的 annotation，经 kernel 预览每次待定参数修改，并且只在用户显式操作后保存新 version。
 - 模型进行结构性修改时收到确切当前 version 与操作上下文；重新校验后失效的操作会被报告。
 - Keyless snapshot 覆盖 extract、apply、replay、receipt 与模型可见操作上下文；浏览器 coverage 固定选择与保存行为。
 

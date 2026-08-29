@@ -43,6 +43,11 @@ describe('Science chart codec', () => {
       { op: 'set_legend_position', axes: null, position: 'upper right' },
       { op: 'set_tick_font_size', axes: 1, size: 12 },
       { op: 'add_reference_line', axes: 0, orientation: 'h', value: 1.5 },
+      { op: 'set_figure_size', axes: null, width: 8, height: 5 },
+      { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 10 },
+      { op: 'set_axis_scale', axes: 0, axis: 'y', scale: 'log' },
+      { op: 'toggle_grid', axes: 0, visible: true },
+      { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
     ] as const
     expect(decodeScienceChartState(chart({ ops })).ops).toEqual(ops)
     expect(decodeScienceChartState(chart({
@@ -68,6 +73,9 @@ describe('Science chart codec', () => {
     }))).toThrow()
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'add_reference_line', axes: null, orientation: 'v', value: Number.POSITIVE_INFINITY }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_axis_range', axes: null, axis: 'x', min: 2, max: 1 }],
     }))).toThrow()
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'unknown', axes: null } as never],

@@ -14,7 +14,10 @@ export interface ScienceArtifactEditSummary {
 const chartEditSchema = {
   type: 'object', additionalProperties: false,
   properties: {
-    op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size', 'add_reference_line'], required: true },
+    op: { type: 'string', enum: [
+      'set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size',
+      'add_reference_line', 'set_figure_size', 'set_axis_range', 'set_axis_scale', 'toggle_grid', 'set_font',
+    ], required: true },
     target: { type: 'string', required: true },
   },
 } as const
@@ -71,6 +74,11 @@ function chartEditTarget(op: ScienceChartOp): string {
     case 'set_legend_position': return axesTarget(op.axes, 'legend')
     case 'set_tick_font_size': return axesTarget(op.axes, 'tick_labels')
     case 'add_reference_line': return axesTarget(op.axes, 'annotation')
+    case 'set_figure_size': return 'figure_size'
+    case 'set_axis_range': return axesTarget(op.axes, `${op.axis}_range`)
+    case 'set_axis_scale': return axesTarget(op.axes, `${op.axis}_scale`)
+    case 'toggle_grid': return axesTarget(op.axes, 'grid')
+    case 'set_font': return axesTarget(op.axes, 'font')
     /* v8 ignore next -- exhaustive over the closed ScienceChartOp union; unreachable through the typed API. */
     default: return assertNever(op)
   }

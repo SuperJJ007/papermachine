@@ -35,7 +35,7 @@ const ALL_ELEMENTS: readonly ScienceChartElement[] = [
   element({ id: 'axes[0].axis_range', kind: 'axis_range', axes: 0, current: [0, 10] }),
   element({ id: 'axes[0].axis_scale', kind: 'axis_scale', axes: 0, current: 'linear' }),
   element({ id: 'figure_size', kind: 'figure_size', current: [6, 4] }),
-  element({ id: 'font', kind: 'font', current: 'sans-serif' }),
+  element({ id: 'font', kind: 'font', current: { family: ['sans'], size: 12, available: ['sans', 'serif'], truncated: false } }),
   element({ id: 'axes[0].annotation[text:hi]', kind: 'annotation', axes: 0, label: 'hi', current: { text: 'hi' } }),
 ]
 
@@ -89,9 +89,9 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('lists every chart element as one row with no duplicate image and no hitmap overlay', () => {
     panel()
     expect(document.querySelector('img')).toBeNull()
-    expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length)
+    expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length - 1)
     for (const name of ['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Series · treatment', 'Tick labels',
-      'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
+      'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font']) {
       expect(screen.getByText(name)).toBeTruthy()
     }
     expect(screen.queryByLabelText('Enter text')).toBeNull()
@@ -186,14 +186,31 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onAddTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: truncated }, '')
   })
 
-  it.each(['Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi'])(
-    'shows a read-only current-value display for the %s row with no write control',
-    (name) => {
-      panel()
-      const row = expandRow(name)
-      expect(within(row).getByText('This property is view-only in this version and cannot be edited yet.')).toBeTruthy()
-    },
-  )
+  it('omits annotations and stages figure size, axis range, axis scale, grid, and font controls', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave })
+    expect(screen.queryByText('Annotation · hi')).toBeNull()
+
+    let row = expandRow('Figure size')
+    fireEvent.change(within(row).getByLabelText('Figure width (inches)'), { target: { value: '8' } })
+    row = expandRow('Axis range')
+    fireEvent.change(within(row).getByLabelText('X-axis maximum'), { target: { value: '20' } })
+    row = expandRow('Axis scale')
+    fireEvent.change(within(row).getByLabelText('X-axis scale'), { target: { value: 'log' } })
+    row = expandRow('Grid')
+    fireEvent.click(within(row).getByLabelText('Show grid'))
+    row = expandRow('Font')
+    fireEvent.change(within(row).getByLabelText('Font family'), { target: { value: 'serif' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+
+    expect(onSave).toHaveBeenCalledWith([
+      { op: 'set_figure_size', axes: null, width: 8, height: 4 },
+      { op: 'set_axis_range', axes: 0, axis: 'x', min: 0, max: 20 },
+      { op: 'set_axis_scale', axes: 0, axis: 'x', scale: 'log' },
+      { op: 'toggle_grid', axes: 0, visible: true },
+      { op: 'set_font', axes: null, family: 'serif', size: 12 },
+    ])
+  })
 })
 
 describe('ScienceChartEditPanel: element +/- composer reference', () => {

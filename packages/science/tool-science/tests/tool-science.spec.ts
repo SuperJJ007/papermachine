@@ -2213,11 +2213,16 @@ describe('get_science_state artifact sanitization', () => {
           { op: 'set_legend_position', axes: null, position: 'upper right' },
           { op: 'set_tick_font_size', axes: 1, size: 14 },
           { op: 'add_reference_line', axes: 0, orientation: 'h', value: 2.5 },
+          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
+          { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 10 },
+          { op: 'set_axis_scale', axes: 0, axis: 'y', scale: 'log' },
+          { op: 'toggle_grid', axes: 0, visible: true },
+          { op: 'set_font', axes: null, family: 'sans', size: 14 },
         ],
       },
     })] }), 20)
     expect(value.artifacts[0]).toMatchObject({
-      editCount: 6,
+      editCount: 11,
       edits: [
         { op: 'set_title', target: 'title' },
         { op: 'set_axis_label', target: 'axes[0].x_label' },
@@ -2225,6 +2230,11 @@ describe('get_science_state artifact sanitization', () => {
         { op: 'set_legend_position', target: 'legend' },
         { op: 'set_tick_font_size', target: 'axes[1].tick_labels' },
         { op: 'add_reference_line', target: 'axes[0].annotation' },
+        { op: 'set_figure_size', target: 'figure_size' },
+        { op: 'set_axis_range', target: 'axes[0].x_range' },
+        { op: 'set_axis_scale', target: 'axes[0].y_scale' },
+        { op: 'toggle_grid', target: 'axes[0].grid' },
+        { op: 'set_font', target: 'font' },
       ],
     })
     expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret|#ff0000|2\.5|14/)

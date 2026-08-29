@@ -72,7 +72,10 @@ const capturedArtifactSchema = {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
         properties: {
-          op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size', 'add_reference_line'], required: true },
+          op: { type: 'string', enum: [
+            'set_title', 'set_axis_label', 'set_series_color', 'set_legend_position', 'set_tick_font_size',
+            'add_reference_line', 'set_figure_size', 'set_axis_range', 'set_axis_scale', 'toggle_grid', 'set_font',
+          ], required: true },
           target: { type: 'string', required: true },
         },
       },

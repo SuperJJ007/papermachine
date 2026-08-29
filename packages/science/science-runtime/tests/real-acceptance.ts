@@ -768,8 +768,23 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       if (referenced.artifact.version !== 4 || referenced.artifact.chart?.ops.length !== 4 || referenced.failedOps.length !== 0) {
         throw new Error('matplotlib reference-line apply did not preserve four cumulative operations in v4')
       }
+      const restyled = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: referenced.artifact.artifactId, version: 4,
+        ops: [
+          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
+          { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 4 },
+          { op: 'set_axis_scale', axes: 0, axis: 'x', scale: 'log' },
+          { op: 'toggle_grid', axes: 0, visible: true },
+          { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
+        ],
+        signal: new AbortController().signal,
+      })
+      if (restyled.artifact.version !== 5 || restyled.artifact.chart?.ops.length !== 9
+        || restyled.failedOps.length !== 0) {
+        throw new Error('matplotlib size/range/scale/grid/font operations did not commit as human-edit v5')
+      }
       await namespaceProbe('end')
-      checks.push('chart apply matplotlib warm title/axis/color/reference: changed PNG, human-edit versions, cumulative ops, namespace')
+      checks.push('chart apply matplotlib warm title/axis/color/reference/size/range/scale/grid/font: cumulative ops, namespace')
 
       await expectChartError('CHART_STALE_VERSION', context.scienceRuntime.applyChartEdit({
         session, artifactId: basicLive.artifact.artifactId, version: 1,
@@ -880,8 +895,23 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         || edited.artifact.chart?.ops.length !== 2 || edited.failedOps.length !== 0) {
         throw new Error('ggplot2 title and legend apply did not commit human-edit v2 with cumulative operations')
       }
+      const restyled = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: edited.artifact.artifactId, version: 2,
+        ops: [
+          { op: 'set_axis_range', axes: null, axis: 'x', min: 2, max: 5 },
+          { op: 'set_axis_scale', axes: null, axis: 'y', scale: 'log' },
+          { op: 'toggle_grid', axes: null, visible: true },
+          { op: 'set_font', axes: null, family: 'sans', size: 14 },
+          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
+        ],
+        signal: new AbortController().signal,
+      })
+      if (restyled.artifact.version !== 3 || restyled.artifact.chart?.ops.length !== 6
+        || restyled.failedOps.length !== 1 || restyled.failedOps[0]?.index !== 4) {
+        throw new Error('ggplot2 range/scale/grid/font apply or unsupported figure-size failedOp was incorrect')
+      }
       await namespaceProbe('end')
-      checks.push('chart apply ggplot2 ggsave title/legend: human-edit v2, cumulative ops, namespace')
+      checks.push('chart apply ggplot2 title/legend/range/scale/grid/font and unsupported figure-size failedOp')
 
       for (const caseName of ['device', 'base'] as const) {
         const filename = `r-${caseName}.png`

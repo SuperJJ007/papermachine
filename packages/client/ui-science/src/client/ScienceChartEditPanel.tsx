@@ -98,6 +98,11 @@ function opTargetLabel(op: ScienceChartOp): string {
     case 'set_legend_position': return `${prefix}legend`
     case 'set_tick_font_size': return `${prefix}tick_labels`
     case 'add_reference_line': return `${prefix}grid`
+    case 'set_figure_size': return 'figure_size'
+    case 'set_axis_range': return `${prefix}${op.axis}_range`
+    case 'set_axis_scale': return `${prefix}${op.axis}_scale`
+    case 'toggle_grid': return `${prefix}grid`
+    case 'set_font': return `${prefix}font`
     /* v8 ignore next -- closed ScienceChartOp union */
     default: return assertNever(op)
   }
@@ -219,6 +224,113 @@ function ReadOnlyControl({ current, t }: { current: unknown; t: TranslateNS<'sci
   )
 }
 
+function currentRecord(current: ScienceChartElement['current']): Record<string, unknown> {
+  return typeof current === 'object' && current !== null && !Array.isArray(current) ? current : {}
+}
+
+function FigureSizeControl({ current, onStage, t }: {
+  current: ScienceChartElement['current']
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const initial = Array.isArray(current) ? current : []
+  const [width, setWidth] = useState(Number(initial[0] ?? 6))
+  const [height, setHeight] = useState(Number(initial[1] ?? 4))
+  const stage = (nextWidth: number, nextHeight: number) => {
+    if (nextWidth >= 1 && nextWidth <= 100 && nextHeight >= 1 && nextHeight <= 100) {
+      onStage({ op: 'set_figure_size', axes: null, width: nextWidth, height: nextHeight })
+    }
+  }
+  return <div className={css.styleControl}>
+    <label>{t('panel.figureWidth')}<input type="number" min={1} max={100} value={width} onChange={(event) => {
+      const value = Number(event.target.value); setWidth(value); stage(value, height)
+    }} /></label>
+    <label>{t('panel.figureHeight')}<input type="number" min={1} max={100} value={height} onChange={(event) => {
+      const value = Number(event.target.value); setHeight(value); stage(width, value)
+    }} /></label>
+  </div>
+}
+
+function AxisRangeControl({ element, onStage, t }: {
+  element: ScienceChartElement
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const current = currentRecord(element.current)
+  const initial = (axis: 'x' | 'y') => Array.isArray(current[axis]) ? current[axis] as unknown[] : [0, 1]
+  const [values, setValues] = useState(() => ({
+    x: [Number(initial('x')[0]), Number(initial('x')[1])],
+    y: [Number(initial('y')[0]), Number(initial('y')[1])],
+  }))
+  const change = (axis: 'x' | 'y', endpoint: 0 | 1, value: number) => {
+    const range = [...values[axis]] as [number, number]
+    range[endpoint] = value
+    setValues(previous => ({ ...previous, [axis]: range }))
+    if (Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[0] < range[1]) {
+      onStage({ op: 'set_axis_range', axes: element.axes, axis, min: range[0], max: range[1] })
+    }
+  }
+  return <div className={css.styleControl}>{(['x', 'y'] as const).map(axis => <div key={axis}>
+    <span className={css.editLabel}>{axis.toUpperCase()}</span>
+    <input aria-label={t('panel.axisMin', { axis: axis.toUpperCase() })} type="number" value={values[axis][0]}
+      onChange={(event) => { change(axis, 0, Number(event.target.value)) }} />
+    <input aria-label={t('panel.axisMax', { axis: axis.toUpperCase() })} type="number" value={values[axis][1]}
+      onChange={(event) => { change(axis, 1, Number(event.target.value)) }} />
+  </div>)}</div>
+}
+
+function AxisScaleControl({ element, onStage, t }: {
+  element: ScienceChartElement
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const current = currentRecord(element.current)
+  return <div className={css.styleControl}>{(['x', 'y'] as const).map(axis => <label key={axis}>
+    {t('panel.axisScale', { axis: axis.toUpperCase() })}
+    <select defaultValue={current[axis] === 'log' ? 'log' : 'linear'} onChange={(event) => {
+      onStage({ op: 'set_axis_scale', axes: element.axes, axis, scale: event.target.value as 'linear' | 'log' })
+    }}><option value="linear">{t('panel.scaleLinear')}</option><option value="log">{t('panel.scaleLog')}</option></select>
+  </label>)}</div>
+}
+
+function GridControl({ element, onStage, t }: {
+  element: ScienceChartElement
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  return <div className={css.styleControl}>
+    <label><input type="checkbox" defaultChecked={element.current === true} onChange={(event) => {
+      onStage({ op: 'toggle_grid', axes: element.axes, visible: event.target.checked })
+    }} />{t('panel.gridVisible')}</label>
+    <ReferenceLineControl onApply={(orientation, value) => {
+      onStage({ op: 'add_reference_line', axes: element.axes, orientation, value })
+    }} t={t} />
+  </div>
+}
+
+function FontControl({ element, onStage, t }: {
+  element: ScienceChartElement
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const current = currentRecord(element.current)
+  const available = Array.isArray(current.available) ? current.available.filter(value => typeof value === 'string') : []
+  const firstFamily = Array.isArray(current.family) ? current.family.find(value => typeof value === 'string') : current.family
+  const initialFamily = typeof firstFamily === 'string' ? firstFamily : available[0] ?? 'sans'
+  const [family, setFamily] = useState(initialFamily)
+  const [size, setSize] = useState(typeof current.size === 'number' ? current.size : 12)
+  return <div className={css.styleControl}>
+    <label>{t('panel.fontFamily')}<select value={family} onChange={(event) => {
+      setFamily(event.target.value); onStage({ op: 'set_font', axes: element.axes, family: event.target.value, size })
+    }}>{available.includes(family) ? null : <option value={family}>{family}</option>}
+      {available.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+    <label>{t('style.fontSize')} · {size}<input type="range" min={4} max={72} value={size} onChange={(event) => {
+      const value = Number(event.target.value); setSize(value); onStage({ op: 'set_font', axes: element.axes, family, size: value })
+    }} /></label>
+    {current.truncated === true && <span className={css.notice}>{t('panel.fontsTruncated')}</span>}
+  </div>
+}
+
 /**
  * Dispatch one element's `kind` to its one property control (v1's six
  * writable operations, or a read-only current-value display).
@@ -245,17 +357,11 @@ function ElementControl({ element, onStage, t }: {
       return <FontSizeControl onApply={(size) => { onStage({ op: 'set_tick_font_size', axes: element.axes, size }) }} t={t} />
     case 'legend':
       return <LegendControl onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
-    case 'grid':
-      return (
-        <ReferenceLineControl
-          onApply={(orientation, value) => { onStage({ op: 'add_reference_line', axes: element.axes, orientation, value }) }}
-          t={t}
-        />
-      )
-    case 'axis_range':
-    case 'axis_scale':
-    case 'figure_size':
-    case 'font':
+    case 'grid': return <GridControl element={element} onStage={onStage} t={t} />
+    case 'axis_range': return <AxisRangeControl element={element} onStage={onStage} t={t} />
+    case 'axis_scale': return <AxisScaleControl element={element} onStage={onStage} t={t} />
+    case 'figure_size': return <FigureSizeControl current={element.current} onStage={onStage} t={t} />
+    case 'font': return <FontControl element={element} onStage={onStage} t={t} />
     case 'annotation':
       return <ReadOnlyControl current={element.current} t={t} />
     /* v8 ignore next -- closed ScienceChartElement kind union */
@@ -395,7 +501,7 @@ export function ScienceChartEditPanel({
     <section className={css.elementPanel} aria-label={t('edit.elements')}>
       <h3>{t('style.title')}</h3>
       <ul className={css.elementRows}>
-        {chart.elements.map((element) => {
+        {chart.elements.filter(element => element.kind !== 'annotation').map((element) => {
           const target: Extract<ScienceEditTarget, { kind: 'element' }> = {
             kind: 'element', elementId: element.id, elementKind: element.kind, current: summarizeCurrent(element.current),
           }

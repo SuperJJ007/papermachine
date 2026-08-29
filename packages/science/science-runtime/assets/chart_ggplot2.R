@@ -108,9 +108,14 @@ extract_elements <- function(plot) {
     add(paste0(prefix, "axis_scale"), "axis_scale", axes, NULL,
         list(x = scale_name(panel$x), y = scale_name(panel$y)))
   }
-  add("figure_size", "figure_size", NULL, NULL, NULL)
   text <- tryCatch(ggplot2::calc_element("text", theme), error = function(e) NULL)
-  if (!is.null(text)) add("font", "font", NULL, NULL, list(family = text$family, size = text$size))
+  if (!is.null(text)) {
+    available <- if (requireNamespace("systemfonts", quietly = TRUE)) {
+      sort(unique(as.character(systemfonts::system_fonts()$family)))
+    } else c("mono", "sans", "serif")
+    add("font", "font", NULL, NULL, list(
+      family = text$family, size = text$size, available = head(available, 300L), truncated = length(available) > 300L))
+  }
   annotation_geoms <- c("GeomHline", "GeomVline", "GeomAbline", "GeomText", "GeomLabel", "GeomSegment", "GeomCurve")
   for (index in seq_along(plot$layers)) {
     geom <- class(plot$layers[[index]]$geom)[1]
@@ -235,6 +240,23 @@ apply_ops <- function(plot, ops) {
         } else {
           current + ggplot2::geom_vline(xintercept = operation$value, color = "darkorange", linetype = "dotted", linewidth = 1)
         }
+      } else if (name == "set_figure_size") {
+        stop("unsupported_operation")
+      } else if (name == "set_axis_range") {
+        current <- if (operation$axis == "x") {
+          current + ggplot2::coord_cartesian(xlim = c(operation$min, operation$max))
+        } else current + ggplot2::coord_cartesian(ylim = c(operation$min, operation$max))
+      } else if (name == "set_axis_scale") {
+        if (operation$axis == "x") {
+          current <- if (operation$scale == "log") current + ggplot2::scale_x_log10() else current + ggplot2::scale_x_continuous()
+        } else {
+          current <- if (operation$scale == "log") current + ggplot2::scale_y_log10() else current + ggplot2::scale_y_continuous()
+        }
+      } else if (name == "toggle_grid") {
+        grid <- if (isTRUE(operation$visible)) ggplot2::element_line() else ggplot2::element_blank()
+        current <- current + ggplot2::theme(panel.grid = grid)
+      } else if (name == "set_font") {
+        current <- current + ggplot2::theme(text = ggplot2::element_text(family = operation$family, size = operation$size))
       } else stop("unknown_op")
       NULL
     }, error = function(error) conditionMessage(error))

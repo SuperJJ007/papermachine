@@ -388,6 +388,11 @@ export type ScienceChartOp =
   | { readonly op: 'set_legend_position'; readonly axes: number | null; readonly position: 'best' | 'upper left' | 'upper right' | 'lower left' | 'lower right' | 'right' | 'center left' | 'center right' | 'upper center' | 'lower center' | 'center' }
   | { readonly op: 'set_tick_font_size'; readonly axes: number | null; readonly size: number }
   | { readonly op: 'add_reference_line'; readonly axes: number | null; readonly orientation: 'h' | 'v'; readonly value: number }
+  | { readonly op: 'set_figure_size'; readonly axes: null; readonly width: number; readonly height: number }
+  | { readonly op: 'set_axis_range'; readonly axes: number | null; readonly axis: 'x' | 'y'; readonly min: number; readonly max: number }
+  | { readonly op: 'set_axis_scale'; readonly axes: number | null; readonly axis: 'x' | 'y'; readonly scale: 'linear' | 'log' }
+  | { readonly op: 'toggle_grid'; readonly axes: number | null; readonly visible: boolean }
+  | { readonly op: 'set_font'; readonly axes: number | null; readonly family: string; readonly size: number }
 
 /**
  * Fields carried by every immutable Science artifact version. The bytes live

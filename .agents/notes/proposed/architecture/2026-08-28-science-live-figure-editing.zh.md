@@ -48,6 +48,16 @@ Viewer 会把经过 debounce 的待定直接操作送入同一条 warm-or-replay
 
 这项区分是一条持久产品规则：只有两个适配器都实现确定性行为，且共享 codec 对操作参数与当前值设定边界时，图表元素才获得直接控件；其他元素一律只可引用。只有在两个适配器与共享 codec 定义同一行为，并同时更新 viewer、Runtime 验收与模型引用校验后，封闭操作集合才可扩张。
 
+当一张图没有图级标题（`fig.suptitle()`；ggplot2 没有对应机制）且只有一个 axes 时，两个 runtime 都把该唯一 axes 的标题抽取为 `kind: 'title'`；matplotlib 只在存在 suptitle 或多个 axes 时才把 axes 标题保留为 `kind: 'subtitle'`，与 ggplot2 自身标题（始终为 `kind: 'title'`）保持一致。
+
+`set_legend_position` 作用于 matplotlib 自身的 `loc` 词汇表（`best`、`right`、四个角、三条边、`center`），并原样传给 `Axes.legend(loc=...)`。ggplot2 的 `theme(legend.position = ...)` 只接受 `right`/`left`/`top`/`bottom`/`inside`/`none`；未映射的字符串会静默移除图例而不是报错，因此 ggplot2 adapter 不把枚举值原样传下去，而是确定性地映射：`best`/`right` 变为 `legend.position = "right"`；每个角、边、居中取值变为 `legend.position = "inside"`，并设置 `legend.position.inside`/`legend.justification.inside` 为对应的归一化坐标。未映射的取值会使操作失败，而不是丢弃图例；抽取会把 inside 图例的坐标读回其 `current` 值。
+
+### 同一 artifact 多版本在 viewer 中的展示
+
+任何在版本级细节之外命名 artifact 的界面——文件库卡片、viewer 头部、标签标题、composer chip、轮末产物卡——都展示该 artifact 最新已知版本的既定标题，用户在版本间步进时该名称保持不变；变化的只有版本徽标与来源标记。溯源下钻是例外：它按其所描述的确切版本命名。
+
+模型用 `read_image` 自检一次渲染并在同一轮内、在整理标题之前重新渲染一个修复版，会在一轮内产生两个字节确实不同的版本；前一个在用户看来像是紧随其后那个的多余重复。修法是展示，而不是版本模型：当同一 artifact 中存在一个更晚的版本与它共享同一授权 turn——即客户端 artifact projection 上的 `turn` 字段，由服务端从已折叠的 `tool/call` 事实解析得出，而非由客户端从原始 session 事件反推——且它本身不是 human-edit 保存时，该版本就是同轮中间稿。版本步进器默认只在非折叠版本间步进，背后有一个可展开的入口临时把折叠版本纳入其中；文件库卡片与轮末产物卡本就只展示最新版本，不受影响。
+
 ### Runtime 所有权
 
 Runtime 拥有 `(runId, capture-relative path)` 到图对象句柄的私有映射。内核 wire 增加显式的 extract 与 apply 操作，而不暴露任意对象访问。Artifact store 拥有持久 PNG 字节；Science session 拥有目录、命中表与操作记录；viewer 只渲染 projection 并提交有类型的操作。既有 `artifact_inputs`、`edit_of`、版本谱系、raster-region 消息、声明式 raster 捕获、artifact 文件库与 provenance 全部保留。

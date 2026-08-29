@@ -63,6 +63,17 @@ Element ids are unique within one catalog: the host codec rejects a chart carryi
 
 The catalog retains all 13 element kinds for display and precise model references. The closed direct-operation set is only `set_title`, `set_axis_label`, `set_legend_position`, and `toggle_grid`; both adapters implement all four, and preview accepts the same codec. The `font` element remains referenceable, but its `current` value contains only `family` and `size`; it never enumerates installed families or carries truncation metadata.
 
+A matplotlib figure extracts its axes title as `kind: 'title'` (not `'subtitle'`) when the figure has no `fig.suptitle()` and exactly one axes; a figure with a suptitle, or more than one axes, keeps the axes title as `kind: 'subtitle'`. ggplot2's own title is always `kind: 'title'` (ggplot2 has no equivalent to matplotlib's per-axes title on a single-axes figure), so the two runtimes agree on a single-axes chart's own title kind.
+
+`set_legend_position` maps the shared position enum to each runtime's own placement mechanism. matplotlib passes every value straight to `Axes.legend(loc=...)`, its own native enum. ggplot2 4's `theme(legend.position = ...)` accepts only `"right"`/`"left"`/`"top"`/`"bottom"`/`"inside"`/`"none"` — passing an unrecognized string (a raw matplotlib corner/edge value) silently drops the legend rather than erroring, so the ggplot2 adapter maps deterministically instead of passing the enum through:
+
+| `position` | ggplot2 `theme()` |
+|---|---|
+| `best`, `right` | `legend.position = "right"` (ggplot2 has no automatic-layout equivalent to `best`, so it takes the same outside placement as `right`) |
+| `upper left`, `upper right`, `lower left`, `lower right`, `center left`, `center right`, `upper center`, `lower center`, `center` | `legend.position = "inside"` plus `legend.position.inside`/`legend.justification.inside` set to the matching normalized corner/edge/center coordinate (`x`, `y` each `0`, `0.5`, or `1`) |
+
+Every other `position` value is a codec-level bug, not a legal runtime input, and fails the operation (`stop("unknown_legend_position")`) rather than silently dropping the legend. Extraction reads an inside legend's position back as `current: { position: 'inside', inside: [x, y], ... }`, so a direct edit's new placement round-trips into the panel's own display.
+
 ##### Direct edits
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` applies a non-empty bounded operation list to the exact current addressable PNG version. It first addresses the live figure in the owning Python or R kernel. If that figure registration has expired, the Runtime privately re-executes the source run with its exact materialized inputs, reapplies the version's cumulative operation log, and then applies the new operations; this recovery creates no `science/run-started` or `science/run-finished` event. Every successful request appends an immutable `origin: 'human-edit'` PNG version whose parent is the requested version and whose `chart.ops` contains the prior successful operations followed by the successful new operations. A partially unresolved request commits its successful operations and reports indexed `failedOps`; a request with no resolved operation rejects with `CHART_ELEMENT_NOT_FOUND`.

@@ -63,6 +63,17 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合只有 `set_title`、`set_axis_label`、`set_legend_position` 与 `toggle_grid`；两个适配器都实现全部四项，预览也接受同一 codec。`font` 元素仍可被引用，但其 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。
 
+当一张 matplotlib 图既没有 `fig.suptitle()` 又只有一个 axes 时，会把该 axes 的标题抽取为 `kind: 'title'`(而非 `'subtitle'`)；存在 suptitle 或多个 axes 的图仍把 axes 标题保留为 `kind: 'subtitle'`。ggplot2 自身的标题始终是 `kind: 'title'`(ggplot2 没有与 matplotlib 单 axes 图 per-axes 标题对等的机制)，因此两个 runtime 在单 axes 图自身标题的 kind 上保持一致。
+
+`set_legend_position` 把共享的 position 枚举映射到各自 runtime 自身的放置机制。matplotlib 把每个值原样传给 `Axes.legend(loc=...)`——这本就是它自己的枚举。ggplot2 4 的 `theme(legend.position = ...)` 只接受 `"right"`/`"left"`/`"top"`/`"bottom"`/`"inside"`/`"none"`——传入无法识别的字符串(原始的 matplotlib 角/边取值)会静默丢弃图例而不是报错，因此 ggplot2 adapter 不会把枚举原样传下去，而是确定性地映射：
+
+| `position` | ggplot2 `theme()` |
+|---|---|
+| `best`、`right` | `legend.position = "right"`(ggplot2 没有与 `best` 对等的自动布局，取与 `right` 相同的外侧位置) |
+| `upper left`、`upper right`、`lower left`、`lower right`、`center left`、`center right`、`upper center`、`lower center`、`center` | `legend.position = "inside"`，并设置 `legend.position.inside`/`legend.justification.inside` 为对应的归一化角/边/居中坐标(`x`、`y` 各取 `0`、`0.5` 或 `1`) |
+
+其余任何 `position` 取值都是 codec 层面的 bug，而非合法的运行期输入，会使该操作失败(`stop("unknown_legend_position")`)而不是静默丢弃图例。抽取会把 inside 图例的位置读回为 `current: { position: 'inside', inside: [x, y], ... }`，因此直接编辑的新位置会回显进面板自身的展示。
+
 ##### 直接编辑
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。

@@ -14,7 +14,11 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 `applyChartEdit` 把封闭的 `set_title`、`set_axis_label`、`set_legend_position` 与 `toggle_grid` 操作施加到确切的当前可寻址 version，并追加一个 `origin: 'human-edit'` 的子 PNG。图对象仍有登记时直接使用活对象；否则会私下重放源 run、确切物化输入与先前操作，且不追加 run event。成功操作累计到新 chart 状态，部分 target 失败以带索引的 `failedOps` 返回，陈旧、不可寻址、无效或全部无法解析的请求保留各自稳定错误码。`scienceEdits.applyChartOps` Remote 为 browser client 转换 chart 专用 Runtime 错误。`get_science_state` 与 artifact receipt 只公开每项操作的名称、元素 target 与编辑数量，绝不公开操作值。元素引用携带 id、kind、axes、label 与有界当前值摘要；Host 要求每个字段与被寻址 chart catalog 的确切条目一致。
 
+当一张图没有图级标题（`fig.suptitle()`；ggplot2 没有对应机制）且只有一个 axes 时，两个 runtime 都把该唯一 axes 的标题抽取为 `kind: 'title'`；matplotlib 只在存在 suptitle 或多个 axes 时才把 axes 标题保留为 `kind: 'subtitle'`。`set_legend_position` 的共享枚举可直接映射到 matplotlib 自身的 `loc`，但 ggplot2 4 的 `theme(legend.position = ...)` 没有对应的角/边词汇——未映射的字符串会静默丢弃图例而不报错——因此 ggplot2 adapter 把每个值确定性地映射到 `"right"` 或 `"inside"` 加一个归一化坐标（[完整对照表](../../packages/science/science-runtime/README.zh.md)）；未映射的 `position` 会使操作失败而不是静默处理。
+
 注册给客户端的 projection 与完整 Host replay 分离。它保留无 path 的 environment 摘要、run status/history（包括存在时的精确 artifact-version input）、带可选精确 parent identity 的 artifact 附件引用、最新 Outcome 与 metrics，同时省略 prefix/executable path、完整 fingerprint、source/scratch fact、授权 request identity，以及 Runtime free-text failure。严格 fold 与 pre-commit invariant 要求每个已记录的 parent 和 input 都解析到更早提交的 artifact version；自 parent 与 terminal 对 start-owned input 的改写会明确失败。
+
+run 产出的 artifact version 的客户端 projection 还携带 `turn`：即授权该 version 的 tool call 所在的 agent turn，由 fold 自身的 `tool/call` 事实解析得出（`toolCallTurnsOf`），而不是由客户端从原始 session 事件反推；human-edit version 没有授权 tool call，因此也没有 `turn`。viewer 用它把「同轮中间稿」——同一 artifact 中被更晚的同轮、非 human-edit version 取代的 version——从版本步进器的默认步进中折叠出去，并在任何于版本级细节之外命名 artifact 的地方展示该 artifact 最新 version 的既定标题（而非当前打开 version 自身的标题）；两者都是基于此数据的客户端展示逻辑，细节见 [`dsh-client-ui-science`](../../packages/client/ui-science)。
 
 每次 probe 和 run 都使用 direct argv、`environmentBase: 'empty'`、固定 allowlist、owned cwd 与 full `workspace-write` confinement。Python 使用冻结的 isolated UTF-8 标志。R 版本发现使用独立的 `Rscript --version`；UTF-8 probe 与 run 使用 `--vanilla --encoding=UTF-8`。file-write confinement 不是保密性：它不隔离 read、network、syscall 或科学正确性。
 

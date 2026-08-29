@@ -264,6 +264,16 @@ describe('Science projection replay', () => {
     }, turns)?.environment).not.toHaveProperty('python')
   })
 
+  it('refuses to build a run-produced client artifact whose authorizing call was never folded', () => {
+    // `requireToolCall` (transition.ts) rejects any accepted fold whose
+    // artifact.toolCallId does not already name a folded tool/call fact, so
+    // this can only happen if a caller passes a `toolCallTurns` map that
+    // does not actually come from the same fold — this proves that
+    // mismatch fails loud instead of silently omitting `turn`.
+    const host = replayScience(legalEvents())
+    expect(() => toClientScienceProjection(host, new Map())).toThrow(/no tool\/call fact folded/)
+  })
+
   it('reuses the same client artifact object across repeated projections of an unchanged version', () => {
     // The client keys per-version load effects on this object's identity
     // (`content.versionId` deps aside, the object itself must not churn) —

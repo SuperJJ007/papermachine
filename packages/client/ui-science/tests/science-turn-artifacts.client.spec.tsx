@@ -136,6 +136,15 @@ describe('ScienceTurnArtifacts', () => {
     expect(openArtifact).toHaveBeenCalledTimes(1)
   })
 
+  it('falls back to the logical name when the kept version has no curated title', () => {
+    const store = testScienceSelectionStore()
+    render(<ScienceTurnArtifacts {...({
+      matched: { artifacts: [{ ...v2, title: '' }] }, actions: store.actions, useStore: store.useStore,
+      loadImage: vi.fn(), openArtifact: vi.fn(), t, sessionId: 'session-1',
+    } as unknown as ScienceTurnArtifactsProps)} />)
+    expect(screen.getByRole('listitem', { name: 'result.csv v2' })).toBeTruthy()
+  })
+
   it('loads a thumbnail for a dimensioned image artifact', async () => {
     const store = testScienceSelectionStore()
     const chart = { artifactId: 'a-3', logicalName: 'plot.png', version: 1, title: 'Plot',

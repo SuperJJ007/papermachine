@@ -86,7 +86,10 @@ function opTargetLabel(op: ScienceChartOp): string {
   }
 }
 
-function directlyEditable(kind: ScienceChartElement['kind']): boolean {
+/** The six element kinds with a direct control (title/subtitle, x/y label, legend, grid). */
+type DirectEditKind = 'title' | 'subtitle' | 'x_label' | 'y_label' | 'legend' | 'grid'
+
+function directlyEditable(kind: ScienceChartElement['kind']): kind is DirectEditKind {
   switch (kind) {
     case 'title':
     case 'subtitle':
@@ -104,6 +107,18 @@ function directlyEditable(kind: ScienceChartElement['kind']): boolean {
     /* v8 ignore next -- closed ScienceChartElement kind union */
     default: return assertNever(kind)
   }
+}
+
+/**
+ * Narrow one element to its directly-editable shape, or `undefined` when it
+ * has none. `directlyEditable` cannot narrow `element` itself through the
+ * function-call boundary (only the `kind` expression it is passed), so the
+ * cast here is the one place that translates its result into the object
+ * `ElementControl` requires; every call site derives its check from this
+ * same function rather than repeating `directlyEditable(element.kind)`.
+ */
+function asDirectEditElement(element: ScienceChartElement): (ScienceChartElement & { kind: DirectEditKind }) | undefined {
+  return directlyEditable(element.kind) ? element as ScienceChartElement & { kind: DirectEditKind } : undefined
 }
 
 /** Row order for the directly-editable kinds; every other kind sorts after them, in extraction order. */
@@ -175,8 +190,15 @@ function LegendControl({ initial, onApply, t }: {
   )
 }
 
+/**
+ * The direct control for one directly-editable element. `ElementRow` only
+ * renders this for an element `asDirectEditElement` narrowed, so this
+ * switch's cases are the closed `DirectEditKind` set, not every
+ * `ScienceChartElement` kind — the other seven kinds have no direct control
+ * and are unreachable here by construction, not merely by convention.
+ */
 function ElementControl({ element, onStage, t }: {
-  element: ScienceChartElement
+  element: ScienceChartElement & { kind: DirectEditKind }
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
@@ -199,14 +221,7 @@ function ElementControl({ element, onStage, t }: {
         type="checkbox" defaultChecked={element.current === true} onChange={(event) => {
           onStage({ op: 'toggle_grid', axes: element.axes, visible: event.target.checked })
         }} />{t('panel.gridVisible')}</label></div>
-    case 'tick_labels':
-    case 'series':
-    case 'axis_range':
-    case 'axis_scale':
-    case 'figure_size':
-    case 'font':
-    case 'annotation': return null
-    /* v8 ignore next -- closed ScienceChartElement kind union */
+    /* v8 ignore next -- closed DirectEditKind union */
     default: return assertNever(element.kind)
   }
 }
@@ -232,7 +247,8 @@ function ElementRow({ element, expanded, added, onToggle, onAddTarget, onRemoveT
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
-  const editable = directlyEditable(element.kind)
+  const directEdit = asDirectEditElement(element)
+  const editable = directEdit !== undefined
   const name = scienceElementLabel(element.kind, element.label, t)
   const toggleReference = added ? onRemoveTarget : onAddTarget
   return (
@@ -257,7 +273,7 @@ function ElementRow({ element, expanded, added, onToggle, onAddTarget, onRemoveT
           {added ? '−' : '+'}
         </button>
       </div>
-      {editable && expanded && <ElementControl element={element} onStage={onStage} t={t} />}
+      {directEdit !== undefined && expanded && <ElementControl element={directEdit} onStage={onStage} t={t} />}
     </li>
   )
 }

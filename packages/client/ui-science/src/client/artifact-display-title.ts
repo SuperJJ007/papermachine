@@ -35,3 +35,24 @@ export function scienceArtifactDisplayTitle(
   if (latest === undefined) return undefined
   return latest.title !== '' ? latest.title : latest.logicalName
 }
+
+/**
+ * {@link scienceArtifactDisplayTitle}, for a caller that already holds one
+ * exact version of the target artifact (`self`) to seed and fall back to —
+ * the artifact viewer toolbar and its provenance breadcrumb, which always
+ * render an already-resolved exact version and so never need the bare
+ * function's `undefined` case. Never returns `undefined`.
+ * @param facts - version facts for any number of artifacts (only the matching `artifactId` is considered).
+ * @param self - one already-known exact version of the target artifact.
+ * @returns the latest version's title between `facts` and `self` (or its logical name, if that title is empty).
+ */
+export function scienceArtifactDisplayTitleOrSelf(
+  facts: readonly ScienceDisplayTitleFact[], self: ScienceDisplayTitleFact,
+): string {
+  let latest = self
+  for (const fact of facts) {
+    if (fact.artifactId !== self.artifactId) continue
+    if (fact.version > latest.version) latest = fact
+  }
+  return latest.title !== '' ? latest.title : latest.logicalName
+}

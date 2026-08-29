@@ -41,7 +41,7 @@ import type {
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
-import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
+import { scienceArtifactDisplayTitle, scienceArtifactDisplayTitleOrSelf } from './artifact-display-title.ts'
 import { foldIntermediateVersions } from './intermediate-versions.ts'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
@@ -219,7 +219,7 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
           <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
         </button>
         {/* C1: the artifact's latest known title, fixed across the version stepper below. */}
-        <span className={css.viewerTitle}>{scienceArtifactDisplayTitle(versions, chart.artifactId) ?? chart.title}</span>
+        <span className={css.viewerTitle}>{scienceArtifactDisplayTitleOrSelf(versions, chart)}</span>
       </div>
       <div className={css.toolbarControls}>
         <div className={css.stepper}>
@@ -651,7 +651,10 @@ function ArtifactTab({
   // surface a confusing CHART_STALE_VERSION on Save, and the existing
   // stale-version notice already covers that case once the user does Save.
   const [hasPendingChartEdits, setHasPendingChartEdits] = useState(false)
-  const latestVersion = versions.at(-1)?.version ?? chart.version
+  // `versions` always includes `chart` itself, so `versions.at(-1)` is never
+  // empty in practice; `Math.max` over both stays correct even if that ever
+  // stopped holding, with no separate empty-versions fallback to maintain.
+  const latestVersion = Math.max(chart.version, ...versions.map(candidate => candidate.version))
   const knownLatest = useRef({ artifactId: chart.artifactId, version: latestVersion })
   useEffect(() => {
     if (knownLatest.current.artifactId !== chart.artifactId) {
@@ -693,7 +696,7 @@ function ArtifactTab({
         <div className={css.body}>
           <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
             <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
-              {scienceArtifactDisplayTitle(versions, chart.artifactId) ?? chart.title}
+              {scienceArtifactDisplayTitleOrSelf(versions, chart)}
             </button>
             <span className={css.breadcrumbSep} aria-hidden="true">›</span>
             <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>

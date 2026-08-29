@@ -133,6 +133,56 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(names).toEqual(['Title', 'Grid · earlier', 'Grid · later'])
   })
 
+  it('breaks a same-kind-same-axes tie by extraction order', () => {
+    panel({ chart: chartState({
+      elements: [
+        element({ id: 'axes[0].grid#2', kind: 'grid', axes: 0, label: 'second' }),
+        element({ id: 'axes[0].grid', kind: 'grid', axes: 0, label: 'first' }),
+      ],
+    }) })
+    const rows = screen.getAllByRole('listitem')
+    const names = rows.map(row => row.querySelector('strong')?.textContent)
+    expect(names).toEqual(['Grid · second', 'Grid · first'])
+  })
+
+  it('stages nothing when a text control is cleared to empty or whitespace', () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave })
+    const row = expandRow('Title')
+    const input = within(row).getByLabelText('Enter text')
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.change(input, { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it.each(['X-axis label', 'Y-axis label'])('shows the %s control empty when current is not a string', (name) => {
+    const kind = name === 'X-axis label' ? 'x_label' : 'y_label'
+    panel({ chart: chartState({
+      elements: [element({ id: `axes[0].${kind}`, kind, axes: 0, current: null })],
+    }) })
+    const row = expandRow(name)
+    const input = within(row).getByLabelText('Enter text') as HTMLInputElement
+    expect(input.value).toBe('')
+  })
+
+  it.each(['X-axis label', 'Y-axis label'])('pre-fills the %s control from a string current', (name) => {
+    const kind = name === 'X-axis label' ? 'x_label' : 'y_label'
+    panel({ chart: chartState({
+      elements: [element({ id: `axes[0].${kind}`, kind, axes: 0, current: 'Epoch' })],
+    }) })
+    const row = expandRow(name)
+    const input = within(row).getByLabelText('Enter text') as HTMLInputElement
+    expect(input.value).toBe('Epoch')
+  })
+
+  it('collapses an expanded row back to reference-only on a second toggle', () => {
+    panel()
+    const row = expandRow('Title')
+    expect(within(row).queryByLabelText('Enter text')).not.toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: /^Title/ }))
+    expect(within(row).queryByLabelText('Enter text')).toBeNull()
+  })
+
   it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
@@ -204,6 +254,8 @@ describe('ScienceChartEditPanel: full element list', () => {
     ['mpl upper-center (no matching segment)', { loc: 9 }],
     ['ggplot2 center-left inside coordinate', { position: 'inside', inside: [0, 0.5] }],
     ['ggplot2 none', { position: 'none' }],
+    ['ggplot2 inside with a malformed (non-pair) coordinate', { position: 'inside', inside: [0] }],
+    ['ggplot2 inside with a non-array coordinate', { position: 'inside', inside: 'bad' }],
   ])('highlights no segment for %s', (_label, current) => {
     panel({ chart: chartState({
       elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
@@ -292,6 +344,31 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
       expect(onPreview).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'Preview title' }])
       expect(onPreviewSrc).toHaveBeenCalledWith('data:image/png;base64,cHJldmlldw==')
     })
+  })
+
+  it('shows the rejection message when a debounced preview fails', async () => {
+    const onPreview = vi.fn().mockResolvedValue({ ok: false, error: 'kernel unavailable' })
+    panel({ onPreview })
+    const row = expandRow('Title')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'Preview title' } })
+    await screen.findByText('Commit failed: kernel unavailable')
+  })
+
+  it('ignores a still-pending preview response after the panel unmounts', async () => {
+    let resolvePreview: (outcome: { ok: true; pngBase64: string; failedOps: [] }) => void = () => {}
+    const onPreview = vi.fn(() => new Promise<{ ok: true; pngBase64: string; failedOps: [] }>((resolve) => { resolvePreview = resolve }))
+    const onPreviewSrc = vi.fn()
+    const { view } = panel({ onPreview, onPreviewSrc })
+    const row = expandRow('Title')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'Preview title' } })
+    await vi.waitFor(() => { expect(onPreview).toHaveBeenCalled() })
+    onPreviewSrc.mockClear()
+    view.unmount()
+    resolvePreview({ ok: true, pngBase64: 'cG9zdA==', failedOps: [] })
+    await Promise.resolve()
+    // The debounce effect's own cleanup already ran on unmount (`live = false`),
+    // so the resolved preview must never reach `onPreviewSrc` after this point.
+    expect(onPreviewSrc).not.toHaveBeenCalled()
   })
 
   it('accumulates multiple staged ops before Save, and lists committed plus pending ops', () => {

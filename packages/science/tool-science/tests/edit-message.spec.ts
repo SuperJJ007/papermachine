@@ -153,6 +153,14 @@ describe('Science edit-message admission', () => {
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
     }], instruction: 'crop' }))
       .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
+    // The artifactId resolves and the version matches, but the caller's
+    // logicalName is stale relative to the current committed artifact
+    // (renamed since the caller last saw it) — a distinct mismatch from the
+    // media-type one above, checked before target resolution runs at all.
+    expect(() => resolveScienceEdit([image()], { targets: [{
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'renamed.png', version: 1, target: region(),
+    }], instruction: 'crop' }))
+      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
   })
 
   it('validates region coordinates, instructions, and target comments', () => {

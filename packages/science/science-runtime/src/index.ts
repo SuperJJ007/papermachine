@@ -690,9 +690,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns The committed artifact and any operations whose targets could not be resolved.
    */
   async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult> {
-    const result = await this.performChartEdit(request, true)
-    if ('artifact' in result) return result
-    throw new Error('science-runtime: committed chart edit did not publish an artifact')
+    return this.performChartEdit(request, true)
   }
 
   /**
@@ -703,12 +701,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.
    */
   async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult> {
-    const result = await this.performChartEdit(request, false)
-    if ('png' in result) return result
-    throw new Error('science-runtime: chart preview unexpectedly published an artifact')
+    return this.performChartEdit(request, false)
   }
 
-  /** Execute the shared warm/replay chart path and optionally publish its output. */
+  /** Execute the shared warm/replay chart path and publish its output only when `commit` is `true`. */
+  private async performChartEdit(
+    request: ScienceChartEditRequest, commit: true,
+  ): Promise<ScienceChartEditResult>
+  private async performChartEdit(
+    request: ScienceChartEditRequest, commit: false,
+  ): Promise<ScienceChartPreviewResult>
   private async performChartEdit(
     request: ScienceChartEditRequest,
     commit: boolean,

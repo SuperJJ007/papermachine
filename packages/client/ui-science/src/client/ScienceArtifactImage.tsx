@@ -35,6 +35,11 @@ export function ScienceArtifactImage({ content, label, load, variant, labels, sr
   if (failed) {
     return <button type="button" className={css.artifactImageError} data-variant={variant} onClick={retry}>{labels.loadFailed}</button>
   }
+  // `resolvedSrc === null` is exactly `srcOverride === undefined && src === null`
+  // (srcOverride can never itself be `null`): a `string` guard here, rather
+  // than an inline `?? ''` fallback at the `<img>` tag, lets the empty-string
+  // fallback disappear as literally unreachable instead of merely unused.
+  const resolvedSrc = srcOverride ?? src
   return (
     <>
       <button
@@ -45,9 +50,9 @@ export function ScienceArtifactImage({ content, label, load, variant, labels, sr
         aria-label={labels.openNamed(label)}
         onClick={() => { if (src !== null) setOpen(true) }}
       >
-        {srcOverride === undefined && src === null
+        {resolvedSrc === null
           ? <span className={css.notice}>{labels.loading}</span>
-          : <img className={css.artifactImage} src={srcOverride ?? src ?? ''} alt={label} />}
+          : <img className={css.artifactImage} src={resolvedSrc} alt={label} />}
       </button>
       {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
     </>

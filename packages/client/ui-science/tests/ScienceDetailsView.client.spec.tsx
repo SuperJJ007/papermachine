@@ -460,7 +460,9 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     } })
     const loadWorkspaceFiles = vi.fn().mockImplementation((path: string) => Promise.resolve({ ok: true, value: path === ''
       ? { root: '', entries: [{ name: 'data', kind: 'dir', modifiedAt: 1 }, { name: 'root.bin', kind: 'file', byteCount: 2_048, modifiedAt: 1 }, { name: 'unknown.bin', kind: 'file', modifiedAt: 1 }] }
-      : { root: path, entries: [{ name: 'large.bin', kind: 'file', byteCount: 2_097_152, modifiedAt: 1 }] } }))
+      : path === 'data'
+        ? { root: path, entries: [{ name: 'sub', kind: 'dir', modifiedAt: 1 }, { name: 'large.bin', kind: 'file', byteCount: 2_097_152, modifiedAt: 1 }] }
+        : { root: path, entries: [{ name: 'leaf.bin', kind: 'file', byteCount: 1, modifiedAt: 1 }] } }))
     const store = testScienceSelectionStore()
     const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
     expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
@@ -480,6 +482,10 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     act(() => { store.actions.setLibraryPage('files') })
     fireEvent.click(await screen.findByRole('button', { name: /data/ }))
     expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
+    fireEvent.click(screen.getByRole('button', { name: /sub/ }))
+    // Two crumbs now ('data', 'sub'): the non-last 'data' segment renders
+    // the plain (non-current) breadcrumb style and still navigates on click.
+    await screen.findByRole('button', { name: /leaf\.bin/ })
     fireEvent.click(screen.getByRole('button', { name: 'data' }))
     fireEvent.click(screen.getByRole('button', { name: 'Project' }))
     expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
@@ -1293,6 +1299,44 @@ describe('ScienceDetailsView: chart edit panel', () => {
       const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
       expect(openTab).toMatchObject({ version: 3 })
     })
+  })
+
+  it('debounces a title edit into a live preview through previewChartOps, overriding the displayed image', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const previewChartOps = vi.fn().mockResolvedValue({
+      ok: true, value: { pngBase64: 'cHJldmlldw==', chart: addressablePreviewChart(), failedOps: [] },
+    })
+    render(<ScienceDetailsView {...props(science, { store, previewChartOps })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Preview title' } })
+
+    await waitFor(() => {
+      expect(previewChartOps).toHaveBeenCalledWith({
+        artifactId: 'chart-1', version: 2, ops: [{ op: 'set_title', axes: null, text: 'Preview title' }],
+      })
+    })
+    await waitFor(() => {
+      expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,cHJldmlldw==')
+    })
+  })
+
+  it('surfaces a rejected debounced preview without discarding the pending edit', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const previewChartOps = vi.fn().mockResolvedValue({ ok: false, error: { message: 'kernel busy' } })
+    render(<ScienceDetailsView {...props(science, { store, previewChartOps })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Preview title' } })
+
+    expect(await screen.findByText('Commit failed: kernel busy')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(false)
   })
 })
 

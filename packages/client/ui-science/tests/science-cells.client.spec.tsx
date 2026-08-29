@@ -87,7 +87,7 @@ function projectionWithChart(): ScienceClientProjection {
       artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve', origin: 'model',
       producerSessionId: 'session-1' as never,
       versionId: 'version-abc' as never, sha256: 'abc', mediaType: 'image/png', byteCount: 100,
-      runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4,
+      runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4, turn: 1,
       environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
     }],

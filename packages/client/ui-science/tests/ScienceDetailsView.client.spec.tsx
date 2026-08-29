@@ -69,11 +69,16 @@ function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceCli
 function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
   const { attachment, ...fields } = over
   const content = attachment ?? { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 100 }
+  // `turn` defaults to the version number: distinct versions land in distinct
+  // default turns, so fixtures built without any C2 intent never collide on
+  // the same turn by accident. A C2-specific fixture overrides `turn`
+  // explicitly to put two versions in the same one.
+  const version = fields.version ?? 1
   return {
     artifactId: 'chart-1' as never,
     producerSessionId: SESSION,
     logicalName: 'loss-curve.png',
-    version: 1,
+    version,
     title: 'Loss curve',
     origin: 'model',
     versionId: `version:${content.attachmentId}` as never,
@@ -83,6 +88,7 @@ function chart(over: RunChartOverrides = {}): ScienceClientRunArtifactVersion {
     runId: 'run-1' as never,
     toolCallId: 'call-chart-1' as never,
     requestHeaderSeq: 4,
+    turn: version,
     environmentRevision: 1,
     environmentFingerprintPreview: 'f'.repeat(12),
     createdAt: 500,
@@ -768,6 +774,61 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     expect(screen.getAllByText('v3 title')).toHaveLength(2)
+  })
+
+  // C2: a same-turn intermediate draft (occ_emp_wage_scatter's shape — a
+  // self-check re-render inside one turn) collapses out of the stepper's
+  // default walk order behind an expand toggle.
+  function sameTurnPair() {
+    const science = baseProjection({
+      artifacts: [
+        chart({ version: 1, turn: 1, title: 'v1 title', attachment: { attachmentId: 'sha256:a', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
+        chart({ version: 2, turn: 1, title: 'v2 title', attachment: { attachmentId: 'sha256:b', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
+      ],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    return { science, store }
+  }
+
+  it('collapses a same-turn superseded version behind an expand toggle, reachable once expanded', () => {
+    const { science, store } = sameTurnPair()
+    render(<ScienceDetailsView {...props(science, { store })} />)
+
+    const toggle = screen.getByRole('button', { name: 'Intermediate drafts ×1' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    // v1 is collapsed and this tab is open at v2, so ‹ has nothing to step to.
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
+
+    fireEvent.click(toggle)
+    const collapseToggle = screen.getByRole('button', { name: 'Collapse intermediate drafts' })
+    expect(collapseToggle.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
+    expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse intermediate drafts' }))
+    expect(screen.getByRole('button', { name: 'Intermediate drafts ×1' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('shows no intermediate toggle when a human-edit save splits two different-turn versions', () => {
+    // mpl_grouped's shape — v1 auto(turn 1), v2 human-edit, v3 auto(turn 2) —
+    // never collapses anything (a human-edit version has no turn to match).
+    const science = baseProjection({
+      artifacts: [
+        chart({ version: 1, turn: 1, title: 'v1 title', attachment: { attachmentId: 'sha256:a', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
+        humanEditChart({ version: 2, title: 'v2 title', attachment: { attachmentId: 'sha256:b', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
+        chart({ version: 3, turn: 2, title: 'v3 title', attachment: { attachmentId: 'sha256:c', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
+      ],
+    })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+
+    expect(screen.queryByRole('button', { name: /Intermediate drafts/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
   })
 })
 

@@ -42,6 +42,7 @@ import type {
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
+import { foldIntermediateVersions } from './intermediate-versions.ts'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import { scienceTabId } from './selection-store.ts'
@@ -187,11 +188,27 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   loadText: TextLoader
   t: TranslateNS<'science'>
 }) {
-  // `chart` is always one of `versions` (the caller resolves it from the same
-  // artifactId's version list), so `index` is never -1 — no defensive branch for it.
-  const index = versions.findIndex(candidate => candidate.version === chart.version)
-  const prev = index > 0 ? versions[index - 1] : undefined
-  const next = index < versions.length - 1 ? versions[index + 1] : undefined
+  // C2: same-turn intermediate drafts (a self-check re-render the model made
+  // within one turn before curating a title) collapse out of the stepper's
+  // default walk order; they stay reachable behind the expand toggle below,
+  // and the currently open version is always kept walkable even if it is
+  // itself one of them (a provenance drill-in or a direct link can still
+  // open one directly).
+  const [showIntermediates, setShowIntermediates] = useState(false)
+  // The toolbar instance is not remounted on a tab switch (`ArtifactTab`
+  // resolves the same component at the same position); reset the toggle so
+  // a different artifact's tab never opens already expanded.
+  useEffect(() => { setShowIntermediates(false) }, [chart.artifactId])
+  const intermediateVersions = foldIntermediateVersions(versions)
+  const walkable = showIntermediates
+    ? versions
+    : versions.filter(candidate => candidate.version === chart.version || !intermediateVersions.has(candidate.version))
+  // `chart` is always one of `walkable` (either it is not collapsed, or the
+  // filter above keeps the open version in regardless), so `index` is never
+  // -1 — no defensive branch for it.
+  const index = walkable.findIndex(candidate => candidate.version === chart.version)
+  const prev = index > 0 ? walkable[index - 1] : undefined
+  const next = index < walkable.length - 1 ? walkable[index + 1] : undefined
   const isImage = chart.mediaType === 'image/png'
   const exportUnavailableId = useId()
 
@@ -225,6 +242,16 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
             <IconChevronRightOutline14 size={12} />
           </button>
         </div>
+        {intermediateVersions.size > 0 && (
+          <button
+            type="button"
+            className={css.intermediateToggle}
+            aria-pressed={showIntermediates}
+            onClick={() => { setShowIntermediates(value => !value) }}
+          >
+            {showIntermediates ? t('toolbar.intermediateCollapse') : t('toolbar.intermediateExpand', { count: intermediateVersions.size })}
+          </button>
+        )}
         <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
           <IconInspectOutline12 size={12} />
         </button>

@@ -40,7 +40,7 @@ function chart(over: LegacyChartOverrides = {}): ScienceClientRunArtifactVersion
     sha256: attachment?.attachmentId ?? 'abc',
     mediaType: attachment?.mediaType ?? 'image/png',
     byteCount: attachment?.bytes ?? 10,
-    runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8,
+    runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8, turn: 1,
     environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 3_000,
     ...fields,
   }

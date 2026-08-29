@@ -118,6 +118,23 @@ def _series_color(matplotlib, artist):
     return matplotlib.colors.to_hex(getter()) if getter is not None else None
 
 
+def _dedupe_element_ids(elements):
+    """Append a stable `#N` suffix to id collisions, in first-occurrence order.
+
+    Distinct artists (for example, two ``ax.annotate`` calls whose text rounds
+    to the same displayed value) can generate the same catalog id; the host
+    codec requires unique element ids and rejects the entire chart otherwise.
+    """
+    seen = {}
+    for element in elements:
+        base = element["id"]
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        if count > 1:
+            element["id"] = "%s#%d" % (base, count)
+    return elements
+
+
 def extract_elements(fig):
     """Extract isolated, JSON-safe catalog entries from one live Figure."""
     import matplotlib
@@ -179,7 +196,7 @@ def extract_elements(fig):
                 "id": _axid(index, count, "annotation[text:%s]" % text.get_text()[:20]),
                 "kind": "annotation", "axes": index, "label": None,
                 "current": {"type": "text", "text": text.get_text()}})
-    return elements
+    return _dedupe_element_ids(elements)
 
 
 def _artist_for(fig, element):

@@ -59,6 +59,8 @@ Element extraction and hit-map extraction fail independently. If the saved raste
 
 Each kernel keeps registrations for the newest `chartLiveRunsRetained` run ids and prunes older runs after extraction. Repeated saves to the same run-relative path replace that path's registration, so extraction describes the figure and export settings from the final save.
 
+Element ids are unique within one catalog: the host codec rejects a chart carrying two elements with the same id, so each adapter appends a stable `#N` suffix to a colliding id (for example, two bar-value annotations whose rendered text matches) in first-occurrence order before hit-map extraction runs.
+
 ##### Direct edits
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` applies a non-empty bounded operation list to the exact current addressable PNG version. It first addresses the live figure in the owning Python or R kernel. If that figure registration has expired, the Runtime privately re-executes the source run with its exact materialized inputs, reapplies the version's cumulative operation log, and then applies the new operations; this recovery creates no `science/run-started` or `science/run-finished` event. Every successful request appends an immutable `origin: 'human-edit'` PNG version whose parent is the requested version and whose `chart.ops` contains the prior successful operations followed by the successful new operations. A partially unresolved request commits its successful operations and reports indexed `failedOps`; a request with no resolved operation rejects with `CHART_ELEMENT_NOT_FOUND`.

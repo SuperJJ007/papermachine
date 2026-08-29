@@ -45,6 +45,21 @@ install_ggsave_hook <- function(register) {
   }, error = function(e) elements)
 }
 
+.dsh_dedupe_element_ids <- function(elements) {
+  # Append a stable `#N` suffix to id collisions, in first-occurrence order.
+  # Distinct artists (for example, two annotation layers whose rendered value
+  # matches) can generate the same catalog id; the host codec requires unique
+  # element ids and rejects the entire chart otherwise.
+  seen <- new.env(parent = emptyenv())
+  for (index in seq_along(elements)) {
+    base <- elements[[index]]$id
+    count <- if (is.null(seen[[base]])) 1L else seen[[base]] + 1L
+    seen[[base]] <- count
+    if (count > 1L) elements[[index]]$id <- paste0(base, "#", count)
+  }
+  elements
+}
+
 extract_elements <- function(plot) {
   elements <- list()
   add <- function(id, kind, axes, label, current) {
@@ -104,7 +119,7 @@ extract_elements <- function(plot) {
           list(geom = geom, params = as.list(plot$layers[[index]]$aes_params)))
     }
   }
-  elements
+  .dsh_dedupe_element_ids(elements)
 }
 
 .dsh_read_png_size <- function(path) {

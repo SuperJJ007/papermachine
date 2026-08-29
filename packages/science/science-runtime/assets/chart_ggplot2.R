@@ -33,7 +33,12 @@ install_ggsave_hook <- function(register) {
 
 .dsh_theme_for <- function(plot) {
   theme <- ggplot2::theme_get()
-  if (!is.null(plot$theme)) theme <- plot$theme + theme
+  # `theme_get()` is the complete base theme; `plot$theme` is the plot's own
+  # (incomplete) incremental `theme()` calls. `+.theme` resolves conflicting
+  # elements from its right-hand operand, so the base must be the left
+  # operand for plot-specific overrides (e.g. `set_legend_position`'s
+  # `legend.position`) to actually take effect in the merged result.
+  if (!is.null(plot$theme)) theme <- theme + plot$theme
   theme
 }
 

@@ -294,6 +294,14 @@
   margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--dsw-alias-border-l2);
+  /* Elevated surface: this panel's own .elementReference chips (and the
+     shared .notes textarea) paint the l2 layer, and the panel's content
+     scrolls with the rest of the details view. Rebind here so any thumb
+     drawn against this panel's l2 background uses the l2 pair instead of
+     the default (see ui-theme styles/scrollbar.css for the rebinding
+     contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .elementPanel h3 {

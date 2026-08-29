@@ -143,7 +143,8 @@ def extract_elements(fig):
     axes = fig.get_axes()
     count = len(axes)
     suptitle = getattr(fig, "_suptitle", None)
-    if suptitle is not None and suptitle.get_text():
+    has_suptitle = suptitle is not None and bool(suptitle.get_text())
+    if has_suptitle:
         _safe_add(elements, lambda: {"id": "title", "kind": "title", "axes": None, "label": None,
                                      "current": suptitle.get_text()})
     _safe_add(elements, lambda: {"id": "figure_size", "kind": "figure_size", "axes": None, "label": None,
@@ -156,7 +157,15 @@ def extract_elements(fig):
     for index, axis in enumerate(axes):
         title = axis.get_title()
         if title:
-            kind = "subtitle" if count == 1 else "title"
+            # A single axes with no suptitle is the ordinary one-panel figure:
+            # its own title reads as the figure's title, not a "subtitle" with
+            # no title above it. A suptitle or multiple axes keep the axes
+            # title subordinate (subtitle for the sole axes under a suptitle,
+            # title-per-axes when there is more than one).
+            if count == 1:
+                kind = "subtitle" if has_suptitle else "title"
+            else:
+                kind = "title"
             _safe_add(elements, lambda title=title, kind=kind: {
                 "id": _axid(index, count, kind), "kind": kind, "axes": index, "label": None, "current": title})
         for kind, getter in (("x_label", axis.get_xlabel), ("y_label", axis.get_ylabel)):

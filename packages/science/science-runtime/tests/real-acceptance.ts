@@ -853,6 +853,15 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       }
       checks.push('chart matplotlib bbox_inches=tight with colliding bar-value annotations: catalog survives, elements unique, ids de-duplicated with #N')
 
+      // B1: a single-axes figure with no suptitle (ax.set_title only) reads
+      // its axes title as the figure's `title`, not a `subtitle` with
+      // nothing above it — the ordinary one-panel chart shape.
+      if (!tightChart.elements.some(element => element.kind === 'title' && element.current === 'Evidence')
+        || tightChart.elements.some(element => element.kind === 'subtitle')) {
+        throw new Error('single-axes matplotlib figure with no suptitle did not promote ax.set_title to kind "title"')
+      }
+      checks.push('chart matplotlib single-axes ax.set_title with no suptitle: extracted as title, not subtitle')
+
       const closed = await runChartSource(matplotlibChartSource('closed'), ['mpl-closed.png'])
       expectLiveChart(closed, 'mpl-closed.png', 'matplotlib')
       checks.push('chart matplotlib strong registration survives pyplot close')

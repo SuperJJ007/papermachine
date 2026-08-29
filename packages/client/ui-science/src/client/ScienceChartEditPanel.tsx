@@ -1,20 +1,24 @@
 /**
  * Chart editing panel for one addressable live-figure PNG (`chart.chart`
- * present on the artifact version): a canvas rendering the same PNG with a
- * hitmap-derived click overlay (or, when the hitmap is unavailable, an
- * element list) to pick one `ScienceChartElement`, one property control per
- * the selected element's `kind`, the committed-plus-pending operation list,
- * and Discard/Save actions. Edits never touch the model: they accumulate as
- * pending `ScienceChartOp`s in this component's own state and Save submits
- * them through the caller-supplied `onSave` (the `applyChartOps` Remote,
- * wired one layer up in `ScienceDetailsView.tsx`'s `ArtifactTab`).
+ * present on the artifact version): every extracted `ScienceChartElement`
+ * as one list row — display name, current-value summary, one property
+ * control per the row's `kind`, and a +/− control that references the exact
+ * element into the main composer (`ScienceElementTarget`) — the committed-
+ * plus-pending operation list, and Discard/Save actions. The panel carries
+ * no image of its own: the single displayed PNG is the caller's
+ * `RasterArtifact`, which also hides its manual region drag-select for a
+ * chart-bearing version (`ArtifactContent.tsx`). Edits never touch the
+ * model: they accumulate as pending `ScienceChartOp`s in this component's
+ * own state and Save submits them through the caller-supplied `onSave` (the
+ * `applyChartOps` Remote, wired one layer up in `ScienceDetailsView.tsx`'s
+ * `ArtifactTab`).
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp } from '@deepseek-ai/dsh-tool-science/types'
-import type { ScienceArtifactContentRef, ScienceImageLoader } from './science-attachment-loader.ts'
+import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceKey } from './locales.ts'
 import css from './ScienceDetailsView.module.css'
 
@@ -45,6 +49,35 @@ const LEGEND_LABEL_KEY: Record<LegendPosition, ScienceKey> = {
 /** Fixed preset palette for the series color control; a native color input covers every other value. */
 const COLOR_PRESETS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'] as const
 
+/** Localized display label for each closed `ScienceChartElement.kind`. */
+const ELEMENT_KIND_LABEL_KEY: Record<ScienceChartElement['kind'], ScienceKey> = {
+  title: 'panel.kindTitle',
+  subtitle: 'panel.kindSubtitle',
+  x_label: 'panel.kindXLabel',
+  y_label: 'panel.kindYLabel',
+  tick_labels: 'panel.kindTickLabels',
+  legend: 'panel.kindLegend',
+  series: 'panel.kindSeries',
+  grid: 'panel.kindGrid',
+  axis_range: 'panel.kindAxisRange',
+  axis_scale: 'panel.kindAxisScale',
+  figure_size: 'panel.kindFigureSize',
+  font: 'panel.kindFont',
+  annotation: 'panel.kindAnnotation',
+}
+
+/** Row display name: the kind's localized label, plus a series/annotation element's own label when it has one. */
+function elementDisplayName(element: ScienceChartElement, t: TranslateNS<'science'>): string {
+  const kindLabel = t(ELEMENT_KIND_LABEL_KEY[element.kind])
+  return element.label === null || element.label === '' ? kindLabel : `${kindLabel} · ${element.label}`
+}
+
+/** Compact single-line current-value text for the row summary and the referenced element target. */
+function summarizeCurrent(current: unknown): string {
+  const text = typeof current === 'string' ? current : JSON.stringify(current)
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+}
+
 /**
  * Derive a display target path for one operation, matching the kernel
  * adapters' `axes[i].kind[label]` id convention closely enough for the
@@ -62,82 +95,6 @@ function opTargetLabel(op: ScienceChartOp): string {
     /* v8 ignore next -- closed ScienceChartOp union */
     default: return assertNever(op)
   }
-}
-
-/** Load one displayable image URL for `content`, re-fetching only when the version changes. */
-function useLoadedImageSrc(content: ScienceArtifactContentRef, loadImage: ScienceImageLoader): string | undefined {
-  const [src, setSrc] = useState<string>()
-  useEffect(() => {
-    let live = true
-    setSrc(undefined)
-    void loadImage(content).then((url) => { if (live) setSrc(url) }).catch(() => {})
-    return () => { live = false }
-  }, [content.versionId, loadImage])
-  return src
-}
-
-/** Canvas with a hitmap click overlay (`hitmapStatus: 'ok'`), or a plain element list otherwise. */
-function ElementPicker({ chart, content, loadImage, selectedId, onSelect, t }: {
-  chart: ScienceChartState
-  content: ScienceArtifactContentRef
-  loadImage: ScienceImageLoader
-  selectedId: string | undefined
-  onSelect: (id: string) => void
-  t: TranslateNS<'science'>
-}) {
-  const src = useLoadedImageSrc(content, loadImage)
-  return (
-    <div className={css.chartPicker} aria-label={t('edit.specTargets')}>
-      <div className={css.chartCanvas}>
-        {src === undefined
-          ? <span className={css.notice} role="status">{t('artifact.loading')}</span>
-          : <img className={css.chartCanvasImage} src={src} alt="" />}
-        {chart.hitmapStatus === 'ok' && src !== undefined && (
-          <div className={css.chartHitLayer}>
-            {chart.hitmap.map((hit) => {
-              const [x0, y0, x1, y1] = hit.bbox
-              const active = hit.id === selectedId
-              return (
-                <button
-                  key={hit.id}
-                  type="button"
-                  className={css.chartHit}
-                  data-active={active || undefined}
-                  style={{
-                    left: `${String((x0 / chart.png.width) * 100)}%`,
-                    top: `${String((y0 / chart.png.height) * 100)}%`,
-                    width: `${String(((x1 - x0) / chart.png.width) * 100)}%`,
-                    height: `${String(((y1 - y0) / chart.png.height) * 100)}%`,
-                    zIndex: hit.z,
-                  }}
-                  aria-pressed={active}
-                  aria-label={hit.id}
-                  onClick={() => { onSelect(hit.id) }}
-                />
-              )
-            })}
-          </div>
-        )}
-      </div>
-      {chart.hitmapStatus === 'unavailable' && (
-        <ul className={css.chartElementList}>
-          {chart.elements.map(element => (
-            <li key={element.id}>
-              <button
-                type="button"
-                className={css.chartElementItem}
-                data-active={element.id === selectedId || undefined}
-                aria-pressed={element.id === selectedId}
-                onClick={() => { onSelect(element.id) }}
-              >
-                {element.id}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
 }
 
 function TextControl({ onApply, t }: { onApply: (text: string) => void; t: TranslateNS<'science'> }) {
@@ -265,8 +222,8 @@ function ReadOnlyControl({ current, t }: { current: unknown; t: TranslateNS<'sci
 }
 
 /**
- * Dispatch the selected element's `kind` to its one property control (v1's
- * six writable operations, or a read-only current-value display).
+ * Dispatch one element's `kind` to its one property control (v1's six
+ * writable operations, or a read-only current-value display).
  */
 function ElementControl({ element, onStage, t }: {
   element: ScienceChartElement
@@ -277,47 +234,22 @@ function ElementControl({ element, onStage, t }: {
   switch (kind) {
     case 'title':
     case 'subtitle':
-      return (
-        <TextControl key={element.id} onApply={(text) => { onStage({ op: 'set_title', axes: element.axes, text }) }} t={t} />
-      )
+      return <TextControl onApply={(text) => { onStage({ op: 'set_title', axes: element.axes, text }) }} t={t} />
     case 'x_label':
-      return (
-        <TextControl
-          key={element.id}
-          onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'x', text }) }} t={t}
-        />
-      )
+      return <TextControl onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'x', text }) }} t={t} />
     case 'y_label':
-      return (
-        <TextControl
-          key={element.id}
-          onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'y', text }) }} t={t}
-        />
-      )
+      return <TextControl onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'y', text }) }} t={t} />
     case 'series': {
       const label = element.label ?? ''
-      return (
-        <ColorControl
-          key={element.id}
-          onApply={(color) => { onStage({ op: 'set_series_color', axes: element.axes, label, color }) }} t={t}
-        />
-      )
+      return <ColorControl onApply={(color) => { onStage({ op: 'set_series_color', axes: element.axes, label, color }) }} t={t} />
     }
     case 'tick_labels':
-      return (
-        <FontSizeControl key={element.id} onApply={(size) => { onStage({ op: 'set_tick_font_size', axes: element.axes, size }) }} t={t} />
-      )
+      return <FontSizeControl onApply={(size) => { onStage({ op: 'set_tick_font_size', axes: element.axes, size }) }} t={t} />
     case 'legend':
-      return (
-        <LegendControl
-          key={element.id}
-          onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t}
-        />
-      )
+      return <LegendControl onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
     case 'grid':
       return (
         <ReferenceLineControl
-          key={element.id}
           onApply={(orientation, value) => { onStage({ op: 'add_reference_line', axes: element.axes, orientation, value }) }}
           t={t}
         />
@@ -327,10 +259,54 @@ function ElementControl({ element, onStage, t }: {
     case 'figure_size':
     case 'font':
     case 'annotation':
-      return <ReadOnlyControl key={element.id} current={element.current} t={t} />
+      return <ReadOnlyControl current={element.current} t={t} />
     /* v8 ignore next -- closed ScienceChartElement kind union */
     default: return assertNever(kind)
   }
+}
+
+/**
+ * One `chart.elements` row: display name, current-value summary, the
+ * kind-dispatched control, and the +/− composer-reference control shared
+ * with `RasterArtifact`'s region row.
+ */
+function ElementRow({ element, comment, added, onCommentChange, onAddTarget, onRemoveTarget, onStage, t }: {
+  element: ScienceChartElement
+  comment: string
+  added: boolean
+  onCommentChange: (value: string) => void
+  onAddTarget: () => void
+  onRemoveTarget: () => void
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const name = elementDisplayName(element, t)
+  return (
+    <li className={css.elementRow}>
+      <div className={css.elementRowHead}>
+        <strong className={css.editLabel}>{name}</strong>
+        <span className={css.elementSummary}>{summarizeCurrent(element.current)}</span>
+      </div>
+      <ElementControl element={element} onStage={onStage} t={t} />
+      <div className={css.specTargetRow}>
+        <input
+          className={css.specComment}
+          value={comment}
+          aria-label={t('edit.targetComment', { target: name })}
+          placeholder={t('edit.targetCommentPlaceholder')}
+          onChange={(event) => { onCommentChange(event.target.value) }}
+        />
+        <button
+          type="button"
+          className={css.specAdd}
+          aria-label={added ? t('edit.removeTarget', { target: name }) : t('edit.addTarget', { target: name })}
+          onClick={added ? onRemoveTarget : onAddTarget}
+        >
+          {added ? '−' : '+'}
+        </button>
+      </div>
+    </li>
+  )
 }
 
 function OpsList({ committed, pending, version, t }: {
@@ -360,27 +336,30 @@ function OpsList({ committed, pending, version, t }: {
 
 /**
  * Render the chart editing panel for one addressable chart version.
- * @param props - the chart state, its version and content reference, image
- * loading, and the Save submission callback (already scoped to this exact
- * artifact/version one layer up).
- * @returns the picker/properties two-column section, op list, and actions.
+ * @param props - the chart state, its version, the Save submission
+ * callback, and the shared composer-reference callbacks (already scoped to
+ * this exact artifact/version one layer up, the same store `RasterArtifact`
+ * stages its region target into).
+ * @returns the full element list, op list, and Discard/Save actions.
  */
-export function ScienceChartEditPanel({ version, chart, content, loadImage, onSave, t }: {
+export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t }: {
   version: number
   chart: ScienceChartState
-  content: ScienceArtifactContentRef
-  loadImage: ScienceImageLoader
   onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  targetComment: (target: ScienceEditTarget) => string
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
   t: TranslateNS<'science'>
 }) {
-  const [selectedId, setSelectedId] = useState<string>()
   const [pending, setPending] = useState<ScienceChartOp[]>([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
-
-  const selected = chart.elements.find(element => element.id === selectedId)
+  // Keyed by element id: an edited-but-unstaged comment for one row never
+  // pre-fills another row that happens to share the same staged text.
+  const [comments, setComments] = useState<Record<string, string>>({})
 
   const stage = (op: ScienceChartOp): void => {
     setPending(current => [...current, op])
@@ -392,17 +371,35 @@ export function ScienceChartEditPanel({ version, chart, content, loadImage, onSa
   return (
     <section className={css.elementPanel} aria-label={t('edit.elements')}>
       <h3>{t('style.title')}</h3>
-      <div className={css.stylePanel}>
-        <ElementPicker chart={chart} content={content} loadImage={loadImage} selectedId={selectedId} onSelect={setSelectedId} t={t} />
-        <div className={css.styleControl}>
-          {selected === undefined
-            ? <p className={css.notice}>{t('panel.selectPrompt')}</p>
-            : <>
-              <strong className={css.editLabel}>{selected.id}</strong>
-              <ElementControl element={selected} onStage={stage} t={t} />
-            </>}
-        </div>
-      </div>
+      <ul className={css.elementRows}>
+        {chart.elements.map((element) => {
+          const target: Extract<ScienceEditTarget, { kind: 'element' }> = {
+            kind: 'element', elementId: element.id, elementKind: element.kind, current: summarizeCurrent(element.current),
+          }
+          const added = isTargetAdded(target)
+          const comment = comments[element.id] ?? targetComment(target)
+          return (
+            <ElementRow
+              key={element.id}
+              element={element}
+              comment={comment}
+              added={added}
+              onCommentChange={(value) => {
+                setComments(current => ({ ...current, [element.id]: value }))
+                // Already staged: an edit must not silently diverge from the
+                // chip and the outgoing science-edit message, so it updates
+                // the staged selection immediately rather than waiting for
+                // another Add click (mirrors RasterArtifact's region row).
+                if (added) onAddTarget(target, value)
+              }}
+              onAddTarget={() => { onAddTarget(target, comment) }}
+              onRemoveTarget={() => { onRemoveTarget(target) }}
+              onStage={stage}
+              t={t}
+            />
+          )
+        })}
+      </ul>
       <OpsList committed={chart.ops} pending={pending} version={version} t={t} />
       {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
       {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}

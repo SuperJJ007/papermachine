@@ -170,10 +170,16 @@ function RasterArtifact({
   onRemoveTarget: (target: ScienceEditTarget) => void
   t: TranslateNS<'science'>
 }) {
+  // A chart-bearing version (`chart.chart` addressable) references its
+  // elements through the panel's per-row list instead: manual region
+  // drag-select — the button, the drag layer, and the drawn-region chip row
+  // — is hidden below for this version. A PNG with no addressable chart
+  // structure keeps region selection as its only reference mechanism.
+  const hasChart = chart.chart !== undefined
   const [selecting, setSelecting] = useState(false)
   const start = useRef<{ x: number; y: number } | undefined>(undefined)
   const [draft, setDraft] = useState<Extract<ScienceEditTarget, { kind: 'normalized-region' }> | undefined>(undefined)
-  const region = draft ?? (selectionTarget?.kind === 'normalized-region' ? selectionTarget : undefined)
+  const region = hasChart ? undefined : draft ?? (selectionTarget?.kind === 'normalized-region' ? selectionTarget : undefined)
   // Keyed by the region's own normalized coordinates: a fresh drag is a distinct key, so
   // its input starts from the staged comment (or empty) rather than whatever
   // was typed for a previous region on this same artifact version.
@@ -227,7 +233,7 @@ function RasterArtifact({
             style={{ left: `${String(region.x * 100)}%`, top: `${String(region.y * 100)}%`, width: `${String(region.width * 100)}%`, height: `${String(region.height * 100)}%` }}
           />
         )}
-        {selecting && (
+        {!hasChart && selecting && (
           <div
             className={css.regionGesture}
             aria-label={t('edit.regionGesture')}
@@ -238,9 +244,11 @@ function RasterArtifact({
           />
         )}
       </div>
-      <button type="button" className={css.regionButton} aria-pressed={selecting} onClick={() => { setSelecting(value => !value) }}>
-        {selecting ? t('edit.regionCancel') : t('edit.regionSelect')}
-      </button>
+      {!hasChart && (
+        <button type="button" className={css.regionButton} aria-pressed={selecting} onClick={() => { setSelecting(value => !value) }}>
+          {selecting ? t('edit.regionCancel') : t('edit.regionSelect')}
+        </button>
+      )}
       {/* Staging row for the current drawn region: a comment field and one add/remove
           control that push the exact region target into the composer
           selections store (ScienceDetailsView's addToConversation/
@@ -329,7 +337,9 @@ export function ArtifactContent({
             />
             {chart.chart !== undefined && (
               <ScienceChartEditPanel
-                version={chart.version} chart={chart.chart} content={chart} loadImage={loadImage} onSave={onSaveChartOps} t={t}
+                version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
+                isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+                t={t}
               />
             )}
           </>

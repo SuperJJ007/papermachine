@@ -14,10 +14,26 @@ export interface ScienceComposerChipsProps {
   t: TranslateNS<'science'>
 }
 
+/** Closed-union exhaustiveness fence (package-local copy; see ArtifactContent.tsx / ScienceDetailsView.tsx). */
+/* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
+function assertNever(value: never): never {
+  throw new Error(`unhandled value: ${JSON.stringify(value)}`)
+}
+
+/** The target-specific portion of the chip label, dispatched by the target's closed `kind`. */
+function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS<'science'>): string {
+  switch (target.kind) {
+    case 'normalized-region':
+      return t('edit.regionTarget', { x: Math.round(target.x * 100), y: Math.round(target.y * 100) })
+    case 'element':
+      return target.elementId
+    /* v8 ignore next -- closed ScienceEditTarget union */
+    default: return assertNever(target)
+  }
+}
+
 function targetLabel(selection: ScienceEditSelection, t: TranslateNS<'science'>): string {
-  const target = t('edit.regionTarget', {
-    x: Math.round(selection.target.x * 100), y: Math.round(selection.target.y * 100),
-  })
+  const target = targetDescriptor(selection.target, t)
   return `${selection.artifactId} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
 }
 

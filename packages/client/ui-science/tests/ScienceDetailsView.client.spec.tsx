@@ -1059,22 +1059,22 @@ describe('ScienceDetailsView: content dispatch', () => {
 })
 
 describe('ScienceDetailsView: chart edit panel', () => {
-  function addressableChart(hitmapStatus: 'ok' | 'unavailable' = 'ok') {
+  function addressableChart() {
     return chart({
       version: 2,
       chart: {
         runtime: 'matplotlib',
         figureKey: 'fig',
         png: { width: 200, height: 100, dpi: 150 },
-        hitmapStatus,
-        hitmap: hitmapStatus === 'ok' ? [{ id: 'title', bbox: [0, 0, 40, 10], z: 1 }] : [],
+        hitmapStatus: 'unavailable',
+        hitmap: [],
         elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Loss' }],
         ops: [],
       },
     })
   }
 
-  it('has no edit panel and keeps only region-select for an artifact with no chart state', async () => {
+  it('has no edit panel and keeps region-select for an artifact with no chart state', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 2 })] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
@@ -1084,38 +1084,45 @@ describe('ScienceDetailsView: chart edit panel', () => {
     expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
   })
 
-  it('mounts the panel with a clickable hitmap overlay alongside the existing region-select', async () => {
-    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+  it('mounts the panel as an element list, with region-select hidden, for a chart-bearing PNG', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
-    expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    // The panel carries no image of its own: the single displayed PNG stays
+    // the big RasterArtifact image, and manual region drag-select is hidden.
+    expect(document.querySelectorAll('img')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Select region to edit' })).toBeNull()
+    // The element's control is present directly, with no click-to-select step.
     expect(screen.getByLabelText('Enter text')).toBeTruthy()
   })
 
-  it('degrades to an element list when the hitmap is unavailable, still editable', async () => {
-    const science = baseProjection({ artifacts: [addressableChart('unavailable')] })
+  it('references an element via +/- into the composer selections, distinct from a region target', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
-    expect(screen.getByLabelText('Enter text')).toBeTruthy()
+    const addToConversation = vi.fn<Props['addToConversation']>()
+    render(<ScienceDetailsView {...props(science, { store, addToConversation })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Title to the conversation' }))
+    expect(addToConversation).toHaveBeenCalledWith([{
+      artifactId: 'chart-1', version: 2,
+      target: { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' },
+    }])
   })
 
   it('Save submits pending ops through applyChartOps for the exact artifact/version and steps the tab to the committed version', async () => {
-    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+    const science = baseProjection({ artifacts: [addressableChart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     const applyChartOps = vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 3, origin: 'human-edit', failedOps: [] },
     })
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
-    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
@@ -1131,14 +1138,13 @@ describe('ScienceDetailsView: chart edit panel', () => {
   })
 
   it('a rejected applyChartOps call leaves the tab on its current version and surfaces the rejection', async () => {
-    const science = baseProjection({ artifacts: [addressableChart('ok')] })
+    const science = baseProjection({ artifacts: [addressableChart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     const applyChartOps = vi.fn().mockResolvedValue({ ok: false, error: { message: 'stale version' } })
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
-    await waitFor(() => { expect(document.querySelectorAll('img')).toHaveLength(2) })
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))

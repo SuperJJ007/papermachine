@@ -440,15 +440,6 @@
   border-radius: 8px;
 }
 
-.stylePanel {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-}
-
 .styleHeader {
   grid-column: 1 / -1;
   display: flex;
@@ -676,81 +667,41 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Chart editing panel: hitmap/list picker, per-kind property control, op list, actions. */
+/* Chart editing panel: full element list, per-kind property control, op list, actions. */
 
-.chartPicker {
+.elementRows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.chartCanvas {
-  position: relative;
-  max-width: 100%;
-}
-
-.chartCanvasImage {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: 70vh;
-  object-fit: contain;
-}
-
-.chartHitLayer {
-  position: absolute;
-  inset: 0;
-}
-
-.chartHit {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-
-.chartHit:hover {
-  border-color: var(--dsw-alias-label-caption);
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent);
-}
-
-.chartHit[data-active] {
-  border: 2px solid var(--dsw-alias-label-primary);
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
-}
-
-.chartElementList {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 160px;
-  overflow: auto;
 }
 
-.chartElementItem {
-  width: 100%;
-  padding: 4px 8px;
+.elementRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  text-align: left;
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
+  border-radius: 8px;
 }
 
-.chartElementItem[data-active] {
-  border-color: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-label-primary);
+.elementRowHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.elementSummary {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
 }
 
 .colorSwatches {

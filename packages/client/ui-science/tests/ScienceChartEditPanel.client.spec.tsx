@@ -1,21 +1,21 @@
 // @vitest-environment jsdom
 /**
- * The chart editing panel in isolation: the hitmap click overlay and its
- * degraded element-list picker, one property control dispatched per
+ * The chart editing panel in isolation: the full `chart.elements` list (no
+ * duplicate image, no hitmap/click overlay), one property control per
  * `ScienceChartElement.kind` (the six writable v1 operations plus the
- * read-only display for the remaining five kinds), pending-op accumulation
- * across selections, the committed/pending op list, and Discard/Save.
+ * read-only display for the remaining five kinds) always rendered inline on
+ * its row, each row's +/− composer-reference control, pending-op
+ * accumulation across rows, the committed/pending op list, and Discard/Save.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from '../src/client/ScienceChartEditPanel.tsx'
-import type { ScienceArtifactContentRef } from '../src/client/science-attachment-loader.ts'
 import { en } from '../src/client/locales.ts'
 
 const t = makeTranslate(en)
-const content: ScienceArtifactContentRef = { versionId: 'version-1', mediaType: 'image/png', byteCount: 100 }
 
 afterEach(cleanup)
 
@@ -56,46 +56,60 @@ function panel(over: {
   chart?: ScienceChartState
   version?: number
   onSave?: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
-  loadImage?: () => Promise<string>
+  isTargetAdded?: (target: ScienceEditTarget) => boolean
+  targetComment?: (target: ScienceEditTarget) => string
+  onAddTarget?: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget?: (target: ScienceEditTarget) => void
 } = {}) {
-  const loadImage = over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc')
   const onSave = over.onSave ?? vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+  const isTargetAdded = over.isTargetAdded ?? vi.fn().mockReturnValue(false)
+  const targetComment = over.targetComment ?? vi.fn().mockReturnValue('')
+  const onAddTarget = over.onAddTarget ?? vi.fn()
+  const onRemoveTarget = over.onRemoveTarget ?? vi.fn()
   const view = render(
     <ScienceChartEditPanel
-      version={over.version ?? 3} chart={over.chart ?? chartState()} content={content} loadImage={loadImage} onSave={onSave} t={t}
+      version={over.version ?? 3} chart={over.chart ?? chartState()} onSave={onSave}
+      isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+      t={t}
     />,
   )
-  return { view, loadImage, onSave }
+  return { view, onSave, isTargetAdded, targetComment, onAddTarget, onRemoveTarget }
 }
 
-describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)', () => {
-  it('shows the select prompt until an element is picked', async () => {
+describe('ScienceChartEditPanel: full element list', () => {
+  it('lists every chart element as one row with no duplicate image and no hitmap overlay', () => {
     panel()
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    expect(screen.getByText('Select an element to edit its properties')).toBeTruthy()
+    expect(document.querySelector('img')).toBeNull()
+    expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length)
+    for (const name of ['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Series · treatment', 'Tick labels',
+      'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
+      expect(screen.getByText(name)).toBeTruthy()
+    }
+    // Every row's inline control is present directly, with no prior selection step.
+    expect(screen.getAllByLabelText('Enter text')).toHaveLength(4) // title, subtitle, x_label, y_label
   })
 
-  it.each(['title', 'subtitle'])('stages set_title for %s', async (id) => {
+  it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: id }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText(name).closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'New title' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'New title' }])
   })
 
-  it('stages set_axis_label with axis x for x_label and axis y for y_label', async () => {
+  it('stages set_axis_label with axis x for the X-axis label row and axis y for the Y-axis label row', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].x_label' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Epoch' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].y_label' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Loss' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const xRow = screen.getByText('X-axis label').closest('li')
+    const yRow = screen.getByText('Y-axis label').closest('li')
+    if (xRow === null || yRow === null) throw new Error('expected element rows')
+    fireEvent.change(within(xRow).getByLabelText('Enter text'), { target: { value: 'Epoch' } })
+    fireEvent.click(within(xRow).getByRole('button', { name: 'Add change' }))
+    fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'Loss' } })
+    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Epoch' },
@@ -106,10 +120,10 @@ describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)
   it('stages set_series_color from a preset swatch', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].series[treatment]' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Color #dc2626' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText('Series · treatment').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.click(within(row).getByRole('button', { name: 'Color #dc2626' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_series_color', axes: 0, label: 'treatment', color: '#dc2626' }])
   })
@@ -118,8 +132,6 @@ describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     const chart = chartState({ elements: [element({ id: 'axes[0].series[]', kind: 'series', axes: 0, label: null })] })
     panel({ chart, onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].series[]' }))
     fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#123456' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
@@ -129,10 +141,10 @@ describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)
   it('stages set_tick_font_size from the 4-72 slider', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].tick_labels' }))
-    fireEvent.change(screen.getByLabelText('Font size (4–72)'), { target: { value: '18' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText('Tick labels').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.change(within(row).getByLabelText('Font size (4–72)'), { target: { value: '18' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_tick_font_size', axes: 0, size: 18 }])
   })
@@ -140,10 +152,10 @@ describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)
   it('stages set_legend_position from the closed 6-value segmented control', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].legend' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Upper left' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText('Legend').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.click(within(row).getByRole('button', { name: 'Upper left' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
   })
@@ -151,71 +163,95 @@ describe('ScienceChartEditPanel: element-list picker (hitmapStatus: unavailable)
   it('stages add_reference_line with the chosen orientation and numeric value, disabled until valid', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].grid' }))
-    expect(screen.getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(true)
+    const row = screen.getByText('Grid').closest('li')
+    if (row === null) throw new Error('expected element row')
+    expect(within(row).getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(true)
     // Horizontal is the default orientation; clicking it re-confirms that
     // choice before switching to Vertical below.
-    fireEvent.click(screen.getByRole('button', { name: 'Horizontal' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Vertical' }))
-    fireEvent.change(screen.getByLabelText('Reference line value'), { target: { value: '3.5' } })
-    expect(screen.getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Horizontal' }))
+    fireEvent.click(within(row).getByRole('button', { name: 'Vertical' }))
+    fireEvent.change(within(row).getByLabelText('Reference line value'), { target: { value: '3.5' } })
+    expect(within(row).getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(false)
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'add_reference_line', axes: 0, orientation: 'v', value: 3.5 }])
   })
 
-  it.each(['axes[0].axis_range', 'axes[0].axis_scale', 'figure_size', 'font', 'axes[0].annotation[text:hi]'])(
-    'shows a read-only current-value display for %s with no write control',
-    async (id) => {
+  it('truncates a current-value summary and referenced-element current past 60 characters', () => {
+    const long = 'x'.repeat(80)
+    const chart = chartState({ elements: [element({ id: 'title', kind: 'title', current: long })] })
+    const onAddTarget = vi.fn()
+    panel({ chart, onAddTarget })
+    const truncated = `${'x'.repeat(60)}…`
+    expect(screen.getByText(truncated)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Title to the conversation' }))
+    expect(onAddTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: truncated }, '')
+  })
+
+  it.each(['Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi'])(
+    'shows a read-only current-value display for the %s row with no write control',
+    (name) => {
       panel()
-      await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-      fireEvent.click(screen.getByRole('button', { name: id }))
-      expect(screen.getByText('This property is view-only in this version and cannot be edited yet.')).toBeTruthy()
-      expect(screen.queryByRole('button', { name: 'Add change' })).toBeNull()
+      const row = screen.getByText(name).closest('li')
+      if (row === null) throw new Error('expected element row')
+      expect(within(row).getByText('This property is view-only in this version and cannot be edited yet.')).toBeTruthy()
+      expect(within(row).queryByRole('button', { name: 'Add change' })).toBeNull()
     },
   )
 })
 
-describe('ScienceChartEditPanel: hitmap point-select (hitmapStatus: ok)', () => {
-  it('clicking a hit rectangle selects its element and shows the matching control', async () => {
-    const hitElements: readonly ScienceChartElement[] = [
-      element({ id: 'title', kind: 'title' }),
-      element({ id: 'axes[0].legend', kind: 'legend', axes: 0 }),
-    ]
-    const chart = chartState({
-      hitmapStatus: 'ok',
-      elements: hitElements,
-      hitmap: [
-        { id: 'title', bbox: [0, 0, 40, 10], z: 1 },
-        { id: 'axes[0].legend', bbox: [0, 10, 40, 20], z: 2 },
-      ],
-    })
-    panel({ chart })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    // The degraded list picker never renders once the hitmap is usable.
-    expect(document.querySelector('ul')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
-    expect(screen.getByLabelText('Enter text')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].legend' }))
-    expect(screen.getByRole('radiogroup', { name: 'Legend position' })).toBeTruthy()
+describe('ScienceChartEditPanel: element +/- composer reference', () => {
+  it('adds an element target with its typed comment, and removes it through the same control', () => {
+    const onAddTarget = vi.fn()
+    const onRemoveTarget = vi.fn()
+    panel({ onAddTarget, onRemoveTarget })
+    const row = screen.getByText('Title').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.change(within(row).getByLabelText('Edit note for Title'), { target: { value: 'shorten this' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Add Title to the conversation' }))
+    expect(onAddTarget).toHaveBeenCalledWith(
+      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, 'shorten this',
+    )
+    expect(onRemoveTarget).not.toHaveBeenCalled()
+  })
+
+  it('shows Remove once staged, and an edited comment updates the staged selection immediately', () => {
+    const onAddTarget = vi.fn()
+    const onRemoveTarget = vi.fn()
+    panel({ isTargetAdded: () => true, onAddTarget, onRemoveTarget })
+    const row = screen.getByText('Title').closest('li')
+    if (row === null) throw new Error('expected element row')
+    expect(within(row).getByRole('button', { name: 'Remove Title' })).toBeTruthy()
+    fireEvent.change(within(row).getByLabelText('Edit note for Title'), { target: { value: 'shorten this more' } })
+    expect(onAddTarget).toHaveBeenCalledWith(
+      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, 'shorten this more',
+    )
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove Title' }))
+    expect(onRemoveTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' })
+  })
+
+  it('starts each row from its already-staged comment', () => {
+    const targetComment = vi.fn((target: ScienceEditTarget) =>
+      target.kind === 'element' && target.elementId === 'title' ? 'existing note' : '')
+    panel({ targetComment })
+    expect(screen.getByLabelText<HTMLInputElement>('Edit note for Title').value).toBe('existing note')
   })
 })
 
 describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
-  it('accumulates multiple staged ops before Save, and lists committed plus pending ops', async () => {
+  it('accumulates multiple staged ops before Save, and lists committed plus pending ops', () => {
     const chart = chartState({ ops: [{ op: 'set_title', axes: null, text: 'Old' }] })
     panel({ chart, version: 5 })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
     expect(screen.getByText('Committed operations · v5')).toBeTruthy()
     expect(screen.getByText('set_title → title')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].y_label' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'B' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const titleRow = screen.getByText('Title').closest('li')
+    const yRow = screen.getByText('Y-axis label').closest('li')
+    if (titleRow === null || yRow === null) throw new Error('expected element rows')
+    fireEvent.change(within(titleRow).getByLabelText('Enter text'), { target: { value: 'A' } })
+    fireEvent.click(within(titleRow).getByRole('button', { name: 'Add change' }))
+    fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'B' } })
+    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
 
     expect(screen.getByText('Pending changes')).toBeTruthy()
     // One committed and one pending entry now share this exact text.
@@ -224,13 +260,13 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(false)
   })
 
-  it('Discard changes clears pending ops and is disabled with none pending', async () => {
+  it('Discard changes clears pending ops and is disabled with none pending', () => {
     panel()
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
     expect(screen.getByRole('button', { name: 'Discard changes' }).hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText('Title').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     expect(screen.getByRole('button', { name: 'Discard changes' }).hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
     expect(screen.queryByText('Pending changes')).toBeNull()
@@ -239,17 +275,17 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
 })
 
 describe('ScienceChartEditPanel: Save', () => {
-  async function stageOneTitleEdit(onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>): Promise<void> {
+  function stageOneTitleEdit(onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>): void {
     panel({ onSave })
-    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-    fireEvent.click(screen.getByRole('button', { name: 'title' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const row = screen.getByText('Title').closest('li')
+    if (row === null) throw new Error('expected element row')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
   }
 
   it('clears pending and shows a confirmation on a clean success', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
-    await stageOneTitleEdit(onSave)
+    stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Human-edited version committed.')).toBeTruthy()
     expect(screen.queryByText('Pending changes')).toBeNull()
@@ -260,14 +296,14 @@ describe('ScienceChartEditPanel: Save', () => {
     const onSave = vi.fn().mockResolvedValue({
       ok: true, failedOps: [{ index: 0, reason: 'element not found' }],
     } satisfies ScienceChartSaveOutcome)
-    await stageOneTitleEdit(onSave)
+    stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Change #1 did not apply: element not found')).toBeTruthy()
   })
 
   it('keeps pending ops and shows the rejection message on failure', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: false, error: 'stale version' } satisfies ScienceChartSaveOutcome)
-    await stageOneTitleEdit(onSave)
+    stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Commit failed: stale version')).toBeTruthy()
     expect(screen.getByText('Pending changes')).toBeTruthy()
@@ -276,33 +312,15 @@ describe('ScienceChartEditPanel: Save', () => {
   it('staging a further change after Save clears the prior confirmation, error, and failed-op notices', async () => {
     const onSave = vi.fn()
       .mockResolvedValueOnce({ ok: true, failedOps: [{ index: 0, reason: 'gone' }] } satisfies ScienceChartSaveOutcome)
-    await stageOneTitleEdit(onSave)
+    stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Change #1 did not apply: gone')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'axes[0].y_label' }))
-    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'C' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
+    const yRow = screen.getByText('Y-axis label').closest('li')
+    if (yRow === null) throw new Error('expected element row')
+    fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'C' } })
+    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
     expect(screen.queryByText('Change #1 did not apply: gone')).toBeNull()
     expect(screen.queryByText('Human-edited version committed.')).toBeNull()
-  })
-})
-
-describe('ScienceChartEditPanel: image loading', () => {
-  it('stays on the loading state, without throwing, when the image load rejects', async () => {
-    const loadImage = vi.fn().mockRejectedValue(new Error('network'))
-    panel({ loadImage })
-    await waitFor(() => { expect(loadImage).toHaveBeenCalledOnce() })
-    expect(screen.getByText('Loading…')).toBeTruthy()
-  })
-
-  it('discards an image load that resolves after the panel already unmounted', async () => {
-    let resolveLoad: ((url: string) => void) | undefined
-    const loadImage = vi.fn(() => new Promise<string>((resolve) => { resolveLoad = resolve }))
-    const { view } = panel({ loadImage })
-    view.unmount()
-    // No "state update on an unmounted component" throw: the effect's
-    // liveness guard discards this late resolution.
-    expect(() => { resolveLoad?.('too late') }).not.toThrow()
   })
 })

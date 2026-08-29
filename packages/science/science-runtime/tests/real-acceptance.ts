@@ -770,6 +770,32 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       await namespaceProbe('end')
       checks.push('chart apply matplotlib warm title/axis-label/legend/grid: four cumulative ops, catalog state, namespace')
 
+      // A1: three deterministic legend positions applied in sequence off the
+      // same edited baseline must each keep the legend element and render a
+      // distinct PNG — matplotlib's numeric `loc` mapping already handles
+      // this; the assertion mirrors the ggplot2 side, which regressed silently.
+      let legendVersion = edited.artifact.version
+      const legendShas: string[] = []
+      for (const position of ['upper left', 'lower right', 'center'] as const) {
+        const legendResult = await context.scienceRuntime.applyChartEdit({
+          session, artifactId: basicLive.artifact.artifactId, version: legendVersion,
+          ops: [{ op: 'set_legend_position', axes: 0, position }],
+          signal: new AbortController().signal,
+        })
+        if (legendResult.failedOps.length !== 0) {
+          throw new Error(`matplotlib legend position ${position} failed to apply: ${JSON.stringify(legendResult.failedOps)}`)
+        }
+        if (legendResult.artifact.chart?.elements.every(element => element.kind !== 'legend') !== false) {
+          throw new Error(`matplotlib legend position ${position} dropped the legend element`)
+        }
+        if (legendShas.includes(legendResult.artifact.sha256)) {
+          throw new Error(`matplotlib legend position ${position} produced a duplicate PNG`)
+        }
+        legendShas.push(legendResult.artifact.sha256)
+        legendVersion = legendResult.artifact.version
+      }
+      checks.push('chart apply matplotlib legend upper left/lower right/center in sequence: legend retained, distinct PNGs')
+
       await expectChartError('CHART_STALE_VERSION', context.scienceRuntime.applyChartEdit({
         session, artifactId: basicLive.artifact.artifactId, version: 1,
         ops: [{ op: 'set_title', axes: null, text: 'stale' }],
@@ -883,6 +909,47 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       }
       await namespaceProbe('end')
       checks.push('chart apply ggplot2 title/axis-label/legend/grid: four cumulative ops, namespace')
+
+      // A1: ggplot2 4.0.3 silently deletes the legend for any
+      // `legend.position` string outside its own small enum (`lower right`
+      // above already proved that path applies without error, but the
+      // rendered legend actually vanished before this fix). Three
+      // deterministic positions applied in sequence off the same edited
+      // baseline must each keep a `legend` element, render a distinct PNG,
+      // and read back the placement the corner maps to.
+      const legendCases = [
+        { position: 'upper left', inside: [0, 1] },
+        { position: 'lower right', inside: [1, 0] },
+        { position: 'center', inside: [0.5, 0.5] },
+      ] as const
+      let legendVersion = edited.artifact.version
+      const legendShas: string[] = []
+      for (const { position, inside } of legendCases) {
+        const legendResult = await context.scienceRuntime.applyChartEdit({
+          session, artifactId: basicLive.artifact.artifactId, version: legendVersion,
+          ops: [{ op: 'set_legend_position', axes: null, position }],
+          signal: new AbortController().signal,
+        })
+        if (legendResult.failedOps.length !== 0) {
+          throw new Error(`ggplot2 legend position ${position} failed to apply: ${JSON.stringify(legendResult.failedOps)}`)
+        }
+        const legendElement = legendResult.artifact.chart?.elements.find(element => element.kind === 'legend')
+        const current = legendElement?.current
+        const record = typeof current === 'object' && current !== null && !Array.isArray(current)
+          ? current as Record<string, unknown> : undefined
+        const insideValue = record?.['inside']
+        if (record === undefined || record['position'] !== 'inside' || !Array.isArray(insideValue)
+          || insideValue.length !== 2
+          || Math.abs(Number(insideValue[0]) - inside[0]) > 1e-6 || Math.abs(Number(insideValue[1]) - inside[1]) > 1e-6) {
+          throw new Error(`ggplot2 legend position ${position} did not read back inside coordinates ${JSON.stringify(inside)}: ${JSON.stringify(current)}`)
+        }
+        if (legendShas.includes(legendResult.artifact.sha256)) {
+          throw new Error(`ggplot2 legend position ${position} produced a duplicate PNG`)
+        }
+        legendShas.push(legendResult.artifact.sha256)
+        legendVersion = legendResult.artifact.version
+      }
+      checks.push('chart apply ggplot2 legend upper left/lower right/center in sequence: legend retained, inside coordinates read back, distinct PNGs')
 
       for (const caseName of ['device', 'base'] as const) {
         const filename = `r-${caseName}.png`

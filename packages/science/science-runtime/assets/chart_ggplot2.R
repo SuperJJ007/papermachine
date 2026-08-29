@@ -80,10 +80,17 @@ extract_elements <- function(plot) {
   if (is.null(scale)) scale <- built$plot$scales$get_scales("colour")
   if (!is.null(scale)) {
     position <- theme$legend.position
+    position_value <- if (is.null(position)) "right" else position
+    position_current <- if (identical(position_value, "inside")) {
+      inside <- theme$legend.position.inside
+      list(position = "inside", inside = if (is.null(inside)) list() else as.numeric(inside))
+    } else {
+      list(position = position_value)
+    }
     add("legend", "legend", NULL, NULL,
-        list(position = if (is.null(position)) "right" else position,
-             title = if (!is.null(plot$labels$fill)) plot$labels$fill else plot$labels$colour,
-             visible = !identical(position, "none")))
+        c(position_current,
+          list(title = if (!is.null(plot$labels$fill)) plot$labels$fill else plot$labels$colour,
+               visible = !identical(position_value, "none"))))
     labels <- scale$get_labels()
     breaks <- scale$get_breaks()
     colours <- tryCatch(scale$map(breaks), error = function(e) rep(NA_character_, length(labels)))
@@ -199,6 +206,33 @@ extract_chart <- function(entry, path) {
   is.null(axes) || (axes >= 0L && axes < panels)
 }
 
+# Deterministic mapping from the shared matplotlib-derived `position` enum to
+# a ggplot2 legend placement. ggplot2 has no automatic-layout equivalent to
+# matplotlib's "best", so it takes the same outside placement as "right"; a
+# corner/edge/center value places the legend inside the panel at the matching
+# normalized coordinate (ggplot2 4's `legend.position = "inside"` mechanism).
+# An unmapped `position` is a codec-level bug, not a legal runtime input:
+# `stop()` here surfaces as a failed op rather than silently dropping the
+# legend the way passing an unrecognized string straight to
+# `theme(legend.position = ...)` used to.
+.dsh_legend_inside_coords <- list(
+  "upper left" = c(0, 1), "upper right" = c(1, 1),
+  "lower left" = c(0, 0), "lower right" = c(1, 0),
+  "center left" = c(0, 0.5), "center right" = c(1, 0.5),
+  "upper center" = c(0.5, 1), "lower center" = c(0.5, 0),
+  "center" = c(0.5, 0.5)
+)
+
+set_legend_position <- function(plot, position) {
+  if (position == "best" || position == "right") {
+    return(plot + ggplot2::theme(legend.position = "right"))
+  }
+  coords <- .dsh_legend_inside_coords[[position]]
+  if (is.null(coords)) stop("unknown_legend_position")
+  plot + ggplot2::theme(legend.position = "inside", legend.position.inside = coords,
+                         legend.justification.inside = coords)
+}
+
 apply_ops <- function(plot, ops) {
   failed <- list()
   current <- plot
@@ -212,7 +246,7 @@ apply_ops <- function(plot, ops) {
       } else if (name == "set_axis_label") {
         current <- if (operation$axis == "x") current + ggplot2::labs(x = operation$text) else current + ggplot2::labs(y = operation$text)
       } else if (name == "set_legend_position") {
-        current <- current + ggplot2::theme(legend.position = operation$position)
+        current <- set_legend_position(current, operation$position)
       } else if (name == "toggle_grid") {
         grid <- if (isTRUE(operation$visible)) ggplot2::element_line() else ggplot2::element_blank()
         current <- current + ggplot2::theme(panel.grid = grid)

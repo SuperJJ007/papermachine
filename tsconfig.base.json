@@ -68,6 +68,7 @@
       "@deepseek-ai/dsh-tool-science/edit-service": ["./packages/science/tool-science/src/edit-service.ts"],
       "@deepseek-ai/dsh-tool-science/invariant": ["./packages/science/tool-science/src/invariant.ts"],
       "@deepseek-ai/dsh-tool-science/types": ["./packages/science/tool-science/src/types.ts"],
+      "@deepseek-ai/dsh-tool-science/element-summary": ["./packages/science/tool-science/src/element-summary.ts"],
       "@deepseek-ai/dsh-session-projection/types": ["./packages/session/session-projection/src/types.ts"],
       "@deepseek-ai/dsh-session-attachment-index/types": ["./packages/session/session-attachment-index/src/types.ts"],
       "@deepseek-ai/dsh-tool-todo/types": ["./packages/todo/tool-todo/src/types.ts"],

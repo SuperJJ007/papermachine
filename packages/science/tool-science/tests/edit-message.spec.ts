@@ -15,6 +15,7 @@ import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } f
 import type { ScienceRunArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import { createScienceEditMessage, resolveScienceEdit, ScienceEditError, ScienceEditService } from '../src/edit-message.ts'
 import * as EditService from '../src/edit-service.ts'
+import { scienceElementCurrentSummary } from '../src/element-summary.ts'
 
 function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
   return {
@@ -97,6 +98,34 @@ describe('Science edit-message admission', () => {
       ].join('\n') },
       { type: 'image', attachment: minted },
     ])
+  })
+
+  it('admits an element target the viewer built from the shared scienceElementCurrentSummary, including a non-string current', () => {
+    // ScienceChartEditPanel.tsx builds an element target's `current` field
+    // with this exact same exported function; a legend element's current is
+    // a JSON object, not a string, so this proves the shared serialization
+    // — not just a hand-typed string literal — is what Host admission
+    // recomputes and matches.
+    const legendCurrent = { position: 'right', title: null, visible: true }
+    const artifact = image({
+      chart: {
+        runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+        elements: [{ id: 'axes[0].legend', kind: 'legend', axes: 0, label: null, current: legendCurrent }],
+        ops: [], hitmap: [], hitmapStatus: 'unavailable',
+      },
+    })
+    const resolved = resolveScienceEdit([artifact], { targets: [{
+      artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
+      target: {
+        kind: 'element', elementId: 'axes[0].legend', elementKind: 'legend', axes: 0, label: null,
+        current: scienceElementCurrentSummary(legendCurrent),
+      },
+    }], instruction: 'move the legend' })
+    expect(resolved.targets).toHaveLength(1)
+    expect(resolved.targets[0]?.target).toEqual({
+      kind: 'element', elementId: 'axes[0].legend', elementKind: 'legend', axes: 0, label: null,
+      current: JSON.stringify(legendCurrent),
+    })
   })
 
   it('rejects a region target whose message image was not minted', () => {

@@ -11,6 +11,7 @@ import { applyScienceArtifactNotes, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGT
 import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import type { ScienceChartElement } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { scienceElementCurrentSummary } from './element-summary.ts'
 import type {
   ScienceChartEditReceipt,
   ScienceChartEditRequest,
@@ -64,12 +65,6 @@ const ELEMENT_KINDS = new Set<ScienceChartElement['kind']>([
 
 function validTargetText(value: string): boolean {
   return value.trim() !== '' && !value.includes('\u0000') && value.isWellFormed()
-}
-
-/** Canonical short summary carried by a precise element target. */
-function elementCurrentSummary(current: ScienceChartElement['current']): string {
-  const text = typeof current === 'string' ? current : JSON.stringify(current)
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
 }
 
 /** Validate and detach one viewer-supplied chart-element target. */
@@ -216,7 +211,7 @@ function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEd
         || element.kind !== target.elementKind
         || element.axes !== target.axes
         || element.label !== target.label
-        || elementCurrentSummary(element.current) !== target.current) {
+        || scienceElementCurrentSummary(element.current) !== target.current) {
         throw new ScienceEditError('Science element target does not match the addressed chart element', 'SCIENCE_EDIT_TARGET_MISMATCH')
       }
       return

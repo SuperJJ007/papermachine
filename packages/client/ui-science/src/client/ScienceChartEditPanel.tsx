@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp, ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
+import { scienceElementCurrentSummary } from '@deepseek-ai/dsh-tool-science/element-summary'
 import type { ScienceKey } from './locales.ts'
-import { scienceElementCurrentSummary, scienceElementLabel } from './science-element-label.ts'
+import { scienceElementLabel } from './science-element-label.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Result of one Save attempt: the committed receipt's unresolved-op list, or a rejection message. */

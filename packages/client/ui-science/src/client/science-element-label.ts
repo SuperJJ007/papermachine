@@ -35,13 +35,3 @@ export function scienceElementLabel(
   const kindLabel = t(ELEMENT_KIND_LABEL_KEY[kind])
   return label === null || label === '' ? kindLabel : `${kindLabel} · ${label}`
 }
-
-/**
- * Serialize one element current value into the bounded reference summary.
- * @param current - extracted JSON value.
- * @returns single-line text capped at 60 characters plus an ellipsis.
- */
-export function scienceElementCurrentSummary(current: ScienceChartElement['current']): string {
-  const text = typeof current === 'string' ? current : JSON.stringify(current)
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
-}

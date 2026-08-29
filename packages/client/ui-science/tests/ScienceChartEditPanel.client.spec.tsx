@@ -154,13 +154,56 @@ describe('ScienceChartEditPanel: full element list', () => {
     ])
   })
 
-  it('stages set_legend_position from the closed 6-value segmented control', async () => {
+  it('stages set_legend_position from the closed 7-value segmented control', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
     const row = expandRow('Legend')
+    for (const label of ['Best', 'Right', 'Upper left', 'Upper right', 'Lower left', 'Lower right', 'Center']) {
+      expect(within(row).getByRole('button', { name: label })).toBeTruthy()
+    }
     fireEvent.click(within(row).getByRole('button', { name: 'Upper left' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
+  })
+
+  it.each([
+    ['best', { loc: 0 }],
+    ['upper right', { loc: 1 }],
+    ['upper left', { loc: 2 }],
+    ['lower left', { loc: 3 }],
+    ['lower right', { loc: 4 }],
+    ['right', { loc: 5 }],
+    ['center', { loc: 10 }],
+    ['right', { position: 'right' }],
+    ['upper left', { position: 'inside', inside: [0, 1] }],
+    ['upper right', { position: 'inside', inside: [1, 1] }],
+    ['lower left', { position: 'inside', inside: [0, 0] }],
+    ['lower right', { position: 'inside', inside: [1, 0] }],
+    ['center', { position: 'inside', inside: [0.5, 0.5] }],
+  ] as const)('highlights %s for legend current %j', (expected, current) => {
+    panel({ chart: chartState({
+      elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
+    }) })
+    const row = expandRow('Legend')
+    const label = { best: 'Best', right: 'Right', 'upper left': 'Upper left', 'upper right': 'Upper right', 'lower left': 'Lower left', 'lower right': 'Lower right', center: 'Center' }[expected]
+    expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it.each([
+    ['mpl center-left (no matching segment)', { loc: 6 }],
+    ['mpl center-right (no matching segment)', { loc: 7 }],
+    ['mpl lower-center (no matching segment)', { loc: 8 }],
+    ['mpl upper-center (no matching segment)', { loc: 9 }],
+    ['ggplot2 center-left inside coordinate', { position: 'inside', inside: [0, 0.5] }],
+    ['ggplot2 none', { position: 'none' }],
+  ] as const)('highlights no segment for %s', (_label, current) => {
+    panel({ chart: chartState({
+      elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
+    }) })
+    const row = expandRow('Legend')
+    for (const label of ['Best', 'Right', 'Upper left', 'Upper right', 'Lower left', 'Lower right', 'Center']) {
+      expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('false')
+    }
   })
 
   it('stages toggle_grid from the grid switch', async () => {

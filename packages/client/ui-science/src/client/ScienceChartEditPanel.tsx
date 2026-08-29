@@ -26,16 +26,52 @@ function assertNever(value: never): never {
   throw new Error(`unhandled value: ${JSON.stringify(value)}`)
 }
 
-const LEGEND_POSITIONS = ['best', 'upper left', 'upper right', 'lower left', 'lower right', 'center'] as const
+const LEGEND_POSITIONS = ['best', 'right', 'upper left', 'upper right', 'lower left', 'lower right', 'center'] as const
 type LegendPosition = typeof LEGEND_POSITIONS[number]
 
 const LEGEND_LABEL_KEY: Record<LegendPosition, ScienceKey> = {
   best: 'panel.legendBest',
+  right: 'panel.legendRight',
   'upper left': 'panel.legendUpperLeft',
   'upper right': 'panel.legendUpperRight',
   'lower left': 'panel.legendLowerLeft',
   'lower right': 'panel.legendLowerRight',
   center: 'panel.legendCenter',
+}
+
+/** matplotlib's numeric `Legend._loc` code, mapped to the segment it names. Codes with no segment (6/7/8/9) are absent. */
+const MPL_LOC_POSITION: Readonly<Record<number, LegendPosition>> = {
+  0: 'best', 1: 'upper right', 2: 'upper left', 3: 'lower left', 4: 'lower right', 5: 'right', 10: 'center',
+}
+
+/**
+ * ggplot2's `legend.position.inside` normalized coordinate, mapped to the
+ * segment it names (see A1's placement table). center-left, center-right,
+ * upper-center, and lower-center have no matching segment among the 7.
+ */
+const R_INSIDE_POSITION: readonly (readonly [x: number, y: number, position: LegendPosition])[] = [
+  [0, 1, 'upper left'], [1, 1, 'upper right'], [0, 0, 'lower left'], [1, 0, 'lower right'], [0.5, 0.5, 'center'],
+]
+
+/**
+ * Derive the legend control's initial highlighted segment from one legend
+ * element's extracted `current` value (matplotlib's numeric `loc`, or
+ * ggplot2's `position`/`inside` pair — see A1's extraction shapes).
+ * @param current - the legend element's extracted current value.
+ * @returns the matching segment, or `undefined` when `current` matches none of the seven.
+ */
+function legendControlInitial(current: ScienceChartElement['current']): LegendPosition | undefined {
+  if (typeof current !== 'object' || current === null || Array.isArray(current)) return undefined
+  const record = current as Record<string, unknown>
+  const loc = record['loc']
+  if (typeof loc === 'number') return MPL_LOC_POSITION[loc]
+  const position = record['position']
+  if (position === 'right') return 'right'
+  if (position !== 'inside') return undefined
+  const inside = record['inside']
+  if (!Array.isArray(inside) || inside.length !== 2) return undefined
+  const [x, y] = inside as [unknown, unknown]
+  return R_INSIDE_POSITION.find(([mx, my]) => Math.abs(Number(x) - mx) < 1e-6 && Math.abs(Number(y) - my) < 1e-6)?.[2]
 }
 
 function opTargetLabel(op: ScienceChartOp): string {
@@ -116,8 +152,12 @@ function TextControl({ initial, onApply, t }: {
   )
 }
 
-function LegendControl({ onApply, t }: { onApply: (position: LegendPosition) => void; t: TranslateNS<'science'> }) {
-  const [value, setValue] = useState<LegendPosition>('best')
+function LegendControl({ initial, onApply, t }: {
+  initial: LegendPosition | undefined
+  onApply: (position: LegendPosition) => void
+  t: TranslateNS<'science'>
+}) {
+  const [value, setValue] = useState<LegendPosition | undefined>(initial)
   return (
     <div className={css.styleControl}>
       <span className={css.editLabel}>{t('panel.legendPositionLabel')}</span>
@@ -152,7 +192,8 @@ function ElementControl({ element, onStage, t }: {
       return <TextControl initial={typeof element.current === 'string' ? element.current : ''}
         onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'y', text }) }} t={t} />
     case 'legend':
-      return <LegendControl onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
+      return <LegendControl initial={legendControlInitial(element.current)}
+        onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
     case 'grid':
       return <div className={css.styleControl}><label className={css.gridControl}><input
         type="checkbox" defaultChecked={element.current === true} onChange={(event) => {

@@ -59,6 +59,8 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 每个 kernel 为最新的 `chartLiveRunsRetained` 个 run id 保留登记，并在抽取后清理更早的 run。同一次 run 内对同一相对路径重复保存会替换该路径的登记，因此抽取得到最后一次保存的 figure 与 export settings。
 
+元素 id 在同一份目录内是唯一的：host codec 会拒绝携带两个同 id 元素的图表，因此每个适配器会在命中表抽取之前，按首次出现顺序为发生碰撞的 id(例如两个渲染文本相同的柱值标注)追加稳定的 `#N` 后缀。
+
 ##### 直接编辑
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。

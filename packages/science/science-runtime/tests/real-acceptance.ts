@@ -417,9 +417,34 @@ function matplotlibChartSource(caseName: 'basic' | 'tight' | 'closed' | 'figure'
     'del _draw',
     '',
   ].join('\n')
-  const filename = caseName === 'tight' ? 'mpl-tight.png'
-    : caseName === 'closed' ? 'mpl-closed.png'
-      : caseName === 'undeclared' ? 'mpl-undeclared.png' : 'mpl-outside.png'
+  if (caseName === 'tight') return [
+    // A grouped bar chart whose bar-value annotations collide before dedup
+    // (control[0]=0.483 and treatment[0]=0.477 both format to "0.48"),
+    // regression coverage for the adapter's element-id de-duplication.
+    'def _draw():',
+    '    import os',
+    '    import matplotlib.pyplot as plt',
+    '    fig, ax = plt.subplots(figsize=(4, 3))',
+    '    groups = ["A", "B"]',
+    '    control = [0.483, 0.511]',
+    '    treatment = [0.477, 0.529]',
+    '    positions = range(len(groups))',
+    '    width = 0.35',
+    '    control_bars = ax.bar([position - width / 2 for position in positions], control, width, label="control")',
+    '    treatment_bars = ax.bar([position + width / 2 for position in positions], treatment, width, label="treatment")',
+    '    for bar in list(control_bars) + list(treatment_bars):',
+    '        ax.annotate(f"{bar.get_height():.2f}", (bar.get_x() + bar.get_width() / 2, bar.get_height()))',
+    '    ax.set_xticks(list(positions))',
+    '    ax.set_xticklabels(groups)',
+    '    ax.set_title("Evidence")',
+    '    ax.legend()',
+    `    fig.savefig(${saveTarget('mpl-tight.png')}, dpi=100, bbox_inches="tight")`,
+    '_draw()',
+    'del _draw',
+    '',
+  ].join('\n')
+  const filename = caseName === 'closed' ? 'mpl-closed.png'
+    : caseName === 'undeclared' ? 'mpl-undeclared.png' : 'mpl-outside.png'
   return [
     'def _draw():',
     '    import os',
@@ -430,7 +455,7 @@ function matplotlibChartSource(caseName: 'basic' | 'tight' | 'closed' | 'figure'
     caseName === 'outside'
       ? `    target = os.path.join(os.getcwd(), ${JSON.stringify(filename)})`
       : `    target = ${saveTarget(filename)}`,
-    caseName === 'tight' ? '    fig.savefig(target, dpi=100, bbox_inches="tight")' : '    fig.savefig(target, dpi=100)',
+    '    fig.savefig(target, dpi=100)',
     caseName === 'closed' ? '    plt.close("all")' : '',
     '_draw()',
     'del _draw',
@@ -784,12 +809,24 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       await namespaceProbe('end')
       checks.push('chart replay matplotlib after chartLiveRunsRetained+1 producing runs: success, cumulative ops, no run events, namespace')
 
+      // A successful expectLiveChart already proves the host decoded this
+      // chart without throwing: extractChartsAfterFinish drops (with a warn)
+      // any chart whose decodeScienceChartState call rejects it, so the
+      // artifact would carry no chart field at all on a duplicate-id chart.
       const tight = await runChartSource(matplotlibChartSource('tight'), ['mpl-tight.png'])
       const tightChart = expectLiveChart(tight, 'mpl-tight.png', 'matplotlib').chart
-      if (tightChart.elements.length === 0 || tightChart.hitmapStatus !== 'unavailable' || tightChart.hitmap.length !== 0) {
+      if (tightChart.runtime !== 'matplotlib' || tightChart.elements.length === 0
+        || tightChart.hitmapStatus !== 'unavailable' || tightChart.hitmap.length !== 0) {
         throw new Error('tight matplotlib save did not preserve catalog with an unavailable hitmap')
       }
-      checks.push('chart matplotlib bbox_inches=tight preserves catalog without hitmap')
+      const tightIds = tightChart.elements.map(element => element.id)
+      if (new Set(tightIds).size !== tightIds.length) {
+        throw new Error('tight matplotlib chart carried duplicate element ids')
+      }
+      if (!tightIds.includes('annotation[text:0.48]') || !tightIds.includes('annotation[text:0.48]#2')) {
+        throw new Error('tight matplotlib chart did not de-duplicate colliding bar-value annotation ids')
+      }
+      checks.push('chart matplotlib bbox_inches=tight with colliding bar-value annotations: catalog survives, elements unique, ids de-duplicated with #N')
 
       const closed = await runChartSource(matplotlibChartSource('closed'), ['mpl-closed.png'])
       expectLiveChart(closed, 'mpl-closed.png', 'matplotlib')

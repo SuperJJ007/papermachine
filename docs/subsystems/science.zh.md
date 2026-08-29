@@ -18,7 +18,7 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 注册给客户端的 projection 与完整 Host replay 分离。它保留无 path 的 environment 摘要、run status/history（包括存在时的精确 artifact-version input）、带可选精确 parent identity 的 artifact 附件引用、最新 Outcome 与 metrics，同时省略 prefix/executable path、完整 fingerprint、source/scratch fact、授权 request identity，以及 Runtime free-text failure。严格 fold 与 pre-commit invariant 要求每个已记录的 parent 和 input 都解析到更早提交的 artifact version；自 parent 与 terminal 对 start-owned input 的改写会明确失败。
 
-run 产出的 artifact version 的客户端 projection 还携带 `turn`：即授权该 version 的 tool call 所在的 agent turn，由 fold 自身的 `tool/call` 事实解析得出（`toolCallTurnsOf`），而不是由客户端从原始 session 事件反推；human-edit version 没有授权 tool call，因此也没有 `turn`。viewer 用它把「同轮中间稿」——同一 artifact 中被更晚的同轮、非 human-edit version 取代的 version——从版本步进器的默认步进中折叠出去，并在任何于版本级细节之外命名 artifact 的地方展示该 artifact 最新 version 的既定标题（而非当前打开 version 自身的标题）；两者都是基于此数据的客户端展示逻辑，细节见 [`dsh-client-ui-science`](../../packages/client/ui-science)。
+run 产出的 artifact version 的客户端 projection 还携带 `turn`：即授权该 version 的 tool call 所在的 agent turn，由 fold 自身的 `tool/call` 事实解析得出（`toolCallTurnsOf`），而不是由客户端从原始 session 事件反推；human-edit version 没有授权 tool call，因此也没有 `turn`。`turn` 按产生该 version 的 session 单独计数，viewer 用它把「同轮中间稿」——同一 artifact 中被同时共享 `turn` 与 `producerSessionId` 的更晚、非 human-edit version 取代的 version——从版本步进器的默认步进中折叠出去，并在任何于版本级细节之外命名 artifact 的地方展示该 artifact 最新 version 的既定标题（而非当前打开 version 自身的标题）；两者都是基于此数据的客户端展示逻辑，细节见 [`dsh-client-ui-science`](../../packages/client/ui-science)。
 
 每次 probe 和 run 都使用 direct argv、`environmentBase: 'empty'`、固定 allowlist、owned cwd 与 full `workspace-write` confinement。Python 使用冻结的 isolated UTF-8 标志。R 版本发现使用独立的 `Rscript --version`；UTF-8 probe 与 run 使用 `--vanilla --encoding=UTF-8`。file-write confinement 不是保密性：它不隔离 read、network、syscall 或科学正确性。
 

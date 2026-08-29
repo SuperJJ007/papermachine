@@ -310,7 +310,7 @@ function BoundedPreText({ text, truncated, total, t }: {
  */
 export function ArtifactContent({
   chart, loadImage, loadText, previewSrc, selectionTarget, onSelectTarget, isTargetAdded,
-  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, onPreviewChartOps, onPreviewSrc, t,
+  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, onPreviewChartOps, onPreviewSrc, onPendingChartEditsChange, t,
 }: {
   chart: ScienceClientArtifactVersion
   loadImage: ScienceImageLoader
@@ -326,6 +326,12 @@ export function ArtifactContent({
   onSaveChartOps: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
   onPreviewChartOps?: import('./ScienceChartEditPanel.tsx').ScienceChartPreview
   onPreviewSrc?: (src: string | undefined) => void
+  /**
+   * Reported whenever the chart edit panel's unsaved direct-edit count
+   * crosses zero, so the caller can suppress auto-stepping the tab to a
+   * newer version mid-edit (B4).
+   */
+  onPendingChartEditsChange?: (hasPending: boolean) => void
   t: TranslateNS<'science'>
 }) {
   const isImage = chart.mediaType === 'image/png'
@@ -346,6 +352,7 @@ export function ArtifactContent({
                 version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
                 {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
                 {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
+                {...onPendingChartEditsChange === undefined ? {} : { onPendingChange: onPendingChartEditsChange }}
                 isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
                 t={t}
               />

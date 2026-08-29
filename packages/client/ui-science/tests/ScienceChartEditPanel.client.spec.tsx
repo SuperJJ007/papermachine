@@ -58,6 +58,7 @@ function panel(over: {
   isTargetAdded?: (target: ScienceEditTarget) => boolean
   onAddTarget?: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget?: (target: ScienceEditTarget) => void
+  onPendingChange?: (hasPending: boolean) => void
 } = {}) {
   const onSave = over.onSave ?? vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
   const isTargetAdded = over.isTargetAdded ?? vi.fn().mockReturnValue(false)
@@ -68,6 +69,7 @@ function panel(over: {
       version={over.version ?? 3} chart={over.chart ?? chartState()} onSave={onSave}
       {...over.onPreview === undefined ? {} : { onPreview: over.onPreview }}
       {...over.onPreviewSrc === undefined ? {} : { onPreviewSrc: over.onPreviewSrc }}
+      {...over.onPendingChange === undefined ? {} : { onPendingChange: over.onPendingChange }}
       isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
       t={t}
     />,
@@ -166,7 +168,12 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
   })
 
-  it.each([
+  const LEGEND_SEGMENT_LABEL: Record<string, string> = {
+    best: 'Best', right: 'Right', 'upper left': 'Upper left', 'upper right': 'Upper right',
+    'lower left': 'Lower left', 'lower right': 'Lower right', center: 'Center',
+  }
+
+  it.each<[string, ScienceChartElement['current']]>([
     ['best', { loc: 0 }],
     ['upper right', { loc: 1 }],
     ['upper left', { loc: 2 }],
@@ -180,28 +187,29 @@ describe('ScienceChartEditPanel: full element list', () => {
     ['lower left', { position: 'inside', inside: [0, 0] }],
     ['lower right', { position: 'inside', inside: [1, 0] }],
     ['center', { position: 'inside', inside: [0.5, 0.5] }],
-  ] as const)('highlights %s for legend current %j', (expected, current) => {
+  ])('highlights %s for legend current %j', (expected, current) => {
     panel({ chart: chartState({
       elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
     }) })
     const row = expandRow('Legend')
-    const label = { best: 'Best', right: 'Right', 'upper left': 'Upper left', 'upper right': 'Upper right', 'lower left': 'Lower left', 'lower right': 'Lower right', center: 'Center' }[expected]
+    const label = LEGEND_SEGMENT_LABEL[expected]
+    if (label === undefined) throw new Error(`no segment label fixture for ${expected}`)
     expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it.each([
+  it.each<[string, ScienceChartElement['current']]>([
     ['mpl center-left (no matching segment)', { loc: 6 }],
     ['mpl center-right (no matching segment)', { loc: 7 }],
     ['mpl lower-center (no matching segment)', { loc: 8 }],
     ['mpl upper-center (no matching segment)', { loc: 9 }],
     ['ggplot2 center-left inside coordinate', { position: 'inside', inside: [0, 0.5] }],
     ['ggplot2 none', { position: 'none' }],
-  ] as const)('highlights no segment for %s', (_label, current) => {
+  ])('highlights no segment for %s', (_label, current) => {
     panel({ chart: chartState({
       elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
     }) })
     const row = expandRow('Legend')
-    for (const label of ['Best', 'Right', 'Upper left', 'Upper right', 'Lower left', 'Lower right', 'Center']) {
+    for (const label of Object.values(LEGEND_SEGMENT_LABEL)) {
       expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('false')
     }
   })
@@ -313,6 +321,28 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
     expect(screen.queryByText('Pending changes')).toBeNull()
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('reports onPendingChange(true) on the first staged op and onPendingChange(false) once Discard clears it (B4)', () => {
+    const onPendingChange = vi.fn()
+    panel({ onPendingChange })
+    expect(onPendingChange).toHaveBeenLastCalledWith(false)
+    const row = expandRow('Title')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
+    expect(onPendingChange).toHaveBeenLastCalledWith(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(onPendingChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('reports onPendingChange(false) once a successful Save clears pending ops (B4)', async () => {
+    const onPendingChange = vi.fn()
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave, onPendingChange })
+    const row = expandRow('Title')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
+    expect(onPendingChange).toHaveBeenLastCalledWith(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    await vi.waitFor(() => { expect(onPendingChange).toHaveBeenLastCalledWith(false) })
   })
 })
 

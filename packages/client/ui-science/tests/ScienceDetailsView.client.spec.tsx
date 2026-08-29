@@ -1075,7 +1075,7 @@ describe('ScienceDetailsView: content dispatch', () => {
 })
 
 describe('ScienceDetailsView: chart edit panel', () => {
-  function addressableChart() {
+  function addressableChart(over: RunChartOverrides = {}) {
     return chart({
       version: 2,
       chart: {
@@ -1087,6 +1087,7 @@ describe('ScienceDetailsView: chart edit panel', () => {
         elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Loss' }],
         ops: [],
       },
+      ...over,
     })
   }
 
@@ -1169,6 +1170,64 @@ describe('ScienceDetailsView: chart edit panel', () => {
     expect(await screen.findByText('Commit failed: stale version')).toBeTruthy()
     const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
     expect(openTab).toMatchObject({ version: 2 })
+  })
+
+  it('auto-steps the open tab to a newer committed version with no pending direct edit (B4)', async () => {
+    const science = baseProjection({ artifacts: [chart({ version: 1 })] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    const view = render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    view.rerender(<ScienceDetailsView {...props(baseProjection({
+      artifacts: [chart({ version: 1 }), chart({ version: 2, title: 'Loss curve v2' })],
+    }), { store })} />)
+
+    await waitFor(() => {
+      const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
+      expect(openTab).toMatchObject({ version: 2 })
+    })
+  })
+
+  it('does not auto-step a tab that has a pending, unsaved direct edit (B4)', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const view = render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
+
+    view.rerender(<ScienceDetailsView {...props(baseProjection({
+      artifacts: [addressableChart(), addressableChart({ version: 3, title: 'Newer render' })],
+    }), { store })} />)
+    await act(async () => {})
+
+    const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
+    expect(openTab).toMatchObject({ version: 2 })
+  })
+
+  it('auto-steps once the pending direct edit is discarded (B4)', async () => {
+    const science = baseProjection({ artifacts: [addressableChart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
+    const view = render(<ScienceDetailsView {...props(science, { store })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
+    fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
+    view.rerender(<ScienceDetailsView {...props(baseProjection({
+      artifacts: [addressableChart(), addressableChart({ version: 3, title: 'Newer render' })],
+    }), { store })} />)
+    await act(async () => {})
+    expect(store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')).toMatchObject({ version: 2 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+    await waitFor(() => {
+      const openTab = store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')
+      expect(openTab).toMatchObject({ version: 3 })
+    })
   })
 })
 

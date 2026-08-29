@@ -20,7 +20,7 @@
 // "not applied" notice replaces them). The top-level missing-support/unbound
 // states below are unrelated to that strip and are unchanged.
 
-import { useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
@@ -606,6 +606,34 @@ function ArtifactTab({
     setPreviewSrc(undefined)
   }, [chart.artifactId, chart.version])
 
+  // B4: when the model (or another client) commits a newer version of this
+  // exact open tab's artifact WHILE the tab is open, step the tab to it
+  // automatically — matching Save's existing step-to-committed-version
+  // behavior above. Tracked against the latest version last observed for
+  // this artifactId (not against chart.version, the tab's currently shown
+  // version) so opening a tab deliberately at an older version, or the
+  // toolbar's own manual stepper walking back through history, never gets
+  // yanked forward — only a genuine increase in the known latest triggers
+  // this. A chart panel with a pending (unsaved) direct edit reports it
+  // through onPendingChartEditsChange below and suppresses this: stepping
+  // out from under an in-progress edit would either discard it silently or
+  // surface a confusing CHART_STALE_VERSION on Save, and the existing
+  // stale-version notice already covers that case once the user does Save.
+  const [hasPendingChartEdits, setHasPendingChartEdits] = useState(false)
+  const latestVersion = versions.at(-1)?.version ?? chart.version
+  const knownLatest = useRef({ artifactId: chart.artifactId, version: latestVersion })
+  useEffect(() => {
+    if (knownLatest.current.artifactId !== chart.artifactId) {
+      knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
+      return
+    }
+    if (hasPendingChartEdits) return
+    if (latestVersion > knownLatest.current.version) {
+      actions.setTabVersion({ artifactId: chart.artifactId, version: latestVersion })
+    }
+    knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
+  }, [latestVersion, hasPendingChartEdits, chart.artifactId, actions])
+
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
   }
@@ -711,6 +739,7 @@ function ArtifactTab({
         onSaveChartOps={saveChartOps}
         onPreviewChartOps={previewOps}
         onPreviewSrc={setPreviewSrc}
+        onPendingChartEditsChange={setHasPendingChartEdits}
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />

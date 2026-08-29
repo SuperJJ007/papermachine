@@ -291,7 +291,7 @@ function OpsList({ committed, pending, version, t }: {
  * @returns element rows, pending operation status, and explicit Discard/Save actions.
  */
 export function ScienceChartEditPanel({
-  version, chart, onSave, onPreview, onPreviewSrc, isTargetAdded, onAddTarget, onRemoveTarget, t,
+  version, chart, onSave, onPreview, onPreviewSrc, isTargetAdded, onAddTarget, onRemoveTarget, onPendingChange, t,
 }: {
   version: number
   chart: ScienceChartState
@@ -301,6 +301,12 @@ export function ScienceChartEditPanel({
   isTargetAdded: (target: ScienceEditTarget) => boolean
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
+  /**
+   * Reported whenever the pending (unsaved) direct-edit count crosses zero,
+   * so a caller can suppress auto-stepping the open tab to a newer
+   * committed version mid-edit (B4).
+   */
+  onPendingChange?: (hasPending: boolean) => void
   t: TranslateNS<'science'>
 }) {
   const [pending, setPending] = useState<ScienceChartOp[]>([])
@@ -310,6 +316,10 @@ export function ScienceChartEditPanel({
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
   const [expandedId, setExpandedId] = useState<string>()
   const [previewing, setPreviewing] = useState(false)
+
+  useEffect(() => {
+    onPendingChange?.(pending.length > 0)
+  }, [pending, onPendingChange])
 
   useEffect(() => {
     if (pending.length === 0) {

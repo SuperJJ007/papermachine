@@ -30,7 +30,7 @@ import {
 } from './projection.ts'
 import type { ScienceProjectionState } from './projection-private.ts'
 import type { ScienceArtifactNotesProjection } from './types.ts'
-import { toClientScienceProjection } from './projection-value.ts'
+import { toClientScienceProjection, toolCallTurnsOf } from './projection-value.ts'
 
 // Type-only re-exports keep event and projection declaration merging visible
 // without turning the pure type outlet into a runtime module.
@@ -69,7 +69,7 @@ export {
   replayScience,
 } from './fold.ts'
 export type { ScienceFoldState } from './fold.ts'
-export { toClientScienceProjection }
+export { toClientScienceProjection, toolCallTurnsOf }
 export { applyScienceArtifactNotes, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from './artifact-notes.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */

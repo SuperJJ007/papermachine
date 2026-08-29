@@ -10,7 +10,15 @@ import {
   scienceProjectionStateSeq,
   viewScienceProjectionState,
 } from '../src/projection.ts'
-import { replayScience, ScienceArtifactId, ScienceRunId, ScienceVersionId, toClientScienceProjection } from '../src/index.ts'
+import {
+  foldScience,
+  replayScience,
+  ScienceArtifactId,
+  ScienceRunId,
+  ScienceVersionId,
+  toClientScienceProjection,
+  toolCallTurnsOf,
+} from '../src/index.ts'
 import type {
   ScienceOutcomePublication,
   ScienceRunStarted,
@@ -148,10 +156,11 @@ describe('Science private projection checkpoint', () => {
     expect(observed.witness).toBe(complete.witness)
     expect(scienceProjectionStateSeq(observed)).toBe(11)
     expect(scienceProjectionChanged(complete, observed)).toBe(false)
-    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(replayScience([
-      ...legalEvents(),
-      irrelevant,
-    ])))
+    const withIrrelevant = [...legalEvents(), irrelevant]
+    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(
+      replayScience(withIrrelevant),
+      toolCallTurnsOf(foldScience(withIrrelevant)),
+    ))
     expect(scienceProjectionStateSchema.safeParse(observed).success).toBe(true)
   })
 

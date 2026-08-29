@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { replayScience, ScienceArtifactId, ScienceRunId, ScienceVersionId, toClientScienceProjection } from '../src/index.ts'
+import {
+  foldScience,
+  replayScience,
+  ScienceArtifactId,
+  ScienceRunId,
+  ScienceVersionId,
+  toClientScienceProjection,
+  toolCallTurnsOf,
+} from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   ARTIFACT_CALL_ID,
@@ -21,7 +29,8 @@ import {
 
 describe('Science projection replay', () => {
   it('projects all six event types and derives stable metrics', () => {
-    const state = toClientScienceProjection(replayScience(legalEvents()))
+    const events = legalEvents()
+    const state = toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))
     expect(state).toMatchObject({
       mode: { modeId: 'science', presetId: 'science', modeRevision: 'r3' },
       environment: {
@@ -45,8 +54,9 @@ describe('Science projection replay', () => {
   })
 
   it('keeps Host paths, full fingerprints, and mutation provenance out of the client projection', () => {
-    const host = replayScience(legalEvents())
-    const client = toClientScienceProjection(host)
+    const events = legalEvents()
+    const host = replayScience(events)
+    const client = toClientScienceProjection(host, toolCallTurnsOf(foldScience(events)))
     const hostJson = JSON.stringify(host)
     const clientJson = JSON.stringify(client)
 
@@ -63,7 +73,7 @@ describe('Science projection replay', () => {
   })
 
   it('returns null before Science mode is bound', () => {
-    expect(toClientScienceProjection(replayScience([]))).toBeNull()
+    expect(toClientScienceProjection(replayScience([]), toolCallTurnsOf(foldScience([])))).toBeNull()
   })
 
   it('projects exact artifact parents and run inputs to clients', () => {
@@ -100,7 +110,7 @@ describe('Science projection replay', () => {
       }),
     ]
 
-    const client = toClientScienceProjection(replayScience(events))!
+    const client = toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))!
     expect(client.artifacts.at(-1)).toMatchObject({ artifactId: branchId, parent })
     expect(client.runs.at(-1)).toMatchObject({ inputs })
     expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
@@ -146,7 +156,7 @@ describe('Science projection replay', () => {
       },
     }))
 
-    const directEdit = toClientScienceProjection(replayScience(events))!.artifacts.at(-1)!
+    const directEdit = toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))!.artifacts.at(-1)!
     expect(directEdit).toMatchObject({
       version: 2,
       origin: 'human-edit',
@@ -164,7 +174,7 @@ describe('Science projection replay', () => {
     events[5] = event('science/run-started', 5, 140, { version: 1, run: started })
     events[6] = event('science/run-finished', 6, 150, { version: 1, run: finished })
 
-    const client = toClientScienceProjection(replayScience(events))!
+    const client = toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))!
     expect(client.runs).toHaveLength(1)
     expect(client.runs[0]).not.toHaveProperty('inputs')
     expect(scienceProjectionSchema.safeParse(client).success).toBe(true)
@@ -178,7 +188,7 @@ describe('Science projection replay', () => {
       event('science/kernel-state', 11, 200, { version: 1, kernel: kernelExited({ at: 200 }) }),
     ]
     const host = replayScience(events)!
-    const client = toClientScienceProjection(host)!
+    const client = toClientScienceProjection(host, toolCallTurnsOf(foldScience(events)))!
 
     expect(host.kernels).toEqual([kernelExited({ at: 200 })])
     expect(host.metrics.kernelCount).toBe(1)
@@ -202,7 +212,9 @@ describe('Science projection replay', () => {
   })
 
   it('sanitizes optional interpreter, run, and artifact fields without inventing absent values', () => {
-    const host = replayScience(legalEvents())!
+    const events = legalEvents()
+    const host = replayScience(events)!
+    const turns = toolCallTurnsOf(foldScience(events))
     const environment = host.environment!
     const python = environment.python!
     const terminal = host.runs[0]!
@@ -228,7 +240,7 @@ describe('Science projection replay', () => {
         { ...terminal, status: 'failed', failureCode: 'RUN_FAILED', outputDegraded: true },
       ],
       artifacts: [{ ...artifact, caption: 'A safe caption.' }],
-    })!
+    }, turns)!
 
     expect(client.environment).toMatchObject({
       python: { capability: 'available', fingerprintPreview: FINGERPRINT.slice(0, 12) },
@@ -249,7 +261,7 @@ describe('Science projection replay', () => {
     expect(toClientScienceProjection({
       ...host,
       environment: { ...environmentWithoutPython, r: unavailableR },
-    })?.environment).not.toHaveProperty('python')
+    }, turns)?.environment).not.toHaveProperty('python')
   })
 
   it('reuses the same client artifact object across repeated projections of an unchanged version', () => {
@@ -258,9 +270,11 @@ describe('Science projection replay', () => {
     // a live session re-derives the client projection on every event while
     // an artifact's source object stays untouched, so re-projecting the same
     // host value must not rebuild its client artifact.
-    const host = replayScience(legalEvents())
-    const first = toClientScienceProjection(host)!
-    const second = toClientScienceProjection(host)!
+    const events = legalEvents()
+    const host = replayScience(events)
+    const turns = toolCallTurnsOf(foldScience(events))
+    const first = toClientScienceProjection(host, turns)!
+    const second = toClientScienceProjection(host, turns)!
     expect(second.artifacts[0]).toBe(first.artifacts[0])
   })
 })

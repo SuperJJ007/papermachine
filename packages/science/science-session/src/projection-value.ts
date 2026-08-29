@@ -1,6 +1,7 @@
 /** Derivation of the client-safe Science projection from strict replay state. */
 
 import { assertNever } from '@deepseek-ai/dsh-llm'
+import type { CallId } from '@deepseek-ai/dsh-llm'
 import type { ScienceFoldState } from './fold-state.ts'
 import type {
   ScienceClientArtifactVersion,
@@ -154,15 +155,21 @@ function clientRun(run: ScienceRun): ScienceClientRun {
  * that identity keeps `toClientScienceProjection` returning the same client
  * object for the same version across the frequent re-projections that occur
  * while a session streams, instead of rebuilding one every emission — the
- * client's per-version load effects key on this returned identity.
+ * client's per-version load effects key on this returned identity. A given
+ * artifact version's authorizing `toolCallId` never changes once recorded, so
+ * caching stays valid regardless of which `toolCallTurns` map produced the
+ * cached entry.
  */
 const clientArtifactCache = new WeakMap<ScienceArtifactVersion, ScienceClientArtifactVersion>()
 
 /** Memoized `buildClientArtifact`, stable per source artifact version object. */
-function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+function clientArtifact(
+  artifact: ScienceArtifactVersion,
+  toolCallTurns: ReadonlyMap<CallId, number>,
+): ScienceClientArtifactVersion {
   const cached = clientArtifactCache.get(artifact)
   if (cached !== undefined) return cached
-  const result = buildClientArtifact(artifact)
+  const result = buildClientArtifact(artifact, toolCallTurns)
   clientArtifactCache.set(artifact, result)
   return result
 }
@@ -173,9 +180,15 @@ function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifact
  * needs the store's project coordinate. `toolCallId` and `requestHeaderSeq`
  * pass through: the browser already holds both as session-log identities, and
  * they let the client join an artifact version to its authorizing transcript
- * call for provenance.
+ * call for provenance. `turn` is looked up from `toolCallTurns` by
+ * `toolCallId`; a run-produced artifact's authorizing tool call is always
+ * folded into that map before its artifact version, so the lookup is total
+ * for every non-human-edit version.
  */
-function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+function buildClientArtifact(
+  artifact: ScienceArtifactVersion,
+  toolCallTurns: ReadonlyMap<CallId, number>,
+): ScienceClientArtifactVersion {
   const common = {
     artifactId: artifact.artifactId,
     producerSessionId: artifact.producerSessionId,
@@ -191,17 +204,24 @@ function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArt
     createdAt: artifact.createdAt,
     ...artifact.chart === undefined ? {} : { chart: artifact.chart },
   }
-  return artifact.origin === 'human-edit'
-    ? { ...common, parent: artifact.parent, origin: artifact.origin, mediaType: artifact.mediaType }
-    : {
-      ...common,
-      ...artifact.parent === undefined ? {} : { parent: artifact.parent },
-      origin: artifact.origin,
-      mediaType: artifact.mediaType,
-      runId: artifact.runId,
-      toolCallId: artifact.toolCallId,
-      requestHeaderSeq: artifact.requestHeaderSeq,
-    }
+  if (artifact.origin === 'human-edit') {
+    return { ...common, parent: artifact.parent, origin: artifact.origin, mediaType: artifact.mediaType }
+  }
+  const turn = toolCallTurns.get(artifact.toolCallId)
+  if (turn === undefined) {
+    throw new Error(`no tool/call fact folded for artifact ${artifact.artifactId}v${String(artifact.version)}`
+      + `'s authorizing call ${artifact.toolCallId}`)
+  }
+  return {
+    ...common,
+    ...artifact.parent === undefined ? {} : { parent: artifact.parent },
+    origin: artifact.origin,
+    mediaType: artifact.mediaType,
+    runId: artifact.runId,
+    toolCallId: artifact.toolCallId,
+    requestHeaderSeq: artifact.requestHeaderSeq,
+    turn,
+  }
 }
 
 /** Remove authorizing request facts from one Outcome publication. */
@@ -261,12 +281,25 @@ export function projectScienceFold(state: ScienceFoldState): ScienceProjection |
 }
 
 /**
+ * Index one strict fold's tool calls by `callId` for artifact `turn` lookup.
+ * @param state - accepted strict replay state.
+ * @returns each folded tool call's turn, keyed by its `callId`.
+ */
+export function toolCallTurnsOf(state: ScienceFoldState): ReadonlyMap<CallId, number> {
+  return new Map(state.toolCalls.map(call => [call.callId, call.turn]))
+}
+
+/**
  * Remove Host-only provenance and authorization fields from a strict replay value.
  * @param projection - complete Host-side replay value.
+ * @param toolCallTurns - the source fold's tool calls indexed by `callId`
+ * ({@link toolCallTurnsOf}), used to fill each run-produced artifact
+ * version's `turn`.
  * @returns the browser-safe Session projection, or `null` before mode binding.
  */
 export function toClientScienceProjection(
   projection: ScienceProjection | null,
+  toolCallTurns: ReadonlyMap<CallId, number>,
 ): ScienceClientProjection | null {
   if (projection === null) return null
   return {
@@ -274,7 +307,7 @@ export function toClientScienceProjection(
     environment: projection.environment === null ? null : clientEnvironment(projection.environment),
     runs: projection.runs.map(clientRun),
     kernels: projection.kernels.map(clientKernel),
-    artifacts: projection.artifacts.map(clientArtifact),
+    artifacts: projection.artifacts.map(artifact => clientArtifact(artifact, toolCallTurns)),
     outcome: projection.outcome === null ? null : clientOutcome(projection.outcome),
     metrics: projection.metrics,
     lastScienceEventSeq: projection.lastScienceEventSeq,
@@ -287,5 +320,5 @@ export function toClientScienceProjection(
  * @returns the client projection, or `null` before mode binding.
  */
 export function projectScienceClientFold(state: ScienceFoldState): ScienceClientProjection | null {
-  return toClientScienceProjection(projectScienceFold(state))
+  return toClientScienceProjection(projectScienceFold(state), toolCallTurnsOf(state))
 }

@@ -1,5 +1,6 @@
 /** Internal mutable state for strict Science replay. */
 
+import type { CallId } from '@deepseek-ai/dsh-llm'
 import type {
   ScienceArtifactVersion,
   ScienceEnvironmentBinding,
@@ -13,7 +14,7 @@ import type {
 export interface IndexedToolCall {
   readonly seq: number
   readonly time: number
-  readonly callId: string
+  readonly callId: CallId
   readonly turn: number
   readonly step: number
   readonly name: string

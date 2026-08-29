@@ -693,13 +693,20 @@ interface ScienceClientArtifactVersionBase {
   readonly chart?: ScienceChartState
 }
 
-/** Browser-safe run-produced artifact version with transcript provenance. */
+/**
+ * Browser-safe run-produced artifact version with transcript provenance.
+ * `turn` is the authorizing tool call's agent turn (from the session log's
+ * `tool/call` event), letting the client group same-turn versions of one
+ * artifact without reconstructing turn numbers from raw events; a
+ * human-edit version has no authorizing tool call and so no `turn`.
+ */
 export interface ScienceClientRunArtifactVersion extends ScienceClientArtifactVersionBase {
   readonly parent?: ScienceArtifactVersionRef
   readonly origin: 'auto' | 'model'
   readonly runId: ScienceRunId
   readonly toolCallId: CallId
   readonly requestHeaderSeq: number
+  readonly turn: number
 }
 
 /** Browser-safe direct style edit with exact ancestry and no synthetic run provenance. */

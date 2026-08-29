@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { replayScience, toClientScienceProjection } from '../src/index.ts'
+import { foldScience, replayScience, toClientScienceProjection, toolCallTurnsOf } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
 import {
   event,
@@ -11,7 +11,7 @@ import {
 
 describe('Science projection wire schema', () => {
   const clientReplay = (events: readonly SessionEvent[]) =>
-    toClientScienceProjection(replayScience(events))
+    toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))
 
   it('accepts decoded members and derived metrics without re-running strict provenance', () => {
     const events = legalEvents()
@@ -36,6 +36,7 @@ describe('Science projection wire schema', () => {
       runId: _chartRunId,
       toolCallId: _chartToolCallId,
       requestHeaderSeq: _chartRequestHeaderSeq,
+      turn: _chartTurn,
       ...humanChartBase
     } = currentChart
     const humanChart = {
@@ -198,6 +199,7 @@ describe('Science projection wire schema', () => {
       runId: _chartRunId,
       toolCallId: _chartToolCallId,
       requestHeaderSeq: _chartRequestHeaderSeq,
+      turn: _chartTurn,
       ...humanChartBase
     } = currentChart
     const humanChart = {
@@ -303,6 +305,9 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [{ ...currentChart, sha256: 'short' }] },
       { ...state, artifacts: [{ ...currentChart, mediaType: 'application/zip' }] },
       { ...state, artifacts: [{ ...currentChart, byteCount: 0 }] },
+      { ...state, artifacts: [{ ...currentChart, turn: 0 }] },
+      { ...state, artifacts: [{ ...currentChart, turn: '1' }] },
+      { ...state, artifacts: [{ ...humanChart, turn: 1 }] },
       { ...state, artifacts: [{ ...currentChart, mediaType: 'text/plain', chart: chartState }] },
       { ...state, artifacts: [{ ...currentChart, chart: { ...chartState, runtime: 'unknown' } }] },
       { ...state, artifacts: [{ ...humanChart, parent: undefined }] },

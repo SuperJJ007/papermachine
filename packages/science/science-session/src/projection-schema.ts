@@ -231,7 +231,7 @@ function validArtifact(value: unknown): boolean {
   const keys = ['artifactId', 'producerSessionId', 'logicalName', 'version', 'title', 'origin',
     'versionId', 'sha256', 'mediaType', 'byteCount',
     'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
-  if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq')
+  if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq', 'turn')
   if (candidate['caption'] !== undefined) keys.push('caption')
   if (candidate['parent'] !== undefined) keys.push('parent')
   if (candidate['chart'] !== undefined) keys.push('chart')
@@ -268,6 +268,7 @@ function validArtifact(value: unknown): boolean {
     && (humanEdit || typeof candidate['runId'] === 'string')
     && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)
     && (humanEdit || safeInteger(candidate['requestHeaderSeq']))
+    && (humanEdit || safeInteger(candidate['turn'], 1))
     && safeInteger(candidate['environmentRevision'], 1)
     && typeof candidate['environmentFingerprintPreview'] === 'string'
     && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])

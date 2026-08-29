@@ -93,12 +93,6 @@ export type ScienceDetailsViewProps =
   PropsRuntime<'conversation.details.view'> & InjectFace<ScienceDetailsInjected>
   & PropsStore<ScienceSelectionStore> & PropsLocale<'science'>
 
-/** Closed-union exhaustiveness fence. */
-/* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
-function assertNever(value: never): never {
-  throw new Error(`unhandled value: ${JSON.stringify(value)}`)
-}
-
 /** Every durable version of one logical artifact, ascending — the version stepper's walk order. */
 function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly T[], artifactId: ScienceArtifactId): T[] {
   return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
@@ -297,49 +291,10 @@ function TabStrip({ tabs, artifacts, activeTabId, onActivate, onClose, t }: {
   )
 }
 
-function artifactTurn(snapshot: ConversationSnapshot, toolCallId: string): number | undefined {
-  const node = snapshot.nodes.find(candidate => candidate.kind === 'assistant'
-    && candidate.blocks.some(block => block.kind === 'tool-call' && block.callId === toolCallId))
-  return node?.kind === 'assistant' ? node.turn : undefined
-}
-
-function artifactType(chart: ScienceClientArtifactVersion, t: TranslateNS<'science'>): string {
-  // Captured so the switch narrows this single literal-union binding.
-  const mediaType = chart.mediaType
-  switch (mediaType) {
-    case 'text/csv': return t('details.artifact.typeDataset')
-    case 'application/json': return t('details.artifact.typeJson')
-    case 'image/png': return t('details.artifact.typeImage')
-    case 'text/markdown': case 'text/plain': return t('details.artifact.typeDocument')
-    /* v8 ignore next -- closed media-type union */
-    default: return assertNever(mediaType)
-  }
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1_024) return `${String(bytes)} B`
   if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`
   return `${(bytes / 1_048_576).toFixed(1)} MB`
-}
-
-function ArtifactMetaRail({ chart, snapshot, t }: {
-  chart: ScienceClientArtifactVersion
-  snapshot: ConversationSnapshot
-  t: TranslateNS<'science'>
-}) {
-  const turn = chart.origin === 'human-edit' ? undefined : artifactTurn(snapshot, chart.toolCallId)
-  return (
-    <dl className={css.metaRail}>
-      <div><dt>{t('details.artifact.format')}</dt><dd>{artifactType(chart, t)}</dd></div>
-      <div><dt>{t('details.artifact.versionLabel')}</dt><dd>{t('artifact.version', { version: chart.version })}</dd></div>
-      <div><dt>{t('details.artifact.source')}</dt><dd>{chart.origin === 'human-edit'
-        ? t('details.artifact.humanSource')
-        : turn === undefined
-          ? t('details.artifact.sourcePending')
-          : t('details.artifact.generationSource', { turn })}</dd></div>
-      <div><dt>{t('details.artifact.status')}</dt><dd>{t('details.artifact.readOnly')}</dd></div>
-    </dl>
-  )
 }
 
 interface LibraryArtifact {
@@ -454,8 +409,11 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
         })}</ul>
       </> : <>
         <nav className={css.breadcrumb} aria-label={t('library.breadcrumb')}>
-          <button type="button" onClick={() => { setPath('') }}>{t('library.root')}</button>
-          {crumbs.map((crumb, index) => <button type="button" key={`${crumb}:${String(index)}`} onClick={() => { setPath(crumbs.slice(0, index + 1).join('/')) }}>› {crumb}</button>)}
+          <button type="button" className={crumbs.length === 0 ? css.breadcrumbCurrent : css.breadcrumbRoot} onClick={() => { setPath('') }}>{t('library.root')}</button>
+          {crumbs.map((crumb, index) => <span className={css.breadcrumbPart} key={`${crumb}:${String(index)}`}>
+            <span className={css.breadcrumbSep} aria-hidden="true">›</span>
+            <button type="button" className={index === crumbs.length - 1 ? css.breadcrumbCurrent : css.breadcrumbRoot} onClick={() => { setPath(crumbs.slice(0, index + 1).join('/')) }}>{crumb}</button>
+          </span>)}
         </nav>
         <ul className={css.workspaceList}>{visibleEntries.map((entry) => {
           const child = path === '' ? entry.name : `${path}/${entry.name}`
@@ -710,7 +668,6 @@ function ArtifactTab({
         loadText={loadText}
         t={t}
       />
-      <ArtifactMetaRail chart={chart} snapshot={snapshot} t={t} />
       <ArtifactContent
         // Keyed by exact artifact identity: forces a full remount (comment
         // drafts and an in-progress raster

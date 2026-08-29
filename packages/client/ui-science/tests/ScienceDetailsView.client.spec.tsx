@@ -458,7 +458,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     act(() => { store.actions.setLibraryPage('files') })
     fireEvent.click(await screen.findByRole('button', { name: /data/ }))
     expect((await screen.findByRole('button', { name: /large\.bin/ })).textContent).toContain('2.0 MB')
-    fireEvent.click(screen.getByRole('button', { name: '› data' }))
+    fireEvent.click(screen.getByRole('button', { name: 'data' }))
     fireEvent.click(screen.getByRole('button', { name: 'Project' }))
     expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
     expect((await screen.findByRole('button', { name: /unknown\.bin/ })).textContent).toContain('0 B')
@@ -571,14 +571,14 @@ describe('ScienceDetailsView: opening a tab', () => {
 
     expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
-    expect(screen.getByText('Format')).toBeTruthy()
+    expect(screen.queryByText('Format')).toBeNull()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
     expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     expect(screen.getByText('v2 title')).toBeTruthy()
   })
 
-  it('shows the generating turn in the viewer source rail after skipping unrelated nodes and calls', async () => {
+  it('omits the redundant source and status metadata rail', async () => {
     const science = baseProjection({ artifacts: [chart()] })
     const snapshot = {
       ...emptySnapshot(),
@@ -591,8 +591,8 @@ describe('ScienceDetailsView: opening a tab', () => {
     } as unknown as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
     fireEvent.click(await screen.findByText('Loss curve'))
-    expect(screen.getByText('Generated in turn 3')).toBeTruthy()
-    expect(screen.getByText('Read-only')).toBeTruthy()
+    expect(screen.queryByText('Generated in turn 3')).toBeNull()
+    expect(screen.queryByText('Read-only')).toBeNull()
   })
 
   it('shows versioned private notes in Review position and submits trimmed text', async () => {

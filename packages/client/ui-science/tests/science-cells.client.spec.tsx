@@ -157,7 +157,7 @@ describe('Science execution cells', () => {
     vi.useRealTimers()
   })
 
-  it('state 2 — success, short output: shows the full retained stdout with no fold, plus the kernel badge', () => {
+  it('state 2 — success, short output: folds the retained stdout by default and keeps the kernel badge visible', () => {
     const block = settled('run_python', {
       content: [{ type: 'text', text: runResultText({ stdout: 'line one\nline two' }) }],
     })
@@ -165,9 +165,11 @@ describe('Science execution cells', () => {
       useProjection: vi.fn(() => projectionWithRun(block.callId)),
     })} />)
     expect(view.container.querySelector('[data-tool="science-run"][data-state="success"]')).toBeTruthy()
-    expect(view.container.querySelector('pre')?.textContent).toBe('line one\nline two')
+    expect(view.container.querySelector('pre')).toBeNull()
     expect(view.container.textContent).toContain('内核 #3')
-    expect(screen.queryByRole('button', { name: /标准输出/u })).toBeNull()
+    const fold = screen.getByRole('button', { name: /标准输出 2 行/u })
+    fireEvent.click(fold)
+    expect(view.container.querySelector('pre')?.textContent).toBe('line one\nline two')
   })
 
   it('state 2 — success, empty output: shows only the status header, with no output box and no fold', () => {

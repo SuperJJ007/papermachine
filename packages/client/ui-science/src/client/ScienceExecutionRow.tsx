@@ -22,8 +22,6 @@ import {
 import type { RunOutputSections } from './run-output.ts'
 import css from './ScienceExecutionRow.module.css'
 
-/** stdout at or below this line count renders in full; above it folds behind a caret. */
-const SHORT_OUTPUT_MAX_LINES = 8
 /** Trailing stderr lines shown as the failed row's tail-first summary, before expansion. */
 const ERROR_TAIL_LINES = 2
 
@@ -139,14 +137,12 @@ function SuccessRow({ title, kernelEpoch, durationMs, sections, truncated, t }: 
     )
     : lineCount === 0
       ? null
-      : lineCount <= SHORT_OUTPUT_MAX_LINES
-        ? <pre className={css.output}>{sections.stdout}</pre>
-        : (
-          <>
-            <FoldButton label={t('run.stdoutFold', { lines: lineCount, size: formatBytes(bytes) })} open={open} onToggle={toggle} />
-            {open && <pre className={`${css.output} ${css.scrollable}`}>{sections.stdout}</pre>}
-          </>
-        )
+      : (
+        <>
+          <FoldButton label={t('run.stdoutFold', { lines: lineCount, size: formatBytes(bytes) })} open={open} onToggle={toggle} />
+          {open && <pre className={`${css.output} ${css.scrollable}`}>{sections.stdout}</pre>}
+        </>
+      )
   return (
     <div className={css.root} data-science-cell data-tool="science-run" data-state="success">
       <RunHeader dot="done" title={title} status={t('run.succeeded', { duration: formatSeconds(durationMs) })} trailing={badge} />

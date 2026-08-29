@@ -338,7 +338,7 @@ export function ArtifactContent({
             {chart.chart !== undefined && (
               <ScienceChartEditPanel
                 version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
-                isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+                isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
                 t={t}
               />
             )}

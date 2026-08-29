@@ -270,11 +270,9 @@ function ElementControl({ element, onStage, t }: {
  * kind-dispatched control, and the +/− composer-reference control shared
  * with `RasterArtifact`'s region row.
  */
-function ElementRow({ element, comment, added, onCommentChange, onAddTarget, onRemoveTarget, onStage, t }: {
+function ElementRow({ element, added, onAddTarget, onRemoveTarget, onStage, t }: {
   element: ScienceChartElement
-  comment: string
   added: boolean
-  onCommentChange: (value: string) => void
   onAddTarget: () => void
   onRemoveTarget: () => void
   onStage: (op: ScienceChartOp) => void
@@ -288,14 +286,7 @@ function ElementRow({ element, comment, added, onCommentChange, onAddTarget, onR
         <span className={css.elementSummary}>{summarizeCurrent(element.current)}</span>
       </div>
       <ElementControl element={element} onStage={onStage} t={t} />
-      <div className={css.specTargetRow}>
-        <input
-          className={css.specComment}
-          value={comment}
-          aria-label={t('edit.targetComment', { target: name })}
-          placeholder={t('edit.targetCommentPlaceholder')}
-          onChange={(event) => { onCommentChange(event.target.value) }}
-        />
+      <div className={css.elementTargetRow}>
         <button
           type="button"
           className={css.specAdd}
@@ -342,12 +333,11 @@ function OpsList({ committed, pending, version, t }: {
  * stages its region target into).
  * @returns the full element list, op list, and Discard/Save actions.
  */
-export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t }: {
+export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, onAddTarget, onRemoveTarget, t }: {
   version: number
   chart: ScienceChartState
   onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
   isTargetAdded: (target: ScienceEditTarget) => boolean
-  targetComment: (target: ScienceEditTarget) => string
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
   t: TranslateNS<'science'>
@@ -357,9 +347,6 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, t
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
-  // Keyed by element id: an edited-but-unstaged comment for one row never
-  // pre-fills another row that happens to share the same staged text.
-  const [comments, setComments] = useState<Record<string, string>>({})
 
   const stage = (op: ScienceChartOp): void => {
     setPending(current => [...current, op])
@@ -377,22 +364,12 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, t
             kind: 'element', elementId: element.id, elementKind: element.kind, current: summarizeCurrent(element.current),
           }
           const added = isTargetAdded(target)
-          const comment = comments[element.id] ?? targetComment(target)
           return (
             <ElementRow
               key={element.id}
               element={element}
-              comment={comment}
               added={added}
-              onCommentChange={(value) => {
-                setComments(current => ({ ...current, [element.id]: value }))
-                // Already staged: an edit must not silently diverge from the
-                // chip and the outgoing science-edit message, so it updates
-                // the staged selection immediately rather than waiting for
-                // another Add click (mirrors RasterArtifact's region row).
-                if (added) onAddTarget(target, value)
-              }}
-              onAddTarget={() => { onAddTarget(target, comment) }}
+              onAddTarget={() => { onAddTarget(target, '') }}
               onRemoveTarget={() => { onRemoveTarget(target) }}
               onStage={stage}
               t={t}

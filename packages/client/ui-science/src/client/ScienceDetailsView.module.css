@@ -148,27 +148,6 @@
   white-space: nowrap;
 }
 
-.metaRail {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 2px 0 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-2);
-  /* Elevated surface: the l2 layer. Content nested under this rail inherits
-     this rebind, so scrolling content added here later draws the l2 thumb
-     instead of the default (see ui-theme styles/scrollbar.css for the
-     rebinding contract). */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.metaRail div { min-width: 0; }
-.metaRail dt { color: var(--dsw-alias-label-caption); font-size: 10px; line-height: 15px; }
-.metaRail dd { overflow: hidden; margin: 1px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-
 .toolbarControls {
   display: flex;
   align-items: center;
@@ -330,6 +309,46 @@
   grid-template-columns: minmax(120px, auto) minmax(120px, 1fr) 30px;
   gap: 6px;
 }
+
+.elementTargetRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.breadcrumbPart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.breadcrumbRoot,
+.breadcrumbCurrent {
+  overflow: hidden;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumbRoot { cursor: pointer; }
+.breadcrumbRoot:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.breadcrumbCurrent { color: var(--dsw-alias-label-primary); font-weight: 600; }
+.breadcrumbSep { flex: none; color: var(--dsw-alias-label-caption); }
 
 .specComment {
   min-width: 0;
@@ -611,10 +630,6 @@
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@media (max-width: 560px) {
-  .metaRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .chartLogicalName {

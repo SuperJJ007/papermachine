@@ -57,23 +57,21 @@ function panel(over: {
   version?: number
   onSave?: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
   isTargetAdded?: (target: ScienceEditTarget) => boolean
-  targetComment?: (target: ScienceEditTarget) => string
   onAddTarget?: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget?: (target: ScienceEditTarget) => void
 } = {}) {
   const onSave = over.onSave ?? vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
   const isTargetAdded = over.isTargetAdded ?? vi.fn().mockReturnValue(false)
-  const targetComment = over.targetComment ?? vi.fn().mockReturnValue('')
   const onAddTarget = over.onAddTarget ?? vi.fn()
   const onRemoveTarget = over.onRemoveTarget ?? vi.fn()
   const view = render(
     <ScienceChartEditPanel
       version={over.version ?? 3} chart={over.chart ?? chartState()} onSave={onSave}
-      isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+      isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
       t={t}
     />,
   )
-  return { view, onSave, isTargetAdded, targetComment, onAddTarget, onRemoveTarget }
+  return { view, onSave, isTargetAdded, onAddTarget, onRemoveTarget }
 }
 
 describe('ScienceChartEditPanel: full element list', () => {
@@ -201,40 +199,30 @@ describe('ScienceChartEditPanel: full element list', () => {
 })
 
 describe('ScienceChartEditPanel: element +/- composer reference', () => {
-  it('adds an element target with its typed comment, and removes it through the same control', () => {
+  it('adds an element target without an inline comment, and removes it through the same control', () => {
     const onAddTarget = vi.fn()
     const onRemoveTarget = vi.fn()
     panel({ onAddTarget, onRemoveTarget })
     const row = screen.getByText('Title').closest('li')
     if (row === null) throw new Error('expected element row')
-    fireEvent.change(within(row).getByLabelText('Edit note for Title'), { target: { value: 'shorten this' } })
+    expect(within(row).queryByLabelText('Edit note for Title')).toBeNull()
     fireEvent.click(within(row).getByRole('button', { name: 'Add Title to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith(
-      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, 'shorten this',
+      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, '',
     )
     expect(onRemoveTarget).not.toHaveBeenCalled()
   })
 
-  it('shows Remove once staged, and an edited comment updates the staged selection immediately', () => {
+  it('shows Remove once staged', () => {
     const onAddTarget = vi.fn()
     const onRemoveTarget = vi.fn()
     panel({ isTargetAdded: () => true, onAddTarget, onRemoveTarget })
     const row = screen.getByText('Title').closest('li')
     if (row === null) throw new Error('expected element row')
     expect(within(row).getByRole('button', { name: 'Remove Title' })).toBeTruthy()
-    fireEvent.change(within(row).getByLabelText('Edit note for Title'), { target: { value: 'shorten this more' } })
-    expect(onAddTarget).toHaveBeenCalledWith(
-      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, 'shorten this more',
-    )
+    expect(onAddTarget).not.toHaveBeenCalled()
     fireEvent.click(within(row).getByRole('button', { name: 'Remove Title' }))
     expect(onRemoveTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' })
-  })
-
-  it('starts each row from its already-staged comment', () => {
-    const targetComment = vi.fn((target: ScienceEditTarget) =>
-      target.kind === 'element' && target.elementId === 'title' ? 'existing note' : '')
-    panel({ targetComment })
-    expect(screen.getByLabelText<HTMLInputElement>('Edit note for Title').value).toBe('existing note')
   })
 })
 

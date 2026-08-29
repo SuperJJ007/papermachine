@@ -643,6 +643,15 @@ describe('ScienceDetailsView: opening a tab', () => {
     await waitFor(() => { expect(removeArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', noteSeq: 19 }) })
   })
 
+  it('shows the note input without empty-state copy when no notes exist', () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store, notes: [] })} />)
+    expect(screen.getByRole('textbox', { name: 'Artifact note' })).toBeTruthy()
+    expect(screen.queryByText('No notes yet.')).toBeNull()
+  })
+
   it('surfaces the Host rejection for an over-limit note without truncating the draft', async () => {
     const science = baseProjection({ artifacts: [chart()] })
     const store = testScienceSelectionStore()
@@ -1182,8 +1191,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     // the big RasterArtifact image, and manual region drag-select is hidden.
     expect(document.querySelectorAll('img')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Select region to edit' })).toBeNull()
-    expect(screen.queryByLabelText('Enter text')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     expect(screen.getByLabelText('Enter text')).toBeTruthy()
   })
 
@@ -1212,7 +1219,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
@@ -1234,7 +1240,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
@@ -1267,7 +1272,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     const view = render(<ScienceDetailsView {...props(science, { store })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
 
     view.rerender(<ScienceDetailsView {...props(baseProjection({
@@ -1286,7 +1290,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     const view = render(<ScienceDetailsView {...props(science, { store })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
     view.rerender(<ScienceDetailsView {...props(baseProjection({
       artifacts: [addressableChart(), addressableChart({ version: 3, title: 'Newer render' })],
@@ -1311,7 +1314,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, previewChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Preview title' } })
 
     await waitFor(() => {
@@ -1332,7 +1334,6 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, previewChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
-    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Preview title' } })
 
     expect(await screen.findByText('Commit failed: kernel busy')).toBeTruthy()

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The chart editing panel in isolation: every extracted element has a precise
- * composer reference, while only titles, axis labels, legend position, and
- * grid expose direct controls and live preview.
+ * composer reference, while titles, axis labels, grid, font, and legend
+ * expose compact direct controls and live preview.
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -80,12 +80,11 @@ function panel(over: {
 function expandRow(name: string): HTMLElement {
   const row = screen.getByText(name).closest('li')
   if (row === null) throw new Error('expected element row')
-  fireEvent.click(within(row).getByRole('button', { name: new RegExp(`^${name}`) }))
   return row
 }
 
 describe('ScienceChartEditPanel: full element list', () => {
-  it('lists every chart element as one row with no duplicate image and no hitmap overlay', () => {
+  it('splits every chart element between always-visible direct rows and reference chips', () => {
     panel()
     expect(document.querySelector('img')).toBeNull()
     expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length)
@@ -93,34 +92,25 @@ describe('ScienceChartEditPanel: full element list', () => {
       'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
       expect(screen.getByText(name)).toBeTruthy()
     }
-    expect(screen.queryByLabelText('Enter text')).toBeNull()
+    expect(screen.getAllByLabelText('Enter text')).toHaveLength(4)
     const title = screen.getByText('Title').closest('li')
     if (title === null) throw new Error('expected element row')
-    expect(within(title).getByRole('button', { name: /^Title/ }).getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(within(title).getByRole('button', { name: /^Title/ }))
+    expect(title.getAttribute('data-editable')).toBe('true')
     expect(within(title).getByLabelText('Enter text')).toBeTruthy()
     const series = screen.getByText('Series · treatment').closest('li')
     if (series === null) throw new Error('expected series row')
     expect(within(series).queryByLabelText('Color')).toBeNull()
-    expect(within(series).getByRole('button', { name: /^Series/ }).getAttribute('aria-expanded')).toBeNull()
+    expect(within(series).getByRole('button', { name: 'Add Series · treatment to the conversation' })).toBeTruthy()
   })
 
-  it('lists directly-editable rows first (title, subtitle, x_label, y_label, legend, grid), then the rest in extraction order', () => {
+  it('orders compact direct rows independently from reference chips', () => {
     panel()
-    const rows = screen.getAllByRole('listitem')
-    const names = rows.map(row => row.querySelector('strong')?.textContent)
-    expect(names).toEqual([
-      'Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Legend', 'Grid',
-      'Series · treatment', 'Tick labels', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi',
-    ])
+    const directNames = [...document.querySelectorAll('[data-editable="true"]')]
+      .map(row => row.firstElementChild?.textContent)
+    expect(directNames).toEqual(['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Grid', 'Font', 'Legend'])
   })
 
-  it('breaks a directly-editable-kind tie by ascending axes, not extraction order', () => {
-    // `label` carries no meaning for a grid element, but scienceElementLabel
-    // appends it whenever present, so it doubles as a name here to
-    // distinguish which physical axes[N].grid row rendered where — the
-    // extracted order below deliberately lists axes: 1 first, so a row
-    // order of "earlier" then "later" proves axes, not extraction order, won.
+  it('sorts repeated direct kinds by axes and adds axes labels', () => {
     panel({ chart: chartState({
       elements: [
         element({ id: 'axes[1].grid', kind: 'grid', axes: 1, label: 'later' }),
@@ -128,9 +118,9 @@ describe('ScienceChartEditPanel: full element list', () => {
         element({ id: 'title', kind: 'title', current: 'Loss' }),
       ],
     }) })
-    const rows = screen.getAllByRole('listitem')
-    const names = rows.map(row => row.querySelector('strong')?.textContent)
-    expect(names).toEqual(['Title', 'Grid · earlier', 'Grid · later'])
+    const names = [...document.querySelectorAll('[data-editable="true"]')]
+      .map(row => row.firstElementChild?.textContent)
+    expect(names).toEqual(['Title', 'Grid · earlier · axes[0]', 'Grid · later · axes[1]'])
   })
 
   it('breaks a same-kind-same-axes tie by extraction order', () => {
@@ -140,9 +130,9 @@ describe('ScienceChartEditPanel: full element list', () => {
         element({ id: 'axes[0].grid', kind: 'grid', axes: 0, label: 'first' }),
       ],
     }) })
-    const rows = screen.getAllByRole('listitem')
-    const names = rows.map(row => row.querySelector('strong')?.textContent)
-    expect(names).toEqual(['Grid · second', 'Grid · first'])
+    const names = [...document.querySelectorAll('[data-editable="true"]')]
+      .map(row => row.firstElementChild?.textContent)
+    expect(names).toEqual(['Grid · second · axes[0]', 'Grid · first · axes[0]'])
   })
 
   it('stages nothing when a text control is cleared to empty or whitespace', () => {
@@ -175,12 +165,11 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(input.value).toBe('Epoch')
   })
 
-  it('collapses an expanded row back to reference-only on a second toggle', () => {
-    panel()
-    const row = expandRow('Title')
-    expect(within(row).queryByLabelText('Enter text')).not.toBeNull()
-    fireEvent.click(within(row).getByRole('button', { name: /^Title/ }))
-    expect(within(row).queryByLabelText('Enter text')).toBeNull()
+  it('does not change composer references when an editable row itself is clicked', () => {
+    const onAddTarget = vi.fn()
+    panel({ onAddTarget })
+    fireEvent.click(screen.getByText('Title'))
+    expect(onAddTarget).not.toHaveBeenCalled()
   })
 
   it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
@@ -206,22 +195,17 @@ describe('ScienceChartEditPanel: full element list', () => {
     ])
   })
 
-  it('stages set_legend_position from the closed 7-value segmented control', async () => {
+  it('stages set_legend_position from the closed 7-value select', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
     const row = expandRow('Legend')
     for (const label of ['Best', 'Right', 'Upper left', 'Upper right', 'Lower left', 'Lower right', 'Center']) {
-      expect(within(row).getByRole('button', { name: label })).toBeTruthy()
+      expect(within(row).getByRole('option', { name: label })).toBeTruthy()
     }
-    fireEvent.click(within(row).getByRole('button', { name: 'Upper left' }))
+    fireEvent.change(within(row).getByLabelText('Legend position'), { target: { value: 'upper left' } })
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
   })
-
-  const LEGEND_SEGMENT_LABEL: Record<string, string> = {
-    best: 'Best', right: 'Right', 'upper left': 'Upper left', 'upper right': 'Upper right',
-    'lower left': 'Lower left', 'lower right': 'Lower right', center: 'Center',
-  }
 
   it.each<[string, ScienceChartElement['current']]>([
     ['best', { loc: 0 }],
@@ -237,14 +221,12 @@ describe('ScienceChartEditPanel: full element list', () => {
     ['lower left', { position: 'inside', inside: [0, 0] }],
     ['lower right', { position: 'inside', inside: [1, 0] }],
     ['center', { position: 'inside', inside: [0.5, 0.5] }],
-  ])('highlights %s for legend current %j', (expected, current) => {
+  ])('selects %s for legend current %j', (expected, current) => {
     panel({ chart: chartState({
       elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
     }) })
     const row = expandRow('Legend')
-    const label = LEGEND_SEGMENT_LABEL[expected]
-    if (label === undefined) throw new Error(`no segment label fixture for ${expected}`)
-    expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(row).getByLabelText('Legend position')).toHaveProperty('value', expected)
   })
 
   it.each<[string, ScienceChartElement['current']]>([
@@ -256,14 +238,14 @@ describe('ScienceChartEditPanel: full element list', () => {
     ['ggplot2 none', { position: 'none' }],
     ['ggplot2 inside with a malformed (non-pair) coordinate', { position: 'inside', inside: [0] }],
     ['ggplot2 inside with a non-array coordinate', { position: 'inside', inside: 'bad' }],
-  ])('highlights no segment for %s', (_label, current) => {
+  ])('shows a disabled current-value placeholder for %s', (_label, current) => {
     panel({ chart: chartState({
       elements: [element({ id: 'axes[0].legend', kind: 'legend', axes: 0, current })],
     }) })
     const row = expandRow('Legend')
-    for (const label of Object.values(LEGEND_SEGMENT_LABEL)) {
-      expect(within(row).getByRole('button', { name: label }).getAttribute('aria-pressed')).toBe('false')
-    }
+    const select = within(row).getByLabelText('Legend position') as HTMLSelectElement
+    expect(select.value).toBe('')
+    expect(select.selectedOptions[0]?.disabled).toBe(true)
   })
 
   it('stages toggle_grid from the grid switch', async () => {
@@ -275,16 +257,55 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onSave).toHaveBeenCalledWith([{ op: 'toggle_grid', axes: 0, visible: true }])
   })
 
-  it('truncates a current-value summary and referenced-element current past 60 characters', () => {
+  it('stages set_font from family and size changes', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave })
+    const row = expandRow('Font')
+    const family = within(row).getByLabelText('Font family')
+    expect(family.getAttribute('list')).toBe('science-font-families-font')
+    fireEvent.change(family, { target: { value: 'DejaVu Sans' } })
+    fireEvent.change(within(row).getByLabelText('Font size'), { target: { value: '14' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(onSave).toHaveBeenCalledWith([{ op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 }])
+  })
+
+  it('uses the current font family when the family input is cleared', async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave })
+    const row = expandRow('Font')
+    fireEvent.change(within(row).getByLabelText('Font family'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(onSave).toHaveBeenCalledWith([{ op: 'set_font', axes: null, family: 'sans', size: 12 }])
+  })
+
+  it.each<[ScienceChartElement['current'], string, number]>([
+    [null, 'sans-serif', 10],
+    [[], 'sans-serif', 10],
+    [{ family: 'serif', size: 11 }, 'serif', 11],
+    [{ family: [], size: 'bad' }, 'sans-serif', 10],
+    [{ family: '', size: 12 }, 'sans-serif', 12],
+  ])('normalizes font current %j to %s/%i', (current, family, size) => {
+    panel({ chart: chartState({ elements: [element({ id: 'font', kind: 'font', current })] }) })
+    expect(screen.getByLabelText('Font family')).toHaveProperty('value', family)
+    expect(screen.getByLabelText('Font size')).toHaveProperty('valueAsNumber', size)
+  })
+
+  it('ignores an invalid font size until it falls within the codec bounds', () => {
+    panel()
+    const row = expandRow('Font')
+    fireEvent.change(within(row).getByLabelText('Font size'), { target: { value: '3' } })
+    expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('truncates chip summaries near 16 characters but keeps the bounded reference current', () => {
     const long = 'x'.repeat(80)
-    const chart = chartState({ elements: [element({ id: 'title', kind: 'title', current: long })] })
+    const chart = chartState({ elements: [element({ id: 'series[long]', kind: 'series', label: 'long', current: long })] })
     const onAddTarget = vi.fn()
     panel({ chart, onAddTarget })
-    const truncated = `${'x'.repeat(60)}…`
-    expect(screen.getByText(truncated)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Add Title to the conversation' }))
+    expect(screen.getByText(`${'x'.repeat(16)}…`)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Series · long to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith({
-      kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: truncated,
+      kind: 'element', elementId: 'series[long]', elementKind: 'series', axes: null, label: 'long', current: `${'x'.repeat(60)}…`,
     }, '')
   })
 
@@ -292,14 +313,24 @@ describe('ScienceChartEditPanel: full element list', () => {
     const onAddTarget = vi.fn()
     const onPreview = vi.fn()
     panel({ onAddTarget, onPreview })
-    const row = screen.getByText('Series · treatment').closest('li')
-    if (row === null) throw new Error('expected series row')
-    fireEvent.click(within(row).getByRole('button', { name: /^Series/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Series · treatment to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith({
       kind: 'element', elementId: 'axes[0].series[treatment]', elementKind: 'series', axes: 0,
       label: 'treatment', current: 'null',
     }, '')
     expect(onPreview).not.toHaveBeenCalled()
+  })
+
+  it('folds annotations after six and expands the remainder through the count chip', () => {
+    const annotations = Array.from({ length: 8 }, (_, index) => element({
+      id: `annotation[${String(index)}]`, kind: 'annotation', label: String(index), current: { text: String(index) },
+    }))
+    panel({ chart: chartState({ elements: annotations }) })
+    expect(screen.queryByText('Annotation · 6')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Annotations ×2' }))
+    expect(screen.getByText('Annotation · 6')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse annotations' }))
+    expect(screen.queryByText('Annotation · 6')).toBeNull()
   })
 })
 
@@ -374,7 +405,11 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
   it('accumulates multiple staged ops before Save, and lists committed plus pending ops', () => {
     const chart = chartState({ ops: [{ op: 'set_title', axes: null, text: 'Old' }] })
     panel({ chart, version: 5 })
-    expect(screen.getByText('Committed operations · v5')).toBeTruthy()
+    const committed = screen.getByText('1 committed · v5 ›')
+    expect(committed).toBeTruthy()
+    expect(committed.closest('details')?.open).toBe(false)
+    fireEvent.click(committed)
+    expect(committed.closest('details')?.open).toBe(true)
     expect(screen.getByText('set_title → title')).toBeTruthy()
 
     const titleRow = expandRow('Title')
@@ -382,10 +417,7 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     const yRow = expandRow('Y-axis label')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'B' } })
 
-    expect(screen.getByText('Pending changes')).toBeTruthy()
-    // One committed and one pending entry now share this exact text.
-    expect(screen.getAllByText('set_title → title')).toHaveLength(2)
-    expect(screen.getByText('set_axis_label → axes[0].y_label')).toBeTruthy()
+    expect(screen.getByText('2 pending: set_title, set_axis_label')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(false)
   })
 
@@ -396,7 +428,7 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
     expect(screen.getByRole('button', { name: 'Discard changes' }).hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
-    expect(screen.queryByText('Pending changes')).toBeNull()
+    expect(screen.queryByText(/pending:/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
   })
 
@@ -435,7 +467,7 @@ describe('ScienceChartEditPanel: Save', () => {
     stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Human-edited version committed.')).toBeTruthy()
-    expect(screen.queryByText('Pending changes')).toBeNull()
+    expect(screen.queryByText(/pending:/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
   })
 
@@ -448,12 +480,23 @@ describe('ScienceChartEditPanel: Save', () => {
     expect(await screen.findByText('Change #1 did not apply: element not found')).toBeTruthy()
   })
 
+  it('localizes the explicit missing-font reason', async () => {
+    const onSave = vi.fn().mockResolvedValue({
+      ok: true, failedOps: [{ index: 0, reason: 'font_not_found' }],
+    } satisfies ScienceChartSaveOutcome)
+    panel({ onSave })
+    const row = expandRow('Font')
+    fireEvent.change(within(row).getByLabelText('Font family'), { target: { value: 'Missing' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(await screen.findByText('Change #1 did not apply: Font is not installed')).toBeTruthy()
+  })
+
   it('keeps pending ops and shows the rejection message on failure', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: false, error: 'stale version' } satisfies ScienceChartSaveOutcome)
     stageOneTitleEdit(onSave)
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Commit failed: stale version')).toBeTruthy()
-    expect(screen.getByText('Pending changes')).toBeTruthy()
+    expect(screen.getByText('1 pending: set_title')).toBeTruthy()
   })
 
   it('staging a further change after Save clears the prior confirmation, error, and failed-op notices', async () => {

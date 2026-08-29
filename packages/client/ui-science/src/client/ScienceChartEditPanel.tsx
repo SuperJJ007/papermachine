@@ -1,4 +1,4 @@
-/** Chart editing and precise composer references for one addressable PNG. */
+/** Compact chart controls and precise composer references for one addressable PNG. */
 
 import { useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -39,27 +39,22 @@ const LEGEND_LABEL_KEY: Record<LegendPosition, ScienceKey> = {
   center: 'panel.legendCenter',
 }
 
-/** matplotlib's numeric `Legend._loc` code, mapped to the segment it names. Codes with no segment (6/7/8/9) are absent. */
+const FONT_FAMILIES = [
+  'sans-serif', 'serif', 'monospace', 'DejaVu Sans', 'Arial', 'Helvetica', 'Times New Roman', 'PingFang SC',
+  'Hiragino Sans GB', 'Songti SC', 'Noto Sans CJK SC', 'Microsoft YaHei', 'SimHei',
+] as const
+
+/** matplotlib's numeric `Legend._loc` code, mapped to the seven-value control. */
 const MPL_LOC_POSITION: Readonly<Record<number, LegendPosition>> = {
   0: 'best', 1: 'upper right', 2: 'upper left', 3: 'lower left', 4: 'lower right', 5: 'right', 10: 'center',
 }
 
-/**
- * ggplot2's `legend.position.inside` normalized coordinate, mapped to the
- * segment it names (see A1's placement table). center-left, center-right,
- * upper-center, and lower-center have no matching segment among the 7.
- */
+/** ggplot2 inside coordinates represented by the seven-value control. */
 const R_INSIDE_POSITION: readonly (readonly [x: number, y: number, position: LegendPosition])[] = [
   [0, 1, 'upper left'], [1, 1, 'upper right'], [0, 0, 'lower left'], [1, 0, 'lower right'], [0.5, 0.5, 'center'],
 ]
 
-/**
- * Derive the legend control's initial highlighted segment from one legend
- * element's extracted `current` value (matplotlib's numeric `loc`, or
- * ggplot2's `position`/`inside` pair — see A1's extraction shapes).
- * @param current - the legend element's extracted current value.
- * @returns the matching segment, or `undefined` when `current` matches none of the seven.
- */
+/** Derive the legend control value from one adapter's extracted current value. */
 function legendControlInitial(current: ScienceChartElement['current']): LegendPosition | undefined {
   if (typeof current !== 'object' || current === null || Array.isArray(current)) return undefined
   const record = current as Record<string, unknown>
@@ -81,13 +76,14 @@ function opTargetLabel(op: ScienceChartOp): string {
     case 'set_axis_label': return `${prefix}${op.axis}_label`
     case 'set_legend_position': return `${prefix}legend`
     case 'toggle_grid': return `${prefix}grid`
+    case 'set_font': return 'font'
     /* v8 ignore next -- closed ScienceChartOp union */
     default: return assertNever(op)
   }
 }
 
-/** The six element kinds with a direct control (title/subtitle, x/y label, legend, grid). */
-type DirectEditKind = 'title' | 'subtitle' | 'x_label' | 'y_label' | 'legend' | 'grid'
+/** Element kinds with compact, always-visible direct controls. */
+type DirectEditKind = 'title' | 'subtitle' | 'x_label' | 'y_label' | 'grid' | 'font' | 'legend'
 
 function directlyEditable(kind: ScienceChartElement['kind']): kind is DirectEditKind {
   switch (kind) {
@@ -95,57 +91,50 @@ function directlyEditable(kind: ScienceChartElement['kind']): kind is DirectEdit
     case 'subtitle':
     case 'x_label':
     case 'y_label':
-    case 'legend':
-    case 'grid': return true
+    case 'grid':
+    case 'font':
+    case 'legend': return true
     case 'tick_labels':
     case 'series':
     case 'axis_range':
     case 'axis_scale':
     case 'figure_size':
-    case 'font':
     case 'annotation': return false
     /* v8 ignore next -- closed ScienceChartElement kind union */
     default: return assertNever(kind)
   }
 }
 
-/**
- * Narrow one element to its directly-editable shape, or `undefined` when it
- * has none. `directlyEditable` cannot narrow `element` itself through the
- * function-call boundary (only the `kind` expression it is passed), so the
- * cast here is the one place that translates its result into the object
- * `ElementControl` requires; every call site derives its check from this
- * same function rather than repeating `directlyEditable(element.kind)`.
- */
-function asDirectEditElement(element: ScienceChartElement): (ScienceChartElement & { kind: DirectEditKind }) | undefined {
-  return directlyEditable(element.kind) ? element as ScienceChartElement & { kind: DirectEditKind } : undefined
-}
+/** Direct-edit order follows the compact form from top to bottom. */
+const DIRECT_EDIT_ROW_ORDER: readonly DirectEditKind[] = ['title', 'subtitle', 'x_label', 'y_label', 'grid', 'font', 'legend']
 
-/** Row order for the directly-editable kinds; every other kind sorts after them, in extraction order. */
-const DIRECT_EDIT_ROW_ORDER: readonly ScienceChartElement['kind'][] = ['title', 'subtitle', 'x_label', 'y_label', 'legend', 'grid']
-
-/**
- * Order chart elements for the panel's row list: directly-editable kinds
- * first (in {@link DIRECT_EDIT_ROW_ORDER}, ties broken by ascending axes),
- * then every other kind in the extraction order the Runtime produced —
- * never reordered among themselves. Does not mutate `elements`.
- * @param elements - the exact chart version's extracted elements.
- * @returns the same elements, reordered for display.
- */
-function sortedElementRows(elements: readonly ScienceChartElement[]): readonly ScienceChartElement[] {
+function directEditRows(elements: readonly ScienceChartElement[]): readonly (ScienceChartElement & { kind: DirectEditKind })[] {
   return elements
     .map((element, index) => ({ element, index }))
-    .sort((left, right) => {
-      const leftRank = DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind)
-      const rightRank = DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
-      if (leftRank !== -1 && rightRank !== -1) {
-        return leftRank - rightRank || (left.element.axes ?? -1) - (right.element.axes ?? -1) || left.index - right.index
-      }
-      if (leftRank !== -1) return -1
-      if (rightRank !== -1) return 1
-      return left.index - right.index
-    })
+    .filter((item): item is {
+      element: ScienceChartElement & { kind: DirectEditKind }
+      index: number
+    } => directlyEditable(item.element.kind))
+    .sort((left, right) => DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind) - DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
+      || (left.element.axes ?? -1) - (right.element.axes ?? -1)
+      || left.index - right.index)
     .map(({ element }) => element)
+}
+
+function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget, { kind: 'element' }> {
+  return {
+    kind: 'element',
+    elementId: element.id,
+    elementKind: element.kind,
+    axes: element.axes,
+    label: element.label,
+    current: scienceElementCurrentSummary(element.current),
+  }
+}
+
+function referenceButtonLabel(element: ScienceChartElement, added: boolean, t: TranslateNS<'science'>): string {
+  const name = scienceElementLabel(element.kind, element.label, t)
+  return added ? t('edit.removeTarget', { target: name }) : t('edit.addTarget', { target: name })
 }
 
 function TextControl({ initial, onApply, t }: {
@@ -154,49 +143,66 @@ function TextControl({ initial, onApply, t }: {
   t: TranslateNS<'science'>
 }) {
   const [value, setValue] = useState(initial)
-  return (
-    <div className={css.styleControl}>
-      <label>
-        {t('panel.textPlaceholder')}
-        <input value={value} aria-label={t('panel.textPlaceholder')} onChange={(event) => {
-          setValue(event.target.value)
-          if (event.target.value.trim() !== '') onApply(event.target.value)
-        }} />
-      </label>
-    </div>
-  )
+  return <input type="text" value={value} aria-label={t('panel.textPlaceholder')} onChange={(event) => {
+    setValue(event.target.value)
+    if (event.target.value.trim() !== '') onApply(event.target.value)
+  }} />
 }
 
-function LegendControl({ initial, onApply, t }: {
-  initial: LegendPosition | undefined
+function LegendControl({ current, onApply, t }: {
+  current: ScienceChartElement['current']
   onApply: (position: LegendPosition) => void
   t: TranslateNS<'science'>
 }) {
-  const [value, setValue] = useState<LegendPosition | undefined>(initial)
-  return (
-    <div className={css.styleControl}>
-      <span className={css.editLabel}>{t('panel.legendPositionLabel')}</span>
-      <div className={css.legendSegments} role="radiogroup" aria-label={t('panel.legendPositionLabel')}>
-        {LEGEND_POSITIONS.map(position => (
-          <button
-            key={position} type="button" className={css.legendSegment} data-active={position === value || undefined}
-            aria-pressed={position === value} onClick={() => { setValue(position); onApply(position) }}
-          >
-            {t(LEGEND_LABEL_KEY[position])}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+  const initial = legendControlInitial(current)
+  const [value, setValue] = useState<LegendPosition | ''>(initial ?? '')
+  return <select aria-label={t('panel.legendPositionLabel')} value={value} onChange={(event) => {
+    const position = event.target.value as LegendPosition
+    setValue(position)
+    onApply(position)
+  }}>
+    {initial === undefined && <option value="" disabled>{t('panel.legendCurrent', { current: scienceElementCurrentSummary(current) })}</option>}
+    {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{t(LEGEND_LABEL_KEY[position])}</option>)}
+  </select>
 }
 
-/**
- * The direct control for one directly-editable element. `ElementRow` only
- * renders this for an element `asDirectEditElement` narrowed, so this
- * switch's cases are the closed `DirectEditKind` set, not every
- * `ScienceChartElement` kind — the other seven kinds have no direct control
- * and are unreachable here by construction, not merely by convention.
- */
+function fontInitial(current: ScienceChartElement['current']): { family: string; size: number } {
+  if (typeof current !== 'object' || current === null || Array.isArray(current)) return { family: 'sans-serif', size: 10 }
+  const record = current as Record<string, unknown>
+  const families = record['family']
+  const family = typeof families === 'string' ? families
+    : Array.isArray(families) && typeof families[0] === 'string' ? families[0]
+      : 'sans-serif'
+  return { family: family.trim() === '' ? 'sans-serif' : family, size: typeof record['size'] === 'number' ? record['size'] : 10 }
+}
+
+function FontControl({ element, onStage, t }: {
+  element: ScienceChartElement
+  onStage: (op: ScienceChartOp) => void
+  t: TranslateNS<'science'>
+}) {
+  const initial = fontInitial(element.current)
+  const [family, setFamily] = useState(initial.family)
+  const [size, setSize] = useState(initial.size)
+  const datalistId = `science-font-families-${element.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
+  const stage = (nextFamily: string, nextSize: number): void => {
+    onStage({ op: 'set_font', axes: null, family: nextFamily.trim() === '' ? initial.family : nextFamily, size: nextSize })
+  }
+  return <div className={css.fontControls}>
+    <input list={datalistId} value={family} aria-label={t('panel.fontFamily')} onChange={(event) => {
+      setFamily(event.target.value)
+      stage(event.target.value, size)
+    }} />
+    <datalist id={datalistId}>{FONT_FAMILIES.map(candidate => <option key={candidate} value={candidate} />)}</datalist>
+    <input type="number" min={4} max={72} step={1} value={size} aria-label={t('panel.fontSize')} onChange={(event) => {
+      const next = event.target.valueAsNumber
+      if (!Number.isFinite(next) || next < 4 || next > 72) return
+      setSize(next)
+      stage(family, next)
+    }} />
+  </div>
+}
+
 function ElementControl({ element, onStage, t }: {
   element: ScienceChartElement & { kind: DirectEditKind }
   onStage: (op: ScienceChartOp) => void
@@ -213,69 +219,63 @@ function ElementControl({ element, onStage, t }: {
     case 'y_label':
       return <TextControl initial={typeof element.current === 'string' ? element.current : ''}
         onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'y', text }) }} t={t} />
-    case 'legend':
-      return <LegendControl initial={legendControlInitial(element.current)}
-        onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
     case 'grid':
-      return <div className={css.styleControl}><label className={css.gridControl}><input
-        type="checkbox" defaultChecked={element.current === true} onChange={(event) => {
-          onStage({ op: 'toggle_grid', axes: element.axes, visible: event.target.checked })
-        }} />{t('panel.gridVisible')}</label></div>
+      return <label className={css.gridControl}><input type="checkbox" defaultChecked={element.current === true} onChange={(event) => {
+        onStage({ op: 'toggle_grid', axes: element.axes, visible: event.target.checked })
+      }} />{t('panel.gridVisible')}</label>
+    case 'font': return <FontControl element={element} onStage={onStage} t={t} />
+    case 'legend':
+      return <LegendControl current={element.current}
+        onApply={(position) => { onStage({ op: 'set_legend_position', axes: element.axes, position }) }} t={t} />
     /* v8 ignore next -- closed DirectEditKind union */
     default: return assertNever(element.kind)
   }
 }
 
-function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget, { kind: 'element' }> {
-  return {
-    kind: 'element',
-    elementId: element.id,
-    elementKind: element.kind,
-    axes: element.axes,
-    label: element.label,
-    current: scienceElementCurrentSummary(element.current),
-  }
-}
-
-function ElementRow({ element, expanded, added, onToggle, onAddTarget, onRemoveTarget, onStage, t }: {
-  element: ScienceChartElement
-  expanded: boolean
+function DirectEditRow({ element, showAxes, added, onAddTarget, onRemoveTarget, onStage, t }: {
+  element: ScienceChartElement & { kind: DirectEditKind }
+  showAxes: boolean
   added: boolean
-  onToggle: () => void
   onAddTarget: () => void
   onRemoveTarget: () => void
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
-  const directEdit = asDirectEditElement(element)
-  const editable = directEdit !== undefined
   const name = scienceElementLabel(element.kind, element.label, t)
-  const toggleReference = added ? onRemoveTarget : onAddTarget
-  return (
-    <li className={css.elementRow} data-selected={added || undefined} data-editable={editable || undefined}>
-      <div className={css.elementRowHead}>
-        <button
-          type="button" className={css.elementToggle}
-          {...editable ? { 'aria-expanded': expanded, onClick: onToggle } : { 'aria-pressed': added, onClick: toggleReference }}
-        >
-          <span className={css.elementKindDot} data-kind={element.kind} aria-hidden="true" />
-          <span className={css.elementIdentity}>
-            <strong className={css.elementName}>{name}</strong>
-            <span className={css.elementSummary}>{scienceElementCurrentSummary(element.current)}</span>
-          </span>
-          {editable && <span className={css.elementChevron} aria-hidden="true">›</span>}
-        </button>
-        <button
-          type="button" className={css.elementReference} data-selected={added || undefined}
-          aria-label={added ? t('edit.removeTarget', { target: name }) : t('edit.addTarget', { target: name })}
-          aria-pressed={added} onClick={toggleReference}
-        >
-          {added ? '−' : '+'}
-        </button>
-      </div>
-      {directEdit !== undefined && expanded && <ElementControl element={directEdit} onStage={onStage} t={t} />}
-    </li>
-  )
+  const label = showAxes && element.axes !== null ? `${name} · axes[${String(element.axes)}]` : name
+  return <li className={css.directEditRow} data-editable="true" data-selected={added || undefined}>
+    <span className={css.directEditName}>{label}</span>
+    <ElementControl element={element} onStage={onStage} t={t} />
+    <button type="button" className={css.elementReference} data-selected={added || undefined}
+      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added}
+      onClick={added ? onRemoveTarget : onAddTarget}>{added ? '−' : '+'}</button>
+  </li>
+}
+
+function chipSummary(element: ScienceChartElement): string | undefined {
+  if (element.kind !== 'series' && element.kind !== 'annotation') return undefined
+  const current = scienceElementCurrentSummary(element.current)
+  return current.length > 16 ? `${current.slice(0, 16)}…` : current
+}
+
+function ReferenceChip({ element, added, onAddTarget, onRemoveTarget, t }: {
+  element: ScienceChartElement
+  added: boolean
+  onAddTarget: () => void
+  onRemoveTarget: () => void
+  t: TranslateNS<'science'>
+}) {
+  const summary = chipSummary(element)
+  return <li data-selected={added || undefined}>
+    <button type="button" className={css.referenceChip} data-selected={added || undefined}
+      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added}
+      onClick={added ? onRemoveTarget : onAddTarget}>
+      <span className={css.elementKindDot} data-kind={element.kind} aria-hidden="true" />
+      <span>{scienceElementLabel(element.kind, element.label, t)}</span>
+      {summary !== undefined && <span className={css.referenceChipSummary}>{summary}</span>}
+      <span aria-hidden="true">{added ? '−' : '+'}</span>
+    </button>
+  </li>
 }
 
 function OpsList({ committed, pending, version, t }: {
@@ -285,27 +285,18 @@ function OpsList({ committed, pending, version, t }: {
   t: TranslateNS<'science'>
 }) {
   if (committed.length === 0 && pending.length === 0) return null
-  return (
-    <div className={css.opsSection}>
-      {committed.length > 0 && <div>
-        <h4 className={css.editLabel}>{t('panel.committedOpsHeading', { version })}</h4>
-        <ul className={css.opsList}>{committed.map((op, index) => <li key={index}>{op.op} → {opTargetLabel(op)}</li>)}</ul>
-      </div>}
-      {pending.length > 0 && <div>
-        <h4 className={css.editLabel}>{t('panel.pendingOpsHeading')}</h4>
-        <ul className={css.opsList}>{pending.map((op, index) => <li key={index}>{op.op} → {opTargetLabel(op)}</li>)}</ul>
-      </div>}
-    </div>
-  )
+  return <div className={css.opsSection}>
+    {committed.length > 0 && <details className={css.committedOps}>
+      <summary>{t('panel.committedOpsSummary', { count: committed.length, version })}</summary>
+      <ul className={css.opsList}>{committed.map((op, index) => <li key={index}>{op.op} → {opTargetLabel(op)}</li>)}</ul>
+    </details>}
+    {pending.length > 0 && <p className={css.pendingOps}>
+      {t('panel.pendingOpsSummary', { count: pending.length, ops: pending.map(op => op.op).join(', ') })}
+    </p>}
+  </div>
 }
 
-/**
- * Render every extracted element with a precise composer reference; only
- * titles, axis labels, legend position, and grid expose direct controls and
- * live preview.
- * @param props - exact chart version, operation callbacks, and composer-reference callbacks.
- * @returns element rows, pending operation status, and explicit Discard/Save actions.
- */
+/** Render compact direct controls and reference-only chips for one exact chart version. */
 export function ScienceChartEditPanel({
   version, chart, onSave, onPreview, onPreviewSrc, isTargetAdded, onAddTarget, onRemoveTarget, onPendingChange, t,
 }: {
@@ -317,11 +308,7 @@ export function ScienceChartEditPanel({
   isTargetAdded: (target: ScienceEditTarget) => boolean
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
-  /**
-   * Reported whenever the pending (unsaved) direct-edit count crosses zero,
-   * so a caller can suppress auto-stepping the open tab to a newer
-   * committed version mid-edit (B4).
-   */
+  /** Report whether unsaved direct operations should suppress automatic version stepping. */
   onPendingChange?: (hasPending: boolean) => void
   t: TranslateNS<'science'>
 }) {
@@ -330,8 +317,8 @@ export function ScienceChartEditPanel({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
-  const [expandedId, setExpandedId] = useState<string>()
   const [previewing, setPreviewing] = useState(false)
+  const [annotationsExpanded, setAnnotationsExpanded] = useState(false)
 
   useEffect(() => {
     onPendingChange?.(pending.length > 0)
@@ -367,39 +354,69 @@ export function ScienceChartEditPanel({
     setFailedOps([])
   }
 
-  return (
-    <section className={css.elementPanel} aria-label={t('edit.elements')}>
-      <h3>{t('edit.elements')}</h3>
-      <ul className={css.elementRows}>{sortedElementRows(chart.elements).map((element) => {
-        const target = elementTarget(element)
-        const added = isTargetAdded(target)
-        return <ElementRow key={element.id} element={element} expanded={expandedId === element.id} added={added}
-          onToggle={() => { setExpandedId(current => current === element.id ? undefined : element.id) }}
-          onAddTarget={() => { onAddTarget(target, '') }} onRemoveTarget={() => { onRemoveTarget(target) }} onStage={stage} t={t} />
-      })}</ul>
-      <OpsList committed={chart.ops} pending={pending} version={version} t={t} />
-      {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
-      {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
-      {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}
-      {failedOps.map(item => <p key={item.index} role="alert" className={css.notice}>
-        {t('panel.failedOp', { index: item.index + 1, reason: item.reason })}
-      </p>)}
-      <div className={css.panelActions}>
-        <button type="button" className={css.regionButton} disabled={pending.length === 0 || saving}
-          onClick={() => { setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([]) }}>
-          {t('panel.discard')}
-        </button>
-        <button type="button" className={css.editSubmit} disabled={pending.length === 0 || saving} onClick={() => {
-          setSaving(true); setError(undefined); setFailedOps([]); setSaved(false)
-          void onSave(pending).then((outcome) => {
-            if (outcome.ok) {
-              setPending([]); onPreviewSrc?.(undefined); setFailedOps(outcome.failedOps); setSaved(true)
-            } else setError(outcome.error)
-          }).finally(() => { setSaving(false) })
-        }}>
-          {saving ? t('style.committing') : t('style.commit')}
-        </button>
-      </div>
+  const direct = directEditRows(chart.elements)
+  const duplicatedAxesKinds = new Set(direct.filter(element => element.axes !== null)
+    .filter(element => direct.filter(candidate => candidate.kind === element.kind && candidate.axes !== null).length > 1)
+    .map(element => element.kind))
+  let annotationIndex = 0
+  const references = chart.elements.filter((element) => {
+    if (directlyEditable(element.kind)) return false
+    if (element.kind !== 'annotation') return true
+    annotationIndex += 1
+    return annotationsExpanded || annotationIndex <= 6
+  })
+  const hiddenAnnotations = chart.elements.filter(element => element.kind === 'annotation').length - 6
+
+  const targetProps = (element: ScienceChartElement) => {
+    const target = elementTarget(element)
+    const added = isTargetAdded(target)
+    return {
+      added,
+      onAddTarget: () => { onAddTarget(target, '') },
+      onRemoveTarget: () => { onRemoveTarget(target) },
+    }
+  }
+
+  return <section className={css.elementPanel} aria-label={t('edit.elements')}>
+    <h3>{t('edit.elements')}</h3>
+    <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
+      <h4 id="science-direct-edit-heading">{t('panel.directEdit')}</h4>
+      <ul className={css.directEditRows}>{direct.map(element => <DirectEditRow key={element.id} element={element}
+        showAxes={duplicatedAxesKinds.has(element.kind)} {...targetProps(element)} onStage={stage} t={t} />)}</ul>
     </section>
-  )
+    <section className={css.elementPanelSection} aria-labelledby="science-reference-heading">
+      <h4 id="science-reference-heading">{t('panel.referenceEdit')}</h4>
+      <ul className={css.referenceChips}>{references.map(element => <ReferenceChip key={element.id} element={element}
+        {...targetProps(element)} t={t} />)}
+      {hiddenAnnotations > 0 && <li><button type="button" className={css.referenceChip}
+        aria-expanded={annotationsExpanded} onClick={() => { setAnnotationsExpanded(value => !value) }}>
+        <span className={css.elementKindDot} data-kind="annotation" aria-hidden="true" />
+        {annotationsExpanded ? t('panel.annotationsCollapse') : t('panel.annotationsMore', { count: hiddenAnnotations })}
+      </button></li>}
+      </ul>
+    </section>
+    <OpsList committed={chart.ops} pending={pending} version={version} t={t} />
+    {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
+    {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
+    {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}
+    {failedOps.map(item => <p key={item.index} role="alert" className={css.notice}>
+      {t('panel.failedOp', { index: item.index + 1, reason: item.reason === 'font_not_found' ? t('panel.fontNotFound') : item.reason })}
+    </p>)}
+    <div className={css.panelActions}>
+      <button type="button" className={css.regionButton} disabled={pending.length === 0 || saving}
+        onClick={() => { setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([]) }}>
+        {t('panel.discard')}
+      </button>
+      <button type="button" className={css.editSubmit} disabled={pending.length === 0 || saving} onClick={() => {
+        setSaving(true); setError(undefined); setFailedOps([]); setSaved(false)
+        void onSave(pending).then((outcome) => {
+          if (outcome.ok) {
+            setPending([]); onPreviewSrc?.(undefined); setFailedOps(outcome.failedOps); setSaved(true)
+          } else setError(outcome.error)
+        }).finally(() => { setSaving(false) })
+      }}>
+        {saving ? t('style.committing') : t('style.commit')}
+      </button>
+    </div>
+  </section>
 }

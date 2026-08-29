@@ -67,6 +67,6 @@ describe('ArtifactContent: optional chart-edit callbacks', () => {
     // ArtifactTab, which always supplies all three) still gets a working panel:
     // Save stays reachable, it only degrades preview and pending-edit reporting.
     render(<ArtifactContent {...baseProps()} />)
-    expect(screen.getByRole('button', { name: /^Title/ })).toBeTruthy()
+    expect(screen.getByLabelText('Enter text')).toBeTruthy()
   })
 })

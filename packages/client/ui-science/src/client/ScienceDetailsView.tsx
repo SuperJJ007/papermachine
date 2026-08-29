@@ -560,7 +560,7 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
   return (
     <section className={css.notes} aria-label={t('notes.title')}>
       <h3>{t('notes.title')}</h3>
-      {notes.length === 0 ? <p>{t('notes.empty')}</p> : <ul>{notes.map(note => (
+      {notes.length === 0 ? null : <ul>{notes.map(note => (
         <li key={note.seq}>
           <span>{note.text}</span>
           <small>{t('notes.version', { version: note.version, time: new Date(note.createdAt).toLocaleString() })}</small>

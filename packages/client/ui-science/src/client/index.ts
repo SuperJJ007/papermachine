@@ -166,6 +166,7 @@ export function apply(ctx: ClientContext): void {
     if (science === null || science === undefined) return null
     return createElement(ScienceComposerChips, {
       selections: composerSelections.store(props.sessionId),
+      artifacts: science.artifacts,
       remove: (index) => { composerSelections.remove(props.sessionId, index) },
       t: props.t,
     })

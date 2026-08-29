@@ -204,7 +204,7 @@ describe('ui-science on the real machinery stack', () => {
     const view = b.runtime.renderRoot()
 
     expect(view.container.querySelector('[data-tool="science-artifact"]')).toBeNull()
-    const card = await view.findByRole('listitem', { name: /loss-curve\.png/u })
+    const card = await view.findByRole('listitem', { name: /^Loss curve/u })
     fireEvent.click(card)
 
     expect(b.layout.openDetails).toHaveBeenCalledTimes(1)
@@ -219,7 +219,7 @@ describe('ui-science on the real machinery stack', () => {
   it('the Turn-tail card and artifact viewer share one selection store', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(await view.findByRole('listitem', { name: /loss-curve\.png/u }))
+    fireEvent.click(await view.findByRole('listitem', { name: /^Loss curve/u }))
 
     // If the row's `openTab` write landed on a store instance different from
     // the one the viewer reads, the tab would never appear here — the tab
@@ -238,7 +238,7 @@ describe('ui-science on the real machinery stack', () => {
   it('the toolbar Messages sub-tab reaches detailed trajectory through the real DetailsPanel handoff', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
-    fireEvent.click(await view.findByRole('listitem', { name: /loss-curve\.png/u }))
+    fireEvent.click(await view.findByRole('listitem', { name: /^Loss curve/u }))
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
     fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))

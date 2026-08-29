@@ -144,9 +144,10 @@ describe('Science composer targets', () => {
   it('renders nothing when empty and removes region and element chips', () => {
     const selections = createSnapshotStore<readonly ScienceEditSelection[]>([])
     const remove = vi.fn()
-    const view = render(<ScienceComposerChips selections={selections} remove={remove} t={t} />)
+    const view = render(<ScienceComposerChips selections={selections} artifacts={[]} remove={remove} t={t} />)
     expect(view.container.firstChild).toBeNull()
     act(() => { selections.set([commented, region, elementSpec]) })
+    // No matching artifact fact supplied: falls back to the wire logicalName.
     expect(screen.getByText('loss.png v1 · region 10%,20%: make it blue')).toBeTruthy()
     expect(screen.getByText('residuals.png v2 · region 10%,20%')).toBeTruthy()
     expect(screen.getByText('loss.png v1 · Title')).toBeTruthy()
@@ -154,6 +155,17 @@ describe('Science composer targets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove residuals.png v2 · region 10%,20%' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · Title' }))
     expect(remove.mock.calls).toEqual([[0], [1], [2]])
+  })
+
+  it('shows the artifact\'s latest known title (C1), not the wire logicalName or the referenced version\'s own title', () => {
+    const selections = createSnapshotStore<readonly ScienceEditSelection[]>([commented])
+    const artifacts = [
+      { artifactId: 'chart-1', version: 1, title: 'Loss curve (draft)', logicalName: 'loss.png' },
+      { artifactId: 'chart-1', version: 2, title: 'Loss curve, final', logicalName: 'loss.png' },
+    ]
+    render(<ScienceComposerChips selections={selections} artifacts={artifacts} remove={vi.fn()} t={t} />)
+    expect(screen.getByText('Loss curve, final v1 · region 10%,20%: make it blue')).toBeTruthy()
+    expect(screen.queryByText(/^loss\.png/)).toBeNull()
   })
 
   it('deduplicates exact selections, preserves distinct versions and targets, removes, and clears per Session', () => {

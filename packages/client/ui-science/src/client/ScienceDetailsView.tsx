@@ -41,6 +41,7 @@ import type {
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
+import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import { scienceTabId } from './selection-store.ts'
@@ -200,7 +201,8 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
         <button type="button" className={css.libraryBack} onClick={onBack}>
           <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
         </button>
-        <span className={css.viewerTitle}>{chart.title}</span>
+        {/* C1: the artifact's latest known title, fixed across the version stepper below. */}
+        <span className={css.viewerTitle}>{scienceArtifactDisplayTitle(versions, chart.artifactId) ?? chart.title}</span>
       </div>
       <div className={css.toolbarControls}>
         <div className={css.stepper}>
@@ -272,9 +274,11 @@ function TabStrip({ tabs, artifacts, activeTabId, onActivate, onClose, t }: {
   return (
     <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
       {tabs.map((tab) => {
-        const artifact = tab.kind === 'artifact' ? artifacts.find(candidate => candidate.artifactId === tab.artifactId && candidate.version === tab.version) : undefined
+        // C1: the tab label is the artifact's latest known title, not the
+        // exact open version's own title, so it stays fixed while the
+        // toolbar's version stepper walks the tab between versions.
         const label = tab.kind === 'artifact'
-          ? artifact?.title ?? tab.artifactId
+          ? scienceArtifactDisplayTitle(artifacts, tab.artifactId) ?? tab.artifactId
           : workspaceFileName(tab.path)
         const id = scienceTabId(tab)
         const active = id === activeTabId
@@ -662,7 +666,7 @@ function ArtifactTab({
         <div className={css.body}>
           <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
             <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
-              {chart.title}
+              {scienceArtifactDisplayTitle(versions, chart.artifactId) ?? chart.title}
             </button>
             <span className={css.breadcrumbSep} aria-hidden="true">›</span>
             <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>

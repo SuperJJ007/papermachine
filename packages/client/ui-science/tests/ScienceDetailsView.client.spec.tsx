@@ -745,14 +745,18 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
 
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
-    // The stepped-to title shows twice: once as the tab label, once in the toolbar.
+    // C1: the artifact's latest known title (here, v3's) stays fixed as the
+    // tab label and toolbar name across every step — only the version
+    // stepper's own v{n} badge tracks the stepped-to version.
     expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v3')
     expect(screen.queryByText(/5\.0 MB/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
-    expect(screen.getAllByText('v1 title')).toHaveLength(2)
+    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
     expect(screen.getByText('First pass')).toBeTruthy()
     expect(screen.queryByText(/512 B/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)

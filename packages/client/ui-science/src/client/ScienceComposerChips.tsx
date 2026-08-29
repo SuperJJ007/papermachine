@@ -5,12 +5,16 @@ import { IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
+import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
+import type { ScienceDisplayTitleFact } from './artifact-display-title.ts'
 import { scienceElementLabel } from './science-element-label.ts'
 import css from './ScienceComposerChips.module.css'
 
 /** Controller face injected for the addressed Session. */
 export interface ScienceComposerChipsProps {
   readonly selections: SnapshotStore<readonly ScienceEditSelection[]>
+  /** Live artifact version facts used to resolve each chip's artifact-level display name (C1). */
+  readonly artifacts: readonly ScienceDisplayTitleFact[]
   remove: (index: number) => void
   t: TranslateNS<'science'>
 }
@@ -33,13 +37,19 @@ function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS
   }
 }
 
-function targetLabel(selection: ScienceEditSelection, t: TranslateNS<'science'>): string {
+/**
+ * The target-level chip label: the artifact's latest known display name
+ * (C1), never `selection.logicalName` — that field stays the stable wire
+ * identity Host admission validates, not what the chip shows.
+ */
+function targetLabel(selection: ScienceEditSelection, artifacts: readonly ScienceDisplayTitleFact[], t: TranslateNS<'science'>): string {
   const target = targetDescriptor(selection.target, t)
-  return `${selection.logicalName} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
+  const name = scienceArtifactDisplayTitle(artifacts, selection.artifactId) ?? selection.logicalName
+  return `${name} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
 }
 
 /** Render removable targets; an empty selection contributes no chrome. */
-export function ScienceComposerChips({ selections, remove, t }: ScienceComposerChipsProps) {
+export function ScienceComposerChips({ selections, artifacts, remove, t }: ScienceComposerChipsProps) {
   const targets = useSyncExternalStore(
     notify => selections.subscribe(notify),
     () => selections.getSnapshot(),
@@ -50,9 +60,9 @@ export function ScienceComposerChips({ selections, remove, t }: ScienceComposerC
   return (
     <div className={css.chips} aria-label={t('edit.composerTargets')}>
       {targets.map((selection, index) => (
-        <span className={css.chip} key={`${selection.artifactId}:${String(selection.version)}:${targetLabel(selection, t)}`}>
-          <span className={css.label}>{targetLabel(selection, t)}</span>
-          <button type="button" className={css.remove} aria-label={t('edit.removeTarget', { target: targetLabel(selection, t) })} onClick={() => { remove(index) }}>
+        <span className={css.chip} key={`${selection.artifactId}:${String(selection.version)}:${targetLabel(selection, artifacts, t)}`}>
+          <span className={css.label}>{targetLabel(selection, artifacts, t)}</span>
+          <button type="button" className={css.remove} aria-label={t('edit.removeTarget', { target: targetLabel(selection, artifacts, t) })} onClick={() => { remove(index) }}>
             <IconCloseFill14 size={10} />
           </button>
         </span>

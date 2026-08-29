@@ -55,17 +55,24 @@ export function ScienceTurnArtifacts({ matched, actions, loadImage, openArtifact
     <section className={css.root} data-science-turn-artifacts>
       <p className={css.title}>{t('turnArtifacts.title', { count: total })}</p>
       <div className={css.list} role="list">
-        {visible.map(item => (
-          <button type="button" role="listitem" aria-label={`${item.logicalName} v${String(item.version)}`} className={css.card} key={item.artifactId}
-            onClick={() => {
-              actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
-              openArtifact()
-            }}>
-            <span className={css.thumb}><ArtifactThumbnail item={item} loadImage={loadImage} /></span>
-            <span className={css.meta}><span className={css.name}>{item.logicalName}</span>
-              <span className={css.version}>{t('artifact.version', { version: item.version })}</span></span>
-          </button>
-        ))}
+        {visible.map((item) => {
+          // C1: this accumulated item is already this Turn's latest-emitted
+          // version for its artifactId (science-turn-artifacts.ts folds to
+          // the highest version per artifactId), so its own curated title —
+          // not the raw logicalName — is the artifact-level display name.
+          const name = item.title !== '' ? item.title : item.logicalName
+          return (
+            <button type="button" role="listitem" aria-label={`${name} v${String(item.version)}`} className={css.card} key={item.artifactId}
+              onClick={() => {
+                actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
+                openArtifact()
+              }}>
+              <span className={css.thumb}><ArtifactThumbnail item={item} loadImage={loadImage} /></span>
+              <span className={css.meta}><span className={css.name}>{name}</span>
+                <span className={css.version}>{t('artifact.version', { version: item.version })}</span></span>
+            </button>
+          )
+        })}
       </div>
       {overflowing && !expanded && (
         <button type="button" className={css.more} onClick={() => { setExpanded(true) }}>

@@ -244,7 +244,7 @@ describe('ui-science apply', () => {
     })(SID)
     injected.addToConversation([target])
 
-    render(createElement(Component, { useProjection: () => ({}), sessionId: SID, t } as never))
+    render(createElement(Component, { useProjection: () => ({ artifacts: [] }), sessionId: SID, t } as never))
     const remove = screen.getByRole('button', { name: 'edit.removeTarget' })
     fireEvent.click(remove)
     expect(screen.queryByRole('button', { name: 'edit.removeTarget' })).toBeNull()

@@ -1851,6 +1851,51 @@ describe('scienceEdits submit', () => {
     await expect(service.applyChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
   })
 
+  it('renders a chart preview without committing a version, and translates the same stable Runtime rejections', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-chart-preview-remote')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
+      hitmap: [], hitmapStatus: 'unavailable', elements: [],
+      ops: [{ op: 'set_title', axes: null, text: 'New title' }],
+    }
+    const preview = vi.spyOn(ctx.scienceRuntime, 'previewChartEdit').mockResolvedValue({
+      png: PNG,
+      chart,
+      failedOps: [{ index: 1, reason: 'series missing' }],
+    })
+    const request = {
+      artifactId: ScienceArtifactId('artifact-1'),
+      version: 1,
+      ops: [{ op: 'set_title' as const, axes: null, text: 'New title' }],
+    }
+    await expect(service.previewChartOps(agent, request, testSignal)).resolves.toEqual({
+      pngBase64: Buffer.from(PNG).toString('base64'),
+      chart,
+      failedOps: [{ index: 1, reason: 'series missing' }],
+    })
+    expect(preview).toHaveBeenCalledWith({ session, ...request, signal: testSignal })
+
+    for (const [runtimeCode, remoteCode] of [
+      ['CHART_STALE_VERSION', 'CHART_STALE'],
+      ['CHART_NOT_ADDRESSABLE', 'CHART_NOT_ADDRESSABLE'],
+      ['CHART_ELEMENT_NOT_FOUND', 'CHART_OP_INVALID'],
+      ['CHART_OP_INVALID', 'CHART_OP_INVALID'],
+    ] as const) {
+      preview.mockRejectedValueOnce(new ScienceRuntimeError(runtimeCode, runtimeCode))
+      await expect(service.previewChartOps(agent, request, testSignal))
+        .rejects.toMatchObject({ code: remoteCode, message: runtimeCode })
+    }
+    const infrastructure = new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'kernel failed')
+    preview.mockRejectedValueOnce(infrastructure)
+    await expect(service.previewChartOps(agent, request, testSignal)).rejects.toBe(infrastructure)
+    const unexpected = new Error('unexpected chart preview failure')
+    preview.mockRejectedValueOnce(unexpected)
+    await expect(service.previewChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
+  })
+
   it('adds and removes ignorable user-only notes without queuing model input', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-notes')

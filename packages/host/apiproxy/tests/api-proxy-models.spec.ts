@@ -451,6 +451,40 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('skips a version whose stored media type this build no longer renders instead of failing the whole listing', async () => {
+    const cwd = '/tmp/science-library-legacy-media'
+    const { ctx, sessionId } = await harness(undefined, cwd)
+    const legacyArtifactId = 'artifact-legacy-vega' as typeof ARTIFACT_ID
+    const png = {
+      versionId: 'png-version-1', artifactId: ARTIFACT_ID, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'image/png', byteCount: 3, createdAt: 42, origin: 'auto', title: 'Chart',
+    }
+    const legacy = {
+      versionId: 'legacy-version-1', artifactId: legacyArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'application/vnd.vega-lite+json', byteCount: 3, createdAt: 40, origin: 'auto', title: 'Old spec',
+    }
+    ctx.provide('scienceArtifactStore', {
+      openProject: vi.fn(() => Promise.resolve({ projectId: PROJECT_ID })),
+      listArtifacts: vi.fn(() => Promise.resolve([
+        { artifactId: legacyArtifactId, owningProjectId: PROJECT_ID, logicalName: 'chart.vl.json', originSessionId: sessionId, latestVersionId: legacy.versionId, createdAt: 39 },
+        { artifactId: ARTIFACT_ID, owningProjectId: PROJECT_ID, logicalName: 'chart.png', originSessionId: sessionId, latestVersionId: png.versionId, createdAt: 41 },
+      ])),
+      getLatestVersion: vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) =>
+        Promise.resolve(artifactId === legacyArtifactId ? legacy : png)),
+      getVersion: vi.fn(() => Promise.resolve(png)),
+      listVersions: vi.fn(() => Promise.resolve([])),
+      readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    const library = expectValue(await api.sessions.scienceLibrary(request({ sessionId })))
+    expect(library.artifacts).toHaveLength(1)
+    expect(library.artifacts).toMatchObject([
+      { logicalName: 'chart.png', latest: { mediaType: 'image/png' } },
+    ])
+    await ctx.fiber.dispose()
+  })
+
   it('fails the project library explicitly when the artifact store is not mounted', async () => {
     const { ctx, sessionId } = await harness(undefined, '/tmp/science-library-no-store')
     const api = createApiProxy(ctx, {

@@ -36,7 +36,7 @@ The field is carried by `science/artifact-saved` and projected to the viewer. `S
 
 A direct edit does not enqueue a model turn. When a later model run sees the same artifact, `get_science_state` and artifact receipts expose the cumulative edit count plus each operation name and element target alongside the exact version, while omitting text, colors, sizes, coordinates, and other operand values. Structural changes such as changing chart type, facets, or source data remain model-authored code changes. After code changes, stored operations are revalidated by element identity; operations whose targets no longer resolve are reported rather than guessed.
 
-The viewer sends debounced pending operations through the same warm-or-replay path for preview. A preview writes only private run-scratch request, result, and PNG files, returns the extracted chart and PNG bytes, and appends no artifact version or Session event. Save applies the accumulated operations again and is the only browser action that appends a human-edit version; Discard restores the persisted version's PNG.
+The viewer sends debounced pending direct operations through the same warm-or-replay path for preview. A preview writes only private run-scratch request, result, and PNG files, returns the extracted chart and PNG bytes, and appends no artifact version or Session event. Precise model references never use the preview path. Save applies the accumulated operations again and is the only browser action that appends a human-edit version; Discard restores the persisted version's PNG.
 
 ### Closed element catalog
 
@@ -44,7 +44,9 @@ Version one recognizes exactly these 13 element families: `title`, `subtitle`, `
 
 ### Closed operation set
 
-The closed operation set is `set_title`, `set_axis_label`, `set_series_color`, `set_legend_position`, `set_tick_font_size`, `add_reference_line`, `set_figure_size`, `set_axis_range`, `set_axis_scale`, `toggle_grid`, and `set_font`. Operations carry typed operands and an element identity where applicable. Matplotlib exposes and supports figure size. ggplot2 does not expose a figure-size element and returns an explicit failed operation if a forged request includes `set_figure_size`. Both runtimes expose installed font families in the font element, sorted, deduplicated, capped at 300 entries, and marked when truncated.
+The closed operation set is `set_title`, `set_axis_label`, `set_legend_position`, and `toggle_grid`. Both adapters define deterministic behavior for all four, and only title/subtitle, x/y label, legend, and grid elements expose direct controls. Every other extracted element remains visible and can be sent to the model as a precise reference. Font elements expose only the current family and size; they never enumerate installed font families.
+
+This split is a durable product rule: a chart element receives a direct control only when both adapters implement deterministic behavior and the shared codec bounds its operands and current value. Every other element is reference-only. The closed operation set may grow only after both adapters and the shared codec define the same behavior and the viewer, Runtime acceptance, and model-reference validation are updated together.
 
 ### Runtime ownership
 
@@ -52,7 +54,7 @@ The runtime owns a private mapping from `(runId, capture-relative path)` to a fi
 
 ## Experimental evidence
 
-The adapter experiments found 12 of 13 catalog element families for matplotlib and 11 of 13 for ggplot2. Pixel hit testing selected the intended element in 88.6% of matplotlib trials and 89.5% of ggplot2 trials. All six version-one operations changed their intended output. Rebuilding a figure and replaying its operation log produced a pixel difference of zero in the deterministic fixtures.
+The adapter experiments found 12 of 13 catalog element families for matplotlib and 11 of 13 for ggplot2. Pixel hit testing selected the intended element in 88.6% of matplotlib trials and 89.5% of ggplot2 trials. All four direct operations changed their intended output. Rebuilding a figure and replaying its operation log produced a pixel difference of zero in the deterministic fixtures.
 
 Warm operation round trips measured about 12 ms for matplotlib and 65–96 ms for ggplot2. Cold restoration measured about 370 ms for matplotlib and 570 ms for ggplot2. These results support immediate previews while a live object exists and bounded replay when it does not; they are not product latency guarantees.
 
@@ -67,10 +69,10 @@ Warm operation round trips measured about 12 ms for matplotlib and 65–96 ms fo
 ## Acceptance criteria
 
 - Captured matplotlib and ggplot2 PNGs produced through supported save paths carry a bounded element catalog, hit map, and empty operation log; unsupported PNGs remain valid without chart metadata.
-- All 13 element families and 11 operations have shared codecs, strict validation, and adapter coverage for each supported runtime or an explicit unsupported result.
+- All 13 element families have shared codecs and strict validation; the four direct operations have matching adapter coverage for both supported runtimes.
 - Applying operations creates a new PNG artifact version with exact parentage and cumulative operations; no direct edit mutates an existing version.
 - A dead kernel is restored by replaying the exact source run, materialized inputs, and operation log, and deterministic fixtures reproduce the edited PNG with zero pixel difference.
-- The viewer lists every editable extracted chart element, omits annotations that have no deterministic editor, previews each pending parameter change through the kernel, and saves a new version only through explicit user action.
+- The viewer lists every extracted chart element, exposes controls and preview only for title/subtitle, x/y label, legend, and grid, makes every other row reference-only, and saves a new version only through explicit user action.
 - Model-authored structural edits receive the exact current version and operation context; invalidated operations are reported after revalidation.
 - Keyless snapshots cover extraction, apply, replay, receipts, and model-visible operation context; browser coverage pins selection and save behavior.
 
@@ -81,4 +83,4 @@ Warm operation round trips measured about 12 ms for matplotlib and 65–96 ms fo
 - Element identity across a source-code change is heuristic when labels are duplicated or removed. Revalidation must reject ambiguity rather than applying an operation to a plausible but different element.
 - Hit maps can be several kilobytes per version and need explicit bounds. Overly coarse maps reduce selection accuracy; overly detailed maps increase session and projection cost.
 - Replay executes model-authored source again. It must reuse the existing confined runtime, exact materialized inputs, timeout policy, and durable run accounting rather than become an unlogged shortcut.
-- Matplotlib and ggplot2 do not support every operation symmetrically. The closed operation set must not grow until both adapters define the behavior or expose an explicit runtime-specific rejection.
+- Matplotlib and ggplot2 do not support every operation symmetrically. The closed operation set must not grow until both adapters define deterministic behavior and the shared codec, viewer, acceptance coverage, and precise model-reference validation change together.

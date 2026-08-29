@@ -61,11 +61,13 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 元素 id 在同一份目录内是唯一的：host codec 会拒绝携带两个同 id 元素的图表，因此每个适配器会在命中表抽取之前，按首次出现顺序为发生碰撞的 id(例如两个渲染文本相同的柱值标注)追加稳定的 `#N` 后缀。
 
+目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合只有 `set_title`、`set_axis_label`、`set_legend_position` 与 `toggle_grid`；两个适配器都实现全部四项，预览也接受同一 codec。`font` 元素仍可被引用，但其 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。
+
 ##### 直接编辑
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。
 
-确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；文本、颜色、字号和参考线坐标等参数值不会进入净化后的 state 与 receipt 摘要。
+确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；标题文本、标签文本、图例位置与网格可见性不会进入净化后的 state 与 receipt 摘要。
 
 当该 session 自身的实时 projection 里没有某个被捕获路径的逻辑名记录时，遍历会去检查所属 project 的 artifact store——而不只是该 session 自身的历史——再决定是否创建新 artifact:同一 project 中的另一个 session 可能已经拥有那个逻辑名(第二个 session 接手第一个 session 的分析)。若在 store 中找到，就沿用其既有 artifactId，把该 session 记为新版本的 producer,而不是在同一名字下分叉出第二个 artifact;与该跨 session latest 字节相同的匹配同样会被跳过,如同同一 session 内重跑一样。与直接人工编辑自身祖先链的去重(见下文)仍只限定在该 session 自身的实时 projection 内。
 

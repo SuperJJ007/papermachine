@@ -36,7 +36,7 @@ interface ScienceChartState {
 
 直接编辑不会排入一次模型回合。当模型之后看到同一个 artifact 时，`get_science_state` 与 artifact receipt 会把累计编辑数量以及每项操作的名称和元素 target 连同确切 version 一起公开，同时省略文本、颜色、字号、坐标及其他参数值。变更图型、facet 或源数据等结构性修改仍由模型修改代码。代码变化后，已存操作按元素身份重新校验；无法再解析目标的操作会被报告，而不是猜测新目标。
 
-Viewer 会把经过 debounce 的待定操作送入同一条 warm-or-replay 路径预览。预览只在私有 run scratch 中写请求、结果与 PNG 文件，返回重新抽取的 chart 与 PNG 字节，不追加 artifact version 或 Session event。Save 会再次应用累计操作，并且是浏览器中唯一会追加 human-edit version 的动作；Discard 恢复已持久化 version 的 PNG。
+Viewer 会把经过 debounce 的待定直接操作送入同一条 warm-or-replay 路径预览。预览只在私有 run scratch 中写请求、结果与 PNG 文件，返回重新抽取的 chart 与 PNG 字节，不追加 artifact version 或 Session event。精确模型引用绝不使用预览路径。Save 会再次应用累计操作，并且是浏览器中唯一会追加 human-edit version 的动作；Discard 恢复已持久化 version 的 PNG。
 
 ### 封闭元素目录
 
@@ -44,7 +44,9 @@ Viewer 会把经过 debounce 的待定操作送入同一条 warm-or-replay 路�
 
 ### 封闭操作集合
 
-封闭操作集合为 `set_title`、`set_axis_label`、`set_series_color`、`set_legend_position`、`set_tick_font_size`、`add_reference_line`、`set_figure_size`、`set_axis_range`、`set_axis_scale`、`toggle_grid` 与 `set_font`。操作携带有类型的参数，并在适用时携带元素身份。Matplotlib 暴露并支持图尺寸。ggplot2 不暴露图尺寸元素；伪造请求若包含 `set_figure_size`，会返回显式失败操作。两个 runtime 都在字体元素中暴露本机字体族：排序、去重、最多 300 项，并在截断时标记。
+封闭操作集合为 `set_title`、`set_axis_label`、`set_legend_position` 与 `toggle_grid`。两个适配器都为全部四项定义确定性行为，只有标题／副标题、x/y 轴标签、图例与网格元素暴露直接控件。其余每个已抽取元素都保持可见，并可作为精确引用发送给模型。字体元素只公开当前字体族与字号，绝不枚举已安装字体族。
+
+这项区分是一条持久产品规则：只有两个适配器都实现确定性行为，且共享 codec 对操作参数与当前值设定边界时，图表元素才获得直接控件；其他元素一律只可引用。只有在两个适配器与共享 codec 定义同一行为，并同时更新 viewer、Runtime 验收与模型引用校验后，封闭操作集合才可扩张。
 
 ### Runtime 所有权
 
@@ -52,7 +54,7 @@ Runtime 拥有 `(runId, capture-relative path)` 到图对象句柄的私有映�
 
 ## 试验证据
 
-Adapter 试验在 matplotlib 中找到 13 类目录元素中的 12 类，在 ggplot2 中找到 11 类。像素命中测试在 matplotlib 试验中有 88.6% 选中预期元素，在 ggplot2 试验中为 89.5%。六种版本一操作都改变了预期输出。重建图对象并重放操作日志后，确定性 fixture 的像素差为零。
+Adapter 试验在 matplotlib 中找到 13 类目录元素中的 12 类，在 ggplot2 中找到 11 类。像素命中测试在 matplotlib 试验中有 88.6% 选中预期元素，在 ggplot2 试验中为 89.5%。四种直接操作都改变了预期输出。重建图对象并重放操作日志后，确定性 fixture 的像素差为零。
 
 Warm 操作往返耗时：matplotlib 约 12 ms，ggplot2 为 65–96 ms。Cold 恢复耗时：matplotlib 约 370 ms，ggplot2 约 570 ms。这些结果支持活对象存在时的即时预览，以及对象不存在时的有界重放；它们不是产品延迟保证。
 
@@ -67,10 +69,10 @@ Warm 操作往返耗时：matplotlib 约 12 ms，ggplot2 为 65–96 ms。Cold �
 ## 验收标准
 
 - 通过受支持保存路径捕获的 matplotlib 与 ggplot2 PNG 携带有界元素目录、命中表与空操作日志；不受支持的 PNG 在没有 chart metadata 时仍然有效。
-- 13 类元素与 11 种操作拥有共享 codec、严格校验，以及每个受支持 runtime 的 adapter coverage 或显式 unsupported 结果。
+- 13 类元素拥有共享 codec 与严格校验；四种直接操作在两个受支持 runtime 中都有匹配的 adapter coverage。
 - 应用操作会创建带确切 parent 与累计操作的新 PNG artifact version；直接编辑绝不修改既有 version。
 - 内核退出后，以确切 source run、物化输入与操作日志恢复；确定性 fixture 重现编辑后 PNG 时像素差为零。
-- Viewer 列出每个可编辑的已抽取图表元素，省略没有确定性编辑器的 annotation，经 kernel 预览每次待定参数修改，并且只在用户显式操作后保存新 version。
+- Viewer 列出每个已抽取图表元素，只为标题／副标题、x/y 轴标签、图例与网格暴露控件和预览，让其余每一行只可引用，并且只在用户显式操作后保存新 version。
 - 模型进行结构性修改时收到确切当前 version 与操作上下文；重新校验后失效的操作会被报告。
 - Keyless snapshot 覆盖 extract、apply、replay、receipt 与模型可见操作上下文；浏览器 coverage 固定选择与保存行为。
 
@@ -81,4 +83,4 @@ Warm 操作往返耗时：matplotlib 约 12 ms，ggplot2 为 65–96 ms。Cold �
 - 当 label 重复或被删除时，跨源代码变化的元素身份具有启发性。重新校验必须拒绝歧义，不能把操作施加到一个看似合理但不同的元素。
 - 命中表每个 version 可能占用数 KB，需要显式上限。过粗会降低选择准确率，过细会增加 session 与 projection 成本。
 - Replay 会再次执行模型编写的 source。它必须复用既有 confined runtime、确切物化输入、timeout 策略与持久 run accounting，不能成为未记录的捷径。
-- Matplotlib 与 ggplot2 并不对称支持所有操作。在两个 adapter 都定义行为或暴露显式 runtime-specific rejection 之前，封闭操作集合不能扩张。
+- Matplotlib 与 ggplot2 并不对称支持所有操作。在两个 adapter 都定义确定性行为，并同时变更共享 codec、viewer、验收覆盖与精确模型引用校验之前，封闭操作集合不能扩张。

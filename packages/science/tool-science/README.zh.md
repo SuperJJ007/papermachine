@@ -6,7 +6,7 @@
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、`@deepseek-ai/dsh-science-artifact-store`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
-本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。该入口注入 `attachments`、`scienceArtifactStore` 与 `scienceRuntime`，从而准入确切已提交 PNG 与直接图表操作。`submit` 接受一个非空有序的 normalized raster region 数组和一条指令。每个 target 可以携带一条元素备注，并使用与指令相同的文本规则校验和去除首尾空白。它严格 fold 被寻址在线 Agent 的完整 session，在排入一条结构化用户消息前校验每个 target 的当前已提交版本及其媒体类型；任一失败会标明 target 位置，并阻止部分准入。同一版本上的重复 region target 会复用一张已铸造图像。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝，媒体类型不匹配以 `SCIENCE_EDIT_TARGET_MISMATCH` 拒绝；该方法绝不静默替换成最新版本。消息 source 保存 `{ kind: 'science-edit', targets, instruction }`，文本要求模型在相应 `artifact_inputs` 与 `edit_of` 中使用每个确切版本；每个选中的 raster version 都按 target 顺序附加其已铸造图像。
+本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。该入口注入 `attachments`、`scienceArtifactStore` 与 `scienceRuntime`，从而准入确切已提交 PNG 与直接图表操作。`submit` 接受一个非空有序的 `ScienceEditTarget` 数组（一个 normalized raster region，或一个按 id 指名某个可寻址图表元素的 `ScienceElementTarget`）和一条指令。每个 target 可以携带一条元素备注，并使用与指令相同的文本规则校验和去除首尾空白。它严格 fold 被寻址在线 Agent 的完整 session，在排入一条结构化用户消息前校验每个 target 的当前已提交版本；region target 还额外要求 raster 媒体类型，元素 target 则不带独立的媒体约束。任一失败会标明 target 位置，并阻止部分准入。同一版本上的重复 region target 会复用一张已铸造图像；元素 target 既不读 store 也不铸造图像。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝，region 媒体类型不匹配以 `SCIENCE_EDIT_TARGET_MISMATCH` 拒绝；该方法绝不静默替换成最新版本。消息 source 保存 `{ kind: 'science-edit', targets, instruction }`，文本要求模型在相应 `artifact_inputs` 与 `edit_of` 中使用每个确切版本；每个选中的 raster version 都按 target 顺序附加其已铸造图像，每个元素 target 则渲染为一段不带图像的结构化 `element(id, kind=..., current=...)` 描述。
 
 `scienceEdits.applyChartOps` 把确切的 `{ artifactId, version, ops }` 请求与取消信号转发给 `ctx.scienceRuntime.applyChartEdit`。receipt 会命名已提交的 `origin: 'human-edit'` version 与任何带索引的部分失败。它把陈旧、不可寻址以及无效或全部无法解析的操作分别映射为 `CHART_STALE`、`CHART_NOT_ADDRESSABLE` 与 `CHART_OP_INVALID`；Runtime 仍是唯一校验者。面向模型的 state 与 artifact receipt 以 `editCount` 加操作名称/元素 target pair 概括累计直接编辑，并省略所有操作值。
 
@@ -94,7 +94,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-获准的 artifact viewer 编辑是一个普通用户轮次。其文本会列出一个非空有序 target 集合、每个 target 的逻辑 artifact 与确切版本及其可选元素备注、一条指令，以及必须把每个版本作为相应 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存 `{ targets, instruction }`；每个 raster target 都按 target 顺序提供确切被选中的图像附件。
+获准的 artifact viewer 编辑是一个普通用户轮次。其文本会列出一个非空有序 target 集合、每个 target 的逻辑 artifact 与确切版本及其可选元素备注、一条指令，以及必须把每个版本作为相应 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存 `{ targets, instruction }`；每个 raster target 都按 target 顺序提供确切被选中的图像附件，元素 target 则不贡献图像。
 
 #### Token 影响
 

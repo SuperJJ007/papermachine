@@ -1279,7 +1279,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
-        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone.',
+        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target names an addressable chart element by id and never reads the store or mints an attachment.',
         parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
         returns: 'durable-inbox admission receipt.',
       },
@@ -4362,7 +4362,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceEditTarget',
-    declaration: 'export type ScienceEditTarget = ScienceNormalizedRegionTarget;',
+    declaration: 'export type ScienceEditTarget = ScienceNormalizedRegionTarget | ScienceElementTarget;',
+  },
+  {
+    name: 'ScienceElementTarget',
+    declaration: 'export interface ScienceElementTarget {\n    readonly kind: \'element\';\n    readonly elementId: string;\n    readonly elementKind: string;\n    readonly current?: string;\n}',
   },
   {
     name: 'ScienceEnvironmentBinding',

@@ -1950,6 +1950,31 @@ describe('scienceEdits submit', () => {
     expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(1)
   })
 
+  it('admits an element target without reading the artifact store or minting an image', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-edit-submit-element')
+    const run = await runSuccessfully(ctx, session, 'science-edit-submit-element-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const followups: UserMessage[] = []
+    const agent = {
+      session,
+      followup: (message: UserMessage) => { followups.push(message) },
+    } as unknown as Agent
+    const service = new ScienceEditService(ctx)
+    const readBlob = vi.spyOn(ctx.scienceArtifactStore, 'readBlob')
+
+    const receipt = await service.submit(agent, { targets: [{
+      artifactId: artifact.artifactId, version: 1,
+      target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', current: 'Loss' },
+    }], instruction: 'shorten the title' })
+
+    expect(receipt).toEqual({ accepted: true })
+    expect(readBlob).not.toHaveBeenCalled()
+    expect(followups).toHaveLength(1)
+    expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(0)
+    const text = followups[0]?.content[0]
+    expect(text?.type === 'text' && text.text).toContain('element(axes[0].title, kind=title, current="Loss")')
+  })
 })
 
 describe('publish_outcome', () => {

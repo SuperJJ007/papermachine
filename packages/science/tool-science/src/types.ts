@@ -21,8 +21,22 @@ export interface ScienceNormalizedRegionTarget {
   readonly height: number
 }
 
+/**
+ * One addressable chart element referenced by id from the artifact viewer's
+ * element list, carrying no pixel coordinates.
+ */
+export interface ScienceElementTarget {
+  readonly kind: 'element'
+  /** `ScienceChartElement.id` on the addressed chart version. */
+  readonly elementId: string
+  /** `ScienceChartElement.kind` on the addressed chart version. */
+  readonly elementKind: string
+  /** Short current-value text for the model-visible message; never pixel coordinates. */
+  readonly current?: string
+}
+
 /** One model-visible edit target selected in the Science artifact viewer. */
-export type ScienceEditTarget = ScienceNormalizedRegionTarget
+export type ScienceEditTarget = ScienceNormalizedRegionTarget | ScienceElementTarget
 
 /** One selected target tied to its exact immutable artifact version. */
 export interface ScienceEditSelection {

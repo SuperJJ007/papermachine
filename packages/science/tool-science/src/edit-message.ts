@@ -17,11 +17,13 @@ import type {
   ScienceArtifactNoteAddRequest,
   ScienceArtifactNoteReceipt,
   ScienceArtifactNoteRemoveRequest,
+  ScienceElementTarget,
   ScienceEditMessageSource,
   ScienceEditReceipt,
   ScienceEditRequest,
   ScienceEditSelection,
   ScienceEditTarget,
+  ScienceNormalizedRegionTarget,
 } from './types.ts'
 
 /** Admission error with a stable Science edit classification. */
@@ -37,8 +39,14 @@ function invalid(message: string): never {
   throw new ScienceEditError(message, 'SCIENCE_EDIT_INVALID_REQUEST')
 }
 
-/** Validate and detach one viewer-supplied target. */
-function resolveTarget(target: ScienceEditTarget): ScienceEditTarget {
+/** Closed-union exhaustiveness fence (package-local copy; see ScienceChartEditPanel.tsx). */
+/* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
+function assertNever(value: never): never {
+  throw new Error(`unhandled value: ${JSON.stringify(value)}`)
+}
+
+/** Validate and detach one viewer-supplied normalized-region target. */
+function resolveRegionTarget(target: ScienceNormalizedRegionTarget): ScienceNormalizedRegionTarget {
   const values = [target.x, target.y, target.width, target.height]
   if (!values.every(Number.isFinite)
     || target.x < 0 || target.y < 0 || target.width <= 0 || target.height <= 0
@@ -46,6 +54,27 @@ function resolveTarget(target: ScienceEditTarget): ScienceEditTarget {
     invalid('Science edit region must be a positive rectangle within normalized coordinates 0 through 1')
   }
   return { ...target }
+}
+
+/** Validate and detach one viewer-supplied chart-element target; carries no coordinates to check. */
+function resolveElementTarget(target: ScienceElementTarget): ScienceElementTarget {
+  if (target.elementId.trim() === '' || target.elementKind.trim() === '') {
+    invalid('Science edit element target must name a non-empty element id and kind')
+  }
+  if (target.current !== undefined && (target.current.includes('\u0000') || !target.current.isWellFormed())) {
+    invalid('Science edit element target current value must be well-formed Unicode without U+0000')
+  }
+  return { ...target }
+}
+
+/** Validate and detach one viewer-supplied target, dispatched by its closed `kind`. */
+function resolveTarget(target: ScienceEditTarget): ScienceEditTarget {
+  switch (target.kind) {
+    case 'normalized-region': return resolveRegionTarget(target)
+    case 'element': return resolveElementTarget(target)
+    /* v8 ignore next -- closed ScienceEditTarget union */
+    default: return assertNever(target)
+  }
 }
 
 /**
@@ -93,7 +122,7 @@ function resolveSelection(
   }
   const target = resolveTarget(request.target)
   const comment = request.comment === undefined ? undefined : resolveFreeText(request.comment, 'target comment')
-  assertTargetMatches(latest)
+  assertTargetMatches(latest, target)
   return { artifact: latest, target, ...comment === undefined ? {} : { comment } }
 }
 
@@ -137,9 +166,37 @@ export function resolveScienceEdit(
   return { targets, instruction }
 }
 
-function assertTargetMatches(artifact: ScienceArtifactVersion): void {
-  if (artifact.mediaType !== 'image/png') {
-    throw new ScienceEditError('Science region edits require a raster image artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
+/**
+ * Enforce the media-type constraint a resolved target's kind carries. A
+ * region target requires a raster image (it rides the message as a minted
+ * image attachment); an element target names an already-addressable chart
+ * element and carries no independent media constraint of its own.
+ */
+function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEditTarget): void {
+  switch (target.kind) {
+    case 'normalized-region':
+      if (artifact.mediaType !== 'image/png') {
+        throw new ScienceEditError('Science region edits require a raster image artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
+      }
+      return
+    case 'element':
+      return
+    /* v8 ignore next -- closed ScienceEditTarget union */
+    default: assertNever(target)
+  }
+}
+
+/** Render one target's model-visible descriptor, dispatched by its closed `kind`. */
+function targetDescriptor(target: ScienceEditTarget): string {
+  switch (target.kind) {
+    case 'normalized-region':
+      return `region(${String(target.x)},${String(target.y)},${String(target.width)},${String(target.height)})`
+    case 'element': {
+      const current = target.current === undefined ? '' : `, current=${JSON.stringify(target.current)}`
+      return `element(${target.elementId}, kind=${target.elementKind}${current})`
+    }
+    /* v8 ignore next -- closed ScienceEditTarget union */
+    default: return assertNever(target)
   }
 }
 
@@ -158,9 +215,8 @@ export function renderScienceEditMessage(
   instruction: string,
 ): string {
   const selections = targets.map(({ artifact, target, comment }) => {
-    const selected = `region(${String(target.x)},${String(target.y)},${String(target.width)},${String(target.height)})`
     const note = comment === undefined ? '' : `:${JSON.stringify(comment)}`
-    return `- ${artifact.logicalName} v${String(artifact.version)} · ${selected}${note}`
+    return `- ${artifact.logicalName} v${String(artifact.version)} · ${targetDescriptor(target)}${note}`
   })
   const versions = [...new Map(targets.map(({ artifact }) => [artifact.artifactId, artifact])).values()]
     .map(artifact => `- ${artifact.artifactId} v${String(artifact.version)}`)
@@ -177,7 +233,9 @@ export function renderScienceEditMessage(
  * Construct the durable structured user message for one admitted edit. A
  * region target's selected raster rides the message as an ordinary image
  * attachment (model-visible ⟺ logged), minted by the caller from the store's
- * bytes and keyed here by the target version's store `versionId`.
+ * bytes and keyed here by the target version's store `versionId`. An element
+ * target names an already-addressable chart element by id and contributes no
+ * image attachment.
  * @param resolved - authoritative artifact and validated request fields.
  * @param regionImages - message image attachment per region-targeted store version id.
  * @returns user message carrying both the readable instruction and structured source.
@@ -202,7 +260,8 @@ export function createScienceEditMessage(
     source,
     content: [
       { type: 'text', text: renderScienceEditMessage(targets, instruction) },
-      ...targets.flatMap(({ artifact }) => {
+      ...targets.flatMap(({ artifact, target }) => {
+        if (target.kind !== 'normalized-region') return []
         const key = String(artifact.versionId)
         if (attachedVersionIds.has(key)) return []
         attachedVersionIds.add(key)
@@ -235,7 +294,9 @@ export class ScienceEditService extends TypertRemoteService {
    * Validate exact current artifact selections and queue one structured edit
    * message. A region target's raster is read back from the project artifact
    * store and admitted as an ordinary session message attachment, so the
-   * model-visible image stays reconstructable from the session log alone.
+   * model-visible image stays reconstructable from the session log alone; an
+   * element target names an addressable chart element by id and never reads
+   * the store or mints an attachment.
    * @param agent - exact live agent resolved by the Remote lookup policy.
    * @param request - selected versions, targets, and shared user instruction.
    * @returns durable-inbox admission receipt.
@@ -245,7 +306,8 @@ export class ScienceEditService extends TypertRemoteService {
     const state = foldScience(agent.session.events)
     const resolved = resolveScienceEdit(state.artifacts, request)
     const regionImages = new Map<string, ImageAttachmentRef>()
-    for (const { artifact } of resolved.targets) {
+    for (const { artifact, target } of resolved.targets) {
+      if (target.kind !== 'normalized-region') continue
       const key = String(artifact.versionId)
       if (regionImages.has(key)) continue
       const data = await this.ctx.scienceArtifactStore.readBlob(artifact.projectId, artifact.sha256)

@@ -363,7 +363,15 @@ export class ScienceEditService extends TypertRemoteService {
     }
   }
 
-  /** Render chart operations through the Runtime without committing a new artifact version. */
+  /**
+   * Render chart operations through the Runtime for live preview without
+   * committing a new artifact version: the preview PNG rides back as base64
+   * and no store or session state is published.
+   * @param agent - exact live agent whose session owns the chart artifact.
+   * @param request - exact target artifact/version and operations to preview.
+   * @param signal - caller-owned cancellation for the kernel round-trip.
+   * @returns the base64 preview PNG, its re-extracted chart state, and any operations whose targets could not be resolved.
+   */
   @Remote('previewChartOps')
   async previewChartOps(
     agent: Agent,

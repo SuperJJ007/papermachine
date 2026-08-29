@@ -695,7 +695,13 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     throw new Error('science-runtime: committed chart edit did not publish an artifact')
   }
 
-  /** Render one direct-edit request without publishing store or session state. */
+  /**
+   * Render one direct-edit request without publishing store or session state:
+   * the shared warm/replay path exports a PNG and re-extracts its chart, but
+   * no artifact version or `science/artifact-saved` event is committed.
+   * @param request - Exact session, target artifact/version, and operations to render for preview.
+   * @returns The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.
+   */
   async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult> {
     const result = await this.performChartEdit(request, false)
     if ('png' in result) return result

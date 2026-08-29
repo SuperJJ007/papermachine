@@ -328,6 +328,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ScienceChartEditReceipt: 'science.md',
   ScienceChartEditRequest: 'science.md',
   ScienceChartEditResult: 'science.md',
+  ScienceChartPreviewReceipt: 'science.md',
+  ScienceChartPreviewResult: 'science.md',
   ScienceEditReceipt: 'science.md',
   ScienceEditRequest: 'science.md',
   ScienceEnvironmentBinding: 'science.md',

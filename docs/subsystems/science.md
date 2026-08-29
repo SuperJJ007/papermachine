@@ -154,6 +154,17 @@ Remote service admitting browser edit gestures into the addressed live agent.
 @Remote('applyChartOps') async applyChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<ScienceChartEditReceipt>
 
 /**
+ * Render chart operations through the Runtime for live preview without
+ * committing a new artifact version: the preview PNG rides back as base64
+ * and no store or session state is published.
+ * @param agent - exact live agent whose session owns the chart artifact.
+ * @param request - exact target artifact/version and operations to preview.
+ * @param signal - caller-owned cancellation for the kernel round-trip.
+ * @returns the base64 preview PNG, its re-extracted chart state, and any operations whose targets could not be resolved.
+ */
+@Remote('previewChartOps') async previewChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<import('./types.ts').ScienceChartPreviewReceipt>
+
+/**
  * Add one user-only note after validating its exact visible artifact version.
  * @param agent - Agent whose session owns the artifact.
  * @param request - Exact artifact version and plain note text.
@@ -206,6 +217,15 @@ async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
  * @returns The committed artifact and any operations whose targets could not be resolved.
  */
 async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
+
+/**
+ * Render one direct-edit request without publishing store or session state:
+ * the shared warm/replay path exports a PNG and re-extracts its chart, but
+ * no artifact version or `science/artifact-saved` event is committed.
+ * @param request - Exact session, target artifact/version, and operations to render for preview.
+ * @returns The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.
+ */
+async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult>
 
 /**
  * Re-commit an existing artifact version's exact store content reference

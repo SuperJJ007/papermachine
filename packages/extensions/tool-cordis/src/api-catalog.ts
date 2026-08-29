@@ -1290,6 +1290,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the committed direct-edit version and unresolved operation targets.',
       },
       {
+        signature: '@Remote(\'previewChartOps\') async previewChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<import(\'./types.ts\').ScienceChartPreviewReceipt>',
+        description: 'Render chart operations through the Runtime for live preview without committing a new artifact version: the preview PNG rides back as base64 and no store or session state is published.',
+        parameters: [{ name: 'agent', description: 'exact live agent whose session owns the chart artifact.' }, { name: 'request', description: 'exact target artifact/version and operations to preview.' }, { name: 'signal', description: 'caller-owned cancellation for the kernel round-trip.' }],
+        returns: 'the base64 preview PNG, its re-extracted chart state, and any operations whose targets could not be resolved.',
+      },
+      {
         signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
         description: 'Add one user-only note after validating its exact visible artifact version.',
         parameters: [{ name: 'agent', description: 'Agent whose session owns the artifact.' }, { name: 'request', description: 'Exact artifact version and plain note text.' }],
@@ -1325,6 +1331,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Apply one direct-edit request and commit its successful operations as a new PNG version.',
         parameters: [{ name: 'request', description: 'The exact chart version, operations, and cancellation context.' }],
         returns: 'The committed artifact and any operations whose targets could not be resolved.',
+      },
+      {
+        signature: 'async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult>',
+        description: 'Render one direct-edit request without publishing store or session state: the shared warm/replay path exports a PNG and re-extracts its chart, but no artifact version or `science/artifact-saved` event is committed.',
+        parameters: [{ name: 'request', description: 'Exact session, target artifact/version, and operations to render for preview.' }],
+        returns: 'The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.',
       },
       {
         signature: 'async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
@@ -4330,7 +4342,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceChartElement',
-    declaration: 'export interface ScienceChartElement {\n    readonly id: string;\n    readonly kind: \'title\' | \'subtitle\' | \'x_label\' | \'y_label\' | \'tick_labels\' | \'legend\' | \'series\' | \'grid\' | \'axis_range\' | \'axis_scale\' | \'figure_size\' | \'font\' | \'annotation\';\n    readonly axes: number | null;\n    readonly label: string | null;\n    readonly current: unknown;\n}',
+    declaration: 'export interface ScienceChartElement {\n    readonly id: string;\n    readonly kind: \'title\' | \'subtitle\' | \'x_label\' | \'y_label\' | \'tick_labels\' | \'legend\' | \'series\' | \'grid\' | \'axis_range\' | \'axis_scale\' | \'figure_size\' | \'font\' | \'annotation\';\n    readonly axes: number | null;\n    readonly label: string | null;\n    readonly current: JsonValue;\n}',
   },
   {
     name: 'ScienceChartHit',
@@ -4338,7 +4350,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceChartOp',
-    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_series_color\';\n    readonly axes: number | null;\n    readonly label: string;\n    readonly color: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'set_tick_font_size\';\n    readonly axes: number | null;\n    readonly size: number;\n} | {\n    readonly op: \'add_reference_line\';\n    readonly axes: number | null;\n    readonly orientation: \'h\' | \'v\';\n    readonly value: number;\n};',
+    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_series_color\';\n    readonly axes: number | null;\n    readonly label: string;\n    readonly color: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'set_tick_font_size\';\n    readonly axes: number | null;\n    readonly size: number;\n} | {\n    readonly op: \'add_reference_line\';\n    readonly axes: number | null;\n    readonly orientation: \'h\' | \'v\';\n    readonly value: number;\n} | {\n    readonly op: \'set_figure_size\';\n    readonly axes: null;\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly op: \'set_axis_range\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly min: number;\n    readonly max: number;\n} | {\n    readonly op: \'set_axis_scale\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly scale: \'linear\' | \'log\';\n} | {\n    readonly op: \'toggle_grid\';\n    readonly axes: number | null;\n    readonly visible: boolean;\n} | {\n    readonly op: \'set_font\';\n    readonly axes: number | null;\n    re /* …truncated — full shape in source */',
+  },
+  {
+    name: 'ScienceChartPreviewReceipt',
+    declaration: 'export interface ScienceChartPreviewReceipt {\n    readonly pngBase64: string;\n    readonly chart: import(\'@deepseek-ai/dsh-science-session/types\').ScienceChartState;\n    readonly failedOps: readonly ScienceChartFailedOp[];\n}',
+  },
+  {
+    name: 'ScienceChartPreviewResult',
+    declaration: 'export interface ScienceChartPreviewResult {\n    readonly png: Uint8Array;\n    readonly chart: ScienceChartState;\n    readonly failedOps: readonly ScienceChartFailedOp[];\n}',
   },
   {
     name: 'ScienceChartState',

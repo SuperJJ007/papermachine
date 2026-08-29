@@ -84,6 +84,13 @@ export interface ScienceChartEditReceipt {
   readonly failedOps: readonly ScienceChartFailedOp[]
 }
 
+/** Ephemeral preview bytes and extracted chart state; never persisted. */
+export interface ScienceChartPreviewReceipt {
+  readonly pngBase64: string
+  readonly chart: import('@deepseek-ai/dsh-science-session/types').ScienceChartState
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
 /** Browser request to add a user-only note to one logical artifact. */
 export interface ScienceArtifactNoteAddRequest {
   readonly artifactId: ScienceArtifactId

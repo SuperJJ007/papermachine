@@ -8,6 +8,7 @@ import type {
   ScienceArtifactVersionRef,
   ScienceArtifactVersion,
   ScienceChartOp,
+  ScienceChartState,
   ScienceEnvironmentBinding,
   ScienceEnvironmentProfileId,
   ScienceLanguage,
@@ -200,6 +201,13 @@ export interface ScienceChartEditResult {
   readonly failedOps: readonly ScienceChartFailedOp[]
 }
 
+/** Ephemeral kernel render returned without appending an artifact version or session event. */
+export interface ScienceChartPreviewResult {
+  readonly png: Uint8Array
+  readonly chart: ScienceChartState
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
 /** Service definition consumed by a future model-facing Science package. */
 export interface ScienceRuntimeService {
   /**
@@ -222,6 +230,12 @@ export interface ScienceRuntimeService {
    * @returns The committed version and operations whose element targets were absent.
    */
   applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
+  /**
+   * Render validated operations against the exact current addressable chart without publishing a version.
+   * @param request - Exact artifact version, operations, live Session, and cancellation.
+   * @returns Ephemeral PNG bytes, extracted chart state, and unresolved targets.
+   */
+  previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult>
   /**
    * Re-commit an existing artifact version's exact store content reference
    * as its curated replacement, carrying a model-supplied title and optional

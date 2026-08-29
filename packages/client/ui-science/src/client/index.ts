@@ -321,6 +321,7 @@ export function apply(ctx: ClientContext): void {
         addArtifactNote: request => ctx.remote.scienceEdits.addArtifactNote(sessionId, request),
         removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
         applyChartOps: request => ctx.remote.scienceEdits.applyChartOps(sessionId, request),
+        previewChartOps: request => ctx.remote.scienceEdits.previewChartOps(sessionId, request),
       }
     },
   }, ScienceDetailsView))

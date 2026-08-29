@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
-import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from '../src/client/ScienceChartEditPanel.tsx'
+import { ScienceChartEditPanel, type ScienceChartPreview, type ScienceChartSaveOutcome } from '../src/client/ScienceChartEditPanel.tsx'
 import { en } from '../src/client/locales.ts'
 
 const t = makeTranslate(en)
@@ -56,6 +56,8 @@ function panel(over: {
   chart?: ScienceChartState
   version?: number
   onSave?: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
+  onPreview?: ScienceChartPreview
+  onPreviewSrc?: (src: string | undefined) => void
   isTargetAdded?: (target: ScienceEditTarget) => boolean
   onAddTarget?: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget?: (target: ScienceEditTarget) => void
@@ -67,11 +69,20 @@ function panel(over: {
   const view = render(
     <ScienceChartEditPanel
       version={over.version ?? 3} chart={over.chart ?? chartState()} onSave={onSave}
+      {...over.onPreview === undefined ? {} : { onPreview: over.onPreview }}
+      {...over.onPreviewSrc === undefined ? {} : { onPreviewSrc: over.onPreviewSrc }}
       isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
       t={t}
     />,
   )
   return { view, onSave, isTargetAdded, onAddTarget, onRemoveTarget }
+}
+
+function expandRow(name: string): HTMLElement {
+  const row = screen.getByText(name).closest('li')
+  if (row === null) throw new Error('expected element row')
+  fireEvent.click(within(row).getByRole('button', { name: new RegExp(`^${name}`) }))
+  return row
 }
 
 describe('ScienceChartEditPanel: full element list', () => {
@@ -83,17 +94,19 @@ describe('ScienceChartEditPanel: full element list', () => {
       'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
       expect(screen.getByText(name)).toBeTruthy()
     }
-    // Every row's inline control is present directly, with no prior selection step.
-    expect(screen.getAllByLabelText('Enter text')).toHaveLength(4) // title, subtitle, x_label, y_label
+    expect(screen.queryByLabelText('Enter text')).toBeNull()
+    const title = screen.getByText('Title').closest('li')
+    if (title === null) throw new Error('expected element row')
+    expect(within(title).getByRole('button', { name: /^Title/ }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(within(title).getByRole('button', { name: /^Title/ }))
+    expect(within(title).getByLabelText('Enter text')).toBeTruthy()
   })
 
   it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const row = screen.getByText(name).closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow(name)
     fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'New title' } })
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'New title' }])
   })
@@ -101,13 +114,10 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('stages set_axis_label with axis x for the X-axis label row and axis y for the Y-axis label row', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const xRow = screen.getByText('X-axis label').closest('li')
-    const yRow = screen.getByText('Y-axis label').closest('li')
-    if (xRow === null || yRow === null) throw new Error('expected element rows')
+    const xRow = expandRow('X-axis label')
     fireEvent.change(within(xRow).getByLabelText('Enter text'), { target: { value: 'Epoch' } })
-    fireEvent.click(within(xRow).getByRole('button', { name: 'Add change' }))
+    const yRow = expandRow('Y-axis label')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'Loss' } })
-    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Epoch' },
@@ -118,10 +128,8 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('stages set_series_color from a preset swatch', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const row = screen.getByText('Series · treatment').closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow('Series · treatment')
     fireEvent.click(within(row).getByRole('button', { name: 'Color #dc2626' }))
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_series_color', axes: 0, label: 'treatment', color: '#dc2626' }])
   })
@@ -130,8 +138,8 @@ describe('ScienceChartEditPanel: full element list', () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     const chart = chartState({ elements: [element({ id: 'axes[0].series[]', kind: 'series', axes: 0, label: null })] })
     panel({ chart, onSave })
+    expandRow('Series')
     fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#123456' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_series_color', axes: 0, label: '', color: '#123456' }])
   })
@@ -139,10 +147,8 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('stages set_tick_font_size from the 4-72 slider', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const row = screen.getByText('Tick labels').closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow('Tick labels')
     fireEvent.change(within(row).getByLabelText('Font size (4–72)'), { target: { value: '18' } })
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_tick_font_size', axes: 0, size: 18 }])
   })
@@ -150,10 +156,8 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('stages set_legend_position from the closed 6-value segmented control', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const row = screen.getByText('Legend').closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow('Legend')
     fireEvent.click(within(row).getByRole('button', { name: 'Upper left' }))
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
   })
@@ -161,16 +165,12 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('stages add_reference_line with the chosen orientation and numeric value, disabled until valid', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const row = screen.getByText('Grid').closest('li')
-    if (row === null) throw new Error('expected element row')
-    expect(within(row).getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(true)
+    const row = expandRow('Grid')
     // Horizontal is the default orientation; clicking it re-confirms that
     // choice before switching to Vertical below.
     fireEvent.click(within(row).getByRole('button', { name: 'Horizontal' }))
     fireEvent.click(within(row).getByRole('button', { name: 'Vertical' }))
     fireEvent.change(within(row).getByLabelText('Reference line value'), { target: { value: '3.5' } })
-    expect(within(row).getByRole('button', { name: 'Add change' }).hasAttribute('disabled')).toBe(false)
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([{ op: 'add_reference_line', axes: 0, orientation: 'v', value: 3.5 }])
   })
@@ -190,10 +190,8 @@ describe('ScienceChartEditPanel: full element list', () => {
     'shows a read-only current-value display for the %s row with no write control',
     (name) => {
       panel()
-      const row = screen.getByText(name).closest('li')
-      if (row === null) throw new Error('expected element row')
+      const row = expandRow(name)
       expect(within(row).getByText('This property is view-only in this version and cannot be edited yet.')).toBeTruthy()
-      expect(within(row).queryByRole('button', { name: 'Add change' })).toBeNull()
     },
   )
 })
@@ -227,19 +225,28 @@ describe('ScienceChartEditPanel: element +/- composer reference', () => {
 })
 
 describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
+  it('previews a parameter change after the debounce and replaces the displayed image source', async () => {
+    const onPreview = vi.fn().mockResolvedValue({ ok: true, pngBase64: 'cHJldmlldw==', failedOps: [] })
+    const onPreviewSrc = vi.fn()
+    panel({ onPreview, onPreviewSrc })
+    const row = expandRow('Title')
+    fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'Preview title' } })
+    await vi.waitFor(() => {
+      expect(onPreview).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'Preview title' }])
+      expect(onPreviewSrc).toHaveBeenCalledWith('data:image/png;base64,cHJldmlldw==')
+    })
+  })
+
   it('accumulates multiple staged ops before Save, and lists committed plus pending ops', () => {
     const chart = chartState({ ops: [{ op: 'set_title', axes: null, text: 'Old' }] })
     panel({ chart, version: 5 })
     expect(screen.getByText('Committed operations · v5')).toBeTruthy()
     expect(screen.getByText('set_title → title')).toBeTruthy()
 
-    const titleRow = screen.getByText('Title').closest('li')
-    const yRow = screen.getByText('Y-axis label').closest('li')
-    if (titleRow === null || yRow === null) throw new Error('expected element rows')
+    const titleRow = expandRow('Title')
     fireEvent.change(within(titleRow).getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(within(titleRow).getByRole('button', { name: 'Add change' }))
+    const yRow = expandRow('Y-axis label')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'B' } })
-    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
 
     expect(screen.getByText('Pending changes')).toBeTruthy()
     // One committed and one pending entry now share this exact text.
@@ -251,10 +258,8 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
   it('Discard changes clears pending ops and is disabled with none pending', () => {
     panel()
     expect(screen.getByRole('button', { name: 'Discard changes' }).hasAttribute('disabled')).toBe(true)
-    const row = screen.getByText('Title').closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow('Title')
     fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
     expect(screen.getByRole('button', { name: 'Discard changes' }).hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
     expect(screen.queryByText('Pending changes')).toBeNull()
@@ -265,10 +270,8 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
 describe('ScienceChartEditPanel: Save', () => {
   function stageOneTitleEdit(onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>): void {
     panel({ onSave })
-    const row = screen.getByText('Title').closest('li')
-    if (row === null) throw new Error('expected element row')
+    const row = expandRow('Title')
     fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'A' } })
-    fireEvent.click(within(row).getByRole('button', { name: 'Add change' }))
   }
 
   it('clears pending and shows a confirmation on a clean success', async () => {
@@ -304,10 +307,8 @@ describe('ScienceChartEditPanel: Save', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Change #1 did not apply: gone')).toBeTruthy()
 
-    const yRow = screen.getByText('Y-axis label').closest('li')
-    if (yRow === null) throw new Error('expected element row')
+    const yRow = expandRow('Y-axis label')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'C' } })
-    fireEvent.click(within(yRow).getByRole('button', { name: 'Add change' }))
     expect(screen.queryByText('Change #1 did not apply: gone')).toBeNull()
     expect(screen.queryByText('Human-edited version committed.')).toBeNull()
   })

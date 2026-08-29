@@ -315,6 +315,20 @@
   justify-content: flex-end;
 }
 
+.elementToggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .breadcrumb {
   display: flex;
   align-items: center;

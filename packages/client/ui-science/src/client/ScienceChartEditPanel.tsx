@@ -14,7 +14,7 @@
  * `ArtifactTab`).
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp } from '@deepseek-ai/dsh-tool-science/types'
@@ -26,6 +26,12 @@ import css from './ScienceDetailsView.module.css'
 export type ScienceChartSaveOutcome =
   | { readonly ok: true; readonly failedOps: readonly ScienceChartFailedOp[] }
   | { readonly ok: false; readonly error: string }
+
+/** Debounced ephemeral preview request supplied by the exact open artifact tab. */
+export type ScienceChartPreview = (ops: readonly ScienceChartOp[]) => Promise<
+  | { readonly ok: true; readonly pngBase64: string; readonly failedOps: readonly ScienceChartFailedOp[] }
+  | { readonly ok: false; readonly error: string }
+>
 
 /** Closed-union exhaustiveness fence (package-local copy; see ArtifactContent.tsx / ScienceDetailsView.tsx). */
 /* v8 ignore next 3 -- closed-union backstop; only reached if a value is forged */
@@ -103,14 +109,11 @@ function TextControl({ onApply, t }: { onApply: (text: string) => void; t: Trans
     <div className={css.styleControl}>
       <label>
         {t('panel.textPlaceholder')}
-        <input value={value} placeholder={t('panel.textPlaceholder')} onChange={(event) => { setValue(event.target.value) }} />
+        <input value={value} placeholder={t('panel.textPlaceholder')} onChange={(event) => {
+          setValue(event.target.value)
+          if (event.target.value.trim() !== '') onApply(event.target.value)
+        }} />
       </label>
-      <button
-        type="button" className={css.editSubmit} disabled={value.trim() === ''}
-        onClick={() => { onApply(value.trim()); setValue('') }}
-      >
-        {t('panel.addChange')}
-      </button>
     </div>
   )
 }
@@ -125,12 +128,11 @@ function ColorControl({ onApply, t }: { onApply: (color: string) => void; t: Tra
           <button
             key={color} type="button" className={css.colorSwatch} data-active={color === value || undefined}
             style={{ background: color }} aria-label={t('panel.colorSwatch', { color })} aria-pressed={color === value}
-            onClick={() => { setValue(color) }}
+            onClick={() => { setValue(color); onApply(color) }}
           />
         ))}
-        <input type="color" value={value} aria-label={t('style.color')} onChange={(event) => { setValue(event.target.value) }} />
+        <input type="color" value={value} aria-label={t('style.color')} onChange={(event) => { setValue(event.target.value); onApply(event.target.value) }} />
       </div>
-      <button type="button" className={css.editSubmit} onClick={() => { onApply(value) }}>{t('panel.addChange')}</button>
     </div>
   )
 }
@@ -142,9 +144,8 @@ function FontSizeControl({ onApply, t }: { onApply: (size: number) => void; t: T
       <span className={css.editLabel}>{t('style.fontSize')} · {value}</span>
       <input
         type="range" min={4} max={72} value={value} aria-label={t('panel.fontSizeInput')}
-        onChange={(event) => { setValue(Number(event.target.value)) }}
+        onChange={(event) => { const next = Number(event.target.value); setValue(next); onApply(next) }}
       />
-      <button type="button" className={css.editSubmit} onClick={() => { onApply(value) }}>{t('panel.addChange')}</button>
     </div>
   )
 }
@@ -158,13 +159,12 @@ function LegendControl({ onApply, t }: { onApply: (position: LegendPosition) => 
         {LEGEND_POSITIONS.map(position => (
           <button
             key={position} type="button" className={css.legendSegment} data-active={position === value || undefined}
-            aria-pressed={position === value} onClick={() => { setValue(position) }}
+            aria-pressed={position === value} onClick={() => { setValue(position); onApply(position) }}
           >
             {t(LEGEND_LABEL_KEY[position])}
           </button>
         ))}
       </div>
-      <button type="button" className={css.editSubmit} onClick={() => { onApply(value) }}>{t('panel.addChange')}</button>
     </div>
   )
 }
@@ -183,13 +183,13 @@ function ReferenceLineControl({ onApply, t }: {
       <div className={css.legendSegments} role="radiogroup" aria-label={t('panel.referenceLineOrientationLabel')}>
         <button
           type="button" className={css.legendSegment} data-active={orientation === 'h' || undefined}
-          aria-pressed={orientation === 'h'} onClick={() => { setOrientation('h') }}
+          aria-pressed={orientation === 'h'} onClick={() => { setOrientation('h'); if (valid) onApply('h', numeric) }}
         >
           {t('panel.orientationHorizontal')}
         </button>
         <button
           type="button" className={css.legendSegment} data-active={orientation === 'v' || undefined}
-          aria-pressed={orientation === 'v'} onClick={() => { setOrientation('v') }}
+          aria-pressed={orientation === 'v'} onClick={() => { setOrientation('v'); if (valid) onApply('v', numeric) }}
         >
           {t('panel.orientationVertical')}
         </button>
@@ -198,15 +198,13 @@ function ReferenceLineControl({ onApply, t }: {
         {t('panel.referenceLineValueLabel')}
         <input
           value={value} inputMode="decimal" aria-label={t('panel.referenceLineValueLabel')}
-          onChange={(event) => { setValue(event.target.value) }}
+          onChange={(event) => {
+            setValue(event.target.value)
+            const next = Number(event.target.value)
+            if (event.target.value.trim() !== '' && Number.isFinite(next)) onApply(orientation, next)
+          }}
         />
       </label>
-      <button
-        type="button" className={css.editSubmit} disabled={!valid}
-        onClick={() => { onApply(orientation, numeric); setValue('') }}
-      >
-        {t('panel.addChange')}
-      </button>
     </div>
   )
 }
@@ -270,9 +268,11 @@ function ElementControl({ element, onStage, t }: {
  * kind-dispatched control, and the +/− composer-reference control shared
  * with `RasterArtifact`'s region row.
  */
-function ElementRow({ element, added, onAddTarget, onRemoveTarget, onStage, t }: {
+function ElementRow({ element, expanded, added, onToggle, onAddTarget, onRemoveTarget, onStage, t }: {
   element: ScienceChartElement
+  expanded: boolean
   added: boolean
+  onToggle: () => void
   onAddTarget: () => void
   onRemoveTarget: () => void
   onStage: (op: ScienceChartOp) => void
@@ -282,11 +282,10 @@ function ElementRow({ element, added, onAddTarget, onRemoveTarget, onStage, t }:
   return (
     <li className={css.elementRow}>
       <div className={css.elementRowHead}>
-        <strong className={css.editLabel}>{name}</strong>
-        <span className={css.elementSummary}>{summarizeCurrent(element.current)}</span>
-      </div>
-      <ElementControl element={element} onStage={onStage} t={t} />
-      <div className={css.elementTargetRow}>
+        <button type="button" className={css.elementToggle} aria-expanded={expanded} onClick={onToggle}>
+          <strong className={css.editLabel}>{name}</strong>
+          <span className={css.elementSummary}>{summarizeCurrent(element.current)}</span>
+        </button>
         <button
           type="button"
           className={css.specAdd}
@@ -296,6 +295,7 @@ function ElementRow({ element, added, onAddTarget, onRemoveTarget, onStage, t }:
           {added ? '−' : '+'}
         </button>
       </div>
+      {expanded && <ElementControl element={element} onStage={onStage} t={t} />}
     </li>
   )
 }
@@ -333,10 +333,17 @@ function OpsList({ committed, pending, version, t }: {
  * stages its region target into).
  * @returns the full element list, op list, and Discard/Save actions.
  */
-export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, onAddTarget, onRemoveTarget, t }: {
+export function ScienceChartEditPanel({
+  version, chart, onSave,
+  onPreview,
+  onPreviewSrc,
+  isTargetAdded, onAddTarget, onRemoveTarget, t,
+}: {
   version: number
   chart: ScienceChartState
   onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
+  onPreview?: ScienceChartPreview
+  onPreviewSrc?: (src: string | undefined) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
@@ -347,9 +354,38 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, o
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
+  const [expandedId, setExpandedId] = useState<string>()
+  const [previewing, setPreviewing] = useState(false)
+
+  useEffect(() => {
+    if (pending.length === 0) {
+      setPreviewing(false)
+      onPreviewSrc?.(undefined)
+      return
+    }
+    if (onPreview === undefined) {
+      return
+    }
+    let live = true
+    const timer = window.setTimeout(() => {
+      setPreviewing(true)
+      void onPreview(pending).then((outcome) => {
+        if (!live) return
+        if (outcome.ok) {
+          onPreviewSrc?.(`data:image/png;base64,${outcome.pngBase64}`)
+          setFailedOps(outcome.failedOps)
+          setError(undefined)
+        } else {
+          setError(outcome.error)
+        }
+      }).finally(() => { if (live) setPreviewing(false) })
+    }, 150)
+    return () => { live = false; window.clearTimeout(timer) }
+  }, [onPreview, onPreviewSrc, pending])
 
   const stage = (op: ScienceChartOp): void => {
-    setPending(current => [...current, op])
+    const key = opTargetLabel(op)
+    setPending(current => [...current.filter(existing => opTargetLabel(existing) !== key), op])
     setSaved(false)
     setError(undefined)
     setFailedOps([])
@@ -368,7 +404,9 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, o
             <ElementRow
               key={element.id}
               element={element}
+              expanded={expandedId === element.id}
               added={added}
+              onToggle={() => { setExpandedId(current => current === element.id ? undefined : element.id) }}
               onAddTarget={() => { onAddTarget(target, '') }}
               onRemoveTarget={() => { onRemoveTarget(target) }}
               onStage={stage}
@@ -378,6 +416,7 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, o
         })}
       </ul>
       <OpsList committed={chart.ops} pending={pending} version={version} t={t} />
+      {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
       {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
       {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}
       {failedOps.map(item => (
@@ -386,7 +425,7 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, o
       <div className={css.panelActions}>
         <button
           type="button" className={css.regionButton} disabled={pending.length === 0 || saving}
-          onClick={() => { setPending([]); setSaved(false); setError(undefined); setFailedOps([]) }}
+          onClick={() => { setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([]) }}
         >
           {t('panel.discard')}
         </button>
@@ -395,7 +434,9 @@ export function ScienceChartEditPanel({ version, chart, onSave, isTargetAdded, o
           onClick={() => {
             setSaving(true); setError(undefined); setFailedOps([]); setSaved(false)
             void onSave(pending).then((outcome) => {
-              if (outcome.ok) { setPending([]); setFailedOps(outcome.failedOps); setSaved(true) } else setError(outcome.error)
+              if (outcome.ok) {
+                setPending([]); onPreviewSrc?.(undefined); setFailedOps(outcome.failedOps); setSaved(true)
+              } else setError(outcome.error)
             }).finally(() => { setSaving(false) })
           }}
         >

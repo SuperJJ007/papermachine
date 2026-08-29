@@ -164,6 +164,7 @@ function props(
     addArtifactNote?: Props['addArtifactNote']
     removeArtifactNote?: Props['removeArtifactNote']
     applyChartOps?: Props['applyChartOps']
+    previewChartOps?: Props['previewChartOps']
     displayTitle?: string
     includeUnknownSession?: boolean
   } = {},
@@ -231,8 +232,23 @@ function props(
     applyChartOps: over.applyChartOps ?? vi.fn().mockResolvedValue({
       ok: true, value: { artifactId: 'chart-1', version: 2, origin: 'human-edit', failedOps: [] },
     }),
+    previewChartOps: over.previewChartOps ?? vi.fn().mockResolvedValue({
+      ok: true, value: { pngBase64: 'cHJldmlldw==', chart: addressablePreviewChart(), failedOps: [] },
+    }),
     t,
   } as unknown as Props
+}
+
+function addressablePreviewChart() {
+  return {
+    runtime: 'matplotlib' as const,
+    figureKey: 'fig',
+    png: { width: 200, height: 100, dpi: 150 },
+    hitmapStatus: 'unavailable' as const,
+    hitmap: [],
+    elements: [{ id: 'title', kind: 'title' as const, axes: null, label: null, current: 'Loss' }],
+    ops: [],
+  }
 }
 
 /** The whole-panel status text, valid only for a single-paragraph state. */
@@ -1094,7 +1110,8 @@ describe('ScienceDetailsView: chart edit panel', () => {
     // the big RasterArtifact image, and manual region drag-select is hidden.
     expect(document.querySelectorAll('img')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Select region to edit' })).toBeNull()
-    // The element's control is present directly, with no click-to-select step.
+    expect(screen.queryByLabelText('Enter text')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     expect(screen.getByLabelText('Enter text')).toBeTruthy()
   })
 
@@ -1123,8 +1140,8 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
     await waitFor(() => { expect(applyChartOps).toHaveBeenCalledOnce() })
@@ -1145,8 +1162,8 @@ describe('ScienceDetailsView: chart edit panel', () => {
     render(<ScienceDetailsView {...props(science, { store, applyChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
 
+    fireEvent.click(screen.getByRole('button', { name: /^Title/ }))
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'New title' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add change' }))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
 
     expect(await screen.findByText('Commit failed: stale version')).toBeTruthy()

@@ -37,7 +37,7 @@ import type {
   ScienceChartOp, ScienceClientArtifactVersion, ScienceClientProjection,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
-  ScienceArtifactNoteReceipt, ScienceChartEditReceipt, ScienceEditSelection, ScienceEditTarget,
+  ScienceArtifactNoteReceipt, ScienceChartEditReceipt, ScienceChartPreviewReceipt, ScienceEditSelection, ScienceEditTarget,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
@@ -84,6 +84,11 @@ export interface ScienceDetailsInjected {
   /** Apply deterministic chart operations to one exact chart version through the `applyChartOps` Remote. */
   applyChartOps: (request: { artifactId: ScienceArtifactId; version: number; ops: readonly ScienceChartOp[] }) => Promise<
     | { readonly ok: true; readonly value: ScienceChartEditReceipt }
+    | { readonly ok: false; readonly error: { readonly message: string } }
+  >
+  /** Render deterministic chart operations without committing a version. */
+  previewChartOps: (request: { artifactId: ScienceArtifactId; version: number; ops: readonly ScienceChartOp[] }) => Promise<
+    | { readonly ok: true; readonly value: ScienceChartPreviewReceipt }
     | { readonly ok: false; readonly error: { readonly message: string } }
   >
 }
@@ -559,7 +564,7 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
 function ArtifactTab({
   science, artifacts, chart, notes, currentSessionId, sourceSessionTitle, view, provenanceSubTab, snapshot, loadImage, loadText,
   addToConversation, removeFromConversation, composerSelections, returnToConversation, selectDetailed,
-  addArtifactNote, removeArtifactNote, applyChartOps, useStore, actions, inspectCall, t,
+  addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -580,6 +585,7 @@ function ArtifactTab({
   addArtifactNote: ScienceDetailsInjected['addArtifactNote']
   removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
   applyChartOps: ScienceDetailsInjected['applyChartOps']
+  previewChartOps: ScienceDetailsInjected['previewChartOps']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -588,6 +594,7 @@ function ArtifactTab({
   const lightboxOpen = useStore(s => s.lightboxOpen)
   const versions = versionsOf(artifacts, chart.artifactId)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
+  const [previewSrc, setPreviewSrc] = useState<string>()
   const staged = useSyncExternalStore(
     notify => composerSelections.subscribe(notify),
     () => composerSelections.getSnapshot(),
@@ -596,6 +603,7 @@ function ArtifactTab({
   )
   useEffect(() => {
     setTarget(undefined)
+    setPreviewSrc(undefined)
   }, [chart.artifactId, chart.version])
 
   const selectTarget = (next: ScienceEditTarget): void => {
@@ -614,6 +622,11 @@ function ArtifactTab({
       actions.setTabVersion({ artifactId: chart.artifactId, version: result.value.version })
       return { ok: true, failedOps: result.value.failedOps }
     })
+  const previewOps = (ops: readonly ScienceChartOp[]) => previewChartOps({
+    artifactId: chart.artifactId, version: chart.version, ops,
+  }).then(result => result.ok
+    ? { ok: true as const, pngBase64: result.value.pngBase64, failedOps: result.value.failedOps }
+    : { ok: false as const, error: result.error.message })
 
   if (view === 'provenance') {
     if (chart.origin === 'human-edit') {
@@ -676,6 +689,7 @@ function ArtifactTab({
         // that happens to share the same spec path or region coordinates.
         key={`${chart.artifactId}:${String(chart.version)}`}
         chart={chart}
+        {...previewSrc === undefined ? {} : { previewSrc }}
         loadImage={loadImage}
         loadText={loadText}
         selectionTarget={target}
@@ -694,6 +708,8 @@ function ArtifactTab({
           if (selection !== undefined) removeFromConversation(selection)
         }}
         onSaveChartOps={saveChartOps}
+        onPreviewChartOps={previewOps}
+        onPreviewSrc={setPreviewSrc}
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
@@ -713,7 +729,7 @@ function ArtifactTab({
 function ArtifactViewer({
   science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText,
   loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, addToConversation, removeFromConversation,
-  composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps,
+  composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps,
   useStore, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
@@ -734,6 +750,7 @@ function ArtifactViewer({
   addArtifactNote: ScienceDetailsInjected['addArtifactNote']
   removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
   applyChartOps: ScienceDetailsInjected['applyChartOps']
+  previewChartOps: ScienceDetailsInjected['previewChartOps']
   useStore: ScienceDetailsViewProps['useStore']
   actions: ScienceDetailsViewProps['actions']
   inspectCall: (callId: string) => void
@@ -838,6 +855,7 @@ function ArtifactViewer({
             addArtifactNote={addArtifactNote}
             removeArtifactNote={removeArtifactNote}
             applyChartOps={applyChartOps}
+            previewChartOps={previewChartOps}
             useStore={useStore}
             actions={actions}
             inspectCall={inspectCall}
@@ -859,7 +877,7 @@ export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
   inspectCall, loadImage, loadText, loadLibrary, loadWorkspaceFiles, loadWorkspaceFile,
   addToConversation, removeFromConversation, composerSelections,
-  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, t,
+  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, t,
 }: ScienceDetailsViewProps) {
   const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   // Session display titles change only when a title or the session list
@@ -903,7 +921,8 @@ export function ScienceDetailsView({
       addToConversation={addToConversation}
       removeFromConversation={removeFromConversation} composerSelections={composerSelections} returnToConversation={returnToConversation}
       selectDetailed={selectDetailed}
-      addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} applyChartOps={applyChartOps}
+      addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote}
+      applyChartOps={applyChartOps} previewChartOps={previewChartOps}
       useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
     />
   )

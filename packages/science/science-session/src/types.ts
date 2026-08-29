@@ -8,7 +8,7 @@
  */
 
 import type { CallId } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -367,7 +367,7 @@ export interface ScienceChartElement {
   /** Human-readable series or annotation label when one exists. */
   readonly label: string | null
   /** Current JSON value, serialized to at most 1 KiB. */
-  readonly current: unknown
+  readonly current: JsonValue
 }
 
 /** One pixel-space hit target for an extracted chart element. */

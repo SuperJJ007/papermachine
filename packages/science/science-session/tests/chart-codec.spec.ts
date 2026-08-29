@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { JsonValue } from '@deepseek-ai/dsh-session'
 import {
   decodeScienceArtifact,
   decodeScienceChartState,
@@ -8,7 +9,7 @@ import {
 import type { ScienceChartElement, ScienceChartState } from '../src/index.ts'
 import { artifact } from './fixtures.ts'
 
-const element = (id = 'title', current: unknown = 'Quarterly revenue'): ScienceChartElement => ({
+const element = (id = 'title', current: JsonValue = 'Quarterly revenue'): ScienceChartElement => ({
   id,
   kind: 'title',
   axes: null,

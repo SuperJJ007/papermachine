@@ -363,6 +363,38 @@ export class ScienceEditService extends TypertRemoteService {
     }
   }
 
+  /** Render chart operations through the Runtime without committing a new artifact version. */
+  @Remote('previewChartOps')
+  async previewChartOps(
+    agent: Agent,
+    request: ScienceChartEditRequest,
+    signal: AbortSignal,
+  ): Promise<import('./types.ts').ScienceChartPreviewReceipt> {
+    try {
+      const result = await this.ctx.scienceRuntime.previewChartEdit({
+        session: agent.session,
+        artifactId: request.artifactId,
+        version: request.version,
+        ops: request.ops,
+        signal,
+      })
+      return {
+        pngBase64: Buffer.from(result.png).toString('base64'),
+        chart: result.chart,
+        failedOps: result.failedOps,
+      }
+    } catch (error: unknown) {
+      if (!(error instanceof ScienceRuntimeError)) throw error
+      switch (error.code) {
+        case 'CHART_STALE_VERSION': throw new ScienceEditError(error.message, 'CHART_STALE')
+        case 'CHART_NOT_ADDRESSABLE': throw new ScienceEditError(error.message, 'CHART_NOT_ADDRESSABLE')
+        case 'CHART_ELEMENT_NOT_FOUND':
+        case 'CHART_OP_INVALID': throw new ScienceEditError(error.message, 'CHART_OP_INVALID')
+        default: throw error
+      }
+    }
+  }
+
   /**
    * Add one user-only note after validating its exact visible artifact version.
    * @param agent - Agent whose session owns the artifact.

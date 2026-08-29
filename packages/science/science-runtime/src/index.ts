@@ -72,6 +72,7 @@ import type {
   BindScienceEnvironmentRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
+  ScienceChartPreviewResult,
   ScienceChartFailedOp,
   ScienceRunHandle,
   ScienceRunResult,
@@ -84,6 +85,7 @@ export type {
   BindScienceEnvironmentRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
+  ScienceChartPreviewResult,
   ScienceChartFailedOp,
   ScienceRunHandle,
   ScienceRunOutput,
@@ -688,6 +690,23 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns The committed artifact and any operations whose targets could not be resolved.
    */
   async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult> {
+    const result = await this.performChartEdit(request, true)
+    if ('artifact' in result) return result
+    throw new Error('science-runtime: committed chart edit did not publish an artifact')
+  }
+
+  /** Render one direct-edit request without publishing store or session state. */
+  async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult> {
+    const result = await this.performChartEdit(request, false)
+    if ('png' in result) return result
+    throw new Error('science-runtime: chart preview unexpectedly published an artifact')
+  }
+
+  /** Execute the shared warm/replay chart path and optionally publish its output. */
+  private async performChartEdit(
+    request: ScienceChartEditRequest,
+    commit: boolean,
+  ): Promise<ScienceChartEditResult | ScienceChartPreviewResult> {
     if (request.ops.length === 0 || request.ops.length > MAX_CHART_OPS) {
       throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations must contain between 1 and 100 entries')
     }
@@ -814,6 +833,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         figureKey: parent.chart.figureKey,
         ops: [...parent.chart.ops, ...successfulOps],
       })
+      if (!commit) return { png: application.png, chart, failedOps }
       const stored = await this.ctx.scienceArtifactStore.appendVersion(projectId, parent.artifactId, {
         producerSessionId: request.session.id,
         data: application.png,

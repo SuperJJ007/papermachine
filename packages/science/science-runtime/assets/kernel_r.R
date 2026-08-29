@@ -8,6 +8,7 @@
 #   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
 #   host -> kernel:  CHART_EXTRACT\t<runId>\t<requestPath>\t<resultPath>
 #   host -> kernel:  CHART_APPLY\t<runId>\t<requestPath>\t<resultPath>
+#     The result path is caller-owned run scratch and may hold an ephemeral preview.
 #   host -> kernel:  EXIT
 #   kernel -> host:  READY\t<protocolVersion=2>\t<pid>
 #   kernel -> host:  DONE\t<runId>\t<status:ok|error|interrupted>\t<detail>\t<flags>

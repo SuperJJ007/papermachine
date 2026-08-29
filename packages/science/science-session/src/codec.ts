@@ -3,7 +3,7 @@
 import { Buffer } from 'node:buffer'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { isJsonValue } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
   SCIENCE_EVENT_VERSION,
@@ -143,7 +143,7 @@ const chartElementSchema = z.object({
   ]),
   axes: SAFE_INTEGER.nullable(),
   label: text(MAX_LABEL_LENGTH).nullable(),
-  current: z.unknown().refine(isJsonValue, { message: 'chart element current must be JSON' }).refine(
+  current: z.custom<JsonValue>(isJsonValue, { message: 'chart element current must be JSON' }).refine(
     value => Buffer.byteLength(JSON.stringify(value), 'utf8') <= MAX_CHART_CURRENT_BYTES,
     { message: `chart element current must be at most ${String(MAX_CHART_CURRENT_BYTES)} UTF-8 JSON bytes` },
   ),

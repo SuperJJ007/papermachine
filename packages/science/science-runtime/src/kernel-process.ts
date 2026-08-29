@@ -492,6 +492,8 @@ export class KernelProcess {
   /**
    * Write one CHART_APPLY frame and await its matching CHART response.
    * A timeout retires the protocol-faulted kernel through the owning KernelSet.
+   * The caller owns both paths inside run scratch; the result PNG may be an
+   * ephemeral preview and is never published merely by this protocol exchange.
    * @param request - source run id, private request/result paths, and deadline.
    * @returns the matching CHART response.
    */

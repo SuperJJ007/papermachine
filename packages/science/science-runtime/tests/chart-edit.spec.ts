@@ -299,3 +299,52 @@ describe('ScienceRuntime.applyChartEdit', () => {
     })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
   })
 })
+
+describe('ScienceRuntime.previewChartEdit', () => {
+  it('renders through a warm kernel without publishing a version or artifact event', async () => {
+    const { runtime, session } = await harness('chart-preview-warm')
+    const parent = chart(session)
+    const beforeEvents = session.events.length
+    const result = await runtime.previewChartEdit({
+      session, artifactId: parent.artifactId, version: parent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })
+    expect([...result.png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    expect(result.chart.ops).toEqual([titleOp])
+    expect(session.events).toHaveLength(beforeEvents)
+    expect(replayScience(session.events)?.artifacts).toHaveLength(1)
+  })
+
+  it('replays an unregistered source and removes its private scratch without publishing a run', async () => {
+    const { runtime, session, root } = await harness('chart-preview-replay', { chartApplyStatus: 'not_registered_once' })
+    const parent = chart(session)
+    const result = await runtime.previewChartEdit({
+      session, artifactId: parent.artifactId, version: parent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })
+    expect(result.chart.elements).toEqual(editExtraction.elements)
+    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
+    const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
+    expect(readdirSync(sessionScratch.runs).filter(name => name.startsWith('replay-'))).toEqual([])
+  })
+
+  it('uses the apply validation errors for stale, invalid, and unaddressable requests', async () => {
+    const warm = await harness('chart-preview-validation')
+    const parent = chart(warm.session)
+    await expect(warm.runtime.previewChartEdit({
+      session: warm.session, artifactId: parent.artifactId, version: parent.version + 1,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_STALE_VERSION' })
+    await expect(warm.runtime.previewChartEdit({
+      session: warm.session, artifactId: parent.artifactId, version: parent.version,
+      ops: [], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_OP_INVALID' })
+
+    const missing = await harness('chart-preview-unaddressable', { chartResult: { charts: {}, errors: {} } })
+    const png = chart(missing.session)
+    await expect(missing.runtime.previewChartEdit({
+      session: missing.session, artifactId: png.artifactId, version: png.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+  })
+})

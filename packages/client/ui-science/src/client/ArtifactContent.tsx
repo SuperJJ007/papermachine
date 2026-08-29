@@ -158,10 +158,11 @@ function normalizedPoint(event: ReactMouseEvent<HTMLDivElement>): { x: number; y
 
 /** Raster display with an opt-in drag layer that emits normalized coordinates. */
 function RasterArtifact({
-  chart, loadImage, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
+  chart, loadImage, previewSrc, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
 }: {
   chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
   loadImage: ScienceImageLoader
+  previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
@@ -226,7 +227,8 @@ function RasterArtifact({
   return (
     <div className={css.rasterSelector}>
       <div className={css.rasterCanvas}>
-        <ScienceArtifactImage content={chart} label={chart.title} load={loadImage} variant="single" labels={artifactImageLabels(t)} />
+        <ScienceArtifactImage content={chart} label={chart.title} load={loadImage} variant="single" labels={artifactImageLabels(t)}
+          {...previewSrc === undefined ? {} : { srcOverride: previewSrc }} />
         {region !== undefined && (
           <span
             className={css.regionBox}
@@ -307,12 +309,13 @@ function BoundedPreText({ text, truncated, total, t }: {
  * @returns the dispatched content and optional human-edit ancestry.
  */
 export function ArtifactContent({
-  chart, loadImage, loadText, selectionTarget, onSelectTarget, isTargetAdded,
-  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, t,
+  chart, loadImage, loadText, previewSrc, selectionTarget, onSelectTarget, isTargetAdded,
+  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, onPreviewChartOps, onPreviewSrc, t,
 }: {
   chart: ScienceClientArtifactVersion
   loadImage: ScienceImageLoader
   loadText: TextLoader
+  previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
   isTargetAdded: (target: ScienceEditTarget) => boolean
@@ -321,6 +324,8 @@ export function ArtifactContent({
   onRemoveTarget: (target: ScienceEditTarget) => void
   /** Apply pending chart operations through the caller's `applyChartOps` Remote, already scoped to this artifact/version. */
   onSaveChartOps: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
+  onPreviewChartOps?: import('./ScienceChartEditPanel.tsx').ScienceChartPreview
+  onPreviewSrc?: (src: string | undefined) => void
   t: TranslateNS<'science'>
 }) {
   const isImage = chart.mediaType === 'image/png'
@@ -331,13 +336,16 @@ export function ArtifactContent({
           <>
             <RasterArtifact
               chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
-              loadImage={loadImage} selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
+              loadImage={loadImage} {...previewSrc === undefined ? {} : { previewSrc }}
+              selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
               isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
               t={t}
             />
             {chart.chart !== undefined && (
               <ScienceChartEditPanel
                 version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
+                {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
+                {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
                 isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
                 t={t}
               />

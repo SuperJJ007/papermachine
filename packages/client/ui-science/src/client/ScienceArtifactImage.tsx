@@ -5,12 +5,13 @@ import type { ScienceArtifactContentRef, ScienceImageLoader } from './science-at
 import css from './ScienceDetailsView.module.css'
 
 /** Project-store image preview with retry and optional original-size lightbox. */
-export function ScienceArtifactImage({ content, label, load, variant, labels }: {
+export function ScienceArtifactImage({ content, label, load, variant, labels, srcOverride }: {
   content: ScienceArtifactContentRef
   label: string
   load: ScienceImageLoader
   variant: 'single' | 'tile'
   labels: MessageImageLabels
+  srcOverride?: string
 }) {
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -44,9 +45,9 @@ export function ScienceArtifactImage({ content, label, load, variant, labels }: 
         aria-label={labels.openNamed(label)}
         onClick={() => { if (src !== null) setOpen(true) }}
       >
-        {src === null
+        {srcOverride === undefined && src === null
           ? <span className={css.notice}>{labels.loading}</span>
-          : <img className={css.artifactImage} src={src} alt={label} />}
+          : <img className={css.artifactImage} src={srcOverride ?? src ?? ''} alt={label} />}
       </button>
       {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
     </>

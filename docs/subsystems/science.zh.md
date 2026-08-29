@@ -2,7 +2,7 @@
 
 [English](science.md) | 中文
 
-Science 家族拥有七种 required-on-read Session 事件、产生 environment/run/artifact 事实的 host-local Runtime、面向模型的 Consumer，以及浏览器会话记录展示。[`dsh-science-session`](../../packages/science/science-session) 严格校验完整 durable 值，暴露客户端安全的 `science` Session projection，并注册 artifact 附件提取。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：观测已配置的既有 Conda prefix、写入私有 scratch、执行 Python/R，并通过 `ctx.attachments` 导入 run 生成的 PNG。[`dsh-tool-science`](../../packages/science/tool-science) 在首次使用时绑定 mode/environment，渲染 `science:environment`，注册五个 Science 工具，并在 evidence 校验后发布 Outcome。[`dsh-client-ui-science`](../../packages/client/ui-science) 通过共享附件加载器渲染 chart 与 Outcome tool occurrence，持有以 `@deepseek-ai/dsh-science-runtime/with-settings` 注册的 `science-runtime` 命名空间为键的 Science 设置卡片，并加入文件 toggle（默认 session 级，`toggleScope: global` 时应用全局）以及一个 `conversation.details.view` Details 条目——一个 artifact viewer：已打开图表的标签栏、面板内工具栏、每个图表版本的溯源下钻（代码、执行日志、消息、环境），以及当某个 PNG 版本的 `chart` 可寻址时的图表编辑面板（命中表点选，或命中表不可用时的元素列表；按选中元素 kind 出一个属性控件；经 `applyChartOps` 放弃修改/保存为新版本）——加上位于无标签落地视图上的最新 Outcome。内置不可复制的 `science` preset 把 Consumer 与受限支持 roster 组装起来，但不携带 Runtime 行；已发布的 Web bundle 会以有意留空的配置档案映射在旁挂载 `with-settings`，具备实时能力的 Host 则另行挂载显式 Runtime 配置。
+Science 家族拥有七种 required-on-read Session 事件、产生 environment/run/artifact 事实的 host-local Runtime、面向模型的 Consumer，以及浏览器会话记录展示。[`dsh-science-session`](../../packages/science/science-session) 严格校验完整 durable 值，暴露客户端安全的 `science` Session projection，并注册 artifact 附件提取。[`dsh-science-runtime`](../../packages/science/science-runtime) 拥有 `ctx.scienceRuntime`：观测已配置的既有 Conda prefix、写入私有 scratch、执行 Python/R，并通过 `ctx.attachments` 导入 run 生成的 PNG。[`dsh-tool-science`](../../packages/science/tool-science) 在首次使用时绑定 mode/environment，渲染 `science:environment`，注册五个 Science 工具，并在 evidence 校验后发布 Outcome。[`dsh-client-ui-science`](../../packages/client/ui-science) 通过共享附件加载器渲染 chart 与 Outcome tool occurrence，持有以 `@deepseek-ai/dsh-science-runtime/with-settings` 注册的 `science-runtime` 命名空间为键的 Science 设置卡片，并加入文件 toggle（默认 session 级，`toggleScope: global` 时应用全局）以及一个 `conversation.details.view` Details 条目——一个 artifact viewer：已打开图表的标签栏、面板内工具栏、每个图表版本的溯源下钻（代码、执行日志、消息、环境），以及当某个 PNG 版本的 `chart` 可寻址时的图表编辑面板（完整元素列表；每行内联其 kind 对应的属性控件；每行的 `+`/`−` 元素引用；经 `applyChartOps` 放弃修改/保存为新版本）——加上位于无标签落地视图上的最新 Outcome。内置不可复制的 `science` preset 把 Consumer 与受限支持 roster 组装起来，但不携带 Runtime 行；已发布的 Web bundle 会以有意留空的配置档案映射在旁挂载 `with-settings`，具备实时能力的 Host 则另行挂载显式 Runtime 配置。
 
 来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)、[`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts) 与 [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
@@ -135,7 +135,9 @@ Remote service admitting browser edit gestures into the addressed live agent.
  * Validate exact current artifact selections and queue one structured edit
  * message. A region target's raster is read back from the project artifact
  * store and admitted as an ordinary session message attachment, so the
- * model-visible image stays reconstructable from the session log alone.
+ * model-visible image stays reconstructable from the session log alone; an
+ * element target names an addressable chart element by id and never reads
+ * the store or mints an attachment.
  * @param agent - exact live agent resolved by the Remote lookup policy.
  * @param request - selected versions, targets, and shared user instruction.
  * @returns durable-inbox admission receipt.

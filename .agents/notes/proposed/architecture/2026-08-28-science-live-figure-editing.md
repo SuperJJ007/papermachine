@@ -68,7 +68,7 @@ Warm operation round trips measured about 12 ms for matplotlib and 65–96 ms fo
 - All 13 element families and six version-one operations have shared codecs, strict validation, and adapter coverage for each supported runtime or an explicit unsupported result.
 - Applying operations creates a new PNG artifact version with exact parentage and cumulative operations; no direct edit mutates an existing version.
 - A dead kernel is restored by replaying the exact source run, materialized inputs, and operation log, and deterministic fixtures reproduce the edited PNG with zero pixel difference.
-- The viewer selects elements from the PNG hit map, shows controls allowed for that element, previews through the runtime, and saves a new version only through explicit user action.
+- The viewer lists every extracted chart element with the control allowed for that element's kind, requires no PNG click-to-select step, and saves a new version only through explicit user action; live preview through the runtime remains deferred work.
 - Model-authored structural edits receive the exact current version and operation context; invalidated operations are reported after revalidation.
 - Keyless snapshots cover extraction, apply, replay, receipts, and model-visible operation context; browser coverage pins selection and save behavior.
 

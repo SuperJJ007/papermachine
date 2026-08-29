@@ -68,7 +68,7 @@ Warm 操作往返耗时：matplotlib 约 12 ms，ggplot2 为 65–96 ms。Cold �
 - 13 类元素与六种版本一操作拥有共享 codec、严格校验，以及每个受支持 runtime 的 adapter coverage 或显式 unsupported 结果。
 - 应用操作会创建带确切 parent 与累计操作的新 PNG artifact version；直接编辑绝不修改既有 version。
 - 内核退出后，以确切 source run、物化输入与操作日志恢复；确定性 fixture 重现编辑后 PNG 时像素差为零。
-- Viewer 从 PNG 命中表选择元素，显示该元素允许的控件，经 runtime 预览，并且只在用户显式操作后保存新 version。
+- Viewer 列出每个已抽取的图表元素，各自展示其 kind 允许的控件，不需要在 PNG 上点选，并且只在用户显式操作后保存新 version；经 runtime 的实时预览仍是暂缓工作。
 - 模型进行结构性修改时收到确切当前 version 与操作上下文；重新校验后失效的操作会被报告。
 - Keyless snapshot 覆盖 extract、apply、replay、receipt 与模型可见操作上下文；浏览器 coverage 固定选择与保存行为。
 

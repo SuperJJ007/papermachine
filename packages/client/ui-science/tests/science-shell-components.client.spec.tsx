@@ -127,18 +127,18 @@ describe('ScienceKernelStatus', () => {
 
 describe('Science composer targets', () => {
   const spec: ScienceEditSelection = {
-    artifactId: ScienceArtifactId('chart-1'), version: 1,
+    artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1,
     target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
   }
   const commented: ScienceEditSelection = { ...spec, comment: 'make it blue' }
   const region: ScienceEditSelection = {
-    artifactId: ScienceArtifactId('image-1'), version: 2,
+    artifactId: ScienceArtifactId('image-1'), logicalName: 'residuals.png', version: 2,
     target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
   }
 
   const elementSpec: ScienceEditSelection = {
-    artifactId: ScienceArtifactId('chart-1'), version: 1,
-    target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', current: 'Loss' },
+    artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1,
+    target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', axes: 0, label: null, current: 'Loss' },
   }
 
   it('renders nothing when empty and removes region and element chips', () => {
@@ -147,12 +147,12 @@ describe('Science composer targets', () => {
     const view = render(<ScienceComposerChips selections={selections} remove={remove} t={t} />)
     expect(view.container.firstChild).toBeNull()
     act(() => { selections.set([commented, region, elementSpec]) })
-    expect(screen.getByText('chart-1 v1 · region 10%,20%: make it blue')).toBeTruthy()
-    expect(screen.getByText('image-1 v2 · region 10%,20%')).toBeTruthy()
-    expect(screen.getByText('chart-1 v1 · axes[0].title')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · region 10%,20%: make it blue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove image-1 v2 · region 10%,20%' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove chart-1 v1 · axes[0].title' }))
+    expect(screen.getByText('loss.png v1 · region 10%,20%: make it blue')).toBeTruthy()
+    expect(screen.getByText('residuals.png v2 · region 10%,20%')).toBeTruthy()
+    expect(screen.getByText('loss.png v1 · Title')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · region 10%,20%: make it blue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove residuals.png v2 · region 10%,20%' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · Title' }))
     expect(remove.mock.calls).toEqual([[0], [1], [2]])
   })
 

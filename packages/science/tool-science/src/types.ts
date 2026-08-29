@@ -10,7 +10,7 @@
  * @module @deepseek-ai/dsh-tool-science/types
  */
 
-import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceChartOp } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceChartElement, ScienceChartOp } from '@deepseek-ai/dsh-science-session/types'
 
 /** A top-left-origin region normalized against the selected raster version. */
 export interface ScienceNormalizedRegionTarget {
@@ -22,17 +22,21 @@ export interface ScienceNormalizedRegionTarget {
 }
 
 /**
- * One addressable chart element referenced by id from the artifact viewer's
- * element list, carrying no pixel coordinates.
+ * One addressable chart element referenced by exact catalog fields from the
+ * artifact viewer's element list, carrying no pixel coordinates.
  */
 export interface ScienceElementTarget {
   readonly kind: 'element'
   /** `ScienceChartElement.id` on the addressed chart version. */
   readonly elementId: string
   /** `ScienceChartElement.kind` on the addressed chart version. */
-  readonly elementKind: string
+  readonly elementKind: ScienceChartElement['kind']
+  /** Zero-based axes index, or `null` for a figure-wide element. */
+  readonly axes: number | null
+  /** Extracted series or annotation label, or `null` when the element has none. */
+  readonly label: string | null
   /** Short current-value text for the model-visible message; never pixel coordinates. */
-  readonly current?: string
+  readonly current: string
 }
 
 /** One model-visible edit target selected in the Science artifact viewer. */
@@ -41,6 +45,8 @@ export type ScienceEditTarget = ScienceNormalizedRegionTarget | ScienceElementTa
 /** One selected target tied to its exact immutable artifact version. */
 export interface ScienceEditSelection {
   readonly artifactId: ScienceArtifactId
+  /** Logical artifact name shown in the composer and verified by Host admission. */
+  readonly logicalName: string
   readonly version: number
   readonly target: ScienceEditTarget
   /** Optional instruction scoped to this exact element. */

@@ -310,25 +310,6 @@
   gap: 6px;
 }
 
-.elementTargetRow {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.elementToggle {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
 .breadcrumb {
   display: flex;
   align-items: center;
@@ -696,7 +677,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Chart editing panel: full element list, per-kind property control, op list, actions. */
+/* Chart editing panel: precise element references plus four deterministic controls. */
 
 .elementRows {
   display: flex;
@@ -710,47 +691,124 @@
 .elementRow {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.elementRow:hover {
+  border-color: var(--dsw-alias-label-caption);
+}
+
+.elementRow[data-selected] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-layer-1));
 }
 
 .elementRowHead {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
+}
+
+.elementToggle {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.elementKindDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-caption);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.elementKindDot[data-kind='title'],
+.elementKindDot[data-kind='subtitle'] { background: var(--dsw-alias-brand-primary); }
+.elementKindDot[data-kind='x_label'],
+.elementKindDot[data-kind='y_label'],
+.elementKindDot[data-kind='tick_labels'] { background: var(--dsw-alias-label-primary); }
+.elementKindDot[data-kind='legend'],
+.elementKindDot[data-kind='series'] { background: var(--dsw-alias-state-warn-label); }
+.elementKindDot[data-kind='grid'],
+.elementKindDot[data-kind='annotation'] { background: var(--dsw-alias-label-secondary); }
+
+.elementIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.elementName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .elementSummary {
   overflow: hidden;
   min-width: 0;
   color: var(--dsw-alias-label-tertiary);
-  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
+  line-height: 16px;
 }
 
-.colorSwatches {
-  display: flex;
+.elementChevron {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: 16px;
+  transition: transform 120ms ease;
+}
+
+.elementToggle[aria-expanded='true'] .elementChevron { transform: rotate(90deg); }
+
+.elementReference {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: none;
   align-items: center;
-  gap: 6px;
-}
-
-.colorSwatch {
-  width: 20px;
-  height: 20px;
+  justify-content: center;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   padding: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.colorSwatch[data-active] {
-  outline: 2px solid var(--dsw-alias-label-primary);
-  outline-offset: 1px;
+.elementReference:hover {
+  border-color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-primary);
+}
+
+.elementReference[data-selected] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-bg-base);
 }
 
 .legendSegments {
@@ -775,17 +833,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.readOnlyValue {
-  overflow: auto;
-  max-height: 80px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--dsw-alias-markdown-code-block);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
+.gridControl { display: flex; align-items: center; gap: 6px; }
 
 .opsSection {
   display: flex;

@@ -39,29 +39,13 @@ describe('Science chart codec', () => {
     const ops = [
       { op: 'set_title', axes: null, text: 'Updated title' },
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Treatment' },
-      { op: 'set_series_color', axes: 0, label: 'control', color: '#12aBcD' },
       { op: 'set_legend_position', axes: null, position: 'upper right' },
-      { op: 'set_tick_font_size', axes: 1, size: 12 },
-      { op: 'add_reference_line', axes: 0, orientation: 'h', value: 1.5 },
-      { op: 'set_figure_size', axes: null, width: 8, height: 5 },
-      { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 10 },
-      { op: 'set_axis_scale', axes: 0, axis: 'y', scale: 'log' },
       { op: 'toggle_grid', axes: 0, visible: true },
-      { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
     ] as const
     expect(decodeScienceChartState(chart({ ops })).ops).toEqual(ops)
-    expect(decodeScienceChartState(chart({
-      ops: [{ op: 'set_series_color', axes: null, label: 'control', color: 'rebeccapurple' }],
-    })).ops).toHaveLength(1)
   })
 
   it('rejects invalid operation operands and unknown operations', () => {
-    expect(() => decodeScienceChartState(chart({
-      ops: [{ op: 'set_series_color', axes: null, label: 'control', color: 'not-a-color' }],
-    }))).toThrow()
-    expect(() => decodeScienceChartState(chart({
-      ops: [{ op: 'set_tick_font_size', axes: null, size: 3 }],
-    }))).toThrow()
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'set_title', axes: -1, text: 'Title' }],
     }))).toThrow()
@@ -69,13 +53,7 @@ describe('Science chart codec', () => {
       ops: [{ op: 'set_title', axes: null, text: 'bad\u0000text' }],
     }))).toThrow()
     expect(() => decodeScienceChartState(chart({
-      ops: [{ op: 'set_series_color', axes: null, label: 'x'.repeat(201), color: 'red' }],
-    }))).toThrow()
-    expect(() => decodeScienceChartState(chart({
-      ops: [{ op: 'add_reference_line', axes: null, orientation: 'v', value: Number.POSITIVE_INFINITY }],
-    }))).toThrow()
-    expect(() => decodeScienceChartState(chart({
-      ops: [{ op: 'set_axis_range', axes: null, axis: 'x', min: 2, max: 1 }],
+      ops: [{ op: 'set_legend_position', axes: null, position: 'outside' } as never],
     }))).toThrow()
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'unknown', axes: null } as never],

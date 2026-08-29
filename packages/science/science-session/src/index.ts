@@ -48,7 +48,6 @@ export {
   ScienceVersionId,
 } from './ids.ts'
 export {
-  CHART_COLOR_NAMES,
   MAX_CHART_ELEMENTS,
   MAX_CHART_HITS,
   MAX_CHART_OPS,

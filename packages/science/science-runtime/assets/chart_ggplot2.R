@@ -110,11 +110,7 @@ extract_elements <- function(plot) {
   }
   text <- tryCatch(ggplot2::calc_element("text", theme), error = function(e) NULL)
   if (!is.null(text)) {
-    available <- if (requireNamespace("systemfonts", quietly = TRUE)) {
-      sort(unique(as.character(systemfonts::system_fonts()$family)))
-    } else c("mono", "sans", "serif")
-    add("font", "font", NULL, NULL, list(
-      family = text$family, size = text$size, available = head(available, 300L), truncated = length(available) > 300L))
+    add("font", "font", NULL, NULL, list(family = text$family, size = text$size))
   }
   annotation_geoms <- c("GeomHline", "GeomVline", "GeomAbline", "GeomText", "GeomLabel", "GeomSegment", "GeomCurve")
   for (index in seq_along(plot$layers)) {
@@ -215,48 +211,11 @@ apply_ops <- function(plot, ops) {
         current <- current + ggplot2::labs(title = operation$text)
       } else if (name == "set_axis_label") {
         current <- if (operation$axis == "x") current + ggplot2::labs(x = operation$text) else current + ggplot2::labs(y = operation$text)
-      } else if (name == "set_series_color") {
-        built <- ggplot2::ggplot_build(current)
-        scale <- built$plot$scales$get_scales("fill")
-        if (is.null(scale)) scale <- built$plot$scales$get_scales("colour")
-        if (is.null(scale) || !(operation$label %in% scale$get_labels())) stop("element_not_found")
-        labels <- scale$get_labels()
-        breaks <- scale$get_breaks()
-        colors <- scale$map(breaks)
-        colors[labels == operation$label] <- operation$color
-        values <- stats::setNames(colors, breaks)
-        current <- if (scale$aesthetics[1] == "fill") {
-          current + ggplot2::scale_fill_manual(values = values, breaks = breaks, labels = labels)
-        } else {
-          current + ggplot2::scale_colour_manual(values = values, breaks = breaks, labels = labels)
-        }
       } else if (name == "set_legend_position") {
         current <- current + ggplot2::theme(legend.position = operation$position)
-      } else if (name == "set_tick_font_size") {
-        current <- current + ggplot2::theme(axis.text = ggplot2::element_text(size = operation$size))
-      } else if (name == "add_reference_line") {
-        current <- if (operation$orientation == "h") {
-          current + ggplot2::geom_hline(yintercept = operation$value, color = "darkorange", linetype = "dotted", linewidth = 1)
-        } else {
-          current + ggplot2::geom_vline(xintercept = operation$value, color = "darkorange", linetype = "dotted", linewidth = 1)
-        }
-      } else if (name == "set_figure_size") {
-        stop("unsupported_operation")
-      } else if (name == "set_axis_range") {
-        current <- if (operation$axis == "x") {
-          current + ggplot2::coord_cartesian(xlim = c(operation$min, operation$max))
-        } else current + ggplot2::coord_cartesian(ylim = c(operation$min, operation$max))
-      } else if (name == "set_axis_scale") {
-        if (operation$axis == "x") {
-          current <- if (operation$scale == "log") current + ggplot2::scale_x_log10() else current + ggplot2::scale_x_continuous()
-        } else {
-          current <- if (operation$scale == "log") current + ggplot2::scale_y_log10() else current + ggplot2::scale_y_continuous()
-        }
       } else if (name == "toggle_grid") {
         grid <- if (isTRUE(operation$visible)) ggplot2::element_line() else ggplot2::element_blank()
         current <- current + ggplot2::theme(panel.grid = grid)
-      } else if (name == "set_font") {
-        current <- current + ggplot2::theme(text = ggplot2::element_text(family = operation$family, size = operation$size))
       } else stop("unknown_op")
       NULL
     }, error = function(error) conditionMessage(error))

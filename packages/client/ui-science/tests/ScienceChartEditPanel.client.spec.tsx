@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The chart editing panel in isolation: the full `chart.elements` list (no
- * duplicate image, no hitmap/click overlay), one property control per
- * `ScienceChartElement.kind` (the six writable v1 operations plus the
- * read-only display for the remaining five kinds) always rendered inline on
- * its row, each row's +/− composer-reference control, pending-op
- * accumulation across rows, the committed/pending op list, and Discard/Save.
+ * The chart editing panel in isolation: every extracted element has a precise
+ * composer reference, while only titles, axis labels, legend position, and
+ * grid expose direct controls and live preview.
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -35,7 +32,7 @@ const ALL_ELEMENTS: readonly ScienceChartElement[] = [
   element({ id: 'axes[0].axis_range', kind: 'axis_range', axes: 0, current: [0, 10] }),
   element({ id: 'axes[0].axis_scale', kind: 'axis_scale', axes: 0, current: 'linear' }),
   element({ id: 'figure_size', kind: 'figure_size', current: [6, 4] }),
-  element({ id: 'font', kind: 'font', current: { family: ['sans'], size: 12, available: ['sans', 'serif'], truncated: false } }),
+  element({ id: 'font', kind: 'font', current: { family: ['sans'], size: 12 } }),
   element({ id: 'axes[0].annotation[text:hi]', kind: 'annotation', axes: 0, label: 'hi', current: { text: 'hi' } }),
 ]
 
@@ -89,9 +86,9 @@ describe('ScienceChartEditPanel: full element list', () => {
   it('lists every chart element as one row with no duplicate image and no hitmap overlay', () => {
     panel()
     expect(document.querySelector('img')).toBeNull()
-    expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length - 1)
+    expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length)
     for (const name of ['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Series · treatment', 'Tick labels',
-      'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font']) {
+      'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
       expect(screen.getByText(name)).toBeTruthy()
     }
     expect(screen.queryByLabelText('Enter text')).toBeNull()
@@ -100,6 +97,10 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(within(title).getByRole('button', { name: /^Title/ }).getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(within(title).getByRole('button', { name: /^Title/ }))
     expect(within(title).getByLabelText('Enter text')).toBeTruthy()
+    const series = screen.getByText('Series · treatment').closest('li')
+    if (series === null) throw new Error('expected series row')
+    expect(within(series).queryByLabelText('Color')).toBeNull()
+    expect(within(series).getByRole('button', { name: /^Series/ }).getAttribute('aria-expanded')).toBeNull()
   })
 
   it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
@@ -125,34 +126,6 @@ describe('ScienceChartEditPanel: full element list', () => {
     ])
   })
 
-  it('stages set_series_color from a preset swatch', async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
-    panel({ onSave })
-    const row = expandRow('Series · treatment')
-    fireEvent.click(within(row).getByRole('button', { name: 'Color #dc2626' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect(onSave).toHaveBeenCalledWith([{ op: 'set_series_color', axes: 0, label: 'treatment', color: '#dc2626' }])
-  })
-
-  it('stages set_series_color from the native color input, and falls back to an empty label when the element has none', async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
-    const chart = chartState({ elements: [element({ id: 'axes[0].series[]', kind: 'series', axes: 0, label: null })] })
-    panel({ chart, onSave })
-    expandRow('Series')
-    fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#123456' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect(onSave).toHaveBeenCalledWith([{ op: 'set_series_color', axes: 0, label: '', color: '#123456' }])
-  })
-
-  it('stages set_tick_font_size from the 4-72 slider', async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
-    panel({ onSave })
-    const row = expandRow('Tick labels')
-    fireEvent.change(within(row).getByLabelText('Font size (4–72)'), { target: { value: '18' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect(onSave).toHaveBeenCalledWith([{ op: 'set_tick_font_size', axes: 0, size: 18 }])
-  })
-
   it('stages set_legend_position from the closed 6-value segmented control', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
@@ -162,17 +135,13 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_legend_position', axes: 0, position: 'upper left' }])
   })
 
-  it('stages add_reference_line with the chosen orientation and numeric value, disabled until valid', async () => {
+  it('stages toggle_grid from the grid switch', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
     const row = expandRow('Grid')
-    // Horizontal is the default orientation; clicking it re-confirms that
-    // choice before switching to Vertical below.
-    fireEvent.click(within(row).getByRole('button', { name: 'Horizontal' }))
-    fireEvent.click(within(row).getByRole('button', { name: 'Vertical' }))
-    fireEvent.change(within(row).getByLabelText('Reference line value'), { target: { value: '3.5' } })
+    fireEvent.click(within(row).getByLabelText('Show grid'))
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect(onSave).toHaveBeenCalledWith([{ op: 'add_reference_line', axes: 0, orientation: 'v', value: 3.5 }])
+    expect(onSave).toHaveBeenCalledWith([{ op: 'toggle_grid', axes: 0, visible: true }])
   })
 
   it('truncates a current-value summary and referenced-element current past 60 characters', () => {
@@ -183,33 +152,23 @@ describe('ScienceChartEditPanel: full element list', () => {
     const truncated = `${'x'.repeat(60)}…`
     expect(screen.getByText(truncated)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Add Title to the conversation' }))
-    expect(onAddTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: truncated }, '')
+    expect(onAddTarget).toHaveBeenCalledWith({
+      kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: truncated,
+    }, '')
   })
 
-  it('omits annotations and stages figure size, axis range, axis scale, grid, and font controls', async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
-    panel({ onSave })
-    expect(screen.queryByText('Annotation · hi')).toBeNull()
-
-    let row = expandRow('Figure size')
-    fireEvent.change(within(row).getByLabelText('Figure width (inches)'), { target: { value: '8' } })
-    row = expandRow('Axis range')
-    fireEvent.change(within(row).getByLabelText('X-axis maximum'), { target: { value: '20' } })
-    row = expandRow('Axis scale')
-    fireEvent.change(within(row).getByLabelText('X-axis scale'), { target: { value: 'log' } })
-    row = expandRow('Grid')
-    fireEvent.click(within(row).getByLabelText('Show grid'))
-    row = expandRow('Font')
-    fireEvent.change(within(row).getByLabelText('Font family'), { target: { value: 'serif' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-
-    expect(onSave).toHaveBeenCalledWith([
-      { op: 'set_figure_size', axes: null, width: 8, height: 4 },
-      { op: 'set_axis_range', axes: 0, axis: 'x', min: 0, max: 20 },
-      { op: 'set_axis_scale', axes: 0, axis: 'x', scale: 'log' },
-      { op: 'toggle_grid', axes: 0, visible: true },
-      { op: 'set_font', axes: null, family: 'serif', size: 12 },
-    ])
+  it('turns a reference-only row click into a precise composer reference without previewing', () => {
+    const onAddTarget = vi.fn()
+    const onPreview = vi.fn()
+    panel({ onAddTarget, onPreview })
+    const row = screen.getByText('Series · treatment').closest('li')
+    if (row === null) throw new Error('expected series row')
+    fireEvent.click(within(row).getByRole('button', { name: /^Series/ }))
+    expect(onAddTarget).toHaveBeenCalledWith({
+      kind: 'element', elementId: 'axes[0].series[treatment]', elementKind: 'series', axes: 0,
+      label: 'treatment', current: 'null',
+    }, '')
+    expect(onPreview).not.toHaveBeenCalled()
   })
 })
 
@@ -223,7 +182,7 @@ describe('ScienceChartEditPanel: element +/- composer reference', () => {
     expect(within(row).queryByLabelText('Edit note for Title')).toBeNull()
     fireEvent.click(within(row).getByRole('button', { name: 'Add Title to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith(
-      { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' }, '',
+      { kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: 'Loss' }, '',
     )
     expect(onRemoveTarget).not.toHaveBeenCalled()
   })
@@ -237,7 +196,9 @@ describe('ScienceChartEditPanel: element +/- composer reference', () => {
     expect(within(row).getByRole('button', { name: 'Remove Title' })).toBeTruthy()
     expect(onAddTarget).not.toHaveBeenCalled()
     fireEvent.click(within(row).getByRole('button', { name: 'Remove Title' }))
-    expect(onRemoveTarget).toHaveBeenCalledWith({ kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' })
+    expect(onRemoveTarget).toHaveBeenCalledWith({
+      kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: 'Loss',
+    })
   })
 })
 

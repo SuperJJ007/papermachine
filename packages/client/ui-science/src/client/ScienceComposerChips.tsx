@@ -5,6 +5,7 @@ import { IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
+import { scienceElementLabel } from './science-element-label.ts'
 import css from './ScienceComposerChips.module.css'
 
 /** Controller face injected for the addressed Session. */
@@ -26,7 +27,7 @@ function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS
     case 'normalized-region':
       return t('edit.regionTarget', { x: Math.round(target.x * 100), y: Math.round(target.y * 100) })
     case 'element':
-      return target.elementId
+      return scienceElementLabel(target.elementKind, target.label, t)
     /* v8 ignore next -- closed ScienceEditTarget union */
     default: return assertNever(target)
   }
@@ -34,7 +35,7 @@ function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS
 
 function targetLabel(selection: ScienceEditSelection, t: TranslateNS<'science'>): string {
   const target = targetDescriptor(selection.target, t)
-  return `${selection.artifactId} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
+  return `${selection.logicalName} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
 }
 
 /** Render removable targets; an empty selection contributes no chrome. */

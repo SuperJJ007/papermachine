@@ -698,6 +698,7 @@ function ArtifactTab({
         targetComment={next => selectionFor(next)?.comment ?? ''}
         onAddTarget={(next, comment) => { addToConversation([{
           artifactId: chart.artifactId,
+          logicalName: chart.logicalName,
           version: chart.version,
           target: next,
           ...(comment.trim() === '' ? {} : { comment: comment.trim() }),

@@ -386,7 +386,7 @@ function matplotlibChartSource(caseName: 'basic' | 'tight' | 'closed' | 'figure'
     '    ax.set_ylabel("Response")',
     '    ax.legend()',
     '    ax.grid(True)',
-    `    fig.savefig(${saveTarget('mpl-basic.png')}, dpi=120)`,
+    `    fig.savefig(${saveTarget('mpl-basic.png')}, dpi=150)`,
     '_draw()',
     'del _draw',
     'assert set(globals()) == _before | {"_before"}',
@@ -728,63 +728,47 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       await namespaceProbe('begin')
       const basic = await runChartSource(matplotlibChartSource('basic'), ['mpl-basic.png'])
       const basicLive = expectLiveChart(basic, 'mpl-basic.png', 'matplotlib')
-      expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series', 'grid', 'axis_range'])
+      expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series', 'grid', 'axis_range', 'font'])
       if (basicLive.chart.hitmapStatus !== 'ok' || basicLive.chart.hitmap.length === 0) {
         throw new Error('ordinary matplotlib save did not produce a usable hitmap')
       }
       const basicPng = pngDimensions(await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256))
       if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
-        || basicLive.chart.png.dpi !== 120) throw new Error('matplotlib chart PNG metadata disagreed with captured bytes')
-      checks.push('chart matplotlib basic savefig dpi=120: catalog, PNG grid, hitmap, namespace, source bytes')
+        || basicLive.chart.png.dpi !== 150) throw new Error('matplotlib chart PNG metadata disagreed with captured bytes')
+      const font = basicLive.chart.elements.find(element => element.kind === 'font')
+      const fontCurrent = font?.current
+      if (font === undefined || typeof fontCurrent !== 'object' || fontCurrent === null || Array.isArray(fontCurrent)
+        || !Object.hasOwn(fontCurrent, 'family') || !Object.hasOwn(fontCurrent, 'size')
+        || Object.hasOwn(fontCurrent, 'available') || Object.hasOwn(fontCurrent, 'truncated')
+        || Buffer.byteLength(JSON.stringify(fontCurrent), 'utf8') > 1_024) {
+        throw new Error('matplotlib font current was not the bounded family-and-size summary')
+      }
+      checks.push('chart matplotlib basic savefig dpi=150: catalog, bounded font current, PNG grid, hitmap, namespace, source bytes')
 
       const basicParentBytes = await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256)
-      const titled = await context.scienceRuntime.applyChartEdit({
+      const edited = await context.scienceRuntime.applyChartEdit({
         session, artifactId: basicLive.artifact.artifactId, version: 1,
         ops: [
           { op: 'set_title', axes: null, text: 'Directly edited trial' },
           { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited group' },
+          { op: 'set_legend_position', axes: 0, position: 'lower right' },
+          { op: 'toggle_grid', axes: 0, visible: false },
         ],
         signal: new AbortController().signal,
       })
-      const titledBytes = await context.scienceArtifactStore.readBlob(titled.artifact.projectId, titled.artifact.sha256)
-      if (titled.artifact.version !== 2 || titled.artifact.origin !== 'human-edit'
-        || titled.artifact.chart?.ops.length !== 2 || titled.failedOps.length !== 0
-        || Buffer.from(titledBytes).equals(Buffer.from(basicParentBytes))) {
-        throw new Error('matplotlib title and axis-label apply did not commit a changed human-edit v2 with two operations')
-      }
-      const colored = await context.scienceRuntime.applyChartEdit({
-        session, artifactId: titled.artifact.artifactId, version: 2,
-        ops: [{ op: 'set_series_color', axes: 0, label: 'treatment', color: '#cc3366' }],
-        signal: new AbortController().signal,
-      })
-      if (colored.artifact.version !== 3 || colored.artifact.chart?.ops.length !== 3 || colored.failedOps.length !== 0) {
-        throw new Error('matplotlib series-color apply did not preserve three cumulative operations in v3')
-      }
-      const referenced = await context.scienceRuntime.applyChartEdit({
-        session, artifactId: colored.artifact.artifactId, version: 3,
-        ops: [{ op: 'add_reference_line', axes: 0, orientation: 'h', value: 1.5 }],
-        signal: new AbortController().signal,
-      })
-      if (referenced.artifact.version !== 4 || referenced.artifact.chart?.ops.length !== 4 || referenced.failedOps.length !== 0) {
-        throw new Error('matplotlib reference-line apply did not preserve four cumulative operations in v4')
-      }
-      const restyled = await context.scienceRuntime.applyChartEdit({
-        session, artifactId: referenced.artifact.artifactId, version: 4,
-        ops: [
-          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
-          { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 4 },
-          { op: 'set_axis_scale', axes: 0, axis: 'x', scale: 'log' },
-          { op: 'toggle_grid', axes: 0, visible: true },
-          { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
-        ],
-        signal: new AbortController().signal,
-      })
-      if (restyled.artifact.version !== 5 || restyled.artifact.chart?.ops.length !== 9
-        || restyled.failedOps.length !== 0) {
-        throw new Error('matplotlib size/range/scale/grid/font operations did not commit as human-edit v5')
+      const editedBytes = await context.scienceArtifactStore.readBlob(edited.artifact.projectId, edited.artifact.sha256)
+      const editedElements = edited.artifact.chart?.elements ?? []
+      if (edited.artifact.version !== 2 || edited.artifact.origin !== 'human-edit'
+        || edited.artifact.chart?.ops.length !== 4 || edited.failedOps.length !== 0
+        || Buffer.from(editedBytes).equals(Buffer.from(basicParentBytes))
+        || !editedElements.some(element => element.kind === 'title' && element.current === 'Directly edited trial')
+        || !editedElements.some(element => element.kind === 'x_label' && element.current === 'Edited group')
+        || !editedElements.some(element => element.kind === 'legend')
+        || !editedElements.some(element => element.kind === 'grid' && element.current === false)) {
+        throw new Error('matplotlib four-operation apply did not commit a changed human-edit v2 with matching catalog state')
       }
       await namespaceProbe('end')
-      checks.push('chart apply matplotlib warm title/axis/color/reference/size/range/scale/grid/font: cumulative ops, namespace')
+      checks.push('chart apply matplotlib warm title/axis-label/legend/grid: four cumulative ops, catalog state, namespace')
 
       await expectChartError('CHART_STALE_VERSION', context.scienceRuntime.applyChartEdit({
         session, artifactId: basicLive.artifact.artifactId, version: 1,
@@ -887,31 +871,18 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         session, artifactId: basicLive.artifact.artifactId, version: 1,
         ops: [
           { op: 'set_title', axes: null, text: 'Edited cars' },
+          { op: 'set_axis_label', axes: null, axis: 'x', text: 'Edited cylinders' },
           { op: 'set_legend_position', axes: null, position: 'lower right' },
+          { op: 'toggle_grid', axes: null, visible: false },
         ],
         signal: new AbortController().signal,
       })
       if (edited.artifact.version !== 2 || edited.artifact.origin !== 'human-edit'
-        || edited.artifact.chart?.ops.length !== 2 || edited.failedOps.length !== 0) {
-        throw new Error('ggplot2 title and legend apply did not commit human-edit v2 with cumulative operations')
-      }
-      const restyled = await context.scienceRuntime.applyChartEdit({
-        session, artifactId: edited.artifact.artifactId, version: 2,
-        ops: [
-          { op: 'set_axis_range', axes: null, axis: 'x', min: 2, max: 5 },
-          { op: 'set_axis_scale', axes: null, axis: 'y', scale: 'log' },
-          { op: 'toggle_grid', axes: null, visible: true },
-          { op: 'set_font', axes: null, family: 'sans', size: 14 },
-          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
-        ],
-        signal: new AbortController().signal,
-      })
-      if (restyled.artifact.version !== 3 || restyled.artifact.chart?.ops.length !== 6
-        || restyled.failedOps.length !== 1 || restyled.failedOps[0]?.index !== 4) {
-        throw new Error('ggplot2 range/scale/grid/font apply or unsupported figure-size failedOp was incorrect')
+        || edited.artifact.chart?.ops.length !== 4 || edited.failedOps.length !== 0) {
+        throw new Error('ggplot2 four-operation apply did not commit human-edit v2 with cumulative operations')
       }
       await namespaceProbe('end')
-      checks.push('chart apply ggplot2 title/legend/range/scale/grid/font and unsupported figure-size failedOp')
+      checks.push('chart apply ggplot2 title/axis-label/legend/grid: four cumulative ops, namespace')
 
       for (const caseName of ['device', 'base'] as const) {
         const filename = `r-${caseName}.png`

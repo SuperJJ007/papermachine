@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
 import { applyScienceArtifactNotes, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import type { ScienceChartElement } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ScienceChartEditReceipt,
@@ -56,13 +57,34 @@ function resolveRegionTarget(target: ScienceNormalizedRegionTarget): ScienceNorm
   return { ...target }
 }
 
-/** Validate and detach one viewer-supplied chart-element target; carries no coordinates to check. */
+const ELEMENT_KINDS = new Set<ScienceChartElement['kind']>([
+  'title', 'subtitle', 'x_label', 'y_label', 'tick_labels', 'legend', 'series', 'grid',
+  'axis_range', 'axis_scale', 'figure_size', 'font', 'annotation',
+])
+
+function validTargetText(value: string): boolean {
+  return value.trim() !== '' && !value.includes('\u0000') && value.isWellFormed()
+}
+
+/** Canonical short summary carried by a precise element target. */
+function elementCurrentSummary(current: ScienceChartElement['current']): string {
+  const text = typeof current === 'string' ? current : JSON.stringify(current)
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+}
+
+/** Validate and detach one viewer-supplied chart-element target. */
 function resolveElementTarget(target: ScienceElementTarget): ScienceElementTarget {
-  if (target.elementId.trim() === '' || target.elementKind.trim() === '') {
-    invalid('Science edit element target must name a non-empty element id and kind')
+  if (!validTargetText(target.elementId) || !ELEMENT_KINDS.has(target.elementKind)) {
+    invalid('Science edit element target must name a valid element id and kind')
   }
-  if (target.current !== undefined && (target.current.includes('\u0000') || !target.current.isWellFormed())) {
-    invalid('Science edit element target current value must be well-formed Unicode without U+0000')
+  if (target.axes !== null && (!Number.isSafeInteger(target.axes) || target.axes < 0)) {
+    invalid('Science edit element target axes must be null or a non-negative safe integer')
+  }
+  if (target.label !== null && !validTargetText(target.label)) {
+    invalid('Science edit element target label must be null or non-empty well-formed Unicode without U+0000')
+  }
+  if (!validTargetText(target.current)) {
+    invalid('Science edit element target current value must be non-empty well-formed Unicode without U+0000')
   }
   return { ...target }
 }
@@ -118,6 +140,12 @@ function resolveSelection(
     throw new ScienceEditError(
       `Science edit target ${JSON.stringify(request.artifactId)}@${String(request.version)} does not match the current committed version ${String(latest.version)}`,
       'SCIENCE_EDIT_STALE_VERSION',
+    )
+  }
+  if (request.logicalName !== latest.logicalName) {
+    throw new ScienceEditError(
+      `Science edit target ${JSON.stringify(request.artifactId)}@${String(request.version)} does not match logical name ${JSON.stringify(latest.logicalName)}`,
+      'SCIENCE_EDIT_TARGET_MISMATCH',
     )
   }
   const target = resolveTarget(request.target)
@@ -179,8 +207,20 @@ function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEd
         throw new ScienceEditError('Science region edits require a raster image artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
       }
       return
-    case 'element':
+    case 'element': {
+      if (artifact.chart === undefined) {
+        throw new ScienceEditError('Science element edits require an addressable chart artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
+      }
+      const element = artifact.chart.elements.find(candidate => candidate.id === target.elementId)
+      if (element === undefined
+        || element.kind !== target.elementKind
+        || element.axes !== target.axes
+        || element.label !== target.label
+        || elementCurrentSummary(element.current) !== target.current) {
+        throw new ScienceEditError('Science element target does not match the addressed chart element', 'SCIENCE_EDIT_TARGET_MISMATCH')
+      }
       return
+    }
     /* v8 ignore next -- closed ScienceEditTarget union */
     default: assertNever(target)
   }
@@ -192,8 +232,7 @@ function targetDescriptor(target: ScienceEditTarget): string {
     case 'normalized-region':
       return `region(${String(target.x)},${String(target.y)},${String(target.width)},${String(target.height)})`
     case 'element': {
-      const current = target.current === undefined ? '' : `, current=${JSON.stringify(target.current)}`
-      return `element(${target.elementId}, kind=${target.elementKind}${current})`
+      return `element(${JSON.stringify(target.elementId)}, kind=${target.elementKind}, axes=${target.axes === null ? 'null' : String(target.axes)}, label=${JSON.stringify(target.label)}, current=${JSON.stringify(target.current)})`
     }
     /* v8 ignore next -- closed ScienceEditTarget union */
     default: return assertNever(target)
@@ -249,6 +288,7 @@ export function createScienceEditMessage(
     kind: 'science-edit',
     targets: targets.map(({ artifact, target, comment }) => ({
       artifactId: artifact.artifactId,
+      logicalName: artifact.logicalName,
       version: artifact.version,
       target,
       ...comment === undefined ? {} : { comment },
@@ -295,8 +335,9 @@ export class ScienceEditService extends TypertRemoteService {
    * message. A region target's raster is read back from the project artifact
    * store and admitted as an ordinary session message attachment, so the
    * model-visible image stays reconstructable from the session log alone; an
-   * element target names an addressable chart element by id and never reads
-   * the store or mints an attachment.
+   * element target must match one addressable chart entry's id, kind, axes,
+   * label, and current-value summary, and never reads the store or mints an
+   * attachment.
    * @param agent - exact live agent resolved by the Remote lookup policy.
    * @param request - selected versions, targets, and shared user instruction.
    * @returns durable-inbox admission receipt.

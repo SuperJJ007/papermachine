@@ -28,7 +28,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartState, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -162,7 +162,7 @@ interface RunProvenance {
  */
 async function seedAutoArtifact(
   ctx: Context, session: Session, run: RunProvenance, logicalName: string,
-  data: Uint8Array, mediaType: ScienceArtifactMediaType,
+  data: Uint8Array, mediaType: ScienceArtifactMediaType, chart?: ScienceChartState,
 ): Promise<ScienceArtifactVersion> {
   const cwd = session.header.cwd
   if (cwd === undefined) throw new Error('tool-science test: science session fixture requires a cwd')
@@ -193,6 +193,7 @@ async function seedAutoArtifact(
     environmentRevision: run.environmentRevision,
     environmentFingerprint: run.environmentFingerprint,
     createdAt: Date.now(),
+    ...chart === undefined ? {} : { chart },
   }
   session.append('science/artifact-saved', { version: 1, artifact })
   return artifact
@@ -719,7 +720,7 @@ describe('runValueFromResult / formatRunResult', () => {
       chart: {
         runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
         hitmap: [], hitmapStatus: 'unavailable', elements: [],
-        ops: [{ op: 'set_series_color', axes: 0, label: 'control', color: '#123456' }],
+        ops: [{ op: 'toggle_grid', axes: 0, visible: false }],
       },
     })
     const value = runValueFromResult({
@@ -731,8 +732,8 @@ describe('runValueFromResult / formatRunResult', () => {
         truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
     })
-    expect(formatRunResult(value)).toContain('1 direct edits: set_series_color (axes[0].series[control]).')
-    expect(formatRunResult(value)).not.toContain('#123456')
+    expect(formatRunResult(value)).toContain('1 direct edits: toggle_grid (axes[0].grid).')
+    expect(formatRunResult(value)).not.toContain('false')
   })
 
   it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', () => {
@@ -1926,17 +1927,17 @@ describe('scienceEdits submit', () => {
     } as unknown as Agent
     const service = new ScienceEditService(ctx)
     await expect(service.submit(agent, { targets: [{
-      artifactId: ScienceArtifactId('absent'), version: 1,
+      artifactId: ScienceArtifactId('absent'), logicalName: 'absent.png', version: 1,
       target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 } }], instruction: 'change region',
     })).rejects.toThrow(/does not identify a committed artifact/)
     expect(followups).toHaveLength(0)
     const receipt = await service.submit(agent, { targets: [
       {
-        artifactId: artifact.artifactId, version: 1,
+        artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
         target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
       },
       {
-        artifactId: artifact.artifactId, version: 1,
+        artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
         target: { kind: 'normalized-region', x: 0, y: 0, width: 0.25, height: 0.25 },
       },
     ], instruction: 'brighten the selected regions' })
@@ -1944,7 +1945,7 @@ describe('scienceEdits submit', () => {
     expect(followups).toHaveLength(1)
     expect(followups[0]?.source).toMatchObject({ kind: 'science-edit' })
     if (followups[0]?.source.kind !== 'science-edit') throw new Error('expected science-edit source')
-    expect(followups[0].source.targets[0]).toEqual({ artifactId: artifact.artifactId, version: 1,
+    expect(followups[0].source.targets[0]).toEqual({ artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 } })
     expect(followups[0].source.targets).toHaveLength(2)
     expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(1)
@@ -1954,7 +1955,11 @@ describe('scienceEdits submit', () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-edit-submit-element')
     const run = await runSuccessfully(ctx, session, 'science-edit-submit-element-run')
-    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      hitmap: [], hitmapStatus: 'unavailable', ops: [],
+      elements: [{ id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' }],
+    })
     const followups: UserMessage[] = []
     const agent = {
       session,
@@ -1964,8 +1969,8 @@ describe('scienceEdits submit', () => {
     const readBlob = vi.spyOn(ctx.scienceArtifactStore, 'readBlob')
 
     const receipt = await service.submit(agent, { targets: [{
-      artifactId: artifact.artifactId, version: 1,
-      target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', current: 'Loss' },
+      artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
+      target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', axes: 0, label: null, current: 'Loss' },
     }], instruction: 'shorten the title' })
 
     expect(receipt).toEqual({ accepted: true })
@@ -1973,7 +1978,7 @@ describe('scienceEdits submit', () => {
     expect(followups).toHaveLength(1)
     expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(0)
     const text = followups[0]?.content[0]
-    expect(text?.type === 'text' && text.text).toContain('element(axes[0].title, kind=title, current="Loss")')
+    expect(text?.type === 'text' && text.text).toContain('element("axes[0].title", kind=title, axes=0, label=null, current="Loss")')
   })
 })
 
@@ -2209,35 +2214,21 @@ describe('get_science_state artifact sanitization', () => {
         ops: [
           { op: 'set_title', axes: null, text: 'Secret title' },
           { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Secret label' },
-          { op: 'set_series_color', axes: 0, label: 'treatment', color: '#ff0000' },
           { op: 'set_legend_position', axes: null, position: 'upper right' },
-          { op: 'set_tick_font_size', axes: 1, size: 14 },
-          { op: 'add_reference_line', axes: 0, orientation: 'h', value: 2.5 },
-          { op: 'set_figure_size', axes: null, width: 8, height: 5 },
-          { op: 'set_axis_range', axes: 0, axis: 'x', min: 1, max: 10 },
-          { op: 'set_axis_scale', axes: 0, axis: 'y', scale: 'log' },
           { op: 'toggle_grid', axes: 0, visible: true },
-          { op: 'set_font', axes: null, family: 'sans', size: 14 },
         ],
       },
     })] }), 20)
     expect(value.artifacts[0]).toMatchObject({
-      editCount: 11,
+      editCount: 4,
       edits: [
         { op: 'set_title', target: 'title' },
         { op: 'set_axis_label', target: 'axes[0].x_label' },
-        { op: 'set_series_color', target: 'axes[0].series[treatment]' },
         { op: 'set_legend_position', target: 'legend' },
-        { op: 'set_tick_font_size', target: 'axes[1].tick_labels' },
-        { op: 'add_reference_line', target: 'axes[0].annotation' },
-        { op: 'set_figure_size', target: 'figure_size' },
-        { op: 'set_axis_range', target: 'axes[0].x_range' },
-        { op: 'set_axis_scale', target: 'axes[0].y_scale' },
         { op: 'toggle_grid', target: 'axes[0].grid' },
-        { op: 'set_font', target: 'font' },
       ],
     })
-    expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret|#ff0000|2\.5|14/)
+    expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret/)
   })
 
   it('keeps direct-edit ancestry and omits run provenance', () => {

@@ -955,7 +955,7 @@ describe('ScienceDetailsView: content dispatch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add region 25%,25% to the conversation' }))
     fireEvent.change(screen.getByLabelText('Edit note for region 25%,25%'), { target: { value: 'brighten this more' } })
     expect(selections.store(SESSION).getSnapshot()).toEqual([{
-      artifactId: 'chart-1', version: 2,
+      artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2,
       target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
       comment: 'brighten this more',
     }])
@@ -1125,8 +1125,8 @@ describe('ScienceDetailsView: chart edit panel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Title to the conversation' }))
     expect(addToConversation).toHaveBeenCalledWith([{
-      artifactId: 'chart-1', version: 2,
-      target: { kind: 'element', elementId: 'title', elementKind: 'title', current: 'Loss' },
+      artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2,
+      target: { kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: 'Loss' },
     }])
   })
 

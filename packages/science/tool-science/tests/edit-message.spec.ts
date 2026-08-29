@@ -22,7 +22,16 @@ function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifac
     version: 1, title: 'Loss', origin: 'auto', projectId: ScienceProjectId('project-1'),
     versionId: ScienceVersionId('store-version-image'), sha256: 'a'.repeat(64), mediaType: 'image/png', byteCount: 100,
     runId: ScienceRunId('run-1'), toolCallId: CallId('call-1'), requestHeaderSeq: 2,
-    environmentRevision: 1, environmentFingerprint: 'b'.repeat(64), createdAt: 1, ...over,
+    environmentRevision: 1, environmentFingerprint: 'b'.repeat(64), createdAt: 1,
+    chart: {
+      runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+      elements: [
+        { id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' },
+        { id: 'subtitle', kind: 'subtitle', axes: null, label: null, current: 'Subtitle' },
+      ],
+      ops: [], hitmap: [], hitmapStatus: 'unavailable',
+    },
+    ...over,
   }
 }
 
@@ -30,10 +39,18 @@ function region(x = 0.1, y = 0.2, width = 0.3, height = 0.4) {
   return { kind: 'normalized-region' as const, x, y, width, height }
 }
 
-function element(over: { elementId?: string; elementKind?: string; current?: string } = {}) {
+function element(over: {
+  elementId?: string
+  elementKind?: 'title' | 'subtitle'
+  axes?: number | null
+  label?: string | null
+  current?: string
+} = {}) {
   return {
     kind: 'element' as const, elementId: over.elementId ?? 'axes[0].title', elementKind: over.elementKind ?? 'title',
-    ...over.current === undefined ? {} : { current: over.current },
+    axes: over.axes === undefined ? 0 : over.axes,
+    label: over.label === undefined ? null : over.label,
+    current: over.current ?? 'Loss',
   }
 }
 
@@ -63,11 +80,11 @@ describe('Science edit-message admission', () => {
     const artifact = image()
     const minted = mintedImage('minted-image')
     const resolved = resolveScienceEdit([artifact], { targets: [{
-      artifactId: artifact.artifactId, version: 1, target: region(), comment: ' brighten this area ',
+      artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region(), comment: ' brighten this area ',
     }], instruction: ' increase contrast ' })
     const message = createScienceEditMessage(resolved, new Map([[String(artifact.versionId), minted]]))
     expect(message.source).toEqual({
-      kind: 'science-edit', targets: [{ artifactId: 'chart-1', version: 1, target: region(), comment: 'brighten this area' }],
+      kind: 'science-edit', targets: [{ artifactId: 'chart-1', logicalName: 'loss.png', version: 1, target: region(), comment: 'brighten this area' }],
       instruction: 'increase contrast',
     })
     expect(message.content).toEqual([
@@ -85,26 +102,26 @@ describe('Science edit-message admission', () => {
   it('rejects a region target whose message image was not minted', () => {
     const artifact = image()
     const resolved = resolveScienceEdit([artifact], {
-      targets: [{ artifactId: artifact.artifactId, version: 1, target: region() }], instruction: 'increase contrast',
+      targets: [{ artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region() }], instruction: 'increase contrast',
     })
     expect(() => createScienceEditMessage(resolved)).toThrow(/has no minted message image/)
   })
 
   it('rejects stale, missing, malformed, and media-mismatched selections', () => {
     expect(() => resolveScienceEdit([image(), image({ version: 2, createdAt: 2 })], { targets: [{
-      artifactId: ScienceArtifactId('chart-1'), version: 1, target: region(),
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
     }], instruction: 'edit selected version' }))
       .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_STALE_VERSION' }))
     expect(() => resolveScienceEdit([], { targets: [{
-      artifactId: ScienceArtifactId('missing'), version: 1, target: region(),
+      artifactId: ScienceArtifactId('missing'), logicalName: 'missing.png', version: 1, target: region(),
     }], instruction: 'edit selected version' }))
       .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' }))
     expect(() => resolveScienceEdit([image()], { targets: [{
-      artifactId: ScienceArtifactId('chart-1'), version: 1, target: region(0.8, 0, 0.3, 1),
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(0.8, 0, 0.3, 1),
     }], instruction: 'crop' }))
       .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
     expect(() => resolveScienceEdit([image({ mediaType: 'application/json' })], { targets: [{
-      artifactId: ScienceArtifactId('chart-1'), version: 1, target: region(),
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
     }], instruction: 'crop' }))
       .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
   })
@@ -114,16 +131,16 @@ describe('Science edit-message admission', () => {
       region(Number.NaN), region(-0.1), region(0, -0.1), region(0, 0, 0), region(0, 0, 1, 0), region(0, 0.5, 1, 0.6),
     ]) {
       expect(() => resolveScienceEdit([image()], { targets: [{
-        artifactId: ScienceArtifactId('chart-1'), version: 1, target,
+        artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
       }], instruction: 'change it' })).toThrow(/positive rectangle/)
     }
     for (const instruction of ['', '   ', 'has\u0000null', '\uD800 lone surrogate']) {
       expect(() => resolveScienceEdit([image()], { targets: [{
-        artifactId: ScienceArtifactId('chart-1'), version: 1, target: region(),
+        artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
       }], instruction })).toThrow(/instruction must be non-empty/)
     }
     expect(() => resolveScienceEdit([image()], { targets: [{
-      artifactId: ScienceArtifactId('chart-1'), version: 1, target: region(), comment: '  ',
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(), comment: '  ',
     }], instruction: 'change it' })).toThrow(/target comment must be non-empty/)
   })
 
@@ -135,9 +152,9 @@ describe('Science edit-message admission', () => {
     const secondMinted = mintedImage('second')
     const message = createScienceEditMessage(resolveScienceEdit([first, second], {
       targets: [
-        { artifactId: first.artifactId, version: 1, target: region(0, 0, 0.5, 1) },
-        { artifactId: first.artifactId, version: 1, target: region(0.5, 0, 0.5, 1) },
-        { artifactId: second.artifactId, version: 1, target: region() },
+        { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region(0, 0, 0.5, 1) },
+        { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region(0.5, 0, 0.5, 1) },
+        { artifactId: second.artifactId, logicalName: second.logicalName, version: 1, target: region() },
       ], instruction: 'use one palette',
     }), new Map([[String(first.versionId), firstMinted], [String(second.versionId), secondMinted]]))
     expect(message.source.kind === 'science-edit' && message.source.targets).toHaveLength(3)
@@ -151,8 +168,8 @@ describe('Science edit-message admission', () => {
     let caught: unknown
     try {
       resolveScienceEdit([first], { targets: [
-        { artifactId: first.artifactId, version: 1, target: region() },
-        { artifactId: ScienceArtifactId('missing'), version: 1, target: region() },
+        { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region() },
+        { artifactId: ScienceArtifactId('missing'), logicalName: 'missing.png', version: 1, target: region() },
       ], instruction: 'change both' })
     } catch (error: unknown) {
       caught = error
@@ -161,47 +178,60 @@ describe('Science edit-message admission', () => {
     expect((caught as ScienceEditError).message).toContain('target 2')
   })
 
-  it('resolves an element target against any media type and renders its descriptor with and without current', () => {
-    const artifact = image({ mediaType: 'application/json' })
+  it('resolves a precise element target against the addressed chart and renders every identity field', () => {
+    const artifact = image()
     const resolved = resolveScienceEdit([artifact], { targets: [
-      { artifactId: artifact.artifactId, version: 1, target: element({ current: 'Loss' }) },
-      { artifactId: artifact.artifactId, version: 1, target: element({ elementId: 'subtitle', elementKind: 'subtitle' }) },
+      { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element({ current: 'Loss' }) },
+      { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element({ elementId: 'subtitle', elementKind: 'subtitle', axes: null, current: 'Subtitle' }) },
     ], instruction: 'shorten the title' })
     const message = createScienceEditMessage(resolved)
     expect(message.source).toMatchObject({ kind: 'science-edit',
       targets: [
-        { target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', current: 'Loss' } },
-        { target: { kind: 'element', elementId: 'subtitle', elementKind: 'subtitle' } },
+        { target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', axes: 0, label: null, current: 'Loss' } },
+        { target: { kind: 'element', elementId: 'subtitle', elementKind: 'subtitle', axes: null, label: null, current: 'Subtitle' } },
       ] })
     expect(message.content).toEqual([{ type: 'text', text: [
       'Edit these Science artifact targets:',
-      '- loss.png v1 · element(axes[0].title, kind=title, current="Loss")',
-      '- loss.png v1 · element(subtitle, kind=subtitle)',
+      '- loss.png v1 · element("axes[0].title", kind=title, axes=0, label=null, current="Loss")',
+      '- loss.png v1 · element("subtitle", kind=subtitle, axes=null, label=null, current="Subtitle")',
       'Instruction: shorten the title',
       'Use exactly these artifact versions as artifact_inputs sources and as edit_of parents for the corresponding edited outputs; do not substitute newer versions:',
       '- chart-1 v1',
     ].join('\n') }])
   })
 
-  it('rejects an element target with an empty id, empty kind, or malformed current text', () => {
-    for (const target of [element({ elementId: '' }), element({ elementId: '  ' }), element({ elementKind: '' })]) {
+  it('rejects incomplete, malformed, or mismatched element identity fields', () => {
+    for (const target of [element({ elementId: '' }), element({ elementId: '  ' }), element({ elementKind: '' as never })]) {
       expect(() => resolveScienceEdit([image()], { targets: [{
-        artifactId: ScienceArtifactId('chart-1'), version: 1, target,
-      }], instruction: 'change it' })).toThrow(/non-empty element id and kind/)
+        artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
+      }], instruction: 'change it' })).toThrow(/valid element id and kind/)
     }
-    for (const current of ['has\u0000null', '\uD800 lone surrogate']) {
+    for (const current of ['', 'has\u0000null', '\uD800 lone surrogate']) {
       expect(() => resolveScienceEdit([image()], { targets: [{
-        artifactId: ScienceArtifactId('chart-1'), version: 1, target: element({ current }),
-      }], instruction: 'change it' })).toThrow(/current value must be well-formed/)
+        artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: element({ current }),
+      }], instruction: 'change it' })).toThrow(/current value must be non-empty well-formed/)
     }
+    for (const target of [element({ axes: -1 }), element({ label: '' })]) {
+      expect(() => resolveScienceEdit([image()], { targets: [{
+        artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
+      }], instruction: 'change it' })).toThrow(/target (axes|label)/)
+    }
+    expect(() => resolveScienceEdit([image()], { targets: [{
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1,
+      target: element({ elementId: 'missing' }),
+    }], instruction: 'change it' })).toThrow(/does not match the addressed chart element/)
+    const { chart: _chart, ...withoutChart } = image()
+    expect(() => resolveScienceEdit([withoutChart], { targets: [{
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: element(),
+    }], instruction: 'change it' })).toThrow(/addressable chart/)
   })
 
   it('omits the image attachment for an element target and mixes cleanly with a region target on the same version', () => {
     const artifact = image()
     const minted = mintedImage('minted-image')
     const resolved = resolveScienceEdit([artifact], { targets: [
-      { artifactId: artifact.artifactId, version: 1, target: region() },
-      { artifactId: artifact.artifactId, version: 1, target: element() },
+      { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region() },
+      { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element() },
     ], instruction: 'use one palette and shorten the title' })
     const message = createScienceEditMessage(resolved, new Map([[String(artifact.versionId), minted]]))
     expect(message.content.filter(block => block.type === 'image')).toEqual([{ type: 'image', attachment: minted }])
@@ -209,7 +239,7 @@ describe('Science edit-message admission', () => {
 
   it('rejects empty, duplicate, and cross-version target sets before admission', () => {
     expect(() => resolveScienceEdit([image()], { targets: [], instruction: 'change it' })).toThrow(/select at least one/)
-    const duplicate = { artifactId: ScienceArtifactId('chart-1'), version: 1, target: region() }
+    const duplicate = { artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region() }
     expect(() => resolveScienceEdit([image()], { targets: [duplicate, duplicate], instruction: 'change it' }))
       .toThrow(/target 2 duplicates/)
     expect(() => resolveScienceEdit([image(), image({ version: 2 })], {

@@ -1279,7 +1279,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
-        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target names an addressable chart element by id and never reads the store or mints an attachment.',
+        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target must match one addressable chart entry\'s id, kind, axes, label, and current-value summary, and never reads the store or mints an attachment.',
         parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
         returns: 'durable-inbox admission receipt.',
       },
@@ -4350,7 +4350,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceChartOp',
-    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_series_color\';\n    readonly axes: number | null;\n    readonly label: string;\n    readonly color: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'set_tick_font_size\';\n    readonly axes: number | null;\n    readonly size: number;\n} | {\n    readonly op: \'add_reference_line\';\n    readonly axes: number | null;\n    readonly orientation: \'h\' | \'v\';\n    readonly value: number;\n} | {\n    readonly op: \'set_figure_size\';\n    readonly axes: null;\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly op: \'set_axis_range\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly min: number;\n    readonly max: number;\n} | {\n    readonly op: \'set_axis_scale\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly scale: \'linear\' | \'log\';\n} | {\n    readonly op: \'toggle_grid\';\n    readonly axes: number | null;\n    readonly visible: boolean;\n} | {\n    readonly op: \'set_font\';\n    readonly axes: number | null;\n    re /* …truncated — full shape in source */',
+    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'toggle_grid\';\n    readonly axes: number | null;\n    readonly visible: boolean;\n};',
   },
   {
     name: 'ScienceChartPreviewReceipt',
@@ -4378,7 +4378,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceEditSelection',
-    declaration: 'export interface ScienceEditSelection {\n    readonly artifactId: ScienceArtifactId;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly comment?: string;\n}',
+    declaration: 'export interface ScienceEditSelection {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly target: ScienceEditTarget;\n    readonly comment?: string;\n}',
   },
   {
     name: 'ScienceEditTarget',
@@ -4386,7 +4386,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceElementTarget',
-    declaration: 'export interface ScienceElementTarget {\n    readonly kind: \'element\';\n    readonly elementId: string;\n    readonly elementKind: string;\n    readonly current?: string;\n}',
+    declaration: 'export interface ScienceElementTarget {\n    readonly kind: \'element\';\n    readonly elementId: string;\n    readonly elementKind: ScienceChartElement[\'kind\'];\n    readonly axes: number | null;\n    readonly label: string | null;\n    readonly current: string;\n}',
   },
   {
     name: 'ScienceEnvironmentBinding',

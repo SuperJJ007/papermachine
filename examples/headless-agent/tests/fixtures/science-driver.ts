@@ -81,6 +81,7 @@ try {
     await ctx.scienceEdits.submit(agent, {
       targets: [{
         artifactId: directChart.artifactId,
+        logicalName: directChart.logicalName,
         version: directChart.version,
         target: { kind: 'normalized-region', x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
         comment: 'Keep the scale readable at small sizes.',
@@ -94,11 +95,13 @@ try {
       targets: [
         {
           artifactId: directChart.artifactId,
+          logicalName: directChart.logicalName,
           version: directChart.version,
           target: { kind: 'normalized-region', x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
         },
         {
           artifactId: edited.artifactId,
+          logicalName: edited.logicalName,
           version: edited.version,
           target: { kind: 'normalized-region', x: 0, y: 0, width: 0.5, height: 0.5 },
         },

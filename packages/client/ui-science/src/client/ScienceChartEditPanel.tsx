@@ -70,6 +70,33 @@ function directlyEditable(kind: ScienceChartElement['kind']): boolean {
   }
 }
 
+/** Row order for the directly-editable kinds; every other kind sorts after them, in extraction order. */
+const DIRECT_EDIT_ROW_ORDER: readonly ScienceChartElement['kind'][] = ['title', 'subtitle', 'x_label', 'y_label', 'legend', 'grid']
+
+/**
+ * Order chart elements for the panel's row list: directly-editable kinds
+ * first (in {@link DIRECT_EDIT_ROW_ORDER}, ties broken by ascending axes),
+ * then every other kind in the extraction order the Runtime produced —
+ * never reordered among themselves. Does not mutate `elements`.
+ * @param elements - the exact chart version's extracted elements.
+ * @returns the same elements, reordered for display.
+ */
+function sortedElementRows(elements: readonly ScienceChartElement[]): readonly ScienceChartElement[] {
+  return elements
+    .map((element, index) => ({ element, index }))
+    .sort((left, right) => {
+      const leftRank = DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind)
+      const rightRank = DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
+      if (leftRank !== -1 && rightRank !== -1) {
+        return leftRank - rightRank || (left.element.axes ?? -1) - (right.element.axes ?? -1) || left.index - right.index
+      }
+      if (leftRank !== -1) return -1
+      if (rightRank !== -1) return 1
+      return left.index - right.index
+    })
+    .map(({ element }) => element)
+}
+
 function TextControl({ initial, onApply, t }: {
   initial: string
   onApply: (text: string) => void
@@ -276,7 +303,7 @@ export function ScienceChartEditPanel({
   return (
     <section className={css.elementPanel} aria-label={t('edit.elements')}>
       <h3>{t('edit.elements')}</h3>
-      <ul className={css.elementRows}>{chart.elements.map((element) => {
+      <ul className={css.elementRows}>{sortedElementRows(chart.elements).map((element) => {
         const target = elementTarget(element)
         const added = isTargetAdded(target)
         return <ElementRow key={element.id} element={element} expanded={expandedId === element.id} added={added}

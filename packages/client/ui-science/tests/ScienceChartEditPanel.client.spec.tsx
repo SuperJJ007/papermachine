@@ -103,6 +103,34 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(within(series).getByRole('button', { name: /^Series/ }).getAttribute('aria-expanded')).toBeNull()
   })
 
+  it('lists directly-editable rows first (title, subtitle, x_label, y_label, legend, grid), then the rest in extraction order', () => {
+    panel()
+    const rows = screen.getAllByRole('listitem')
+    const names = rows.map(row => row.querySelector('strong')?.textContent)
+    expect(names).toEqual([
+      'Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Legend', 'Grid',
+      'Series · treatment', 'Tick labels', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi',
+    ])
+  })
+
+  it('breaks a directly-editable-kind tie by ascending axes, not extraction order', () => {
+    // `label` carries no meaning for a grid element, but scienceElementLabel
+    // appends it whenever present, so it doubles as a name here to
+    // distinguish which physical axes[N].grid row rendered where — the
+    // extracted order below deliberately lists axes: 1 first, so a row
+    // order of "earlier" then "later" proves axes, not extraction order, won.
+    panel({ chart: chartState({
+      elements: [
+        element({ id: 'axes[1].grid', kind: 'grid', axes: 1, label: 'later' }),
+        element({ id: 'axes[0].grid', kind: 'grid', axes: 0, label: 'earlier' }),
+        element({ id: 'title', kind: 'title', current: 'Loss' }),
+      ],
+    }) })
+    const rows = screen.getAllByRole('listitem')
+    const names = rows.map(row => row.querySelector('strong')?.textContent)
+    expect(names).toEqual(['Title', 'Grid · earlier', 'Grid · later'])
+  })
+
   it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })

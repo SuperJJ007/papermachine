@@ -833,7 +833,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         .map(failed => ({ index: failed.index - failedOffset, reason: failed.reason }))
       const failedIndices = new Set(failedOps.map(failed => failed.index))
       const successfulOps = request.ops.filter((_, index) => !failedIndices.has(index))
-      if (successfulOps.length === 0) {
+      if (commit && successfulOps.length === 0) {
         throw new ScienceRuntimeError('CHART_ELEMENT_NOT_FOUND', 'No chart edit operation resolved an addressable element')
       }
       const chart = decodeScienceChartState({

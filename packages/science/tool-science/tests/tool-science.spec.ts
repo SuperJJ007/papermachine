@@ -2261,16 +2261,18 @@ describe('get_science_state artifact sanitization', () => {
           { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Secret label' },
           { op: 'set_legend_position', axes: null, position: 'upper right' },
           { op: 'toggle_grid', axes: 0, visible: true },
+          { op: 'set_font', axes: null, family: 'Secret Font', size: 14 },
         ],
       },
     })] }), 20)
     expect(value.artifacts[0]).toMatchObject({
-      editCount: 4,
+      editCount: 5,
       edits: [
         { op: 'set_title', target: 'title' },
         { op: 'set_axis_label', target: 'axes[0].x_label' },
         { op: 'set_legend_position', target: 'legend' },
         { op: 'toggle_grid', target: 'axes[0].grid' },
+        { op: 'set_font', target: 'font' },
       ],
     })
     expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret/)

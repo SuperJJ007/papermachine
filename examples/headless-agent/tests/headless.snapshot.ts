@@ -351,7 +351,7 @@ function normalizeScienceStream(rawStdout: string, cwd: string, runtimeRoot: str
 }
 
 describe('headless stream-json snapshots', () => {
-  it('exposes Science guidance, schemas, context, and state through a runnable keyless example', async () => {
+  it('exposes science guidance, schemas, context, and state through a runnable keyless example', async () => {
     let runCwd = ''
     let rawModelView: string | undefined
     const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
@@ -398,9 +398,10 @@ describe('headless stream-json snapshots', () => {
       // no image bytes; the Client reads those from the durable event instead.
       expect(modelView).not.toContain('attachmentId')
       expect(modelView).not.toContain(PNG_BASE64)
-      expect(modelView).toContain('\\"editCount\\": 2')
+      expect(modelView).toContain('\\"editCount\\": 3')
       expect(modelView).toContain('\\"target\\": \\"title\\"')
       expect(modelView).toContain('\\"target\\": \\"axes[0].x_label\\"')
+      expect(modelView).toContain('\\"target\\": \\"font\\"')
       expect(modelView).not.toContain('Directly edited chart')
       expect(modelView).not.toContain('Edited input')
       const captured = JSON.parse(modelView) as { filesystemTools?: unknown }

@@ -41,6 +41,7 @@ describe('Science chart codec', () => {
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Treatment' },
       { op: 'set_legend_position', axes: null, position: 'upper right' },
       { op: 'toggle_grid', axes: 0, visible: true },
+      { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
     ] as const
     expect(decodeScienceChartState(chart({ ops })).ops).toEqual(ops)
   })
@@ -57,6 +58,15 @@ describe('Science chart codec', () => {
     }))).toThrow()
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'unknown', axes: null } as never],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_font', axes: null, family: 'DejaVu Sans', size: 3 }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_font', axes: null, family: '', size: 12 }],
+    }))).toThrow()
+    expect(() => decodeScienceChartState(chart({
+      ops: [{ op: 'set_font', axes: null, family: 'bad\u0000font', size: 12 }],
     }))).toThrow()
   })
 

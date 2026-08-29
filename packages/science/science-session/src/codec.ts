@@ -146,7 +146,7 @@ const chartHitSchema = z.object({
 }).strict()
 
 const chartAxesSchema = SAFE_INTEGER.nullable()
-const chartOpTextSchema = z.string().max(500).refine(value => !/[\u0000-\u001f\u007f-\u009f]/.test(value), {
+const chartOpTextSchema = z.string().max(500).regex(/^[^\u0000-\u001f\u007f-\u009f]*$/, {
   message: 'chart operation text must not contain control characters',
 })
 const chartOpSchema: z.ZodType<ScienceChartOp> = z.discriminatedUnion('op', [
@@ -166,6 +166,12 @@ const chartOpSchema: z.ZodType<ScienceChartOp> = z.discriminatedUnion('op', [
     ]),
   }).strict(),
   z.object({ op: z.literal('toggle_grid'), axes: chartAxesSchema, visible: z.boolean() }).strict(),
+  z.object({
+    op: z.literal('set_font'),
+    axes: z.null(),
+    family: chartOpTextSchema.min(1),
+    size: z.number().min(4).max(72),
+  }).strict(),
 ])
 
 const chartStateSchema: z.ZodType<ScienceChartState> = z.object({

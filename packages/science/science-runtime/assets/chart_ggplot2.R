@@ -238,6 +238,18 @@ set_legend_position <- function(plot, position) {
                          legend.justification.inside = coords)
 }
 
+.dsh_font_available <- function(family) {
+  if (!requireNamespace("systemfonts", quietly = TRUE)) return(family %in% c("sans", "serif", "mono"))
+  matched <- systemfonts::match_fonts(family)
+  matched_family <- if ("family" %in% names(matched)) {
+    as.character(matched$family[[1]])
+  } else {
+    info <- systemfonts::font_info(matched$path[[1]], matched$index[[1]])
+    as.character(info$family[[1]])
+  }
+  identical(matched_family, family)
+}
+
 apply_ops <- function(plot, ops) {
   failed <- list()
   current <- plot
@@ -255,6 +267,9 @@ apply_ops <- function(plot, ops) {
       } else if (name == "toggle_grid") {
         grid <- if (isTRUE(operation$visible)) ggplot2::element_line() else ggplot2::element_blank()
         current <- current + ggplot2::theme(panel.grid = grid)
+      } else if (name == "set_font") {
+        if (!.dsh_font_available(operation$family)) stop("font_not_found")
+        current <- current + ggplot2::theme(text = ggplot2::element_text(family = operation$family, size = operation$size))
       } else stop("unknown_op")
       NULL
     }, error = function(error) conditionMessage(error))

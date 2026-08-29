@@ -169,6 +169,12 @@ describe('ScienceRuntime.applyChartEdit', () => {
       chartApplyResult: { chart: editExtraction, failedOps: [{ index: 0, reason: 'element_not_found' }] },
     })
     const unresolvedParent = chart(unresolved.session)
+    const unresolvedPreview = await unresolved.runtime.previewChartEdit({
+      session: unresolved.session, artifactId: unresolvedParent.artifactId, version: unresolvedParent.version,
+      ops: [titleOp], signal: new AbortController().signal,
+    })
+    expect(unresolvedPreview.failedOps).toEqual([{ index: 0, reason: 'element_not_found' }])
+    expect(unresolvedPreview.chart.ops).toEqual([])
     await expect(unresolved.runtime.applyChartEdit({
       session: unresolved.session, artifactId: unresolvedParent.artifactId, version: unresolvedParent.version,
       ops: [titleOp], signal: new AbortController().signal,

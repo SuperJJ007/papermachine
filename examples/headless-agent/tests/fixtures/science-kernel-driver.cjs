@@ -64,6 +64,7 @@ rl.on('line', (line) => {
             { id: 'axes[0].y_label', kind: 'y_label', axes: 0, label: null, current: 'Output' },
             { id: 'axes[0].series[0]', kind: 'series', axes: 0, label: 'observed', current: { color: '#1f77b4' } },
             { id: 'axes[0].grid', kind: 'grid', axes: 0, label: null, current: true },
+            { id: 'figure.font', kind: 'font', axes: null, label: null, current: { family: 'sans-serif', size: 10 } },
           ],
           hitmap: [
             { id: 'figure.title', bbox: [0, 0, 1, 1], z: 2 },
@@ -88,6 +89,7 @@ rl.on('line', (line) => {
         elements: [
           { id: 'figure.title', kind: 'title', axes: null, label: null, current: 'Edited chart' },
           { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: 'Edited input' },
+          { id: 'figure.font', kind: 'font', axes: null, label: null, current: { family: 'DejaVu Sans', size: 14 } },
         ],
         hitmap: [],
         hitmapStatus: 'ok',

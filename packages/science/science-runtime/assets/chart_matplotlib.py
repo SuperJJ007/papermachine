@@ -150,8 +150,17 @@ def extract_elements(fig):
     _safe_add(elements, lambda: {"id": "figure_size", "kind": "figure_size", "axes": None, "label": None,
                                  "current": [float(value) for value in fig.get_size_inches()]})
     def font_current():
-        return {"family": list(matplotlib.rcParams["font.family"]),
-                "size": float(matplotlib.rcParams["font.size"])}
+        from matplotlib.text import Text
+
+        if axes:
+            text = axes[0].title
+        else:
+            texts = fig.findobj(match=Text)
+            text = texts[0] if texts else None
+        if text is None:
+            return {"family": list(matplotlib.rcParams["font.family"]),
+                    "size": float(matplotlib.rcParams["font.size"])}
+        return {"family": list(text.get_fontfamily()), "size": float(text.get_fontsize())}
     _safe_add(elements, lambda: {"id": "font", "kind": "font", "axes": None, "label": None,
                                  "current": font_current()})
     for index, axis in enumerate(axes):
@@ -356,6 +365,20 @@ def apply_ops(fig, ops):
                 for axis in axes:
                     axis.grid(operation["visible"])
                     applied = True
+            elif name == "set_font":
+                from matplotlib import font_manager
+                from matplotlib.font_manager import FontProperties
+                from matplotlib.text import Text
+
+                family = operation["family"]
+                try:
+                    font_manager.findfont(FontProperties(family=family), fallback_to_default=False)
+                except Exception as error:
+                    raise ValueError("font_not_found") from error
+                for text in fig.findobj(match=Text):
+                    text.set_fontfamily(family)
+                    text.set_fontsize(operation["size"])
+                applied = True
             else:
                 raise ValueError("unknown_op")
             if not applied:

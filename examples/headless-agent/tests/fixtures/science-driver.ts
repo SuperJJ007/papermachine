@@ -48,12 +48,13 @@ try {
     ops: [
       { op: 'set_title', axes: null, text: 'Directly edited chart' },
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited input' },
+      { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
     ],
   }, new AbortController().signal)
   const directChart = foldScience(agent.session.events).artifacts.find(artifact =>
     artifact.artifactId === directReceipt.artifactId && artifact.version === directReceipt.version)
-  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 2) {
-    throw new Error(`${NAME}: direct chart edit did not preserve its two cumulative operations`)
+  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 3) {
+    throw new Error(`${NAME}: direct chart edit did not preserve its three cumulative operations`)
   }
   const directEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'
     && event.data.artifact.artifactId === directChart.artifactId

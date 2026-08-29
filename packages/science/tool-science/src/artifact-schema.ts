@@ -14,7 +14,7 @@ export interface ScienceArtifactEditSummary {
 const chartEditSchema = {
   type: 'object', additionalProperties: false,
   properties: {
-    op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_legend_position', 'toggle_grid'], required: true },
+    op: { type: 'string', enum: ['set_title', 'set_axis_label', 'set_legend_position', 'toggle_grid', 'set_font'], required: true },
     target: { type: 'string', required: true },
   },
 } as const
@@ -69,6 +69,7 @@ function chartEditTarget(op: ScienceChartOp): string {
     case 'set_axis_label': return axesTarget(op.axes, `${op.axis}_label`)
     case 'set_legend_position': return axesTarget(op.axes, 'legend')
     case 'toggle_grid': return axesTarget(op.axes, 'grid')
+    case 'set_font': return 'font'
     /* v8 ignore next -- exhaustive over the closed ScienceChartOp union; unreachable through the typed API. */
     default: return assertNever(op)
   }

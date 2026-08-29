@@ -770,11 +770,36 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       await namespaceProbe('end')
       checks.push('chart apply matplotlib warm title/axis-label/legend/grid: four cumulative ops, catalog state, namespace')
 
+      const fontEdited = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: edited.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 }],
+        signal: new AbortController().signal,
+      })
+      const fontEditedBytes = await context.scienceArtifactStore.readBlob(fontEdited.artifact.projectId, fontEdited.artifact.sha256)
+      const editedFont = fontEdited.artifact.chart?.elements.find(element => element.kind === 'font')?.current
+      const editedFontRecord = typeof editedFont === 'object' && editedFont !== null && !Array.isArray(editedFont)
+        ? editedFont as Record<string, unknown> : undefined
+      if (fontEdited.failedOps.length !== 0 || Buffer.from(fontEditedBytes).equals(Buffer.from(editedBytes))
+        || !Array.isArray(editedFontRecord?.['family']) || !editedFontRecord['family'].includes('DejaVu Sans')
+        || editedFontRecord['size'] !== 14) {
+        throw new Error(`matplotlib set_font did not change PNG bytes and read back DejaVu Sans/14: ${JSON.stringify(editedFont)}`)
+      }
+      const missingFontPreview = await context.scienceRuntime.previewChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: fontEdited.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'Definitely Missing Font 123', size: 14 }],
+        signal: new AbortController().signal,
+      })
+      if (missingFontPreview.failedOps.length !== 1 || missingFontPreview.failedOps[0]?.reason !== 'font_not_found'
+        || !Buffer.from(missingFontPreview.png).equals(Buffer.from(fontEditedBytes))) {
+        throw new Error(`matplotlib missing font did not fail explicitly with unchanged PNG: ${JSON.stringify(missingFontPreview.failedOps)}`)
+      }
+      checks.push('chart apply matplotlib set_font DejaVu Sans/14: PNG changed, font current read back; missing font: font_not_found, PNG unchanged')
+
       // A1: three deterministic legend positions applied in sequence off the
       // same edited baseline must each keep the legend element and render a
       // distinct PNG — matplotlib's numeric `loc` mapping already handles
       // this; the assertion mirrors the ggplot2 side, which regressed silently.
-      let legendVersion = edited.artifact.version
+      let legendVersion = fontEdited.artifact.version
       const legendShas: string[] = []
       for (const position of ['upper left', 'lower right', 'center'] as const) {
         const legendResult = await context.scienceRuntime.applyChartEdit({
@@ -919,6 +944,31 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       await namespaceProbe('end')
       checks.push('chart apply ggplot2 title/axis-label/legend/grid: four cumulative ops, namespace')
 
+      const editedBytes = await context.scienceArtifactStore.readBlob(edited.artifact.projectId, edited.artifact.sha256)
+      const fontEdited = await context.scienceRuntime.applyChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: edited.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'sans', size: 14 }],
+        signal: new AbortController().signal,
+      })
+      const fontEditedBytes = await context.scienceArtifactStore.readBlob(fontEdited.artifact.projectId, fontEdited.artifact.sha256)
+      const editedFont = fontEdited.artifact.chart?.elements.find(element => element.kind === 'font')?.current
+      const editedFontRecord = typeof editedFont === 'object' && editedFont !== null && !Array.isArray(editedFont)
+        ? editedFont as Record<string, unknown> : undefined
+      if (fontEdited.failedOps.length !== 0 || Buffer.from(fontEditedBytes).equals(Buffer.from(editedBytes))
+        || editedFontRecord?.['family'] !== 'sans' || editedFontRecord['size'] !== 14) {
+        throw new Error(`ggplot2 set_font did not change PNG bytes and read back sans/14: ${JSON.stringify(editedFont)}`)
+      }
+      const missingFontPreview = await context.scienceRuntime.previewChartEdit({
+        session, artifactId: basicLive.artifact.artifactId, version: fontEdited.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'Definitely Missing Font 123', size: 14 }],
+        signal: new AbortController().signal,
+      })
+      if (missingFontPreview.failedOps.length !== 1 || missingFontPreview.failedOps[0]?.reason !== 'font_not_found'
+        || !Buffer.from(missingFontPreview.png).equals(Buffer.from(fontEditedBytes))) {
+        throw new Error(`ggplot2 missing font did not fail explicitly with unchanged PNG: ${JSON.stringify(missingFontPreview.failedOps)}`)
+      }
+      checks.push('chart apply ggplot2 set_font sans/14: PNG changed, font current read back; missing font: font_not_found, PNG unchanged')
+
       // A1: ggplot2 4.0.3 silently deletes the legend for any
       // `legend.position` string outside its own small enum (`lower right`
       // above already proved that path applies without error, but the
@@ -931,7 +981,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         { position: 'lower right', inside: [1, 0] },
         { position: 'center', inside: [0.5, 0.5] },
       ] as const
-      let legendVersion = edited.artifact.version
+      let legendVersion = fontEdited.artifact.version
       const legendShas: string[] = []
       for (const { position, inside } of legendCases) {
         const legendResult = await context.scienceRuntime.applyChartEdit({

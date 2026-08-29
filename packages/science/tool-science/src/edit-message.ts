@@ -47,6 +47,25 @@ function assertNever(value: never): never {
   throw new Error(`unhandled value: ${JSON.stringify(value)}`)
 }
 
+/**
+ * Translate a Runtime chart-edit failure into the matching Science edit
+ * rejection, or rethrow it unchanged when it carries a Runtime code neither
+ * `applyChartOps` nor `previewChartOps` recognizes. Both Remotes call the
+ * same Runtime chart-edit codes and must reject identically.
+ * @param error - value caught from a Runtime `applyChartEdit`/`previewChartEdit` call.
+ * @returns never; always throws.
+ */
+function translateChartRuntimeError(error: unknown): never {
+  if (!(error instanceof ScienceRuntimeError)) throw error
+  switch (error.code) {
+    case 'CHART_STALE_VERSION': throw new ScienceEditError(error.message, 'CHART_STALE')
+    case 'CHART_NOT_ADDRESSABLE': throw new ScienceEditError(error.message, 'CHART_NOT_ADDRESSABLE')
+    case 'CHART_ELEMENT_NOT_FOUND':
+    case 'CHART_OP_INVALID': throw new ScienceEditError(error.message, 'CHART_OP_INVALID')
+    default: throw error
+  }
+}
+
 /** Validate and detach one viewer-supplied normalized-region target. */
 function resolveRegionTarget(target: ScienceNormalizedRegionTarget): ScienceNormalizedRegionTarget {
   const values = [target.x, target.y, target.width, target.height]
@@ -388,14 +407,7 @@ export class ScienceEditService extends TypertRemoteService {
         failedOps: result.failedOps,
       }
     } catch (error: unknown) {
-      if (!(error instanceof ScienceRuntimeError)) throw error
-      switch (error.code) {
-        case 'CHART_STALE_VERSION': throw new ScienceEditError(error.message, 'CHART_STALE')
-        case 'CHART_NOT_ADDRESSABLE': throw new ScienceEditError(error.message, 'CHART_NOT_ADDRESSABLE')
-        case 'CHART_ELEMENT_NOT_FOUND':
-        case 'CHART_OP_INVALID': throw new ScienceEditError(error.message, 'CHART_OP_INVALID')
-        default: throw error
-      }
+      translateChartRuntimeError(error)
     }
   }
 
@@ -428,14 +440,7 @@ export class ScienceEditService extends TypertRemoteService {
         failedOps: result.failedOps,
       }
     } catch (error: unknown) {
-      if (!(error instanceof ScienceRuntimeError)) throw error
-      switch (error.code) {
-        case 'CHART_STALE_VERSION': throw new ScienceEditError(error.message, 'CHART_STALE')
-        case 'CHART_NOT_ADDRESSABLE': throw new ScienceEditError(error.message, 'CHART_NOT_ADDRESSABLE')
-        case 'CHART_ELEMENT_NOT_FOUND':
-        case 'CHART_OP_INVALID': throw new ScienceEditError(error.message, 'CHART_OP_INVALID')
-        default: throw error
-      }
+      translateChartRuntimeError(error)
     }
   }
 

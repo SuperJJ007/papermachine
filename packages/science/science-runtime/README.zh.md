@@ -61,7 +61,7 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 元素 id 在同一份目录内是唯一的：host codec 会拒绝携带两个同 id 元素的图表，因此每个适配器会在命中表抽取之前，按首次出现顺序为发生碰撞的 id(例如两个渲染文本相同的柱值标注)追加稳定的 `#N` 后缀。
 
-目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合只有 `set_title`、`set_axis_label`、`set_legend_position` 与 `toggle_grid`；两个适配器都实现全部四项，预览也接受同一 codec。`font` 元素仍可被引用，但其 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。
+目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合为 `set_title`、`set_axis_label`、`set_legend_position`、`toggle_grid` 与 `set_font`；两个适配器都实现全部五项，预览也接受同一 codec。`font` 元素的 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。`set_font` 通过绘图 runtime 检查请求的字体族；无法精确解析时返回 `font_not_found`，并且不改变图对象。matplotlib adapter 把已解析字体族与字号施加到图对象已有的 `Text` 对象，不修改全局 `rcParams`；ggplot2 adapter 则通过 plot theme 施加字体。
 
 当一张 matplotlib 图既没有 `fig.suptitle()` 又只有一个 axes 时，会把该 axes 的标题抽取为 `kind: 'title'`(而非 `'subtitle'`)；存在 suptitle 或多个 axes 的图仍把 axes 标题保留为 `kind: 'subtitle'`。ggplot2 自身的标题始终是 `kind: 'title'`(ggplot2 没有与 matplotlib 单 axes 图 per-axes 标题对等的机制)，因此两个 runtime 在单 axes 图自身标题的 kind 上保持一致。
 
@@ -76,7 +76,7 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 ##### 直接编辑
 
-`applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。
+`applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。`previewChartEdit` 使用同一操作路径但不发布 version；即使全部操作都失败，它仍返回带索引的 `failedOps`，因此 viewer 能解释失败并保留未改变的 PNG。
 
 确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；标题文本、标签文本、图例位置与网格可见性不会进入净化后的 state 与 receipt 摘要。
 

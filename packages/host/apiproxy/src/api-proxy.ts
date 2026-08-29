@@ -141,11 +141,17 @@ function workspaceMediaType(path: string): string {
   }
 }
 
-/** Narrow durable store metadata to the media set the Science library can render. */
-function scienceArtifactMediaType(value: string): ScienceArtifactMediaType {
+/**
+ * Narrow durable store metadata to the media set the Science library can
+ * render, or `undefined` for a version whose stored media type this build no
+ * longer renders (a legacy on-disk value such as a removed Vega-Lite spec).
+ * The library listing drops that one version rather than failing the whole
+ * project's listing over a single unrenderable row.
+ */
+function scienceArtifactMediaType(value: string): ScienceArtifactMediaType | undefined {
   switch (value) {
     case 'image/png': case 'text/csv': case 'application/json': case 'text/markdown': case 'text/plain': return value
-    default: throw new Error(`Science artifact store returned unsupported media type ${JSON.stringify(value)}`)
+    default: return undefined
   }
 }
 
@@ -2699,6 +2705,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           const artifacts = (await Promise.all(records.map(async (record) => {
             const latest = await store.getLatestVersion(projectId, record.artifactId)
             if (latest === undefined) return undefined
+            // A version stored in a media type this build no longer renders
+            // (a legacy Vega-Lite spec from before that format was removed)
+            // drops from the renderable library instead of failing the whole
+            // project's listing.
+            const latestMediaType = scienceArtifactMediaType(latest.mediaType)
+            if (latestMediaType === undefined) return undefined
             let originSessionTitle: string | undefined
             try {
               originSessionTitle = foldSessionTitle((await readSessionState(record.originSessionId)).events)?.title
@@ -2710,7 +2722,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               originSessionId: record.originSessionId,
               ...(originSessionTitle === undefined ? {} : { originSessionTitle }),
               latest: {
-                versionId: latest.versionId, ordinal: latest.ordinal, mediaType: scienceArtifactMediaType(latest.mediaType),
+                versionId: latest.versionId, ordinal: latest.ordinal, mediaType: latestMediaType,
                 byteCount: latest.byteCount, createdAt: latest.createdAt,
               },
             }

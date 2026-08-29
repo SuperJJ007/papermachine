@@ -72,6 +72,17 @@ const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
 
 /**
+ * Individual browser-safe leaf modules published from packages whose other
+ * subpaths carry real Host imports, so the whole package cannot join
+ * `INLINE_SAFE`. Each entry is a specific subpath its own module doc states
+ * carries no Host import, kept identical between Host admission and a
+ * client bundle by import rather than copy-paste.
+ */
+const INLINE_SAFE_LEAF = new Set([
+  '@deepseek-ai/dsh-tool-science/element-summary',
+])
+
+/**
  * Workspace mode replaces an empty config array with the root defaults. A
  * falsey entry instead removes this package before entry resolution.
  */
@@ -489,6 +500,7 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (isRequested(source)) return null // requested module-table row: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
+        if (INLINE_SAFE_LEAF.has(source)) return null // declared browser-safe leaf module: inline is the point
         throw new Error(
           `client bundle purity: "${source}" is not in the default client externals or ${id}'s dsh.client.external, an inline-safe wire layer, or a generated /remote contribution — `
           + 'cross-plugin value imports are forbidden; declare a non-default module request or collaborate through cordis services '

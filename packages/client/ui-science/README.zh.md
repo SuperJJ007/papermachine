@@ -48,7 +48,7 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在文件库主页处为 null；`libraryPage` 记住该主页显示产物还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 与 `provenanceSubTab` 仍是共享 viewer 字段：激活文档会回到 content，同时保留最近一次 provenance 子标签偏好。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括文件库页与折叠分组，因此刷新浏览器后仍会恢复。
 
-产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；卡片只显示版本与媒体类型，不重复来源。
+产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；网格卡片是一张有边框的整体——上半是通栏 1:1 缩略图（图片裁到左上角，非图片则居中显示文件类型磁贴），下半是脚注，显示标题与 `vN · 相对时间`，不再显示媒体类型文字。列表布局仍是 76px 缩略行，脚注文案与网格一致。`ProjectLibrary` 每次渲染只取一次 `Date.now()`，组头与每张卡片的脚注共用同一个值。
 
 ## Artifact viewer（Details 条目）
 

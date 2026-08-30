@@ -39,7 +39,15 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: Artifacts
-- button "Close tab":
-  - img
-- text: Choose a session to see its real data, charts, and documents here.
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
+- button "Close details"
+- textbox "Search"
+- combobox "Artifact sort":
+  - option "Newest" [selected]
+  - option "Oldest"
+  - option "Name"
+- button "Switch grid or list view": Grid
+- text: 0 artifacts
+- status: No artifacts yet.

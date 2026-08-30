@@ -96,7 +96,7 @@ describe('web e2e: project Science file library', () => {
     const currentSession = page.locator('[role="treeitem"]').nth(1)
     await currentSession.waitFor({ timeout: 10_000 })
     await currentSession.click()
-    await page.getByRole('button', { name: 'Files', exact: true }).click()
+    await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
   }, 120_000)
 
   afterAll(async () => {

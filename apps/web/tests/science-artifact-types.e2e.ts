@@ -5,6 +5,7 @@
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
+import { basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -26,11 +27,12 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const PANEL_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/panel.expected.md', import.meta.url))
 const LIBRARY_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/library.expected.md', import.meta.url))
 const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/transcript.expected.md', import.meta.url))
+const BLANK_SESSION_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/blank-session.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-artifact-types-web-e2e'
 const SEED_TITLE = 'Science artifact types'
@@ -352,4 +354,49 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(await current.getByRole('listitem').count()).toBe(4)
   }, 60_000)
 
+  it('shows the shared artifact library by default for a brand-new blank Science session', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-blank-session-library'))
+    // Session creation is deferred until first send (lifecycle-chrome.e2e.ts:
+    // "materializes a real Workspace + Session on first send"), so reaching a
+    // genuinely blank Session (`blank === true`, `science === null` — no
+    // `science/mode-bound` event yet) means going through the same connect
+    // flow a real user does. Connecting AT `scaffold.workspaceCwd` itself
+    // (rather than a fresh subdirectory) keeps this new Session in the same
+    // project as the three already-seeded ones, so its library shows their
+    // groups too.
+    await page.getByRole('button', { name: 'New session' }).first().click()
+    await page.getByText('Into the Unknown', { exact: false }).waitFor({ timeout: 15_000 })
+    await connectFreshWorkspace(page, dirname(scaffold.workspaceCwd), basename(scaffold.workspaceCwd))
+    // Stage the blank session to Science mode before any send — the real
+    // product path (README: "a blank Session already staged to science").
+    await page.getByRole('button', { name: 'Standard mode' }).click()
+    await page.getByRole('menuitem', { name: /Science mode/ }).click()
+    const detailsToggle = page.getByRole('button', { name: 'Science details', exact: true })
+    await detailsToggle.waitFor({ timeout: 10_000 })
+    if (await page.locator('[data-details-collapsed]').count() > 0) await detailsToggle.click()
+    const details = page.locator('[class*="detailsCol"]')
+    await details.getByRole('tab', { name: 'Artifacts', exact: true }).waitFor({ timeout: 10_000 })
+    expect(await details.getByRole('tab', { name: 'Project files', exact: true }).count()).toBe(1)
+    // The blank session contributes no group of its own (zero artifacts), but
+    // the other three sessions' groups remain visible — the same project-wide
+    // library, unaffected by which session is current.
+    await details.getByText('12 artifacts', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await details.getByRole('region').evaluateAll(groups => groups.map(group => group.getAttribute('aria-label'))))
+      .toEqual(expect.arrayContaining(['Recent experiment', 'Earlier experiment', 'Science artifact types']))
+    // Name sort (not the default Newest): every artifact here was created
+    // within the same real-clock millisecond, so a time-based order is not
+    // stable across runs — the same reason library.expected.md (above) sorts
+    // by name before its own golden capture.
+    await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption('name')
+    const aria = await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)
+    // The three retired non-artifact states this scenario replaces (R9): the
+    // true-welcome-page placeholder, the pre-R9 "unbound" notice, and the
+    // built-in tool slot's empty-selection fallback.
+    expect(aria).not.toContain('Choose a session')
+    expect(aria).not.toContain('No Science activity yet in this session.')
+    expect(aria).not.toContain('Click a tool row in the message flow to view its details')
+    await compareOrRefreshGolden(BLANK_SESSION_EXPECTED, aria, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
+  }, 60_000)
 })

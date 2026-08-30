@@ -1,0 +1,62 @@
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
+- button "Close details"
+- textbox "Search"
+- combobox "Artifact sort":
+  - option "Newest"
+  - option "Oldest"
+  - option "Name" [selected]
+- button "Switch grid or list view": Grid
+- text: 12 artifacts
+- region "Recent experiment":
+  - heading "Recent experiment 4 · now" [level=3]:
+    - button "Recent experiment 4 · now" [expanded]:
+      - img
+      - text: Recent experiment 4 · now
+  - list:
+    - listitem:
+      - button "Open metrics.json, version 1": metrics.json v1 · now
+    - listitem:
+      - button "Open plot.png, version 1":
+        - 'button "View original: plot.png"':
+          - img "plot.png"
+        - text: plot.png v1 · now
+    - listitem:
+      - button "Open report.md, version 1": report.md v1 · now
+    - listitem:
+      - button "Open summary.csv, version 1": summary.csv v1 · now
+- region "Earlier experiment":
+  - heading "Earlier experiment 4 · now" [level=3]:
+    - button "Earlier experiment 4 · now" [expanded]:
+      - img
+      - text: Earlier experiment 4 · now
+  - list:
+    - listitem:
+      - button "Open metrics.json, version 1": metrics.json v1 · now
+    - listitem:
+      - button "Open plot.png, version 1":
+        - 'button "View original: plot.png"':
+          - img "plot.png"
+        - text: plot.png v1 · now
+    - listitem:
+      - button "Open report.md, version 1": report.md v1 · now
+    - listitem:
+      - button "Open summary.csv, version 1": summary.csv v1 · now
+- region "Science artifact types":
+  - heading "Science artifact types 4 · now" [level=3]:
+    - button "Science artifact types 4 · now" [expanded]:
+      - img
+      - text: Science artifact types 4 · now
+  - list:
+    - listitem:
+      - button "Open metrics.json, version 1": metrics.json v1 · now
+    - listitem:
+      - button "Open plot.png, version 1":
+        - 'button "View original: plot.png"':
+          - img "plot.png"
+        - text: plot.png v1 · now
+    - listitem:
+      - button "Open report.md, version 1": report.md v1 · now
+    - listitem:
+      - button "Open summary.csv, version 1": summary.csv v1 · now

@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
-/** Semantic Science trace grouping and actor-owned presentation. */
+/** Science process projection, disclosure, and navigation. */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { en } from '../src/client/locales.ts'
 import {
-  formatScienceTraceDuration, scienceTraceGroupTitle, ScienceTraceView, type ScienceTraceViewProps,
+  formatScienceTraceDuration, scienceTraceStepTitle, scienceTraceStepStatus, ScienceTraceView, type ScienceTraceViewProps,
 } from '../src/client/ScienceTraceView.tsx'
-import type { ScienceTraceGroup } from '../src/client/science-trace-model.ts'
-import { buildScienceTraceModel } from '../src/client/science-trace-model.ts'
+import type { ScienceTraceStepTitle } from '../src/client/science-trace-model.ts'
+import { buildScienceTraceModel, scienceTracePips } from '../src/client/science-trace-model.ts'
 
 const translate = (key: keyof typeof en, params?: Record<string, unknown>): string => {
   let text: string = en[key]
@@ -100,220 +100,279 @@ function fixture() {
   return { nodes, science, turnTimes }
 }
 
-describe('Science semantic trace', () => {
-  it('formats every structured title and duration without reading model prose', () => {
-    const base = { turn: 1, runs: [], artifacts: [], failedCount: 0, miscToolCount: 0,
-      delegatedCallIds: [], anchor: 'turn:1' } as const
-    const title = (value: ScienceTraceGroup['title']) => scienceTraceGroupTitle({ ...base, title: value }, t)
-    expect(title({ kind: 'selected-edit', name: 'plot.json' })).toBe('Edit plot.json from your selection')
-    expect(title({ kind: 'edit', name: 'plot.json', version: 2 })).toBe('Edit plot.json (from v2)')
-    expect(title({ kind: 'generate', name: 'plot.json', count: 1 })).toBe('Generate plot.json')
-    expect(title({ kind: 'generate', name: 'plot.json', count: 2 })).toBe('Generate plot.json and 2 items')
-    expect(title({ kind: 'curate', name: 'plot.json', artifactTitle: 'Result' })).toBe('Curate plot.json (title: Result)')
-    expect(title({ kind: 'run', language: 'python' })).toBe('Run python code')
-    expect(title({ kind: 'browse' })).toBe('Review sources')
-    expect(formatScienceTraceDuration(undefined, t)).toBe('running')
-    expect(formatScienceTraceDuration(500, t)).toBe('500 ms')
-    expect(formatScienceTraceDuration(1_500, t)).toBe('1.5 s')
-  })
+type Tool = { name: string; argsRaw?: string; callId?: string }
+function step(seq: number, number: number, tools: readonly Tool[], turn = 1): ConversationNode {
+  return { kind: 'assistant', seq, time: seq, turn, step: number,
+    blocks: tools.map((tool, index) => ({ kind: 'tool-call', name: tool.name,
+      callId: tool.callId ?? `call-${String(seq)}-${String(index)}`, argsRaw: tool.argsRaw ?? '{}' })) }
+}
+function result(callId: string, isError: boolean): ConversationNode {
+  return { kind: 'tool-result', seq: 99, time: 99, callId, isError, content: [],
+    call: null, callTime: null, callView: null, resultView: null, subCalls: [] }
+}
+function projection(patch: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
+  return { ...fixture().science, environment: null, runs: [], artifacts: [], kernels: [], ...patch }
+}
+function build(nodes: readonly ConversationNode[], patch: Partial<ScienceClientProjection> = {},
+  times: ReadonlyMap<number, { startTime: number; endTime?: number }> = new Map()) {
+  return buildScienceTraceModel(nodes, projection(patch), times)
+}
+function mount(nodes: readonly ConversationNode[], science: ScienceClientProjection | null | undefined = projection(),
+  turnTimings: ReadonlyMap<number, { startTime: number; endTime?: number }> = new Map()) {
+  const inspectCall = vi.fn(), openArtifact = vi.fn(), selectDetailed = vi.fn(), openTab = vi.fn()
+  const snapshot = { nodes, turnTimings } as unknown as ConversationSnapshot
+  const rendered = render(<ScienceTraceView {...({
+    useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
+    useProjection: () => science, inspectCall, actions: { openTab }, openArtifact, selectDetailed, t,
+  } as unknown as ScienceTraceViewProps)} />)
+  return { ...rendered, inspectCall, openArtifact, selectDetailed, openTab }
+}
+const scroll = vi.fn()
+beforeEach(() => { Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scroll }); scroll.mockClear() })
 
-  it('groups eight attempts, keeps steering in the current turn, exposes failure, and attributes human edits to the user', () => {
+const tools = [
+  ['run_python', '{}', 'run', { kind: 'run', language: 'python' }],
+  ['run_r', '{}', 'run', { kind: 'run', language: 'r' }],
+  ['read', '{"file_path":"/Users/private/input.csv"}', 'browse', { kind: 'read', name: 'input.csv' }],
+  ['read_image', JSON.stringify({ file_path: 'C:\\Users\\private\\plot.png' }), 'browse', { kind: 'read-image', name: 'plot.png' }],
+  ['glob', '{"pattern":"**/*.csv"}', 'browse', { kind: 'glob', pattern: '**/*.csv' }],
+  ['grep', '{"pattern":"accuracy"}', 'browse', { kind: 'grep', pattern: 'accuracy' }],
+  ['get_science_state', '{}', 'browse', { kind: 'state' }],
+  ['annotate_artifact', '{"logical_name":"/private/plot.png","version":1,"title":"Plot"}', 'curate',
+    { kind: 'annotate', name: 'plot.png', version: 1, title: 'Plot' }],
+  ['publish_outcome', '{"title":"Result"}', 'publish', { kind: 'publish', title: 'Result' }],
+  ['subagent_task', '{}', 'delegate', { kind: 'delegate' }],
+  ['todo_write', '{}', 'other', { kind: 'tool', name: 'todo_write' }],
+] as const
+
+describe('Science process model', () => {
+  it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {
+    expect(build([step(1, 1, [{ name, argsRaw }])]).groups[0]?.steps[0]).toMatchObject({ kind, title })
+  })
+  it.each([
+    ['read', '{'], ['read', 'null'], ['read', '[]'], ['read', '1'], ['read', '{}'], ['read', '{"file_path":1}'],
+    ['glob', '{}'], ['grep', '{"pattern":false}'], ['annotate_artifact', '{}'],
+    ['annotate_artifact', '{"logical_name":"x","version":"1","title":"x"}'],
+    ['annotate_artifact', '{"logical_name":"x","version":1,"title":false}'], ['publish_outcome', '{}'],
+    ['publish_outcome', '{"title":2}'],
+  ])('keeps the tool name for malformed %s arguments %s', (name, argsRaw) => {
+    expect(build([step(1, 1, [{ name, argsRaw }])]).groups[0]?.steps[0]?.title).toEqual({ kind: 'tool', name })
+  })
+  it('strips absolute paths and bounds structured titles at forty characters', () => {
+    for (const name of ['glob', 'grep']) {
+      const model = build([step(1, 1, [{ name, argsRaw: JSON.stringify({ pattern: '/Users/private/*.csv' }) }])])
+      expect(model.groups[0]?.steps[0]?.title).toEqual({ kind: name, pattern: '*.csv' })
+    }
+    for (const title of ['x'.repeat(40), 'x'.repeat(41)]) {
+      const expected = title.length === 40 ? title : `${'x'.repeat(40)}…`
+      for (const name of ['annotate_artifact', 'publish_outcome']) {
+        const model = build([step(1, 1, [{ name, argsRaw: JSON.stringify({ title, logical_name: 'plot.png', version: 1 }) }])])
+        expect(model.groups[0]?.steps[0]?.title).toMatchObject({ title: expected })
+      }
+    }
+  })
+  it('orders calls by seq, shares parallel step numbers, and counts answer-only steps', () => {
+    const model = build([step(20, 2, [{ name: 'run_python' }]), step(10, 1, [{ name: 'run_r' }, { name: 'run_python' }]), step(30, 3, [])])
+    expect(model.groups[0]?.steps.map(row => [row.step, row.members[0]?.callId])).toEqual([
+      [1, 'call-10-0'], [1, 'call-10-1'], [2, 'call-20-0'],
+    ])
+    expect(model.groups[0]?.stepCount).toBe(3)
+  })
+  it('merges only consecutive successful browse calls within a turn, preserving each pip destination', () => {
+    const model = build([
+      step(1, 1, [{ name: 'read', argsRaw: '{"file_path":"a"}' }, { name: 'read', argsRaw: '{"file_path":"b"}' }]),
+      step(2, 2, [{ name: 'get_science_state' }]),
+      step(3, 3, [{ name: 'run_python' }, { name: 'annotate_artifact' }, { name: 'publish_outcome' }, { name: 'subagent' }]),
+      step(4, 4, [{ name: 'read', callId: 'failure' }, { name: 'get_science_state' }]), result('failure', true),
+      step(5, 1, [{ name: 'get_science_state' }], 2),
+    ])
+    const group = model.groups[0]!
+    expect(group.steps.map(row => row.title.kind)).toEqual(['browse-many', 'run', 'tool', 'tool', 'delegate', 'tool', 'state'])
+    expect(group.steps[0]).toMatchObject({ step: 1, title: { kind: 'browse-many', count: 3 } })
+    expect(scienceTracePips(group).map(pip => pip.rowIndex)).toEqual([0, 0, 0, 1, 2, 3, 4, 5, 6])
+    expect(scienceTracePips(group)[1]?.title).toEqual({ kind: 'read', name: 'b' })
+    expect(model.groups[1]?.steps).toHaveLength(1)
+  })
+  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled'] as const)('uses authoritative run %s over the result error flag', (status) => {
+    const model = build([step(1, 1, [{ name: 'run_python', callId: 'r' }]), result('r', true)], { runs: [run('r', 1, status)] })
+    expect(model.groups[0]?.steps[0]).toMatchObject({ runStatus: status, failed: status !== 'running' && status !== 'success',
+      durationMs: status === 'running' ? undefined : 500 })
+  })
+  it('uses run language and interruption facts, and treats missing results as unknown', () => {
+    const interrupted = { ...run('r', 1), language: 'r', status: 'interrupted', finishedAt: 900, interruptedAtSeq: 5 } as ScienceClientRun
+    const model = build([step(1, 1, [{ name: 'run_python', callId: 'r' }, { name: 'todo_write' }]), result('r', false)], { runs: [interrupted] })
+    expect(model.groups[0]?.steps[0]).toMatchObject({ title: { language: 'r' }, failed: true, durationMs: 0, runStatus: 'interrupted' })
+    expect(model.groups[0]?.steps[1]?.failed).toBe(false)
+  })
+  it('attaches artifact deltas to calls and keeps direct edits on the user side', () => {
     const { nodes, science, turnTimes } = fixture()
     const model = buildScienceTraceModel(nodes, science, turnTimes)
-    expect(model.turns).toEqual([1, 2])
-    expect(model.groups).toHaveLength(2)
-    expect(model.groups[0]?.runs).toHaveLength(8)
-    expect(model.dialogues.some(item => item.text === 'The chart is ready.')).toBe(false)
-    expect(model.groups[0]?.title).toEqual({ kind: 'generate', name: 'chart.png', count: 2 })
-    expect(model.groups[0]?.artifacts.map(item => item.action)).toEqual(['created', 'curated'])
+    expect(model.groups[0]?.steps[7]?.artifacts.map(item => item.action)).toEqual(['created', 'curated'])
+    expect(model.groups[1]?.steps[1]?.artifacts[0]).toMatchObject({ action: 'advanced', parentVersion: 1 })
     expect(model.groups[1]?.failedCount).toBe(1)
-    expect(model.groups[1]).toMatchObject({ miscToolCount: 1, delegatedCallIds: ['subagent-child'] })
-    expect(model.groups[1]?.title).toEqual({ kind: 'selected-edit', name: 'chart.png' })
+    expect(model.groups.flatMap(group => group.steps.flatMap(row => row.artifacts)).map(item => item.version)).not.toContain(3)
     expect(model.humanEdits).toMatchObject([{ actor: 'user', turn: 2, anchor: 'artifact:chart-1@3' }])
     expect(model.dialogues.find(item => item.seq === 21)?.turn).toBe(2)
+    expect(model.environment?.languages).toEqual(['Python'])
   })
-
-  it('classifies run-only, browse-only, agent-edit, running, and history-fallback groups', () => {
+  it('retains orphan artifacts, assigns out-of-turn edits to the last turn, and tolerates empty dialogue', () => {
+    const human = fixture().science.artifacts[3]!
+    const orphan = fixture().science.artifacts[0]!
     const nodes = [
-      { kind: 'user', seq: 1, time: 1, source: null, content: [{ type: 'text', text: '' }] },
-      { kind: 'user', seq: 2, time: 2, source: { kind: 1 },
-        content: [{ type: 'image', attachment: {} as never }, { type: 'text', text: 'Check environment' }] },
-      assistant(1, 3, ['run-only']),
-      { kind: 'user', seq: 4, time: 4, source: null, content: [{ type: 'text', text: 'Inspect files' }] },
-      assistant(2, 5, ['misc-files']),
-      { kind: 'steering', seq: 6, time: 6, messageId: 'empty' as never, source: null, content: [] },
-      { kind: 'user', seq: 7, time: 7, source: { kind: 'user' }, content: [{ type: 'text', text: 'Revise chart' }] },
-      assistant(3, 8, ['edit-run']),
-      { kind: 'context', seq: 9, time: 9, source: null, content: [], provenance: {} as never, form: null },
-      { kind: 'user', seq: 10, time: 10, source: { kind: 'user' }, content: [{ type: 'text', text: 'Delegate' }] },
-      assistant(4, 11, ['subagent-only']),
-      { kind: 'user', seq: 12, time: 12, source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] },
-      assistant(5, 13, []),
+      { kind: 'user', seq: 1, time: 0, source: null, content: [{ type: 'image', attachment: {} as never }] },
+      { kind: 'steering', seq: 2, time: 1, messageId: 'm' as never, source: null, content: [] },
+      { kind: 'steering', seq: 3, time: 2, messageId: 'm2' as never, source: null, content: [{ type: 'text', text: 'First' }] },
+      step(4, 1, [], 2),
     ] as ConversationNode[]
-    const science = {
-      mode: {}, environment: { revision: 1, profileId: 'science', configuredAt: 1, validatedAt: 1,
-        status: 'ready', r: { language: 'r', capability: 'supported' } },
-      kernels: [], outcome: null, lastScienceEventSeq: 9,
-      runs: [run('run-only', 1, 'running'), run('edit-run', 2), run('outside-run', 3)],
-      artifacts: [
-        { artifactId: ScienceArtifactId('plot'), logicalName: 'plot.json', version: 2, title: 'Plot',
-          parent: { artifactId: ScienceArtifactId('plot'), version: 1 }, attachment: {} as never,
-          environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 8,
-          origin: 'model', runId: ScienceRunId('run-2'), toolCallId: 'edit-run', requestHeaderSeq: 2 },
-        { artifactId: ScienceArtifactId('orphan'), logicalName: 'orphan.csv', version: 1, title: 'Orphan',
-          attachment: {} as never, environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 8,
-          origin: 'model', runId: ScienceRunId('run-3'), toolCallId: 'outside', requestHeaderSeq: 3 },
-        { artifactId: ScienceArtifactId('plot'), logicalName: 'plot.json', version: 3, title: 'Plot',
-          parent: { artifactId: ScienceArtifactId('plot'), version: 2 }, attachment: {} as never,
-          environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 99,
-          origin: 'human-edit' },
-        { artifactId: ScienceArtifactId('plot'), logicalName: 'plot.json', version: 4, title: 'Plot',
-          parent: { artifactId: ScienceArtifactId('plot'), version: 3 }, attachment: {} as never,
-          environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 50,
-          origin: 'human-edit' },
-      ],
-      metrics: {},
-    } as unknown as ScienceClientProjection
-    const model = buildScienceTraceModel(nodes, science, new Map([[5, { startTime: 90 }]]))
-    expect(model.environment?.languages).toEqual(['R'])
-    expect(model.groups.map(group => group.title)).toEqual([
-      { kind: 'run', language: 'python' },
-      { kind: 'browse' },
-      { kind: 'edit', name: 'plot.json', version: 1 },
-      { kind: 'browse' },
-      { kind: 'generate', name: 'orphan.csv', count: 1 },
+    const model = build(nodes, { artifacts: [orphan, human], runs: [run('unseen', 1)] }, new Map([[2, { startTime: 30_000 }]]))
+    expect(model.groups[0]).toMatchObject({ turn: 2, stepCount: 1, durationMs: 500, steps: [] })
+    expect(model.humanEdits[0]?.turn).toBe(2)
+    expect(model.dialogues[0]?.turn).toBe(1)
+    const ongoing = build([step(1, 1, [], 2)], { artifacts: [human] }, new Map([[1, { startTime: 0 }]]))
+    expect(ongoing.humanEdits[0]?.turn).toBe(1)
+  })
+  it('uses turn wall time and otherwise sums completed run durations', () => {
+    const nodes = [step(1, 1, [{ name: 'run_python', callId: 'r' }])]
+    expect(build(nodes, { runs: [run('r', 1)] }, new Map([[1, { startTime: 0, endTime: 12_000 }]])).groups[0]?.durationMs).toBe(12_000)
+    expect(build(nodes, { runs: [run('r', 1)] }).groups[0]?.durationMs).toBe(500)
+    expect(build(nodes, { runs: [run('r', 1, 'running')] }).groups[0]?.durationMs).toBeUndefined()
+  })
+  it('expands terminal epochs, sorts markers and positions them before the first later turn', () => {
+    const base = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprintPreview: 'abc' }
+    const model = build([step(1, 1, [], 1), step(2, 1, [], 2), step(3, 1, [], 3)], { kernels: [
+      { ...base, state: 'exited', at: 30, startedAt: 5, reason: 'idle' },
+      { ...base, language: 'r', state: 'interrupted', startedAt: 12, finishedAt: 25, interruptedAtSeq: 10 },
+      { ...base, kernelEpoch: 2, state: 'started', at: 35 },
+    ] }, new Map([[1, { startTime: 10 }], [2, { startTime: 20 }]]))
+    expect(model.kernelMarkers.map(marker => [marker.event, marker.at, marker.beforeTurn])).toEqual([
+      ['started', 5, 1], ['started', 12, 2], ['interrupted', 25, 4], ['exited', 30, 4], ['started', 35, 4],
     ])
-    expect(model.groups[0]?.durationMs).toBeUndefined()
-    expect(model.humanEdits.map(item => item.turn)).toEqual([5, 5])
   })
+})
 
-  it('classifies a later same-version save as curation', () => {
-    const nodes = [
-      { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'Create' }] },
-      assistant(1, 2, ['create']),
-      { kind: 'user', seq: 3, time: 3, source: { kind: 'user' }, content: [{ type: 'text', text: 'Curate' }] },
-      assistant(2, 4, ['curate']),
-    ] as ConversationNode[]
-    const artifact = {
-      artifactId: ScienceArtifactId('plot'), logicalName: 'plot.json', version: 1, title: 'Plot',
-      attachment: {} as never, environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 2,
-      origin: 'model' as const, runId: ScienceRunId('run-1'), requestHeaderSeq: 1,
+describe('Science process presentation', () => {
+  it('localizes titles, durations and every run terminal status', () => {
+    const titles: readonly [ScienceTraceStepTitle, string][] = [
+      [{ kind: 'run', language: 'python' }, 'Python run'], [{ kind: 'run', language: 'r' }, 'R run'],
+      [{ kind: 'run', language: 'julia' }, 'julia run'], [{ kind: 'read', name: 'a' }, 'Read file a'],
+      [{ kind: 'read-image', name: 'a' }, 'View image a'], [{ kind: 'glob', pattern: '*.csv' }, 'Find files *.csv'],
+      [{ kind: 'grep', pattern: 'x' }, 'Search contents x'], [{ kind: 'state' }, 'Read session state'],
+      [{ kind: 'annotate', name: 'a', version: 1, title: 'Plot' }, 'Annotate a v1 “Plot”'],
+      [{ kind: 'publish', title: 'Result' }, 'Publish outcome “Result”'], [{ kind: 'delegate' }, 'Delegate task'],
+      [{ kind: 'tool', name: 'custom' }, 'custom'], [{ kind: 'browse-many', count: 3 }, 'Reviewed 3 sources'],
+    ]
+    for (const [title, text] of titles) expect(scienceTraceStepTitle(title, t)).toBe(text)
+    expect(formatScienceTraceDuration(undefined, t)).toBe('running')
+    expect(formatScienceTraceDuration(500, t)).toBe('500 ms')
+    expect(formatScienceTraceDuration(1500, t)).toBe('1.5 s')
+    const base = build([step(1, 1, [{ name: 'run_python' }])]).groups[0]!.steps[0]!
+    const statuses = [['running', ''], ['success', 'Success · 500 ms'], ['failed', 'Failed'],
+      ['timed-out', 'Timed out'], ['cancelled', 'Cancelled'], ['interrupted', 'Interrupted']] as const
+    for (const [runStatus, label] of statuses) {
+      expect(scienceTraceStepStatus({ ...base, runStatus, durationMs: 500 }, t)).toBe(label)
     }
-    const science = {
-      mode: {}, environment: null, kernels: [], outcome: null, lastScienceEventSeq: 4, runs: [],
-      artifacts: [{ ...artifact, toolCallId: 'create' }, { ...artifact, title: 'Curated', toolCallId: 'curate' }], metrics: {},
-    } as unknown as ScienceClientProjection
-    expect(buildScienceTraceModel(nodes, science, new Map()).groups.map(group => group.title)).toEqual([
-      { kind: 'generate', name: 'plot.json', count: 1 },
-      { kind: 'curate', name: 'plot.json', artifactTitle: 'Curated' },
-    ])
+    expect(scienceTraceStepStatus({ ...base, failed: true }, t)).toBe('Failed')
+    expect(scienceTraceStepStatus({ ...base, kind: 'other', failed: false }, t)).toBe('')
   })
-
-  it('renders three-line fact cards and routes run and artifact anchors without repeating answers', () => {
+  it('starts collapsed, navigates from pips, toggles disclosure, and opens precise artifacts and calls', () => {
     const { nodes, science, turnTimes } = fixture()
-    const inspectCall = vi.fn()
-    const openArtifact = vi.fn()
-    const selectDetailed = vi.fn()
-    const openTab = vi.fn()
-    const snapshot = { nodes, turnTimings: turnTimes } as unknown as ConversationSnapshot
-    render(<ScienceTraceView {...({
-      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-      useProjection: () => science,
-      inspectCall, actions: { openTab }, openArtifact, selectDetailed, t,
-    } as unknown as ScienceTraceViewProps)} />)
-
-    expect(document.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
-    expect(screen.queryByText(/Intermediate narration/)).toBeNull()
+    const { container, inspectCall, selectDetailed, openArtifact, openTab } = mount(nodes, science, turnTimes)
+    expect(screen.queryByRole('list', { name: 'Turn steps' })).toBeNull()
+    expect(container.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
+    expect(screen.getAllByRole('group', { name: 'Step strip' }).flatMap(strip => within(strip).getAllByRole('button'))).toHaveLength(12)
+    expect(screen.getByText('2 turns · 2 steps · 10 runs · 1 artifacts · 20.0 s')).toBeTruthy()
+    expect(container.querySelector('b')?.textContent).toBe('1')
     expect(screen.queryByText('The chart is ready.')).toBeNull()
-    const failed = screen.getByRole('button', { name: /python ×2.*1 failed/u })
-    fireEvent.click(failed)
+    expect(container.textContent).not.toMatch(/Intermediate narration|Research environment|Semantic trace|Swimlane|\/Users\//u)
+    fireEvent.click(screen.getByRole('button', { name: 'chart.png v2' }))
+    expect(openTab).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })
+    expect(openArtifact).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })
+    const strip = screen.getAllByRole('group', { name: 'Step strip' })[1]!
+    fireEvent.click(within(strip).getAllByRole('button')[1]!)
+    const list = screen.getByRole('list', { name: 'Turn steps' })
+    expect(within(list).getAllByRole('listitem')[1]?.getAttribute('data-highlight')).toBe('true')
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+    fireEvent.click(within(list).getByRole('button', { name: 'chart.png v2' }))
+    expect(openTab).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })
+    fireEvent.click(within(list).getAllByRole('button', { name: 'Python run' })[0]!)
     expect(selectDetailed).toHaveBeenCalledTimes(1)
-    expect(inspectCall).toHaveBeenCalledWith('repair-1')
-    const chip = screen.getByRole('button', { name: /chart.png v2/ })
-    expect(chip.getAttribute('data-anchor')).toBe('artifact:chart-1@2')
-    fireEvent.click(chip)
-    expect(openTab).toHaveBeenCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })
-    expect(openArtifact).toHaveBeenCalled()
+    expect(inspectCall).toHaveBeenCalledExactlyOnceWith('repair-1')
+    const toggle = screen.getByRole('button', { name: /Collapse steps.*1 failed/u })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('list', { name: 'Turn steps' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps.*1 failed/u }))
+    expect(screen.getByRole('button', { name: /Collapse steps.*1 failed/u }).getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: 'Open artifact' }))
-    expect(openTab).toHaveBeenCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 3 })
+    expect(openTab).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 3 })
   })
-
-  it('shows the no-runs and no-artifacts fallbacks, and skips the group card for a human-edit-only turn', () => {
-    const nodes = [
-      { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'First' }] },
-      assistant(1, 2, ['run-a']),
-      { kind: 'user', seq: 3, time: 3, source: { kind: 'user' }, content: [{ type: 'text', text: 'Second' }] },
-      assistant(2, 4, ['subagent-a']),
-      { kind: 'user', seq: 5, time: 5, source: { kind: 'user' }, content: [{ type: 'text', text: 'Third' }] },
-    ] as ConversationNode[]
-    const science = {
-      mode: {}, environment: null, kernels: [], outcome: null, lastScienceEventSeq: 5,
-      runs: [run('run-a', 1)],
-      artifacts: [
-        { artifactId: ScienceArtifactId('note'), logicalName: 'note.md', version: 2, title: 'Note',
-          parent: { artifactId: ScienceArtifactId('note'), version: 1 }, attachment: {} as never,
-          environmentRevision: 1, environmentFingerprintPreview: 'abc', createdAt: 25, origin: 'human-edit' },
-      ],
-      metrics: {},
-    } as unknown as ScienceClientProjection
-    const turnTimes = new Map([
-      [1, { startTime: 0, endTime: 10 }], [2, { startTime: 11, endTime: 20 }], [3, { startTime: 21, endTime: 30 }],
-    ])
-    const snapshot = { nodes, turnTimings: turnTimes } as unknown as ConversationSnapshot
-    render(<ScienceTraceView {...({
-      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-      useProjection: () => science,
-      inspectCall: vi.fn(), actions: { openTab: vi.fn() }, openArtifact: vi.fn(), selectDetailed: vi.fn(), t,
-    } as unknown as ScienceTraceViewProps)} />)
-
-    // Turn 3 published only a human edit: no card renders for it, but its
-    // human-edit node still does (reusing the already-covered node render).
-    expect(document.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
-    expect(screen.getByText(/directly edited note\.md/u)).toBeTruthy()
-    // Turn 1 ran code but produced no artifact.
-    expect(screen.getAllByText('No produced files').length).toBeGreaterThan(0)
-    // Turn 2 delegated to a subagent with no run of its own: the facts button
-    // is disabled and falls back to the no-runs label.
-    const noRuns = screen.getByRole('button', { name: 'No code runs' })
-    expect(noRuns.hasAttribute('disabled')).toBe(true)
-  })
-
-  it('falls back to a request-unavailable label when no dialogue precedes the group\'s turn', () => {
-    const nodes = [assistant(1, 1, ['run-a'])] as ConversationNode[]
-    const science = {
-      mode: {}, environment: null, kernels: [], outcome: null, lastScienceEventSeq: 1,
-      runs: [run('run-a', 1)], artifacts: [], metrics: {},
-    } as unknown as ScienceClientProjection
-    const snapshot = { nodes, turnTimings: new Map() } as unknown as ConversationSnapshot
-    render(<ScienceTraceView {...({
-      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-      useProjection: () => science,
-      inspectCall: vi.fn(), actions: { openTab: vi.fn() }, openArtifact: vi.fn(), selectDetailed: vi.fn(), t,
-    } as unknown as ScienceTraceViewProps)} />)
-
+  it('opens the first member of a merged row and preserves individual pip labels', () => {
+    const { inspectCall, selectDetailed } = mount([step(1, 1, [
+      { name: 'read', argsRaw: '{"file_path":"a"}' }, { name: 'read', argsRaw: '{"file_path":"b"}' },
+    ])])
+    fireEvent.click(screen.getByRole('button', { name: 'Read file b' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reviewed 2 sources' }))
+    expect(inspectCall).toHaveBeenCalledExactlyOnceWith('call-1-0')
+    expect(selectDetailed).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('No produced files')).toBeTruthy()
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
   })
-
-  it('renders the empty projection state', () => {
-    const snapshot = { nodes: [], turnTimings: new Map() } as unknown as ConversationSnapshot
-    render(<ScienceTraceView {...({
-      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-      useProjection: () => null, t,
-    } as unknown as ScienceTraceViewProps)} />)
-    expect(screen.getByText(/Intent groups will appear/)).toBeTruthy()
+  it('shows four final artifact chips for fourteen versions and exposes earlier versions inline', () => {
+    const original = fixture().science.artifacts[0]!
+    const artifacts = Array.from({ length: 14 }, (_, index) => ({ ...original,
+      artifactId: ScienceArtifactId(`file-${String(index % 4)}`), logicalName: `file-${String(index % 4)}.png`,
+      version: Math.floor(index / 4) + 1, toolCallId: 'create', origin: 'model' as const,
+    })) as unknown as ScienceClientProjection['artifacts']
+    const { container } = mount([step(1, 1, [{ name: 'run_python', callId: 'create' }])],
+      projection({ artifacts: [...artifacts, artifacts[0]!], outcome: { title: 'Done' } as ScienceClientProjection['outcome'] }))
+    expect(container.querySelectorAll('button[data-anchor^="artifact:"]')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'file-0.png v4' })).toBeTruthy()
+    expect(screen.getByText(/4 artifacts.*outcome published/u)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    expect(within(screen.getByRole('list')).getAllByRole('button', { name: /file-/u })).toHaveLength(15)
   })
-
-  it('never renders a direct assistant conclusion in the trace', () => {
-    const nodes = [
-      { kind: 'user', seq: 1, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text: 'Answer directly' }] },
-      assistant(1, 2, [], 'Direct conclusion'),
-    ] as ConversationNode[]
-    const snapshot = { nodes, turnTimings: new Map() } as unknown as ConversationSnapshot
-    render(<ScienceTraceView {...({
-      useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-      useProjection: () => ({ ...fixture().science, runs: [], artifacts: [] }), t,
-    } as unknown as ScienceTraceViewProps)} />)
+  it('caps the strip at 120 calls while keeping all expanded rows', () => {
+    mount([step(1, 1, Array.from({ length: 123 }, () => ({ name: 'todo_write' })))])
+    expect(within(screen.getByRole('group')).getAllByRole('button')).toHaveLength(120)
+    expect(screen.getByLabelText('123 calls in total').textContent).toBe('…')
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(123)
+    expect(screen.getAllByLabelText('Step 1')[1]?.getAttribute('data-repeated')).toBe('true')
+  })
+  it.each([null, undefined, projection()])('shows an empty session without copying an assistant answer', (science) => {
+    // Pass undefined explicitly to the projection hook rather than the fixture helper default.
+    if (science === undefined) {
+      const snapshot = { nodes: [], turnTimings: new Map() } as unknown as ConversationSnapshot
+      render(<ScienceTraceView {...({ useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
+        useProjection: () => undefined, t } as unknown as ScienceTraceViewProps)} />)
+    } else mount([assistant(1, 1, [], 'Direct conclusion')], science)
+    expect(screen.getByText(/Intent groups will appear/u)).toBeTruthy()
     expect(screen.queryByText('Direct conclusion')).toBeNull()
-    expect(document.querySelector('[data-kind="dialogue"]')).toBeNull()
+  })
+  it('keeps a human-only turn and omits empty agent turns', () => {
+    const human = fixture().science.artifacts[3]!
+    const { container } = mount([step(1, 1, [], 1), step(2, 1, [], 2)], projection({ artifacts: [human] }),
+      new Map([[1, { startTime: 30_000 }], [2, { startTime: 40_000 }]]))
+    expect(container.querySelectorAll('[data-actor="agent"]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-kind="human-edit"]')).toHaveLength(1)
+    expect(screen.queryByText('Turn 1')).toBeNull()
+  })
+  it.each(['idle', 'session-end', 'environment-rebound', 'run-escalation', 'protocol', 'crash', 'service-disposed', undefined] as const)(
+    'renders kernel exit reason %s', (reason) => {
+      mount([step(1, 1, [{ name: 'get_science_state' }])], projection({ kernels: [{ kernelEpoch: 1, language: 'python',
+        state: 'exited', at: 30, startedAt: 5, ...(reason === undefined ? {} : { reason }),
+        environmentRevision: 1, environmentFingerprintPreview: 'abc' }] }), new Map([[1, { startTime: 10, endTime: 20 }]]))
+      expect(screen.getByText('Python kernel #1 started')).toBeTruthy()
+      expect(screen.getByText(`Python kernel #1 exited (${en[`trace.kernel.reason.${reason ?? 'unknown'}`]}) · variables cleared`)).toBeTruthy()
+    },
+  )
+  it('renders started and interrupted kernels with environment display names', () => {
+    const environment = { ...fixture().science.environment!, python: undefined, r: { language: 'r' } } as unknown as ScienceClientProjection['environment']
+    const science = projection({ environment, kernels: [{ kernelEpoch: 2, language: 'r', state: 'interrupted',
+      startedAt: 0, finishedAt: 10, interruptedAtSeq: 5, environmentRevision: 1, environmentFingerprintPreview: 'abc' }] })
+    expect(buildScienceTraceModel([], science, new Map()).environment?.languages).toEqual(['R'])
+    mount([], science)
+    expect(screen.getByText('R kernel #2 started · environment science')).toBeTruthy()
+    expect(screen.getByText('R kernel #2 interrupted · variables cleared')).toBeTruthy()
   })
 })

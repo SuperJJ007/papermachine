@@ -304,6 +304,10 @@ export function apply(ctx: ClientContext): void {
     id: SCIENCE_DETAILS_ID,
     order: 10,
     label: '',
+    // The default Details entry for any current Session (blank or Science-
+    // unbound included): the artifact library it renders is the one Details
+    // surface product-wide, so it is what shows without an explicit selection.
+    primary: true,
     locale: NS,
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceDetailsInjected => {

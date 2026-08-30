@@ -202,7 +202,11 @@ export function apply(ctx: Context): void {
     for (const entry of slots.entries('conversation.details.view')) {
       /* v8 ignore next -- unreachable: list registration validates id at load. */
       if (entry.options.id === undefined) continue
-      list.push({ id: entry.options.id, label: resolveSlotLabel(entry.options.label) ?? entry.options.id })
+      list.push({
+        id: entry.options.id,
+        label: resolveSlotLabel(entry.options.label) ?? entry.options.id,
+        primary: entry.options.primary === true,
+      })
     }
     return list
   }

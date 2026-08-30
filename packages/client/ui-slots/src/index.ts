@@ -475,7 +475,7 @@ export type SlotLabel = string | (() => string)
 
 /**
  * Kind shape fields carried in register options (keyed dispatch key; list
- * id/order/label; chain select/priority; non-chain priority = cell shadowing rank).
+ * id/order/label/primary; chain select/priority; non-chain priority = cell shadowing rank).
  */
 export type KindOptions<
   K extends keyof SlotMap & string,
@@ -493,6 +493,13 @@ export type KindOptions<
       label?: SlotLabel
       /** Cell shadowing rank (ascending, default 0, lowest renders; same id + same priority throws — see {@link SlotCore.register}). */
       priority?: number
+      /**
+       * Declares this entry the slot's default when a consumer has not
+       * explicitly selected one. At most one entry per slot may declare it;
+       * a second `primary: true` registration throws at load time (see
+       * {@link SlotCore.register}) instead of silently picking the first.
+       */
+      primary?: true
     }
       : SlotMap[K]['kind'] extends 'chain' ? {
         /** Routing selector, mandatory on chain entries; `M` (the component's `matched` prop) infers from its return. */
@@ -556,7 +563,7 @@ type BaseOptions<
  */
 export interface StoredEntry {
   component: unknown
-  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number }
+  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number; primary?: true }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined
   /** Registrant business face; positional params derive from the declaration (sessionId?, actions?). */
@@ -596,6 +603,7 @@ interface ErasedOptions {
   label?: SlotLabel | undefined
   select?: ((owner: never) => unknown) | undefined
   priority?: number | undefined
+  primary?: true | undefined
   children?: Record<string, SlotSpec<SlotEntryDef>> | undefined
   store?: StoreDecl | undefined
   locale?: string | undefined
@@ -712,7 +720,8 @@ export class SlotCore {
    * an already-declared child key throws (one declarer per slot — the message
    * names the first declarer); mounting one shared store handle under slots
    * of different scopes throws. Kind constraints: keyed — missing `key`
-   * throws; list — missing `id` throws; chain — missing `select` throws (the
+   * throws; list — missing `id` throws, and a second `primary: true` entry
+   * throws naming the existing one; chain — missing `select` throws (the
    * selector is the entry's routing seat, see {@link ChainSelect}).
    *
    * Shadowing (single/keyed/list): entries sharing one cell (single — the
@@ -729,7 +738,7 @@ export class SlotCore {
    *
    * @param options - registration options: target `name`, `children`
    * declaration table, `store` seat, `inject` business-face factory, kind
-   * shape fields (keyed `key`; list `id`/`order`/`label`).
+   * shape fields (keyed `key`; list `id`/`order`/`label`/`primary`).
    * @param component - component honoring the four-share composed props
    * contract ({@link ComposedProps}); checked at this call site.
    * @returns disposer removing the registration and its declarations
@@ -816,6 +825,15 @@ export class SlotCore {
         if (occupant) {
           throw new Error(`list slot "${options.name}" already has an entry with id "${options.id}" ${occupantHint(occupant)}`)
         }
+        if (options.primary === true) {
+          const existingPrimary = rec.entries.find(e => e.options.primary === true)
+          if (existingPrimary) {
+            throw new Error(
+              `list slot "${options.name}" already has a primary entry ("${existingPrimary.options.id}"${
+                existingPrimary.registrant !== undefined ? `, registered by ${existingPrimary.registrant}` : ''
+              }) — only one entry may declare primary: true`)
+          }
+        }
         break
       }
       case 'chain':
@@ -850,6 +868,7 @@ export class SlotCore {
         ...(options.order !== undefined ? { order: options.order } : {}),
         ...(options.label !== undefined ? { label: options.label } : {}),
         ...(options.priority !== undefined ? { priority: options.priority } : {}),
+        ...(options.primary !== undefined ? { primary: options.primary } : {}),
       },
       ...(options.select !== undefined ? { select: options.select } : {}),
       ...(options.inject !== undefined ? { inject: options.inject } : {}),

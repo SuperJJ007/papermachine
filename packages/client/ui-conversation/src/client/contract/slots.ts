@@ -170,7 +170,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * top-level `details` slot directly. Session scope: entries read the
      * conversation snapshot and shared chat store through the standard kit,
      * same as `conversation.view` entries; the owner passes one write
-     * capability (see {@link DetailsViewOwnerProps}).
+     * capability (see {@link DetailsViewOwnerProps}). An entry may register
+     * with `primary: true` to become the default entry shown when the
+     * session has not explicitly picked one (`DetailsPanel.tsx
+     * resolveActiveDetailsView`); at most one entry in this whole registry
+     * may carry it — a second throws at registration (ui-slots
+     * `SlotCore.register`), never resolved by silently taking the first.
      */
     'conversation.details.view': { kind: 'list'; scope: 'session'; owner: DetailsViewOwnerProps }
     /**

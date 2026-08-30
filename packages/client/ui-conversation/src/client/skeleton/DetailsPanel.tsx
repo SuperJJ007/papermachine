@@ -27,10 +27,16 @@ export type DetailsPanelProps = DetailsSlotProps
 /** Built-in Details entry id whose title stays the selected call's name instead of its registered label. */
 const TOOL_VIEW_ID = 'tool'
 
-/** Resolve by id and keep stale/unregistered selections on the built-in `tool` fallback. */
+/**
+ * Resolve the active entry: an explicit `selectedId` hit wins; otherwise the
+ * registered `primary` entry (at most one, see {@link DetailsViewEntry});
+ * otherwise the built-in `tool` fallback. A stale/unregistered `selectedId`
+ * falls through the same chain as no selection at all.
+ */
 function resolveActiveDetailsView(entries: readonly DetailsViewEntry[], selectedId: string | null): DetailsViewEntry | undefined {
-  const requestedId = selectedId ?? TOOL_VIEW_ID
-  return entries.find(entry => entry.id === requestedId)
+  const selected = selectedId === null ? undefined : entries.find(entry => entry.id === selectedId)
+  return selected
+    ?? entries.find(entry => entry.primary)
     ?? entries.find(entry => entry.id === TOOL_VIEW_ID)
 }
 

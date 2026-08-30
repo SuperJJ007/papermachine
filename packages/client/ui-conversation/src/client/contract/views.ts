@@ -16,7 +16,19 @@ export interface ViewTab { id: string; label: string }
  * One routed Details entry, projected from a 'conversation.details.view'
  * slot entry's registration options (label falls back to the entry id).
  */
-export interface DetailsViewEntry { id: string; label: string }
+export interface DetailsViewEntry {
+  id: string
+  label: string
+  /**
+   * Whether this entry declared itself the slot's default (`primary: true`
+   * at registration — at most one entry ever carries it, see
+   * {@link SlotCore.register} in ui-slots). `resolveActiveDetailsView`
+   * (DetailsPanel.tsx) selects it when the session has no explicit
+   * `detailsView` selection; the built-in `tool` entry remains the final
+   * fallback when no entry declares primary.
+   */
+  primary: boolean
+}
 
 /**
  * Per-session state shared by conversation, chat-view, and details slots.
@@ -35,6 +47,10 @@ export interface ChatStoreState {
    * persisted snapshots from before this field rehydrate without it.
    */
   inspect: { callId: CallId } | null
-  /** Active Details entry id ('conversation.details.view' entry id); null falls back to the built-in `tool` entry. */
+  /**
+   * Active Details entry id ('conversation.details.view' entry id); null
+   * falls back to the registered `primary` entry, or the built-in `tool`
+   * entry when none is primary.
+   */
   detailsView: string | null
 }

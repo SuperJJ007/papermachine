@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-08-25-science-trajectory-and-transcript-ia.zh.md)
 
-The three-row summary and Swimlane name are superseded by [Science process steps inside Trajectory](../../proposed/feature/2026-08-30-science-trace-process-view.md); nested Trajectory placement, mounted subviews and transcript ownership remain current.
+The three-row summary and Swimlane name are superseded by [Science process steps inside Trajectory](2026-08-30-science-trace-process-view.md); nested Trajectory placement, mounted subviews and transcript ownership remain current.
 
 ## Problem
 

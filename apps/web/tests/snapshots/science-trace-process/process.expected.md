@@ -1,50 +1,177 @@
 ## Collapsed
 - region "Science process view":
-  - text: "Turns 1 · Steps 4 · Runs 2 · Artifacts 1 · 49.0 s Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared Turn 1"
+  - text: "Turns 1 · Steps 8 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 1"
   - article:
     - paragraph: Draw a scatter plot.
     - group "Step strip":
+      - button "Read session state"
       - button "Python run"
       - button "Read file input.csv"
       - button "Read file schema.json"
       - button "Read file notes.md"
       - button "Python run"
+      - button "R run"
       - button "Annotate scatter_plot.png “Scatter plot”"
-    - button "Expand steps · Steps 4 · Runs 2 · 1 failed · 49.0 s": Steps 4 · Runs 2 · 1 failed · 49.0 s
+    - button "Expand steps · Steps 8 · Runs 3 · 1 failed · {{duration}}": Steps 8 · Runs 3 · 1 failed · {{duration}}
     - button "scatter_plot.png v1":
       - img
       - code: scatter_plot.png v1
 ## Expanded
 - region "Science process view":
-  - text: "Turns 1 · Steps 4 · Runs 2 · Artifacts 1 · 49.0 s Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared Turn 1"
+  - text: "Turns 1 · Steps 8 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 1"
   - article:
     - paragraph: Draw a scatter plot.
     - group "Step strip":
+      - button "Read session state"
       - button "Python run"
       - button "Read file input.csv"
       - button "Read file schema.json"
       - button "Read file notes.md"
       - button "Python run"
+      - button "R run"
       - button "Annotate scatter_plot.png “Scatter plot”"
-    - button "Collapse steps · Steps 4 · Runs 2 · 1 failed · 49.0 s" [expanded]: Steps 4 · Runs 2 · 1 failed · 49.0 s
+    - button "Collapse steps · Steps 8 · Runs 3 · 1 failed · {{duration}}" [expanded]: Steps 8 · Runs 3 · 1 failed · {{duration}}
     - list "Turn steps":
       - listitem:
         - text: "1"
-        - button "Python run"
-        - text: Failed
+        - button "Read session state"
       - listitem:
         - text: "2"
-        - button "Reviewed 3 sources"
-      - listitem:
-        - text: "5"
         - button "Python run"
+        - paragraph:
+          - text: "Code:"
+          - code: raise ValueError("fixture failure")
+        - text: Failed
+      - listitem:
+        - text: "3"
+        - button "Reviewed 3 sources"
+        - paragraph: Read file input.csv · Read file schema.json · Read file notes.md
+      - listitem:
+        - text: "6"
+        - button "Python run"
+        - paragraph:
+          - text: "Code:"
+          - code: plot = draw_scatter(data)
         - button "scatter_plot.png v1":
           - img
           - code: scatter_plot.png v1
         - text: Success · 1.0 s
       - listitem:
-        - text: "6"
+        - text: "7"
+        - button "R run"
+        - paragraph:
+          - text: "Code:"
+          - code: cor(data$x, data$y)
+        - text: Success · 1.0 s
+      - listitem:
+        - text: "8"
         - button "Annotate scatter_plot.png “Scatter plot”"
+    - button "scatter_plot.png v1":
+      - img
+      - code: scatter_plot.png v1
+## Inspected
+- region "Science process view":
+  - text: "Turns 1 · Steps 8 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 1"
+  - article:
+    - paragraph: Draw a scatter plot.
+    - group "Step strip":
+      - button "Read session state"
+      - button "Python run"
+      - button "Read file input.csv"
+      - button "Read file schema.json"
+      - button "Read file notes.md"
+      - button "Python run"
+      - button "R run"
+      - button "Annotate scatter_plot.png “Scatter plot”"
+    - button "Collapse steps · Steps 8 · Runs 3 · 1 failed · {{duration}}" [expanded]: Steps 8 · Runs 3 · 1 failed · {{duration}}
+    - list "Turn steps":
+      - listitem:
+        - text: "1"
+        - button "Read session state" [expanded]
+        - region "Read session state":
+          - heading "Read session state" [level=4]
+          - region "Input arguments": "Input arguments {}"
+          - region "Tool result": "Tool result {\"profile\":\"science\",\"artifacts\":[]}"
+      - listitem:
+        - text: "2"
+        - button "Python run" [expanded]
+        - paragraph:
+          - text: "Code:"
+          - code: raise ValueError("fixture failure")
+        - text: Failed
+        - region "Python run":
+          - heading "Python run" [level=4]
+          - paragraph: "Kernel #1 · Environment revision 1 · EXECUTION_ERROR"
+          - region "Code":
+            - text: Code python
+            - button "Copy"
+            - code: raise ValueError("fixture failure")
+          - region "Standard output": Standard output (empty)
+          - region "Error output": "Error output ValueError: fixture failure"
+          - group: Full tool result
+          - paragraph: Stdout 0 bytes · Stderr 27 bytes
+      - listitem:
+        - text: "3"
+        - button "Reviewed 3 sources" [expanded]
+        - paragraph: Read file input.csv · Read file schema.json · Read file notes.md
+        - region "Read file input.csv":
+          - heading "Read file input.csv" [level=4]
+          - region "Input arguments": "Input arguments { \"file_path\": \"/Users/private/input.csv\" }"
+          - region "Tool result": Tool result x,y 1,2 2,4
+        - region "Read file schema.json":
+          - heading "Read file schema.json" [level=4]
+          - region "Input arguments": "Input arguments { \"file_path\": \"/Users/private/schema.json\" }"
+          - region "Tool result": "Tool result {\"columns\":[\"x\",\"y\"]}"
+        - region "Read file notes.md":
+          - heading "Read file notes.md" [level=4]
+          - region "Input arguments": "Input arguments { \"file_path\": \"/Users/private/notes.md\" }"
+          - region "Tool result": Tool result 120 observations; remove missing pairs.
+      - listitem:
+        - text: "6"
+        - button "Python run" [expanded]
+        - paragraph:
+          - text: "Code:"
+          - code: plot = draw_scatter(data)
+        - button "scatter_plot.png v1":
+          - img
+          - code: scatter_plot.png v1
+        - text: Success · 1.0 s
+        - region "Python run":
+          - heading "Python run" [level=4]
+          - paragraph: "Kernel #1 · Environment revision 1"
+          - region "Code":
+            - text: Code python
+            - button "Copy"
+            - code: plot = draw_scatter(data) plot.savefig("scatter_plot.png")
+          - region "Standard output": Standard output Saved scatter_plot.png
+          - region "Error output": Error output (empty)
+          - group: Full tool result
+          - paragraph: Stdout 22 bytes · Stderr 0 bytes
+      - listitem:
+        - text: "7"
+        - button "R run" [expanded]
+        - paragraph:
+          - text: "Code:"
+          - code: cor(data$x, data$y)
+        - text: Success · 1.0 s
+        - region "R run":
+          - heading "R run" [level=4]
+          - paragraph: "Kernel #2 · Environment revision 1"
+          - region "Code":
+            - text: Code r
+            - button "Copy"
+            - code: cor(data$x, data$y)
+          - region "Standard output": Standard output [1] 0.84
+          - region "Error output": Error output (empty)
+          - group: Full tool result
+          - paragraph: Stdout 8 bytes · Stderr 0 bytes
+      - listitem:
+        - text: "8"
+        - button "Annotate scatter_plot.png “Scatter plot”" [expanded]
+        - region "Annotate scatter_plot.png “Scatter plot”":
+          - heading "Annotate scatter_plot.png “Scatter plot”" [level=4]
+          - region "Input arguments": "Input arguments { \"logical_name\": \"scatter_plot.png\", \"title\": \"Scatter plot\" }"
+          - region "Tool result": "Tool result Annotated scatter_plot.png: Scatter plot"
     - button "scatter_plot.png v1":
       - img
       - code: scatter_plot.png v1

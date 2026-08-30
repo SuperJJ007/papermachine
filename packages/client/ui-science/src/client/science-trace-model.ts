@@ -11,7 +11,7 @@ export type ScienceTraceAnchor =
   | `turn:${number}` | `call:${string}` | `run:${string}` | `artifact:${string}@${number}` | `seq:${number}`
   | `kernel:${string}:${number}:${'started' | 'exited' | 'interrupted'}`
 
-/** One artifact delta summarized by an intent group. */
+/** One artifact delta summarized by a turn group. */
 interface ScienceTraceArtifactDeltaBase {
   readonly artifactId: ScienceArtifactId
   readonly logicalName: string
@@ -26,7 +26,7 @@ export type ScienceTraceArtifactDelta = ScienceTraceArtifactDeltaBase & (
   | { readonly action: 'advanced'; readonly parentVersion: number }
 )
 
-/** One run row inside an intent group. */
+/** One run row inside a turn group. */
 export interface ScienceTraceRunRow {
   readonly run: ScienceClientRun
   readonly callId: string
@@ -55,22 +55,24 @@ export type ScienceTraceStepTitle =
 /** One real call, retained separately even when its list row is merged. */
 export interface ScienceTraceStepMember {
   readonly callId: string
+  /** Logged arguments and result; details are mounted only when requested. */
+  readonly argsRaw: string
+  readonly result: Extract<ConversationNode, { kind: 'tool-result' }> | undefined
+  readonly run: ScienceClientRun | undefined
   readonly title: ScienceTraceStepTitle
   readonly failed: boolean
   readonly anchor: ScienceTraceAnchor
 }
 
-/** One expanded list row, possibly containing consecutive successful browse calls. */
+/** One expanded list row, possibly containing consecutive non-failed browse calls. */
 export interface ScienceTraceStep {
-  /** Detailed-view destination, retained when browse rows merge. */
-  readonly firstCallId: string
   /** Parallel calls from one assistant step share this number. */
   readonly step: number
   readonly kind: ScienceTraceStepKind
   readonly failed: boolean
   readonly title: ScienceTraceStepTitle
   /** Always contains at least one real call. */
-  readonly members: readonly ScienceTraceStepMember[]
+  readonly members: readonly [ScienceTraceStepMember, ...ScienceTraceStepMember[]]
   /** Run elapsed time; absent while running or before the run record arrives. */
   readonly durationMs?: number | undefined
   readonly runStatus?: ScienceClientRun['status'] | undefined
@@ -78,7 +80,7 @@ export interface ScienceTraceStep {
   readonly anchor: ScienceTraceAnchor
 }
 
-/** One turn-sized semantic intent group. */
+/** One turn's recorded calls and artifact changes. */
 export interface ScienceTraceGroup {
   readonly turn: number
   readonly runs: readonly ScienceTraceRunRow[]
@@ -236,7 +238,7 @@ function mergeBrowseSteps(steps: readonly ScienceTraceStep[]): readonly ScienceT
   for (const step of steps) {
     const previous = rows.at(-1)
     if (step.kind === 'browse' && !step.failed && previous?.kind === 'browse' && !previous.failed) {
-      const members = [...previous.members, ...step.members]
+      const members: [ScienceTraceStepMember, ...ScienceTraceStepMember[]] = [...previous.members, ...step.members]
       rows[rows.length - 1] = { ...previous, title: { kind: 'browse-many', count: members.length },
         members, artifacts: [...previous.artifacts, ...step.artifacts] }
     } else rows.push(step)
@@ -274,7 +276,7 @@ export function buildScienceTraceModel(
 ): ScienceTraceModel {
   const callTurns = new Map<string, number>()
   const calls = new Map<string, TraceCall>()
-  const results = new Map<string, boolean>()
+  const results = new Map<string, Extract<ConversationNode, { kind: 'tool-result' }>>()
   const assistantTurns = new Set<number>()
   const dialogues: ScienceTraceDialogue[] = []
   let inferredTurn = 0
@@ -291,7 +293,7 @@ export function buildScienceTraceModel(
       if (text !== '') dialogues.push({ actor: 'user', turn: node.turn ?? Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
-    if (node.kind === 'tool-result') results.set(node.callId, node.isError)
+    if (node.kind === 'tool-result') results.set(node.callId, node)
     if (node.kind !== 'assistant') continue
     inferredTurn = Math.max(inferredTurn, node.turn)
     assistantTurns.add(node.turn)
@@ -363,11 +365,12 @@ export function buildScienceTraceModel(
     const turnCalls = orderedCalls.filter(call => call.turn === turn)
     const steps = turnCalls.map((call): ScienceTraceStep => {
       const run = runsByCall.get(call.callId)
-      const failed = run === undefined ? results.get(call.callId) ?? false : run.status !== 'running' && run.status !== 'success'
+      const result = results.get(call.callId)
+      const failed = run === undefined ? result?.isError ?? false : run.status !== 'running' && run.status !== 'success'
       const anchor = `call:${call.callId}` as const
       const title = stepTitle(call, run)
-      return { step: call.step, firstCallId: call.callId, kind: stepKind(call.name), failed, title,
-        members: [{ callId: call.callId, title, failed, anchor }],
+      return { step: call.step, kind: stepKind(call.name), failed, title,
+        members: [{ callId: call.callId, argsRaw: call.argsRaw, result, run, title, failed, anchor }],
         durationMs: run === undefined ? undefined : runDuration(run), runStatus: run?.status,
         artifacts: artifactsByCall.get(call.callId) ?? [], anchor }
     })
@@ -379,7 +382,7 @@ export function buildScienceTraceModel(
       durationMs: timing?.endTime === undefined
         ? durations.length === 0 ? undefined : durations.reduce((sum, value) => sum + value, 0)
         : Math.max(0, timing.endTime - timing.startTime),
-      steps: displayedSteps, stepCount: new Set(displayedSteps.map(step => step.step)).size, anchor: `turn:${turn}`,
+      steps: displayedSteps, stepCount: new Set(steps.map(step => step.step)).size, anchor: `turn:${turn}`,
     }
   }).filter(group => group.steps.length > 0 || group.artifacts.length > 0)
 

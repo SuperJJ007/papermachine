@@ -305,17 +305,17 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the process\'s own trajectory.view entry opens the artifact viewer and selects the detailed subview', async () => {
+  it('the process\'s own trajectory.view entry opens files without a Detailed navigation callback', async () => {
     const { ctx, slots, conversationOpenDetailsView, trajectorySelect } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('trajectory.view')[0]
     if (entry?.inject === undefined) throw new Error('expected the injected process entry')
-    const injected = (entry.inject as (sessionId: SessionId) => { openArtifact: () => void; selectDetailed: () => void })(SID)
+    const injected = (entry.inject as (sessionId: SessionId) => { openArtifact: () => void })(SID)
     injected.openArtifact()
     expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
-    injected.selectDetailed()
-    expect(trajectorySelect).toHaveBeenCalledWith(SID, 'detailed')
+    expect(injected).not.toHaveProperty('selectDetailed')
+    expect(trajectorySelect).not.toHaveBeenCalled()
     await fiber.dispose()
   })
 

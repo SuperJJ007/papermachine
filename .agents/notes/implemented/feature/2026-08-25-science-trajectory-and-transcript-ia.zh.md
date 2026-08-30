@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-25-science-trajectory-and-transcript-ia.md) | 中文
 
-三行摘要与泳道名称由[轨迹中的 Science 过程步骤](../../proposed/feature/2026-08-30-science-trace-process-view.zh.md)取代；轨迹内嵌位置、已挂载子视图与会话内容归属仍然有效。
+三行摘要与泳道名称由[轨迹中的 Science 过程步骤](2026-08-30-science-trace-process-view.zh.md)取代；轨迹内嵌位置、已挂载子视图与会话内容归属仍然有效。
 
 ## 问题
 

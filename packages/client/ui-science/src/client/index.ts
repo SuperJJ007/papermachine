@@ -311,7 +311,6 @@ export function apply(ctx: ClientContext): void {
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceTraceInjected => ({
       openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
-      selectDetailed: () => { ctx.trajectorySubviews.select(sessionId, 'detailed') },
     }),
   }, ScienceTraceView))
   ctx.slots.inject('conversation.details.view', () => ctx.slots.register({

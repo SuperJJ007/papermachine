@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-08-23-science-workbench-ui-convergence.zh.md)
 
-The Trace and Outcome placement in this record is superseded by [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). Its provenance-summary placement is superseded by [Science artifact provenance and private review](2026-08-26-science-artifact-provenance-review.md). The actor-separated timeline and forced light palette are partially superseded by [Science process steps inside Trajectory](../../proposed/feature/2026-08-30-science-trace-process-view.md). The Files stage, composer selections, settings, kernel status, and desktop toggle placement retain independent rationale. The light-reset mechanism and test described below belong to the superseded palette decision.
+The Trace and Outcome placement in this record is superseded by [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). Its provenance-summary placement is superseded by [Science artifact provenance and private review](2026-08-26-science-artifact-provenance-review.md). The actor-separated timeline and forced light palette are partially superseded by [Science process steps inside Trajectory](2026-08-30-science-trace-process-view.md). The Files stage, composer selections, settings, kernel status, and desktop toggle placement retain independent rationale. The light-reset mechanism and test described below belong to the superseded palette decision.
 
 ## Problem
 

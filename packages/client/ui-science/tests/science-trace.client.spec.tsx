@@ -193,8 +193,8 @@ describe('Science process model', () => {
     const group = model.groups[0]!
     expect(group.steps.map(row => row.title.kind)).toEqual(['browse-many', 'run', 'tool', 'tool', 'delegate', 'tool', 'state'])
     expect(group.steps[0]).toMatchObject({ step: 1, title: { kind: 'browse-many', count: 3 } })
-    expect(group.stepCount).toBe(3)
-    expect(group.steps[0]?.firstCallId).toBe('call-1-0')
+    expect(group.stepCount).toBe(4)
+    expect(group.steps[0]?.members[0]?.callId).toBe('call-1-0')
     expect(scienceTracePips(group).map(pip => pip.rowIndex)).toEqual([0, 0, 0, 1, 2, 3, 4, 5, 6])
     expect(scienceTracePips(group)[1]?.title).toEqual({ kind: 'read', name: 'b' })
     expect(model.groups[1]?.steps).toHaveLength(1)
@@ -288,6 +288,115 @@ describe('Science process model', () => {
 })
 
 describe('Science process presentation', () => {
+  it('bounds source code and arbitrary arguments, with separate truncation notices', () => {
+    mount([step(1, 1, [{ name: 'run_python', argsRaw: JSON.stringify({ code: 'x'.repeat(100_001), context: 'y'.repeat(100_001) }) }])])
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    expect(screen.getByText(/^x+$/u).textContent).toHaveLength(180)
+    fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: 'Python run' }))
+    expect(screen.getByRole('button', { name: 'Copy displayed code' })).toBeTruthy()
+    for (const name of ['Code', 'Input arguments']) {
+      const region = screen.getByRole('region', { name })
+      expect(region.querySelector('pre')?.textContent).toHaveLength(100_000)
+      expect(region.textContent).toContain('Showing first 100000 of ')
+    }
+  })
+
+  it('shows recorded code, parameters, output and run facts locally, and keeps copy controls independent', () => {
+    const callId = 'calculation'
+    const output = { ...result(callId, false), content: [{ type: 'text' as const,
+      text: '--- stdout ---\nrows=120\n--- stderr ---\n(empty)' }] }
+    const finished = { ...run(callId, 1), stdoutBytes: 9, stderrBytes: 0, stdoutTruncated: true,
+      failureCode: 'EXECUTION_ERROR' } as ScienceClientRun
+    const { inspectCall, selectDetailed } = mount([
+      step(1, 1, [{ name: 'run_python', callId, argsRaw: JSON.stringify({ code: '\nprint("rows=120")', timeout: 30 }) }]), output,
+    ], projection({ runs: [finished] }))
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    expect(screen.queryByRole('region', { name: 'Standard output' })).toBeNull()
+    expect(screen.getByText('print("rows=120")')).toBeTruthy()
+    const title = within(screen.getByRole('list')).getByRole('button', { name: 'Python run' })
+    fireEvent.click(title)
+    expect(title.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('region', { name: 'Code' }).textContent).toContain('print("rows=120")')
+    expect(screen.getByRole('region', { name: 'Input arguments' }).textContent).toContain('"timeout": 30')
+    expect(screen.getByRole('region', { name: 'Standard output' }).textContent).toContain('rows=120')
+    expect(screen.getByRole('region', { name: 'Error output' }).textContent).toContain('(empty)')
+    fireEvent.click(screen.getByText('Full tool result'))
+    expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('--- stdout ---')
+    expect(screen.getByText(/Stdout 9 bytes.*Output truncated/u)).toBeTruthy()
+    expect(screen.getByText(/Kernel #1.*Environment revision 1.*EXECUTION_ERROR/u)).toBeTruthy()
+    const details = screen.getByRole('region', { name: 'Python run' })
+    for (const target of [details, details.querySelector('h4')!, details.querySelector('p')!, details.querySelector('b')!,
+      details.parentElement!, screen.getByRole('region', { name: 'Standard output' }).querySelector('pre')!]) {
+      fireEvent.click(target)
+      expect(screen.getByRole('list')).toBeTruthy()
+    }
+    expect(title.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(title)
+    expect(screen.queryByRole('region', { name: 'Code' })).toBeNull()
+    expect(inspectCall).not.toHaveBeenCalled()
+    expect(selectDetailed).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['run_r', '{"code":"x <- 1"}', 'R run'],
+    ['run_python', '{"code":""}', 'Python run'],
+    ['run_python', '{"code":1}', 'Python run'],
+    ['read', '{', 'read'],
+    ['read', 'null', 'read'],
+    ['read', '[]', 'read'],
+  ])('keeps incomplete and empty %s inputs inspectable: %s', (name, argsRaw, label) => {
+    mount([step(1, 1, [{ name, argsRaw }])])
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: label }))
+    expect(screen.getByText('Result not yet recorded')).toBeTruthy()
+    const code = screen.queryByRole('region', { name: 'Code' })
+    if (argsRaw.includes('"code":"')) {
+      expect(code).toBeTruthy()
+      expect(screen.queryByRole('region', { name: 'Input arguments' })).toBeNull()
+    } else {
+      expect(code).toBeNull()
+      expect(screen.getByRole('region', { name: 'Input arguments' }).querySelector('pre')?.textContent?.replace(/\s/gu, '')).toBe(argsRaw)
+    }
+  })
+  it('retains unstructured output and describes non-text results without embedding raw image bytes', () => {
+    const output = { ...result('read-image', false), content: [
+      { type: 'text' as const, text: 'x'.repeat(100_001) },
+      { type: 'image' as const, attachment: { attachmentId: 'PRIVATE_IMAGE_REF' as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 } },
+    ] }
+    mount([step(1, 1, [{ name: 'read_image', callId: 'read-image', argsRaw: '{"file_path":"image.png"}' }]), output])
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: 'View image image.png' }))
+    expect(screen.getByRole('region', { name: 'Tool result' }).querySelector('pre')?.textContent).toHaveLength(100_000)
+    expect(screen.getByText('Showing first 100000 of 100001 characters.')).toBeTruthy()
+    expect(screen.getByText('1 non-text result blocks (image)')).toBeTruthy()
+    expect(screen.queryByText(/PRIVATE_IMAGE_REF/u)).toBeNull()
+  })
+  it('shows an empty recorded output distinctly from a result that has not arrived', () => {
+    mount([step(1, 1, [{ name: 'run_python', callId: 'empty', argsRaw: '{"code":"pass"}' }]), result('empty', false)])
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: 'Python run' }))
+    expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('(empty)')
+    expect(screen.queryByText('Result not yet recorded')).toBeNull()
+  })
+
+  it('toggles the whole card while preserving independent controls and text selection', () => {
+    const { nodes, science, turnTimes } = fixture()
+    const { container } = mount(nodes, science, turnTimes)
+    const card = container.querySelector('article[data-actor="agent"]')!
+    fireEvent.click(screen.getByText('Build the chart'))
+    expect(within(card as HTMLElement).getByRole('list')).toBeTruthy()
+    fireEvent.click(card)
+    expect(within(card as HTMLElement).queryByRole('list')).toBeNull()
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'chart.png v1' }))
+    expect(within(card as HTMLElement).queryByRole('list')).toBeNull()
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => 'selected text' } as Selection)
+    fireEvent.click(card)
+    expect(within(card as HTMLElement).queryByRole('list')).toBeNull()
+    selection.mockReturnValue(null)
+    fireEvent.click(card)
+    expect(within(card as HTMLElement).getByRole('list')).toBeTruthy()
+    selection.mockRestore()
+  })
+
   it.each([[999, '999 ms'], [1000, '1.0 s'], [59999, '60.0 s'], [60000, '1m 0s'],
     [137100, '2m 17s'], [361000, '6m 1s']])('formats %s milliseconds as %s', (ms, expected) => {
     expect(formatScienceTraceDuration(ms, t)).toBe(expected)
@@ -316,7 +425,7 @@ describe('Science process presentation', () => {
     expect(scienceTraceStepStatus({ ...base, failed: true }, t)).toBe('Failed')
     expect(scienceTraceStepStatus({ ...base, kind: 'other', failed: false }, t)).toBe('')
   })
-  it('starts collapsed, navigates from pips, toggles disclosure, and opens precise artifacts and calls', () => {
+  it('starts collapsed, navigates from pips, toggles disclosure, and opens precise artifacts without Detailed', () => {
     const { nodes, science, turnTimes } = fixture()
     const { container, inspectCall, selectDetailed, openArtifact, openTab } = mount(nodes, science, turnTimes)
     expect(screen.queryByRole('list', { name: 'Turn steps' })).toBeNull()
@@ -339,8 +448,9 @@ describe('Science process presentation', () => {
     fireEvent.click(within(list).getByRole('button', { name: 'chart.png v2' }))
     expect(openTab).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 2 })
     fireEvent.click(within(list).getAllByRole('button', { name: 'Python run' })[0]!)
-    expect(selectDetailed).toHaveBeenCalledTimes(1)
-    expect(inspectCall).toHaveBeenCalledExactlyOnceWith('repair-1')
+    expect(selectDetailed).not.toHaveBeenCalled()
+    expect(inspectCall).not.toHaveBeenCalled()
+    expect(within(list).getByRole('region', { name: 'Python run' })).toBeTruthy()
     const toggle = screen.getByRole('button', { name: /Collapse steps.*1 failed/u })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(toggle)
@@ -350,14 +460,17 @@ describe('Science process presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open artifact' }))
     expect(openTab).toHaveBeenLastCalledWith({ artifactId: ScienceArtifactId('chart-1'), version: 3 })
   })
-  it('opens the first member of a merged row and preserves individual pip labels', () => {
+  it('expands every member of a merged row locally and preserves individual pip labels', () => {
     const { inspectCall, selectDetailed } = mount([step(1, 1, [
       { name: 'read', argsRaw: '{"file_path":"a"}' }, { name: 'read', argsRaw: '{"file_path":"b"}' },
     ])])
     fireEvent.click(screen.getByRole('button', { name: 'Read file b' }))
     fireEvent.click(screen.getByRole('button', { name: 'Reviewed 2 sources' }))
-    expect(inspectCall).toHaveBeenCalledExactlyOnceWith('call-1-0')
-    expect(selectDetailed).toHaveBeenCalledTimes(1)
+    expect(inspectCall).not.toHaveBeenCalled()
+    expect(screen.getByRole('region', { name: 'Read file a' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Read file b' })).toBeTruthy()
+    expect(screen.getAllByText('Result not yet recorded')).toHaveLength(2)
+    expect(selectDetailed).not.toHaveBeenCalled()
     expect(screen.getByText('No produced files')).toBeTruthy()
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
   })

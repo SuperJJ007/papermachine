@@ -10,14 +10,13 @@ import {
   type ScienceTraceKernelMarker, type ScienceTraceArtifactDelta,
   type ScienceTraceStep, type ScienceTraceStepTitle,
 } from './science-trace-model.ts'
+import { ScienceTraceStepDetails, scienceTraceCodePreview } from './ScienceTraceStepDetails.tsx'
 import css from './ScienceTraceView.module.css'
 
 /** Cross-view writes supplied by the Science trace registration. */
 export interface ScienceTraceInjected {
   /** Open one exact artifact version in the Science Details stage. */
   openArtifact: (selection: { readonly artifactId: ScienceArtifactId; readonly version: number }) => void
-  /** Select the detailed Trajectory implementation before applying an inspect handoff. */
-  selectDetailed: () => void
 }
 
 /** Full props for the Science process view. */
@@ -126,14 +125,22 @@ function ArtifactChip({ artifact, open }: {
   </button>
 }
 
-/** Render process groups; expansion and the selected step live only in this mounted view. */
+function toggleSet<T>(previous: ReadonlySet<T>, value: T): ReadonlySet<T> {
+  const next = new Set(previous)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
+  return next
+}
+
+/** Render process groups; turn and call expansion stay local to this mounted view. */
 export function ScienceTraceView({
-  useSession, useProjection, inspectCall, actions, openArtifact, selectDetailed, t,
+  useSession, useProjection, actions, openArtifact, t,
 }: ScienceTraceViewProps) {
   const nodes = useSession(snapshot => snapshot.nodes)
   const turnTimes = useSession(snapshot => snapshot.turnTimings)
   const science = useProjection('science')
   const [expandedTurns, setExpandedTurns] = useState<ReadonlySet<number>>(() => new Set())
+  const [expandedSteps, setExpandedSteps] = useState<ReadonlySet<string>>(() => new Set())
   const [highlight, setHighlight] = useState<{ turn: number; row: number } | null>(null)
   const highlightedRow = useRef<HTMLLIElement>(null)
   const id = useId()
@@ -146,6 +153,9 @@ export function ScienceTraceView({
   const open: ScienceTraceInjected['openArtifact'] = (selection) => {
     actions.openTab(selection)
     openArtifact(selection)
+  }
+  const toggleTurn = (turn: number): void => {
+    setExpandedTurns(previous => toggleSet(previous, turn))
   }
   const duration = model.turns.reduce((sum, turn) => {
     const timing = turnTimes.get(turn)
@@ -190,7 +200,13 @@ export function ScienceTraceView({
                 <div className={css.turnLabel}>{t('trace.turn', { turn })}</div>
                 {group !== undefined && (
                   <article className={css.group} data-actor="agent" data-anchor={group.anchor}
-                    data-line-budget="4">
+                    data-line-budget="4" onClick={(event) => {
+                      // The native disclosure button owns keyboard access; other controls and text selection keep their own gestures.
+                      const target = event.target as HTMLElement
+                      if (target.closest('button, a, input, textarea, select, summary, pre, [data-trace-details], [role="dialog"]') !== null
+                        || window.getSelection()?.toString()) return
+                      toggleTurn(turn)
+                    }}>
                     <p className={css.request} title={request?.text}>{request === undefined ? t('trace.requestUnavailable') : compact(request.text)}</p>
                     <div className={css.strip} role="group" aria-label={t('trace.strip')}>
                       {pips.slice(0, 120).map((pip, index) => (
@@ -206,14 +222,7 @@ export function ScienceTraceView({
                     </div>
                     <button type="button" className={css.toggle} aria-expanded={expanded}
                       aria-controls={`${id}-${String(turn)}-steps`} aria-label={`${t(expanded ? 'trace.collapse' : 'trace.expand')} · ${tally}`}
-                      onClick={() => {
-                        setExpandedTurns((previous) => {
-                          const next = new Set(previous)
-                          if (next.has(turn)) next.delete(turn)
-                          else next.add(turn)
-                          return next
-                        })
-                      }}>
+                      onClick={() => { toggleTurn(turn) }}>
                       <span>{tallySteps} · {tallyRuns} ·
                         {' '}{tallyFailures !== undefined && <><b>{tallyFailures}</b> · </>}{tallyDuration}</span>
                       <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
@@ -223,21 +232,33 @@ export function ScienceTraceView({
                         {group.steps.map((step, row) => {
                           const highlighted = highlight?.turn === turn && highlight.row === row
                           const status = scienceTraceStepStatus(step, t)
+                          const detailsOpen = expandedSteps.has(step.anchor)
+                          const preview = scienceTraceCodePreview(step.members[0])
                           return <li key={step.anchor} className={css.step} data-highlight={highlighted}
                             ref={highlighted ? highlightedRow : undefined} data-anchor={step.anchor}>
                             <span className={css.stepNumber} data-repeated={step.step === group.steps[row - 1]?.step}
                               aria-label={t('trace.stepNumber', { step: step.step })}>{step.step}</span>
                             <span className={css.pip} data-kind={step.kind} data-failed={step.failed} aria-hidden="true" />
                             <div className={css.stepContent}>
-                              <button className={css.stepTitle} type="button" title={scienceTraceStepTitle(step.title, t)}
-                                onClick={() => { selectDetailed(); inspectCall(step.firstCallId) }}>
-                                {scienceTraceStepTitle(step.title, t)}
+                              <button className={css.stepTitle} type="button" aria-expanded={detailsOpen}
+                                aria-controls={`${id}-${step.anchor}-details`}
+                                onClick={() => { setExpandedSteps(previous => toggleSet(previous, step.anchor)) }}>
+                                <span aria-hidden="true">{detailsOpen ? '▾' : '▸'}</span> {scienceTraceStepTitle(step.title, t)}
                               </button>
+                              {preview !== undefined && preview !== '' && <p className={css.preview} title={preview}>
+                                {t('trace.detail.code')}: <code>{preview}</code>
+                              </p>}
+                              {step.members.length > 1 && <p className={css.preview}>
+                                {step.members.map(member => scienceTraceStepTitle(member.title, t)).join(' · ')}
+                              </p>}
                               <div className={css.chips}>{step.artifacts.map((artifact, index) => (
                                 <ArtifactChip key={index} artifact={artifact} open={open} />
                               ))}</div>
                             </div>
                             <span className={css.result} data-failed={step.failed}>{status}</span>
+                            {detailsOpen && <div className={css.detailsBody} data-trace-details="" id={`${id}-${step.anchor}-details`}>
+                              <ScienceTraceStepDetails step={step} titleOf={scienceTraceStepTitle} t={t} />
+                            </div>}
                           </li>
                         })}
                       </ol>

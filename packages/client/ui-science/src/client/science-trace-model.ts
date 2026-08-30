@@ -1,4 +1,4 @@
-/** Pure Science semantic-trace projection over conversation nodes and the browser-safe Science projection. */
+/** Pure Science process projection over conversation nodes and the browser-safe Science projection. */
 
 import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -33,15 +33,57 @@ export interface ScienceTraceRunRow {
   readonly anchor: ScienceTraceAnchor
 }
 
+/** Step classification shared by the strip and expanded list. */
+export type ScienceTraceStepKind = 'run' | 'browse' | 'curate' | 'publish' | 'delegate' | 'other'
+
+/** Structured step title; localization belongs to the view. */
+export type ScienceTraceStepTitle =
+  | { readonly kind: 'run'; readonly language: string }
+  | { readonly kind: 'read'; readonly name: string }
+  | { readonly kind: 'read-image'; readonly name: string }
+  | { readonly kind: 'glob'; readonly pattern: string }
+  | { readonly kind: 'grep'; readonly pattern: string }
+  | { readonly kind: 'state' }
+  | { readonly kind: 'annotate'; readonly name: string; readonly version: number; readonly title: string }
+  | { readonly kind: 'publish'; readonly title: string }
+  | { readonly kind: 'delegate' }
+  | { readonly kind: 'tool'; readonly name: string }
+  | { readonly kind: 'browse-many'; readonly count: number }
+
+/** One real call, retained separately even when its list row is merged. */
+export interface ScienceTraceStepMember {
+  readonly callId: string
+  readonly title: ScienceTraceStepTitle
+  readonly failed: boolean
+  readonly anchor: ScienceTraceAnchor
+}
+
+/** One expanded list row, possibly containing consecutive successful browse calls. */
+export interface ScienceTraceStep {
+  /** Parallel calls from one assistant step share this number. */
+  readonly step: number
+  readonly kind: ScienceTraceStepKind
+  readonly failed: boolean
+  readonly title: ScienceTraceStepTitle
+  readonly members: readonly ScienceTraceStepMember[]
+  /** Run elapsed time; absent while running or before the run record arrives. */
+  readonly durationMs?: number | undefined
+  readonly runStatus?: ScienceClientRun['status'] | undefined
+  readonly artifacts: readonly ScienceTraceArtifactDelta[]
+  readonly anchor: ScienceTraceAnchor
+}
+
 /** One turn-sized semantic intent group. */
 export interface ScienceTraceGroup {
   readonly turn: number
   readonly runs: readonly ScienceTraceRunRow[]
   readonly artifacts: readonly ScienceTraceArtifactDelta[]
   readonly failedCount: number
+  /** Turn wall time, falling back to completed run durations without a turn end. */
   readonly durationMs?: number | undefined
-  readonly miscToolCount: number
-  readonly delegatedCallIds: readonly string[]
+  readonly steps: readonly ScienceTraceStep[]
+  /** Distinct assistant step numbers, including steps without tool calls. */
+  readonly stepCount: number
   readonly anchor: ScienceTraceAnchor
 }
 
@@ -62,7 +104,7 @@ export interface ScienceTraceHumanEdit {
   readonly anchor: ScienceTraceAnchor
 }
 
-/** Environment and current kernel summary shown once above the intent groups. */
+/** Environment facts used by kernel lifecycle labels. */
 export interface ScienceTraceEnvironment {
   readonly profileId: string
   readonly languages: readonly string[]
@@ -104,12 +146,100 @@ function runDuration(run: ScienceClientRun): number | undefined {
   return run.status === 'running' ? undefined : Math.max(0, run.finishedAt - run.startedAt)
 }
 
+interface TraceCall {
+  readonly callId: string
+  readonly name: string
+  readonly argsRaw: string
+  readonly turn: number
+  readonly step: number
+  readonly seq: number
+}
+
+function basename(value: string): string {
+  return value.slice(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1)
+}
+
+function shortTitle(value: string): string {
+  return value.length > 40 ? `${value.slice(0, 40)}…` : value
+}
+
+function stepKind(name: string): ScienceTraceStepKind {
+  switch (name) {
+    case 'run_python': case 'run_r': return 'run'
+    case 'read': case 'read_image': case 'glob': case 'grep': case 'get_science_state': return 'browse'
+    case 'annotate_artifact': return 'curate'
+    case 'publish_outcome': return 'publish'
+    default: return name.startsWith('subagent') ? 'delegate' : 'other'
+  }
+}
+
+function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceTraceStepTitle {
+  const fallback = { kind: 'tool', name: call.name } as const
+  let args: unknown
+  try { args = JSON.parse(call.argsRaw) }
+  catch {
+    // Model tool arguments may be incomplete or invalid JSON; retain the tool name.
+    return fallback
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return fallback
+  switch (call.name) {
+    case 'run_python': case 'run_r':
+      return { kind: 'run', language: run?.language ?? (call.name === 'run_r' ? 'r' : 'python') }
+    case 'read': case 'read_image':
+      return 'file_path' in args && typeof args.file_path === 'string'
+        ? { kind: call.name === 'read' ? 'read' : 'read-image', name: basename(args.file_path) } : fallback
+    case 'glob': case 'grep': {
+      if (!('pattern' in args) || typeof args.pattern !== 'string') return fallback
+      const pattern = args.pattern
+      return { kind: call.name, pattern: /^(?:[/\\]|[a-z]:[/\\])/iu.test(pattern) ? basename(pattern) : pattern }
+    }
+    case 'get_science_state': return { kind: 'state' }
+    case 'annotate_artifact':
+      return 'logical_name' in args && typeof args.logical_name === 'string'
+        && 'version' in args && typeof args.version === 'number'
+        && 'title' in args && typeof args.title === 'string'
+        ? { kind: 'annotate', name: basename(args.logical_name), version: args.version, title: shortTitle(args.title) } : fallback
+    case 'publish_outcome':
+      return 'title' in args && typeof args.title === 'string' ? { kind: 'publish', title: shortTitle(args.title) } : fallback
+    default: return call.name.startsWith('subagent') ? { kind: 'delegate' } : fallback
+  }
+}
+
+function mergeBrowseSteps(steps: readonly ScienceTraceStep[]): readonly ScienceTraceStep[] {
+  const rows: ScienceTraceStep[] = []
+  for (const step of steps) {
+    const previous = rows.at(-1)
+    if (step.kind === 'browse' && !step.failed && previous?.kind === 'browse' && !previous.failed) {
+      const members = [...previous.members, ...step.members]
+      rows[rows.length - 1] = { ...previous, title: { kind: 'browse-many', count: members.length },
+        members, artifacts: [...previous.artifacts, ...step.artifacts] }
+    } else rows.push(step)
+  }
+  return rows
+}
+
 /**
- * Build the trace's turn groups without parsing model prose, source code, or shell text.
- * @param nodes - assembled conversation nodes.
- * @param science - current browser-safe Science projection.
- * @param turnTimes - authoritative turn timing map.
- * @returns semantic trace grouped by turn.
+ * Expand every real call into a strip pip without losing merged-row destinations.
+ * @param group - One turn's process group.
+ * @returns Call-ordered pips pointing at expanded list rows.
+ */
+export function scienceTracePips(group: ScienceTraceGroup): readonly {
+  readonly rowIndex: number
+  readonly kind: ScienceTraceStepKind
+  readonly failed: boolean
+  readonly title: ScienceTraceStepTitle
+}[] {
+  return group.steps.flatMap((step, rowIndex) => step.members.map(member => ({
+    rowIndex, kind: step.kind, failed: member.failed, title: member.title,
+  })))
+}
+
+/**
+ * Build ordered process steps without parsing model prose, source code, or shell text.
+ * @param nodes - Assembled conversation nodes.
+ * @param science - Current browser-safe Science projection.
+ * @param turnTimes - Authoritative turn timing map.
+ * @returns Process steps and artifact changes grouped by turn.
  */
 export function buildScienceTraceModel(
   nodes: readonly ConversationNode[],
@@ -117,7 +247,9 @@ export function buildScienceTraceModel(
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
 ): ScienceTraceModel {
   const callTurns = new Map<string, number>()
-  const calls = new Map<string, { readonly name: string; readonly turn: number }>()
+  const calls = new Map<string, TraceCall>()
+  const results = new Map<string, boolean>()
+  const assistantSteps = new Map<number, Set<number>>()
   const dialogues: ScienceTraceDialogue[] = []
   let inferredTurn = 0
   for (const node of nodes) {
@@ -125,28 +257,30 @@ export function buildScienceTraceModel(
       const text = textOf(node)
       if (text === '') continue
       inferredTurn += 1
-      dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq,
-        anchor: `seq:${node.seq}` })
+      dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'steering') {
       const text = textOf(node)
-      if (text !== '') dialogues.push({ actor: 'user', turn: Math.max(1, inferredTurn), text, seq: node.seq,
-        anchor: `seq:${node.seq}` })
+      if (text !== '') dialogues.push({ actor: 'user', turn: Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
+    if (node.kind === 'tool-result') results.set(node.callId, node.isError)
     if (node.kind !== 'assistant') continue
     inferredTurn = Math.max(inferredTurn, node.turn)
+    const steps = assistantSteps.get(node.turn) ?? new Set<number>()
+    steps.add(node.step)
+    assistantSteps.set(node.turn, steps)
     for (const block of node.blocks) {
       if (block.kind === 'tool-call') {
         callTurns.set(block.callId, node.turn)
-        calls.set(block.callId, { name: block.name, turn: node.turn })
+        calls.set(block.callId, { ...block, turn: node.turn, step: node.step, seq: node.seq })
       }
     }
   }
 
   const lastTurn = Math.max(1, inferredTurn)
-  const artifactsByTurn = new Map<number, ScienceClientArtifactVersion[]>()
+  const artifactsByTurn = new Map<number, Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>[]>()
   const humanEdits: ScienceTraceHumanEdit[] = []
   const seenVersions = new Set<string>()
   for (const artifact of science.artifacts) {
@@ -161,6 +295,7 @@ export function buildScienceTraceModel(
   }
 
   const runsByTurn = new Map<number, ScienceClientRun[]>()
+  const runsByCall = new Map(science.runs.map(run => [run.toolCallId as string, run]))
   for (const run of science.runs) {
     const turn = callTurns.get(run.toolCallId) ?? lastTurn
     const list = runsByTurn.get(turn) ?? []
@@ -169,38 +304,55 @@ export function buildScienceTraceModel(
   }
 
   const turns = [...new Set([
-    ...dialogues.map(item => item.turn), ...runsByTurn.keys(), ...artifactsByTurn.keys(), ...humanEdits.map(item => item.turn),
+    ...dialogues.map(item => item.turn), ...assistantSteps.keys(), ...runsByTurn.keys(),
+    ...artifactsByTurn.keys(), ...humanEdits.map(item => item.turn),
   ])].sort((a, b) => a - b)
+  const orderedCalls = [...calls.values()].sort((a, b) => a.seq - b.seq)
   const groups = turns.map((turn): ScienceTraceGroup => {
     const runRows = (runsByTurn.get(turn) ?? []).map((run): ScienceTraceRunRow => ({
       run, callId: run.toolCallId, durationMs: runDuration(run), failed: run.status !== 'running' && run.status !== 'success',
       anchor: `run:${run.runId}`,
     }))
+    const artifactsByCall = new Map<string, ScienceTraceArtifactDelta[]>()
     const artifacts = (artifactsByTurn.get(turn) ?? []).map((artifact): ScienceTraceArtifactDelta => {
       const key = `${artifact.artifactId}@${artifact.version}`
       const curated = seenVersions.has(key)
       seenVersions.add(key)
       const base = {
-        artifactId: artifact.artifactId, logicalName: artifact.logicalName, title: artifact.title,
+        artifactId: artifact.artifactId, logicalName: basename(artifact.logicalName), title: artifact.title,
         version: artifact.version,
         anchor: `artifact:${artifact.artifactId}@${artifact.version}` as const,
       } satisfies ScienceTraceArtifactDeltaBase
-      if (curated) return { ...base, action: 'curated' }
-      if (artifact.parent === undefined) return { ...base, action: 'created' }
-      return { ...base, action: 'advanced', parentVersion: artifact.parent.version }
+      const delta: ScienceTraceArtifactDelta = curated ? { ...base, action: 'curated' }
+        : artifact.parent === undefined ? { ...base, action: 'created' }
+          : { ...base, action: 'advanced', parentVersion: artifact.parent.version }
+      const callId = artifact.toolCallId
+      const list = artifactsByCall.get(callId) ?? []
+      list.push(delta)
+      artifactsByCall.set(callId, list)
+      return delta
     })
-    const turnCalls = [...calls.entries()].filter(([, call]) => call.turn === turn)
-    const runCallIds = new Set(runRows.map(row => row.callId))
-    const delegatedCallIds = turnCalls.filter(([, call]) => call.name.startsWith('subagent')).map(([callId]) => callId)
-    const miscToolCount = turnCalls.filter(([callId, call]) => !runCallIds.has(callId) && !call.name.startsWith('subagent')).length
+    const turnCalls = orderedCalls.filter(call => call.turn === turn)
+    const steps = turnCalls.map((call): ScienceTraceStep => {
+      const run = runsByCall.get(call.callId)
+      const failed = run === undefined ? results.get(call.callId) ?? false : run.status !== 'running' && run.status !== 'success'
+      const anchor = `call:${call.callId}` as const
+      const title = stepTitle(call, run)
+      return { step: call.step, kind: stepKind(call.name), failed, title,
+        members: [{ callId: call.callId, title, failed, anchor }],
+        durationMs: run === undefined ? undefined : runDuration(run), runStatus: run?.status,
+        artifacts: artifactsByCall.get(call.callId) ?? [], anchor }
+    })
     const durations = runRows.flatMap(row => row.durationMs === undefined ? [] : [row.durationMs])
+    const timing = turnTimes.get(turn)
     return {
-      turn, runs: runRows, artifacts, failedCount: runRows.filter(row => row.failed).length,
-      durationMs: durations.length === 0 ? undefined : durations.reduce((sum, value) => sum + value, 0),
-      miscToolCount, delegatedCallIds, anchor: `turn:${turn}`,
+      turn, runs: runRows, artifacts, failedCount: steps.filter(step => step.failed).length,
+      durationMs: timing?.endTime === undefined
+        ? durations.length === 0 ? undefined : durations.reduce((sum, value) => sum + value, 0)
+        : Math.max(0, timing.endTime - timing.startTime),
+      steps: mergeBrowseSteps(steps), stepCount: assistantSteps.get(turn)?.size ?? 0, anchor: `turn:${turn}`,
     }
-  }).filter(group => group.runs.length > 0 || group.artifacts.length > 0
-    || group.miscToolCount > 0 || group.delegatedCallIds.length > 0)
+  }).filter(group => group.steps.length > 0 || group.artifacts.length > 0)
 
   const environment = science.environment === null ? undefined : {
     profileId: science.environment.profileId,

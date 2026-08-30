@@ -22,7 +22,7 @@ type Stored = { readonly artifact: ArtifactRecord; readonly version: VersionReco
 
 function processFixture(projectId: ProjectId, stored: Stored): string {
   const session = Session.create(SessionId(SEED_ID))
-  const origin = Date.now() - 60_000 - 500
+  const origin = Date.now() - 120_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
   session.append('turn/start', { turn: 1 })
   session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'process-browser' } })
@@ -40,7 +40,6 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
   const user = session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Draw a scatter plot.' }],
     source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('session/title', { title: 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
-  let requestSeq = 0
   const artifact = {
     artifactId: stored.artifact.artifactId, producerSessionId: session.id, logicalName: 'scatter_plot.png', version: 1,
     title: 'Scatter plot', origin: 'auto' as const, projectId, versionId: stored.version.versionId,
@@ -54,14 +53,13 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
     ['read', { file_path: '/Users/private/schema.json' }],
     ['read', { file_path: '/Users/private/notes.md' }],
     ['run_python', { code: 'print("PRIVATE_STDOUT")' }],
-    ['annotate_artifact', { logical_name: 'scatter_plot.png', version: 1, title: 'Scatter plot' }],
+    ['annotate_artifact', { logical_name: 'scatter_plot.png', title: 'Scatter plot' }],
   ] as const
   calls.forEach(([name, args], index) => {
     const step = index + 1
     const callId = CallId(`process-call-${String(index === 4 ? 2 : index === 0 ? 1 : step + 10)}`)
     session.append('step/start', { turn: 1, step })
     const request = session.append('request/header', { header: { config: { provider: 'fixture', model: 'fixture' } }, reason: 'initial' })
-    requestSeq = request.seq
     session.append('assistant/message', { turn: 1, step, message: createAssistantMessage({
       content: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }],
       source: { provider: 'fixture', model: 'fixture' },
@@ -81,16 +79,19 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
         ...artifact, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 3),
       } })
     }
+    if (name === 'annotate_artifact') session.append('science/artifact-saved', { version: 1, artifact: {
+      ...artifact, origin: 'model', toolCallId: callId, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 1),
+    } })
     session.append('tool/result', { turn: 1, step, message: createToolResultMessage({
       callId, content: [{ type: 'text', text: 'PRIVATE_TOOL_OUTPUT' }], isError: index === 0,
     }) }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     session.append('step/end', { turn: 1, step })
   })
   session.append('science/kernel-state', { version: 1, kernel: {
-    ...kernel, state: 'exited', reason: 'idle', startedAt: eventTime(3), at: eventTime(requestSeq + 4),
+    ...kernel, state: 'exited', reason: 'idle', startedAt: eventTime(3), at: eventTime(session.events.length),
   } })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  return [JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: 0,
+  return [JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: origin,
     cwd: '{{cwd}}', agentPreset: 'science' }), ...session.events.map(event => JSON.stringify({ ...event, time: eventTime(event.seq) })), ''].join('\n')
 }
 
@@ -124,9 +125,19 @@ describe('web e2e: Science process view', () => {
     expect(await process.getByRole('group', { name: 'Step strip' }).getByRole('button').count()).toBe(6)
     const collapsed = await captureStableAria(page, selector, scaffold.workspaceCwd)
     expect(collapsed).toContain('Python kernel #1 exited (idle)')
+    expect(await process.locator('[data-kind="kernel"]').evaluateAll(markers =>
+      markers.map(marker => marker.getAttribute('data-anchor')))).toEqual([
+      'kernel:python:1:started', 'kernel:python:1:exited',
+    ])
+    expect(await process.locator('[data-kind="kernel"]').first().evaluate(marker =>
+      marker.getBoundingClientRect().top < document.querySelector('[data-line-budget]')!.getBoundingClientRect().top)).toBe(true)
     await process.getByRole('button', { name: 'Read file schema.json' }).click()
     expect(await process.locator('[data-highlight="true"]').innerText()).toContain('Reviewed 3 sources')
     expect(await process.getByRole('listitem').count()).toBe(4)
+    const annotation = process.getByRole('listitem').filter({ hasText: 'Annotate scatter_plot.png “Scatter plot”' })
+    expect(await annotation.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).count()).toBe(0)
+    expect(await process.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'scatter_plot.png v1', exact: true }) })
+      .getByRole('button', { name: 'Python run', exact: true }).count()).toBe(1)
     const expanded = await captureStableAria(page, selector, scaffold.workspaceCwd)
     expect(expanded).not.toMatch(/PRIVATE_|\/Users\/|raise ValueError|print\(/u)
     await compareOrRefreshGolden(EXPECTED, ['## Collapsed', collapsed, '## Expanded', expanded].join('\n'), MODE)
@@ -138,8 +149,51 @@ describe('web e2e: Science process view', () => {
     expect(await process.getByRole('listitem').count()).toBe(4)
     await page.setViewportSize({ width: 720, height: 720 })
     expect(await process.evaluate(root => root.scrollWidth <= root.clientWidth)).toBe(true)
-    expect(await process.locator('[data-line-budget="3"]').evaluate(card => card.scrollWidth <= card.clientWidth)).toBe(true)
+    expect(await process.locator('[data-line-budget="4"]').evaluate(card => card.scrollWidth <= card.clientWidth)).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
+  }, 60_000)
+
+  it('applies light, dark and system preferences to an active Science workbench while preserving image pixels', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-process-theme'))
+    await page.setViewportSize({ width: 1280, height: 720 })
+    const chooseTheme = async (name: 'Light' | 'Dark' | 'System') => {
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
+      const option = page.getByRole('dialog').getByRole('button', { name, exact: true })
+      await option.click()
+      await expect.poll(() => option.getAttribute('aria-pressed')).toBe('true')
+      await page.keyboard.press('Escape')
+    }
+    const renderedPalette = () => page.locator('[class*="frame"], [class*="sidebarCol"], [aria-label="Science process view"]')
+      .evaluateAll(elements => elements.map((element) => {
+        const style = getComputedStyle(element)
+        return { background: style.backgroundColor, scheme: style.colorScheme }
+      }))
+    await chooseTheme('Light')
+    const light = await renderedPalette()
+    expect(light).toHaveLength(3)
+    const picture = page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u })
+    const imagePixels = () => picture.evaluate((image) => {
+      const style = getComputedStyle(image)
+      return { background: style.backgroundColor, filter: style.filter, opacity: style.opacity }
+    })
+    const originalPixels = await imagePixels()
+    expect(originalPixels).toEqual({ background: 'rgb(255, 255, 255)', filter: 'none', opacity: '1' })
+    await chooseTheme('Dark')
+    const dark = await renderedPalette()
+    expect(dark).toHaveLength(3)
+    for (const [index, surface] of dark.entries()) {
+      expect(surface.scheme).toBe('dark')
+      expect(surface.background).not.toBe(light[index]!.background)
+    }
+    expect(await imagePixels()).toEqual(originalPixels)
+    await chooseTheme('Light')
+    expect(await renderedPalette()).toEqual(light)
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await chooseTheme('System')
+    await expect.poll(renderedPalette).toEqual(dark)
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(renderedPalette).toEqual(light)
+    expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

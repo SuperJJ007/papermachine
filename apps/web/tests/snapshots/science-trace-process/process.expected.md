@@ -1,6 +1,6 @@
 ## Collapsed
 - region "Science process view":
-  - text: 1 turns · 6 steps · 2 runs · 1 artifacts · 48.0 s Turn 1
+  - text: "Turns 1 · Steps 4 · Runs 2 · Artifacts 1 · 49.0 s Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared Turn 1"
   - article:
     - paragraph: Draw a scatter plot.
     - group "Step strip":
@@ -9,15 +9,14 @@
       - button "Read file schema.json"
       - button "Read file notes.md"
       - button "Python run"
-      - button "Annotate scatter_plot.png v1 “Scatter plot”"
-    - button "Expand steps · 6 steps · 2 runs · 1 failed · 48.0 s": 6 steps · 2 runs · 1 failed · 48.0 s
+      - button "Annotate scatter_plot.png “Scatter plot”"
+    - button "Expand steps · Steps 4 · Runs 2 · 1 failed · 49.0 s": Steps 4 · Runs 2 · 1 failed · 49.0 s
     - button "scatter_plot.png v1":
       - img
       - code: scatter_plot.png v1
-  - text: "Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared"
 ## Expanded
 - region "Science process view":
-  - text: 1 turns · 6 steps · 2 runs · 1 artifacts · 48.0 s Turn 1
+  - text: "Turns 1 · Steps 4 · Runs 2 · Artifacts 1 · 49.0 s Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared Turn 1"
   - article:
     - paragraph: Draw a scatter plot.
     - group "Step strip":
@@ -26,13 +25,13 @@
       - button "Read file schema.json"
       - button "Read file notes.md"
       - button "Python run"
-      - button "Annotate scatter_plot.png v1 “Scatter plot”"
-    - button "Collapse steps · 6 steps · 2 runs · 1 failed · 48.0 s" [expanded]: 6 steps · 2 runs · 1 failed · 48.0 s
+      - button "Annotate scatter_plot.png “Scatter plot”"
+    - button "Collapse steps · Steps 4 · Runs 2 · 1 failed · 49.0 s" [expanded]: Steps 4 · Runs 2 · 1 failed · 49.0 s
     - list "Turn steps":
       - listitem:
         - text: "1"
         - button "Python run"
-        - text: ● Failed
+        - text: Failed
       - listitem:
         - text: "2"
         - button "Reviewed 3 sources"
@@ -42,11 +41,10 @@
         - button "scatter_plot.png v1":
           - img
           - code: scatter_plot.png v1
-        - text: ● Success · 1.0 s
+        - text: Success · 1.0 s
       - listitem:
         - text: "6"
-        - button "Annotate scatter_plot.png v1 “Scatter plot”"
+        - button "Annotate scatter_plot.png “Scatter plot”"
     - button "scatter_plot.png v1":
       - img
       - code: scatter_plot.png v1
-  - text: "Python kernel #1 started · environment science Python kernel #1 exited (idle) · variables cleared"

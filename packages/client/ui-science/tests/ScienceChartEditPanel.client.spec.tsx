@@ -84,6 +84,27 @@ function expandRow(name: string): HTMLElement {
   return row
 }
 
+describe('ScienceChartEditPanel: two-column layout', () => {
+  it('renders one columns container with direct edits on the left and reference chips on the right', () => {
+    panel()
+    const heading = screen.getByText('Modify elements')
+    const directSection = heading.closest('section')
+    if (directSection === null) throw new Error('expected direct-edit section')
+    const columns = directSection.parentElement
+    if (columns === null) throw new Error('expected columns container')
+    const [left, right] = columns.children
+    expect(left).toBe(directSection)
+    expect(within(directSection).getAllByRole('listitem').length).toBeGreaterThan(0)
+    expect(right?.querySelector('h4')?.textContent).toBe('Reference for AI editing')
+    expect(within(right as HTMLElement).getByRole('button', { name: 'Add Series · treatment to the conversation' })).toBeTruthy()
+  })
+
+  it('does not render a separate Direct edits heading', () => {
+    panel()
+    expect(screen.queryByText('Direct edits')).toBeNull()
+  })
+})
+
 describe('ScienceChartEditPanel: full element list', () => {
   it('splits every chart element between always-visible direct rows and reference chips', () => {
     panel()

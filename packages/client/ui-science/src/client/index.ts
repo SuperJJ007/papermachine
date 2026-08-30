@@ -43,6 +43,7 @@ import { ScienceGlobalToggle } from './ScienceGlobalToggle.tsx'
 import { ScienceEmptyDetails } from './ScienceEmptyDetails.tsx'
 import { ScienceComposerChips } from './ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from './composer-selections.ts'
+import { scienceElementLabel } from './science-element-label.ts'
 import { ScienceDestinations } from './ScienceDestinations.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
 import { ScienceTurnArtifacts, type ScienceTurnArtifactsInjected } from './ScienceTurnArtifacts.tsx'
@@ -289,6 +290,20 @@ export function apply(ctx: ClientContext): void {
   // Registration-time text reads through the bound translator; components
   // read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
+  ctx.conversationEvents.registerUserInput('science-edit', (message) => {
+    const source = message.source
+    if (source.kind !== 'science-edit') throw new Error('Science input requires a science-edit source')
+    return {
+      content: [{ type: 'text', text: source.instruction }, ...message.content.filter(block => block.type === 'image')],
+      references: source.targets.map(({ logicalName, version, target, comment }) => {
+        const label = target.kind === 'element'
+          ? scienceElementLabel(target.elementKind, target.label, t,
+            target.elementId.startsWith('axes[') && target.axes !== null ? target.axes + 1 : undefined, target.current, target.elementId)
+          : t('edit.regionTarget', { x: Math.round(target.x * 100), y: Math.round(target.y * 100) })
+        return `${logicalName} v${String(version)} · ${label}${comment ? `: ${comment}` : ''}`
+      }),
+    }
+  })
   ctx.effect(() => ctx.trajectorySubviews.registerVisibility('process', createTraceVisibilitySource(ctx)),
     'ui-science: process visibility')
   ctx.slots.inject('trajectory.view', () => ctx.slots.register({

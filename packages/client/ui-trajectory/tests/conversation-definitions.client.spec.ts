@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { describe, expect, it } from 'vitest'
 import type {
   ConversationEventInput, ConversationNodeDefinition, ConversationViewDefinition,
@@ -15,6 +16,7 @@ import { registerTrajectoryToolDefinition } from '../src/client/trajectory-tool-
 const DEFINITIONS: ConversationNodeDefinition[] = []
 const registrationContext = {
   conversationEvents: {
+    userInput: (message: SessionEvent<'user/message'>['data']) => message.source.kind === 'user' ? { content: message.content } : undefined,
     register: (definition: ConversationNodeDefinition) => {
       DEFINITIONS.push(definition)
       return () => {}

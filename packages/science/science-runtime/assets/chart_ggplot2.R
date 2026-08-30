@@ -2,6 +2,7 @@
 
 .dsh_chart_state <- new.env(parent = emptyenv())
 .dsh_chart_state$traced <- FALSE
+.dsh_chart_state$png <- grDevices::png
 
 .dsh_inside <- function(path, root) {
   target <- normalizePath(path, mustWork = FALSE)
@@ -9,7 +10,7 @@
   identical(target, base) || startsWith(target, paste0(base, .Platform$file.sep))
 }
 
-install_ggsave_hook <- function(register) {
+install_ggsave_hook <- function(register, register_device) {
   install_now <- function(...) {
     if (.dsh_chart_state$traced || !("ggplot2" %in% loadedNamespaces())) return(invisible(NULL))
     target <- get("ggsave", envir = asNamespace("ggplot2"))
@@ -24,11 +25,103 @@ install_ggsave_hook <- function(register) {
     # Repeated registration is harmless on releases whose exit tracer runs.
     trace("ggsave", tracer = register_exit, exit = register_exit, at = return_index,
           print = FALSE, where = asNamespace("ggplot2"))
+    for (class_name in c("ggplot", "ggplot2::ggplot")) {
+      original <- utils::getS3method("print", class_name, optional = TRUE)
+      if (is.null(original)) next
+      wrapped <- local({
+        method <- original
+        function(x, ...) {
+          result <- withVisible(method(x, ...))
+          .dsh_record_plot(x, list(...))
+          if (result$visible) result$value else invisible(result$value)
+        }
+      })
+      registerS3method("print", class_name, wrapped, envir = asNamespace("base"))
+    }
     .dsh_chart_state$traced <- TRUE
     invisible(NULL)
   }
   setHook(packageEvent("ggplot2", "onLoad"), install_now, action = "append")
   install_now()
+  .dsh_install_png_hook(register_device)
+}
+
+# Only one complete ggplot rendered on a tracked PNG device is addressable.
+# Base graphics, viewport composition, and multi-page output retain raster editing.
+.dsh_chart_state$devices <- new.env(parent = emptyenv())
+
+.dsh_record_plot <- function(plot, args) {
+  key <- as.character(grDevices::dev.cur())
+  entry <- .dsh_chart_state$devices[[key]]
+  if (is.null(entry)) return(invisible(NULL))
+  entry$count <- entry$count + 1L
+  if (entry$count == 1L && is.null(args$vp) && !identical(args$newpage, FALSE)) {
+    entry$chart <- .dsh_chart_entry(plot, entry$dpi, entry$save_args)
+  } else entry$chart <- NULL
+  .dsh_chart_state$devices[[key]] <- entry
+  invisible(NULL)
+}
+
+.dsh_install_png_hook <- function(register) {
+  opened <- function(frame) {
+    root <- Sys.getenv("SCIENCE_ARTIFACT_DIR", unset = "")
+    filename <- get("filename", frame)
+    if (root == "" || grepl("%", filename, fixed = TRUE) || !.dsh_inside(filename, root)) return(invisible(NULL))
+    register(filename, NULL)
+    resolution <- get("res", frame)
+    dpi <- if (is.finite(resolution) && resolution > 0) resolution else 72
+    geometry <- get("g", frame)
+    size <- c(geometry$width, geometry$height) / dpi
+    options <- get("d", frame)
+    .dsh_chart_state$devices[[as.character(grDevices::dev.cur())]] <- list(
+      filename = normalizePath(filename, mustWork = FALSE), root = root, count = 0L, dpi = dpi,
+      save_args = list(device = eval(quote(function(filename, width, height, ...) {
+        png_device(filename, round(width * resolution), round(height * resolution), units = "px", res = resolution, ...)
+      }), list2env(list(resolution = dpi, png_device = .dsh_chart_state$png), parent = baseenv())), width = size[1], height = size[2], units = "in", dpi = dpi,
+                       type = get("type", frame), family = options$family, antialias = options$antialias,
+                       pointsize = get("pointsize", frame), bg = get("bg", frame)))
+    invisible(NULL)
+  }
+  closed <- function(frame) {
+    key <- as.character(get("which", frame))
+    entry <- .dsh_chart_state$devices[[key]]
+    if (is.null(entry)) return(invisible(NULL))
+    rm(list = key, envir = .dsh_chart_state$devices)
+    if (identical(entry$root, Sys.getenv("SCIENCE_ARTIFACT_DIR")) && !is.null(entry$chart)) {
+      register(entry$filename, entry$chart)
+    }
+    invisible(NULL)
+  }
+  invalidate <- function() {
+    key <- as.character(grDevices::dev.cur())
+    entry <- .dsh_chart_state$devices[[key]]
+    if (!is.null(entry)) {
+      entry$count <- entry$count + 1L
+      entry$chart <- NULL
+      .dsh_chart_state$devices[[key]] <- entry
+    }
+    invisible(NULL)
+  }
+  for (where in list(asNamespace("grDevices"), as.environment("package:grDevices"))) {
+    trace("png", exit = substitute(callback(environment()), list(callback = opened)), print = FALSE, where = where)
+    trace("dev.off", exit = substitute(callback(environment()), list(callback = closed)), print = FALSE, where = where)
+  }
+  for (where in list(asNamespace("graphics"), as.environment("package:graphics"))) {
+    trace("plot.new", tracer = substitute(callback(), list(callback = invalidate)), print = FALSE, where = where)
+  }
+  invisible(NULL)
+}
+
+.dsh_chart_entry <- function(plot, dpi, save_args) {
+  tryCatch({
+    plot <- plot + .dsh_theme_for(plot)
+    list(snapshot = serialize(list(plot = plot, dpi = dpi, save_args = save_args), NULL))
+  }, error = function(e) list(error = conditionMessage(e)))
+}
+
+.dsh_copy_chart <- function(entry) {
+  if (!is.null(entry$error)) stop(entry$error)
+  unserialize(entry$snapshot)
 }
 
 .dsh_theme_for <- function(plot) {
@@ -74,10 +167,10 @@ extract_elements <- function(plot) {
   panel_params <- built$layout$panel_params
   panels <- length(panel_params)
   theme <- .dsh_theme_for(plot)
-  if (!is.null(plot$labels$title)) add("title", "title", NULL, NULL, plot$labels$title)
-  if (!is.null(plot$labels$subtitle)) add("subtitle", "subtitle", NULL, NULL, plot$labels$subtitle)
-  if (!is.null(plot$labels$x)) add("x_label", "x_label", NULL, NULL, plot$labels$x)
-  if (!is.null(plot$labels$y)) add("y_label", "y_label", NULL, NULL, plot$labels$y)
+  if (!is.null(built$plot$labels$title)) add("title", "title", NULL, NULL, built$plot$labels$title)
+  if (!is.null(built$plot$labels$subtitle)) add("subtitle", "subtitle", NULL, NULL, built$plot$labels$subtitle)
+  if (!is.null(built$plot$labels$x)) add("x_label", "x_label", NULL, NULL, built$plot$labels$x)
+  if (!is.null(built$plot$labels$y)) add("y_label", "y_label", NULL, NULL, built$plot$labels$y)
   axis_text <- tryCatch(ggplot2::calc_element("axis.text.x", theme), error = function(e) NULL)
   if (!is.null(axis_text)) add("tick_labels", "tick_labels", NULL, NULL,
                                list(size = axis_text$size, angle = axis_text$angle))
@@ -94,7 +187,7 @@ extract_elements <- function(plot) {
     }
     add("legend", "legend", NULL, NULL,
         c(position_current,
-          list(title = if (!is.null(plot$labels$fill)) plot$labels$fill else plot$labels$colour,
+          list(title = if (!is.null(built$plot$labels$fill)) built$plot$labels$fill else built$plot$labels$colour,
                visible = !identical(position_value, "none"))))
     labels <- scale$get_labels()
     breaks <- scale$get_breaks()
@@ -128,8 +221,14 @@ extract_elements <- function(plot) {
   for (index in seq_along(plot$layers)) {
     geom <- class(plot$layers[[index]]$geom)[1]
     if (geom %in% annotation_geoms) {
-      add(paste0("annotation[layer", index, ":", geom, "]"), "annotation", NULL, NULL,
-          list(geom = geom, params = as.list(plot$layers[[index]]$aes_params)))
+      data <- built$data[[index]]
+      labels <- unique(as.character(data$label))
+      label <- if (length(labels) > 0L) paste(labels, collapse = " / ") else geom
+      colours <- unique(as.character(data$colour))
+      add(paste0("annotation[layer", index, ":", geom, "]"), "annotation", NULL, label,
+          list(geom = geom, text = if (length(labels) > 0L) label else NULL,
+               color = if (length(colours) == 1L) colours[1] else NULL,
+               params = as.list(plot$layers[[index]]$aes_params)))
     }
   }
   .dsh_dedupe_element_ids(elements)
@@ -147,9 +246,7 @@ extract_elements <- function(plot) {
   c(width = uint32(bytes[17:20]), height = uint32(bytes[21:24]))
 }
 
-compute_hitmap <- function(plot, width_in, height_in, dpi) {
-  table <- ggplot2::ggplotGrob(plot)
-  layout <- table$layout
+compute_hitmap <- function(plot, width_in, height_in, dpi, save_args) {
   result <- list()
   add <- function(id, bbox, z) {
     values <- pmax(c(0, 0, 0, 0), pmin(c(width_in * dpi, height_in * dpi, width_in * dpi, height_in * dpi), as.numeric(bbox)))
@@ -159,8 +256,11 @@ compute_hitmap <- function(plot, width_in, height_in, dpi) {
   }
   temp <- tempfile(fileext = ".png")
   on.exit(unlink(temp), add = TRUE)
-  grDevices::png(temp, width = width_in, height = height_in, units = "in", res = dpi)
+  device_args <- save_args[!names(save_args) %in% c("device", "width", "height", "units", "dpi", "limitsize", "scale")]
+  do.call(save_args$device, c(list(filename = temp, width = width_in, height = height_in), device_args))
   on.exit(grDevices::dev.off(), add = TRUE)
+  table <- ggplot2::ggplotGrob(plot)
+  layout <- table$layout
   grid::grid.newpage()
   grid::grid.draw(table)
   cell_bbox <- function(row) {
@@ -194,11 +294,13 @@ compute_hitmap <- function(plot, width_in, height_in, dpi) {
 }
 
 extract_chart <- function(entry, path) {
+  if (!is.null(entry$snapshot)) entry <- .dsh_copy_chart(entry)
   size <- .dsh_read_png_size(path)
   width_in <- size[["width"]] / entry$dpi
   height_in <- size[["height"]] / entry$dpi
   elements <- extract_elements(entry$plot)
-  hitmap <- tryCatch(compute_hitmap(entry$plot, width_in, height_in, entry$dpi), error = function(e) NULL)
+  hitmap <- tryCatch(compute_hitmap(entry$plot, width_in, height_in, entry$dpi, entry$save_args), error = function(e) NULL)
+  if (!is.null(hitmap)) hitmap <- Filter(function(hit) hit$id %in% vapply(elements, function(item) item$id, character(1)), hitmap)
   list(runtime = "ggplot2",
        png = list(width = size[["width"]], height = size[["height"]], dpi = entry$dpi),
        elements = elements,

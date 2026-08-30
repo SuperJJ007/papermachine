@@ -1177,16 +1177,16 @@ describe('ScienceDetailsView: chart edit panel', () => {
     expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
   })
 
-  it('mounts the panel as an element list, with region-select hidden, for a chart-bearing PNG', async () => {
+  it('keeps region selection alongside the element list for a chart-bearing PNG', async () => {
     const science = baseProjection({ artifacts: [addressableChart()] })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     render(<ScienceDetailsView {...props(science, { store })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
     // The panel carries no image of its own: the single displayed PNG stays
-    // the big RasterArtifact image, and manual region drag-select is hidden.
+    // the big RasterArtifact image used for both element and region references.
     expect(document.querySelectorAll('img')).toHaveLength(1)
-    expect(screen.queryByRole('button', { name: 'Select region to edit' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Select region to edit' })).toBeTruthy()
     expect(screen.getByLabelText('Enter text')).toBeTruthy()
   })
 

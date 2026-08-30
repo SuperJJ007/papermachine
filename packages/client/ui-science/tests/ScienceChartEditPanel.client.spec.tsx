@@ -319,12 +319,13 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
   })
 
-  it('truncates chip summaries near 16 characters but keeps the bounded reference current', () => {
+  it('keeps readable labels separate from bounded wire summaries', () => {
     const long = 'x'.repeat(80)
     const chart = chartState({ elements: [element({ id: 'series[long]', kind: 'series', label: 'long', current: long })] })
     const onAddTarget = vi.fn()
     panel({ chart, onAddTarget })
-    expect(screen.getByText(`${'x'.repeat(16)}…`)).toBeTruthy()
+    expect(screen.getByText('Series · long')).toBeTruthy()
+    expect(screen.queryByText(`${'x'.repeat(16)}…`)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Add Series · long to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith({
       kind: 'element', elementId: 'series[long]', elementKind: 'series', axes: null, label: 'long', current: `${'x'.repeat(60)}…`,

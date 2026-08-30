@@ -866,8 +866,8 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       const tight = await runChartSource(matplotlibChartSource('tight'), ['mpl-tight.png'])
       const tightChart = expectLiveChart(tight, 'mpl-tight.png', 'matplotlib').chart
       if (tightChart.runtime !== 'matplotlib' || tightChart.elements.length === 0
-        || tightChart.hitmapStatus !== 'unavailable' || tightChart.hitmap.length !== 0) {
-        throw new Error('tight matplotlib save did not preserve catalog with an unavailable hitmap')
+        || tightChart.hitmapStatus !== 'ok' || tightChart.hitmap.length === 0) {
+        throw new Error('tight matplotlib save did not preserve its exported hitmap')
       }
       const tightIds = tightChart.elements.map(element => element.id)
       if (new Set(tightIds).size !== tightIds.length) {
@@ -1010,7 +1010,9 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       }
       checks.push('chart apply ggplot2 legend upper left/lower right/center in sequence: legend retained, inside coordinates read back, distinct PNGs')
 
-      for (const caseName of ['device', 'base'] as const) {
+      const device = await runChartSource(ggplotChartSource('device'), ['r-device.png'])
+      expectLiveChart(device, 'r-device.png', 'ggplot2')
+      for (const caseName of ['base'] as const) {
         const filename = `r-${caseName}.png`
         const result = await runChartSource(ggplotChartSource(caseName), [filename])
         const artifact = result.capture?.captured.find(candidate => candidate.logicalName === filename)
@@ -1019,7 +1021,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
           throw new Error(`${caseName} R graphics unexpectedly became addressable`)
         }
       }
-      checks.push('chart R print-to-device and base graphics remain unaddressable')
+      checks.push('chart R print-to-device is addressable; base graphics remain raster-only')
 
       await namespaceProbe('begin')
       const facet = await runChartSource(ggplotChartSource('facet'), ['r-facet.png'])

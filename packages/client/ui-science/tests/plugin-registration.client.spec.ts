@@ -129,7 +129,7 @@ function setup(sessionsOverride?: unknown) {
     registerTranscriptDetailVisibility: vi.fn(() => () => {}), cancel: conversationCancel,
   }
   ctx.provide('conversation', conversation as never)
-  ctx.provide('conversationEvents', { register: vi.fn() } as never)
+  ctx.provide('conversationEvents', { register: vi.fn(), registerUserInput: vi.fn(() => () => {}) } as never)
   const trajectoryRegisterVisibility = vi.fn<TrajectorySubviewRegistry['registerVisibility']>(() => () => {})
   const trajectorySelect = vi.fn()
   ctx.provide('trajectorySubviews', {

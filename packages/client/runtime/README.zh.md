@@ -58,6 +58,8 @@ Definition 作者只根据当前事件完成匹配，为每条关联事件提供
 
 Chat builder 为每个 Session 保留一个 mutable keyed store。内容更新只通知受影响的 node key；结构变化才重建顺序和 Location 成员关系；prepend 只增加行，不替换既有 keyed value。每个 Assistant chunk 都会更新 Definition State，但最多每个 animation frame 请求一次物化；final message 与 Turn/Step 关闭会立即发布。参见 [Client Tool 展示所有权决策](../../../.agents/notes/implemented/architecture/2026-08-08-client-tool-presentation-ownership.zh.md)。
 
+来源记录与用户身份分别处理。`conversationEvents.registerUserInput(kind, project)` 允许生产者把已记录的 `user/message` 投影为用户撰写的内容与可读引用。聊天和 Detailed Trajectory 查询同一注册表；未注册的来源仍作为注入上下文。注册和释放都会重建已加载投影，包括历史消息，而不改变持久事件。用户节点保留权威 Turn 位置，供领域轨迹使用。
+
 ## Trajectory 请求数据
 
 Trajectory Definition 组装出一条按时间顺序排列、以用途为判别字段的提供方请求流。助手请求始终携带数值型 `turn` 与 `step`；压缩请求携带 `step: 0`，其 `turn` 所有者可以是 `null`。这个 null 所有者表示手动压缩独立运行在两个轮次之间，并不表示它属于任一相邻轮次。由取消定稿的 `assistant/message` 会保留持久结果 seq 和提供方信息，但不会将请求标记为完成；`step/end` 会把该请求归类为错误。`session/end-seed` 边界会在边界时刻将未匹配的压缩请求以错误状态结束，错误固定为 `Compaction was interrupted before completion.`；后续 start 会投影为独立请求，而不会覆盖这项遗留的未匹配请求。

@@ -48,13 +48,13 @@ export function ScienceArtifactImage({ content, label, load, variant, labels, sr
         data-variant={variant}
         title={labels.open}
         aria-label={labels.openNamed(label)}
-        onClick={() => { if (src !== null) setOpen(true) }}
+        onClick={() => { if (resolvedSrc !== null) setOpen(true) }}
       >
         {resolvedSrc === null
           ? <span className={css.notice}>{labels.loading}</span>
           : <img className={css.artifactImage} src={resolvedSrc} alt={label} />}
       </button>
-      {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
+      {open && resolvedSrc !== null && <ImageLightbox src={resolvedSrc} alt={label} labels={labels.lightbox} onClose={close} />}
     </>
   )
 }

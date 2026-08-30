@@ -17,6 +17,7 @@ import type { ScienceChartOp, ScienceClientArtifactVersion } from '@deepseek-ai/
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import { scienceElementLabel } from './science-element-label.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
@@ -158,9 +159,11 @@ function normalizedPoint(event: ReactMouseEvent<HTMLDivElement>): { x: number; y
 
 /** Raster display with an opt-in drag layer that emits normalized coordinates. */
 function RasterArtifact({
-  chart, loadImage, previewSrc, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget, t,
+  chart, loadImage, previewSrc, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget,
+  inspectedElement, t,
 }: {
   chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  inspectedElement: string | undefined
   loadImage: ScienceImageLoader
   previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
@@ -171,16 +174,16 @@ function RasterArtifact({
   onRemoveTarget: (target: ScienceEditTarget) => void
   t: TranslateNS<'science'>
 }) {
-  // A chart-bearing version (`chart.chart` addressable) references its
-  // elements through the panel's per-row list instead: manual region
-  // drag-select — the button, the drag layer, and the drawn-region chip row
-  // — is hidden below for this version. A PNG with no addressable chart
-  // structure keeps region selection as its only reference mechanism.
-  const hasChart = chart.chart !== undefined
+  const geometry = chart.chart?.png
+  const element = chart.chart?.elements.find(item => item.id === inspectedElement)
+  const hits = previewSrc === undefined && chart.chart?.hitmapStatus === 'ok'
+    ? chart.chart.hitmap.filter(hit => hit.id === element?.id) : []
+  const elementName = element === undefined ? undefined : scienceElementLabel(element.kind, element.label, t,
+    element.id.startsWith('axes[') && element.axes !== null ? element.axes + 1 : undefined, element.current, element.id)
   const [selecting, setSelecting] = useState(false)
   const start = useRef<{ x: number; y: number } | undefined>(undefined)
   const [draft, setDraft] = useState<Extract<ScienceEditTarget, { kind: 'normalized-region' }> | undefined>(undefined)
-  const region = hasChart ? undefined : draft ?? (selectionTarget?.kind === 'normalized-region' ? selectionTarget : undefined)
+  const region = draft ?? (selectionTarget?.kind === 'normalized-region' ? selectionTarget : undefined)
   // Keyed by the region's own normalized coordinates: a fresh drag is a distinct key, so
   // its input starts from the staged comment (or empty) rather than whatever
   // was typed for a previous region on this same artifact version.
@@ -229,13 +232,21 @@ function RasterArtifact({
       <div className={css.rasterCanvas}>
         <ScienceArtifactImage content={chart} label={chart.title} load={loadImage} variant="single" labels={artifactImageLabels(t)}
           {...previewSrc === undefined ? {} : { srcOverride: previewSrc }} />
+        {!selecting && previewSrc === undefined && geometry !== undefined && hits.map((hit, index) => <span
+          key={index} className={css.elementOutline}
+          aria-label={elementName} style={{
+            left: `${String(hit.bbox[0] / geometry.width * 100)}%`,
+            top: `${String(hit.bbox[1] / geometry.height * 100)}%`,
+            width: `${String((hit.bbox[2] - hit.bbox[0]) / geometry.width * 100)}%`,
+            height: `${String((hit.bbox[3] - hit.bbox[1]) / geometry.height * 100)}%`,
+          }} />)}
         {region !== undefined && (
           <span
             className={css.regionBox}
             style={{ left: `${String(region.x * 100)}%`, top: `${String(region.y * 100)}%`, width: `${String(region.width * 100)}%`, height: `${String(region.height * 100)}%` }}
           />
         )}
-        {!hasChart && selecting && (
+        {previewSrc === undefined && selecting && (
           <div
             className={css.regionGesture}
             aria-label={t('edit.regionGesture')}
@@ -246,11 +257,15 @@ function RasterArtifact({
           />
         )}
       </div>
-      {!hasChart && (
-        <button type="button" className={css.regionButton} aria-pressed={selecting} onClick={() => { setSelecting(value => !value) }}>
-          {selecting ? t('edit.regionCancel') : t('edit.regionSelect')}
-        </button>
-      )}
+      {chart.chart !== undefined && <p className={css.elementLocationStatus} role="status">
+        {elementName !== undefined && previewSrc === undefined
+          ? `${elementName} · ${t(hits.length > 0 ? 'panel.located' : 'panel.locationUnavailable')}` : '\u00a0'}
+      </p>}
+      <button type="button" className={css.regionButton} aria-pressed={selecting} disabled={previewSrc !== undefined}
+        title={previewSrc === undefined ? undefined : t('edit.savePreviewFirst')} onClick={() => { setSelecting(value => !value) }}>
+        {selecting ? t('edit.regionCancel') : t('edit.regionSelect')}
+      </button>
+      {previewSrc !== undefined && <p className={css.notice}>{t('edit.savePreviewFirst')}</p>}
       {/* Staging row for the current drawn region: a comment field and one add/remove
           control that push the exact region target into the composer
           selections store (ScienceDetailsView's addToConversation/
@@ -260,6 +275,7 @@ function RasterArtifact({
           <span className={css.specTarget}>{regionLabel}</span>
           <input
             className={css.specComment}
+            disabled={previewSrc !== undefined}
             value={comment}
             aria-label={t('edit.targetComment', { target: regionLabel })}
             placeholder={t('edit.targetCommentPlaceholder')}
@@ -276,6 +292,7 @@ function RasterArtifact({
           <button
             type="button"
             className={css.specAdd}
+            disabled={!added && previewSrc !== undefined}
             aria-label={added ? t('edit.removeTarget', { target: regionLabel }) : t('edit.addTarget', { target: regionLabel })}
             onClick={() => { if (added) onRemoveTarget(region); else onAddTarget(region, comment) }}
           >
@@ -334,6 +351,7 @@ export function ArtifactContent({
   onPendingChartEditsChange?: (hasPending: boolean) => void
   t: TranslateNS<'science'>
 }) {
+  const [inspectedElement, setInspectedElement] = useState<string>()
   const isImage = chart.mediaType === 'image/png'
   return (
     <div className={css.content}>
@@ -341,6 +359,7 @@ export function ArtifactContent({
         ? (
           <>
             <RasterArtifact
+              inspectedElement={inspectedElement}
               chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
               loadImage={loadImage} {...previewSrc === undefined ? {} : { previewSrc }}
               selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
@@ -350,6 +369,7 @@ export function ArtifactContent({
             {chart.chart !== undefined && (
               <ScienceChartEditPanel
                 version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
+                onInspectElement={setInspectedElement} referencesDisabled={previewSrc !== undefined}
                 {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
                 {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
                 {...onPendingChartEditsChange === undefined ? {} : { onPendingChange: onPendingChartEditsChange }}

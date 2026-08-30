@@ -63,51 +63,59 @@ const trajectoryInboxDefinition: ConversationNodeDefinition<InboxState> = {
   publication: () => 'none',
 }
 
-const trajectoryMessageDefinition: ConversationNodeDefinition<MessageNode> = {
-  kind: 'trajectory-input-message',
-  target: 'trajectory',
-  match: event => event.type === 'user/message'
-    ? { id: String(event.seq), role: 'start' }
-    : null,
-  start: (_context, match, reader) => {
-    if (match.event.type !== 'user/message') {
-      throw new Error('trajectory-input-message start requires user/message')
-    }
-    const event = match.event
-    if (event.data.source.kind !== 'user') {
-      return {
-        kind: 'context',
-        seq: event.seq,
-        time: event.time,
-        content: event.data.content,
-        source: event.data.source,
-        provenance: contextProvenance(event.data.source),
-        form: contextForm(event.data.source),
+function createTrajectoryMessageDefinition(ctx: Context): ConversationNodeDefinition<MessageNode> {
+  return {
+    kind: 'trajectory-input-message',
+    target: 'trajectory',
+    match: event => event.type === 'user/message'
+      ? { id: String(event.seq), role: 'start' }
+      : null,
+    start: (_context, match, reader) => {
+      if (match.event.type !== 'user/message') {
+        throw new Error('trajectory-input-message start requires user/message')
       }
-    }
-    const claimed = reader.previous<InboxState>('trajectory-inbox-next-step')
-      ?.state.claimed.has(String(event.data.id)) === true
-    return claimed
-      ? {
-        kind: 'steering',
-        messageId: event.data.id,
-        seq: event.seq,
-        time: event.time,
-        content: event.data.content,
-        source: event.data.source,
+      const event = match.event
+      const input = ctx.conversationEvents.userInput(event.data)
+      if (input === undefined) {
+        return {
+          kind: 'context',
+          seq: event.seq,
+          time: event.time,
+          content: event.data.content,
+          source: event.data.source,
+          provenance: contextProvenance(event.data.source),
+          form: contextForm(event.data.source),
+        }
       }
-      : {
-        kind: 'user',
-        seq: event.seq,
-        time: event.time,
-        content: event.data.content,
-        source: event.data.source,
-      }
-  },
-  update: context => context.state,
-  buildViewNode: context => context.state === undefined
-    ? null
-    : trajectoryNode(context, context.state.seq, { kind: 'node', node: context.state }),
+      const turn = match.location.kind === 'turn' || match.location.kind === 'step' ? match.location.turn.turn : undefined
+      const claimed = reader.previous<InboxState>('trajectory-inbox-next-step')
+        ?.state.claimed.has(String(event.data.id)) === true
+      return claimed
+        ? {
+          kind: 'steering',
+          ...turn === undefined ? {} : { turn },
+          ...input.references === undefined ? {} : { references: input.references },
+          messageId: event.data.id,
+          seq: event.seq,
+          time: event.time,
+          content: input.content,
+          source: event.data.source,
+        }
+        : {
+          kind: 'user',
+          ...turn === undefined ? {} : { turn },
+          ...input.references === undefined ? {} : { references: input.references },
+          seq: event.seq,
+          time: event.time,
+          content: input.content,
+          source: event.data.source,
+        }
+    },
+    update: context => context.state,
+    buildViewNode: context => context.state === undefined
+      ? null
+      : trajectoryNode(context, context.state.seq, { kind: 'node', node: context.state }),
+  }
 }
 /* jscpd:ignore-end */
 
@@ -118,5 +126,5 @@ const trajectoryMessageDefinition: ConversationNodeDefinition<MessageNode> = {
  */
 export function registerTrajectoryMessageDefinitions(ctx: Context): void {
   ctx.conversationEvents.register(trajectoryInboxDefinition)
-  ctx.conversationEvents.register(trajectoryMessageDefinition)
+  ctx.conversationEvents.register(createTrajectoryMessageDefinition(ctx))
 }

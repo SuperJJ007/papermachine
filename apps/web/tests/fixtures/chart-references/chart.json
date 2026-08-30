@@ -1,0 +1,302 @@
+{
+  "runtime": "matplotlib",
+  "png": {
+    "width": 949,
+    "height": 564,
+    "dpi": 120.0
+  },
+  "elements": [
+    {
+      "id": "figure_size",
+      "kind": "figure_size",
+      "axes": null,
+      "label": null,
+      "current": [
+        7.910833333333333,
+        4.705
+      ]
+    },
+    {
+      "id": "font",
+      "kind": "font",
+      "axes": null,
+      "label": null,
+      "current": {
+        "family": [
+          "sans-serif"
+        ],
+        "size": 12.0
+      }
+    },
+    {
+      "id": "title",
+      "kind": "title",
+      "axes": 0,
+      "label": null,
+      "current": "Synthetic reference fixture"
+    },
+    {
+      "id": "x_label",
+      "kind": "x_label",
+      "axes": 0,
+      "label": null,
+      "current": "Exposure"
+    },
+    {
+      "id": "y_label",
+      "kind": "y_label",
+      "axes": 0,
+      "label": null,
+      "current": "Density"
+    },
+    {
+      "id": "tick_labels",
+      "kind": "tick_labels",
+      "axes": 0,
+      "label": null,
+      "current": {
+        "fontsize": 10.0,
+        "rotation": 0.0
+      }
+    },
+    {
+      "id": "legend",
+      "kind": "legend",
+      "axes": 0,
+      "label": null,
+      "current": {
+        "loc": 1,
+        "title": null,
+        "visible": true
+      }
+    },
+    {
+      "id": "series[$\\alpha$ No exposure]",
+      "kind": "series",
+      "axes": 0,
+      "label": "$\\alpha$ No exposure",
+      "current": {
+        "color": "#006ba2"
+      }
+    },
+    {
+      "id": "series[$\\beta$ LLM exposure]",
+      "kind": "series",
+      "axes": 0,
+      "label": "$\\beta$ LLM exposure",
+      "current": {
+        "color": "#ebb434"
+      }
+    },
+    {
+      "id": "series[$\\gamma$ LLM + other technology]",
+      "kind": "series",
+      "axes": 0,
+      "label": "$\\gamma$ LLM + other technology",
+      "current": {
+        "color": "#db444b"
+      }
+    },
+    {
+      "id": "grid",
+      "kind": "grid",
+      "axes": 0,
+      "label": null,
+      "current": false
+    },
+    {
+      "id": "axis_range",
+      "kind": "axis_range",
+      "axes": 0,
+      "label": null,
+      "current": {
+        "x": [
+          -0.05,
+          1.05
+        ],
+        "y": [
+          0.0,
+          1.35
+        ]
+      }
+    },
+    {
+      "id": "axis_scale",
+      "kind": "axis_scale",
+      "axes": 0,
+      "label": null,
+      "current": {
+        "x": "linear",
+        "y": "linear"
+      }
+    },
+    {
+      "id": "annotation[text:Mean 0.14]",
+      "kind": "annotation",
+      "axes": 0,
+      "label": "Mean 0.14",
+      "current": {
+        "type": "text",
+        "text": "Mean 0.14",
+        "color": "#006ba2"
+      }
+    },
+    {
+      "id": "annotation[text:Mean 0.34]",
+      "kind": "annotation",
+      "axes": 0,
+      "label": "Mean 0.34",
+      "current": {
+        "type": "text",
+        "text": "Mean 0.34",
+        "color": "#ebb434"
+      }
+    },
+    {
+      "id": "annotation[text:Mean 0.55]",
+      "kind": "annotation",
+      "axes": 0,
+      "label": "Mean 0.55",
+      "current": {
+        "type": "text",
+        "text": "Mean 0.55",
+        "color": "#db444b"
+      }
+    }
+  ],
+  "hitmap": [
+    {
+      "id": "title",
+      "bbox": [
+        371.5666666666666,
+        11.399999999999977,
+        640.5666666666666,
+        30.399999999999977
+      ],
+      "z": 3.0
+    },
+    {
+      "id": "x_label",
+      "bbox": [
+        467.6291666666666,
+        534.0,
+        544.5041666666666,
+        552.0
+      ],
+      "z": 3.0
+    },
+    {
+      "id": "y_label",
+      "bbox": [
+        12.000000000000007,
+        235.3458333333333,
+        30.00000000000001,
+        298.7208333333333
+      ],
+      "z": 3.0
+    },
+    {
+      "id": "tick_labels",
+      "bbox": [
+        0.0,
+        509.3333333333333,
+        949.0,
+        527.3333333333334
+      ],
+      "z": 0.0
+    },
+    {
+      "id": "tick_labels",
+      "bbox": [
+        36.66666666666668,
+        12.31604938271596,
+        63.16666666666668,
+        508.6666666666667
+      ],
+      "z": 0.0
+    },
+    {
+      "id": "legend",
+      "bbox": [
+        708.5621053059896,
+        43.066666666666606,
+        930.6333333333334,
+        117.0666666666666
+      ],
+      "z": 5.0
+    },
+    {
+      "id": "series[$\\alpha$ No exposure]",
+      "bbox": [
+        114.03636363636365,
+        155.995145104348,
+        898.0969696969696,
+        497.6666666666667
+      ],
+      "z": 2.0
+    },
+    {
+      "id": "series[$\\beta$ LLM exposure]",
+      "bbox": [
+        114.03636363636365,
+        156.0318322835226,
+        898.0969696969696,
+        497.6666666666667
+      ],
+      "z": 2.0
+    },
+    {
+      "id": "series[$\\gamma$ LLM + other technology]",
+      "bbox": [
+        114.03636363636365,
+        156.06503842694116,
+        898.0969696969696,
+        497.6666666666418
+      ],
+      "z": 2.0
+    },
+    {
+      "id": "grid",
+      "bbox": [
+        74.83333333333334,
+        36.39999999999998,
+        937.3,
+        497.6666666666667
+      ],
+      "z": -1000.0
+    },
+    {
+      "id": "annotation[text:Mean 0.14]",
+      "bbox": [
+        180.1173484848485,
+        121.48691358024689,
+        267.4923484848485,
+        139.4869135802469
+      ],
+      "z": 3.0
+    },
+    {
+      "id": "annotation[text:Mean 0.34]",
+      "bbox": [
+        336.9294696969697,
+        121.48691358024689,
+        424.3044696969697,
+        139.4869135802469
+      ],
+      "z": 3.0
+    },
+    {
+      "id": "annotation[text:Mean 0.55]",
+      "bbox": [
+        501.64469696969695,
+        121.48691358024689,
+        588.894696969697,
+        139.4869135802469
+      ],
+      "z": 3.0
+    }
+  ],
+  "hitmapStatus": "ok",
+  "figureKey": "plot.png",
+  "ops": []
+}

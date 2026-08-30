@@ -11,6 +11,12 @@ export interface ConversationEventInput {
   readonly view: ToolEventView | undefined
 }
 
+/** User-authored content and readable references projected from a producer's logged message. */
+export interface ConversationUserInput {
+  readonly content: SessionEvent<'user/message'>['data']['content']
+  readonly references?: readonly string[]
+}
+
 /** Definition-local identity and lifecycle role extracted from one event. */
 export interface ConversationMatchResult {
   readonly id: string

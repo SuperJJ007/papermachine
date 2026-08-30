@@ -75,6 +75,10 @@ export function toAssistantBlock(block: ContentBlock): AssistantBlock {
 /** A finalized user message. */
 export interface UserMessageNode {
   kind: 'user'
+  /** Authoritative turn number when its start is loaded. */
+  turn?: number
+  /** Readable producer-owned references accompanying the user's text. */
+  references?: readonly string[]
   seq: number
   /** Unix epoch ms from the source session event. */
   time: number
@@ -120,6 +124,10 @@ export interface AssistantMessageNode {
 
 /** A human message admitted from the next-step inbox while a turn was running. */
 export interface SteeringMessageNode {
+  /** Authoritative turn number when its start is loaded. */
+  turn?: number
+  /** Readable producer-owned references accompanying the user's text. */
+  references?: readonly string[]
   kind: 'steering'
   /** Stable message identity shared with its pre-admission inbox occurrence. */
   messageId: MessageId

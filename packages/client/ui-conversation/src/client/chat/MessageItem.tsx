@@ -214,7 +214,7 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, referenceLabels = [], t,
+  content, renderMessageImages, actions, pending = false, referenceLabels = [], references = [], t,
 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
@@ -224,6 +224,8 @@ function UserStyleBubble({
   pending?: boolean
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
+  /** Producer-owned references kept separate from the user's instruction. */
+  references?: readonly string[]
   t: ChatViewSlotProps['t']
 }): ReactNode {
   const { text, images, rest } = contentParts(content)
@@ -242,6 +244,9 @@ function UserStyleBubble({
             {t('message.referenceSummary', { labels: referenceLabels.join(t('message.referenceSeparator')) })}
           </div>
         )}
+        {references.length > 0 && <ul className={css.referenceSummary}>
+          {references.map((reference, index) => <li key={index}>{reference}</li>)}
+        </ul>}
       </div>
       {actions?.(text)}
     </div>
@@ -287,6 +292,7 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
       content={data.content}
       renderMessageImages={renderMessageImages}
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
+      {...data.references === undefined ? {} : { references: data.references }}
       t={t}
       actions={text => (
         <MessageIconActions

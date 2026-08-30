@@ -53,9 +53,9 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 #### 图表可寻址性
 
-通过 matplotlib `Figure.savefig()`/`pyplot.savefig()` 或 ggplot2 `ggsave()` 保存并被捕获的 PNG，可以在其 `science/artifact-saved` 值上携带 `chart` 投影。内核为保存时的图对象和导出设置创建快照，包括 matplotlib 的裁剪、留白、透明度与渲染默认值，或 ggplot2 解析后的尺寸、设备与背景。有界元素目录与像素命中表描述保存的图片；产物存储仍只拥有原样 PNG 字节与普通元数据。R device-level 输出、base graphics、`SCIENCE_ARTIFACT_DIR` 之外的路径，以及被捕获策略排除的 PNG，都保持普通 raster artifact 行为。
+通过 matplotlib `Figure.savefig()`/`pyplot.savefig()`、ggplot2 `ggsave()`，或在 `png()` 与 `dev.off()` 之间打印一张完整 ggplot 保存并捕获的 PNG，可以携带 `chart` 投影。kernel 保留导出时的图形快照与导出设置；预览和保存编辑都操作独立副本。R 保留绘图设备、DPI、尺寸和字体选项。artifact store 拥有原样 PNG 字节与普通元数据。基础绘图、视口组合、同一设备上的多张图以及捕获策略排除的路径仍保持普通 raster artifact 行为。
 
-元素抽取与 hit-map 抽取相互独立。若保存的 raster 尺寸与 figure geometry 不一致（包括 matplotlib `bbox_inches='tight'`），该版本仍保留 element catalog，但设置 `hitmapStatus: 'unavailable'` 与空 `hitmap`。任何图表超时、协议错误、无效结果、adapter 错误或 live registration 缺失，都不会阻止普通 PNG 捕获；`chartUnavailablePaths` 只为 Host 诊断与测试记录受影响的已捕获路径，不进入模型输出。
+元素抽取与 hit-map 抽取相互独立。Matplotlib 在最终导出绘制期间记录位置，包含 `bbox_inches='tight'` 的裁剪变换；重复标注 id 对应各自的 artist。R 从构建后的图形中提取自动坐标轴标签，且只输出目录中已有 id 的命中范围。不支持的几何信息仍保留目录，但标记为 `hitmapStatus: 'unavailable'`。图表超时、协议错误、无效结果、adapter 错误或注册缺失均不阻止普通 PNG 捕获；`chartUnavailablePaths` 为诊断记录受影响路径，不进入模型输出。
 
 每个 kernel 为最新的 `chartLiveRunsRetained` 个 run id 保留登记，并在抽取后清理更早的 run。同一次 run 内对同一相对路径重复保存会替换该路径的登记，因此抽取得到最后一次保存的 figure 与 export settings。
 
@@ -146,6 +146,6 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 - **遍历过程中(而非遍历之前)发生的自动捕获失败同样没有自动重试** — 无论是环境性故障(run 的 artifact 目录消失、权限或磁盘错误)还是本 Runtime 自身捕获逻辑中的缺陷，都会让该 run 的遍历就此停止而不导致 run 失败；该 run 自身的 terminal fact 与结果保持不变，且失败会被记录(环境性故障记为 `warn`，其他情况记为 `error`)而不是被静默吞掉，但该 run 中剩余的可捕获文件仍会保持未捕获状态，直到未来某个保留或对账流程以与上述崩溃场景相同的方式弥补这个缺口。
 - **`editBaselines` 只依据该 session 自身的实时 projection 解析** — 与上文的 `artifactInputs` 不同，把同一 project 中另一个 session 产出的版本指名为 edit baseline 仍会以 `ARTIFACT_NOT_FOUND` 拒绝。要解除这一点，需要 `dsh-science-session` 的 strict fold 在 replay 时也接受一个无法在本地解析的跨 session `parent` 引用，这需要单独的跨会话血缘决策。
 - **项目库读取没有 chart 状态** — project artifact store 持久化 PNG 字节与版本元数据，不持久化归 session 所有的 `chart` 投影。读取另一会话的产物时，无法只从项目库恢复其可寻址状态。
-- **R device 输出与 base graphics 不可寻址** — `png(); print(p); dev.off()` 与 base `plot()` 会绕过 `ggsave()`，因此它们捕获的 PNG 不带 chart 状态。
-- **重复保存只保留终态** — 一次 run 内多次把 matplotlib 或 ggplot2 图保存到同一路径时，抽取登记只保留最后一次保存的 live figure 与 export settings。
+- **R 组合图与基础绘图仅支持栅格编辑** — PNG 设备上只有一张完整 ggplot 时才可寻址；视口组合、多张图与基础 `plot()` 保留区域编辑。
+- **重复保存只保留终态** — 一次 run 内多次把 matplotlib 或 ggplot2 图保存到同一路径时，抽取登记只保留最后一次导出的快照与设置。
 - **无法复制的自定义图对象保持普通 PNG** — 快照失败不会破坏成功的保存，但图片无法直接编辑。冷恢复仍要求源码输入与绘图依赖可重现；运行时对象不持久化。

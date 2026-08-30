@@ -6,7 +6,7 @@
  * preview/pending-edit support, distinct from `ScienceDetailsView.tsx`'s own
  * always-supplying `ArtifactTab` caller).
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
@@ -68,5 +68,49 @@ describe('ArtifactContent: optional chart-edit callbacks', () => {
     // Save stays reachable, it only degrades preview and pending-edit reporting.
     render(<ArtifactContent {...baseProps()} />)
     expect(screen.getByLabelText('Enter text')).toBeTruthy()
+  })
+})
+
+
+describe('ArtifactContent: region references', () => {
+  it.each([true, false])('offers region selection with chart metadata: %s', async (addressable) => {
+    const props = baseProps()
+    if (!addressable) {
+      const { chart: _chart, ...raster } = props.chart
+      props.chart = raster
+    }
+    render(<ArtifactContent {...props} />)
+    await screen.findByRole('img')
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    expect(screen.getByLabelText('Drag to select an edit region')).toBeTruthy()
+  })
+
+  it('blocks references against an unsaved preview, then restores selection on discard', () => {
+    const props = baseProps()
+    const view = render(<ArtifactContent {...props} previewSrc="data:image/png;base64,preview" />)
+    expect(screen.getByRole('button', { name: 'Select region to edit' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Save or discard the preview before referencing elements or selecting a region.')).toBeTruthy()
+    view.rerender(<ArtifactContent {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    expect(screen.getByLabelText('Drag to select an edit region')).toBeTruthy()
+  })
+})
+
+
+describe('ArtifactContent: element location', () => {
+  it('highlights the saved pixel bounds on hover and keyboard focus without staging a reference', async () => {
+    const props = baseProps()
+    props.chart = chart({ chart: { ...props.chart.chart!, hitmapStatus: 'ok', hitmap: [{ id: 'title', bbox: [20, 10, 180, 30], z: 3 }] } })
+    render(<ArtifactContent {...props} />)
+    await screen.findByRole('img')
+    const reference = screen.getByRole('button', { name: 'Add Title to the conversation' })
+    fireEvent.focus(reference)
+    const outline = screen.getByLabelText('Title', { selector: 'span' })
+    expect(outline.style.left).toBe('10%')
+    expect(outline.style.top).toBe('10%')
+    expect(outline.style.width).toBe('80%')
+    expect(props.onAddTarget).not.toHaveBeenCalled()
+    fireEvent.mouseEnter(reference.closest('li')!)
+    expect(screen.getByText('Title · highlighted in the image')).toBeTruthy()
   })
 })

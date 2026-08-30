@@ -1,5 +1,7 @@
 ## Details column — artifact viewer
-- text: Science
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
 - button "Close details"
 - tablist "Open artifacts":
   - tab "Missing revision" [selected]

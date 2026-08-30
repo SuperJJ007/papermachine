@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-chart-element-id-collision.md
-2026-08-28-chart-element-id-collision.md: 91ca4d042a056520a2e9ae99611802e551723618
-2026-08-28-chart-element-id-collision.zh.md: 0aa6aa237f7212f9aa196d1214bd01bc95074fc3
+2026-08-28-chart-element-id-collision.md: 5c37a523594f1d665bcf7592d7295ef29beac4b6
+2026-08-28-chart-element-id-collision.zh.md: 89fe605d85a85e06e9ab793ef8c55b15a4fa0ef4

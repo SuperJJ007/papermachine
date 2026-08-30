@@ -14,14 +14,13 @@
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .remove {

@@ -26,37 +26,16 @@ def _wrap_figure_savefig(register):
         return True
 
     def savefig(self, fname, *args, **kwargs):
-        result = original(self, fname, *args, **kwargs)
         artifact_dir = os.environ.get("SCIENCE_ARTIFACT_DIR")
-        if artifact_dir and isinstance(fname, (str, os.PathLike)):
-            target = os.fspath(fname)
-            if target.lower().endswith(".png") and _inside(target, artifact_dir):
-                import matplotlib
-                requested = kwargs.get("dpi")
-                if requested is None:
-                    requested = matplotlib.rcParams["savefig.dpi"]
-                dpi = self.dpi if requested == "figure" else requested
-                if isinstance(dpi, (int, float)) and math.isfinite(float(dpi)) and float(dpi) > 0:
-                    save_options = dict(kwargs)
-                    for key in ("bbox_inches", "pad_inches", "facecolor", "edgecolor", "transparent"):
-                        if save_options.get(key) is None:
-                            setting = "bbox" if key == "bbox_inches" else key
-                            save_options[key] = matplotlib.rcParams["savefig." + setting]
-                    if save_options["transparent"]:
-                        for key in ("facecolor", "edgecolor"):
-                            if key not in kwargs:
-                                save_options[key] = "none"
-                    save_options["dpi"] = float(dpi)
-                    register(
-                        os.path.relpath(os.path.realpath(target), os.path.realpath(artifact_dir)).replace(os.sep, "/"),
-                        self,
-                        float(dpi),
-                        tuple(float(value) for value in self.get_size_inches()),
-                        save_options,
-                    )
-        return result
+        tracked = (artifact_dir and isinstance(fname, (str, os.PathLike))
+                   and os.fspath(fname).lower().endswith(".png") and _inside(fname, artifact_dir))
+        if not tracked:
+            return original(self, fname, *args, **kwargs)
+        entry = save_chart(self, fname, args, kwargs, original)
+        register(os.path.relpath(os.path.realpath(fname), os.path.realpath(artifact_dir)).replace(os.sep, "/"), entry)
 
     savefig._dsh_chart_hook = True
+    savefig._dsh_original = original
     figure.savefig = savefig
     return True
 
@@ -243,8 +222,8 @@ def extract_elements(fig):
         for text in axis.texts:
             _safe_add(elements, lambda text=text: {
                 "id": _axid(index, count, "annotation[text:%s]" % text.get_text()[:20]),
-                "kind": "annotation", "axes": index, "label": None,
-                "current": {"type": "text", "text": text.get_text()}})
+                "kind": "annotation", "axes": index, "label": text.get_text(),
+                "current": {"type": "text", "text": text.get_text(), "color": matplotlib.colors.to_hex(text.get_color())}})
     return _dedupe_element_ids(elements)
 
 
@@ -266,15 +245,15 @@ def _artist_for(fig, element):
     if kind == "legend":
         return axis.get_legend() if axis is not None else (fig.legends[0] if fig.legends else None)
     if kind == "series":
-        for label, artist in _labeled_artists(axis):
-            if label == element["label"]:
-                return artist
+        matches = [artist for label, artist in _labeled_artists(axis) if label == element["label"]]
+        occurrence = int(element["id"].rsplit("#", 1)[1]) - 1 if "]#" in element["id"] else 0
+        return matches[occurrence] if occurrence < len(matches) else None
     if kind == "grid":
         return axis.patch
     if kind == "annotation":
-        for text in axis.texts:
-            if "text:%s" % text.get_text()[:20] in element["id"]:
-                return text
+        matches = [text for text in axis.texts if "text:%s]" % text.get_text()[:20] in element["id"]]
+        occurrence = int(element["id"].rsplit("#", 1)[1]) - 1 if "]#" in element["id"] else 0
+        return matches[occurrence] if occurrence < len(matches) else None
     return None
 
 
@@ -296,6 +275,10 @@ def compute_hitmap(fig, elements, dpi, width, height):
     fig.set_dpi(dpi)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
+    return _renderer_hitmap(fig, elements, renderer, width, height)
+
+
+def _renderer_hitmap(fig, elements, renderer, width, height):
     result = []
     for element in elements:
         try:
@@ -320,6 +303,54 @@ def compute_hitmap(fig, elements, dpi, width, height):
     return result
 
 
+def save_chart(fig, path, args, kwargs, savefig=None):
+    """Capture geometry from the final export draw, including tight-bbox cropping."""
+    import matplotlib
+
+    options = dict(kwargs)
+    requested = options.get("dpi")
+    if requested is None:
+        requested = matplotlib.rcParams["savefig.dpi"]
+    dpi = float(getattr(fig, "_original_dpi", fig.dpi) if requested == "figure" else requested)
+    options["dpi"] = dpi
+    for key in ("bbox_inches", "pad_inches", "facecolor", "edgecolor", "transparent"):
+        if options.get(key) is None:
+            setting = "bbox" if key == "bbox_inches" else key
+            options[key] = matplotlib.rcParams["savefig." + setting]
+    if options["transparent"]:
+        for key in ("facecolor", "edgecolor"):
+            if key not in kwargs:
+                options[key] = "none"
+    captured = {}
+    canvas = fig.canvas
+
+    def on_draw(event):
+        # The final draw occurs while matplotlib's export transform is active.
+        # An earlier layout draw can precede it; only the last one is retained.
+        try:
+            width, height = int(event.renderer.width), int(event.renderer.height)
+            elements = extract_elements(fig)
+            captured.update(elements=elements, raster_size=(width, height),
+                            hitmap=_renderer_hitmap(fig, elements, event.renderer, width, height))
+        except Exception:
+            # Custom renderers may not expose pixel geometry. Keep raster editing.
+            captured.clear()
+
+    subscription = canvas.mpl_connect("draw_event", on_draw)
+    try:
+        if savefig is None:
+            method = type(fig).savefig
+            getattr(method, "_dsh_original", method)(fig, path, *args, **options)
+        else:
+            savefig(fig, path, *args, **options)
+    finally:
+        canvas.mpl_disconnect(subscription)
+    elements = captured.get("elements", extract_elements(fig))
+    return {"fig": fig, "dpi": dpi, "save_options": options, "rc": dict(matplotlib.rcParams),
+            "elements": elements, "raster_size": captured.get("raster_size"),
+            "hitmap": captured.get("hitmap", [])}
+
+
 def read_png_size(path):
     """Read the exact PNG IHDR dimensions without an image dependency."""
     with open(path, "rb") as stream:
@@ -332,17 +363,9 @@ def read_png_size(path):
 def extract_chart(entry, path):
     """Extract one registered figure while preserving the catalog on raster mismatch."""
     width, height = read_png_size(path)
-    elements = extract_elements(entry["fig"])
-    expected = (round(entry["size_in"][0] * entry["dpi"]), round(entry["size_in"][1] * entry["dpi"]))
-    available = not entry["tight"] and expected == (width, height)
-    if available:
-        try:
-            hitmap = compute_hitmap(entry["fig"], elements, entry["dpi"], width, height)
-        except Exception:
-            available = False
-            hitmap = []
-    else:
-        hitmap = []
+    elements = entry["elements"]
+    available = entry["raster_size"] == (width, height)
+    hitmap = entry["hitmap"] if available else []
     return {"runtime": "matplotlib", "png": {"width": width, "height": height, "dpi": entry["dpi"]},
             "elements": elements, "hitmap": hitmap,
             "hitmapStatus": "ok" if available else "unavailable"}

@@ -282,13 +282,13 @@ export function buildScienceTraceModel(
     if (node.kind === 'user') {
       const text = textOf(node)
       if (text === '') continue
-      inferredTurn += 1
+      inferredTurn = node.turn ?? inferredTurn + 1
       dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'steering') {
       const text = textOf(node)
-      if (text !== '') dialogues.push({ actor: 'user', turn: Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
+      if (text !== '') dialogues.push({ actor: 'user', turn: node.turn ?? Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'tool-result') results.set(node.callId, node.isError)

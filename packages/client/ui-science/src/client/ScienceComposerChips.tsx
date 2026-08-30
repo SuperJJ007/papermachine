@@ -31,7 +31,7 @@ function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS
     case 'normalized-region':
       return t('edit.regionTarget', { x: Math.round(target.x * 100), y: Math.round(target.y * 100) })
     case 'element':
-      return scienceElementLabel(target.elementKind, target.label, t, target.elementId.startsWith('axes[') && target.axes !== null ? target.axes + 1 : undefined)
+      return scienceElementLabel(target.elementKind, target.label, t, target.elementId.startsWith('axes[') && target.axes !== null ? target.axes + 1 : undefined, target.current, target.elementId)
     /* v8 ignore next -- closed ScienceEditTarget union */
     default: return assertNever(target)
   }

@@ -29,7 +29,7 @@ export type {
   ConversationLocationData, ConversationLocationDataScope, ConversationLocationDataStore,
   ConversationStepDataMap,
   ConversationLocation, ConversationMatch, ConversationMatchResult,
-  ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext,
+  ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext, ConversationUserInput,
   ConversationPublication, ConversationTimelineSnapshot, ConversationTurnDataMap, ConversationViewBuilder,
   ConversationViewDefinition, ConversationViewNode, ConversationViewSnapshotMap,
   ConversationViewSnapshotStore, StepLocation, TurnLocation,

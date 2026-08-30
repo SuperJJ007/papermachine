@@ -48,20 +48,12 @@ def _load_chart_module():
     return _chart_module
 
 
-def _register_chart(relative_path, fig, dpi, size_in, save_options):
+def _register_chart(relative_path, entry):
     if _active_run_id is None:
         return
     run_charts = _dsh_charts.setdefault(_active_run_id, {})
-    import matplotlib
     try:
-        run_charts[relative_path] = _load_chart_module().copy_chart({
-            "fig": fig,
-            "dpi": dpi,
-            "size_in": size_in,
-            "tight": save_options["bbox_inches"] is not None,
-            "save_options": save_options,
-            "rc": dict(matplotlib.rcParams),
-        })
+        run_charts[relative_path] = _load_chart_module().copy_chart(entry)
     except Exception as error:
         # A valid PNG remains capturable when a custom artist cannot be copied for editing.
         run_charts[relative_path] = {"error": str(error)}
@@ -226,8 +218,8 @@ def apply_chart(run_id, request_path, result_path):
     import matplotlib
     with matplotlib.rc_context(entry["rc"]):
         failed = adapter.apply_ops(entry["fig"], request["ops"])
-        entry["fig"].savefig(output_path, **entry["save_options"])
-        chart = adapter.extract_chart(entry, output_path)
+        exported = adapter.save_chart(entry["fig"], output_path, (), entry["save_options"])
+        chart = adapter.extract_chart(exported, output_path)
     with open(result_path, "w", encoding="utf-8") as stream:
         json.dump({"chart": chart, "failedOps": failed}, stream, ensure_ascii=False, separators=(",", ":"))
     return None

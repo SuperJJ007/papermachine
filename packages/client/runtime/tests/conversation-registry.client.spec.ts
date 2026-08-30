@@ -9,6 +9,7 @@ import type {
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionRuntime } from '../src/client/sessions/service.ts'
 import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
 function eventDefinition(kind: string): ConversationNodeDefinition<null> {
   return {
@@ -46,6 +47,30 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
+  it('classifies registered user sources and restores context classification on disposal', async () => {
+    const { ctx, events } = await bootRegistries()
+    const message = {
+      source: { kind: 'reference-input' }, content: [{ type: 'text', text: 'model descriptor' }],
+    } as unknown as SessionEvent<'user/message'>['data']
+    const changed = vi.fn()
+    events.subscribe(changed)
+    expect(events.userInput(message)).toBeUndefined()
+    const feature = ctx.inject(['conversationEvents'], (child) => {
+      child.conversationEvents.registerUserInput('reference-input', () => ({
+        content: [{ type: 'text', text: 'Make this clearer' }], references: ['plot.png v2 · Mean 0.14'],
+      }))
+    })
+    await feature.await()
+    expect(events.userInput(message)).toEqual({
+      content: [{ type: 'text', text: 'Make this clearer' }], references: ['plot.png v2 · Mean 0.14'],
+    })
+    expect(message.content).toEqual([{ type: 'text', text: 'model descriptor' }])
+    expect(() => events.registerUserInput('reference-input', () => ({ content: [] }))).toThrow(/already registered/)
+    expect(() => events.registerUserInput('user', () => ({ content: [] }))).toThrow(/already registered/)
+    await feature.dispose()
+    expect(events.userInput(message)).toBeUndefined()
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
   it('rejects duplicate Event Definitions and disposes an ordinary registration once', async () => {
     const { events } = await bootRegistries()
     const definition = eventDefinition('message')

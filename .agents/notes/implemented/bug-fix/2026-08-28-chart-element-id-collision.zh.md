@@ -24,7 +24,7 @@ codec 的唯一性校验是对的:像素空间命中表靠 id 引用元素,重�
 
 ## Consequences
 
-一张本会因元素碰撞而丢失的 matplotlib 或 ggplot2 图表,现在能在唯一 id 下保留完整目录,像其他图表一样获得编辑面板,而不是被 `extractChartsAfterFinish` 静默丢弃整个 `chart` 字段、只留一条 warn 级日志。后一个重复元素追加的 `#N` 后缀 id,对同一张图是稳定的(列表顺序在一次提取内是确定的),但不保证在一张顺序不同的重绘图里指向"同一个"物理 artist——这只影响本来就存在 id 碰撞的图表,而这些图表此前根本没有 `chart` 状态可供区分。`chart_matplotlib.py` 里 `_artist_for` 对 `kind: 'annotation'` 现有的子串查找(`"text:%s" % text.get_text()[:20] in element["id"]`)会把一个重复 id 及其 `#2` 后缀都解析到同一个最先匹配的 `axis.texts` artist;这个既有的歧义此前从未影响过任何可达图表(重复此前总是在上游被拒绝),本次改动不改变它——这不在本次范围内,若需要区分重复标注各自的命中表方框,需要单独修复。
+一张本会因元素碰撞而丢失的 matplotlib 或 ggplot2 图表,现在能在唯一 id 下保留完整目录,像其他图表一样获得编辑面板,而不是被 `extractChartsAfterFinish` 静默丢弃整个 `chart` 字段、只留一条 warn 级日志。后一个重复元素追加的 `#N` 后缀 id,对同一张图是稳定的(列表顺序在一次提取内是确定的),但不保证在一张顺序不同的重绘图里指向"同一个"物理 artist——这只影响本来就存在 id 碰撞的图表,而这些图表此前根本没有 `chart` 状态可供区分。`chart_matplotlib.py` 里 [导出几何信息](2026-08-31-science-reference-authorship-and-geometry.zh.md) 将重复标注 id 解析到各自的 artist，并记录 tight 裁剪后的坐标。
 
 ## Verification
 

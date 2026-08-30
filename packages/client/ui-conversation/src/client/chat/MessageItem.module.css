@@ -29,9 +29,10 @@
 }
 
 .referenceSummary {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 .contextRow {
   padding: 2px 0;

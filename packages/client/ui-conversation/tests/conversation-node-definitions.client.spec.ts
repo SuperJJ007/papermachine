@@ -10,7 +10,7 @@ import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
 import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
-import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
+import { createMessageDefinition, messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { retryDefinition } from '../src/client/conversation-nodes/retry.ts'
 import { toolDefinition } from '../src/client/conversation-nodes/tool.ts'
 import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error.ts'
@@ -118,6 +118,31 @@ function toolResult(callId: string, text: string) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('replays a producer-owned user instruction and its references in the logged turn', () => {
+    const input = createMessageDefinition(message => message.source.kind === 'user'
+      ? { content: message.content }
+      : { content: [{ type: 'text', text: 'Why are these different?' }], references: ['plot.png v2 · Mean 0.14'] })
+    const value = new ConversationNodeAssembler({
+      entries: () => [...DEFINITIONS.filter(definition => definition !== messageDefinition), input],
+      fallbackEntry: () => unknownFallbackDefinition,
+    }, new TestViewDefinitions())
+    const events = [
+      at(100, 'turn/start', { turn: 3 }),
+      at(101, 'step/start', { turn: 3, step: 7 }),
+      at(102, 'user/message', { ...textMessage('reference-1', 'model descriptor'), source: { kind: 'reference-input' } },
+        { surfaceOp: 'append' }),
+    ]
+    for (const replay of [false, true]) {
+      if (replay) value.replaceWindow(events, true)
+      else for (const event of events) value.append(event)
+      value.flush()
+      const user = node(snapshot(value), 'user')
+      expect(user).toMatchObject({ kind: 'user', data: {
+        kind: 'user', turn: 3, content: [{ type: 'text', text: 'Why are these different?' }],
+        references: ['plot.png v2 · Mean 0.14'], source: { kind: 'reference-input' },
+      } })
+    }
+  })
   it('keeps one keyed Assistant node while streaming settles and materializes interruption from Location', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),

@@ -419,7 +419,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.change(search, { target: { value: 'Cross-session' } })
     expect(await screen.findByText('v3 · image/png · Source experiment')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open Cross-session chart, version 3' }))
-    expect(screen.getByText('Cross-session chart')).toBeTruthy()
+    expect(screen.queryByText('Cross-session chart')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByText('Source experiment')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back to original conversation' }).hasAttribute('disabled')).toBe(true)
@@ -474,7 +474,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const z = screen.getByRole('button', { name: 'Open z.png, version 1' })
     fireEvent.keyDown(z, { key: 'x' })
     fireEvent.keyDown(z, { key: ' ' })
-    expect(screen.getByText('z.png')).toBeTruthy()
+    expect(screen.queryByText('z.png')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByText('unknown-session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
@@ -598,7 +598,7 @@ describe('ScienceDetailsView: opening a tab', () => {
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
     act(() => { store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 }) })
-    expect(screen.getByText('Second chart')).toBeTruthy()
+    expect(screen.queryByText('Second chart')).toBeNull()
     expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-2')
   })
 
@@ -617,7 +617,7 @@ describe('ScienceDetailsView: opening a tab', () => {
     render(<ScienceDetailsView {...props(science)} />)
     fireEvent.click(await screen.findByText('v2 title'))
 
-    expect(screen.getByText('v2 title')).toBeTruthy()
+    expect(screen.queryByText('v2 title')).toBeNull()
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
     expect(screen.queryByText('Format')).toBeNull()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
@@ -735,17 +735,14 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
 
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
-    // C1: the artifact's latest known title (here, v3's) stays fixed as the
-    // tab label and toolbar name across every step — only the version
-    // stepper's own v{n} badge tracks the stepped-to version.
-    expect(screen.getAllByText('v3 title')).toHaveLength(1)
+    expect(screen.queryByText('v3 title')).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v3')
     expect(screen.queryByText(/5\.0 MB/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
-    expect(screen.getAllByText('v3 title')).toHaveLength(1)
+    expect(screen.queryByText('v3 title')).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
     expect(screen.getByText('First pass')).toBeTruthy()
     expect(screen.queryByText(/512 B/)).toBeNull()
@@ -757,7 +754,7 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     render(<ScienceDetailsView {...props(science, { store })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
-    expect(screen.getAllByText('v3 title')).toHaveLength(1)
+    expect(screen.queryByText('v3 title')).toBeNull()
   })
 
   // C2: a same-turn intermediate draft (occ_emp_wage_scatter's shape — a
@@ -817,25 +814,25 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
 })
 
 describe('ScienceDetailsView: viewer title', () => {
-  it('shows the human title without repeating the logical filename', () => {
+  it('omits the human title and logical filename from the viewer', () => {
     const science = baseProjection({
       artifacts: [chart({ title: 'Loss curve', logicalName: 'loss-curve.png' })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    expect(screen.getAllByText('Loss curve')).toHaveLength(1)
+    expect(screen.queryByText('Loss curve')).toBeNull()
     expect(screen.queryByText('loss-curve.png')).toBeNull()
   })
 
-  it('shows the name once when an auto-captured artifact\'s title equals its logical name', () => {
+  it('omits the title when an auto-captured artifact\'s title equals its logical name', () => {
     const science = baseProjection({
       artifacts: [chart({ title: 'plot.png', logicalName: 'plot.png', origin: 'auto' })],
     })
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    expect(screen.getAllByText('plot.png')).toHaveLength(1)
+    expect(screen.queryByText('plot.png')).toBeNull()
   })
 })
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-28-science-live-figure-editing.md
-2026-08-28-science-live-figure-editing.md: fcfcbda1ca434d290dae759a900003ad0747775c
-2026-08-28-science-live-figure-editing.zh.md: b21deae3c19655a1138cf11a370ab2a6db84f008
+2026-08-28-science-live-figure-editing.md: e30c0a868763d67d8691a049a0ec86f7ba8fe62a
+2026-08-28-science-live-figure-editing.zh.md: aac72d3908e73a18fe895a9bdbd5730c81f4dd8c

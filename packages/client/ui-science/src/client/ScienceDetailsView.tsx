@@ -2,7 +2,7 @@
 // `science` Session projection (packages/science/science-session/src/types.ts).
 // Viewer-first, not a dashboard: a top tab strip holds one tab per opened
 // artifact (logical chart); the active tab shows an in-panel toolbar
-// (filename, version stepper, provenance, download, maximize [image only],
+// (library return, version stepper, provenance, download, maximize [image only],
 // close tab) above the dispatched content (ArtifactContent.tsx), or — one
 // toolbar click away — the provenance drill-in (ScienceArtifactProvenance.tsx).
 // With no open tabs the panel shows the landing view: a gallery of latest
@@ -219,8 +219,6 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
         <button type="button" className={css.libraryBack} onClick={onBack}>
           <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
         </button>
-        {/* C1: the artifact's latest known title, fixed across the version stepper below. */}
-        <span className={css.viewerTitle}>{scienceArtifactDisplayTitleOrSelf(versions, chart)}</span>
       </div>
       <div className={css.toolbarControls}>
         <div className={css.stepper}>

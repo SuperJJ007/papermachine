@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-31-science-without-publication.md
-2026-08-31-science-without-publication.md: 8b7a7e8415b13bc4bd550d38dbb2fdeab86ff9f1
-2026-08-31-science-without-publication.zh.md: 86706011c2747f6c3701530d24fea019781e5612
+2026-08-31-science-without-publication.md: 19f3ec9ff3f574295187ac9fd40a328dca84aaad
+2026-08-31-science-without-publication.zh.md: 628592348209c832d801e3bff7afeb18b480d301

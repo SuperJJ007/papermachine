@@ -25,16 +25,13 @@ describe('gen-tool-catalog collectToolCatalog', () => {
   it('boots every shipped tool package and harvests its model-facing schemas', async () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
-    // FIXME(science-merge): placeholder union pending a real run of
-    // collectToolCatalog() after the merge settles; verify against actual
-    // output (science tools + upstream's new team-task tools) before commit.
     expect(names).toEqual([
       'annotate_artifact', 'ask_user_question', 'bash', 'bash', 'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
       'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal',
       'get_science_state', 'glob', 'grep',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
-      'list_agents', 'list_agents', 'lsp', 'publish_outcome', 'pwsh', 'pwsh', 'ralph',
+      'list_agents', 'list_agents', 'lsp', 'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'run_python', 'run_r', 'schedule_create', 'schedule_delete',
       'schedule_list', 'send_message', 'send_message', 'session_event_read', 'session_event_search',
       'session_event_trace', 'session_search', 'session_trace', 'skill', 'spawn_teammate',

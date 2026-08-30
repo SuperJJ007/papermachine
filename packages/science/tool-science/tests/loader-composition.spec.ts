@@ -188,7 +188,7 @@ describe('tool-science real Loader + agent-loop composition through cordis.yml',
 
     // Exactly five Science schemas — the whole composition's tool roster.
     expect(ctx.tools.schemas().map(schema => schema.name).sort()).toEqual([
-      'annotate_artifact', 'get_science_state', 'publish_outcome', 'run_python', 'run_r',
+      'annotate_artifact', 'get_science_state', 'run_python', 'run_r',
     ])
 
     const sessionId = SessionId('tool-science-real-session')

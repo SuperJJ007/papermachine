@@ -1,6 +1,6 @@
 /**
  * Model-facing Science mode Consumer: first-use mode/environment binding, the
- * `science:environment` dynamic context, and five Science tools. It never spawns a process, writes run
+ * `science:environment` dynamic context, and four Science tools. It never spawns a process, writes run
  * source, classifies termination, manages Conda, or appends Runtime-owned
  * events — those remain owned by `@deepseek-ai/dsh-science-runtime`, called
  * through the optional `ctx.scienceRuntime` service.
@@ -12,7 +12,6 @@ import type {} from '@deepseek-ai/dsh-science-runtime'
 import { applyAnnotateArtifactTool } from './annotate-artifact.ts'
 import { applyScienceContext } from './context.ts'
 import { Config, resolveConfig } from './config.ts'
-import { applyPublishOutcomeTool } from './publish-outcome.ts'
 import { applyRunTool } from './run.ts'
 import { applyScienceStateTool } from './state.ts'
 
@@ -45,7 +44,6 @@ const STATIC_GUIDANCE = [
   'A run\'s eligible written files (csv/json/md/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts, and a PNG only when named in raster_artifacts; no separate save step is needed otherwise. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader.',
   'Write a render, preview, or debug dump meant only for your own inspection outside SCIENCE_ARTIFACT_DIR (for example a temp directory), never into it, so it is never captured as an artifact.',
   'Do not open a new artifact version to reconcile a cosmetic difference the user did not ask for; mention the difference in your reply instead.',
-  'Use publish_outcome to publish the current result as a titled, cited Outcome revision once evidence (successful runs, saved artifact versions, and/or prior messages) supports it.',
 ].join(' ')
 
 /** Register the Science Consumer's prompt, context, and tool contributions. */
@@ -57,5 +55,4 @@ export function apply(ctx: Context, config: Config): void {
   applyRunTool(ctx, 'python')
   applyRunTool(ctx, 'r')
   applyAnnotateArtifactTool(ctx)
-  applyPublishOutcomeTool(ctx)
 }

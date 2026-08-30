@@ -20,7 +20,7 @@ Chat keeps Assistant prose unchanged and folds process detail. `run_python`, `ru
 
 Science registers a Turn-scoped conversation Definition that accumulates valid `science/artifact` Tool-result presentation values. It retains one entry per logical artifact and replaces it only with an equal or higher version. A Turn-tail contribution renders that final set after the Assistant reply, so artifact cards occur once per Turn rather than beside each producing or curating call. Opening a card writes the exact artifact id and version to the existing shared selection store. At 6 or fewer artifacts the group renders every card; at 7 or more it renders the first 5 plus a "+N more" button that expands the rest in place, matching `CS-TURN-RENDERING-SPEC.md`'s GENERATED-tray rule. The title's count is always the Turn's total, never the visible slice, and the expanded choice is component-local view state that resets on reload.
 
-The sidebar and Details column expose Files only. Published Outcomes remain available through their collapsed transcript cells; there is no Outcome-only Details destination or Outcome section in the artifact landing view.
+The sidebar and Details column expose Files only. Only previously recorded Outcomes remain available through their collapsed transcript cells under [Science without publication](../simplification/2026-08-31-science-without-publication.md); there is no Outcome-only Details destination or Outcome section in the artifact landing view.
 
 ## Alternatives considered
 

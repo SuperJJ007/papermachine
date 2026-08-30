@@ -546,6 +546,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await page.getByRole('listitem', { name: /Missing revision v2/u }).count()).toBe(1)
     expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
+    // Disclosure resizing can leave the transcript at either scroll position.
+    await page.locator('[data-conversation-scroll]').evaluate((element) => { element.scrollTop = 0 })
+    await page.getByRole('button', { name: 'Back to bottom', exact: true }).waitFor()
     const aria = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     expect(aria).toContain('Outcome published · revision 1')
     expect(aria).toContain('Outcome published · revision 2')
@@ -577,7 +580,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
 
-  it('locates named chart elements and keeps region selection on an addressable PNG', async () => {
+  it('references named chart elements without covering the PNG and keeps explicit region selection', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-reference-elements'))
     await openSessionByTitle(SEED_TITLE)
     const center = page.locator('[class*="centerCol"]')
@@ -586,14 +589,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
     const reference = details.getByRole('button', { name: 'Add Annotation · Mean 0.14 to the conversation', exact: true })
     await reference.hover()
-    const outline = details.locator('[class*="elementOutline"]')
-    await outline.waitFor()
-    expect(await outline.getAttribute('aria-label')).toBe('Annotation · Mean 0.14')
-    const imageBox = await details.getByRole('img', { name: 'Observed series', exact: true }).boundingBox()
-    const outlineBox = await outline.boundingBox()
-    if (imageBox === null || outlineBox === null) throw new Error('chart layout unavailable')
-    expect(outlineBox.x).toBeGreaterThan(imageBox.x)
-    expect(outlineBox.x + outlineBox.width).toBeLessThan(imageBox.x + imageBox.width)
+    await reference.focus()
+    expect(await details.locator('[class*="elementOutline"]').count()).toBe(0)
+    expect(await details.getByRole('img', { name: 'Observed series', exact: true }).isVisible()).toBe(true)
     expect(await details.getByRole('button', { name: 'Select region to edit', exact: true }).isEnabled()).toBe(true)
     expect(await details.getByText('Series · α No exposure', { exact: true }).count()).toBe(1)
     expect(await details.getByText('#006ba2', { exact: true }).count()).toBe(2)

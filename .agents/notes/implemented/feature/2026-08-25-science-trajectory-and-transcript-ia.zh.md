@@ -20,7 +20,7 @@ Chat 保持 Assistant 散文不变，并折叠过程细节。`run_python`、`run
 
 Science 注册一个 turn scope 的 conversation Definition，用于聚合有效的 `science/artifact` 工具结果 presentation 值。它为每个逻辑 artifact 保留一个条目，仅在相同或更高版本出现时替换。Turn-tail 贡献在 Assistant 回复后渲染最终集合，因此 artifact 卡每轮只出现一次，而不在每个生成或标注调用旁出现。打开卡片会把精确 artifact id 与版本写入现有共享选择存储。产物数 ≤ 6 时该组渲染全部卡片；≥ 7 时渲染前 5 张加一个「+N 更多」按钮原地展开其余产物，对齐 `CS-TURN-RENDERING-SPEC.md` 的 GENERATED 托盘规则。标题计数始终是本轮总数，不是可见数；展开选择是组件本地视图状态，刷新后恢复默认。
 
-侧边栏与 Details 列只公开文件。已发布 Outcome 保留在折叠的会话单元格中；不存在 Outcome-only Details 目的地，artifact 落地视图也没有 Outcome 小节。
+侧边栏与 Details 列只公开文件。按 [Science 无发布流程](../simplification/2026-08-31-science-without-publication.zh.md)，只有此前已记录的 Outcome 保留在折叠的会话单元格中；不存在 Outcome-only Details 目的地，artifact 落地视图也没有 Outcome 小节。
 
 ## 考虑过的替代方案
 

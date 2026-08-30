@@ -14,6 +14,8 @@ R4 已在验收通过的 Session、Runtime 与模型工具层之上交付可选�
 
 ## Decision
 
+发布工具的当前可用性由 [Science 无发布流程](../simplification/2026-08-31-science-without-publication.zh.md)规定；本记录保留附件授权与已记录事件回放的依据。
+
 R5 在验收通过的 R4 收口 head `fb04b0d273a6d4d3a319a4e8243c44953010f930` 上实现 `SCI-CHARTS-OUTCOME` 切片。它为已交付的 Science preset 增加直接工具 `save_chart` 与 `publish_outcome`，为 Runtime 增加从自有成功 run 导入 PNG 的操作，增加用于领域 Session 附件引用的通用 registry，并增加渲染图表与 Outcome 工具 occurrence 的 `ui-science` Client Plugin。该 range 不包含 settings、sidebar、prefix 管理、environment mutation、Desktop carrier、provider release 或 package publication 工作。
 
 R5 明确采用双表面策略。模型侧 `save_chart` 结果是有界文字 receipt，包含图表 identity、version、source run、尺寸、字节数与标题，不包含 `ImageBlock`。Web presentation 读取同一个持久 `ImageAttachmentRef` 并渲染 PNG。`publish_outcome` 将已发布的标题、Markdown 摘要、evidence references 与 revision 作为模型可见文字返回，并在专用 Web row 中渲染同一 publication。模型若确实需要检查像素，仍在明确支持图片的 route 上使用 `read_image`；保存与展示图表本身不要求这种 route。

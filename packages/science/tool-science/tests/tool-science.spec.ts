@@ -1,7 +1,7 @@
 /**
  * Focused behavior tests for `@deepseek-ai/dsh-tool-science`: config
  * validation, registration/disposal, first-use binding, context rendering,
- * and the five tools — composed directly with `ctx.plugin(...)` (not
+ * and the four tools — composed directly with `ctx.plugin(...)` (not
  * through the real agent loop; see `loader-composition.spec.ts` for the
  * required REAL-composition coverage).
  */
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
@@ -35,8 +35,6 @@ import { resolveConfig } from '../src/config.ts'
 import { ScienceEditService } from '../src/edit-message.ts'
 import { closedKernelFacts, isScienceSession, renderScienceProjection } from '../src/context.ts'
 import { scienceArtifactPresentation } from '../src/presentation.ts'
-import { formatOutcomeResult, isMessageFact } from '../src/publish-outcome.ts'
-import type { ScienceOutcomeResultValue } from '../src/publish-outcome.ts'
 import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annotate-artifact.ts'
 import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
 import { formatRunResult, kernelRestartReason, latestRequestHeaderSeq, requireScienceSession, runValueFromResult } from '../src/run.ts'
@@ -321,18 +319,32 @@ describe('config', () => {
 })
 
 describe('registration and disposal', () => {
-  it('registers the science:environment context and all three tools', async () => {
+  it('registers Science tools without outcome publication or guidance', async () => {
     const { ctx } = await setup()
     const names = ctx.tools.schemas().map(schema => schema.name)
     expect(names).toContain('get_science_state')
     expect(names).toContain('run_python')
     expect(names).toContain('run_r')
+    expect(names).toContain('annotate_artifact')
+    expect(names).not.toContain('publish_outcome')
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.contexts.some(entry => entry.name === 'science:environment')).toBe(true)
     expect(assembly.sections.some(section => section.name === 'tool:science')).toBe(true)
+    expect(JSON.stringify(assembly)).not.toMatch(/publish_outcome|Outcome revision/)
     expect(assembly.sections.find(section => section.name === 'tool:science')?.text).toContain(
       'reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path',
     )
+  })
+
+  it('rejects direct calls to the removed publication tool without appending a publication', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-publication-unavailable')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('removed-publication'), name: 'publish_outcome',
+      arguments: {}, agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(false)
   })
 
   it('HMR-safety: disposing the plugin fiber removes every registration', async () => {
@@ -1027,7 +1039,7 @@ describe('get_science_state', () => {
     const value = stateValueFromProjection(projectionFixture({
       metrics: { runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, kernelCount: 5, outcomeRevision: 6 },
     }), 4)
-    expect(value.metrics).toEqual({ runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, outcomeRevision: 6 })
+    expect(value.metrics).toEqual({ runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4 })
     expect(value.metrics).not.toHaveProperty('kernelCount')
   })
 
@@ -1607,23 +1619,6 @@ describe('scienceArtifactPresentation', () => {
   })
 })
 
-describe('isMessageFact', () => {
-  function withEvents(events: readonly { seq: number; type: string }[]): Session {
-    return { events } as unknown as Session
-  }
-
-  it('recognizes every message-bearing carrier the durable fold tracks', () => {
-    expect(isMessageFact(withEvents([{ seq: 1, type: 'user/message' }]), 1)).toBe(true)
-    expect(isMessageFact(withEvents([{ seq: 1, type: 'assistant/message' }]), 1)).toBe(true)
-    expect(isMessageFact(withEvents([{ seq: 1, type: 'tool/result' }]), 1)).toBe(true)
-  })
-
-  it('rejects a seq naming a non-message event or no event at all', () => {
-    expect(isMessageFact(withEvents([{ seq: 1, type: 'tool/call' }]), 1)).toBe(false)
-    expect(isMessageFact(withEvents([]), 1)).toBe(false)
-  })
-})
-
 describe('annotate_artifact', () => {
   it('curates an already-captured artifact and returns a text receipt without file bytes or the internal attachment id', async () => {
     const { ctx } = await setup()
@@ -2027,230 +2022,14 @@ describe('scienceEdits submit', () => {
   })
 })
 
-describe('publish_outcome', () => {
-  it('publishes revision 1 citing a successful run, then revision 2 citing a message', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-success')
-    const runCall = authorizeToolCall(session, 2, 'run_python', 'science-outcome-run')
-    const runResult = await ctx.tools.execute({
-      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
-      agent: fakeAgent(session),
-    })
-    expect(runResult.isError).toBe(false)
-    const started = session.events.find(event => event.type === 'science/run-started')
-    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
-    const runId = String(started.data.run.runId)
-    const run = started.data.run
-    // Auto-capture always runs immediately after its own source run's
-    // terminal fact commits, so the durable event it appends carries that
-    // run's own (necessarily latest-at-the-time) requestHeaderSeq; seeding it
-    // here, before any later turn's request/header exists, matches that.
-    const captured = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
-    const messageSeq = session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
-    }), { surfaceOp: 'append' }).seq
-    const publishCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-publish-1')
-    const first = await ctx.tools.execute({
-      signal: testSignal, callId: publishCall, name: 'publish_outcome',
-      arguments: {
-        title: 'First result', summary_markdown: 'It worked.',
-        evidence: [{ kind: 'run', run_id: runId }],
-      },
-      agent: fakeAgent(session),
-    })
-    expect(first.isError).toBe(false)
-    if (first.isError) throw new Error('unreachable')
-    expect(first.value).toMatchObject({ revision: 1, title: 'First result' })
-    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(true)
-    const secondCall = authorizeToolCall(session, 4, 'publish_outcome', 'science-outcome-publish-2')
-    const second = await ctx.tools.execute({
-      signal: testSignal, callId: secondCall, name: 'publish_outcome',
-      arguments: {
-        title: 'Updated result', summary_markdown: 'Still true, see the note.',
-        evidence: [{ kind: 'message', seq: messageSeq }],
-      },
-      agent: fakeAgent(session),
-    })
-    if (second.isError) throw new Error('unreachable')
-    const secondValue = second.value as unknown as ScienceOutcomeResultValue
-    expect(secondValue.revision).toBe(2)
-    expect(second.meta).toMatchObject({ kind: 'science/outcome', version: 1, revision: 2 })
-
-    const thirdCall = authorizeToolCall(session, 6, 'publish_outcome', 'science-outcome-publish-3')
-    const third = await ctx.tools.execute({
-      signal: testSignal, callId: thirdCall, name: 'publish_outcome',
-      arguments: {
-        title: 'With a chart', summary_markdown: 'See the chart.',
-        evidence: [{ kind: 'chart', chart_id: String(captured.artifactId), version: 1 }],
-      },
-      agent: fakeAgent(session),
-    })
-    if (third.isError) throw new Error('unreachable')
-    const thirdValue = third.value as unknown as ScienceOutcomeResultValue
-    expect(third.value).toMatchObject({
-      revision: 3, evidence: [{ kind: 'chart', chart_id: String(captured.artifactId), version: 1 }],
-    })
-    expect(formatOutcomeResult(thirdValue)).toContain(`- chart ${String(captured.artifactId)}@1`)
-  })
-
-  it('rejects an empty title before it reaches the durable codec', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-empty-title')
-    const messageSeq = session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
-    }), { surfaceOp: 'append' }).seq
-    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-empty-title-call')
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
-      arguments: { title: '   ', summary_markdown: 's', evidence: [{ kind: 'message', seq: messageSeq }] },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('title must be a non-empty string'))).toBe(true)
-  })
-
-  it('rejects when Science mode is not yet bound', async () => {
-    const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-outcome-not-bound')
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-outcome-not-bound-call'), name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('Science mode is not bound'))).toBe(true)
-  })
-
-  it('rejects when no request/header is recorded', async () => {
-    const { ctx } = await setup()
-    const session = scienceSession(ctx, 'science-outcome-no-header')
-    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-outcome-no-header-call'), name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
-  })
-
-  it('rejects a nested Code Mode sub-dispatch before validation or append', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-nested')
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-outcome-nested-call'), name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 0 }] },
-      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('publish_outcome cannot run'))).toBe(true)
-    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(false)
-  })
-
-  it('rejects empty evidence', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-empty-evidence')
-    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-empty-call')
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [] },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('evidence must be non-empty'))).toBe(true)
-  })
-
-  it('rejects duplicate evidence references', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-dup-evidence')
-    const messageSeq = session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'note' }], source: { kind: 'user' },
-    }), { surfaceOp: 'append' }).seq
-    const toolCallId = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-dup-call')
-    const result = await ctx.tools.execute({
-      signal: testSignal, callId: toolCallId, name: 'publish_outcome',
-      arguments: {
-        title: 't', summary_markdown: 's',
-        evidence: [{ kind: 'message', seq: messageSeq }, { kind: 'message', seq: messageSeq }],
-      },
-      agent: fakeAgent(session),
-    })
-    expect(result.isError).toBe(true)
-    expect(result.content.some(block => block.type === 'text' && block.text.includes('duplicate evidence reference'))).toBe(true)
-  })
-
-  it('rejects evidence citing a run, chart, or message that does not exist', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-missing-evidence')
-    const runCall = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-missing-run')
-    const runRejection = await ctx.tools.execute({
-      signal: testSignal, callId: runCall, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'run', run_id: 'nope' }] },
-      agent: fakeAgent(session),
-    })
-    expect(runRejection.isError).toBe(true)
-    expect(runRejection.content.some(block => block.type === 'text' && block.text.includes('is not a successful prior run'))).toBe(true)
-
-    const chartCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-missing-chart')
-    const chartRejection = await ctx.tools.execute({
-      signal: testSignal, callId: chartCall, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'nope', version: 1 }] },
-      agent: fakeAgent(session),
-    })
-    expect(chartRejection.isError).toBe(true)
-    expect(chartRejection.content.some(block => block.type === 'text' && block.text.includes('does not exist'))).toBe(true)
-
-    const messageCall = authorizeToolCall(session, 4, 'publish_outcome', 'science-outcome-missing-message')
-    const messageRejection = await ctx.tools.execute({
-      signal: testSignal, callId: messageCall, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'message', seq: 999_999 }] },
-      agent: fakeAgent(session),
-    })
-    expect(messageRejection.isError).toBe(true)
-    expect(messageRejection.content.some(block => block.type === 'text' && block.text.includes('does not name a prior message'))).toBe(true)
-  })
-
-  it('hints that a chart_id matching a known logical name is not an artifact id', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-chart-id-logical-name')
-    const runCall = authorizeToolCall(session, 2, 'run_python', 'science-outcome-chart-id-logical-name-run')
-    const runResult = await ctx.tools.execute({
-      signal: testSignal, callId: runCall, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) },
-      agent: fakeAgent(session),
-    })
-    expect(runResult.isError).toBe(false)
-    const started = session.events.find(event => event.type === 'science/run-started')
-    if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
-    await seedAutoArtifact(ctx, session, started.data.run, 'plot.png', PNG, 'image/png')
-    const chartCall = authorizeToolCall(session, 3, 'publish_outcome', 'science-outcome-chart-id-logical-name-call')
-    const rejection = await ctx.tools.execute({
-      signal: testSignal, callId: chartCall, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'plot.png', version: 1 }] },
-      agent: fakeAgent(session),
-    })
-    expect(rejection.isError).toBe(true)
-    expect(rejection.content.some(block => block.type === 'text'
-      && block.text.includes('"plot.png" is a logical name, not an artifact id')
-      && block.text.includes('save receipt (artifact-…)'))).toBe(true)
-  })
-
-  it('hints that a filename-shaped chart_id is not the artifact id, even without a matching logical name', async () => {
-    const { ctx } = await setup()
-    const session = await boundSession(ctx, 'science-outcome-chart-id-filename')
-    const chartCall = authorizeToolCall(session, 2, 'publish_outcome', 'science-outcome-chart-id-filename-call')
-    const rejection = await ctx.tools.execute({
-      signal: testSignal, callId: chartCall, name: 'publish_outcome',
-      arguments: { title: 't', summary_markdown: 's', evidence: [{ kind: 'chart', chart_id: 'unknown.png', version: 1 }] },
-      agent: fakeAgent(session),
-    })
-    expect(rejection.isError).toBe(true)
-    expect(rejection.content.some(block => block.type === 'text'
-      && block.text.includes('"unknown.png" looks like a filename')
-      && block.text.includes('save receipt (artifact-…)'))).toBe(true)
-  })
-})
 
 describe('get_science_state artifact sanitization', () => {
+  it('omits publication state and metrics from the model response', () => {
+    const value = stateValueFromProjection(projectionFixture(), 20)
+    expect(value).not.toHaveProperty('outcome')
+    expect(value.metrics).not.toHaveProperty('outcomeRevision')
+  })
+
   it('renders cumulative direct edits as operation and target identities without values', () => {
     const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture({
       chart: {

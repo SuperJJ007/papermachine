@@ -569,11 +569,10 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
           .then((result) => { if (result.ok) setText(''); else setError(result.error.message) })
           .finally(() => { setPending(false) })
       }}>
-        <textarea value={text} aria-label={t('notes.input')} placeholder={t('notes.placeholder')}
+        <textarea value={text} aria-label={t('notes.input')} placeholder={`${t('notes.placeholder')}\n${t('notes.privacy')}`}
           onChange={(event) => { setText(event.currentTarget.value) }} />
         <button type="submit" disabled={pending || text.trim() === ''}>{t('notes.add')}</button>
       </form>
-      <p className={css.notesPrivacy}>{t('notes.privacy')}</p>
       {error !== undefined && <p role="alert">{error}</p>}
     </section>
   )

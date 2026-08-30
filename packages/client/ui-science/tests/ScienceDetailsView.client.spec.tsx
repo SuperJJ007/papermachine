@@ -687,7 +687,10 @@ describe('ScienceDetailsView: opening a tab', () => {
     })} />)
     expect(screen.getByRole('region', { name: 'Notes' })).toBeTruthy()
     expect(screen.getByText('Keep this label')).toBeTruthy()
-    expect(screen.getByText('These notes belong only to you and never enter model context.')).toBeTruthy()
+    expect(screen.queryByText('These notes belong only to you and never enter model context.')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Artifact note' }).getAttribute('placeholder')).toBe(
+      'Add a private note\nThese notes belong only to you and never enter model context.',
+    )
     fireEvent.change(screen.getByRole('textbox', { name: 'Artifact note' }), { target: { value: '  New note  ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => { expect(addArtifactNote).toHaveBeenCalledWith({ artifactId: 'chart-1', version: 2, text: 'New note' }) })

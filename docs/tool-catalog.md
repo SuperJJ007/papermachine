@@ -41,7 +41,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
-| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `publish_outcome`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `science/artifact-saved`, `science/outcome-published`, `tool/result` | - | Direct run, artifact-curation, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject. |
+| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `science/artifact-saved`, `tool/result` | - | Direct run and artifact-curation mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -2261,7 +2261,7 @@ Source: [`packages/science/tool-science/src/annotate-artifact.ts`](../packages/s
 
 ### `get_science_state`
 
-Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.
+Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.
 
 ```json
 {
@@ -2271,102 +2271,6 @@ Return the current Science session state: mode, sanitized bound environment, eve
 ```
 
 Source: [`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
-
-### `publish_outcome`
-
-Publish the current Science result as the session's next Outcome revision: a title, a Markdown summary, and non-empty unique evidence citing only prior successful runs, exact saved chart versions, and/or prior messages. Each publish replaces the model-visible current Outcome with a new contiguous revision; it does not read or change Goal state.
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "title": {
-      "type": "string",
-      "description": "Human-readable result title."
-    },
-    "summary_markdown": {
-      "type": "string",
-      "description": "Markdown summary of the result."
-    },
-    "evidence": {
-      "type": "array",
-      "description": "Non-empty, unique list of prior facts this Outcome cites: {kind:\"run\",run_id}, {kind:\"chart\",chart_id,version}, or {kind:\"message\",seq}. chart_id is the artifact id shown in parentheses in save/capture receipts (e.g. \"artifact-xxx\"), never the file's logical name or filename.",
-      "items": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "run"
-                ]
-              },
-              "run_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "run_id"
-            ]
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "chart"
-                ]
-              },
-              "chart_id": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "kind",
-              "chart_id",
-              "version"
-            ]
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "message"
-                ]
-              },
-              "seq": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "kind",
-              "seq"
-            ]
-          }
-        ]
-      }
-    }
-  },
-  "required": [
-    "title",
-    "summary_markdown",
-    "evidence"
-  ]
-}
-```
-
-Source: [`packages/science/tool-science/src/publish-outcome.ts`](../packages/science/tool-science/src/publish-outcome.ts)
 
 ### `run_python`
 
@@ -2520,4 +2424,4 @@ Run R source against this session's persistent R kernel: variables and loaded pa
 
 Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-science/src/run.ts)
 
-Direct run, artifact-curation, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject.
+Direct run and artifact-curation mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject.

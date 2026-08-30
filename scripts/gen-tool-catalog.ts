@@ -639,12 +639,11 @@ const TOOL_PACKAGES: ToolPackage[] = [
     source: {
       annotate_artifact: 'packages/science/tool-science/src/annotate-artifact.ts',
       get_science_state: 'packages/science/tool-science/src/state.ts',
-      publish_outcome: 'packages/science/tool-science/src/publish-outcome.ts',
       run_python: 'packages/science/tool-science/src/run.ts',
       run_r: 'packages/science/tool-science/src/run.ts',
     },
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)'],
-    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/artifact-saved', 'science/outcome-published', 'tool/result'],
+    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/artifact-saved', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ToolScience, {
         profileId: 'catalog',
@@ -653,7 +652,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       })
     },
     note:
-      'Direct run, artifact-curation, and Outcome mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject.',
+      'Direct run and artifact-curation mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject.',
   },
 ]
 

@@ -584,3 +584,16 @@ it('identifies a reference-only series by its localized panel suffix', () => {
   ] }) })
   expect(screen.getByRole('button', { name: '将 数据系列 · Sales · 子图 2 加入对话' })).toBeTruthy()
 })
+
+it('places a color swatch after a colored element name and omits empty swatches', () => {
+  panel({ chart: chartState({ elements: [
+    element({ id: 'series[blue]', kind: 'series', label: 'blue', current: { color: '#006ba2' } }),
+    element({ id: 'axis_range', kind: 'axis_range', current: [0, 10] }),
+  ] }) })
+  const colored = screen.getByRole('button', { name: 'Add Series · blue to the conversation' })
+  expect(colored.firstElementChild?.textContent).toBe('Series · blue')
+  expect((colored.children[1] as HTMLElement).style.backgroundColor).toBe('rgb(0, 107, 162)')
+  const plain = screen.getByRole('button', { name: 'Add Axis range to the conversation' })
+  expect(plain.firstElementChild?.textContent).toBe('Axis range')
+  expect(plain.querySelector('[style]')).toBeNull()
+})

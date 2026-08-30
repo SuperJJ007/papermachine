@@ -14,6 +14,8 @@ A naive image-bearing tool result violates the last requirement. `ImageBlock` is
 
 ## Decision
 
+Current publication availability is governed by [Science without publication](../simplification/2026-08-31-science-without-publication.md); this record retains attachment-authorization and recorded-event replay rationale.
+
 R5 implements the `SCI-CHARTS-OUTCOME` slice over the accepted R4 closure head `fb04b0d273a6d4d3a319a4e8243c44953010f930`. It adds direct `save_chart` and `publish_outcome` tools to the shipped Science preset, a Runtime operation that imports one PNG from an owned successful run, a generic registry for domain-owned Session attachment references, and a `ui-science` Client Plugin that renders chart and Outcome tool occurrences. The range contains no settings, sidebar, prefix management, environment mutation, Desktop carrier, provider release, or package-publication work.
 
 R5 makes a deliberate two-surface choice. The model-facing `save_chart` result is a bounded text receipt containing chart identity, version, source run, dimensions, byte count, and title; it carries no `ImageBlock`. The Web presentation reads the same durable `ImageAttachmentRef` and renders the PNG. `publish_outcome` returns the published title, Markdown summary, evidence references, and revision as model-visible text and renders the same publication as a dedicated Web row. A model that must inspect pixels still uses `read_image` on an explicitly image-capable route; saving and presenting a chart does not require such a route.

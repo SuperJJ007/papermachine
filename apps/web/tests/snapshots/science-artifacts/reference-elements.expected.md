@@ -25,10 +25,9 @@
   - img
 - 'button "View original: Observed series"':
   - img "Observed series"
-- status: Annotation · Mean 0.14 · highlighted in the image
 - button "Select region to edit"
 - region "Modify elements":
-  - paragraph: Hover or focus an element to locate it, then reference it and describe your edit in chat.
+  - paragraph: Select an element to reference, then describe your edit in chat.
   - region "Modify elements":
     - heading "Modify elements" [level=4]
     - list:
@@ -94,6 +93,5 @@
 - region "Notes":
   - heading "Notes" [level=3]
   - textbox "Artifact note":
-    - /placeholder: Add a private note
+    - /placeholder: "Add a private note\nThese notes belong only to you and never enter model context."
   - button "Save" [disabled]
-  - paragraph: These notes belong only to you and never enter model context.

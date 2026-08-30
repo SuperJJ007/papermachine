@@ -156,7 +156,7 @@ describe('science agent preset', () => {
     const rosterTools = requestHeader.tools?.map(tool => tool.name)
       .filter(name => name !== 'glob' && name !== 'grep').sort()
     expect(rosterTools).toEqual([
-      'annotate_artifact', 'ask_user_question', 'get_science_state', 'publish_outcome', 'read', 'read_image',
+      'annotate_artifact', 'ask_user_question', 'get_science_state', 'read', 'read_image',
       'run_python', 'run_r', 'skill', 'todo_write',
     ])
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
@@ -247,30 +247,17 @@ describe('science agent preset', () => {
     expect(firstArtifact).toMatchObject({ version: 1 })
     expect(secondArtifact).toMatchObject({ artifactId: firstArtifact.artifactId, version: 1 })
 
-    const publish = await executeScienceTool(agentHandle, 5, 'publish_outcome', {
-      title: 'Snapshot result',
-      summary_markdown: 'The deterministic run produced the cited chart.',
-      evidence: [
-        { kind: 'run', run_id: runValue.runId },
-        { kind: 'chart', chart_id: secondArtifact.artifactId, version: 1 },
-      ],
-    })
-    expect(publish.isError).toBe(false)
-    if (publish.isError) throw new Error('R5 snapshot Outcome publication failed')
-    expect(publish.value).toMatchObject({ revision: 1, title: 'Snapshot result' })
-
-    const current = await executeScienceTool(agentHandle, 6, 'get_science_state', {})
+    const current = await executeScienceTool(agentHandle, 5, 'get_science_state', {})
     expect(current.isError).toBe(false)
     if (current.isError) throw new Error('R5 snapshot state replay failed')
     const currentValue = current.value as unknown as {
       artifacts: readonly Record<string, unknown>[]
-      outcome: { revision: number } | null
-      metrics: { artifactCount: number; artifactVersionCount: number; outcomeRevision: number }
+      metrics: { artifactCount: number; artifactVersionCount: number }
     }
     // Model curation reuses the auto-captured attachment and its version.
     expect(currentValue.artifacts).toHaveLength(1)
-    expect(currentValue.outcome?.revision).toBe(1)
-    expect(currentValue.metrics).toMatchObject({ artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1 })
+    expect(currentValue).not.toHaveProperty('outcome')
+    expect(currentValue.metrics).toMatchObject({ artifactCount: 1, artifactVersionCount: 1 })
     for (const artifactState of currentValue.artifacts) {
       expect(artifactState).not.toHaveProperty('attachmentId')
       expect(artifactState).not.toHaveProperty('environmentFingerprint')
@@ -286,7 +273,7 @@ describe('science agent preset', () => {
 
     const r5Events = agentHandle.agent.session.events.filter(event => event.seq > result!.seq)
     expect(r5Events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(3)
-    expect(r5Events.filter(event => event.type === 'science/outcome-published')).toHaveLength(1)
+    expect(r5Events.filter(event => event.type === 'science/outcome-published')).toHaveLength(0)
     const r5ToolResults = r5Events.filter(event => event.type === 'tool/result')
     expect(r5ToolResults.every(event => event.type !== 'tool/result'
       || event.data.message.content.every(block => block.type !== 'tool-result'

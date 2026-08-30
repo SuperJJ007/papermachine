@@ -75,7 +75,6 @@ const stateMetricsSchema = {
     successfulRunCount: { type: 'integer', required: true },
     artifactCount: { type: 'integer', required: true },
     artifactVersionCount: { type: 'integer', required: true },
-    outcomeRevision: { type: 'integer', required: true },
   },
 } as const
 
@@ -98,7 +97,6 @@ const stateOutputSchema = {
     runs: { type: 'array', items: { type: 'json' }, required: true },
     kernels: { type: 'array', items: stateKernelSchema, required: true },
     artifacts: { type: 'array', items: stateArtifactSchema, required: true },
-    outcome: { type: 'json', required: true },
     metrics: { ...stateMetricsSchema, required: true },
     history: {
       type: 'object',
@@ -228,7 +226,6 @@ function stateMetrics(metrics: ScienceProjectionMetrics): InferValue<typeof stat
     successfulRunCount: metrics.successfulRunCount,
     artifactCount: metrics.artifactCount,
     artifactVersionCount: metrics.artifactVersionCount,
-    outcomeRevision: metrics.outcomeRevision,
   }
 }
 
@@ -253,7 +250,6 @@ export function stateValueFromProjection(
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
     kernels: projection.kernels.slice(-historyItemLimit).map(stateKernel),
     artifacts: projection.artifacts.slice(-historyItemLimit).map(stateArtifact),
-    outcome: projection.outcome as unknown as JsonValue,
     metrics: stateMetrics(projection.metrics),
     history: { runsOmitted, kernelsOmitted, artifactVersionsOmitted },
     lastScienceEventSeq: projection.lastScienceEventSeq,
@@ -269,7 +265,7 @@ export function stateValueFromProjection(
 export function applyScienceStateTool(ctx: Context, historyItemLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'get_science_state',
-    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), recent run and artifact-version histories with omitted counts, and the latest published outcome. Takes no arguments.',
+    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.',
     parameters: {},
     output: {
       schema: stateOutputSchema,

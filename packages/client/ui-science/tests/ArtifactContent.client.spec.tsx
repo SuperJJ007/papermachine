@@ -97,20 +97,20 @@ describe('ArtifactContent: region references', () => {
 })
 
 
-describe('ArtifactContent: element location', () => {
-  it('highlights the saved pixel bounds on hover and keyboard focus without staging a reference', async () => {
+describe('ArtifactContent: element references', () => {
+  it('keeps the image unobscured when an element with saved bounds is focused, hovered, or referenced', async () => {
     const props = baseProps()
     props.chart = chart({ chart: { ...props.chart.chart!, hitmapStatus: 'ok', hitmap: [{ id: 'title', bbox: [20, 10, 180, 30], z: 3 }] } })
     render(<ArtifactContent {...props} />)
-    await screen.findByRole('img')
+    const image = await screen.findByRole('img')
     const reference = screen.getByRole('button', { name: 'Add Title to the conversation' })
     fireEvent.focus(reference)
-    const outline = screen.getByLabelText('Title', { selector: 'span' })
-    expect(outline.style.left).toBe('10%')
-    expect(outline.style.top).toBe('10%')
-    expect(outline.style.width).toBe('80%')
-    expect(props.onAddTarget).not.toHaveBeenCalled()
     fireEvent.mouseEnter(reference.closest('li')!)
-    expect(screen.getByText('Title · highlighted in the image')).toBeTruthy()
+    expect(screen.queryByLabelText('Title', { selector: 'span' })).toBeNull()
+    expect(props.onAddTarget).not.toHaveBeenCalled()
+    fireEvent.click(reference)
+    expect(props.onAddTarget).toHaveBeenCalledWith(expect.objectContaining({ kind: 'element', elementId: 'title' }), '')
+    expect(image.getAttribute('src')).toBe('data:image/png;base64,loaded')
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

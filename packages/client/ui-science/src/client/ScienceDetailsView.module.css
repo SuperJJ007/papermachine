@@ -239,7 +239,6 @@
 .notes button:disabled { cursor: default; opacity: .45; }
 .notes form { display: flex; align-items: stretch; gap: 6px; }
 .notes textarea { min-width: 0; min-height: 52px; flex: 1; padding: 7px 8px; resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
-.notesPrivacy { color: var(--dsw-alias-label-caption); font-size: 11px; line-height: 16px; }
 
 /* Plain-text and unparseable-JSON content fallback. */
 
@@ -804,31 +803,13 @@
   white-space: nowrap;
 }
 
-.elementKindDot {
+.elementColorSwatch {
   width: 12px;
   height: 12px;
   flex: none;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 3px;
   background: transparent;
-}
-
-.elementLocationStatus {
-  height: 40px;
-  margin: 0;
-  overflow: auto;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.elementOutline {
-  position: absolute;
-  z-index: 1;
-  border: 2px solid var(--dsw-alias-brand-primary);
-  outline: 1px solid white;
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
-  pointer-events: none;
 }
 
 .elementReference {

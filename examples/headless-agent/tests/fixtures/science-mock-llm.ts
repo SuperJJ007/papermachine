@@ -14,7 +14,7 @@ import type { ScienceEditMessageSource } from '@deepseek-ai/dsh-tool-science/typ
 const capturePath = join(process.cwd(), 'science-model-view.json')
 
 /** Science tools whose model-facing schemas this snapshot pins verbatim. */
-const SCIENCE_TOOLS = ['annotate_artifact', 'get_science_state', 'publish_outcome', 'run_python', 'run_r']
+const SCIENCE_TOOLS = ['annotate_artifact', 'get_science_state', 'run_python', 'run_r']
 
 /** The auto-captured file this scenario curates through `annotate_artifact`. */
 const CURATED_LOGICAL_NAME = 'plot.png'
@@ -65,29 +65,6 @@ function pendingEditSource(options: GenerateOptions, served: Set<string>): Scien
   return options.messages
     .flatMap(message => message.source.kind === 'science-edit' ? [message.source] : [])
     .find(source => !served.has(editCallId(source)))
-}
-
-/**
- * The run the Science runtime context reports as the latest successful one.
- * The rendered run result deliberately carries no run id, so the durable
- * context snapshot is the model's only source for it — exactly the path a real
- * model follows before calling `annotate_artifact`.
- */
-function latestRunId(options: GenerateOptions): string {
-  const match = /Latest run (\S+) \(python\): success\./.exec(runtimeContext(options).join('\n'))
-  if (match?.[1] === undefined) throw new Error('science-mock-llm: the runtime context reports no successful python run')
-  return match[1]
-}
-
-/** The artifact identity the `annotate_artifact` receipt reported. */
-function curatedArtifactRef(options: GenerateOptions): { readonly artifactId: string; readonly version: number } {
-  // Cite what the receipt reported rather than a version number written into
-  // the fixture: a curated version is the one the model was told it curated.
-  const match = /" v(\d+) \(([^)]+)\) curated from run /.exec(toolResultTexts(options).join('\n'))
-  if (match?.[1] === undefined || match[2] === undefined) {
-    throw new Error('science-mock-llm: no annotate_artifact receipt names an artifact version and id')
-  }
-  return { artifactId: match[2], version: Number(match[1]) }
 }
 
 /** The exact plot version reported by the auto-capture receipt. */
@@ -171,11 +148,6 @@ class ScienceMockAdapter extends LlmAdapter {
       })
       return
     }
-    // One step per settled tool result: read state, run code that writes
-    // csv/json/md/png artifacts (auto-captured with no separate save step),
-    // curate the file that best demonstrates the result, publish the cited
-    // Outcome, read the sanitized state those facts produced, then run a
-    // second time on the same kernel (proving epoch reuse and no restart line).
     switch (toolResultTexts(options).length) {
       case 0:
         yield * toolCall('science-state-call', 'get_science_state', {})
@@ -197,22 +169,10 @@ class ScienceMockAdapter extends LlmAdapter {
           caption: 'Deterministic snapshot chart',
         })
         return
-      case 3: {
-        const chart = curatedArtifactRef(options)
-        yield * toolCall('science-outcome-call', 'publish_outcome', {
-          title: 'Snapshot finding',
-          summary_markdown: 'The deterministic run produced the **cited chart**.',
-          evidence: [
-            { kind: 'run', run_id: latestRunId(options) },
-            { kind: 'chart', chart_id: chart.artifactId, version: chart.version },
-          ],
-        })
-        return
-      }
-      case 4:
+      case 3:
         yield * toolCall('science-state-call-2', 'get_science_state', {})
         return
-      case 5:
+      case 4:
         // Same kernel as the first run, so the result carries no restart
         // line. This assembled call also materializes the curated exact
         // version and branches one edited output from that baseline.

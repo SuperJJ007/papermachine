@@ -120,7 +120,7 @@ export interface ScienceTraceKernelMarker {
   readonly event: 'started' | 'exited' | 'interrupted'
   readonly reason?: ScienceKernelEndReason | undefined
   readonly at: number
-  /** First later turn, or lastTurn + 1 after all turns. */
+  /** Containing turn, otherwise the first later turn, or lastTurn + 1 after all turns. */
   readonly beforeTurn: number
   readonly anchor: ScienceTraceAnchor
 }
@@ -379,7 +379,10 @@ export function buildScienceTraceModel(
   for (const kernel of science.kernels) {
     const marker = (event: ScienceTraceKernelMarker['event'], at: number, reason?: ScienceKernelEndReason): ScienceTraceKernelMarker => ({
       kernelEpoch: kernel.kernelEpoch, language: kernel.language, event, at, reason,
-      beforeTurn: turns.find(turn => (turnTimes.get(turn)?.startTime ?? Number.NEGATIVE_INFINITY) > at) ?? lastTurn + 1,
+      beforeTurn: turns.find((turn) => {
+        const timing = turnTimes.get(turn)
+        return timing !== undefined && timing.startTime <= at && at <= (timing.endTime ?? Number.POSITIVE_INFINITY)
+      }) ?? turns.find(turn => (turnTimes.get(turn)?.startTime ?? Number.NEGATIVE_INFINITY) > at) ?? lastTurn + 1,
       anchor: `seq:${science.lastScienceEventSeq}`,
     })
     // The projection guarantees startedAt on every exited or interrupted epoch.

@@ -237,16 +237,22 @@ describe('Science process model', () => {
     expect(build(nodes, { runs: [run('r', 1)] }).groups[0]?.durationMs).toBe(500)
     expect(build(nodes, { runs: [run('r', 1, 'running')] }).groups[0]?.durationMs).toBeUndefined()
   })
-  it('expands terminal epochs, sorts markers and positions them before the first later turn', () => {
+  it('expands terminal epochs and places sorted markers before their containing or next turn', () => {
     const base = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprintPreview: 'abc' }
     const model = build([step(1, 1, [], 1), step(2, 1, [], 2), step(3, 1, [], 3)], { kernels: [
       { ...base, state: 'exited', at: 30, startedAt: 5, reason: 'idle' },
       { ...base, language: 'r', state: 'interrupted', startedAt: 12, finishedAt: 25, interruptedAtSeq: 10 },
       { ...base, kernelEpoch: 2, state: 'started', at: 35 },
-    ] }, new Map([[1, { startTime: 10 }], [2, { startTime: 20 }]]))
+    ] }, new Map([[1, { startTime: 10, endTime: 15 }], [2, { startTime: 20, endTime: 25 }]]))
     expect(model.kernelMarkers.map(marker => [marker.event, marker.at, marker.beforeTurn])).toEqual([
-      ['started', 5, 1], ['started', 12, 2], ['interrupted', 25, 4], ['exited', 30, 4], ['started', 35, 4],
+      ['started', 5, 1], ['started', 12, 1], ['interrupted', 25, 2], ['exited', 30, 4], ['started', 35, 4],
     ])
+  })
+  it.each([[10, 1], [15, 1], [16, 2], [20, 2], [35, 2]])('places a marker at %s before turn %s, including an open turn', (at, beforeTurn) => {
+    const model = build([step(1, 1, [], 1), step(2, 1, [], 2)], { kernels: [{
+      kernelEpoch: 1, language: 'python', state: 'started', at, environmentRevision: 1, environmentFingerprintPreview: 'abc',
+    }] }, new Map([[1, { startTime: 10, endTime: 15 }], [2, { startTime: 20 }]]))
+    expect(model.kernelMarkers[0]?.beforeTurn).toBe(beforeTurn)
   })
 })
 

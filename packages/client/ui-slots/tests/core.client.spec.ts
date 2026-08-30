@@ -150,6 +150,19 @@ describe('kind semantics', () => {
     expect(core.entries('test.list').map(e => e.options.id)).toEqual(['a', 'b', 'c'])
   })
 
+  it('list: at most one entry may declare primary: true; a second throws naming the first', () => {
+    const core = new SlotCore()
+    mountFrame(core)
+    core.register({ name: 'test.list', id: 'a', primary: true, registrant: 'first' }, Comp)
+    core.register({ name: 'test.list', id: 'b' }, Comp) // non-primary entries are unrestricted
+    expect(() => core.register({ name: 'test.list', id: 'c', primary: true }, Comp))
+      .toThrow('already has a primary entry ("a", registered by first) — only one entry may declare primary: true')
+    expect(core.entries('test.list').map(e => ({ id: e.options.id, primary: e.options.primary }))).toEqual([
+      { id: 'a', primary: true },
+      { id: 'b', primary: undefined },
+    ])
+  })
+
   it('chain: missing select throws; select and priority land on the stored entry', () => {
     const core = new SlotCore()
     mountFrame(core)

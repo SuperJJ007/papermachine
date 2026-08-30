@@ -421,7 +421,7 @@ describe('details inject API', () => {
     expect(b.layoutFake.closeDetails).toHaveBeenCalledTimes(1)
     // The built-in `tool` entry rides the same ledger projection as
     // conversation.view's tabs.
-    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }])
+    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具', primary: false }])
     // The shared handle: details resolves the SAME instance conversation writes.
     const conv = b.runtime.storeOf('conversation.session', ROOT)
     const details = b.runtime.storeOf('details', ROOT)
@@ -442,12 +442,32 @@ describe('details inject API', () => {
     await Promise.resolve() // ledger notifications batch per microtask
     expect(listener).toHaveBeenCalled()
     expect(injected.views.version()).toBeGreaterThan(before)
-    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }, { id: 'science', label: 'Science' }])
+    expect(injected.views.list()).toEqual([
+      { id: 'tool', label: '工具', primary: false },
+      { id: 'science', label: 'Science', primary: false },
+    ])
     // Disposal (the fiber tearing down / HMR reload) removes it from the
     // ledger; the built-in entry survives.
     off()
-    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具' }])
+    expect(injected.views.list()).toEqual([{ id: 'tool', label: '工具', primary: false }])
     unsub()
+    await b.runtime.dispose()
+  })
+
+  it('projects a registrant\'s primary: true declaration; a second primary registration throws instead of silently taking the first', async () => {
+    const b = await bench()
+    const entry = b.entryOf('details')
+    const injected = (entry.inject as unknown as () => DetailsInjected)()
+    const off = b.slots.register(
+      { name: 'conversation.details.view', id: 'science', order: 10, label: 'Science', primary: true } as never, (() => null) as never)
+    expect(injected.views.list()).toEqual([
+      { id: 'tool', label: '工具', primary: false },
+      { id: 'science', label: 'Science', primary: true },
+    ])
+    expect(() => b.slots.register(
+      { name: 'conversation.details.view', id: 'other', order: 20, label: 'Other', primary: true } as never, (() => null) as never))
+      .toThrow(/already has a primary entry \("science"/)
+    off()
     await b.runtime.dispose()
   })
 

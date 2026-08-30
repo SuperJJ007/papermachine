@@ -40,7 +40,7 @@ afterEach(() => {
 })
 
 const SID = 's1' as SessionId
-const TOOL_ENTRY: DetailsViewEntry = { id: 'tool', label: '工具' }
+const TOOL_ENTRY: DetailsViewEntry = { id: 'tool', label: '工具', primary: false }
 
 /** Minimal framework seat for direct DetailsPanel/ToolDetailsView host tests. */
 const SessionProviderStub: SessionProviderComponent = ({ children }) => children(SID)
@@ -297,7 +297,7 @@ describe('DetailsPanel routing shell', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
-        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science', primary: false }])}
         t={t}
       />,
     )
@@ -320,6 +320,47 @@ describe('DetailsPanel routing shell', () => {
         actions={chat.actions}
         closeDetails={vi.fn()}
         views={detailsViews([TOOL_ENTRY])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('详情')).toBeTruthy()
+    expectDetailsViewCall(calls, 'tool')
+  })
+
+  it('falls to the registered primary entry when the session has not selected one', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    const calls: { owner: unknown; only: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science', primary: true }])}
+        t={t}
+      />,
+    )
+    expect(view.getByText('Science')).toBeTruthy()
+    expectDetailsViewCall(calls, 'science')
+  })
+
+  it('an explicit selection still wins over a registered primary entry', () => {
+    localStorage.clear()
+    const snap = snapshotBase()
+    const chat = createChatStore().create()
+    chat.actions.setDetailsView('tool')
+    const calls: { owner: unknown; only: string | undefined }[] = []
+    const view = render(
+      <DetailsPanel
+        {...standardKit(snap)}
+        renderSlot={renderDetailsViewProbe(calls)}
+        useStore={bindSnapshotSelector(chat)}
+        actions={chat.actions}
+        closeDetails={vi.fn()}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science', primary: true }])}
         t={t}
       />,
     )
@@ -361,7 +402,7 @@ describe('DetailsPanel routing shell', () => {
     const view = render(<DetailsPanel {...standardKit(snapshotBase())}
       renderSlot={renderSlot as DetailsSlotProps['renderSlot']} useStore={bindSnapshotSelector(chat)}
       actions={chat.actions} closeDetails={vi.fn()}
-      views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])} t={t} />)
+      views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science', primary: false }])} t={t} />)
     expect(renderSlot).toHaveBeenCalledWith('conversation.details.header.tabs', { openView: expect.any(Function) as unknown }, { entryKey: 'science' })
     const row = view.container.querySelector('[class*="tabRow"]')
     expect(row).not.toBeNull()
@@ -384,7 +425,7 @@ describe('DetailsPanel routing shell', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
-        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])}
+        views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science', primary: false }])}
         t={t}
       />,
     )

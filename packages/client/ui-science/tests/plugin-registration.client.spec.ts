@@ -160,7 +160,10 @@ describe('ui-science apply', () => {
     expect(slots.entries('conversation.chat.turnTail')[0]?.component).toBe(ScienceTurnArtifacts)
     expect(slots.entries('trajectory.view')[0]?.component).toBe(ScienceTraceView)
     expect(slots.entries('trajectory.view')[0]?.options).toMatchObject({ id: 'swimlane', order: 0 })
-    expect(slots.entries('conversation.details.view').map(entry => entry.options.id)).toEqual(['science'])
+    // `primary: true` makes the artifact library the Details column's
+    // default entry for any current Session (no explicit selection needed).
+    expect(slots.entries('conversation.details.view').map(entry => ({ id: entry.options.id, primary: entry.options.primary })))
+      .toEqual([{ id: 'science', primary: true }])
     expect(slots.entries('conversation.details.header.actions').map(entry => entry.options.key)).toEqual(['science'])
 
     await fiber.dispose()

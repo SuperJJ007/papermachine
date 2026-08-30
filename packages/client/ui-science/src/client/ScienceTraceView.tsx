@@ -5,7 +5,7 @@ import { IconFolderOpenOutline16, IconThinkOutline16, IconUserOutline16 } from '
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceSelectionStore } from './selection-store.ts'
-import { buildScienceTraceModel, type ScienceTraceGroup } from './science-trace-model.ts'
+import { buildScienceTraceModel } from './science-trace-model.ts'
 import css from './ScienceTraceView.module.css'
 
 /** Cross-view writes supplied by the Science trace registration. */
@@ -29,22 +29,6 @@ export function formatScienceTraceDuration(ms: number | undefined, t: TranslateN
   if (ms === undefined) return t('trace.running')
   if (ms < 1_000) return t('trace.durationMs', { value: ms })
   return t('trace.durationSeconds', { value: (ms / 1_000).toFixed(1) })
-}
-
-/** @param group - structured intent group. @param t - Science translator. @returns localized pure-function title. */
-export function scienceTraceGroupTitle(group: ScienceTraceGroup, t: TranslateNS<'science'>): string {
-  switch (group.title.kind) {
-    case 'selected-edit': return t('trace.title.selectedEdit', { name: group.title.name })
-    case 'edit': return t('trace.title.edit', { name: group.title.name, version: group.title.version })
-    case 'generate': return group.title.count === 1
-      ? t('trace.title.generate', { name: group.title.name })
-      : t('trace.title.generateMany', { name: group.title.name, count: group.title.count })
-    case 'curate': return t('trace.title.curate', {
-      name: group.title.name, title: group.title.artifactTitle,
-    })
-    case 'run': return t('trace.title.run', { language: group.title.language })
-    case 'browse': return t('trace.title.browse')
-  }
 }
 
 /** Render the turn-grouped Science trace using actor-owned sides of the center timeline. */

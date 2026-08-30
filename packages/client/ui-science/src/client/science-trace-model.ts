@@ -24,15 +24,6 @@ export type ScienceTraceArtifactDelta = ScienceTraceArtifactDeltaBase & (
   | { readonly action: 'advanced'; readonly parentVersion: number }
 )
 
-/** Structured title selected for one intent group. */
-export type ScienceTraceGroupTitle =
-  | { readonly kind: 'selected-edit'; readonly name: string }
-  | { readonly kind: 'edit'; readonly name: string; readonly version: number }
-  | { readonly kind: 'generate'; readonly name: string; readonly count: number }
-  | { readonly kind: 'curate'; readonly name: string; readonly artifactTitle: string }
-  | { readonly kind: 'run'; readonly language: string }
-  | { readonly kind: 'browse' }
-
 /** One run row inside an intent group. */
 export interface ScienceTraceRunRow {
   readonly run: ScienceClientRun
@@ -45,7 +36,6 @@ export interface ScienceTraceRunRow {
 /** One turn-sized semantic intent group. */
 export interface ScienceTraceGroup {
   readonly turn: number
-  readonly title: ScienceTraceGroupTitle
   readonly runs: readonly ScienceTraceRunRow[]
   readonly artifacts: readonly ScienceTraceArtifactDelta[]
   readonly failedCount: number
@@ -61,7 +51,6 @@ export interface ScienceTraceDialogue {
   readonly turn: number
   readonly text: string
   readonly seq: number
-  readonly selection: boolean
   readonly anchor: ScienceTraceAnchor
 }
 
@@ -96,11 +85,6 @@ export interface ScienceTraceModel {
 
 function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>): string {
   return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
-}
-
-function sourceKind(source: unknown): string | undefined {
-  if (typeof source !== 'object' || source === null || !('kind' in source)) return undefined
-  return typeof source.kind === 'string' ? source.kind : undefined
 }
 
 function artifactTurn(
@@ -142,13 +126,13 @@ export function buildScienceTraceModel(
       if (text === '') continue
       inferredTurn += 1
       dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq,
-        selection: sourceKind(node.source) === 'science-edit', anchor: `seq:${node.seq}` })
+        anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'steering') {
       const text = textOf(node)
       if (text !== '') dialogues.push({ actor: 'user', turn: Math.max(1, inferredTurn), text, seq: node.seq,
-        selection: sourceKind(node.source) === 'science-edit', anchor: `seq:${node.seq}` })
+        anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind !== 'assistant') continue
@@ -187,7 +171,6 @@ export function buildScienceTraceModel(
   const turns = [...new Set([
     ...dialogues.map(item => item.turn), ...runsByTurn.keys(), ...artifactsByTurn.keys(), ...humanEdits.map(item => item.turn),
   ])].sort((a, b) => a - b)
-  const selectionTurns = new Set(dialogues.filter(item => item.selection).map(item => item.turn))
   const groups = turns.map((turn): ScienceTraceGroup => {
     const runRows = (runsByTurn.get(turn) ?? []).map((run): ScienceTraceRunRow => ({
       run, callId: run.toolCallId, durationMs: runDuration(run), failed: run.status !== 'running' && run.status !== 'success',
@@ -210,26 +193,9 @@ export function buildScienceTraceModel(
     const runCallIds = new Set(runRows.map(row => row.callId))
     const delegatedCallIds = turnCalls.filter(([, call]) => call.name.startsWith('subagent')).map(([callId]) => callId)
     const miscToolCount = turnCalls.filter(([callId, call]) => !runCallIds.has(callId) && !call.name.startsWith('subagent')).length
-    const firstAdvanced = artifacts.find((item): item is ScienceTraceArtifactDelta & { readonly action: 'advanced' } =>
-      item.action === 'advanced')
-    const firstCreated = artifacts.find(item => item.action === 'created')
-    const firstCurated = artifacts.find(item => item.action === 'curated')
-    const firstRun = runRows[0]
-    let title: ScienceTraceGroup['title']
-    if (firstAdvanced !== undefined) {
-      title = selectionTurns.has(turn)
-        ? { kind: 'selected-edit', name: firstAdvanced.logicalName }
-        : { kind: 'edit', name: firstAdvanced.logicalName, version: firstAdvanced.parentVersion }
-    } else if (firstCreated !== undefined) {
-      title = { kind: 'generate', name: firstCreated.logicalName, count: artifacts.length }
-    } else if (firstCurated !== undefined) {
-      title = { kind: 'curate', name: firstCurated.logicalName, artifactTitle: firstCurated.title }
-    } else {
-      title = firstRun === undefined ? { kind: 'browse' } : { kind: 'run', language: firstRun.run.language }
-    }
     const durations = runRows.flatMap(row => row.durationMs === undefined ? [] : [row.durationMs])
     return {
-      turn, title, runs: runRows, artifacts, failedCount: runRows.filter(row => row.failed).length,
+      turn, runs: runRows, artifacts, failedCount: runRows.filter(row => row.failed).length,
       durationMs: durations.length === 0 ? undefined : durations.reduce((sum, value) => sum + value, 0),
       miscToolCount, delegatedCallIds, anchor: `turn:${turn}`,
     }

@@ -9,7 +9,7 @@ export function ScienceArtifactImage({ content, label, load, variant, labels, sr
   content: ScienceArtifactContentRef
   label: string
   load: ScienceImageLoader
-  variant: 'single' | 'tile'
+  variant: 'single' | 'tile' | 'card'
   labels: MessageImageLabels
   srcOverride?: string
 }) {

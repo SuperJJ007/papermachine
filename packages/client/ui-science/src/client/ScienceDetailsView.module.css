@@ -46,6 +46,32 @@
 .libraryList { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .libraryCard { width: 100%; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .libraryList .libraryCard { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 10px; }
+.libraryList .libraryCardThumb { display: contents; }
+.chartList .libraryCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+.chartList .libraryCard:hover { border-color: var(--dsw-alias-label-caption); }
+.chartList .libraryCardThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+.chartList .chartMeta {
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
 .workspaceList { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--dsw-alias-border-l2); }
 .workspaceList button { display: flex; width: 100%; justify-content: space-between; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
 .fileHead { display: flex; align-items: center; gap: 8px; }
@@ -382,6 +408,11 @@
   height: 64px;
 }
 
+.artifactImageFrame[data-variant='card'] {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
 .artifactImage {
   display: block;
   width: auto;
@@ -395,6 +426,13 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.artifactImageFrame[data-variant='card'] .artifactImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
 }
 
 .artifactImageError {
@@ -536,8 +574,8 @@
 
 .chartList {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -584,14 +622,15 @@
   white-space: nowrap;
   font-size: 13px;
   line-height: 18px;
+  font-weight: 500;
   color: var(--dsw-alias-label-primary);
 }
 
 .libraryFacts {
   overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 15px;
+  font-size: 11px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

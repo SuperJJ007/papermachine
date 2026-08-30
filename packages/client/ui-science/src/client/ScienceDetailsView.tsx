@@ -350,6 +350,7 @@ function ProjectLibrary({
     return () => { live = false }
   }, [loadWorkspaceFiles, path, page])
 
+  const now = Date.now()
   const needle = query.trim().toLocaleLowerCase()
   const visibleArtifacts = artifacts.filter(item => `${item.logicalName}\n${item.title ?? ''}`.toLocaleLowerCase().includes(needle))
   const groupsBySession = new Map<string, { title: string; latestAt: number; items: ScienceLibraryArtifact[] }>()
@@ -401,7 +402,7 @@ function ProjectLibrary({
                 {isCollapsed ? <IconChevronRightOutline14 /> : <IconChevronDownOutline14 />}
                 <span className={css.libraryGroupTitle}>{title}</span>{' '}
                 <span className={css.libraryGroupFacts}>
-                  {group.items.length} · {formatRelativeTime(group.latestAt, Date.now(), t, true)}
+                  {group.items.length} · {formatRelativeTime(group.latestAt, now, t, true)}
                 </span>
               </button>
             </h3>
@@ -412,13 +413,15 @@ function ProjectLibrary({
                 event.preventDefault()
                 onOpenArtifact(item)
               }}>
-                {item.latest.mediaType === 'image/png'
-                  ? <ScienceArtifactImage content={item.latest} label={title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
-                  : <ArtifactFileTile mediaType={item.latest.mediaType} />}
+                <span className={css.libraryCardThumb}>
+                  {item.latest.mediaType === 'image/png'
+                    ? <ScienceArtifactImage content={item.latest} label={title} load={loadImage} variant={layout === 'grid' ? 'card' : 'tile'} labels={artifactImageLabels(t)} />
+                    : <ArtifactFileTile mediaType={item.latest.mediaType} />}
+                </span>
                 <span className={css.chartMeta}>
-                  <strong className={css.chartTitle}>{title}</strong>
+                  <span className={css.chartTitle}>{title}</span>
                   <span className={css.libraryFacts}>
-                    v{String(item.latest.ordinal)} · {item.latest.mediaType}
+                    v{String(item.latest.ordinal)} · {formatRelativeTime(item.latest.createdAt, now, t, true)}
                   </span>
                 </span>
               </div></li>

@@ -39,6 +39,5 @@
 - region "Notes":
   - heading "Notes" [level=3]
   - textbox "Artifact note":
-    - /placeholder: Add a private note
+    - /placeholder: "Add a private note\nThese notes belong only to you and never enter model context."
   - button "Save" [disabled]
-  - paragraph: These notes belong only to you and never enter model context.

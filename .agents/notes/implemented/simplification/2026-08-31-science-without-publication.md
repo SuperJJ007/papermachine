@@ -24,6 +24,6 @@ Element references preserve exact identities without drawing over the PNG. Only 
 
 ## Consequences
 
-There is no new evidence-backed publication revision. Reintroduction requires a deliberate product decision covering producer, model guidance, and presentation together. Component tests pin unobscured images, conditional trailing swatches, and placeholder-only privacy text; the tool catalog, assembled CLI preset, real Web preset, and headless snapshot pin the model tool roster without publication.
+There is no new evidence-backed publication revision. Reintroduction requires a deliberate product decision covering producer, model guidance, and presentation together. Component tests and artifact-viewer snapshots pin unobscured images, conditional trailing swatches, and placeholder-only privacy text; the tool catalog, assembled CLI preset, real Web preset, and headless snapshot pin the model tool roster without publication.
 
 This partially supersedes [R5 publication](../feature/2026-08-16-dsh-science-v01-r5-charts-outcome.md) and qualifies [transcript Outcome placement](../feature/2026-08-25-science-trajectory-and-transcript-ia.md) as recorded-history presentation. Both records retain independent attachment-authorization, replay, and transcript-layout rationale.

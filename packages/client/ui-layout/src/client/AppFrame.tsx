@@ -204,7 +204,7 @@ export function AppFrame({
             empty while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
         <DetailsColumn>
-          {detailsSession === undefined
+          {current === undefined
             ? renderSlot('details.files', { closeDetails: actions.closeDetails })
             : renderSlot('details', {})}
         </DetailsColumn>

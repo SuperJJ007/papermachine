@@ -177,6 +177,23 @@ describe('AppFrame', () => {
     expect(slotCalls.map(c => c.key)).toContain('conversation')
   })
 
+  it('renders the session-scoped details slot for a blank current session, not details.files', () => {
+    selectedSession.current = 's-blank' as SessionId
+    selectedSessionBlank.current = true
+    const { slotCalls } = mountFrame()
+    const keys = slotCalls.map(c => c.key)
+    expect(keys).toContain('details')
+    expect(keys).not.toContain('details.files')
+  })
+
+  it('falls back to details.files only on the true welcome page (no current session)', () => {
+    selectedSession.current = undefined
+    const { slotCalls } = mountFrame()
+    const keys = slotCalls.map(c => c.key)
+    expect(keys).toContain('details.files')
+    expect(keys).not.toContain('details')
+  })
+
   it('renders both column occupants before baselines settle (no loading gate)', () => {
     // No loading gate: a bare loading status reads worse than the shell's own
     // pending rendering — both occupants mount from first paint.

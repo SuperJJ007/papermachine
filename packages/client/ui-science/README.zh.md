@@ -4,6 +4,8 @@
 
 浏览器端的 Science 执行单元格、轮末产物组、语义泳道、artifact viewer、Science 设置卡片和文件 toggle。本包只消费冻结的工具调用/结果数据与客户端安全的 `science` 会话投影；它不创建 Science 事实，也不改变模型可见内容。泳道与 artifact viewer 共享同一投影和一个本包内部选择状态存储。
 
+直接修改行在自适应宽度的标签列中显示完整的本地化元素名。多子图按编号分组，整图行在前；单子图不显示分组标题。分组行以外的元素引用仅在 id 带 `axes[n].` 前缀时附加本地化子图号。产物和文件标签页位于 `conversation.details.header.tabs`，页面选择器位于头部第一行，两者读取同一个 selection store。
+
 ## 语义泳道
 
 泳道以 `trajectory.view` id `swimlane` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在内置「详细」之前，因此 Science 会话进入「轨迹」时默认显示泳道，其他会话仍只显示详细账本。每个生成轮只有一张卡，严格限制为三行：截断的用户要求、结构化的运行/失败摘要，以及不换行的精确 artifact 版本小标签。泳道不复制 Assistant 散文或 Agent 结语。运行摘要在「详细」中打开对应调用；artifact 小标签在共享查看器中打开精确版本。

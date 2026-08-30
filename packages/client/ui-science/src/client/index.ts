@@ -49,6 +49,7 @@ import { ScienceTurnArtifacts, type ScienceTurnArtifactsInjected } from './Scien
 import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from './science-turn-artifacts.ts'
 import { ScienceTraceView, type ScienceTraceInjected } from './ScienceTraceView.tsx'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
+import { ScienceDetailsTabs } from './ScienceDetailsTabs.tsx'
 import { ScienceDetailsHeader } from './ScienceDetailsHeader.tsx'
 import { createScienceSelectionStore } from './selection-store.ts'
 import { readToggleScope } from './toggle-scope.ts'
@@ -326,6 +327,10 @@ export function apply(ctx: ClientContext): void {
       }
     },
   }, ScienceDetailsView))
+  ctx.slots.inject('conversation.details.header.tabs', () => ctx.slots.register({
+    name: 'conversation.details.header.tabs', key: SCIENCE_DETAILS_ID, locale: NS,
+    store: scienceSelectionStore,
+  }, ScienceDetailsTabs))
   ctx.slots.inject('conversation.details.header.actions', () => ctx.slots.register({
     name: 'conversation.details.header.actions', key: SCIENCE_DETAILS_ID, locale: NS,
     store: scienceSelectionStore,

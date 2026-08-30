@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Browser presentation for Science execution cells, Turn-end artifact groups, the semantic Swimlane, the artifact viewer, the Science settings card, and the Files toggle. The package consumes frozen Tool call/result data and the client-safe `science` Session projection; it does not create Science facts or change model-visible content. The Swimlane and artifact viewer share the projection and one package-local selection store.
 
+Direct-edit rows use localized, complete kind names in one content-sized label column. Multiple axes group under numbered panel headings, with figure-wide rows first; single-panel figures have no headings. Element references outside grouped rows carry a localized panel suffix only for `axes[n].` ids. Open artifact and file tabs occupy `conversation.details.header.tabs`; the page selector occupies the first header row. Both read the same selection store.
+
 ## Semantic Swimlane
 
 The Swimlane contributes `trajectory.view` id `swimlane` and appears only for a Session whose preset or resolved projection is `science`. It is ordered before the built-in Detailed view, so Science Sessions open Trajectory on Swimlane while other Sessions retain the Detailed ledger alone. Each generated Turn is one card with a hard three-line budget: one clamped user request, one structured run/failure summary, and one non-wrapping row of exact artifact-version chips. It never copies Assistant prose or an agent conclusion. The run summary opens the corresponding call in Detailed; artifact chips open exact versions in the shared viewer.

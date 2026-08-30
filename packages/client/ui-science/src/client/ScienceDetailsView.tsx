@@ -23,7 +23,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseFill14, IconCloseOutline16,
+  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -41,12 +41,13 @@ import type {
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
-import { scienceArtifactDisplayTitle, scienceArtifactDisplayTitleOrSelf } from './artifact-display-title.ts'
+import { scienceArtifactDisplayTitleOrSelf } from './artifact-display-title.ts'
 import { foldIntermediateVersions } from './intermediate-versions.ts'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
+import type { ScienceLibraryArtifact } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
-import type { ScienceArtifactView, ScienceOpenTab, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
+import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import css from './ScienceDetailsView.module.css'
@@ -290,64 +291,12 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   )
 }
 
-function TabStrip({ tabs, artifacts, activeTabId, onActivate, onClose, t }: {
-  tabs: readonly ScienceOpenTab[]
-  artifacts: readonly ScienceClientArtifactVersion[]
-  activeTabId: string | null
-  onActivate: (tabId: string) => void
-  onClose: (tabId: string) => void
-  t: TranslateNS<'science'>
-}) {
-  return (
-    <div className={css.tabStrip} role="tablist" aria-label={t('toolbar.openArtifacts')}>
-      {tabs.map((tab) => {
-        // C1: the tab label is the artifact's latest known title, not the
-        // exact open version's own title, so it stays fixed while the
-        // toolbar's version stepper walks the tab between versions.
-        const label = tab.kind === 'artifact'
-          ? scienceArtifactDisplayTitle(artifacts, tab.artifactId) ?? tab.artifactId
-          : workspaceFileName(tab.path)
-        const id = scienceTabId(tab)
-        const active = id === activeTabId
-        return (
-          <div key={id} className={active ? `${css.tab} ${css.tabActive}` : css.tab}>
-            <button type="button" role="tab" aria-selected={active} className={css.tabButton} onClick={() => { onActivate(id) }}>
-              {label}
-            </button>
-            <button
-              type="button" className={css.tabClose} aria-label={t('toolbar.closeNamedTab', { title: label })}
-              onClick={() => { onClose(id) }}
-            >
-              <IconCloseFill14 size={10} />
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1_024) return `${String(bytes)} B`
   if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`
   return `${(bytes / 1_048_576).toFixed(1)} MB`
 }
 
-interface LibraryArtifact {
-  artifactId: string
-  logicalName: string
-  title?: string
-  caption?: string
-  originSessionId: string
-  originSessionTitle?: string
-  latest: {
-    versionId: string
-    ordinal: number
-    mediaType: ScienceArtifactMediaType
-    byteCount: number
-    createdAt: number
-  }
-}
 interface WorkspaceEntry {
   name: string
   kind: 'file' | 'dir'
@@ -362,7 +311,7 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
   loadLibrary: ScienceDetailsInjected['loadLibrary']
   loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
   loadImage: ScienceImageLoader
-  onOpenArtifact: (artifact: LibraryArtifact) => void
+  onOpenArtifact: (artifact: ScienceLibraryArtifact) => void
   onOpenFile: (path: string) => void
   currentSessionId: string
   t: TranslateNS<'science'>
@@ -370,7 +319,7 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'newest' | 'oldest' | 'name'>('newest')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
-  const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([])
+  const [artifacts, setArtifacts] = useState<ScienceLibraryArtifact[]>([])
   const [path, setPath] = useState('')
   const [entries, setEntries] = useState<WorkspaceEntry[]>([])
   const [error, setError] = useState<string>()
@@ -826,7 +775,7 @@ function ArtifactViewer({
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
-  const [libraryTabs, setLibraryTabs] = useState<Record<string, LibraryArtifact>>({})
+  const libraryTabs = useStore(state => state.libraryTabs)
   const libraryCharts = Object.values(libraryTabs).map(item => previewChart({
     artifactId: item.artifactId, logicalName: item.logicalName, title: item.title ?? item.logicalName,
     ...(item.caption === undefined ? {} : { caption: item.caption }), versionId: item.latest.versionId,
@@ -837,19 +786,15 @@ function ArtifactViewer({
   // `showLibrary` deliberately leaves open tabs intact while clearing the
   // active id; every non-null active id still names one open tab.
   const activeTab = openArtifacts.find(tab => scienceTabId(tab) === activeTabId)
-  const tabStrip = openArtifacts.length === 0 ? null : <TabStrip tabs={openArtifacts} artifacts={tabArtifacts} activeTabId={activeTabId}
-    onActivate={(tabId) => { actions.activateTab(tabId) }}
-    onClose={(tabId) => { actions.closeTab(tabId) }} t={t} />
   if (activeTab === undefined) {
     return (
       <div className={css.body}>
-        {tabStrip}
         <ProjectLibrary key={science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}
           page={libraryPage}
           loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadImage={loadImage}
           currentSessionId={currentSessionId}
           onOpenArtifact={(item) => {
-            setLibraryTabs(current => ({ ...current, [item.artifactId]: item }))
+            actions.rememberLibraryArtifact(item)
             actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.latest.ordinal })
           }}
           onOpenFile={(path) => { actions.openFileTab(path) }} t={t} />
@@ -858,7 +803,7 @@ function ArtifactViewer({
   }
 
   if (activeTab.kind === 'file') {
-    return <div className={css.body}>{tabStrip}<div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
+    return <div className={css.body}><div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
   }
 
   // The one remaining way `activeChart` resolves to undefined is the
@@ -869,7 +814,6 @@ function ArtifactViewer({
 
   return (
     <div className={css.body}>
-      {tabStrip}
       {activeChart === undefined
         ? <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
         : libraryTabs[activeChart.artifactId] !== undefined && !artifacts.includes(activeChart) ? (

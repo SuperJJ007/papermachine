@@ -8,6 +8,7 @@
  * owns for state its own skeleton dispatches.
  */
 
+import type { ScienceLibraryArtifact } from './library-artifact.ts'
 import { defineStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
@@ -73,6 +74,8 @@ export type ScienceProvenanceSubTab = 'code' | 'log' | 'messages' | 'environment
 export interface ScienceSelectionState {
   /** Ordered open artifact and file tabs. */
   openArtifacts: ScienceOpenTab[]
+  /** Selected project-library records shared by the header tabs and preview body. */
+  libraryTabs: Record<string, ScienceLibraryArtifact>
   /** The active document id, or `null` while the library is showing. */
   activeTabId: string | null
   /** The project-library page shown whenever no document tab is active. */
@@ -86,6 +89,8 @@ export interface ScienceSelectionState {
 }
 
 type ScienceSelectionActions = {
+  /** Retain selected library metadata for the open preview and its title. */
+  rememberLibraryArtifact: (draft: ScienceSelectionState, artifact: ScienceLibraryArtifact) => void
   /** Show the artifact library without closing any artifact tabs. */
   showLibrary: (draft: ScienceSelectionState) => void
   /** Select the artifact or project-files library page. */
@@ -122,9 +127,10 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      libraryTabs: {}, openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     actions: {
+      rememberLibraryArtifact: (draft, artifact) => { draft.libraryTabs[artifact.artifactId] = artifact },
       showLibrary: (draft) => {
         draft.activeTabId = null
         draft.view = 'content'

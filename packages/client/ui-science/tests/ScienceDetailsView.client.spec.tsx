@@ -400,7 +400,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.keyDown(gallery, { key: 'a' })
     expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
     fireEvent.keyDown(gallery, { key: 'Enter' })
-    expect(screen.getByRole('tablist', { name: 'Open artifacts' })).toBeTruthy()
+    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
   })
 
   it('filters and opens a latest artifact produced by another project session', async () => {
@@ -419,7 +419,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.change(search, { target: { value: 'Cross-session' } })
     expect(await screen.findByText('v3 · image/png · Source experiment')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open Cross-session chart, version 3' }))
-    expect(screen.getByRole('tab', { name: 'Cross-session chart' })).toBeTruthy()
+    expect(screen.getByText('Cross-session chart')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByText('Source experiment')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back to original conversation' }).hasAttribute('disabled')).toBe(true)
@@ -474,7 +474,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const z = screen.getByRole('button', { name: 'Open z.png, version 1' })
     fireEvent.keyDown(z, { key: 'x' })
     fireEvent.keyDown(z, { key: ' ' })
-    expect(screen.getByRole('tab', { name: 'z.png' })).toBeTruthy()
+    expect(screen.getByText('z.png')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByText('unknown-session')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
@@ -592,18 +592,38 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 })
 
 describe('ScienceDetailsView: opening a tab', () => {
-  it('clicking a gallery entry opens its tab, shows the tab strip and toolbar, and switches away from the landing view', async () => {
+  it('switches the active artifact body without advancing the selected version', () => {
+    const store = testScienceSelectionStore()
+    const science = baseProjection({ artifacts: [chart(), chart({ artifactId: 'chart-2' as never, title: 'Second chart' })] })
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+    act(() => { store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 }) })
+    expect(screen.getByText('Second chart')).toBeTruthy()
+    expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-2')
+  })
+
+  it('reports a missing open version and closes the last valid tab back to the library', async () => {
+    const store = testScienceSelectionStore()
+    store.actions.openTab({ artifactId: 'missing' as never, version: 1 })
+    render(<ScienceDetailsView {...props(baseProjection({ artifacts: [chart()] }), { store })} />)
+    expect(statusText()).toBe('This artifact version is no longer available.')
+    act(() => { store.actions.closeTab('missing'); store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
+    expect(await screen.findByRole('button', { name: 'Open Loss curve, version 1' })).toBeTruthy()
+  })
+
+  it('clicking a gallery entry opens its toolbar and returning to the library restores the gallery', async () => {
     const science = baseProjection({ artifacts: [chart({ version: 1, title: 'v1 title' }), chart({ version: 2, title: 'v2 title' })] })
     render(<ScienceDetailsView {...props(science)} />)
     fireEvent.click(await screen.findByText('v2 title'))
 
-    expect(screen.getByRole('tab', { name: 'v2 title' })).toBeTruthy()
+    expect(screen.getByText('v2 title')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'File library' })).toBeTruthy()
     expect(screen.queryByText('Format')).toBeNull()
     expect(screen.queryByText('No artifacts yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
     expect(screen.queryByRole('tab', { name: 'File library' })).toBeNull()
-    expect(screen.getByText('v2 title')).toBeTruthy()
+    expect(await screen.findByText('v2 title')).toBeTruthy()
   })
 
   it('omits the redundant source and status metadata rail', async () => {
@@ -694,57 +714,6 @@ describe('ScienceDetailsView: opening a tab', () => {
 
 })
 
-describe('ScienceDetailsView: tab strip', () => {
-  function twoTabs() {
-    const science = baseProjection({
-      artifacts: [chart({ artifactId: 'chart-1' as never, title: 'Alpha' }), chart({ artifactId: 'chart-2' as never, title: 'Beta' })],
-    })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
-    store.actions.openTab({ artifactId: 'chart-2' as never, version: 1 })
-    return { science, store }
-  }
-
-  it('renders one tab per opened artifact, the most recently opened active', () => {
-    const { science, store } = twoTabs()
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    const tabs = screen.getAllByRole('tab')
-    expect(tabs.map(tab => tab.textContent)).toEqual(['Alpha', 'Beta'])
-    expect(screen.getByRole('tab', { name: 'Beta' }).getAttribute('aria-selected')).toBe('true')
-  })
-
-  it('clicking an inactive tab activates it', () => {
-    const { science, store } = twoTabs()
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Alpha' }))
-    expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-1')
-  })
-
-  it('closing a tab through its own close control removes it; closing the last tab returns to the landing view', async () => {
-    const { science, store } = twoTabs()
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Close Alpha' }))
-    expect(screen.queryByRole('tab', { name: 'Alpha' })).toBeNull()
-    expect(screen.getByRole('tab', { name: 'Beta' })).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(screen.queryByRole('tablist', { name: 'Open artifacts' })).toBeNull()
-    // Back to the landing view: the gallery lists both charts again (closing
-    // a tab never removes the chart itself from the projection).
-    expect(await screen.findByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Open Beta, version 1' })).toBeTruthy()
-  })
-
-  it('a stale tab (chart no longer present in the projection) shows its raw id and the unavailable notice', () => {
-    const science = baseProjection({ artifacts: [chart()] })
-    const store = testScienceSelectionStore()
-    store.actions.openTab({ artifactId: 'missing-chart' as never, version: 1 })
-    render(<ScienceDetailsView {...props(science, { store })} />)
-    expect(screen.getByRole('tab', { name: 'missing-chart' })).toBeTruthy()
-    expect(statusText()).toBe('This artifact version is no longer available.')
-  })
-})
-
 describe('ScienceDetailsView: toolbar version stepper', () => {
   function threeVersions() {
     const science = baseProjection({
@@ -769,14 +738,14 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     // C1: the artifact's latest known title (here, v3's) stays fixed as the
     // tab label and toolbar name across every step — only the version
     // stepper's own v{n} badge tracks the stepped-to version.
-    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getAllByText('v3 title')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v3')
     expect(screen.queryByText(/5\.0 MB/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
-    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getAllByText('v3 title')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
     expect(screen.getByText('First pass')).toBeTruthy()
     expect(screen.queryByText(/512 B/)).toBeNull()
@@ -788,7 +757,7 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     render(<ScienceDetailsView {...props(science, { store })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
-    expect(screen.getAllByText('v3 title')).toHaveLength(2)
+    expect(screen.getAllByText('v3 title')).toHaveLength(1)
   })
 
   // C2: a same-turn intermediate draft (occ_emp_wage_scatter's shape — a
@@ -855,7 +824,7 @@ describe('ScienceDetailsView: viewer title', () => {
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    expect(screen.getAllByText('Loss curve')).toHaveLength(2)
+    expect(screen.getAllByText('Loss curve')).toHaveLength(1)
     expect(screen.queryByText('loss-curve.png')).toBeNull()
   })
 
@@ -866,9 +835,7 @@ describe('ScienceDetailsView: viewer title', () => {
     const store = testScienceSelectionStore()
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
     render(<ScienceDetailsView {...props(science, { store })} />)
-    // Once as the tab label, once as the toolbar title — never a second,
-    // redundant logicalName line beside it.
-    expect(screen.getAllByText('plot.png')).toHaveLength(2)
+    expect(screen.getAllByText('plot.png')).toHaveLength(1)
   })
 })
 

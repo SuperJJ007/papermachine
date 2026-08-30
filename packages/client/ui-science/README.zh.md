@@ -2,15 +2,21 @@
 
 [English](README.md) | 中文
 
-浏览器端的 Science 执行单元格、轮末产物组、语义泳道、artifact viewer、Science 设置卡片和文件 toggle。本包只消费冻结的工具调用/结果数据与客户端安全的 `science` 会话投影；它不创建 Science 事实，也不改变模型可见内容。泳道与 artifact viewer 共享同一投影和一个本包内部选择状态存储。
+浏览器端的 Science 执行单元格、轮末产物组、过程视图、artifact viewer、Science 设置卡片和文件 toggle。本包只消费冻结的工具调用/结果数据与客户端安全的 `science` 会话投影；它不创建 Science 事实，也不改变模型可见内容。过程视图与 artifact viewer 共享同一投影和本包内部的产物选择状态存储。
 
 直接修改行在自适应宽度的标签列中显示完整的本地化元素名。多子图按编号分组，整图行在前；单子图不显示分组标题。分组行以外的元素引用仅在 id 带 `axes[n].` 前缀时附加本地化子图号。产物和文件标签页位于 `conversation.details.header.tabs`，页面选择器位于头部第一行，两者读取同一个 selection store。
 
-## 语义泳道
+## 过程视图
 
-泳道以 `trajectory.view` id `swimlane` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在内置「详细」之前，因此 Science 会话进入「轨迹」时默认显示泳道，其他会话仍只显示详细账本。每个生成轮只有一张卡，严格限制为三行：截断的用户要求、结构化的运行/失败摘要，以及不换行的精确 artifact 版本小标签。泳道不复制 Assistant 散文或 Agent 结语。运行摘要在「详细」中打开对应调用；artifact 小标签在共享查看器中打开精确版本。
+「过程（Process）」以 `trajectory.view` id `process` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在「详细」之前，因此 Science 会话进入「轨迹」时默认显示过程，其他会话仍只有详细账本。折叠的轮卡片有三行内容：截断的用户要求、有序步骤条与统计，以及每个产物在本轮最终版本的小标签。长步骤条和产物标签行在卡片内换行。步骤条最多渲染 120 次调用并提示总数；展开清单仍然完整。
 
-可见性通过 `ctx.trajectorySubviews.registerVisibility('swimlane', source)` 注册。会话列表变化时，该 source 会重新绑定投影订阅，因此 preset 指派、Session 创建、投影解析、插件卸载与热更新都会直接使轨迹内层切换器失效并重算。
+点击色块会展开卡片、高亮对应清单行并滚动到该行。展开后的每行包含 assistant 步号、种类标记、结构化标题、结果和该调用产出的产物版本。同一步的并行调用共享步号。同轮内连续成功的资料查看调用合并，包括跨步号的调用，但每次调用保留自己的色块、标题和锚点。失败、运行、标注、发布和委派都不合并。点击行标题会在「详细」中打开第一个成员；点击产物标签会在共享查看器中打开精确版本。展开与高亮只属于当前挂载的过程视图，切换详细后仍保留，但不落盘。
+
+标题取自工具名、经校验的 JSON 参数字段和 Science 事件。文件名省略目录，标注与发布标题截断到四十个字符。视图不解析代码或模型散文，不复制 Assistant 文本、stdout 或 stderr。运行状态和时长以 run 记录为准，其他失败来自工具结果的错误标志。步骤统计计算不同的 assistant 步号，包括没有工具调用的步骤。会话统计对产物去重并累加轮次墙钟时长；缺少结束时间时回退到已完成运行的时长之和。
+
+内核启动、退出和中断事实显示为时间线标记，不单独渲染环境卡。终态 epoch 同时提供启动和结束标记；退出原因说明变量何时清空。标记放在其时间戳之后开始的第一轮之前，否则放在最后一轮之后。当前环境可用时，启动标记显示其 profile 名。
+
+可见性通过 `ctx.trajectorySubviews.registerVisibility('process', source)` 注册。会话列表变化时，该 source 会重新绑定投影订阅，因此 preset 指派、Session 创建、投影解析、插件卸载与热更新都会直接使轨迹内层切换器失效并重算。
 
 ## 轮末产物
 
@@ -34,7 +40,7 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 对话流过程细节 chrome
 
-`registerTranscriptDetailVisibility`（`ui-conversation` 的 `IConversation`）会为满足泳道资格的会话隐藏对话流中的上下文注入展开行，以及每轮的 `用时`/TTFT/吞吐标签（`createTranscriptDetailVisibilitySource`，与泳道自身可见性来源同一套响应式判定逻辑，取反）。两者都仍可从持久日志重建——上下文行经由 Trajectory 详细子视图，计时数字经由 composer dock 的全会话统计条，本抑制机制不影响后者。`ui-conversation` 自身无条件渲染两者，仅通过其 `processDetailVisible` chat-node Hook 咨询已注册的来源，因此不携带任何 Science 专属代码；本包目前是唯一的注册方。
+`registerTranscriptDetailVisibility`（`ui-conversation` 的 `IConversation`）会为满足过程视图资格的会话隐藏对话流中的上下文注入展开行，以及每轮的 `用时`/TTFT/吞吐标签（`createTranscriptDetailVisibilitySource`，与过程视图自身可见性来源同一套响应式判定逻辑，取反）。两者都仍可从持久日志重建——上下文行经由 Trajectory 详细子视图，计时数字经由 composer dock 的全会话统计条，本抑制机制不影响后者。`ui-conversation` 自身无条件渲染两者，仅通过其 `processDetailVisible` chat-node Hook 咨询已注册的来源，因此不携带任何 Science 专属代码；本包目前是唯一的注册方。
 
 ## Outcome 行
 

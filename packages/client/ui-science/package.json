@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-science",
-  "description": "Science transcript cells, turn artifacts, trajectory swimlane, and artifact workbench",
+  "description": "Science transcript cells, turn artifacts, trajectory process view, and artifact workbench",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"

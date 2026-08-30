@@ -2,15 +2,21 @@
 
 English | [中文](README.zh.md)
 
-Browser presentation for Science execution cells, Turn-end artifact groups, the semantic Swimlane, the artifact viewer, the Science settings card, and the Files toggle. The package consumes frozen Tool call/result data and the client-safe `science` Session projection; it does not create Science facts or change model-visible content. The Swimlane and artifact viewer share the projection and one package-local selection store.
+Browser presentation for Science execution cells, Turn-end artifact groups, the Process view, the artifact viewer, the Science settings card, and the Files toggle. The package consumes frozen Tool call/result data and the client-safe `science` Session projection; it does not create Science facts or change model-visible content. The Process view and artifact viewer share the projection and one package-local artifact selection store.
 
 Direct-edit rows use localized, complete kind names in one content-sized label column. Multiple axes group under numbered panel headings, with figure-wide rows first; single-panel figures have no headings. Element references outside grouped rows carry a localized panel suffix only for `axes[n].` ids. Open artifact and file tabs occupy `conversation.details.header.tabs`; the page selector occupies the first header row. Both read the same selection store.
 
-## Semantic Swimlane
+## Process view
 
-The Swimlane contributes `trajectory.view` id `swimlane` and appears only for a Session whose preset or resolved projection is `science`. It is ordered before the built-in Detailed view, so Science Sessions open Trajectory on Swimlane while other Sessions retain the Detailed ledger alone. Each generated Turn is one card with a hard three-line budget: one clamped user request, one structured run/failure summary, and one non-wrapping row of exact artifact-version chips. It never copies Assistant prose or an agent conclusion. The run summary opens the corresponding call in Detailed; artifact chips open exact versions in the shared viewer.
+Process contributes `trajectory.view` id `process` and appears only for a Session whose preset or resolved projection is `science`. It is ordered before Detailed, so Science Sessions open Trajectory on Process while other Sessions retain only the Detailed ledger. A collapsed Turn card has three content rows: a clamped user request, an ordered step strip with totals, and artifact chips retaining each artifact's final version for that Turn. Long strips and chip rows wrap within the card. The strip caps rendering at 120 calls and reports the full count; the expanded list remains complete.
 
-Visibility is registered through `ctx.trajectorySubviews.registerVisibility('swimlane', source)`. The source rebinds projection subscriptions when the Session list changes, so preset assignment, Session creation, projection resolution, plugin unload, and hot reload invalidate the inner Trajectory switcher directly.
+Clicking a strip pip expands the card, highlights its list row and scrolls that row into view. Each expanded row contains the assistant step number, a kind marker, a structured title, a result and any artifact versions produced by that call. Parallel calls share a step number. Consecutive successful browse calls merge within one Turn, including across step numbers, but each call retains its own pip, title and anchor. Failures, runs, annotations, publications and delegations never merge. A row title opens its first member in Detailed; an artifact chip opens that exact version in the shared viewer. Expansion and highlighting stay local to the mounted Process view and survive switching to Detailed, without persistence.
+
+Titles use tool names, validated JSON argument fields and Science events. File names omit directories; annotation and publication titles stop at forty characters. The view never parses code or model prose and never copies Assistant text, stdout or stderr. Run records determine run status and duration; other failures use tool-result errors. Step totals count distinct assistant steps, including steps without calls. Session totals count unique artifacts and sum turn wall time, falling back to completed run durations where turn-end timing is absent.
+
+Kernel start, exit and interruption facts appear as timeline markers instead of a separate environment card. A terminal epoch supplies both its start and its end marker; exit reasons explain when variables were cleared. Markers precede the first turn starting after their timestamp, or follow the final turn. The current environment profile labels starts when available.
+
+Visibility is registered through `ctx.trajectorySubviews.registerVisibility('process', source)`. The source rebinds projection subscriptions when the Session list changes, so preset assignment, Session creation, projection resolution, plugin unload, and hot reload invalidate the inner Trajectory switcher directly.
 
 ## Turn-end artifacts
 
@@ -34,7 +40,7 @@ Every other Tool call (`get_science_state`, `read`, `grep`, `todo_write`, and so
 
 ## Transcript process-detail chrome
 
-`registerTranscriptDetailVisibility` (`ui-conversation`'s `IConversation`) hides the chat flow's injected-context disclosure row and each turn's `Ran for`/TTFT/throughput labels for a Session that qualifies for the Swimlane (`createTranscriptDetailVisibilitySource`, the same reactive predicate as the Swimlane's own visibility source, inverted). Both stay reconstructable from the durable log — the context row through the Trajectory detailed subview, the timing figures through the composer dock's whole-session stats strip, which this suppression does not touch. `ui-conversation` renders both unconditionally on its own and only consults registered sources through its `processDetailVisible` chat-node Hook, so it carries no Science-specific code; this package is the sole registrant today.
+`registerTranscriptDetailVisibility` (`ui-conversation`'s `IConversation`) hides the chat flow's injected-context disclosure row and each turn's `Ran for`/TTFT/throughput labels for a Session that qualifies for Process (`createTranscriptDetailVisibilitySource`, the same reactive predicate as Process's own visibility source, inverted). Both stay reconstructable from the durable log — the context row through the Trajectory detailed subview, the timing figures through the composer dock's whole-session stats strip, which this suppression does not touch. `ui-conversation` renders both unconditionally on its own and only consults registered sources through its `processDetailVisible` chat-node Hook, so it carries no Science-specific code; this package is the sole registrant today.
 
 ## Outcome row
 

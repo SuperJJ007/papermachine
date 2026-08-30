@@ -1,5 +1,6 @@
 """Private matplotlib save registration and chart extraction for the Science kernel."""
 
+import copy
 import importlib.abc
 import importlib.machinery
 import math
@@ -30,21 +31,49 @@ def _wrap_figure_savefig(register):
         if artifact_dir and isinstance(fname, (str, os.PathLike)):
             target = os.fspath(fname)
             if target.lower().endswith(".png") and _inside(target, artifact_dir):
+                import matplotlib
                 requested = kwargs.get("dpi")
-                dpi = self.dpi if requested is None or requested == "figure" else requested
+                if requested is None:
+                    requested = matplotlib.rcParams["savefig.dpi"]
+                dpi = self.dpi if requested == "figure" else requested
                 if isinstance(dpi, (int, float)) and math.isfinite(float(dpi)) and float(dpi) > 0:
+                    save_options = dict(kwargs)
+                    for key in ("bbox_inches", "pad_inches", "facecolor", "edgecolor", "transparent"):
+                        if save_options.get(key) is None:
+                            setting = "bbox" if key == "bbox_inches" else key
+                            save_options[key] = matplotlib.rcParams["savefig." + setting]
+                    if save_options["transparent"]:
+                        for key in ("facecolor", "edgecolor"):
+                            if key not in kwargs:
+                                save_options[key] = "none"
+                    save_options["dpi"] = float(dpi)
                     register(
                         os.path.relpath(os.path.realpath(target), os.path.realpath(artifact_dir)).replace(os.sep, "/"),
                         self,
                         float(dpi),
                         tuple(float(value) for value in self.get_size_inches()),
-                        kwargs.get("bbox_inches") is not None,
+                        save_options,
                     )
         return result
 
     savefig._dsh_chart_hook = True
     figure.savefig = savefig
     return True
+
+
+def copy_chart(entry):
+    """Clone the figure and related save artists without registering another pyplot manager."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    canvas = entry["fig"].canvas
+    manager = canvas.manager
+    try:
+        canvas.manager = None
+        copied = copy.deepcopy(entry)
+    finally:
+        canvas.manager = manager
+    FigureCanvasAgg(copied["fig"])
+    return copied
 
 
 class _FigureLoader(importlib.abc.Loader):
@@ -305,7 +334,7 @@ def extract_chart(entry, path):
     width, height = read_png_size(path)
     elements = extract_elements(entry["fig"])
     expected = (round(entry["size_in"][0] * entry["dpi"]), round(entry["size_in"][1] * entry["dpi"]))
-    available = expected == (width, height)
+    available = not entry["tight"] and expected == (width, height)
     if available:
         try:
             hitmap = compute_hitmap(entry["fig"], elements, entry["dpi"], width, height)
@@ -350,14 +379,17 @@ def apply_ops(fig, ops):
             applied = False
             if name == "set_title":
                 if operation["axes"] is None:
-                    fig.suptitle(operation["text"])
+                    if fig._suptitle is None:
+                        fig.suptitle(operation["text"])
+                    else:
+                        fig._suptitle.set_text(operation["text"])
                     applied = True
                 else:
-                    axes[0].set_title(operation["text"])
+                    axes[0].title.set_text(operation["text"])
                     applied = True
             elif name == "set_axis_label":
                 for axis in axes:
-                    (axis.set_xlabel if operation["axis"] == "x" else axis.set_ylabel)(operation["text"])
+                    (axis.xaxis if operation["axis"] == "x" else axis.yaxis).label.set_text(operation["text"])
                     applied = True
             elif name == "set_legend_position":
                 applied = any(_set_legend_position(axis, operation["position"]) for axis in axes)

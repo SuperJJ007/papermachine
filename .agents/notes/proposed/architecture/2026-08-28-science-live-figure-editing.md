@@ -12,6 +12,8 @@ Raster-region selection remains useful when a chart or image has no addressable 
 
 ## Proposal
 
+Saved-version source selection, export preservation, and preview isolation follow the [baseline isolation decision](../../implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.md).
+
 The chart foundation is a live figure object plus a durable operation log. Models continue to author matplotlib or ggplot2 code and save an `image/png` under `SCIENCE_ARTIFACT_DIR`. At run completion, the kernel adapter associates each intercepted `savefig` or `ggsave` path with its live figure, extracts a closed element catalog and pixel hit map, and stores that projection on the artifact version. The displayed image is the captured PNG itself.
 
 Three ownership decisions constrain this foundation. Each save keeps the DPI selected by matplotlib or ggplot2; the Runtime does not normalize different libraries to one export density. Intercepted `Figure.savefig()`/`pyplot.savefig()` and `ggsave()` calls are the only registration entry points, so device-level R output and base graphics remain ordinary PNGs. The `chart` projection belongs to `science/artifact-saved` and the Session projection rather than the project artifact store, which continues to persist exact image bytes and ordinary version metadata.

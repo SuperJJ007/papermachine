@@ -68,7 +68,16 @@ send <- function(frame) {
   charts <- if (exists(.dsh_active_run_id, envir = .dsh_charts, inherits = FALSE)) {
     get(.dsh_active_run_id, envir = .dsh_charts, inherits = FALSE)
   } else list()
-  charts[[relative]] <- list(plot = plot, dpi = .dsh_resolve_dpi(dpi))
+  charts[[relative]] <- tryCatch({
+    dimensions <- get("dim", envir = frame, inherits = FALSE)
+    save_args <- c(list(device = get("dev", envir = frame, inherits = FALSE),
+                        width = dimensions[1], height = dimensions[2], units = "in", scale = 1,
+                        dpi = .dsh_resolve_dpi(dpi), bg = get("bg", envir = frame, inherits = FALSE),
+                        limitsize = get("limitsize", envir = frame, inherits = FALSE)),
+                   eval(quote(list(...)), envir = frame))
+    plot <- plot + .dsh_chart_env$.dsh_theme_for(plot)
+    list(snapshot = serialize(list(plot = plot, dpi = .dsh_resolve_dpi(dpi), save_args = save_args), NULL))
+  }, error = function(e) list(error = conditionMessage(e)))
   assign(.dsh_active_run_id, charts, envir = .dsh_charts)
   invisible(NULL)
 }
@@ -217,7 +226,7 @@ send <- function(frame) {
     if (!is.null(request$allow) && !(relative %in% request$allow)) next
     target <- normalizePath(file.path(root, relative), mustWork = FALSE)
     if (!.dsh_chart_env$.dsh_inside(target, root)) next
-    outcome <- tryCatch(list(ok = TRUE, value = .dsh_chart_env$extract_chart(registered[[relative]], target)),
+    outcome <- tryCatch(list(ok = TRUE, value = .dsh_chart_env$extract_chart(.dsh_copy_chart(registered[[relative]]), target)),
                         error = function(e) list(ok = FALSE, value = class(e)[1]))
     if (outcome$ok) charts[[relative]] <- outcome$value else errors[[relative]] <- outcome$value
   }
@@ -229,18 +238,21 @@ send <- function(frame) {
   writeLines(.dsh_to_json(list(charts = charts, errors = errors)), con = result_path, useBytes = TRUE)
 }
 
+.dsh_copy_chart <- function(entry) {
+  if (!is.null(entry$error)) stop(entry$error)
+  unserialize(entry$snapshot)
+}
+
 .dsh_apply_chart <- function(run_id, request_path, result_path) {
   request <- .dsh_from_json(request_path)
   if (!exists(run_id, envir = .dsh_charts, inherits = FALSE)) return("not_registered")
   registered <- get(run_id, envir = .dsh_charts, inherits = FALSE)
   entry <- registered[[request$figureKey]]
   if (is.null(entry)) return("not_registered")
+  entry <- .dsh_copy_chart(entry)
   applied <- .dsh_chart_env$apply_ops(entry$plot, request$ops)
   entry$plot <- applied$plot
-  entry$dpi <- request$dpi
-  registered[[request$figureKey]] <- entry
-  assign(run_id, registered, envir = .dsh_charts)
-  ggplot2::ggsave(filename = request$outputPath, plot = entry$plot, dpi = request$dpi)
+  do.call(ggplot2::ggsave, c(list(filename = request$outputPath, plot = entry$plot), entry$save_args))
   chart <- .dsh_chart_env$extract_chart(entry, request$outputPath)
   writeLines(.dsh_to_json(list(chart = chart, failedOps = applied$failedOps)), con = result_path, useBytes = TRUE)
   NULL

@@ -12,6 +12,8 @@ Science 需要一种图表编辑方式：保留研究者已经使用的绘图库
 
 ## 提案
 
+保存版本的来源选择、导出保留和预览隔离遵循[基线隔离决策](../../implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.zh.md)。
+
 图表底座采用活图对象加持久操作日志。模型继续编写 matplotlib 或 ggplot2 代码，并在 `SCIENCE_ARTIFACT_DIR` 下保存 `image/png`。run 结束时，内核 adapter 将每个被拦截的 `savefig` 或 `ggsave` 路径与其活图对象关联，抽取封闭元素目录与像素命中表，并把该投影存到 artifact version。屏幕显示的就是捕获的 PNG。
 
 三项所有权决策约束这一底座。每次保存沿用 matplotlib 或 ggplot2 选定的 DPI；Runtime 不把不同绘图库统一到同一种 export density。只有被拦截的 `Figure.savefig()`/`pyplot.savefig()` 与 `ggsave()` 调用才会登记，因此 R device-level 输出与 base graphics 保持普通 PNG。`chart` 投影属于 `science/artifact-saved` 与 Session projection，而不属于 project artifact store；后者继续持久化原样图片字节与普通版本元数据。

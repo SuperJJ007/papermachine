@@ -740,9 +740,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       } catch (error) {
         throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations are invalid or exceed chart state bounds', { cause: error })
       }
-      const source = versions.find(candidate => candidate.origin !== 'human-edit'
-        && candidate.chart?.figureKey === parent.chart?.figureKey) as ScienceRunArtifactVersion | undefined
-      if (source === undefined) {
+      // Human edits must parent the current version, so the nearest run-origin version owns their baseline.
+      const source = versions.findLast((candidate): candidate is ScienceRunArtifactVersion => candidate.origin !== 'human-edit')
+      if (source?.chart === undefined || source.chart.figureKey !== parent.chart.figureKey) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
       const sourceRun = projection.runs.find(candidate => candidate.runId === source.runId)
@@ -764,15 +764,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       const kernel = await this.acquireKernel(request.session, language, environment, sessionScratch, lease.control)
       this.kernels.disarmIdleTimer(request.session, language)
 
+      const cumulativeOps = [...parent.chart.ops, ...request.ops]
+      const failedOffset = parent.chart.ops.length
       let application = await this.applyChartInKernel(
         kernel.process,
         source.runId,
         parent.chart.figureKey,
-        request.ops,
+        cumulativeOps,
         parent.chart.png.dpi,
         planRunScratch(sessionScratch, source.runId, language).directory,
       )
-      let failedOffset = 0
       if (application.kind === 'not-registered') {
         const sourceScratch = planRunScratch(sessionScratch, source.runId, language)
         let sourceBytes: Uint8Array
@@ -815,18 +816,20 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         if (replayFrame.status !== 'ok') {
           throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source replay failed; rerun the code to regenerate this figure')
         }
-        failedOffset = parent.chart.ops.length
         application = await this.applyChartInKernel(
           kernel.process,
           source.runId,
           parent.chart.figureKey,
-          [...parent.chart.ops, ...request.ops],
+          cumulativeOps,
           parent.chart.png.dpi,
           replayScratch.directory,
         )
       }
       if (application.kind === 'not-registered') {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source replay did not register the figure')
+      }
+      if (application.failedOps.some(failed => failed.index < failedOffset)) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart committed edits could not be reconstructed; rerun the code to regenerate this figure')
       }
       const failedOps = application.failedOps
         .filter(failed => failed.index >= failedOffset)

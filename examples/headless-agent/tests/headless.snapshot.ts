@@ -354,6 +354,7 @@ describe('headless stream-json snapshots', () => {
   it('exposes science guidance, schemas, context, and state through a runnable keyless example', async () => {
     let runCwd = ''
     let rawModelView: string | undefined
+    let rawChartPreview: string | undefined
     const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
     try {
       const result = await runLoaderSmoke({
@@ -375,6 +376,7 @@ describe('headless stream-json snapshots', () => {
         },
         inspect: async (cwd) => {
           rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
+          rawChartPreview = await readFile(join(cwd, 'science-chart-preview.json'), 'utf8').catch(() => undefined)
         },
       })
 
@@ -383,6 +385,14 @@ describe('headless stream-json snapshots', () => {
       // Both artifacts normalize against the same minted identities, so the
       // model view and the durable stream name the same run and chart.
       const ids = scienceIds(result.stdout)
+      if (rawChartPreview === undefined) throw new Error('science driver did not capture a chart preview')
+      const chartPreview = normalizeScienceJson(rawChartPreview, ids)
+      const chartPreviewExpected = join(scienceToolsScenarioDir, 'chart-preview.expected.json')
+      if (refreshing) await writeFile(chartPreviewExpected, chartPreview)
+      expect(chartPreview).toBe(await readFile(chartPreviewExpected, 'utf8'))
+      expect(chartPreview).toContain('Preview title')
+      expect(chartPreview).toContain('Edited input')
+      expect(chartPreview).not.toContain('Discarded draft')
       const modelView = normalizeScienceJson(rawModelView, ids)
       const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
       if (refreshing) await writeFile(modelViewExpected, modelView)

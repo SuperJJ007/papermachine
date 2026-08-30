@@ -225,13 +225,15 @@ export interface ScienceRuntimeService {
    */
   startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>
   /**
-   * Apply validated operations to the exact current addressable chart and append one direct-edit PNG version.
+   * Render the current version's cumulative operations from its producing run's saved figure and export settings,
+   * then append one direct-edit PNG version. Pending previews never contribute to the committed result.
    * @param request - Exact artifact version, operations, live Session, and cancellation.
    * @returns The committed version and operations whose element targets were absent.
    */
   applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEditResult>
   /**
-   * Render validated operations against the exact current addressable chart without publishing a version.
+   * Render validated operations against the exact current addressable chart without publishing a version
+   * or mutating its saved figure. Every preview independently includes the committed operations.
    * @param request - Exact artifact version, operations, live Session, and cancellation.
    * @returns Ephemeral PNG bytes, extracted chart state, and unresolved targets.
    */

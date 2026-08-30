@@ -81,15 +81,18 @@ rl.on('line', (line) => {
   if (parts[0] === 'CHART_APPLY') {
     const [, runId, requestPath, resultPath] = parts
     const request = JSON.parse(readFileSync(requestPath, 'utf8'))
+    const title = request.ops.findLast(op => op.op === 'set_title')?.text ?? 'Deterministic chart'
+    const xLabel = request.ops.findLast(op => op.op === 'set_axis_label' && op.axis === 'x')?.text ?? 'Input'
+    const font = request.ops.findLast(op => op.op === 'set_font') ?? { family: 'sans-serif', size: 10 }
     writeFileSync(request.outputPath, PNG)
     writeFileSync(resultPath, JSON.stringify({
       chart: {
         runtime: 'matplotlib',
         png: { width: 1, height: 1, dpi: request.dpi },
         elements: [
-          { id: 'figure.title', kind: 'title', axes: null, label: null, current: 'Edited chart' },
-          { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: 'Edited input' },
-          { id: 'figure.font', kind: 'font', axes: null, label: null, current: { family: 'DejaVu Sans', size: 14 } },
+          { id: 'figure.title', kind: 'title', axes: null, label: null, current: title },
+          { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: xLabel },
+          { id: 'figure.font', kind: 'font', axes: null, label: null, current: { family: font.family, size: font.size } },
         ],
         hitmap: [],
         hitmapStatus: 'ok',

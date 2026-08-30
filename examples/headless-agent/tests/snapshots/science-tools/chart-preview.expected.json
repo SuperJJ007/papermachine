@@ -1,0 +1,64 @@
+{
+  "chart": {
+    "runtime": "matplotlib",
+    "figureKey": "plot.png",
+    "png": {
+      "width": 1,
+      "height": 1,
+      "dpi": 120
+    },
+    "elements": [
+      {
+        "id": "figure.title",
+        "kind": "title",
+        "axes": null,
+        "label": null,
+        "current": "Preview title"
+      },
+      {
+        "id": "axes[0].x_label",
+        "kind": "x_label",
+        "axes": 0,
+        "label": null,
+        "current": "Edited input"
+      },
+      {
+        "id": "figure.font",
+        "kind": "font",
+        "axes": null,
+        "label": null,
+        "current": {
+          "family": "DejaVu Sans",
+          "size": 14
+        }
+      }
+    ],
+    "ops": [
+      {
+        "op": "set_title",
+        "axes": null,
+        "text": "Directly edited chart"
+      },
+      {
+        "op": "set_axis_label",
+        "axes": 0,
+        "axis": "x",
+        "text": "Edited input"
+      },
+      {
+        "op": "set_font",
+        "axes": null,
+        "family": "DejaVu Sans",
+        "size": 14
+      },
+      {
+        "op": "set_title",
+        "axes": null,
+        "text": "Preview title"
+      }
+    ],
+    "hitmap": [],
+    "hitmapStatus": "ok"
+  },
+  "failedOps": []
+}

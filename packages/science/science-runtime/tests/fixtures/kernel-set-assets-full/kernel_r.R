@@ -127,7 +127,7 @@ function handleRun(runId, sourcePath, stdoutPath, stderrPath, artifactDir) {
   const flags = action.flags || ''
   if (typeof action.stdout === 'string') writeFileSync(stdoutPath, action.stdout)
   if (typeof action.stderr === 'string') writeFileSync(stderrPath, action.stderr)
-  if (action.artifact === 'tiny-png') writeFileSync(join(artifactDir, 'plot.png'), TINY_PNG)
+  if (action.artifact === 'tiny-png') writeFileSync(join(artifactDir, 'plot.png'), action.artifactPngBase64 ? Buffer.from(action.artifactPngBase64, 'base64') : TINY_PNG)
 
   if (kind === 'reply') {
     send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)

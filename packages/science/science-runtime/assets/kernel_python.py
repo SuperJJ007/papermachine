@@ -48,16 +48,23 @@ def _load_chart_module():
     return _chart_module
 
 
-def _register_chart(relative_path, fig, dpi, size_in, tight):
+def _register_chart(relative_path, fig, dpi, size_in, save_options):
     if _active_run_id is None:
         return
     run_charts = _dsh_charts.setdefault(_active_run_id, {})
-    run_charts[relative_path] = {
-        "fig": fig,
-        "dpi": dpi,
-        "size_in": size_in,
-        "tight": tight,
-    }
+    import matplotlib
+    try:
+        run_charts[relative_path] = _load_chart_module().copy_chart({
+            "fig": fig,
+            "dpi": dpi,
+            "size_in": size_in,
+            "tight": save_options["bbox_inches"] is not None,
+            "save_options": save_options,
+            "rc": dict(matplotlib.rcParams),
+        })
+    except Exception as error:
+        # A valid PNG remains capturable when a custom artist cannot be copied for editing.
+        run_charts[relative_path] = {"error": str(error)}
 
 
 def send(resp, frame):
@@ -191,7 +198,11 @@ def extract_charts(run_id, request_path, result_path):
         try:
             if os.path.commonpath([target, artifact_dir]) != artifact_dir:
                 continue
-            charts[relative_path] = adapter.extract_chart(entry, target)
+            if "error" in entry:
+                raise ValueError(entry["error"])
+            import matplotlib
+            with matplotlib.rc_context(entry["rc"]):
+                charts[relative_path] = adapter.extract_chart(adapter.copy_chart(entry), target)
         except Exception as error:
             errors[relative_path] = type(error).__name__
     while len(_dsh_charts) > retain_runs:
@@ -207,18 +218,16 @@ def apply_chart(run_id, request_path, result_path):
     entry = _dsh_charts.get(run_id, {}).get(request["figureKey"])
     if entry is None:
         return "not_registered"
+    if "error" in entry:
+        raise ValueError(entry["error"])
     adapter = _load_chart_module()
-    failed = adapter.apply_ops(entry["fig"], request["ops"])
+    entry = adapter.copy_chart(entry)
     output_path = request["outputPath"]
-    dpi = float(request["dpi"])
-    entry["fig"].savefig(output_path, dpi=dpi)
-    extraction_entry = {
-        "fig": entry["fig"],
-        "dpi": dpi,
-        "size_in": tuple(float(value) for value in entry["fig"].get_size_inches()),
-        "tight": False,
-    }
-    chart = adapter.extract_chart(extraction_entry, output_path)
+    import matplotlib
+    with matplotlib.rc_context(entry["rc"]):
+        failed = adapter.apply_ops(entry["fig"], request["ops"])
+        entry["fig"].savefig(output_path, **entry["save_options"])
+        chart = adapter.extract_chart(entry, output_path)
     with open(result_path, "w", encoding="utf-8") as stream:
         json.dump({"chart": chart, "failedOps": failed}, stream, ensure_ascii=False, separators=(",", ":"))
     return None

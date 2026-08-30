@@ -53,7 +53,7 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 #### 图表可寻址性
 
-通过 matplotlib `Figure.savefig()`/`pyplot.savefig()` 或 ggplot2 `ggsave()` 保存并被捕获的 PNG，可以在其 `science/artifact-saved` 值上携带 `chart` 投影。kernel 保留 live figure、保存时的 DPI、有界 semantic element catalog 与 pixel-space hit map；artifact store 仍只拥有原样 PNG 字节与普通元数据。R device-level 输出、base graphics、`SCIENCE_ARTIFACT_DIR` 之外的路径，以及被捕获策略排除的 PNG，都保持普通 raster artifact 行为。
+通过 matplotlib `Figure.savefig()`/`pyplot.savefig()` 或 ggplot2 `ggsave()` 保存并被捕获的 PNG，可以在其 `science/artifact-saved` 值上携带 `chart` 投影。内核为保存时的图对象和导出设置创建快照，包括 matplotlib 的裁剪、留白、透明度与渲染默认值，或 ggplot2 解析后的尺寸、设备与背景。有界元素目录与像素命中表描述保存的图片；产物存储仍只拥有原样 PNG 字节与普通元数据。R device-level 输出、base graphics、`SCIENCE_ARTIFACT_DIR` 之外的路径，以及被捕获策略排除的 PNG，都保持普通 raster artifact 行为。
 
 元素抽取与 hit-map 抽取相互独立。若保存的 raster 尺寸与 figure geometry 不一致（包括 matplotlib `bbox_inches='tight'`），该版本仍保留 element catalog，但设置 `hitmapStatus: 'unavailable'` 与空 `hitmap`。任何图表超时、协议错误、无效结果、adapter 错误或 live registration 缺失，都不会阻止普通 PNG 捕获；`chartUnavailablePaths` 只为 Host 诊断与测试记录受影响的已捕获路径，不进入模型输出。
 
@@ -76,7 +76,9 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 ##### 直接编辑
 
-`applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG version。它先在所属 Python 或 R kernel 中寻址活图对象。若图对象登记已经过期，Runtime 会私下用源 run 的确切物化输入重新执行源码，重放该 version 的累计操作日志，再施加新操作；这项恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。每次成功请求都会追加一个不可变的 `origin: 'human-edit'` PNG version，其 parent 是所请求 version，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，Runtime 会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。`previewChartEdit` 使用同一操作路径但不发布 version；即使全部操作都失败，它仍返回带索引的 `failedOps`，因此 viewer 能解释失败并保留未改变的 PNG。
+`applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG 版本。其来源是该产物最近的运行产出版本，而非另一次保存同名文件的运行。每次预览和保存都会复制来源版本保存的图对象，依次应用已提交操作和本次请求操作，再按原保存设置导出。若登记已经过期，运行时会私下用该源运行的确切物化输入重新执行源码；恢复不会产生 `science/run-started` 或 `science/run-finished` 事件。无法重建已提交操作时，以 `CHART_NOT_ADDRESSABLE` 拒绝，而非静默丢掉版本中的部分修改。
+
+每次成功保存都会追加一个不可变的 `origin: 'human-edit'` PNG 版本，其 parent 是所请求版本，`chart.ops` 则依次包含先前成功操作与本次成功的新操作。部分目标无法解析时，会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝。`previewChartEdit` 不发布版本，也不改变保存的图对象，即使全部待提交操作都失败也如此。因此，放弃预览不会影响后续保存。标题与轴标签编辑保留既有文字样式。紧裁剪导出的外围边界可能随修改后的文字范围变化，但裁剪策略本身保持不变。参见[编辑隔离决策](../../../.agents/notes/implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.zh.md)。
 
 确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；标题文本、标签文本、图例位置与网格可见性不会进入净化后的 state 与 receipt 摘要。
 
@@ -146,3 +148,4 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 - **项目库读取没有 chart 状态** — project artifact store 持久化 PNG 字节与版本元数据，不持久化归 session 所有的 `chart` 投影。读取另一会话的产物时，无法只从项目库恢复其可寻址状态。
 - **R device 输出与 base graphics 不可寻址** — `png(); print(p); dev.off()` 与 base `plot()` 会绕过 `ggsave()`，因此它们捕获的 PNG 不带 chart 状态。
 - **重复保存只保留终态** — 一次 run 内多次把 matplotlib 或 ggplot2 图保存到同一路径时，抽取登记只保留最后一次保存的 live figure 与 export settings。
+- **无法复制的自定义图对象保持普通 PNG** — 快照失败不会破坏成功的保存，但图片无法直接编辑。冷恢复仍要求源码输入与绘图依赖可重现；运行时对象不持久化。

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /** Drive one Science-bound agent through the keyless snapshot composition. */
 
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
@@ -61,6 +63,20 @@ try {
     && event.data.artifact.version === directChart.version)
   if (directEvent === undefined) throw new Error(`${NAME}: direct chart edit committed no artifact event`)
   process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event: directEvent })}\n`)
+  const previewRequest = { session: agent.session, artifactId: directChart.artifactId, version: directChart.version,
+    signal: new AbortController().signal }
+  const beforePreview = agent.session.events.length
+  await ctx.scienceRuntime.previewChartEdit({ ...previewRequest,
+    ops: [{ op: 'set_axis_label', axes: 0, axis: 'x', text: 'Discarded draft' }] })
+  const preview = await ctx.scienceRuntime.previewChartEdit({ ...previewRequest,
+    ops: [{ op: 'set_title', axes: null, text: 'Preview title' }] })
+  if (agent.session.events.length !== beforePreview
+    || preview.chart.elements.find(element => element.kind === 'x_label')?.current !== 'Edited input'
+    || preview.chart.ops.length !== 4) {
+    throw new Error(`${NAME}: preview did not retain the committed baseline independently of the discarded draft`)
+  }
+  await writeFile(join(process.cwd(), 'science-chart-preview.json'),
+    JSON.stringify({ chart: preview.chart, failedOps: preview.failedOps }))
   await runFixtureTurn(ctx, {
     task: 'Inspect the direct chart edit state.',
     onEvent: (sessionId: string, event: SessionEvent) => {

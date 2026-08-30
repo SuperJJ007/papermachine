@@ -1,6 +1,6 @@
 /** Direct chart editing through the assembled Runtime and fake persistent kernel. */
 
-import { mkdtempSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
@@ -8,6 +8,7 @@ import { ScienceEnvironmentProfileId, ScienceVersionId, replayScience } from '@d
 import type { ScienceChartOp, ScienceHumanEditArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
+import { KernelProcess } from '../src/kernel-process.ts'
 import {
   authorizeAnnotateArtifact,
   authorizePythonRun,
@@ -23,6 +24,7 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -118,6 +120,62 @@ function appendHumanEdit(
 }
 
 describe('ScienceRuntime.applyChartEdit', () => {
+  it('edits the newest producing run and keeps that source through consecutive human edits', async () => {
+    const { runtime, session } = await harness('chart-edit-newest-source')
+    const first = chart(session)
+    const secondExtraction = { ...editExtraction, elements: [{ ...editExtraction.elements[0], current: 'Second source' }] }
+    const handle = await runtime.startRun({
+      session, language: 'python',
+      code: kernelAction({ status: 'ok', artifact: 'tiny-png', chartResult: { charts: { 'plot.png': extraction }, errors: {} },
+        artifactPngBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=',
+        chartApplyResult: { chart: secondExtraction, failedOps: [] } }),
+      rasterArtifacts: ['plot.png'], ...authorizePythonRun(session, 'second-source'), signal: new AbortController().signal,
+    })
+    await handle.done
+    for (const version of [2, 3]) {
+      const result = await runtime.applyChartEdit({
+        session, artifactId: first.artifactId, version, ops: [titleOp], signal: new AbortController().signal,
+      })
+      expect(result.artifact.chart?.elements).toEqual(secondExtraction.elements)
+      expect(result.artifact.chart?.ops).toHaveLength(version - 1)
+    }
+  })
+
+  it.each(['ok', 'not_registered_once'])('sends all committed operations on %s kernels and reports new failure indices', async (chartApplyStatus) => {
+    const { runtime, session } = await harness(`chart-edit-cumulative-${chartApplyStatus}`, {
+      chartApplyStatus, chartApplyResult: { chart: editExtraction, failedOps: [{ index: 2, reason: 'element_not_found' }] },
+    })
+    const parent = chart(session)
+    appendHumanEdit(session, parent, { chart: { ...parent.chart!, ops: [titleOp] } })
+    const received: unknown[] = []
+    // The saved method is invoked with the exact kernel receiver inside the spy.
+    // oxlint-disable-next-line typescript/unbound-method
+    const apply = KernelProcess.prototype.applyChart
+    vi.spyOn(KernelProcess.prototype, 'applyChart').mockImplementation(function (this: KernelProcess, request) {
+      received.push(JSON.parse(readFileSync(request.requestPath, 'utf8')))
+      return apply.call(this, request)
+    })
+    const result = await runtime.previewChartEdit({
+      session, artifactId: parent.artifactId, version: 2, ops, signal: new AbortController().signal,
+    })
+    expect(received).toHaveLength(chartApplyStatus === 'ok' ? 1 : 2)
+    for (const request of received) expect(request).toMatchObject({ ops: [titleOp, ...ops] })
+    expect(result.failedOps).toEqual([{ index: 1, reason: 'element_not_found' }])
+    expect(result.chart.ops).toEqual([titleOp, titleOp])
+  })
+
+  it('refuses to save when a committed operation cannot be reconstructed', async () => {
+    const { runtime, session } = await harness('chart-edit-invalid-baseline', {
+      chartApplyResult: { chart: editExtraction, failedOps: [{ index: 0, reason: 'element_not_found' }] },
+    })
+    const parent = chart(session)
+    appendHumanEdit(session, parent, { chart: { ...parent.chart!, ops: [titleOp] } })
+    await expect(runtime.applyChartEdit({
+      session, artifactId: parent.artifactId, version: 2, ops: [titleOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
+    expect(replayScience(session.events)?.artifacts).toHaveLength(2)
+  })
+
   it('commits one warm human-edit version with cumulative successful operations', async () => {
     const { runtime, session } = await harness('chart-edit-warm')
     const parent = chart(session)

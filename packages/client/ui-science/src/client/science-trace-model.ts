@@ -166,7 +166,7 @@ function runDuration(run: ScienceClientRun): number | undefined {
 }
 
 function artifactCallId(
-  artifact: Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>,
+  artifact: { readonly runId?: ScienceRunId; readonly toolCallId: string },
   runs: ReadonlyMap<ScienceRunId, ScienceClientRun>,
 ): string | undefined {
   return artifact.runId === undefined ? artifact.toolCallId : runs.get(artifact.runId)?.toolCallId

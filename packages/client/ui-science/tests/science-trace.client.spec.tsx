@@ -259,6 +259,12 @@ describe('Science process model', () => {
     const model = build([step(1, 1, [{ name: 'run_python', callId: 'produce' }])], { artifacts: [artifact] })
     expect(model.groups[0]?.steps[0]?.artifacts).toMatchObject([{ logicalName: 'chart.png' }])
   })
+  it('retains a produced artifact in the last turn when its call is absent from the conversation', () => {
+    const model = build([step(1, 1, [], 2)], {
+      runs: [run('produce', 8)], artifacts: [fixture().science.artifacts[0]!],
+    })
+    expect(model.groups).toMatchObject([{ turn: 2, steps: [], artifacts: [{ logicalName: 'chart.png', version: 1 }] }])
+  })
   it('expands terminal epochs and places sorted markers before their containing or next turn', () => {
     const base = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprintPreview: 'abc' }
     const model = build([step(1, 1, [], 1), step(2, 1, [], 2), step(3, 1, [], 3)], { kernels: [

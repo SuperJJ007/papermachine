@@ -23,7 +23,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
-  IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
+  formatRelativeTime, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -304,7 +304,9 @@ interface WorkspaceEntry {
 }
 
 /** Project-level library home: latest artifacts plus bounded workspace browsing. */
-function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, t }: {
+function ProjectLibrary({
+  page, loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, collapsed, onToggleGroup, t,
+}: {
   page: 'artifacts' | 'files'
   loadLibrary: ScienceDetailsInjected['loadLibrary']
   loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
@@ -312,6 +314,8 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
   onOpenArtifact: (artifact: ScienceLibraryArtifact) => void
   onOpenFile: (path: string) => void
   currentSessionId: string
+  collapsed: Readonly<Record<string, true>>
+  onToggleGroup: (sessionId: string) => void
   t: TranslateNS<'science'>
 }) {
   const [query, setQuery] = useState('')
@@ -347,7 +351,25 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
   }, [loadWorkspaceFiles, path, page])
 
   const needle = query.trim().toLocaleLowerCase()
-  const visibleArtifacts = artifacts.filter(item => `${item.logicalName}\n${item.title ?? ''}`.toLocaleLowerCase().includes(needle)).sort((a, b) => {
+  const visibleArtifacts = artifacts.filter(item => `${item.logicalName}\n${item.title ?? ''}`.toLocaleLowerCase().includes(needle))
+  const groupsBySession = new Map<string, { title: string; latestAt: number; items: ScienceLibraryArtifact[] }>()
+  for (const item of visibleArtifacts) {
+    const group = groupsBySession.get(item.originSessionId)
+    if (group === undefined) {
+      groupsBySession.set(item.originSessionId, {
+        title: item.originSessionTitle ?? t('library.unknownSession'), latestAt: item.latest.createdAt, items: [item],
+      })
+    } else {
+      group.latestAt = Math.max(group.latestAt, item.latest.createdAt)
+      group.items.push(item)
+    }
+  }
+  const groups = [...groupsBySession].sort(([leftId, left], [rightId, right]) => {
+    if (leftId === currentSessionId) return -1
+    if (rightId === currentSessionId) return 1
+    return right.latestAt - left.latestAt
+  })
+  for (const [, group] of groups) group.items.sort((a, b) => {
     if (sort === 'name') return (a.title ?? a.logicalName).localeCompare(b.title ?? b.logicalName)
     return sort === 'newest' ? b.latest.createdAt - a.latest.createdAt : a.latest.createdAt - b.latest.createdAt
   })
@@ -369,27 +391,40 @@ function ProjectLibrary({ page, loadLibrary, loadWorkspaceFiles, loadImage, onOp
       {error !== undefined && <p role="alert" className={css.notice}>{error}</p>}
       {page === 'artifacts' ? <>
         {visibleArtifacts.length === 0 && <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>}
-        <ul className={layout === 'grid' ? css.chartList : css.libraryList}>{visibleArtifacts.map((item) => {
-          const title = item.title ?? item.logicalName
-          const source = item.originSessionId === currentSessionId
-            ? t('library.currentSession')
-            : item.originSessionTitle ?? item.originSessionId
-          return <li key={item.artifactId} className={css.chartItem}><div role="button" tabIndex={0} aria-label={t('details.artifact.select', { title, version: item.latest.ordinal })} className={css.libraryCard} onClick={() => { onOpenArtifact(item) }} onKeyDown={(event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return
-            event.preventDefault()
-            onOpenArtifact(item)
-          }}>
-            {item.latest.mediaType === 'image/png'
-              ? <ScienceArtifactImage content={item.latest} label={title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
-              : <ArtifactFileTile mediaType={item.latest.mediaType} />}
-            <span className={css.chartMeta}>
-              <strong className={css.chartTitle}>{title}</strong>
-              <span className={css.libraryFacts}>
-                v{String(item.latest.ordinal)} · {item.latest.mediaType} · {source}
-              </span>
-            </span>
-          </div></li>
-        })}</ul>
+        <div className={css.libraryGroups}>{groups.map(([sessionId, group]) => {
+          const title = `${group.title}${sessionId === currentSessionId ? ` · ${t('library.currentSession')}` : ''}`
+          const isCollapsed = collapsed[sessionId] === true
+          return <section key={sessionId} aria-label={title}>
+            <h3 className={css.libraryGroupHeading}>
+              <button type="button" className={css.libraryGroupToggle} aria-expanded={!isCollapsed}
+                onClick={() => { onToggleGroup(sessionId) }}>
+                {isCollapsed ? <IconChevronRightOutline14 /> : <IconChevronDownOutline14 />}
+                <span className={css.libraryGroupTitle}>{title}</span>{' '}
+                <span className={css.libraryGroupFacts}>
+                  {group.items.length} · {formatRelativeTime(group.latestAt, Date.now(), t, true)}
+                </span>
+              </button>
+            </h3>
+            {!isCollapsed && <ul className={layout === 'grid' ? css.chartList : css.libraryList}>{group.items.map((item) => {
+              const title = item.title ?? item.logicalName
+              return <li key={item.artifactId} className={css.chartItem}><div role="button" tabIndex={0} aria-label={t('details.artifact.select', { title, version: item.latest.ordinal })} className={css.libraryCard} onClick={() => { onOpenArtifact(item) }} onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onOpenArtifact(item)
+              }}>
+                {item.latest.mediaType === 'image/png'
+                  ? <ScienceArtifactImage content={item.latest} label={title} load={loadImage} variant="tile" labels={artifactImageLabels(t)} />
+                  : <ArtifactFileTile mediaType={item.latest.mediaType} />}
+                <span className={css.chartMeta}>
+                  <strong className={css.chartTitle}>{title}</strong>
+                  <span className={css.libraryFacts}>
+                    v{String(item.latest.ordinal)} · {item.latest.mediaType}
+                  </span>
+                </span>
+              </div></li>
+            })}</ul>}
+          </section>
+        })}</div>
       </> : <>
         <nav className={css.breadcrumb} aria-label={t('library.breadcrumb')}>
           <button type="button" className={crumbs.length === 0 ? css.breadcrumbCurrent : css.breadcrumbRoot} onClick={() => { setPath('') }}>{t('library.root')}</button>
@@ -770,6 +805,7 @@ function ArtifactViewer({
   const openArtifacts = useStore(s => s.openArtifacts)
   const activeTabId = useStore(s => s.activeTabId)
   const libraryPage = useStore(s => s.libraryPage)
+  const libraryCollapsed = useStore(s => s.libraryCollapsed)
   const view = useStore(s => s.view)
   const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
@@ -789,6 +825,7 @@ function ArtifactViewer({
       <div className={css.body}>
         <ProjectLibrary key={science.artifacts.map(item => `${item.artifactId}:${String(item.version)}`).join('|')}
           page={libraryPage}
+          collapsed={libraryCollapsed} onToggleGroup={actions.toggleLibraryGroup}
           loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadImage={loadImage}
           currentSessionId={currentSessionId}
           onOpenArtifact={(item) => {

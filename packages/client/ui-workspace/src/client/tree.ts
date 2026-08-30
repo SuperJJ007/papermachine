@@ -297,15 +297,6 @@ export function deriveFlat(
   return rows.map(session => sessionNode(session, descendants))
 }
 
-/** Relative-time bucket of a session row's trailing label. */
-export type RelativeTimeUnit = 'now' | 'minutes' | 'hours' | 'days' | 'months' | 'years'
-
-/** Structured relative time: the bucket plus its magnitude (0 for 'now'). */
-export interface RelativeTime {
-  unit: RelativeTimeUnit
-  n: number
-}
-
 /**
  * Merge immediate title/Workspace substring matches with ranked Host content
  * matches. Local rows lead newest-first, content-only rows retain backend
@@ -390,24 +381,4 @@ export function deriveSearchResults(
     }),
     hasMore: content.hasMore || ordered.length > limit,
   }
-}
-
-/**
- * Compact relative time for session rows, as a structured bucket the
- * renderer localizes ("now"/"5min"/"3h"/"2d"/"4mo"/"1y" in en).
- * @param updatedAt - epoch ms of the session's last activity.
- * @param now - current epoch ms (injected for pure rendering).
- * @returns the row's trailing time bucket and magnitude.
- */
-export function relativeTime(updatedAt: number, now: number): RelativeTime {
-  const MIN = 60_000
-  const HOUR = 3_600_000
-  const DAY = 86_400_000
-  const diff = Math.max(0, now - updatedAt)
-  if (diff < MIN) return { unit: 'now', n: 0 }
-  if (diff < HOUR) return { unit: 'minutes', n: Math.floor(diff / MIN) }
-  if (diff < DAY) return { unit: 'hours', n: Math.floor(diff / HOUR) }
-  if (diff < 30 * DAY) return { unit: 'days', n: Math.floor(diff / DAY) }
-  if (diff < 365 * DAY) return { unit: 'months', n: Math.floor(diff / (30 * DAY)) }
-  return { unit: 'years', n: Math.floor(diff / (365 * DAY)) }
 }

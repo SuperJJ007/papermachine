@@ -80,6 +80,8 @@ export interface ScienceSelectionState {
   activeTabId: string | null
   /** The project-library page shown whenever no document tab is active. */
   libraryPage: ScienceLibraryPage
+  /** Origin-session groups collapsed in the artifact library; absent groups are expanded. */
+  libraryCollapsed: Record<string, true>
   /** content|provenance for the active tab. */
   view: ScienceArtifactView
   /** The last-selected provenance sub-tab. */
@@ -95,6 +97,8 @@ type ScienceSelectionActions = {
   showLibrary: (draft: ScienceSelectionState) => void
   /** Select the artifact or project-files library page. */
   setLibraryPage: (draft: ScienceSelectionState, page: ScienceLibraryPage) => void
+  /** Toggle one origin-session group without changing the open document or library page. */
+  toggleLibraryGroup: (draft: ScienceSelectionState, sessionId: string) => void
   /** Open (or activate, if already open) the named artifact's tab at exactly the given version. */
   openTab: (draft: ScienceSelectionState, selection: { artifactId: ScienceArtifactId; version: number }) => void
   /** Open or activate one read-only workspace file. */
@@ -127,8 +131,9 @@ export type ScienceSelectionStore = EngineStoreHandle<ScienceSelectionState, Sci
 export function createScienceSelectionStore(): ScienceSelectionStore {
   return defineStore<ScienceSelectionState, ScienceSelectionActions>({
     init: (): ScienceSelectionState => ({
-      libraryTabs: {}, openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+      libraryCollapsed: {}, libraryTabs: {}, openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
+    persist: 'dsh.science.selection.v1',
     actions: {
       rememberLibraryArtifact: (draft, artifact) => { draft.libraryTabs[artifact.artifactId] = artifact },
       showLibrary: (draft) => {
@@ -137,6 +142,10 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
         draft.lightboxOpen = false
       },
       setLibraryPage: (draft, page) => { draft.libraryPage = page },
+      toggleLibraryGroup: (draft, sessionId) => {
+        if (draft.libraryCollapsed[sessionId]) Reflect.deleteProperty(draft.libraryCollapsed, sessionId)
+        else draft.libraryCollapsed[sessionId] = true
+      },
       openTab: (draft, selection) => {
         const existing = draft.openArtifacts.find((tab): tab is ScienceOpenArtifact => tab.kind === 'artifact' && tab.artifactId === selection.artifactId)
         if (existing === undefined) draft.openArtifacts.push({ kind: 'artifact', artifactId: selection.artifactId, version: selection.version })

@@ -7,6 +7,8 @@
 [`scaffold.ts`](scaffold.ts) 和
 [浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)中。
 
+修改源码的 HMR 场景遵循[构建产物恢复要求](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)。
+
 ## 这些是 Host 面的测试
 
 它们在根 `tsconfig.host.json` 中做类型检查，而不在 Client aggregate 中，因为它们直接读取

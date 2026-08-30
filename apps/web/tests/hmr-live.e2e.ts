@@ -1,4 +1,4 @@
-/** Published dsh web + pnpm dev:web → browser HMR, with no page reload. */
+/** Published dsh web + pnpm dev:web → browser HMR; restores source, compiler outputs, and bundles. */
 
 import { existsSync, globSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -75,9 +75,12 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   const binPath = join(REPO_ROOT, 'apps/cli/lib/bin.js')
   if (!existsSync(binPath)) throw new Error('HMR browser test needs the built dsh bin; run pnpm run build first')
   const clientBuildEnvironment = readClientBuildRecord(REPO_ROOT).environment
-  const clientBundlePaths = globSync('packages/*/*/lib/client.js{,.map}', { cwd: REPO_ROOT })
+  const clientArtifactPaths = globSync([
+    'packages/*/*/lib/client.js{,.map}',
+    'packages/client/*/lib/types/**/*.{js,d.ts}{,.map}',
+  ], { cwd: REPO_ROOT })
     .map(path => join(REPO_ROOT, path))
-  const originalClientBundles = await Promise.all(clientBundlePaths.map(async path => [path, await readFile(path)] as const))
+  const originalClientArtifacts = await Promise.all(clientArtifactPaths.map(async path => [path, await readFile(path)] as const))
   const originalSource = await readFile(sourcePath)
   const oldText = 'Into the Unknown'
   const sourceNeedle = "'hero.headline': 'Into the Unknown'"
@@ -130,7 +133,7 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   } finally {
     await writeFile(sourcePath, originalSource).catch((error: unknown) => failures.push(error))
     if (watcher !== undefined) await stopTree(watcher).catch((error: unknown) => failures.push(error))
-    await Promise.all(originalClientBundles.map(async ([path, content]) => {
+    await Promise.all(originalClientArtifacts.map(async ([path, content]) => {
       await writeFile(path, content).catch((error: unknown) => failures.push(error))
     }))
     if (host !== undefined) await stopTree(host).catch((error: unknown) => failures.push(error))
@@ -139,4 +142,7 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
   }
   if (failures.length > 0) throw new AggregateError(failures, 'HMR browser test or cleanup failed')
+  const restoredCompilerOutput = await readFile(join(REPO_ROOT, 'packages/client/ui-conversation/lib/types/client/locales.js'), 'utf8')
+  expect(restoredCompilerOutput).toContain(oldText)
+  expect(restoredCompilerOutput).not.toContain(newText)
 }, 120_000)

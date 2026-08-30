@@ -8,6 +8,8 @@ the deliberate composition divergences from `dsh web` — are documented in
 [`scaffold.ts`](scaffold.ts) and the
 [browser e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
 
+Source-editing HMR scenarios follow the [artifact restoration requirements](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
+
 ## These are Host-face tests
 
 They type-check in the root `tsconfig.host.json`, not in the Client aggregate,

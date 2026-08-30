@@ -152,14 +152,14 @@ export function ConversationSessionHeader({
             </div>
           </div>
           {tabs.length > 1 && (
-            <div className={css.tabs} role="tablist">
+            <div className="dsh-header-tabs" role="tablist">
               {tabs.map(viewTab => (
                 <button
                   key={viewTab.id}
                   type="button"
                   role="tab"
                   aria-selected={viewTab.id === active?.id}
-                  className={clsx(css.tab, viewTab.id === active?.id && css.tabActive)}
+                  className={clsx('dsh-header-tab', viewTab.id === active?.id && 'dsh-header-tab-active')}
                   onClick={() => { actions.setView(viewTab.id) }}
                 >
                   {viewTab.label}

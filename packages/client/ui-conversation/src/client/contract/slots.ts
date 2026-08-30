@@ -184,6 +184,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `conversation.details.view` entries.
      */
     'conversation.details.header.actions': { kind: 'keyed'; scope: 'session'; owner: DetailsHeaderActionOwnerProps }
+    /** Second-row tabs for the active Details view, keyed by its entry id. */
+    'conversation.details.header.tabs': { kind: 'keyed'; scope: 'session'; owner: DetailsHeaderActionOwnerProps }
     /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
@@ -949,7 +951,7 @@ export interface DetailsInjected {
 
 /** Full details-slot props: selection store, routed entry ring, injected close callback + view ledger, and locale. */
 export type DetailsSlotProps =
-  PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.view' | 'conversation.details.header.actions'>
+  PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.view' | 'conversation.details.header.actions' | 'conversation.details.header.tabs'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
 
 /** Full built-in `tool` Details entry props: runtime & its Tool output render share & store & locale seat. */

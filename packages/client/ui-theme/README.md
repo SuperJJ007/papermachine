@@ -12,6 +12,8 @@ Scrollbar rebinding contract: `scrollbar.css` binds `--dsh-scrollbar-thumb` and 
 
 The two paths are mutually exclusive by construction. `scrollbar-width`/`scrollbar-color` sit inside `@supports not selector(::-webkit-scrollbar)` because a non-`auto` value of either makes Chromium and Safari discard every `::-webkit-scrollbar*` rule for that element, `::-webkit-scrollbar-thumb:hover` included — declaring both unconditionally leaves `--dsh-scrollbar-thumb-hover` with no rendering anywhere. Firefox therefore takes the standard properties and WebKit-based engines take the pseudo-elements, so the hover token only ever renders through the pseudo-element path. Reasoning and the measured computed values: [the scrollbar Agent Note](../../../.agents/notes/implemented/bug-fix/2026-07-28-themed-scrollbars-and-reserved-gutter.md).
 
+The shared header tab stylesheet keeps the conversation and Details columns' second rows on the same baseline and active underline.
+
 ## Model Experience
 
 None, as the theme service manages a browser preference; nothing here reaches a model request.

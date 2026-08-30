@@ -19,12 +19,21 @@
   display: flex;
   flex: none;
   box-sizing: border-box;
-  height: var(--dsh-column-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 12px;
+  min-height: var(--dsh-column-header-height);
+  flex-direction: column;
+  padding: 12px 12px 0 20px;
   border-bottom: 1px solid transparent;
+}
+
+.titleRow {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.tabRow {
+  min-width: 0;
 }
 
 .header::after {
@@ -39,6 +48,8 @@
 }
 
 /* figma I54:42735;43:41479: 14/20 wt500. */
+.title:empty { display: none; }
+
 .title {
   overflow: hidden;
   flex: 1 1 auto;
@@ -55,7 +66,8 @@
    between the title and the shell's close button. */
 .actions {
   display: flex;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 4px;
 }

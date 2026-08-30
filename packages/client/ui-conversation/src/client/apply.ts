@@ -515,6 +515,7 @@ export function apply(ctx: Context): void {
     children: {
       'conversation.details.view': { kind: 'list', scope: 'session' },
       'conversation.details.header.actions': { kind: 'keyed', scope: 'session' },
+      'conversation.details.header.tabs': { kind: 'keyed', scope: 'session' },
     },
     store: chatStore,
     inject: (): DetailsInjected => ({

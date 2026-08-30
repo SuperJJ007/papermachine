@@ -52,22 +52,29 @@ export function DetailsPanel({ useSession, useStore, actions, renderSlot, closeD
   return (
     <div className={css.root}>
       <div className={css.header}>
-        <div className={css.title}>{title}</div>
-        {active !== undefined && (
-          <div className={css.actions}>
-            {renderSlot('conversation.details.header.actions', {
-              openView: (id) => { actions.setView(id) },
-            }, { entryKey: active.id })}
-          </div>
-        )}
-        <button
-          type="button" className={css.close} aria-label={t('details.close')}
-          onClick={() => { closeDetails() }}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        <div className={css.titleRow}>
+          <div className={css.title}>{title}</div>
+          {active !== undefined && (
+            <div className={css.actions}>
+              {renderSlot('conversation.details.header.actions', {
+                openView: (id) => { actions.setView(id) },
+              }, { entryKey: active.id })}
+            </div>
+          )}
+          <button
+            type="button" className={css.close} aria-label={t('details.close')}
+            onClick={() => { closeDetails() }}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div className={`${css.tabRow} dsh-header-tabs`}>
+          {active !== undefined && renderSlot('conversation.details.header.tabs', {
+            openView: (id) => { actions.setView(id) },
+          }, { entryKey: active.id })}
+        </div>
       </div>
       <div className={css.body}>
         {active === undefined

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -350,6 +350,25 @@ describe('DetailsPanel routing shell', () => {
     // does not attempt the header-actions dispatch either.
     expect(headerCalls).toEqual([])
     expect(view.queryByTestId('details-header-actions-seat')).toBeNull()
+  })
+
+  it.each([false, true])('renders the active keyed header tabs entry when registered (%s)', (registered) => {
+    localStorage.clear()
+    const chat = createChatStore().create()
+    chat.actions.setDetailsView('science')
+    const renderSlot = vi.fn((key: string, owner: { openView: (id: string) => void }) => key === 'conversation.details.header.tabs' && registered
+      ? <button type="button" onClick={() => { owner.openView('trajectory') }}>Artifact tab</button> : null)
+    const view = render(<DetailsPanel {...standardKit(snapshotBase())}
+      renderSlot={renderSlot as DetailsSlotProps['renderSlot']} useStore={bindSnapshotSelector(chat)}
+      actions={chat.actions} closeDetails={vi.fn()}
+      views={detailsViews([TOOL_ENTRY, { id: 'science', label: 'Science' }])} t={t} />)
+    expect(renderSlot).toHaveBeenCalledWith('conversation.details.header.tabs', { openView: expect.any(Function) as unknown }, { entryKey: 'science' })
+    const row = view.container.querySelector('[class*="tabRow"]')
+    expect(row).not.toBeNull()
+    if (registered) {
+      fireEvent.click(view.getByRole('button', { name: 'Artifact tab' }))
+      expect(chat.getSnapshot().view).toBe('trajectory')
+    } else expect(row?.textContent).toBe('')
   })
 
   it('dispatches the active entry\'s own keyed header-actions entry between the title and the close button', () => {

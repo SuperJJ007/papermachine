@@ -166,9 +166,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // index.js and read-only.js share image-reading code, which tsdown emits as
   // a hashed chunk both entries import.
   '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js', 'lib/read-image-*.js'],
-  // Web mounts the Science viewer-edit Remote in the Host root independently
-  // from the preset-scoped model-facing Consumer.
-  '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js'],
+  // Web mounts the viewer-edit Remote independently of the model-facing
+  // Consumer; browser clients import the separate element-summary bundle.
+  '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js', 'lib/element-summary.js'],
   // The settings-bound Runtime entry ships beside the root plugin and
   // invariant companion. It subclasses the root entry, so the package builds
   // all three from one multi-entry tsdown config: independent bundles would

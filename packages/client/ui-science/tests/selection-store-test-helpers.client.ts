@@ -9,10 +9,11 @@ import type { ScienceSelectionState } from '../src/client/selection-store.ts'
  * production, bound to `useSyncExternalStore` instead of the framework's own
  * selector-hook cache (which needs a slot render tree these unit tests do
  * not mount).
+ * @param scopeKey - Storage identity; omitted for an isolated test instance.
  * @returns the store instance plus the bound `useStore`/`actions` pair.
  */
-export function testScienceSelectionStore() {
-  const instance = createScienceSelectionStore().create()
+export function testScienceSelectionStore(scopeKey: string = crypto.randomUUID()) {
+  const instance = createScienceSelectionStore().create(scopeKey)
   function useStore<S>(select: (state: ScienceSelectionState) => S): S {
     return useSyncExternalStore(fn => instance.subscribe(fn), () => select(instance.getSnapshot()))
   }

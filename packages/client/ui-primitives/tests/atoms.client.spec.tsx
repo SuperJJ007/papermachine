@@ -380,6 +380,13 @@ describe('Menu', () => {
 })
 
 describe('Modal', () => {
+  it('renders a headless dialog with only consumer-owned content', () => {
+    render(<Modal open headless title="Custom dialog" onClose={() => {}}><button type="button">Custom action</button></Modal>)
+    expect(screen.getByRole('dialog', { name: 'Custom dialog' }).textContent).toBe('Custom action')
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  })
+
   it('is absent while closed; Escape and mask click call onClose', () => {
     const onClose = vi.fn()
     const { rerender } = render(

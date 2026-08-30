@@ -428,3 +428,8 @@ describe('writeClipboard', () => {
     await expect(writeClipboard('payload')).resolves.toBe(false)
   })
 })
+
+it('uses supplied terminal labels while retaining defaults for omitted labels', () => {
+  render(<TerminalBlock command="build" running labels={{ running: 'Building' }} />)
+  expect(screen.getByText('Building')).toBeTruthy()
+})

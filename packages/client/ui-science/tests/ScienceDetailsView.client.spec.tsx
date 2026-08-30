@@ -9,7 +9,7 @@
  * toolbar, a stale tab, and distinct accessible text per top-level state).
  */
 import { useRef } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TextMediaType } from '@deepseek-ai/dsh-attachment'
@@ -23,7 +23,7 @@ import {
   type ScienceDetailsViewProps,
 } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
 type Props = ScienceDetailsViewProps
@@ -49,6 +49,7 @@ type HumanChartOverrides = Omit<Partial<ScienceClientHumanEditArtifactVersion>, 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 
@@ -201,7 +202,7 @@ function props(
   }
   const libraryArtifacts = [...latestByArtifact.values()].map(item => ({
     artifactId: item.artifactId, logicalName: item.logicalName, title: item.title,
-    ...(item.caption === undefined ? {} : { caption: item.caption }), originSessionId: item.producerSessionId,
+    ...(item.caption === undefined ? {} : { caption: item.caption }), originSessionId: item.producerSessionId, originSessionTitle: 'Current analysis',
     latest: {
       versionId: item.versionId, ordinal: item.version, mediaType: item.mediaType,
       byteCount: item.byteCount, createdAt: item.createdAt,
@@ -319,7 +320,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(await screen.findByText('v2 · image/png · This session')).toBeTruthy()
+    expect(await screen.findByText('v2 · image/png')).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
     expect(screen.getByText('Other')).toBeTruthy()
   })
@@ -349,7 +350,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    expect(await screen.findByText('v5 · image/png · This session')).toBeTruthy()
+    expect(await screen.findByText('v5 · image/png')).toBeTruthy()
   })
 
   it('labels first-generation and human-edited artifacts without internal generation facts', async () => {
@@ -363,8 +364,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
-    expect(await screen.findByText('v1 · image/png · This session')).toBeTruthy()
-    expect(screen.getByText('v2 · image/png · This session')).toBeTruthy()
+    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
+    expect(screen.getByText('v2 · image/png')).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -417,7 +418,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
     const search = screen.getByRole('textbox', { name: 'Search' })
     fireEvent.change(search, { target: { value: 'Cross-session' } })
-    expect(await screen.findByText('v3 · image/png · Source experiment')).toBeTruthy()
+    expect(await screen.findByText('v3 · image/png')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open Cross-session chart, version 3' }))
     expect(screen.queryByText('Cross-session chart')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
@@ -465,7 +466,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
         : { root: path, entries: [{ name: 'leaf.bin', kind: 'file', byteCount: 1, modifiedAt: 1 }] } }))
     const store = testScienceSelectionStore()
     const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
-    expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
     fireEvent.click(screen.getByRole('button', { name: 'Switch grid or list view' }))
@@ -506,10 +507,10 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFiles = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [] } })
     const store = testScienceSelectionStore()
     render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
-    expect(await screen.findByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'z.png' } })
-    expect(screen.queryByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(screen.queryByText('v1 · image/png')).toBeTruthy()
     expect(screen.queryByText('Alpha')).toBeNull()
 
     // Switching library pages is a prop change, not a remount: the ProjectLibrary
@@ -519,7 +520,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     act(() => { store.actions.setLibraryPage('artifacts') })
 
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Search' }).value).toBe('z.png')
-    expect(screen.queryByText('v1 · image/png · unknown-session')).toBeTruthy()
+    expect(screen.queryByText('v1 · image/png')).toBeTruthy()
     expect(screen.queryByText('Alpha')).toBeNull()
   })
 
@@ -1589,5 +1590,96 @@ describe('ScienceDetailsView: distinct accessible text per top-level state', () 
 
     expect(new Set(texts).size).toBe(texts.length)
     expect(texts).toHaveLength(3)
+  })
+})
+
+describe('ScienceDetailsView: conversation groups', () => {
+  const now = 2_000_000_000_000
+  const artifact = (id: string, originSessionId: string, createdAt: number, title?: string, originSessionTitle?: string) => ({
+    artifactId: id, logicalName: `${id}.png`, originSessionId,
+    ...(title === undefined ? {} : { title }),
+    ...(originSessionTitle === undefined ? {} : { originSessionTitle }),
+    latest: { versionId: `${id}-v1`, ordinal: 1, mediaType: 'image/png' as const, byteCount: 100, createdAt },
+  })
+  function groupedProps(scopeKey?: string) {
+    const store = testScienceSelectionStore(scopeKey)
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: { projectId: 'project-1', artifacts: [
+      artifact('old', 'older', now - 7_200_000, 'Old plot', 'Earlier analysis'),
+      artifact('alpha', SESSION, now - 3_600_000, 'Alpha', 'Current analysis'),
+      artifact('zeta', SESSION, now - 180_000, 'Zeta', 'Current analysis'),
+      artifact('recent', 'recent-session', now - 60_000, 'Recent plot', 'Recent analysis'),
+      artifact('deleted', 'deleted-session', now - 86_400_000),
+    ] } })
+    return { store, value: props(baseProjection(), { store, loadLibrary }) }
+  }
+  const groupTitles = () => screen.getAllByRole('region').map(group => group.getAttribute('aria-label'))
+  const cards = (name: string) => within(screen.getByRole('region', { name })).getAllByRole('button', { name: /^Open / }).map(card => card.getAttribute('aria-label'))
+
+  it('pins the current conversation first, orders other groups by time, and keeps sorting inside groups', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const { value } = groupedProps()
+    render(<ScienceDetailsView {...value} />)
+    await screen.findByRole('region', { name: 'Current analysis · This session' })
+    const titles = ['Current analysis · This session', 'Recent analysis', 'Earlier analysis', 'Deleted session']
+    expect(groupTitles()).toEqual(titles)
+    expect(screen.getByRole('button', { name: 'Current analysis · This session 2 · 3min ago' })).toBeTruthy()
+    expect(screen.getByText('5 artifacts')).toBeTruthy()
+    expect(cards(titles[0]!)).toEqual(['Open Zeta, version 1', 'Open Alpha, version 1'])
+    expect(screen.getAllByText('v1 · image/png')).toHaveLength(5)
+    expect(screen.queryByText(/image\/png ·/)).toBeNull()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
+    expect(groupTitles()).toEqual(titles)
+    expect(cards(titles[0]!)).toEqual(['Open Alpha, version 1', 'Open Zeta, version 1'])
+    fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
+    expect(groupTitles()).toEqual(titles)
+    expect(cards(titles[0]!)).toEqual(['Open Alpha, version 1', 'Open Zeta, version 1'])
+  })
+
+  it('removes collapsed cards, restores the group after reopening and reload, and persists expansion', async () => {
+    const scopeKey = crypto.randomUUID()
+    const { value, store } = groupedProps(scopeKey)
+    const view = render(<ScienceDetailsView {...value} />)
+    const toggle = await screen.findByRole('button', { name: /^Current analysis · This session/ })
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'Open Alpha, version 1' })).toBeNull()
+    expect(store.instance.getSnapshot().libraryCollapsed).toEqual({ [SESSION]: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Open Recent plot, version 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'File library' }))
+    expect((await screen.findByRole('button', { name: /^Current analysis · This session/ })).getAttribute('aria-expanded')).toBe('false')
+    view.unmount()
+    const other = groupedProps(crypto.randomUUID())
+    const otherView = render(<ScienceDetailsView {...other.value} />)
+    expect((await screen.findByRole('button', { name: /^Current analysis · This session/ })).getAttribute('aria-expanded')).toBe('true')
+    otherView.unmount()
+    const restored = groupedProps(scopeKey)
+    render(<ScienceDetailsView {...restored.value} />)
+    const restoredToggle = await screen.findByRole('button', { name: /^Current analysis · This session/ })
+    expect(restoredToggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(restoredToggle)
+    expect(screen.getByRole('button', { name: 'Open Alpha, version 1' })).toBeTruthy()
+    expect(restored.store.instance.getSnapshot().libraryCollapsed).toEqual({})
+    expect(groupedProps(scopeKey).store.instance.getSnapshot().libraryCollapsed).toEqual({})
+  })
+
+  it('filters cards before grouping, hides empty groups, and counts only matching cards', async () => {
+    const { value } = groupedProps()
+    render(<ScienceDetailsView {...value} />)
+    await screen.findByText('5 artifacts')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'alpha' } })
+    expect(groupTitles()).toEqual(['Current analysis · This session'])
+    expect(screen.getByText('1 artifacts')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Current analysis · This session 1 ·/ })).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'no matching artifact' } })
+    expect(screen.queryAllByRole('region')).toHaveLength(0)
+    expect(screen.getByText('0 artifacts')).toBeTruthy()
+  })
+
+  it('localizes the missing session title and group time in Chinese', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const { value } = groupedProps()
+    render(<ScienceDetailsView {...value} t={makeTranslate(zh)} />)
+    expect(await screen.findByRole('button', { name: '已删除的会话 1 · 1天前' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Current analysis · 本会话 2 · 3分钟前' })).toBeTruthy()
   })
 })

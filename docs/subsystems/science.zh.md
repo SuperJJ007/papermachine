@@ -6,6 +6,8 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)、[`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts) 与 [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
+产物身份属于产生它的对话：会话首次捕获逻辑名时创建 v1，后续捕获延续本会话的链。项目中的同名产物通过 artifactId 区分。跨对话输入通过 `artifact_inputs` 指定精确版本，`edit_of` 仍限于本会话。已有日志保留已记录的版本号。
+
 ## 操作
 
 `bindEnvironment` 要求精确的活 Science Session 对象，观测一个允许列表中的 profile，并追加一条完整的 `science/environment-bound` 值。`startRun` 写入精确源码，通过经过校验的附件读取解析可选的 artifact-version input，把它们物化到保留的 `inputs/` 目录下，在 `science/run-started` 上追加完整映射，并返回只包含 `runId`、`done` 与幂等 `cancel()` 的 `ScienceRunHandle`。可选 edit baseline 会在 terminal 之后的捕获遍历中指定精确 `parent` 引用，包括陈旧分支与跨 artifact 分支。`commitChart` 只接受由精确 Session 本地启动且已成功的 run，解析其 artifact directory 内的普通非 symlink PNG，通过 `ctx.attachments` 持久化，并在不公开 Host path 的前提下追加带有 `origin: 'model'` 的下一条不可变 logical artifact version。同一活 Session 上的第二项 Runtime 操作返回 `RUNTIME_BUSY`。Runtime 在创建 owner marker、scratch 或 Session 事件之前，拒绝 remote subprocess 世界以及无法报告 full enforcement 的 sandbox。

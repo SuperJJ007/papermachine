@@ -320,9 +320,18 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       ],
     })
     render(<ScienceDetailsView {...props(science)} />)
-    expect(await screen.findByText('v2 · image/png')).toBeTruthy()
+    expect(await screen.findByText(/^v2 · /)).toBeTruthy()
     expect(screen.getByText('Loss curve')).toBeTruthy()
     expect(screen.getByText('Other')).toBeTruthy()
+  })
+
+  it('renders the grid gallery thumbnail as the square card variant', async () => {
+    const science = baseProjection({ artifacts: [chart()] })
+    render(<ScienceDetailsView {...props(science)} />)
+    await waitFor(() => {
+      expect(document.querySelector('[data-variant="card"]')).toBeTruthy()
+    })
+    expect(document.querySelector('[data-variant="tile"]')).toBeNull()
   })
 
   it('keeps byte counts out of artifact cards', () => {
@@ -350,7 +359,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(science, { snapshot })} />)
-    expect(await screen.findByText('v5 · image/png')).toBeTruthy()
+    expect(await screen.findByText(/^v5 · /)).toBeTruthy()
   })
 
   it('labels first-generation and human-edited artifacts without internal generation facts', async () => {
@@ -364,8 +373,8 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       }],
     } as ConversationSnapshot
     render(<ScienceDetailsView {...props(baseProjection({ artifacts: [generated, edited] }), { snapshot })} />)
-    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
-    expect(screen.getByText('v2 · image/png')).toBeTruthy()
+    expect(await screen.findByText(/^v1 · /)).toBeTruthy()
+    expect(screen.getByText(/^v2 · /)).toBeTruthy()
   })
 
   it('loads a gallery thumbnail through the injected session-scoped loader', async () => {
@@ -418,7 +427,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
     const search = screen.getByRole('textbox', { name: 'Search' })
     fireEvent.change(search, { target: { value: 'Cross-session' } })
-    expect(await screen.findByText('v3 · image/png')).toBeTruthy()
+    expect(await screen.findByText(/^v3 · /)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open Cross-session chart, version 3' }))
     expect(screen.queryByText('Cross-session chart')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
@@ -466,11 +475,15 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
         : { root: path, entries: [{ name: 'leaf.bin', kind: 'file', byteCount: 1, modifiedAt: 1 }] } }))
     const store = testScienceSelectionStore()
     const view = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
-    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
+    expect(await screen.findAllByText(/^v1 · /)).toHaveLength(4)
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
+    expect(document.querySelector('[data-variant="card"]')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Switch grid or list view' }))
+    expect(document.querySelector('[data-variant="tile"]')).toBeTruthy()
+    expect(document.querySelector('[data-variant="card"]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Switch grid or list view' }))
+    expect(document.querySelector('[data-variant="card"]')).toBeTruthy()
     fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'z.png' } })
     const z = screen.getByRole('button', { name: 'Open z.png, version 1' })
     fireEvent.keyDown(z, { key: 'x' })
@@ -507,10 +520,10 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const loadWorkspaceFiles = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [] } })
     const store = testScienceSelectionStore()
     render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
-    expect(await screen.findByText('v1 · image/png')).toBeTruthy()
+    expect(await screen.findAllByText(/^v1 · /)).toHaveLength(2)
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'z.png' } })
-    expect(screen.queryByText('v1 · image/png')).toBeTruthy()
+    expect(screen.queryByText(/^v1 · /)).toBeTruthy()
     expect(screen.queryByText('Alpha')).toBeNull()
 
     // Switching library pages is a prop change, not a remount: the ProjectLibrary
@@ -520,7 +533,7 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     act(() => { store.actions.setLibraryPage('artifacts') })
 
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Search' }).value).toBe('z.png')
-    expect(screen.queryByText('v1 · image/png')).toBeTruthy()
+    expect(screen.queryByText(/^v1 · /)).toBeTruthy()
     expect(screen.queryByText('Alpha')).toBeNull()
   })
 
@@ -1625,8 +1638,13 @@ describe('ScienceDetailsView: conversation groups', () => {
     expect(screen.getByRole('button', { name: 'Current analysis · This session 2 · 3min ago' })).toBeTruthy()
     expect(screen.getByText('5 artifacts')).toBeTruthy()
     expect(cards(titles[0]!)).toEqual(['Open Zeta, version 1', 'Open Alpha, version 1'])
-    expect(screen.getAllByText('v1 · image/png')).toHaveLength(5)
-    expect(screen.queryByText(/image\/png ·/)).toBeNull()
+    expect(screen.getAllByText(/^v1 · /)).toHaveLength(5)
+    expect(screen.getByText('v1 · 2h ago')).toBeTruthy()
+    expect(screen.getByText('v1 · 1h ago')).toBeTruthy()
+    expect(screen.getByText('v1 · 3min ago')).toBeTruthy()
+    expect(screen.getByText('v1 · 1min ago')).toBeTruthy()
+    expect(screen.getByText('v1 · 1d ago')).toBeTruthy()
+    expect(screen.queryByText(/image\/png/)).toBeNull()
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     expect(groupTitles()).toEqual(titles)
     expect(cards(titles[0]!)).toEqual(['Open Alpha, version 1', 'Open Zeta, version 1'])
@@ -1681,5 +1699,8 @@ describe('ScienceDetailsView: conversation groups', () => {
     render(<ScienceDetailsView {...value} t={makeTranslate(zh)} />)
     expect(await screen.findByRole('button', { name: '已删除的会话 1 · 1天前' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Current analysis · 本会话 2 · 3分钟前' })).toBeTruthy()
+    expect(screen.getByText('v1 · 3分钟前')).toBeTruthy()
+    expect(screen.getByText('v1 · 1小时前')).toBeTruthy()
+    expect(screen.queryByText(/image\/png/)).toBeNull()
   })
 })

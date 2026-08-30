@@ -44,7 +44,7 @@ export type ScienceTraceStepTitle =
   | { readonly kind: 'glob'; readonly pattern: string }
   | { readonly kind: 'grep'; readonly pattern: string }
   | { readonly kind: 'state' }
-  | { readonly kind: 'annotate'; readonly name: string; readonly version: number; readonly title: string }
+  | { readonly kind: 'annotate'; readonly name: string; readonly version?: number | undefined; readonly title: string }
   | { readonly kind: 'publish'; readonly title: string }
   | { readonly kind: 'delegate' }
   | { readonly kind: 'tool'; readonly name: string }
@@ -210,9 +210,9 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
     case 'get_science_state': return { kind: 'state' }
     case 'annotate_artifact':
       return 'logical_name' in args && typeof args.logical_name === 'string'
-        && 'version' in args && typeof args.version === 'number'
         && 'title' in args && typeof args.title === 'string'
-        ? { kind: 'annotate', name: basename(args.logical_name), version: args.version, title: shortTitle(args.title) } : fallback
+        ? { kind: 'annotate', name: basename(args.logical_name),
+          version: 'version' in args && typeof args.version === 'number' ? args.version : undefined, title: shortTitle(args.title) } : fallback
     case 'publish_outcome':
       return 'title' in args && typeof args.title === 'string' ? { kind: 'publish', title: shortTitle(args.title) } : fallback
     default: return call.name.startsWith('subagent') ? { kind: 'delegate' } : fallback

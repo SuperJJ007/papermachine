@@ -53,7 +53,9 @@ export function scienceTraceStepTitle(title: ScienceTraceStepTitle, t: Translate
     case 'glob': return t('trace.step.glob', { pattern: title.pattern })
     case 'grep': return t('trace.step.grep', { pattern: title.pattern })
     case 'state': return t('trace.step.state')
-    case 'annotate': return t('trace.step.annotate', { name: title.name, version: title.version, title: title.title })
+    case 'annotate': return title.version === undefined
+      ? t('trace.step.annotateNoVersion', { name: title.name, title: title.title })
+      : t('trace.step.annotate', { name: title.name, version: title.version, title: title.title })
     case 'publish': return t('trace.step.publish', { title: title.title })
     case 'delegate': return t('trace.step.delegate')
     case 'tool': return t('trace.step.tool', { name: title.name })

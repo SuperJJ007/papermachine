@@ -18,6 +18,8 @@ Kernel start, exit and interruption facts appear as timeline markers instead of 
 
 Visibility is registered through `ctx.trajectorySubviews.registerVisibility('process', source)`. The source rebinds projection subscriptions when the Session list changes, so preset assignment, Session creation, projection resolution, plugin unload, and hot reload invalidate the inner Trajectory switcher directly.
 
+Annotation titles require a logical name and title; a numeric version is displayed only when supplied in the call.
+
 ## Turn-end artifacts
 
 Science artifact presentation metadata accumulates in authoritative Turn data. After the Assistant reply, one Turn-tail group renders one card per logical artifact and keeps only the highest version produced in that Turn. Cards show a thumbnail or media-type tile, a display name (this Turn's own kept version's curated title, or logical name when that title is empty), and version; activating a card opens that exact version in Science Details. `annotate_artifact` remains a folded process cell and does not render an artifact card at the call site, so files appear once in the transcript. At 6 or fewer artifacts the group shows every card; at 7 or more it shows the first 5 plus a "+N more" button that expands the rest in place. The title's count is always the Turn's total, never the visible slice, and the expanded/collapsed choice is component-local view state that resets on reload.

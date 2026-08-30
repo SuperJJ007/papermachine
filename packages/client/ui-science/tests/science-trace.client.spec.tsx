@@ -140,6 +140,10 @@ const tools = [
   ['get_science_state', '{}', 'browse', { kind: 'state' }],
   ['annotate_artifact', '{"logical_name":"/private/plot.png","version":1,"title":"Plot"}', 'curate',
     { kind: 'annotate', name: 'plot.png', version: 1, title: 'Plot' }],
+  ['annotate_artifact', '{"logical_name":"plot.png","title":"Plot"}', 'curate',
+    { kind: 'annotate', name: 'plot.png', title: 'Plot' }],
+  ['annotate_artifact', '{"logical_name":"plot.png","version":"1","title":"Plot"}', 'curate',
+    { kind: 'annotate', name: 'plot.png', title: 'Plot' }],
   ['publish_outcome', '{"title":"Result"}', 'publish', { kind: 'publish', title: 'Result' }],
   ['subagent_task', '{}', 'delegate', { kind: 'delegate' }],
   ['todo_write', '{}', 'other', { kind: 'tool', name: 'todo_write' }],
@@ -152,7 +156,7 @@ describe('Science process model', () => {
   it.each([
     ['read', '{'], ['read', 'null'], ['read', '[]'], ['read', '1'], ['read', '{}'], ['read', '{"file_path":1}'],
     ['glob', '{}'], ['grep', '{"pattern":false}'], ['annotate_artifact', '{}'],
-    ['annotate_artifact', '{"logical_name":"x","version":"1","title":"x"}'],
+    ['annotate_artifact', '{"logical_name":"x","version":1}'],
     ['annotate_artifact', '{"logical_name":"x","version":1,"title":false}'], ['publish_outcome', '{}'],
     ['publish_outcome', '{"title":2}'],
   ])('keeps the tool name for malformed %s arguments %s', (name, argsRaw) => {
@@ -264,6 +268,7 @@ describe('Science process presentation', () => {
       [{ kind: 'read-image', name: 'a' }, 'View image a'], [{ kind: 'glob', pattern: '*.csv' }, 'Find files *.csv'],
       [{ kind: 'grep', pattern: 'x' }, 'Search contents x'], [{ kind: 'state' }, 'Read session state'],
       [{ kind: 'annotate', name: 'a', version: 1, title: 'Plot' }, 'Annotate a v1 “Plot”'],
+      [{ kind: 'annotate', name: 'a', title: 'Plot' }, 'Annotate a “Plot”'],
       [{ kind: 'publish', title: 'Result' }, 'Publish outcome “Result”'], [{ kind: 'delegate' }, 'Delegate task'],
       [{ kind: 'tool', name: 'custom' }, 'custom'], [{ kind: 'browse-many', count: 3 }, 'Reviewed 3 sources'],
     ]

@@ -72,3 +72,13 @@ button.pip { cursor: pointer; }
   .node, .group, .group[data-expanded='true'] { width: 100%; align-self: stretch !important; }
   .node::after, .group::after { top: 18px; right: auto !important; left: -21px !important; width: 20px; }
 }
+
+.kernelMarker { position: relative; z-index: 2; display: flex; align-self: center; align-items: center; gap: 6px; max-width: 100%; box-sizing: border-box; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); overflow-wrap: anywhere; }
+.kernelState { flex: 0 0 8px; box-sizing: border-box; width: 8px; height: 8px; border: 1px solid var(--dsw-alias-label-caption); border-radius: 2px; }
+.kernelState[data-event='started'] { border-color: var(--dsw-alias-state-success-primary); background: var(--dsw-alias-state-success-primary); }
+@container science-process (max-width: 760px) {
+  .kernelMarker { align-self: flex-start; }
+}
+@media (max-width: 760px) {
+  .kernelMarker { align-self: flex-start; }
+}

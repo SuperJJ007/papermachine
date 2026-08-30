@@ -1,13 +1,14 @@
 /** Science process view: ordered calls and artifact changes around actor-owned turns. */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { IconFolderOpenOutline16, IconUserOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactId, ScienceKernelEndReason } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceSelectionStore } from './selection-store.ts'
 import {
   buildScienceTraceModel, scienceTracePips,
-  type ScienceTraceArtifactDelta, type ScienceTraceStep, type ScienceTraceStepMember, type ScienceTraceStepTitle,
+  type ScienceTraceKernelMarker, type ScienceTraceArtifactDelta,
+  type ScienceTraceStep, type ScienceTraceStepMember, type ScienceTraceStepTitle,
 } from './science-trace-model.ts'
 import css from './ScienceTraceView.module.css'
 
@@ -77,6 +78,41 @@ export function scienceTraceStepStatus(step: ScienceTraceStep, t: TranslateNS<'s
   }
 }
 
+function kernelReason(reason: ScienceKernelEndReason | undefined, t: TranslateNS<'science'>): string {
+  switch (reason) {
+    case undefined: return t('trace.kernel.reason.unknown')
+    case 'idle': return t('trace.kernel.reason.idle')
+    case 'session-end': return t('trace.kernel.reason.session-end')
+    case 'environment-rebound': return t('trace.kernel.reason.environment-rebound')
+    case 'run-escalation': return t('trace.kernel.reason.run-escalation')
+    case 'protocol': return t('trace.kernel.reason.protocol')
+    case 'crash': return t('trace.kernel.reason.crash')
+    case 'service-disposed': return t('trace.kernel.reason.service-disposed')
+    /* v8 ignore next -- closed ScienceKernelEndReason union. */
+    default: return assertNever(reason)
+  }
+}
+
+function KernelMarker({ marker, profile, t }: {
+  readonly marker: ScienceTraceKernelMarker
+  readonly profile: string | undefined
+  readonly t: TranslateNS<'science'>
+}) {
+  const params = { language: languageName(marker.language, t), epoch: marker.kernelEpoch }
+  let text: string
+  switch (marker.event) {
+    case 'started': text = profile === undefined ? t('trace.kernel.startedNoProfile', params)
+      : t('trace.kernel.started', { ...params, profile }); break
+    case 'exited': text = t('trace.kernel.exited', { ...params, reason: kernelReason(marker.reason, t) }); break
+    case 'interrupted': text = t('trace.kernel.interrupted', params); break
+    /* v8 ignore next -- closed marker event union. */
+    default: return assertNever(marker.event)
+  }
+  return <div className={css.kernelMarker} data-kind="kernel" data-event={marker.event} data-anchor={marker.anchor}>
+    <span className={css.kernelState} data-event={marker.event} aria-hidden="true" />{text}
+  </div>
+}
+
 function ArtifactChip({ artifact, open }: {
   readonly artifact: ScienceTraceArtifactDelta
   readonly open: ScienceTraceInjected['openArtifact']
@@ -129,7 +165,6 @@ export function ScienceTraceView({
           const request = model.dialogues.find(item => item.turn === turn)
           const group = model.groups.find(item => item.turn === turn)
           const humanEdits = model.humanEdits.filter(item => item.turn === turn)
-          if (group === undefined && humanEdits.length === 0) return null
           const expanded = expandedTurns.has(turn)
           const pips = group === undefined ? [] : scienceTracePips(group)
           const latest = new Map<ScienceArtifactId, ScienceTraceArtifactDelta>()
@@ -142,81 +177,91 @@ export function ScienceTraceView({
             ? t('trace.tallyFailed', { ...tallyParams, failures: group.failedCount }) : t('trace.tally', tallyParams)
           const [beforeFailure, afterFailure] = t('trace.tallyFailed', { ...tallyParams, failures: '\u0000' }).split('\u0000')
           return (
-            <section className={css.turn} id={`trace-turn-${String(turn)}`} data-anchor={`turn:${String(turn)}`} key={turn}>
-              <div className={css.turnLabel}>{t('trace.turn', { turn })}</div>
-              {group !== undefined && (
-                <article className={css.group} data-actor="agent" data-anchor={group.anchor}
-                  data-line-budget="3" data-expanded={expanded}>
-                  <p className={css.request} title={request?.text}>{request === undefined ? t('trace.requestUnavailable') : compact(request.text)}</p>
-                  <div className={css.facts}>
-                    <div className={css.strip} role="group" aria-label={t('trace.strip')}>
-                      {pips.slice(0, 120).map((pip, index) => (
-                        <button key={index} type="button" className={css.pip} data-kind={pip.kind} data-failed={pip.failed}
-                          title={scienceTraceStepTitle(pip.title, t)} aria-label={scienceTraceStepTitle(pip.title, t)}
-                          aria-controls={`${id}-${String(turn)}-steps`} onClick={() => {
-                            setExpandedTurns(previous => new Set([...previous, turn]))
-                            setHighlight({ turn, row: pip.rowIndex })
-                          }} />
-                      ))}
-                      {pips.length > 120 && <span title={t('trace.stripTruncated', { count: pips.length })}
-                        aria-label={t('trace.stripTruncated', { count: pips.length })}>…</span>}
-                    </div>
-                    <button type="button" className={css.toggle} aria-expanded={expanded}
-                      aria-controls={`${id}-${String(turn)}-steps`} aria-label={`${t(expanded ? 'trace.collapse' : 'trace.expand')} · ${tally}`}
-                      onClick={() => {
-                        setExpandedTurns((previous) => {
-                          const next = new Set(previous)
-                          if (next.has(turn)) next.delete(turn)
-                          else next.add(turn)
-                          return next
-                        })
-                      }}>
-                      <span>{group.failedCount > 0 ? <>{beforeFailure}<b>{group.failedCount}</b>{afterFailure}</> : tally}</span>
-                      <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
-                    </button>
-                  </div>
-                  {expanded && (
-                    <ol className={css.steps} id={`${id}-${String(turn)}-steps`} aria-label={t('trace.steps')}>
-                      {group.steps.map((step, row) => {
-                        const highlighted = highlight?.turn === turn && highlight.row === row
-                        const status = scienceTraceStepStatus(step, t)
-                        return <li key={step.anchor} className={css.step} data-highlight={highlighted}
-                          ref={highlighted ? highlightedRow : undefined} data-anchor={step.anchor}>
-                          <span className={css.stepNumber} data-repeated={step.step === group.steps[row - 1]?.step}
-                            aria-label={t('trace.stepNumber', { step: step.step })}>{step.step}</span>
-                          <span className={css.pip} data-kind={step.kind} data-failed={step.failed} aria-hidden="true" />
-                          <div className={css.stepContent}>
-                            <button className={css.stepTitle} type="button" title={scienceTraceStepTitle(step.title, t)}
-                              onClick={() => { selectDetailed(); inspectCall((step.members[0] as ScienceTraceStepMember).callId) }}>
-                              {scienceTraceStepTitle(step.title, t)}
-                            </button>
-                            <div className={css.chips}>{step.artifacts.map((artifact, index) => (
-                              <ArtifactChip key={index} artifact={artifact} open={open} />
-                            ))}</div>
-                          </div>
-                          <span className={css.result} data-failed={step.failed}>{status !== '' && <>● {status}</>}</span>
-                        </li>
-                      })}
-                    </ol>
-                  )}
-                  <div className={css.chips}>{[...latest.values()].map(artifact => (
-                    <ArtifactChip key={artifact.artifactId} artifact={artifact} open={open} />
-                  ))}{group.artifacts.length === 0 && <span>{t('trace.noArtifacts')}</span>}</div>
-                </article>
-              )}
-              {humanEdits.map(item => (
-                <article className={css.node} data-actor="user" data-kind="human-edit" data-anchor={item.anchor} key={item.anchor}>
-                  <span className={css.icon}><IconUserOutline16 /></span>
-                  <div><b>{t('trace.humanEdit', { name: item.artifact.logicalName, version: item.artifact.version,
-                    parent: item.artifact.parent.version })}</b>
-                  <button type="button" onClick={() => {
-                    open({ artifactId: item.artifact.artifactId, version: item.artifact.version })
-                  }}>{t('trace.openArtifact')}</button></div>
-                </article>
+            <Fragment key={turn}>
+              {model.kernelMarkers.filter(marker => marker.beforeTurn === turn).map(marker => (
+                <KernelMarker key={`${marker.language}:${String(marker.kernelEpoch)}:${marker.event}`} marker={marker}
+                  profile={model.environment?.profileId} t={t} />
               ))}
-            </section>
+              {(group !== undefined || humanEdits.length > 0) && <section className={css.turn} id={`trace-turn-${String(turn)}`} data-anchor={`turn:${String(turn)}`} key={turn}>
+                <div className={css.turnLabel}>{t('trace.turn', { turn })}</div>
+                {group !== undefined && (
+                  <article className={css.group} data-actor="agent" data-anchor={group.anchor}
+                    data-line-budget="3" data-expanded={expanded}>
+                    <p className={css.request} title={request?.text}>{request === undefined ? t('trace.requestUnavailable') : compact(request.text)}</p>
+                    <div className={css.facts}>
+                      <div className={css.strip} role="group" aria-label={t('trace.strip')}>
+                        {pips.slice(0, 120).map((pip, index) => (
+                          <button key={index} type="button" className={css.pip} data-kind={pip.kind} data-failed={pip.failed}
+                            title={scienceTraceStepTitle(pip.title, t)} aria-label={scienceTraceStepTitle(pip.title, t)}
+                            aria-controls={`${id}-${String(turn)}-steps`} onClick={() => {
+                              setExpandedTurns(previous => new Set([...previous, turn]))
+                              setHighlight({ turn, row: pip.rowIndex })
+                            }} />
+                        ))}
+                        {pips.length > 120 && <span title={t('trace.stripTruncated', { count: pips.length })}
+                          aria-label={t('trace.stripTruncated', { count: pips.length })}>…</span>}
+                      </div>
+                      <button type="button" className={css.toggle} aria-expanded={expanded}
+                        aria-controls={`${id}-${String(turn)}-steps`} aria-label={`${t(expanded ? 'trace.collapse' : 'trace.expand')} · ${tally}`}
+                        onClick={() => {
+                          setExpandedTurns((previous) => {
+                            const next = new Set(previous)
+                            if (next.has(turn)) next.delete(turn)
+                            else next.add(turn)
+                            return next
+                          })
+                        }}>
+                        <span>{group.failedCount > 0 ? <>{beforeFailure}<b>{group.failedCount}</b>{afterFailure}</> : tally}</span>
+                        <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+                      </button>
+                    </div>
+                    {expanded && (
+                      <ol className={css.steps} id={`${id}-${String(turn)}-steps`} aria-label={t('trace.steps')}>
+                        {group.steps.map((step, row) => {
+                          const highlighted = highlight?.turn === turn && highlight.row === row
+                          const status = scienceTraceStepStatus(step, t)
+                          return <li key={step.anchor} className={css.step} data-highlight={highlighted}
+                            ref={highlighted ? highlightedRow : undefined} data-anchor={step.anchor}>
+                            <span className={css.stepNumber} data-repeated={step.step === group.steps[row - 1]?.step}
+                              aria-label={t('trace.stepNumber', { step: step.step })}>{step.step}</span>
+                            <span className={css.pip} data-kind={step.kind} data-failed={step.failed} aria-hidden="true" />
+                            <div className={css.stepContent}>
+                              <button className={css.stepTitle} type="button" title={scienceTraceStepTitle(step.title, t)}
+                                onClick={() => { selectDetailed(); inspectCall((step.members[0] as ScienceTraceStepMember).callId) }}>
+                                {scienceTraceStepTitle(step.title, t)}
+                              </button>
+                              <div className={css.chips}>{step.artifacts.map((artifact, index) => (
+                                <ArtifactChip key={index} artifact={artifact} open={open} />
+                              ))}</div>
+                            </div>
+                            <span className={css.result} data-failed={step.failed}>{status !== '' && <>● {status}</>}</span>
+                          </li>
+                        })}
+                      </ol>
+                    )}
+                    <div className={css.chips}>{[...latest.values()].map(artifact => (
+                      <ArtifactChip key={artifact.artifactId} artifact={artifact} open={open} />
+                    ))}{group.artifacts.length === 0 && <span>{t('trace.noArtifacts')}</span>}</div>
+                  </article>
+                )}
+                {humanEdits.map(item => (
+                  <article className={css.node} data-actor="user" data-kind="human-edit" data-anchor={item.anchor} key={item.anchor}>
+                    <span className={css.icon}><IconUserOutline16 /></span>
+                    <div><b>{t('trace.humanEdit', { name: item.artifact.logicalName, version: item.artifact.version,
+                      parent: item.artifact.parent.version })}</b>
+                    <button type="button" onClick={() => {
+                      open({ artifactId: item.artifact.artifactId, version: item.artifact.version })
+                    }}>{t('trace.openArtifact')}</button></div>
+                  </article>
+                ))}
+              </section>}
+            </Fragment>
           )
         })}
+        {model.kernelMarkers.filter(marker => !model.turns.includes(marker.beforeTurn)).map(marker => (
+          <KernelMarker key={`${marker.language}:${String(marker.kernelEpoch)}:${marker.event}`} marker={marker}
+            profile={model.environment?.profileId} t={t} />
+        ))}
       </div>
     </section>
   )

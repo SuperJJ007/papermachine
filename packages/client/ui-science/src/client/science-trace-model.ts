@@ -2,7 +2,7 @@
 
 import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun,
+  ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceKernelEndReason,
 } from '@deepseek-ai/dsh-science-session/types'
 
 /** Stable cross-view anchor vocabulary shared by the trace, trajectory, and artifact viewer. */
@@ -113,6 +113,18 @@ export interface ScienceTraceEnvironment {
   readonly anchor: ScienceTraceAnchor
 }
 
+/** One lifecycle marker on the process timeline. */
+export interface ScienceTraceKernelMarker {
+  readonly kernelEpoch: number
+  readonly language: string
+  readonly event: 'started' | 'exited' | 'interrupted'
+  readonly reason?: ScienceKernelEndReason | undefined
+  readonly at: number
+  /** First later turn, or lastTurn + 1 after all turns. */
+  readonly beforeTurn: number
+  readonly anchor: ScienceTraceAnchor
+}
+
 /** Complete semantic-trace model. */
 export interface ScienceTraceModel {
   readonly environment?: ScienceTraceEnvironment
@@ -124,6 +136,7 @@ export interface ScienceTraceModel {
   readonly dialogues: readonly ScienceTraceDialogue[]
   readonly groups: readonly ScienceTraceGroup[]
   readonly humanEdits: readonly ScienceTraceHumanEdit[]
+  readonly kernelMarkers: readonly ScienceTraceKernelMarker[]
 }
 
 function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>): string {
@@ -362,7 +375,20 @@ export function buildScienceTraceModel(
     kernels: [...new Set(science.kernels.map(kernel => kernel.kernelEpoch))],
     anchor: `seq:${science.lastScienceEventSeq}` as const,
   }
+  const kernelMarkers: ScienceTraceKernelMarker[] = []
+  for (const kernel of science.kernels) {
+    const marker = (event: ScienceTraceKernelMarker['event'], at: number, reason?: ScienceKernelEndReason): ScienceTraceKernelMarker => ({
+      kernelEpoch: kernel.kernelEpoch, language: kernel.language, event, at, reason,
+      beforeTurn: turns.find(turn => (turnTimes.get(turn)?.startTime ?? Number.NEGATIVE_INFINITY) > at) ?? lastTurn + 1,
+      anchor: `seq:${science.lastScienceEventSeq}`,
+    })
+    // The projection guarantees startedAt on every exited or interrupted epoch.
+    kernelMarkers.push(marker('started', kernel.state === 'started' ? kernel.at : kernel.startedAt as number))
+    if (kernel.state === 'exited') kernelMarkers.push(marker('exited', kernel.at, kernel.reason))
+    if (kernel.state === 'interrupted') kernelMarkers.push(marker('interrupted', kernel.finishedAt))
+  }
+  kernelMarkers.sort((a, b) => a.at - b.at)
   return environment === undefined
-    ? { turns, dialogues, groups, humanEdits }
-    : { environment, turns, dialogues, groups, humanEdits }
+    ? { turns, dialogues, groups, humanEdits, kernelMarkers }
+    : { environment, turns, dialogues, groups, humanEdits, kernelMarkers }
 }

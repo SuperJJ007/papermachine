@@ -10,13 +10,6 @@
   min-width: 0;
 }
 
-.preset {
-  margin: 0 0 8px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 .section {
   margin-bottom: 16px;
 }

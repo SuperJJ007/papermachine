@@ -5,7 +5,7 @@ export const NS = 'science'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'nav.files': '文件',
+  'nav.files': '产物',
   'kernel.status': 'Science 内核状态',
   'kernel.item': '{language} · epoch {epoch} · {state}',
   'kernel.started': '存活',
@@ -128,9 +128,7 @@ export const zh = {
   'details.action': 'Science 详情',
   'details.label': '文件',
   'details.missingSupport': '此部署未上报 Science 会话状态。',
-  'details.preset': '预设：{preset}',
-  'details.unbound': '此会话尚无 Science 活动。',
-  'details.artifacts.title': '文件',
+  'details.artifacts.title': '产物',
   'details.artifacts.generated': '本会话生成',
   'details.artifacts.empty': '尚无文件。',
   'library.home': '文件库',
@@ -159,7 +157,7 @@ export const zh = {
   'library.root': '项目',
   'library.unsupported': '不支持预览，{bytes}',
   'library.sourceNavigationUnavailable': '来源会话缺少可定位的生成消息。',
-  'details.artifacts.chooseSession': '选择一个会话后，这个项目的真实数据、图表和文档会显示在这里。',
+  'details.artifacts.chooseSession': '打开一个会话后，项目产物会显示在这里。',
   'details.artifact.select': '打开 {title}，版本 {version}',
   'details.artifact.provenance': '溯源',
   'details.artifact.expand': '放大',
@@ -262,7 +260,7 @@ export type ScienceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'nav.files': 'Files',
+  'nav.files': 'Artifacts',
   'kernel.status': 'Science kernel status',
   'kernel.item': '{language} · epoch {epoch} · {state}',
   'kernel.started': 'live',
@@ -385,8 +383,6 @@ export const en = {
   'details.action': 'Science details',
   'details.label': 'Files',
   'details.missingSupport': 'This deployment does not report Science session state.',
-  'details.preset': 'Preset: {preset}',
-  'details.unbound': 'No Science activity yet in this session.',
   'details.artifacts.title': 'Artifacts',
   'details.artifacts.generated': 'Generated in this session',
   'details.artifacts.empty': 'No artifacts yet.',
@@ -416,7 +412,7 @@ export const en = {
   'library.root': 'Project',
   'library.unsupported': 'Preview unavailable, {bytes}',
   'library.sourceNavigationUnavailable': 'The source session does not expose a generating-message anchor.',
-  'details.artifacts.chooseSession': 'Choose a session to see its real data, charts, and documents here.',
+  'details.artifacts.chooseSession': "Open a session to see the project's artifacts here.",
   'details.artifact.select': 'Open {title}, version {version}',
   'details.artifact.provenance': 'Provenance',
   'details.artifact.expand': 'Expand',

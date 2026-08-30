@@ -17,8 +17,11 @@
 // The former resident Environment strip and Runs list are gone: Environment
 // facts now live only in the provenance drill-in's Environment sub-tab, per
 // artifact version (README "Design notes" explains why no session-wide
-// "not applied" notice replaces them). The top-level missing-support/unbound
-// states below are unrelated to that strip and are unchanged.
+// "not applied" notice replaces them). The one remaining top-level notice
+// (`details.missingSupport`, below) is unrelated to that strip and unchanged;
+// a Session without a bound Science mode renders the artifact library like
+// any other current Session (`EMPTY_SCIENCE_PROJECTION` above) instead of a
+// second notice.
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
@@ -913,6 +916,28 @@ function ArtifactViewer({
 }
 
 /**
+ * Client-safe projection rendered for a current Session that has not (yet)
+ * bound Science mode (`useProjection('science')` returns `null` — a blank
+ * Session, or one where the first `science/mode-bound` event has not
+ * appended yet). Every field the artifact library and its viewer read
+ * (`artifacts`, `runs`, `kernels`) is empty; `mode`/`environment`/`outcome`/
+ * `metrics` are inert placeholders that no Details component under this
+ * projection reads — `ArtifactViewer`'s no-tab landing view sources the
+ * library entirely from the `loadLibrary` RPC (project-wide, grouped by
+ * conversation), independent of this session's own projection.
+ */
+const EMPTY_SCIENCE_PROJECTION: ScienceClientProjection = {
+  mode: { modeId: 'science', presetId: 'science', modeRevision: '' },
+  environment: null,
+  runs: [],
+  kernels: [],
+  artifacts: [],
+  outcome: null,
+  metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
+  lastScienceEventSeq: -1,
+}
+
+/**
  * Render the Science Details entry (the artifact viewer) from the current
  * `science` projection and the shared selection store.
  * @param props - runtime slot currency, the injected loaders, the shared
@@ -925,7 +950,6 @@ export function ScienceDetailsView({
   addToConversation, removeFromConversation, composerSelections,
   returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, t,
 }: ScienceDetailsViewProps) {
-  const preset = useSessions(state => state.byId[sessionId]?.agentPreset)
   // Session display titles change only when a title or the session list
   // itself changes, not on every streamed event — shallowEqual over the
   // derived record keeps the returned reference stable across unrelated frames.
@@ -950,18 +974,9 @@ export function ScienceDetailsView({
     )
   }
 
-  if (science === null) {
-    return (
-      <div className={css.body}>
-        {preset !== undefined && <p className={css.preset}>{t('details.preset', { preset })}</p>}
-        <p className={css.notice} role="status">{t('details.unbound')}</p>
-      </div>
-    )
-  }
-
   return (
     <ArtifactViewer
-      science={science} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
+      science={science ?? EMPTY_SCIENCE_PROJECTION} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
       snapshot={snapshot} loadImage={loadImage} loadText={loadText}
       loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadWorkspaceFile={loadWorkspaceFile}
       addToConversation={addToConversation}

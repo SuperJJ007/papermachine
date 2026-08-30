@@ -234,7 +234,7 @@ export function ScienceTraceView({
                                 <ArtifactChip key={index} artifact={artifact} open={open} />
                               ))}</div>
                             </div>
-                            <span className={css.result} data-failed={step.failed}>{status !== '' && <>● {status}</>}</span>
+                            <span className={css.result} data-failed={step.failed}>{status}</span>
                           </li>
                         })}
                       </ol>

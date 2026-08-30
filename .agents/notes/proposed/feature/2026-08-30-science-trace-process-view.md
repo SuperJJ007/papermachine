@@ -34,6 +34,8 @@ This proposal partially supersedes the card summary and subview name in [Science
 
 ## Acceptance criteria
 
+Markers use two status colors plus neutral shapes: muted green runs and red failures, pale neutral ordinary calls, outlined annotations and solid publication circles. The strip and list share the same marker styling. Result text has no duplicate status dot; success uses caption text and failure uses red. Blue is reserved for selection and human edits, keeping failure the only high-saturation status.
+
 - Ordered strip markers and expanded rows match cold replay, including parallel calls, browse merging, failures and intermediate artifact versions.
 - Titles and rendered text expose no host file paths, code, model prose or tool output; malformed arguments retain only the tool name.
 - Counts use recorded steps, runs and unique artifacts, and kernel markers retain both ends of terminal epochs.

@@ -301,6 +301,8 @@ describe('Science process presentation', () => {
     const strip = screen.getAllByRole('group', { name: 'Step strip' })[1]!
     fireEvent.click(within(strip).getAllByRole('button')[1]!)
     const list = screen.getByRole('list', { name: 'Turn steps' })
+    expect(list.textContent).not.toContain('●')
+    expect(within(list).getByText('Success · 500 ms')).toBeTruthy()
     expect(within(list).getAllByRole('listitem')[1]?.getAttribute('data-highlight')).toBe('true')
     expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
     fireEvent.click(within(list).getByRole('button', { name: 'chart.png v2' }))

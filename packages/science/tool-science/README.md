@@ -12,6 +12,8 @@ The package also owns the `scienceEdits` Typert Remote used by the artifact view
 
 `ctx.scienceRuntime` is optional from this package's own `inject` — it statically injects only `tools` and `systemPrompt`, and reads `ctx.get('scienceRuntime')` at the first operation that needs it (first-use binding, each `run_python`/`run_r` call, and `annotate_artifact`). A deployment that omits the Runtime still loads this package; assembly for a `science`-preset session then rejects with a clear error instead of silently degrading. `publish_outcome` remains usable over already-durable evidence without Runtime access.
 
+Edit guidance identifies `artifactId` as the UUID in capture receipts and `get_science_state`, never a file name.
+
 ## Config
 
 All three keys are required; none has a default or an environment-discovered value. This package supplies no shipped production identity or history policy.

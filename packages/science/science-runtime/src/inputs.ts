@@ -80,7 +80,7 @@ function artifactVersion(
   if (artifact === undefined) {
     throw new ScienceRuntimeError(
       code,
-      `${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`,
+      `${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version (artifactId must be the UUID from the capture receipt, not the file name)`,
     )
   }
   return artifact
@@ -129,7 +129,7 @@ async function resolveInputArtifactVersion(
   if (stored === undefined) {
     throw new ScienceRuntimeError(
       'INPUT_NOT_FOUND',
-      `${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`,
+      `${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version (artifactId must be the UUID from the capture receipt, not the file name)`,
     )
   }
   return stored

@@ -170,7 +170,10 @@ describe('prepareRunArtifacts', () => {
     }, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(prepareRunArtifacts(projection, store(), PROJECT_ID, undefined, {
       'output.txt': { artifactId: TEXT_ID, version: 2 },
-    }, undefined, 1, 2, signal)).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    }, undefined, 1, 2, signal)).rejects.toMatchObject({
+      code: 'ARTIFACT_NOT_FOUND',
+      message: `Science edit baseline "${TEXT_ID}"@2 does not identify a committed artifact version (artifactId must be the UUID from the capture receipt, not the file name)`,
+    })
   })
 
   it('validates raster-artifact paths and retains them as a deduplicated set', async () => {

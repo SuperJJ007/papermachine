@@ -10,7 +10,7 @@ A turn's language counts and aggregate failures cannot show how an analysis reac
 
 ## Proposal
 
-Use Process as the default Science representation inside Trajectory, with slot id `process`, followed by Detailed. Preserve the user-request row and actor-owned timeline layout. Replace the aggregate-only row with ordered call markers and a disclosure control; show one final-version chip per artifact in the collapsed card. Expansion reveals step numbers, kind markers, structured titles, results and call-owned artifact versions. Titles navigate to the first call represented by a row; artifact chips open exact versions.
+Use Process as the default Science representation inside Trajectory, with slot id `process`, followed by Detailed. Preserve the user-request row. Use a single left rail with full-width cards and distinguish human edits by their user icon and blue left border. Four structured rows hold the request, ordered call markers, right-aligned totals with disclosure, and one final-version chip per artifact; they add no free-form explanation. Expansion reveals step numbers, kind markers, structured titles, results and call-owned artifact versions. Titles navigate to the first call represented by a row; artifact chips open exact versions.
 
 Titles derive only from tool names, validated argument fields and Science projection facts. They never parse model prose or code, and neither code nor stdout/stderr enters Process. File arguments display only their basenames. Failed or incomplete JSON retains the tool name without inventing missing facts. Run records own run status and timing; tool-result errors classify other failures, while a missing result remains unknown.
 
@@ -21,6 +21,8 @@ Kernel lifecycle markers replace the environment card because starts and exits h
 This proposal partially supersedes the card summary and subview name in [Science trajectory and transcript information architecture](../../implemented/feature/2026-08-25-science-trajectory-and-transcript-ia.md). Its nested Trajectory placement, preserved visited panels, transcript ownership and Turn-tail artifact reasoning remain useful. [Science transcript chrome suppression](../../implemented/feature/2026-08-25-science-transcript-chrome-suppression.md) continues to own conversation chrome; neither record is changed by this proposal.
 
 ## Alternatives considered
+
+**Keep opposite actor lanes and a three-row card.** Half-width cards and totals beside the strip break short call sequences into matrices. Full-width cards and a separate totals row preserve reading order; actor identity remains explicit on human-edit cards. This partially supersedes the actor layout in [Science workbench UI convergence](../../implemented/feature/2026-08-23-science-workbench-ui-convergence.md), whose composer and settings decisions remain useful.
 
 **Keep only aggregate counts.** Counts hide attempt order, failed reads and the point at which a file appears. They remain useful beside the strip, but cannot substitute for it.
 
@@ -39,6 +41,6 @@ This proposal partially supersedes the card summary and subview name in [Science
 
 ## Risks
 
-The projection may contain runs or artifacts whose call heads lie outside the loaded conversation window. Process can show retained artifact facts but cannot reconstruct missing step titles. Kernel markers are positioned between turns, not between individual calls. The environment label uses the projection's current profile rather than an environment-history reconstruction. Long strips and artifact rows can wrap beyond one physical text line while preserving the three content rows.
+The projection may contain runs or artifacts whose call heads lie outside the loaded conversation window. Process can show retained artifact facts but cannot reconstruct missing step titles. Kernel markers are positioned between turns, not between individual calls. The environment label uses the projection's current profile rather than an environment-history reconstruction. Long strips and artifact rows can wrap beyond one physical text line while preserving four structured rows without free-form explanations.
 
 Nested subagent lanes, package-installation and manual-operation entries, and durable expansion state remain deferred. Delegation shows one call row and a Detailed handoff; installation and manual-operation rows require authoritative persistent events. Expansion and highlighting remain local to the mounted view, outside the artifact selection store and session log.

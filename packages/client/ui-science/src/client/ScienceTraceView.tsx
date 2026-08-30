@@ -188,35 +188,33 @@ export function ScienceTraceView({
                 <div className={css.turnLabel}>{t('trace.turn', { turn })}</div>
                 {group !== undefined && (
                   <article className={css.group} data-actor="agent" data-anchor={group.anchor}
-                    data-line-budget="3" data-expanded={expanded}>
+                    data-line-budget="4">
                     <p className={css.request} title={request?.text}>{request === undefined ? t('trace.requestUnavailable') : compact(request.text)}</p>
-                    <div className={css.facts}>
-                      <div className={css.strip} role="group" aria-label={t('trace.strip')}>
-                        {pips.slice(0, 120).map((pip, index) => (
-                          <button key={index} type="button" className={css.pip} data-kind={pip.kind} data-failed={pip.failed}
-                            title={scienceTraceStepTitle(pip.title, t)} aria-label={scienceTraceStepTitle(pip.title, t)}
-                            aria-controls={`${id}-${String(turn)}-steps`} onClick={() => {
-                              setExpandedTurns(previous => new Set([...previous, turn]))
-                              setHighlight({ turn, row: pip.rowIndex })
-                            }} />
-                        ))}
-                        {pips.length > 120 && <span title={t('trace.stripTruncated', { count: pips.length })}
-                          aria-label={t('trace.stripTruncated', { count: pips.length })}>…</span>}
-                      </div>
-                      <button type="button" className={css.toggle} aria-expanded={expanded}
-                        aria-controls={`${id}-${String(turn)}-steps`} aria-label={`${t(expanded ? 'trace.collapse' : 'trace.expand')} · ${tally}`}
-                        onClick={() => {
-                          setExpandedTurns((previous) => {
-                            const next = new Set(previous)
-                            if (next.has(turn)) next.delete(turn)
-                            else next.add(turn)
-                            return next
-                          })
-                        }}>
-                        <span>{group.failedCount > 0 ? <>{beforeFailure}<b>{group.failedCount}</b>{afterFailure}</> : tally}</span>
-                        <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
-                      </button>
+                    <div className={css.strip} role="group" aria-label={t('trace.strip')}>
+                      {pips.slice(0, 120).map((pip, index) => (
+                        <button key={index} type="button" className={css.pip} data-kind={pip.kind} data-failed={pip.failed}
+                          title={scienceTraceStepTitle(pip.title, t)} aria-label={scienceTraceStepTitle(pip.title, t)}
+                          aria-controls={`${id}-${String(turn)}-steps`} onClick={() => {
+                            setExpandedTurns(previous => new Set([...previous, turn]))
+                            setHighlight({ turn, row: pip.rowIndex })
+                          }} />
+                      ))}
+                      {pips.length > 120 && <span title={t('trace.stripTruncated', { count: pips.length })}
+                        aria-label={t('trace.stripTruncated', { count: pips.length })}>…</span>}
                     </div>
+                    <button type="button" className={css.toggle} aria-expanded={expanded}
+                      aria-controls={`${id}-${String(turn)}-steps`} aria-label={`${t(expanded ? 'trace.collapse' : 'trace.expand')} · ${tally}`}
+                      onClick={() => {
+                        setExpandedTurns((previous) => {
+                          const next = new Set(previous)
+                          if (next.has(turn)) next.delete(turn)
+                          else next.add(turn)
+                          return next
+                        })
+                      }}>
+                      <span>{group.failedCount > 0 ? <>{beforeFailure}<b>{group.failedCount}</b>{afterFailure}</> : tally}</span>
+                      <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+                    </button>
                     {expanded && (
                       <ol className={css.steps} id={`${id}-${String(turn)}-steps`} aria-label={t('trace.steps')}>
                         {group.steps.map((step, row) => {

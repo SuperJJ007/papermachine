@@ -289,7 +289,7 @@ describe('Science process presentation', () => {
     const { nodes, science, turnTimes } = fixture()
     const { container, inspectCall, selectDetailed, openArtifact, openTab } = mount(nodes, science, turnTimes)
     expect(screen.queryByRole('list', { name: 'Turn steps' })).toBeNull()
-    expect(container.querySelectorAll('[data-line-budget="3"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[data-line-budget="4"]')).toHaveLength(2)
     expect(screen.getAllByRole('group', { name: 'Step strip' }).flatMap(strip => within(strip).getAllByRole('button'))).toHaveLength(12)
     expect(screen.getByText('2 turns · 2 steps · 10 runs · 1 artifacts · 20.0 s')).toBeTruthy()
     expect(container.querySelector('b')?.textContent).toBe('1')

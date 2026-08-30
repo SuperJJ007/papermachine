@@ -249,6 +249,7 @@
   margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--dsw-alias-border-l2);
+  container-type: inline-size;
   /* Elevated surface: this panel's own .elementReference chips (and the
      shared .notes textarea) paint the l2 layer, and the panel's content
      scrolls with the rest of the details view. Rebind here so any thumb
@@ -259,12 +260,17 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-.elementPanel h3 {
-  margin: 0;
-  color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 600;
+.elementPanelColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  column-gap: 12px;
+  align-items: start;
+}
+
+@container (max-width: 439px) {
+  .elementPanelColumns {
+    grid-template-columns: 1fr;
+  }
 }
 
 .specTargetRow {

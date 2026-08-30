@@ -375,26 +375,27 @@ export function ScienceChartEditPanel({
   }
 
   return <section className={css.elementPanel} aria-label={t('edit.elements')}>
-    <h3>{t('edit.elements')}</h3>
-    <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
-      <h4 id="science-direct-edit-heading">{t('panel.directEdit')}</h4>
-      <ul className={css.directEditRows}>{direct.map((element, index) => <Fragment key={element.id}>
-        {multiAxes && element.axes !== null && direct[index - 1]?.axes !== element.axes
-          && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: element.axes + 1 })}</li>}
-        <DirectEditRow element={element} {...targetProps(element)} onStage={stage} t={t} />
-      </Fragment>)}</ul>
-    </section>
-    <section className={css.elementPanelSection} aria-labelledby="science-reference-heading">
-      <h4 id="science-reference-heading">{t('panel.referenceEdit')}</h4>
-      <ul className={css.referenceChips}>{references.map(element => <ReferenceChip key={element.id} element={element}
-        {...targetProps(element)} t={t} />)}
-      {hiddenAnnotations > 0 && <li><button type="button" className={css.referenceChip}
-        aria-expanded={annotationsExpanded} onClick={() => { setAnnotationsExpanded(value => !value) }}>
-        <span className={css.elementKindDot} data-kind="annotation" aria-hidden="true" />
-        {annotationsExpanded ? t('panel.annotationsCollapse') : t('panel.annotationsMore', { count: hiddenAnnotations })}
-      </button></li>}
-      </ul>
-    </section>
+    <div className={css.elementPanelColumns}>
+      <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
+        <h4 id="science-direct-edit-heading">{t('edit.elements')}</h4>
+        <ul className={css.directEditRows}>{direct.map((element, index) => <Fragment key={element.id}>
+          {multiAxes && element.axes !== null && direct[index - 1]?.axes !== element.axes
+            && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: element.axes + 1 })}</li>}
+          <DirectEditRow element={element} {...targetProps(element)} onStage={stage} t={t} />
+        </Fragment>)}</ul>
+      </section>
+      <section className={css.elementPanelSection} aria-labelledby="science-reference-heading">
+        <h4 id="science-reference-heading">{t('panel.referenceEdit')}</h4>
+        <ul className={css.referenceChips}>{references.map(element => <ReferenceChip key={element.id} element={element}
+          {...targetProps(element)} t={t} />)}
+        {hiddenAnnotations > 0 && <li><button type="button" className={css.referenceChip}
+          aria-expanded={annotationsExpanded} onClick={() => { setAnnotationsExpanded(value => !value) }}>
+          <span className={css.elementKindDot} data-kind="annotation" aria-hidden="true" />
+          {annotationsExpanded ? t('panel.annotationsCollapse') : t('panel.annotationsMore', { count: hiddenAnnotations })}
+        </button></li>}
+        </ul>
+      </section>
+    </div>
     <OpsList committed={chart.ops} pending={pending} version={version} multiAxes={multiAxes} t={t} />
     {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
     {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}

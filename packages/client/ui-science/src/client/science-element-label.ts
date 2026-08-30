@@ -25,13 +25,16 @@ const ELEMENT_KIND_LABEL_KEY: Record<ScienceChartElement['kind'], ScienceKey> = 
  * @param kind - extracted element category.
  * @param label - extracted series or annotation label.
  * @param t - Science namespace translator.
- * @returns localized kind, with the element label appended when present.
+ * @param panel - Optional one-based panel number for a multi-panel element.
+ * @returns localized kind with optional element label and panel suffix.
  */
 export function scienceElementLabel(
   kind: ScienceChartElement['kind'],
   label: string | null,
   t: TranslateNS<'science'>,
+  panel?: number,
 ): string {
   const kindLabel = t(ELEMENT_KIND_LABEL_KEY[kind])
-  return label === null || label === '' ? kindLabel : `${kindLabel} · ${label}`
+  const name = label === null || label === '' ? kindLabel : `${kindLabel} · ${label}`
+  return panel === undefined ? name : `${name} · ${t('panel.panelSuffix', { index: panel })}`
 }

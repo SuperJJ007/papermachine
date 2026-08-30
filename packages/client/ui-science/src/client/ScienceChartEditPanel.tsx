@@ -1,6 +1,6 @@
 /** Compact chart controls and precise composer references for one addressable PNG. */
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp, ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
@@ -69,14 +69,14 @@ function legendControlInitial(current: ScienceChartElement['current']): LegendPo
   return R_INSIDE_POSITION.find(([mx, my]) => Math.abs(Number(x) - mx) < 1e-6 && Math.abs(Number(y) - my) < 1e-6)?.[2]
 }
 
-function opTargetLabel(op: ScienceChartOp): string {
-  const prefix = op.axes === null ? '' : `axes[${String(op.axes)}].`
+function opTargetLabel(op: ScienceChartOp, multiAxes: boolean, t: TranslateNS<'science'>): string {
+  const prefix = multiAxes && op.axes !== null ? `${t('panel.panelSuffix', { index: op.axes + 1 })} · ` : ''
   switch (op.op) {
-    case 'set_title': return `${prefix}title`
-    case 'set_axis_label': return `${prefix}${op.axis}_label`
-    case 'set_legend_position': return `${prefix}legend`
-    case 'toggle_grid': return `${prefix}grid`
-    case 'set_font': return 'font'
+    case 'set_title': return `${prefix}${t('panel.kindTitle')}`
+    case 'set_axis_label': return `${prefix}${t(op.axis === 'x' ? 'panel.kindXLabel' : 'panel.kindYLabel')}`
+    case 'set_legend_position': return `${prefix}${t('panel.kindLegend')}`
+    case 'toggle_grid': return `${prefix}${t('panel.kindGrid')}`
+    case 'set_font': return t('panel.kindFont')
     /* v8 ignore next -- closed ScienceChartOp union */
     default: return assertNever(op)
   }
@@ -106,7 +106,7 @@ function directlyEditable(kind: ScienceChartElement['kind']): kind is DirectEdit
 }
 
 /** Direct-edit order follows the compact form from top to bottom. */
-const DIRECT_EDIT_ROW_ORDER: readonly DirectEditKind[] = ['title', 'subtitle', 'x_label', 'y_label', 'grid', 'font', 'legend']
+const DIRECT_EDIT_ROW_ORDER: readonly DirectEditKind[] = ['title', 'subtitle', 'x_label', 'y_label', 'legend', 'grid', 'font']
 
 function directEditRows(elements: readonly ScienceChartElement[]): readonly (ScienceChartElement & { kind: DirectEditKind })[] {
   return elements
@@ -115,8 +115,8 @@ function directEditRows(elements: readonly ScienceChartElement[]): readonly (Sci
       element: ScienceChartElement & { kind: DirectEditKind }
       index: number
     } => directlyEditable(item.element.kind))
-    .sort((left, right) => DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind) - DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
-      || (left.element.axes ?? -1) - (right.element.axes ?? -1)
+    .sort((left, right) => (left.element.axes ?? -1) - (right.element.axes ?? -1)
+      || DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind) - DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
       || left.index - right.index)
     .map(({ element }) => element)
 }
@@ -133,7 +133,7 @@ function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget,
 }
 
 function referenceButtonLabel(element: ScienceChartElement, added: boolean, t: TranslateNS<'science'>): string {
-  const name = scienceElementLabel(element.kind, element.label, t)
+  const name = scienceElementLabel(element.kind, element.label, t, element.id.startsWith('axes[') && element.axes !== null ? element.axes + 1 : undefined)
   return added ? t('edit.removeTarget', { target: name }) : t('edit.addTarget', { target: name })
 }
 
@@ -232,17 +232,15 @@ function ElementControl({ element, onStage, t }: {
   }
 }
 
-function DirectEditRow({ element, showAxes, added, onAddTarget, onRemoveTarget, onStage, t }: {
+function DirectEditRow({ element, added, onAddTarget, onRemoveTarget, onStage, t }: {
   element: ScienceChartElement & { kind: DirectEditKind }
-  showAxes: boolean
   added: boolean
   onAddTarget: () => void
   onRemoveTarget: () => void
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
-  const name = scienceElementLabel(element.kind, element.label, t)
-  const label = showAxes && element.axes !== null ? `${name} · axes[${String(element.axes)}]` : name
+  const label = scienceElementLabel(element.kind, null, t)
   return <li className={css.directEditRow} data-editable="true" data-selected={added || undefined}>
     <span className={css.directEditName}>{label}</span>
     <ElementControl element={element} onStage={onStage} t={t} />
@@ -271,24 +269,25 @@ function ReferenceChip({ element, added, onAddTarget, onRemoveTarget, t }: {
       aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added}
       onClick={added ? onRemoveTarget : onAddTarget}>
       <span className={css.elementKindDot} data-kind={element.kind} aria-hidden="true" />
-      <span>{scienceElementLabel(element.kind, element.label, t)}</span>
+      <span>{scienceElementLabel(element.kind, element.label, t, element.id.startsWith('axes[') && element.axes !== null ? element.axes + 1 : undefined)}</span>
       {summary !== undefined && <span className={css.referenceChipSummary}>{summary}</span>}
       <span aria-hidden="true">{added ? '−' : '+'}</span>
     </button>
   </li>
 }
 
-function OpsList({ committed, pending, version, t }: {
+function OpsList({ committed, pending, version, multiAxes, t }: {
   committed: readonly ScienceChartOp[]
   pending: readonly ScienceChartOp[]
   version: number
+  multiAxes: boolean
   t: TranslateNS<'science'>
 }) {
   if (committed.length === 0 && pending.length === 0) return null
   return <div className={css.opsSection}>
     {committed.length > 0 && <details className={css.committedOps}>
       <summary>{t('panel.committedOpsSummary', { count: committed.length, version })}</summary>
-      <ul className={css.opsList}>{committed.map((op, index) => <li key={index}>{op.op} → {opTargetLabel(op)}</li>)}</ul>
+      <ul className={css.opsList}>{committed.map((op, index) => <li key={index}>{op.op} → {opTargetLabel(op, multiAxes, t)}</li>)}</ul>
     </details>}
     {pending.length > 0 && <p className={css.pendingOps}>
       {t('panel.pendingOpsSummary', { count: pending.length, ops: pending.map(op => op.op).join(', ') })}
@@ -347,17 +346,15 @@ export function ScienceChartEditPanel({
   }, [onPreview, onPreviewSrc, pending])
 
   const stage = (op: ScienceChartOp): void => {
-    const key = opTargetLabel(op)
-    setPending(current => [...current.filter(existing => opTargetLabel(existing) !== key), op])
+    const key = opTargetLabel(op, true, t)
+    setPending(current => [...current.filter(existing => opTargetLabel(existing, true, t) !== key), op])
     setSaved(false)
     setError(undefined)
     setFailedOps([])
   }
 
   const direct = directEditRows(chart.elements)
-  const duplicatedAxesKinds = new Set(direct.filter(element => element.axes !== null)
-    .filter(element => direct.filter(candidate => candidate.kind === element.kind && candidate.axes !== null).length > 1)
-    .map(element => element.kind))
+  const multiAxes = new Set(direct.filter(element => element.axes !== null).map(element => element.axes)).size >= 2
   let annotationIndex = 0
   const references = chart.elements.filter((element) => {
     if (directlyEditable(element.kind)) return false
@@ -381,8 +378,11 @@ export function ScienceChartEditPanel({
     <h3>{t('edit.elements')}</h3>
     <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
       <h4 id="science-direct-edit-heading">{t('panel.directEdit')}</h4>
-      <ul className={css.directEditRows}>{direct.map(element => <DirectEditRow key={element.id} element={element}
-        showAxes={duplicatedAxesKinds.has(element.kind)} {...targetProps(element)} onStage={stage} t={t} />)}</ul>
+      <ul className={css.directEditRows}>{direct.map((element, index) => <Fragment key={element.id}>
+        {multiAxes && element.axes !== null && direct[index - 1]?.axes !== element.axes
+          && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: element.axes + 1 })}</li>}
+        <DirectEditRow element={element} {...targetProps(element)} onStage={stage} t={t} />
+      </Fragment>)}</ul>
     </section>
     <section className={css.elementPanelSection} aria-labelledby="science-reference-heading">
       <h4 id="science-reference-heading">{t('panel.referenceEdit')}</h4>
@@ -395,7 +395,7 @@ export function ScienceChartEditPanel({
       </button></li>}
       </ul>
     </section>
-    <OpsList committed={chart.ops} pending={pending} version={version} t={t} />
+    <OpsList committed={chart.ops} pending={pending} version={version} multiAxes={multiAxes} t={t} />
     {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
     {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
     {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}

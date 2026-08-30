@@ -512,6 +512,7 @@ describe('web e2e: settings modal and General preferences', () => {
       // Golden of the English fallback dialog — the visible output this change
       // produces. The zh golden above covers the detected-locale surface, so
       // the pair pins both directions of the resolution.
+      await expect.poll(() => dialog.getByRole('button', { name: 'Standard mode', exact: true }).isEnabled(), { timeout: 10_000 }).toBe(true)
       const snapshot = await captureStableAria(frPage, '[role="dialog"]', fresh.workspaceCwd)
       await compareOrRefreshGolden(DIALOG_EN_EXPECTED, snapshot, MODE)
       expect(frTripwire.pageErrors).toEqual([])

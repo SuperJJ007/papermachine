@@ -8,7 +8,7 @@ import type { ScienceSelectionStore } from './selection-store.ts'
 import {
   buildScienceTraceModel, scienceTracePips,
   type ScienceTraceKernelMarker, type ScienceTraceArtifactDelta,
-  type ScienceTraceStep, type ScienceTraceStepMember, type ScienceTraceStepTitle,
+  type ScienceTraceStep, type ScienceTraceStepTitle,
 } from './science-trace-model.ts'
 import css from './ScienceTraceView.module.css'
 
@@ -41,7 +41,8 @@ function compact(text: string): string {
 export function formatScienceTraceDuration(ms: number | undefined, t: TranslateNS<'science'>): string {
   if (ms === undefined) return t('trace.running')
   if (ms < 1_000) return t('trace.durationMs', { value: ms })
-  return t('trace.durationSeconds', { value: (ms / 1_000).toFixed(1) })
+  if (ms < 60_000) return t('trace.durationSeconds', { value: (ms / 1_000).toFixed(1) })
+  return t('trace.durationMinutes', { m: Math.floor(ms / 60_000), s: Math.floor(ms / 1_000) % 60 })
 }
 
 /** @param title - Structured step title. @param t - Science translator. @returns Localized one-line title. */
@@ -173,11 +174,12 @@ export function ScienceTraceView({
           for (const artifact of group?.artifacts ?? []) {
             if (artifact.version >= (latest.get(artifact.artifactId)?.version ?? 0)) latest.set(artifact.artifactId, artifact)
           }
-          const tallyParams = { steps: group?.stepCount ?? 0, runs: group?.runs.length ?? 0,
-            duration: formatScienceTraceDuration(group?.durationMs, t) }
-          const tally = group !== undefined && group.failedCount > 0
-            ? t('trace.tallyFailed', { ...tallyParams, failures: group.failedCount }) : t('trace.tally', tallyParams)
-          const [beforeFailure, afterFailure] = t('trace.tallyFailed', { ...tallyParams, failures: '\u0000' }).split('\u0000')
+          const tallySteps = t('trace.tallySteps', { steps: group?.stepCount ?? 0 })
+          const tallyRuns = t('trace.tallyRuns', { runs: group?.runs.length ?? 0 })
+          const tallyFailures = group !== undefined && group.failedCount > 0
+            ? t('trace.tallyFailures', { failures: group.failedCount }) : undefined
+          const tallyDuration = formatScienceTraceDuration(group?.durationMs, t)
+          const tally = [tallySteps, tallyRuns, tallyFailures, tallyDuration].filter(part => part !== undefined).join(' · ')
           return (
             <Fragment key={turn}>
               {model.kernelMarkers.filter(marker => marker.beforeTurn === turn).map(marker => (
@@ -212,7 +214,8 @@ export function ScienceTraceView({
                           return next
                         })
                       }}>
-                      <span>{group.failedCount > 0 ? <>{beforeFailure}<b>{group.failedCount}</b>{afterFailure}</> : tally}</span>
+                      <span>{tallySteps} · {tallyRuns} ·
+                        {' '}{tallyFailures !== undefined && <><b>{tallyFailures}</b> · </>}{tallyDuration}</span>
                       <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
                     </button>
                     {expanded && (
@@ -227,7 +230,7 @@ export function ScienceTraceView({
                             <span className={css.pip} data-kind={step.kind} data-failed={step.failed} aria-hidden="true" />
                             <div className={css.stepContent}>
                               <button className={css.stepTitle} type="button" title={scienceTraceStepTitle(step.title, t)}
-                                onClick={() => { selectDetailed(); inspectCall((step.members[0] as ScienceTraceStepMember).callId) }}>
+                                onClick={() => { selectDetailed(); inspectCall(step.firstCallId) }}>
                                 {scienceTraceStepTitle(step.title, t)}
                               </button>
                               <div className={css.chips}>{step.artifacts.map((artifact, index) => (

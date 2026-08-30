@@ -175,12 +175,12 @@ describe('Science process model', () => {
       }
     }
   })
-  it('orders calls by seq, shares parallel step numbers, and counts answer-only steps', () => {
+  it('orders calls by seq, shares parallel step numbers, and excludes answer-only steps from totals', () => {
     const model = build([step(20, 2, [{ name: 'run_python' }]), step(10, 1, [{ name: 'run_r' }, { name: 'run_python' }]), step(30, 3, [])])
     expect(model.groups[0]?.steps.map(row => [row.step, row.members[0]?.callId])).toEqual([
       [1, 'call-10-0'], [1, 'call-10-1'], [2, 'call-20-0'],
     ])
-    expect(model.groups[0]?.stepCount).toBe(3)
+    expect(model.groups[0]?.stepCount).toBe(2)
   })
   it('merges only consecutive successful browse calls within a turn, preserving each pip destination', () => {
     const model = build([
@@ -193,6 +193,8 @@ describe('Science process model', () => {
     const group = model.groups[0]!
     expect(group.steps.map(row => row.title.kind)).toEqual(['browse-many', 'run', 'tool', 'tool', 'delegate', 'tool', 'state'])
     expect(group.steps[0]).toMatchObject({ step: 1, title: { kind: 'browse-many', count: 3 } })
+    expect(group.stepCount).toBe(3)
+    expect(group.steps[0]?.firstCallId).toBe('call-1-0')
     expect(scienceTracePips(group).map(pip => pip.rowIndex)).toEqual([0, 0, 0, 1, 2, 3, 4, 5, 6])
     expect(scienceTracePips(group)[1]?.title).toEqual({ kind: 'read', name: 'b' })
     expect(model.groups[1]?.steps).toHaveLength(1)
@@ -229,7 +231,7 @@ describe('Science process model', () => {
       step(4, 1, [], 2),
     ] as ConversationNode[]
     const model = build(nodes, { artifacts: [orphan, human], runs: [run('unseen', 1)] }, new Map([[2, { startTime: 30_000 }]]))
-    expect(model.groups[0]).toMatchObject({ turn: 2, stepCount: 1, durationMs: 500, steps: [] })
+    expect(model.groups[0]).toMatchObject({ turn: 2, stepCount: 0, durationMs: 500, steps: [] })
     expect(model.humanEdits[0]?.turn).toBe(2)
     expect(model.dialogues[0]?.turn).toBe(1)
     const ongoing = build([step(1, 1, [], 2)], { artifacts: [human] }, new Map([[1, { startTime: 0 }]]))
@@ -241,6 +243,22 @@ describe('Science process model', () => {
     expect(build(nodes, { runs: [run('r', 1)] }).groups[0]?.durationMs).toBe(500)
     expect(build(nodes, { runs: [run('r', 1, 'running')] }).groups[0]?.durationMs).toBeUndefined()
   })
+  it('keeps an annotated version with its producing run even when annotation is in a later turn', () => {
+    const artifact = { ...fixture().science.artifacts[0]!, toolCallId: 'annotate' } as ScienceClientProjection['artifacts'][number]
+    const nodes = [step(1, 5, [{ name: 'run_python', callId: 'produce' }]),
+      step(2, 6, [{ name: 'annotate_artifact', callId: 'annotate', argsRaw: '{"logical_name":"chart.png","title":"Chart"}' }], 2)]
+    const model = build(nodes, { runs: [run('produce', 8)], artifacts: [artifact] })
+    expect(model.groups[0]?.steps[0]?.artifacts).toMatchObject([{ logicalName: 'chart.png', version: 1 }])
+    expect(model.groups[1]?.steps[0]?.artifacts).toEqual([])
+    const missingRun = build(nodes, { artifacts: [artifact] })
+    expect(missingRun.groups.flatMap(group => group.steps.flatMap(row => row.artifacts))).toEqual([])
+    expect(missingRun.groups[1]?.artifacts).toHaveLength(1)
+  })
+  it('uses call ownership for a version without run provenance', () => {
+    const artifact = { ...fixture().science.artifacts[0]!, runId: undefined, toolCallId: 'produce' } as unknown as ScienceClientProjection['artifacts'][number]
+    const model = build([step(1, 1, [{ name: 'run_python', callId: 'produce' }])], { artifacts: [artifact] })
+    expect(model.groups[0]?.steps[0]?.artifacts).toMatchObject([{ logicalName: 'chart.png' }])
+  })
   it('expands terminal epochs and places sorted markers before their containing or next turn', () => {
     const base = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprintPreview: 'abc' }
     const model = build([step(1, 1, [], 1), step(2, 1, [], 2), step(3, 1, [], 3)], { kernels: [
@@ -250,6 +268,9 @@ describe('Science process model', () => {
     ] }, new Map([[1, { startTime: 10, endTime: 15 }], [2, { startTime: 20, endTime: 25 }]]))
     expect(model.kernelMarkers.map(marker => [marker.event, marker.at, marker.beforeTurn])).toEqual([
       ['started', 5, 1], ['started', 12, 1], ['interrupted', 25, 2], ['exited', 30, 4], ['started', 35, 4],
+    ])
+    expect(model.kernelMarkers.map(marker => marker.anchor)).toEqual([
+      'kernel:python:1:started', 'kernel:r:1:started', 'kernel:r:1:interrupted', 'kernel:python:1:exited', 'kernel:python:2:started',
     ])
   })
   it.each([[10, 1], [15, 1], [16, 2], [20, 2], [35, 2]])('places a marker at %s before turn %s, including an open turn', (at, beforeTurn) => {
@@ -261,6 +282,10 @@ describe('Science process model', () => {
 })
 
 describe('Science process presentation', () => {
+  it.each([[999, '999 ms'], [1000, '1.0 s'], [59999, '60.0 s'], [60000, '1m 0s'],
+    [137100, '2m 17s'], [361000, '6m 1s']])('formats %s milliseconds as %s', (ms, expected) => {
+    expect(formatScienceTraceDuration(ms, t)).toBe(expected)
+  })
   it('localizes titles, durations and every run terminal status', () => {
     const titles: readonly [ScienceTraceStepTitle, string][] = [
       [{ kind: 'run', language: 'python' }, 'Python run'], [{ kind: 'run', language: 'r' }, 'R run'],
@@ -291,8 +316,8 @@ describe('Science process presentation', () => {
     expect(screen.queryByRole('list', { name: 'Turn steps' })).toBeNull()
     expect(container.querySelectorAll('[data-line-budget="4"]')).toHaveLength(2)
     expect(screen.getAllByRole('group', { name: 'Step strip' }).flatMap(strip => within(strip).getAllByRole('button'))).toHaveLength(12)
-    expect(screen.getByText('2 turns · 2 steps · 10 runs · 1 artifacts · 20.0 s')).toBeTruthy()
-    expect(container.querySelector('b')?.textContent).toBe('1')
+    expect(screen.getByText('Turns 2 · Steps 2 · Runs 10 · Artifacts 1 · 20.0 s')).toBeTruthy()
+    expect(container.querySelector('b')?.textContent).toBe('1 failed')
     expect(screen.queryByText('The chart is ready.')).toBeNull()
     expect(container.textContent).not.toMatch(/Intermediate narration|Research environment|Semantic trace|Swimlane|\/Users\//u)
     fireEvent.click(screen.getByRole('button', { name: 'chart.png v2' }))
@@ -337,10 +362,11 @@ describe('Science process presentation', () => {
       version: Math.floor(index / 4) + 1, toolCallId: 'create', origin: 'model' as const,
     })) as unknown as ScienceClientProjection['artifacts']
     const { container } = mount([step(1, 1, [{ name: 'run_python', callId: 'create' }])],
-      projection({ artifacts: [...artifacts, artifacts[0]!], outcome: { title: 'Done' } as ScienceClientProjection['outcome'] }))
+      projection({ artifacts: [...artifacts, artifacts[0]!], runs: [run('create', 8)],
+        outcome: { title: 'Done' } as ScienceClientProjection['outcome'] }))
     expect(container.querySelectorAll('button[data-anchor^="artifact:"]')).toHaveLength(4)
     expect(screen.getByRole('button', { name: 'file-0.png v4' })).toBeTruthy()
-    expect(screen.getByText(/4 artifacts.*outcome published/u)).toBeTruthy()
+    expect(screen.getByText(/Artifacts 4.*outcome published/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     expect(within(screen.getByRole('list')).getAllByRole('button', { name: /file-/u })).toHaveLength(15)
   })

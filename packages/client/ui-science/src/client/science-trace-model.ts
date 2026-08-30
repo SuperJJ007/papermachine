@@ -3,11 +3,13 @@
 import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceKernelEndReason,
+  ScienceRunId,
 } from '@deepseek-ai/dsh-science-session/types'
 
 /** Stable cross-view anchor vocabulary shared by the trace, trajectory, and artifact viewer. */
 export type ScienceTraceAnchor =
   | `turn:${number}` | `call:${string}` | `run:${string}` | `artifact:${string}@${number}` | `seq:${number}`
+  | `kernel:${string}:${number}:${'started' | 'exited' | 'interrupted'}`
 
 /** One artifact delta summarized by an intent group. */
 interface ScienceTraceArtifactDeltaBase {
@@ -60,6 +62,8 @@ export interface ScienceTraceStepMember {
 
 /** One expanded list row, possibly containing consecutive successful browse calls. */
 export interface ScienceTraceStep {
+  /** Detailed-view destination, retained when browse rows merge. */
+  readonly firstCallId: string
   /** Parallel calls from one assistant step share this number. */
   readonly step: number
   readonly kind: ScienceTraceStepKind
@@ -83,7 +87,7 @@ export interface ScienceTraceGroup {
   /** Turn wall time, falling back to completed run durations without a turn end. */
   readonly durationMs?: number | undefined
   readonly steps: readonly ScienceTraceStep[]
-  /** Distinct assistant step numbers, including steps without tool calls. */
+  /** Distinct assistant step numbers represented in the displayed rows. */
   readonly stepCount: number
   readonly anchor: ScienceTraceAnchor
 }
@@ -145,11 +149,12 @@ function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>):
 
 function artifactTurn(
   artifact: ScienceClientArtifactVersion,
+  callId: string | undefined,
   callTurns: ReadonlyMap<string, number>,
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
   lastTurn: number,
 ): number {
-  if (artifact.origin !== 'human-edit') return callTurns.get(artifact.toolCallId) ?? lastTurn
+  if (artifact.origin !== 'human-edit') return callId === undefined ? lastTurn : callTurns.get(callId) ?? lastTurn
   for (const [turn, timing] of turnTimes) {
     if (artifact.createdAt >= timing.startTime && artifact.createdAt <= (timing.endTime ?? Number.POSITIVE_INFINITY)) return turn
   }
@@ -158,6 +163,13 @@ function artifactTurn(
 
 function runDuration(run: ScienceClientRun): number | undefined {
   return run.status === 'running' ? undefined : Math.max(0, run.finishedAt - run.startedAt)
+}
+
+function artifactCallId(
+  artifact: Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>,
+  runs: ReadonlyMap<ScienceRunId, ScienceClientRun>,
+): string | undefined {
+  return artifact.runId === undefined ? artifact.toolCallId : runs.get(artifact.runId)?.toolCallId
 }
 
 interface TraceCall {
@@ -263,7 +275,7 @@ export function buildScienceTraceModel(
   const callTurns = new Map<string, number>()
   const calls = new Map<string, TraceCall>()
   const results = new Map<string, boolean>()
-  const assistantSteps = new Map<number, Set<number>>()
+  const assistantTurns = new Set<number>()
   const dialogues: ScienceTraceDialogue[] = []
   let inferredTurn = 0
   for (const node of nodes) {
@@ -282,9 +294,7 @@ export function buildScienceTraceModel(
     if (node.kind === 'tool-result') results.set(node.callId, node.isError)
     if (node.kind !== 'assistant') continue
     inferredTurn = Math.max(inferredTurn, node.turn)
-    const steps = assistantSteps.get(node.turn) ?? new Set<number>()
-    steps.add(node.step)
-    assistantSteps.set(node.turn, steps)
+    assistantTurns.add(node.turn)
     for (const block of node.blocks) {
       if (block.kind === 'tool-call') {
         callTurns.set(block.callId, node.turn)
@@ -294,11 +304,13 @@ export function buildScienceTraceModel(
   }
 
   const lastTurn = Math.max(1, inferredTurn)
+  const runsById = new Map(science.runs.map(run => [run.runId, run]))
   const artifactsByTurn = new Map<number, Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>[]>()
   const humanEdits: ScienceTraceHumanEdit[] = []
   const seenVersions = new Set<string>()
   for (const artifact of science.artifacts) {
-    const turn = artifactTurn(artifact, callTurns, turnTimes, lastTurn)
+    const callId = artifact.origin === 'human-edit' ? undefined : artifactCallId(artifact, runsById)
+    const turn = artifactTurn(artifact, callId, callTurns, turnTimes, lastTurn)
     if (artifact.origin === 'human-edit') {
       humanEdits.push({ actor: 'user', turn, artifact, anchor: `artifact:${artifact.artifactId}@${artifact.version}` })
       continue
@@ -318,7 +330,7 @@ export function buildScienceTraceModel(
   }
 
   const turns = [...new Set([
-    ...dialogues.map(item => item.turn), ...assistantSteps.keys(), ...runsByTurn.keys(),
+    ...dialogues.map(item => item.turn), ...assistantTurns, ...runsByTurn.keys(),
     ...artifactsByTurn.keys(), ...humanEdits.map(item => item.turn),
   ])].sort((a, b) => a - b)
   const orderedCalls = [...calls.values()].sort((a, b) => a.seq - b.seq)
@@ -340,10 +352,12 @@ export function buildScienceTraceModel(
       const delta: ScienceTraceArtifactDelta = curated ? { ...base, action: 'curated' }
         : artifact.parent === undefined ? { ...base, action: 'created' }
           : { ...base, action: 'advanced', parentVersion: artifact.parent.version }
-      const callId = artifact.toolCallId
-      const list = artifactsByCall.get(callId) ?? []
-      list.push(delta)
-      artifactsByCall.set(callId, list)
+      const callId = artifactCallId(artifact, runsById)
+      if (callId !== undefined) {
+        const list = artifactsByCall.get(callId) ?? []
+        list.push(delta)
+        artifactsByCall.set(callId, list)
+      }
       return delta
     })
     const turnCalls = orderedCalls.filter(call => call.turn === turn)
@@ -352,19 +366,20 @@ export function buildScienceTraceModel(
       const failed = run === undefined ? results.get(call.callId) ?? false : run.status !== 'running' && run.status !== 'success'
       const anchor = `call:${call.callId}` as const
       const title = stepTitle(call, run)
-      return { step: call.step, kind: stepKind(call.name), failed, title,
+      return { step: call.step, firstCallId: call.callId, kind: stepKind(call.name), failed, title,
         members: [{ callId: call.callId, title, failed, anchor }],
         durationMs: run === undefined ? undefined : runDuration(run), runStatus: run?.status,
         artifacts: artifactsByCall.get(call.callId) ?? [], anchor }
     })
     const durations = runRows.flatMap(row => row.durationMs === undefined ? [] : [row.durationMs])
     const timing = turnTimes.get(turn)
+    const displayedSteps = mergeBrowseSteps(steps)
     return {
       turn, runs: runRows, artifacts, failedCount: steps.filter(step => step.failed).length,
       durationMs: timing?.endTime === undefined
         ? durations.length === 0 ? undefined : durations.reduce((sum, value) => sum + value, 0)
         : Math.max(0, timing.endTime - timing.startTime),
-      steps: mergeBrowseSteps(steps), stepCount: assistantSteps.get(turn)?.size ?? 0, anchor: `turn:${turn}`,
+      steps: displayedSteps, stepCount: new Set(displayedSteps.map(step => step.step)).size, anchor: `turn:${turn}`,
     }
   }).filter(group => group.steps.length > 0 || group.artifacts.length > 0)
 
@@ -383,7 +398,7 @@ export function buildScienceTraceModel(
         const timing = turnTimes.get(turn)
         return timing !== undefined && timing.startTime <= at && at <= (timing.endTime ?? Number.POSITIVE_INFINITY)
       }) ?? turns.find(turn => (turnTimes.get(turn)?.startTime ?? Number.NEGATIVE_INFINITY) > at) ?? lastTurn + 1,
-      anchor: `seq:${science.lastScienceEventSeq}`,
+      anchor: `kernel:${kernel.language}:${kernel.kernelEpoch}:${event}`,
     })
     // The projection guarantees startedAt on every exited or interrupted epoch.
     kernelMarkers.push(marker('started', kernel.state === 'started' ? kernel.at : kernel.startedAt as number))

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-08-30-science-trace-process-view.md
-2026-08-30-science-trace-process-view.md: 2098e8bfbdb13a337417871e45538b28c29b2b54
-2026-08-30-science-trace-process-view.zh.md: fc6fd1a82e3810db7172c5d6785d55ef64002c91
+2026-08-30-science-trace-process-view.md: 17a25470c3995fc96e2d8b30a5b893a0ff3e7124
+2026-08-30-science-trace-process-view.zh.md: 6d9e4e01b4f6d8a6da1f044f84e5239be88af555

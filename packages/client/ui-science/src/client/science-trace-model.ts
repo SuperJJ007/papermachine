@@ -65,6 +65,7 @@ export interface ScienceTraceStep {
   readonly kind: ScienceTraceStepKind
   readonly failed: boolean
   readonly title: ScienceTraceStepTitle
+  /** Always contains at least one real call. */
   readonly members: readonly ScienceTraceStepMember[]
   /** Run elapsed time; absent while running or before the run record arrives. */
   readonly durationMs?: number | undefined

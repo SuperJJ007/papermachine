@@ -34,23 +34,16 @@
       - text: Recent experiment 4 · now
   - list:
     - listitem:
-      - button "Open metrics.json, version 1":
-        - strong: metrics.json
-        - text: v1 · application/json
+      - button "Open metrics.json, version 1": metrics.json v1 · now
     - listitem:
       - button "Open plot.png, version 1":
         - 'button "View original: plot.png"':
           - img "plot.png"
-        - strong: plot.png
-        - text: v1 · image/png
+        - text: plot.png v1 · now
     - listitem:
-      - button "Open report.md, version 1":
-        - strong: report.md
-        - text: v1 · text/markdown
+      - button "Open report.md, version 1": report.md v1 · now
     - listitem:
-      - button "Open summary.csv, version 1":
-        - strong: summary.csv
-        - text: v1 · text/csv
+      - button "Open summary.csv, version 1": summary.csv v1 · now
 - region "Earlier experiment":
   - heading "Earlier experiment 4 · now" [level=3]:
     - button "Earlier experiment 4 · now" [expanded]:
@@ -58,20 +51,13 @@
       - text: Earlier experiment 4 · now
   - list:
     - listitem:
-      - button "Open metrics.json, version 1":
-        - strong: metrics.json
-        - text: v1 · application/json
+      - button "Open metrics.json, version 1": metrics.json v1 · now
     - listitem:
       - button "Open plot.png, version 1":
         - 'button "View original: plot.png"':
           - img "plot.png"
-        - strong: plot.png
-        - text: v1 · image/png
+        - text: plot.png v1 · now
     - listitem:
-      - button "Open report.md, version 1":
-        - strong: report.md
-        - text: v1 · text/markdown
+      - button "Open report.md, version 1": report.md v1 · now
     - listitem:
-      - button "Open summary.csv, version 1":
-        - strong: summary.csv
-        - text: v1 · text/csv
+      - button "Open summary.csv, version 1": summary.csv v1 · now

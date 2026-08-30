@@ -17,9 +17,7 @@
       - text: Current session B · This session 1 · now
   - list:
     - listitem:
-      - button "Open Beta metrics, version 1":
-        - strong: Beta metrics
-        - text: v1 · application/json
+      - button "Open Beta metrics, version 1": Beta metrics v1 · now
 - region "Source session A":
   - heading "Source session A 2 · now" [level=3]:
     - button "Source session A 2 · now" [expanded]:
@@ -27,10 +25,6 @@
       - text: Source session A 2 · now
   - list:
     - listitem:
-      - button "Open Alpha results, version 1":
-        - strong: Alpha results
-        - text: v1 · text/csv
+      - button "Open Alpha results, version 1": Alpha results v1 · now
     - listitem:
-      - button "Open Research notes, version 1":
-        - strong: Research notes
-        - text: v1 · text/markdown
+      - button "Open Research notes, version 1": Research notes v1 · now

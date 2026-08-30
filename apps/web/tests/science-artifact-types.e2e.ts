@@ -29,6 +29,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const PANEL_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/panel.expected.md', import.meta.url))
+const LIBRARY_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/library.expected.md', import.meta.url))
 const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/transcript.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-artifact-types-web-e2e'
@@ -46,7 +47,7 @@ const RUN_CALL_ID = CallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
 /** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png artifacts. */
-function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[]): string {
+function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[], title = SEED_TITLE): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
   // own creation-time anchor plus that event's delta from the fixture's
@@ -94,7 +95,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[])
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('session/title', {
-    title: SEED_TITLE,
+    title,
     messageSeqs: [user.seq],
     source: { kind: 'fallback' },
   })
@@ -307,4 +308,48 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
+  it('groups project artifacts by conversation and restores collapsed groups after reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-library-groups'))
+    const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
+    for (const [sessionId, title] of [['science-library-other', 'Earlier experiment'], ['science-library-newest', 'Recent experiment']] as const) {
+      const stored: StoredArtifact[] = []
+      for (const [logicalName, data, mediaType] of [
+        ['summary.csv', Buffer.from(CSV_TEXT), 'text/csv'], ['metrics.json', Buffer.from(JSON_TEXT), 'application/json'],
+        ['report.md', Buffer.from(MARKDOWN_TEXT), 'text/markdown'], ['plot.png', PNG, 'image/png'],
+      ] as const) {
+        stored.push(await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+          logicalName, data, mediaType, originSessionId: SessionId(sessionId), origin: 'auto', title: logicalName,
+        }))
+      }
+      await seedSession(scaffold, scienceFixture(projectId, stored, title), sessionId, 'science')
+    }
+    const details = page.locator('[class*="detailsCol"]')
+    await details.getByRole('tab', { name: 'Artifacts', exact: true }).click()
+    await details.getByText('12 artifacts', { exact: true }).waitFor()
+    expect(await details.getByRole('region').evaluateAll(groups => groups.map(group => group.getAttribute('aria-label')))).toEqual([
+      'Science artifact types · This session', 'Recent experiment', 'Earlier experiment',
+    ])
+    const current = details.getByRole('region', { name: 'Science artifact types · This session', exact: true })
+    await current.getByRole('button', { name: /^Science artifact types/ }).click()
+    expect(await current.getByRole('listitem').count()).toBe(0)
+    expect(await details.getByRole('listitem').count()).toBe(8)
+    await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption('name')
+    await compareOrRefreshGolden(LIBRARY_EXPECTED, await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE)
+    await details.getByRole('textbox', { name: 'Search', exact: true }).fill('metrics.json')
+    await details.getByText('3 artifacts', { exact: true }).waitFor()
+    expect(await details.getByRole('region').count()).toBe(3)
+    await details.getByRole('textbox', { name: 'Search', exact: true }).fill('unmatched artifact')
+    expect(await details.getByRole('region').count()).toBe(0)
+    await page.reload({ waitUntil: 'load' })
+    const detailsToggle = page.getByRole('button', { name: 'Science details', exact: true })
+    await detailsToggle.waitFor()
+    if (await page.locator('[data-details-collapsed]').count() > 0) await detailsToggle.click()
+    await details.getByRole('tab', { name: 'Artifacts', exact: true }).waitFor()
+    await details.getByText('12 artifacts', { exact: true }).waitFor()
+    expect(await current.getByRole('button', { name: /^Science artifact types/ }).getAttribute('aria-expanded')).toBe('false')
+    expect(await current.getByRole('listitem').count()).toBe(0)
+    await current.getByRole('button', { name: /^Science artifact types/ }).click()
+    expect(await current.getByRole('listitem').count()).toBe(4)
+  }, 60_000)
+
 })

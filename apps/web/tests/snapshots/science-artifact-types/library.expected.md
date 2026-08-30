@@ -1,0 +1,77 @@
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
+- button "Close details"
+- tablist "Open artifacts":
+  - tab "summary.csv"
+  - button "Close summary.csv":
+    - img
+  - tab "metrics.json"
+  - button "Close metrics.json":
+    - img
+  - tab "report.md"
+  - button "Close report.md":
+    - img
+  - tab "plot.png"
+  - button "Close plot.png":
+    - img
+- textbox "Search"
+- combobox "Artifact sort":
+  - option "Newest"
+  - option "Oldest"
+  - option "Name" [selected]
+- button "Switch grid or list view": Grid
+- text: 12 artifacts
+- region "Science artifact types · This session":
+  - heading "Science artifact types · This session 4 · now" [level=3]:
+    - button "Science artifact types · This session 4 · now":
+      - img
+      - text: Science artifact types · This session 4 · now
+- region "Recent experiment":
+  - heading "Recent experiment 4 · now" [level=3]:
+    - button "Recent experiment 4 · now" [expanded]:
+      - img
+      - text: Recent experiment 4 · now
+  - list:
+    - listitem:
+      - button "Open metrics.json, version 1":
+        - strong: metrics.json
+        - text: v1 · application/json
+    - listitem:
+      - button "Open plot.png, version 1":
+        - 'button "View original: plot.png"':
+          - img "plot.png"
+        - strong: plot.png
+        - text: v1 · image/png
+    - listitem:
+      - button "Open report.md, version 1":
+        - strong: report.md
+        - text: v1 · text/markdown
+    - listitem:
+      - button "Open summary.csv, version 1":
+        - strong: summary.csv
+        - text: v1 · text/csv
+- region "Earlier experiment":
+  - heading "Earlier experiment 4 · now" [level=3]:
+    - button "Earlier experiment 4 · now" [expanded]:
+      - img
+      - text: Earlier experiment 4 · now
+  - list:
+    - listitem:
+      - button "Open metrics.json, version 1":
+        - strong: metrics.json
+        - text: v1 · application/json
+    - listitem:
+      - button "Open plot.png, version 1":
+        - 'button "View original: plot.png"':
+          - img "plot.png"
+        - strong: plot.png
+        - text: v1 · image/png
+    - listitem:
+      - button "Open report.md, version 1":
+        - strong: report.md
+        - text: v1 · text/markdown
+    - listitem:
+      - button "Open summary.csv, version 1":
+        - strong: summary.csv
+        - text: v1 · text/csv

@@ -15,7 +15,7 @@ import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
 import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
 import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 const SESSION = 'session-1' as SessionId
 const t = makeTranslate(en)
@@ -141,6 +141,15 @@ describe('Science composer targets', () => {
     target: { kind: 'element', elementId: 'axes[0].title', elementKind: 'title', axes: 0, label: null, current: 'Loss' },
   }
 
+  it.each(['axes[1].title', 'title'])('uses a panel suffix only for prefixed element ids (%s)', (elementId) => {
+    const selections = createSnapshotStore<readonly ScienceEditSelection[]>([{
+      ...elementSpec,
+      target: { kind: 'element', elementId, elementKind: 'title', axes: elementId === 'title' ? 0 : 1, label: null, current: 'Loss' },
+    }])
+    render(<ScienceComposerChips selections={selections} artifacts={[]} remove={vi.fn()} t={makeTranslate(zh)} />)
+    expect(screen.getByText(elementId === 'title' ? 'loss.png v1 · 标题' : 'loss.png v1 · 标题 · 子图 2')).toBeTruthy()
+  })
+
   it('renders nothing when empty and removes region and element chips', () => {
     const selections = createSnapshotStore<readonly ScienceEditSelection[]>([])
     const remove = vi.fn()
@@ -150,10 +159,10 @@ describe('Science composer targets', () => {
     // No matching artifact fact supplied: falls back to the wire logicalName.
     expect(screen.getByText('loss.png v1 · region 10%,20%: make it blue')).toBeTruthy()
     expect(screen.getByText('residuals.png v2 · region 10%,20%')).toBeTruthy()
-    expect(screen.getByText('loss.png v1 · Title')).toBeTruthy()
+    expect(screen.getByText('loss.png v1 · Title · Panel 1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · region 10%,20%: make it blue' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove residuals.png v2 · region 10%,20%' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · Title' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove loss.png v1 · Title · Panel 1' }))
     expect(remove.mock.calls).toEqual([[0], [1], [2]])
   })
 

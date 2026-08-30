@@ -10,7 +10,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import { ScienceChartEditPanel, type ScienceChartPreview, type ScienceChartSaveOutcome } from '../src/client/ScienceChartEditPanel.tsx'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 const t = makeTranslate(en)
 
@@ -23,17 +23,17 @@ function element(over: Partial<ScienceChartElement> & Pick<ScienceChartElement, 
 const ALL_ELEMENTS: readonly ScienceChartElement[] = [
   element({ id: 'title', kind: 'title', current: 'Loss' }),
   element({ id: 'subtitle', kind: 'subtitle' }),
-  element({ id: 'axes[0].x_label', kind: 'x_label', axes: 0 }),
-  element({ id: 'axes[0].y_label', kind: 'y_label', axes: 0 }),
-  element({ id: 'axes[0].series[treatment]', kind: 'series', axes: 0, label: 'treatment' }),
-  element({ id: 'axes[0].tick_labels', kind: 'tick_labels', axes: 0 }),
-  element({ id: 'axes[0].legend', kind: 'legend', axes: 0 }),
-  element({ id: 'axes[0].grid', kind: 'grid', axes: 0 }),
-  element({ id: 'axes[0].axis_range', kind: 'axis_range', axes: 0, current: [0, 10] }),
-  element({ id: 'axes[0].axis_scale', kind: 'axis_scale', axes: 0, current: 'linear' }),
+  element({ id: 'x_label', kind: 'x_label', axes: 0 }),
+  element({ id: 'y_label', kind: 'y_label', axes: 0 }),
+  element({ id: 'series[treatment]', kind: 'series', axes: 0, label: 'treatment' }),
+  element({ id: 'tick_labels', kind: 'tick_labels', axes: 0 }),
+  element({ id: 'legend', kind: 'legend', axes: 0 }),
+  element({ id: 'grid', kind: 'grid', axes: 0 }),
+  element({ id: 'axis_range', kind: 'axis_range', axes: 0, current: [0, 10] }),
+  element({ id: 'axis_scale', kind: 'axis_scale', axes: 0, current: 'linear' }),
   element({ id: 'figure_size', kind: 'figure_size', current: [6, 4] }),
   element({ id: 'font', kind: 'font', current: { family: ['sans'], size: 12 } }),
-  element({ id: 'axes[0].annotation[text:hi]', kind: 'annotation', axes: 0, label: 'hi', current: { text: 'hi' } }),
+  element({ id: 'annotation[text:hi]', kind: 'annotation', axes: 0, label: 'hi', current: { text: 'hi' } }),
 ]
 
 function chartState(over: Partial<ScienceChartState> = {}): ScienceChartState {
@@ -50,6 +50,7 @@ function chartState(over: Partial<ScienceChartState> = {}): ScienceChartState {
 }
 
 function panel(over: {
+  t?: typeof t
   chart?: ScienceChartState
   version?: number
   onSave?: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
@@ -71,7 +72,7 @@ function panel(over: {
       {...over.onPreviewSrc === undefined ? {} : { onPreviewSrc: over.onPreviewSrc }}
       {...over.onPendingChange === undefined ? {} : { onPendingChange: over.onPendingChange }}
       isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
-      t={t}
+      t={over.t ?? t}
     />,
   )
   return { view, onSave, isTargetAdded, onAddTarget, onRemoveTarget }
@@ -88,7 +89,7 @@ describe('ScienceChartEditPanel: full element list', () => {
     panel()
     expect(document.querySelector('img')).toBeNull()
     expect(screen.getAllByRole('listitem')).toHaveLength(ALL_ELEMENTS.length)
-    for (const name of ['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Series · treatment', 'Tick labels',
+    for (const name of ['Title', 'Subtitle', 'X-axis title', 'Y-axis title', 'Series · treatment', 'Tick labels',
       'Legend', 'Grid', 'Axis range', 'Axis scale', 'Figure size', 'Font', 'Annotation · hi']) {
       expect(screen.getByText(name)).toBeTruthy()
     }
@@ -107,10 +108,10 @@ describe('ScienceChartEditPanel: full element list', () => {
     panel()
     const directNames = [...document.querySelectorAll('[data-editable="true"]')]
       .map(row => row.firstElementChild?.textContent)
-    expect(directNames).toEqual(['Title', 'Subtitle', 'X-axis label', 'Y-axis label', 'Grid', 'Font', 'Legend'])
+    expect(directNames).toEqual(['Title', 'Subtitle', 'Font', 'X-axis title', 'Y-axis title', 'Legend', 'Grid'])
   })
 
-  it('sorts repeated direct kinds by axes and adds axes labels', () => {
+  it('groups repeated direct kinds by ascending panel number', () => {
     panel({ chart: chartState({
       elements: [
         element({ id: 'axes[1].grid', kind: 'grid', axes: 1, label: 'later' }),
@@ -120,7 +121,7 @@ describe('ScienceChartEditPanel: full element list', () => {
     }) })
     const names = [...document.querySelectorAll('[data-editable="true"]')]
       .map(row => row.firstElementChild?.textContent)
-    expect(names).toEqual(['Title', 'Grid · earlier · axes[0]', 'Grid · later · axes[1]'])
+    expect(names).toEqual(['Title', 'Grid', 'Grid'])
   })
 
   it('breaks a same-kind-same-axes tie by extraction order', () => {
@@ -132,7 +133,7 @@ describe('ScienceChartEditPanel: full element list', () => {
     }) })
     const names = [...document.querySelectorAll('[data-editable="true"]')]
       .map(row => row.firstElementChild?.textContent)
-    expect(names).toEqual(['Grid · second · axes[0]', 'Grid · first · axes[0]'])
+    expect(names).toEqual(['Grid', 'Grid'])
   })
 
   it('stages nothing when a text control is cleared to empty or whitespace', () => {
@@ -145,8 +146,8 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
   })
 
-  it.each(['X-axis label', 'Y-axis label'])('shows the %s control empty when current is not a string', (name) => {
-    const kind = name === 'X-axis label' ? 'x_label' : 'y_label'
+  it.each(['X-axis title', 'Y-axis title'])('shows the %s control empty when current is not a string', (name) => {
+    const kind = name === 'X-axis title' ? 'x_label' : 'y_label'
     panel({ chart: chartState({
       elements: [element({ id: `axes[0].${kind}`, kind, axes: 0, current: null })],
     }) })
@@ -155,8 +156,8 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(input.value).toBe('')
   })
 
-  it.each(['X-axis label', 'Y-axis label'])('pre-fills the %s control from a string current', (name) => {
-    const kind = name === 'X-axis label' ? 'x_label' : 'y_label'
+  it.each(['X-axis title', 'Y-axis title'])('pre-fills the %s control from a string current', (name) => {
+    const kind = name === 'X-axis title' ? 'x_label' : 'y_label'
     panel({ chart: chartState({
       elements: [element({ id: `axes[0].${kind}`, kind, axes: 0, current: 'Epoch' })],
     }) })
@@ -181,12 +182,12 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onSave).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'New title' }])
   })
 
-  it('stages set_axis_label with axis x for the X-axis label row and axis y for the Y-axis label row', async () => {
+  it('stages set_axis_label with axis x for the X-axis title row and axis y for the Y-axis title row', async () => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
-    const xRow = expandRow('X-axis label')
+    const xRow = expandRow('X-axis title')
     fireEvent.change(within(xRow).getByLabelText('Enter text'), { target: { value: 'Epoch' } })
-    const yRow = expandRow('Y-axis label')
+    const yRow = expandRow('Y-axis title')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'Loss' } })
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(onSave).toHaveBeenCalledWith([
@@ -315,7 +316,7 @@ describe('ScienceChartEditPanel: full element list', () => {
     panel({ onAddTarget, onPreview })
     fireEvent.click(screen.getByRole('button', { name: 'Add Series · treatment to the conversation' }))
     expect(onAddTarget).toHaveBeenCalledWith({
-      kind: 'element', elementId: 'axes[0].series[treatment]', elementKind: 'series', axes: 0,
+      kind: 'element', elementId: 'series[treatment]', elementKind: 'series', axes: 0,
       label: 'treatment', current: 'null',
     }, '')
     expect(onPreview).not.toHaveBeenCalled()
@@ -410,11 +411,11 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     expect(committed.closest('details')?.open).toBe(false)
     fireEvent.click(committed)
     expect(committed.closest('details')?.open).toBe(true)
-    expect(screen.getByText('set_title → title')).toBeTruthy()
+    expect(screen.getByText('set_title → Title')).toBeTruthy()
 
     const titleRow = expandRow('Title')
     fireEvent.change(within(titleRow).getByLabelText('Enter text'), { target: { value: 'A' } })
-    const yRow = expandRow('Y-axis label')
+    const yRow = expandRow('Y-axis title')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'B' } })
 
     expect(screen.getByText('2 pending: set_title, set_axis_label')).toBeTruthy()
@@ -506,9 +507,58 @@ describe('ScienceChartEditPanel: Save', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
     expect(await screen.findByText('Change #1 did not apply: gone')).toBeTruthy()
 
-    const yRow = expandRow('Y-axis label')
+    const yRow = expandRow('Y-axis title')
     fireEvent.change(within(yRow).getByLabelText('Enter text'), { target: { value: 'C' } })
     expect(screen.queryByText('Change #1 did not apply: gone')).toBeNull()
     expect(screen.queryByText('Human-edited version committed.')).toBeNull()
   })
+})
+
+describe('localized panel grouping', () => {
+  const kinds = ['title', 'x_label', 'y_label', 'legend', 'grid'] as const
+  const globalElements = [
+    element({ id: 'title', kind: 'title', current: 'Overall' }),
+    element({ id: 'font', kind: 'font' }),
+  ]
+  const panels = [0, 1].flatMap(axes => kinds.map(kind => element({ id: `axes[${axes}].${kind}`, kind, axes })))
+  it.each([['zh', zh], ['en', en]] as const)('shows complete direct names and ordered panel headings in %s', (_locale, dictionary) => {
+    const translate = makeTranslate(dictionary)
+    panel({ t: translate, chart: chartState({ elements: [...panels.toReversed(), ...globalElements] }) })
+    const rows = [...document.querySelectorAll('[data-editable="true"]')]
+    const allowed = kinds.map(kind => ({ title: 'Title', x_label: 'XLabel', y_label: 'YLabel', legend: 'Legend', grid: 'Grid' })[kind])
+      .map(key => dictionary[`panel.kind${key}` as keyof typeof dictionary])
+    allowed.push(dictionary['panel.kindFont'])
+    for (const row of rows) {
+      const name = row.firstElementChild?.textContent
+      expect(allowed).toContain(name)
+      expect(name).not.toContain('axes[')
+      expect(name).not.toContain('·')
+    }
+    const heading = screen.getByText(translate('panel.panelHeading', { index: 1 }))
+    expect(screen.getByText(translate('panel.panelHeading', { index: 2 }))).toBeTruthy()
+    for (const row of rows.slice(0, 2)) {
+      expect(row.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  })
+  it('leaves single-panel direct rows without headings or suffixes', () => {
+    panel({ chart: chartState({ elements: ALL_ELEMENTS }) })
+    expect(screen.queryByText('Panel 1')).toBeNull()
+    for (const row of document.querySelectorAll('[data-editable="true"]')) {
+      expect(row.firstElementChild?.textContent).not.toContain('·')
+    }
+  })
+  it.each([false, true])('localizes committed operation targets (multiple panels: %s)', (multi) => {
+    panel({ t: makeTranslate(zh), chart: chartState({
+      elements: multi ? panels : ALL_ELEMENTS,
+      ops: [{ op: 'set_title', axes: 0, text: 'Changed' }],
+    }) })
+    expect(screen.getByText(multi ? 'set_title → 子图 1 · 标题' : 'set_title → 标题')).toBeTruthy()
+  })
+})
+
+it('identifies a reference-only series by its localized panel suffix', () => {
+  panel({ t: makeTranslate(zh), chart: chartState({ elements: [
+    element({ id: 'axes[1].series[sales]', kind: 'series', axes: 1, label: 'Sales' }),
+  ] }) })
+  expect(screen.getByRole('button', { name: '将 数据系列 · Sales · 子图 2 加入对话' })).toBeTruthy()
 })

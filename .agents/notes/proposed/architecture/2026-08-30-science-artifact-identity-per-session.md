@@ -18,6 +18,8 @@ This supersedes only the same-name cross-session continuation decision in [proje
 
 Direct-edit forms group multiple axes under localized panel headings and keep complete kind names in one content-sized column. References outside the grouped rows retain panel numbers. The Details shell provides separate keyed action and tab slots, with the conversation and Details tabs sharing one theme stylesheet. The existing Science selection store shares open-library metadata between tabs and content.
 
+Grouping the artifact library by originSessionId follows directly from session-owned identity: a conversation owns each group even when file names collide. Group headers carry the origin title and latest artifact time; cards do not repeat the source. The current conversation stays first, while card sorting stays within groups. Collapsed groups and the library page persist through the existing selection-store engine under session-scoped localStorage keys. Relative-time formatting lives once in ui-primitives for workspace rows and library groups.
+
 ## Alternatives considered
 
 **Renumber versions only in the display.** Showing v7 as “conversation version 2” leaves model-visible chips and get_science_state at v7, and a human edit still selects another conversation's figure as its parent. It hides the symptom without repairing identity.

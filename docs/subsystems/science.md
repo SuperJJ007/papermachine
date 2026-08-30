@@ -6,7 +6,7 @@ The Science family owns seven required-on-read Session events, the host-local Ru
 
 Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts), [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts), and [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
-Artifact identity belongs to the producing conversation: a session's first capture of a logical name creates v1, and later captures continue that session's chain. Same-named project artifacts remain distinct by artifactId. Cross-conversation inputs name exact versions through `artifact_inputs`; `edit_of` remains session-local. Existing logs keep their recorded ordinals.
+Artifact identity belongs to the producing conversation: a session's first capture of a logical name creates v1, and later captures continue that session's chain. Same-named project artifacts remain distinct by artifactId. Cross-conversation inputs name exact versions through `artifact_inputs`; `edit_of` remains session-local. Existing logs keep their recorded ordinals. The artifact library groups by producing conversation, with collapsible groups persisted in the selection store.
 
 ## Operations
 

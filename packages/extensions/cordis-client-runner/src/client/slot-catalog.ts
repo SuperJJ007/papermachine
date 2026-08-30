@@ -2247,7 +2247,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.view\' (client-ui-trajectory), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-science ScienceTraceView id \'swimlane\'',
+      'client-ui-science ScienceTraceView id \'process\'',
       'client-ui-trajectory TrajectoryView id \'detailed\'',
     ],
     replaceRisk: 'none',

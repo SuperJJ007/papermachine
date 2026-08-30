@@ -1,10 +1,10 @@
 /**
  * Browser composition for Science transcript cells, Turn-end artifacts,
- * the Trajectory Swimlane, the Files Details entry, settings, composer
+ * the Trajectory Process, the Files Details entry, settings, composer
  * selections, and kernel status. Process Tool rows are collapsed visual
  * cells; artifact presentation values accumulate in Turn data and render
  * once after the Assistant reply. Science contributes `trajectory.view`
- * id `swimlane` through ui-trajectory's extension point and registers its
+ * id `process` through ui-trajectory's extension point and registers its
  * own reactive visibility source. The artifact viewer, Turn-tail cards, and
  * composer controls share package-local per-Session stores; none of their
  * visual state enters the Session log or model requests.
@@ -68,7 +68,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const SCIENCE_DETAILS_ID = 'science'
 
 /**
- * The Swimlane's visibility source: a Session qualifies once it names
+ * The Process's visibility source: a Session qualifies once it names
  * the `science` preset OR its `science` projection has resolved (a
  * subagent, or a preset switch after creation, may bind one without the
  * preset field itself ever being `science`). `subscribe` re-derives its
@@ -117,8 +117,8 @@ function createTraceVisibilitySource(ctx: ClientContext): TrajectoryViewVisibili
  * stats) stays hidden for every Science Session: Science's own transcript
  * cells and Turn-end artifact groups are the denser presentation, and this
  * detail remains reconstructable from the durable log. Same reactive
- * predicate as the Swimlane, inverted — a Session qualifies for hiding
- * exactly when it qualifies for the Swimlane.
+ * predicate as the Process, inverted — a Session qualifies for hiding
+ * exactly when it qualifies for the Process.
  * @param ctx - client root context (reads `ctx.sessions`).
  * @returns the registrable {@link TranscriptDetailVisibilitySource}.
  */
@@ -289,10 +289,10 @@ export function apply(ctx: ClientContext): void {
   // Registration-time text reads through the bound translator; components
   // read the standard `t` seat instead.
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.trajectorySubviews.registerVisibility('swimlane', createTraceVisibilitySource(ctx)),
-    'ui-science: swimlane visibility')
+  ctx.effect(() => ctx.trajectorySubviews.registerVisibility('process', createTraceVisibilitySource(ctx)),
+    'ui-science: process visibility')
   ctx.slots.inject('trajectory.view', () => ctx.slots.register({
-    name: 'trajectory.view', id: 'swimlane', order: 0, label: () => t('trace.view'), locale: NS,
+    name: 'trajectory.view', id: 'process', order: 0, label: () => t('trace.view'), locale: NS,
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceTraceInjected => ({
       openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },

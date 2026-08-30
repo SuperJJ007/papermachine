@@ -1,7 +1,7 @@
-/** Science-only semantic swimlane: per-turn request, run/artifact facts, and human edits opposite agent intent groups on the timeline. */
+/** Science-only process view: per-turn request, run/artifact facts, and human edits opposite agent intent groups on the timeline. */
 
 import { useMemo } from 'react'
-import { IconCodeOutline16, IconFolderOpenOutline16, IconThinkOutline16, IconUserOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconFolderOpenOutline16, IconThinkOutline16, IconUserOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceSelectionStore } from './selection-store.ts'
@@ -62,20 +62,9 @@ export function ScienceTraceView({
   return (
     <section className={css.root} data-conversation-composer-overlay="" aria-label={t('trace.label')}>
       <header className={css.header}>
-        <div><span className={css.eyebrow}>{t('trace.eyebrow')}</span><h2>{t('trace.view')}</h2></div>
         <span className={css.summary}>{t('trace.summary', { turns: model.turns.length, groups: model.groups.length })}</span>
       </header>
       <div className={css.flow}>
-        {model.environment !== undefined && (
-          <article className={css.node} data-actor="agent" data-kind="environment" data-anchor={model.environment.anchor}>
-            <span className={css.icon}><IconCodeOutline16 /></span>
-            <div><b>{t('trace.environment')}</b><p>{t('trace.environmentSummary', {
-              profile: model.environment.profileId,
-              languages: model.environment.languages.join(' · '),
-              kernels: model.environment.kernels.join(', '),
-            })}</p></div>
-          </article>
-        )}
         {model.turns.map((turn) => {
           const dialogues = model.dialogues.filter(item => item.turn === turn)
           const group = model.groups.find(item => item.turn === turn)

@@ -190,18 +190,18 @@ async function bench() {
 }
 
 describe('ui-science on the real machinery stack', () => {
-  it('places Swimlane and Detailed inside the single Trajectory tab and defaults Science Sessions to Swimlane', async () => {
+  it('places Process and Detailed inside the single Trajectory tab and defaults Science Sessions to Process', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
 
     fireEvent.click(view.getByRole('tab', { name: 'Trajectory' }))
-    expect(view.getByRole('tab', { name: 'Swimlane' }).getAttribute('aria-selected')).toBe('true')
+    expect(view.getByRole('tab', { name: 'Process' }).getAttribute('aria-selected')).toBe('true')
     expect(view.getByRole('tab', { name: 'Detailed' }).getAttribute('aria-selected')).toBe('false')
     fireEvent.click(view.getByRole('tab', { name: 'Detailed' }))
     expect(view.getByRole('tab', { name: 'Detailed' }).getAttribute('aria-selected')).toBe('true')
     expect(view.getByRole('toolbar', { name: 'Trajectory toolbar' })).toBeTruthy()
-    fireEvent.click(view.getByRole('tab', { name: 'Swimlane' }))
-    expect(view.getByRole('tab', { name: 'Swimlane' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(view.getByRole('tab', { name: 'Process' }))
+    expect(view.getByRole('tab', { name: 'Process' }).getAttribute('aria-selected')).toBe('true')
     await b.runtime.dispose()
   })
 
@@ -271,7 +271,7 @@ describe('ui-science on the real machinery stack', () => {
       .toEqual(expect.arrayContaining(['annotate_artifact', 'publish_outcome']))
     expect(b.slots.entries('conversation.details.view').map(e => e.options.id)).toContain('science')
     expect(b.slots.entries('conversation.session.header.utilities').map(e => e.options.id)).toContain('science')
-    expect(b.slots.entries('trajectory.view').map(e => e.options.id)).toEqual(['swimlane', 'detailed'])
+    expect(b.slots.entries('trajectory.view').map(e => e.options.id)).toEqual(['process', 'detailed'])
 
     const outcome = b.slots.entries('tool.call.toolview')
       .find(entry => (entry.options as { key?: string }).key === 'publish_outcome')

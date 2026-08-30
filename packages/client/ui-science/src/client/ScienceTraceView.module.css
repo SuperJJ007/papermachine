@@ -6,10 +6,8 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
-.header h2 { margin: 3px 0 0; font: var(--dsw-font-lg-18); }
-.eyebrow, .summary { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); }
-.eyebrow { letter-spacing: .08em; text-transform: uppercase; }
+.header { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.summary { color: var(--dsw-alias-label-caption); font: var(--dsw-font-xxs-12); }
 
 .flow { position: relative; display: flex; max-width: 860px; flex-direction: column; gap: 24px; margin: 0 auto; padding-top: 28px; }
 .flow::before, .turn::before { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--dsw-alias-border-l3); content: ''; }

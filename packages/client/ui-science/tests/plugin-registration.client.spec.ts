@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** ui-science registers folded tool cells, Turn-tail artifacts, and the Trajectory swimlane reversibly. */
+/** ui-science registers folded tool cells, Turn-tail artifacts, and the Trajectory process reversibly. */
 
 import { createElement, type ComponentType } from 'react'
 import { Context } from '@deepseek-ai/cordis'
@@ -148,7 +148,7 @@ describe('ui-science apply', () => {
     expect(inject).toEqual(['locale', 'slots', 'connection', 'remote', 'remote.scienceEdits', 'settingsScope', 'sessions', 'conversation', 'conversationEvents', 'trajectorySubviews'])
   })
 
-  it('registers the folded rows, one Turn-tail group, one swimlane, and no Outcome details view', async () => {
+  it('registers the folded rows, one Turn-tail group, one process, and no Outcome details view', async () => {
     const { ctx, slots } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -159,7 +159,7 @@ describe('ui-science apply', () => {
     expect(tools.get('publish_outcome')).toBe(ScienceOutcomeRow)
     expect(slots.entries('conversation.chat.turnTail')[0]?.component).toBe(ScienceTurnArtifacts)
     expect(slots.entries('trajectory.view')[0]?.component).toBe(ScienceTraceView)
-    expect(slots.entries('trajectory.view')[0]?.options).toMatchObject({ id: 'swimlane', order: 0 })
+    expect(slots.entries('trajectory.view')[0]?.options).toMatchObject({ id: 'process', order: 0 })
     // `primary: true` makes the artifact library the Details column's
     // default entry for any current Session (no explicit selection needed).
     expect(slots.entries('conversation.details.view').map(entry => ({ id: entry.options.id, primary: entry.options.primary })))
@@ -305,12 +305,12 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the swimlane\'s own trajectory.view entry opens the artifact viewer and selects the detailed subview', async () => {
+  it('the process\'s own trajectory.view entry opens the artifact viewer and selects the detailed subview', async () => {
     const { ctx, slots, conversationOpenDetailsView, trajectorySelect } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('trajectory.view')[0]
-    if (entry?.inject === undefined) throw new Error('expected the injected swimlane entry')
+    if (entry?.inject === undefined) throw new Error('expected the injected process entry')
     const injected = (entry.inject as (sessionId: SessionId) => { openArtifact: () => void; selectDetailed: () => void })(SID)
     injected.openArtifact()
     expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
@@ -371,7 +371,7 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the swimlane visibility source treats a science-preset or resolved-projection session as visible, and declines every other', async () => {
+  it('the process visibility source treats a science-preset or resolved-projection session as visible, and declines every other', async () => {
     const sessionsFake = makeSessionsFake()
     sessionsFake.setSessions({
       ids: ['preset', 'projected', 'neither'],
@@ -391,7 +391,7 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the swimlane visibility source subscribes only sessions with a resolvable science face, and resyncs as the session list changes', async () => {
+  it('the process visibility source subscribes only sessions with a resolvable science face, and resyncs as the session list changes', async () => {
     const sessionsFake = makeSessionsFake()
     const staleDisposer = vi.fn()
     const staleFace = makeFace(null, staleDisposer)

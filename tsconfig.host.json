@@ -22,6 +22,7 @@
     "apps/web/tests/science-artifact-types.e2e.ts",
     "apps/web/tests/science-file-library.e2e.ts",
     "apps/web/tests/science-transcript-chrome.e2e.ts",
+    "apps/web/tests/science-trace-process.e2e.ts",
     "apps/web/tests/message-feedback-protocol.snapshot.ts",
     "apps/web/tests/live-interactions.e2e.ts",
     "apps/web/tests/question-composer.e2e.ts",

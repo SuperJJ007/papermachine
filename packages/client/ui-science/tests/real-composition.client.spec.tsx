@@ -146,6 +146,12 @@ async function bench() {
         ok: true,
         value: { ...ARTIFACT_ITEM.content, versionId: ARTIFACT_ITEM.content.versionId as never, data: new Uint8Array() },
       })),
+      // The Details column now defaults to the Science entry (`primary: true`
+      // in ui-science's registration), so ProjectLibrary's loadLibrary effect
+      // fires on first mount, before any transcript-row click.
+      readScienceLibrary: vi.fn<ISession['readScienceLibrary']>(async () => ({
+        ok: true, value: { projectId: 'project-1' as never, artifacts: [] },
+      })),
     },
   })
   // The projection value the artifact viewer reads (useProjection('science'))

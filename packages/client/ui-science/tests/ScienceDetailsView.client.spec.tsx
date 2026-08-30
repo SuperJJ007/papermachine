@@ -2,11 +2,12 @@
 /**
  * The Science Details entry (the artifact viewer): every reachable state
  * from the accepted client-safe `science` projection (missing projection
- * support, unbound, no-tab landing view with gallery/Outcome, opening a tab,
- * the tab strip across multiple open artifacts, the toolbar's version
- * stepper/provenance/download/maximize/close-tab controls, content dispatch
- * across every accepted media type, the provenance drill-in reached from the
- * toolbar, a stale tab, and distinct accessible text per top-level state).
+ * support; an unbound session rendering the same artifact library landing
+ * view as a bound one; the no-tab landing view with gallery/Outcome; opening
+ * a tab; the tab strip across multiple open artifacts; the toolbar's version
+ * stepper/provenance/download/maximize/close-tab controls; content dispatch
+ * across every accepted media type; the provenance drill-in reached from the
+ * toolbar; a stale tab; and distinct accessible text per top-level state).
  */
 import { useRef } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -291,17 +292,34 @@ describe('ScienceDetailsView: missing projection support', () => {
   })
 })
 
-describe('ScienceDetailsView: unbound', () => {
-  it('shows the selected preset and an unbound state before the first Science event', () => {
-    const view = render(<ScienceDetailsView {...props(null, { agentPreset: 'science' })} />)
-    expect(view.container.textContent).toContain('Preset: science')
-    expect(statusText()).toBe('No Science activity yet in this session.')
+describe('ScienceDetailsView: projection not yet bound (science === null)', () => {
+  it('renders the artifact library grouped by originating session, without an unbound notice', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        projectId: 'project-1',
+        artifacts: [{
+          artifactId: 'chart-1', logicalName: 'loss-curve.png', title: 'Loss curve',
+          originSessionId: SESSION, originSessionTitle: 'Current analysis',
+          latest: { versionId: 'version:1' as never, ordinal: 1, mediaType: 'image/png', byteCount: 100, createdAt: 500 },
+        }],
+      },
+    })
+    render(<ScienceDetailsView {...props(null, { agentPreset: 'science', loadLibrary })} />)
+    // The library is a project-wide RPC read, independent of this session's
+    // own (still-unbound) projection — it renders and groups exactly as it
+    // does for a bound session.
+    expect(await screen.findByText('Loss curve')).toBeTruthy()
+    expect(screen.getByText(/^Current analysis/)).toBeTruthy()
+    expect(loadLibrary).toHaveBeenCalled()
+    expect(screen.queryByText('No Science activity yet in this session.')).toBeNull()
+    expect(screen.queryByText(/^Preset:/)).toBeNull()
   })
 
-  it('omits the preset line when the session summary carries none', () => {
-    const view = render(<ScienceDetailsView {...props(null)} />)
-    expect(view.container.textContent).not.toContain('Preset:')
-    expect(statusText()).toBe('No Science activity yet in this session.')
+  it('reports no artifacts for an empty library, same as a bound session with none', async () => {
+    render(<ScienceDetailsView {...props(null)} />)
+    expect(await screen.findByText('No artifacts yet.')).toBeTruthy()
+    expect(screen.queryByText('No Science activity yet in this session.')).toBeNull()
   })
 })
 
@@ -1585,15 +1603,16 @@ describe('ScienceDetailsView: provenance drill-in', () => {
   })
 })
 
-describe('ScienceDetailsView: distinct accessible text per top-level state', () => {
-  it('never repeats the same status text across missing-support/unbound/landing states', () => {
+describe('ScienceDetailsView: distinct accessible text across top-level states', () => {
+  it('never repeats the same status text between missing-support and the landing view', () => {
+    // Only two top-level states remain distinct text: missing projection
+    // support (`science === undefined`) and the landing view's own statuses.
+    // An unbound session (`science === null`) renders the same landing view
+    // as a bound one with no artifacts — same text, by design, not a second
+    // state to keep distinct from it.
     const texts: string[] = []
 
     render(<ScienceDetailsView {...props(undefined)} />)
-    texts.push(statusText())
-    cleanup()
-
-    render(<ScienceDetailsView {...props(null, { agentPreset: 'science' })} />)
     texts.push(statusText())
     cleanup()
 
@@ -1602,7 +1621,7 @@ describe('ScienceDetailsView: distinct accessible text per top-level state', () 
     cleanup()
 
     expect(new Set(texts).size).toBe(texts.length)
-    expect(texts).toHaveLength(3)
+    expect(texts).toHaveLength(2)
   })
 })
 

@@ -37,7 +37,7 @@ function sessionState(current: SessionId | undefined): SessionListState {
 }
 
 describe('ScienceDestinations', () => {
-  it('renders the Files destination and opens it for the current Session', () => {
+  it('renders the Artifacts destination and opens it for the current Session', () => {
     const openScience = vi.fn()
     render(<ScienceDestinations {...({
       wide: true,
@@ -46,7 +46,7 @@ describe('ScienceDestinations', () => {
       t,
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
     expect(screen.queryByRole('button', { name: 'Sessions' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Files' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
     expect(screen.queryByRole('button', { name: 'Outcomes' })).toBeNull()
     expect(openScience).toHaveBeenCalledWith(SESSION)
   })
@@ -59,7 +59,7 @@ describe('ScienceDestinations', () => {
       openScience,
       t,
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.queryByRole('button', { name: 'Files' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Artifacts' })).toBeNull()
     expect(openScience).not.toHaveBeenCalled()
   })
 
@@ -70,8 +70,8 @@ describe('ScienceDestinations', () => {
       openScience: vi.fn(),
       t,
     } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.getByRole('button', { name: 'Files' }).getAttribute('title')).toBe('Files')
-    expect(screen.queryByText('Files')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Artifacts' }).getAttribute('title')).toBe('Artifacts')
+    expect(screen.queryByText('Artifacts')).toBeNull()
   })
 })
 

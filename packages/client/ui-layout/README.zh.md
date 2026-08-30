@@ -8,6 +8,8 @@ AppFrame 始终挂载会话栏和详情栏；已连接 Session 通过 `SessionPr
 
 `/client` 导出表层包含插件主体（`apply`／`inject`）、`LayoutController` 和四个 owner-share 接口。AppFrame、面板 store 与让步求解器仍属于包内部。
 
+Science 的侧边栏、对话、过程视图和产物库均跟随应用主题偏好。AppFrame 不为任何会话覆盖 document 的调色板或配色方案。
+
 ## 模型体验
 
 无。布局外壳管理浏览器查看状态；这里没有任何内容进入模型请求。

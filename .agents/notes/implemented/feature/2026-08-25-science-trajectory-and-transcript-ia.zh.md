@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-25-science-trajectory-and-transcript-ia.md) | 中文
 
+三行摘要与泳道名称由[轨迹中的 Science 过程步骤](../../proposed/feature/2026-08-30-science-trace-process-view.zh.md)取代；轨迹内嵌位置、已挂载子视图与会话内容归属仍然有效。
+
 ## 问题
 
 Science 把语义泳道作为工程 Trajectory 账本的平级会话视图，在泳道中复制 Assistant 散文，在 Chat 中直接展开执行输出，并在各个工具调用旁放置 artifact 卡。因此，同一 turn 的回答、过程输出与文件可能在多个表面重复出现。独立 Outcome Details 目的地还把已发布结论当成常驻对象，尽管它的持久语境已存在于会话记录中。
@@ -38,4 +40,4 @@ Science 注册一个 turn scope 的 conversation Definition，用于聚合有效
 
 会话记录仍是唯一的完整散文账本。泳道卡是有界的事实摘要，执行细节按需展开，每个 turn 至多有一个最终 artifact 组。如果工具结果没有有效的标签化 artifact presentation 元数据，即使 Session 投影稍后包含相关 artifact，该结果也不会贡献轮末卡。
 
-本决定收紧了 [Science 工作台 UI 收敛](2026-08-23-science-workbench-ui-convergence.zh.md) 中的 Trace 与 Outcome 放置。该 Note 对文件舞台、composer 选择、设置、内核状态、浅色 composition 与桌面 toggle 放置的决定仍然有效。
+本决定收紧了 [Science 工作台 UI 收敛](2026-08-23-science-workbench-ui-convergence.zh.md) 中的 Trace 与 Outcome 放置。该 Note 对文件舞台、composer 选择、设置、内核状态与桌面 toggle 放置的决定仍然有效。

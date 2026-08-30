@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-25-science-trajectory-and-transcript-ia.zh.md)
 
+The three-row summary and Swimlane name are superseded by [Science process steps inside Trajectory](../../proposed/feature/2026-08-30-science-trace-process-view.md); nested Trajectory placement, mounted subviews and transcript ownership remain current.
+
 ## Problem
 
 Science exposed its semantic trace as a conversation-level peer of the engineering Trajectory ledger, repeated Assistant prose inside the trace, rendered execution output openly in Chat, and placed artifact cards beside individual Tool calls. The same Turn could therefore repeat its answer, process output, and files across several surfaces. A separate Outcome Details destination also treated a published conclusion as a persistent object even though its durable context already lived in the transcript.
@@ -38,4 +40,4 @@ Plugins that need another Trajectory representation register `trajectory.view` a
 
 The transcript remains the only full prose account. Swimlane cards are bounded factual summaries, execution detail is opt-in, and each Turn has at most one final artifact group. A Tool result without valid tagged artifact presentation metadata contributes no Turn-end card even if the Session projection later contains a related artifact.
 
-This decision narrows the Trace and Outcome placement described in [Science workbench UI convergence](2026-08-23-science-workbench-ui-convergence.md). That note remains active for the Files stage, composer selections, settings, kernel status, light-palette composition, and desktop toggle placement.
+This decision narrows the Trace and Outcome placement described in [Science workbench UI convergence](2026-08-23-science-workbench-ui-convergence.md). That note remains active for the Files stage, composer selections, settings, kernel status, and desktop toggle placement.

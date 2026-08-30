@@ -18,9 +18,11 @@ Merge consecutive successful browse calls only within one turn, even across assi
 
 Kernel lifecycle markers replace the environment card because starts and exits have authoritative times and explain whether interpreter variables survive. Terminal epochs retain their start time, so replay can show both ends. Markers precede their containing turn, including its start and end instants; an open turn has no upper bound. Outside a turn, markers precede the first later turn or follow the final turn. This keeps a kernel started during the first run ahead of that turn rather than after its exit. The start label names the current environment when available.
 
-This proposal partially supersedes the card summary and subview name in [Science trajectory and transcript information architecture](../../implemented/feature/2026-08-25-science-trajectory-and-transcript-ia.md). Its nested Trajectory placement, preserved visited panels, transcript ownership and Turn-tail artifact reasoning remain useful. [Science transcript chrome suppression](../../implemented/feature/2026-08-25-science-transcript-chrome-suppression.md) continues to own conversation chrome; neither record is changed by this proposal.
+This proposal partially supersedes the card summary and subview name in [Science trajectory and transcript information architecture](../../implemented/feature/2026-08-25-science-trajectory-and-transcript-ia.md). Its nested Trajectory placement, preserved visited panels, transcript ownership and Turn-tail artifact reasoning remain useful. [Science transcript chrome suppression](../../implemented/feature/2026-08-25-science-transcript-chrome-suppression.md) continues to own conversation chrome; both records remain active for those independent decisions.
 
 ## Alternatives considered
+
+**Keep the Science-specific light palette.** A preset-specific document palette defeats the application preference once Science is the product default. Keeping it would leave the theme buttons changing stored state without changing the workbench.
 
 **Attribute files to the version's latest tool-call id.** Annotation can replace that id without producing a new file. Resolve `runId` to its generating call for both row and Turn ownership; only versions without run provenance use their own tool-call id. Missing run records leave the version in the summary without inventing a producing row. Each row carries its first call id for navigation. Kernel anchors identify language, epoch and lifecycle event instead of sharing the last Science event sequence.
 
@@ -35,6 +37,12 @@ This proposal partially supersedes the card summary and subview name in [Science
 **Keep every browse call as a separate list row.** Long stretches of reading obscure the runs and failures. Consecutive successful calls can share one row without losing their individual strip markers or navigation anchors.
 
 ## Acceptance criteria
+
+### Application theme
+
+The Science light override originated as a white document workbench for a distinct preset. Science becoming the product default removes that distinction: the override then masks every resolved dark palette although theme state and document attributes update correctly. Remove the AppFrame override, its preset selector and its coverage-table test. The sidebar, conversation, Process and library inherit the application preference; images alone retain the existing fixed light-canvas token so scientific plots remain readable without inversion or dimming.
+
+This partially supersedes the light-palette decision in [Science workbench UI convergence](../../implemented/feature/2026-08-23-science-workbench-ui-convergence.md). Keep that record for its independent composer, settings and deployment-configuration rationale. A real Science-session Web scenario verifies dark, light and system gestures against rendered backgrounds, not only the body theme attribute.
 
 Markers use two status colors plus neutral shapes: muted green runs and red failures, pale neutral ordinary calls, outlined annotations and solid publication circles. The strip and list share the same marker styling. Result text has no duplicate status dot; success uses caption text and failure uses red. Blue is reserved for selection and human edits, keeping failure the only high-saturation status.
 

@@ -96,10 +96,6 @@ export function AppFrame({
     const c = s.current
     return c !== undefined && s.byId[c]?.blank === false ? c : undefined
   })
-  const scienceSession = useSessions((s) => {
-    const c = s.current
-    return c !== undefined && s.byId[c]?.agentPreset === 'science'
-  })
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
 
@@ -183,7 +179,6 @@ export function AppFrame({
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
-      data-science-session={scienceSession || undefined}
     >
       <div className={css.sidebarCol}>
         {/* Render-site slot call with live concession output: a closed

@@ -407,6 +407,8 @@
 }
 
 .artifactImage {
+  /* Scientific plots keep their light canvas even when the surrounding UI is dark. */
+  background: var(--dsw-static-neutral-bluish-00);
   display: block;
   width: auto;
   max-width: 100%;

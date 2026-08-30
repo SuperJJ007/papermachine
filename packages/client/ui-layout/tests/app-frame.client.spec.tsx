@@ -24,7 +24,6 @@ import type {
 // Session selection controls for the SessionProvider and useSessions stubs.
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
-const selectedSessionPreset = { current: undefined as string | undefined }
 const baselinesReady = { current: true }
 
 // Render-prop contract stub fed through the standard seat prop (the renderer
@@ -73,7 +72,6 @@ function mountFrame() {
         ? {}
         : { [current]: {
           id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1,
-          ...(selectedSessionPreset.current === undefined ? {} : { agentPreset: selectedSessionPreset.current }),
         } },
       current,
       phase: 'ready',
@@ -118,7 +116,6 @@ beforeEach(() => {
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
-  selectedSessionPreset.current = undefined
   baselinesReady.current = true
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
@@ -145,15 +142,6 @@ describe('AppFrame', () => {
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
-  })
-
-  it('marks the complete shell for the Science light workbench palette only', () => {
-    selectedSessionPreset.current = 'science'
-    const { frame, rerenderFrame } = mountFrame()
-    expect(frame.getAttribute('data-science-session')).toBe('true')
-    selectedSessionPreset.current = 'standard'
-    rerenderFrame()
-    expect(frame.hasAttribute('data-science-session')).toBe(false)
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {

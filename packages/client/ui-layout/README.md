@@ -8,6 +8,8 @@ AppFrame always mounts the conversation and details columns; a connected Session
 
 The `/client` exports are the plugin body (`apply`/`inject`), `LayoutController`, and the four owner-share interfaces. AppFrame, the panel store, and the concession solver remain package-internal.
 
+Science follows the application theme preference across the sidebar, conversation, process view and artifact library. AppFrame does not override the document's palette or color scheme for any Session.
+
 ## Model Experience
 
 None, as the layout shell manages browser viewing state; nothing here reaches a model request.

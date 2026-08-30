@@ -51,8 +51,9 @@ artifact viewer 与会话记录行共享一个本包私有的按会话存储（`
 产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；网格卡片是一张有边框的整体——上半是通栏 1:1 缩略图（图片裁到左上角，非图片则居中显示文件类型磁贴），下半是脚注，显示标题与 `vN · 相对时间`，不再显示媒体类型文字。列表布局仍是 76px 缩略行，脚注文案与网格一致。`ProjectLibrary` 每次渲染只取一次 `Date.now()`，组头与每张卡片的脚注共用同一个值。
 
 ## Artifact viewer（Details 条目）
+<a id="artifact-viewer-details-entry"></a>
 
-viewer 以 id `science` 注册进 `conversation.details.view`。它的 keyed `conversation.details.header.actions` 条目把一级「产物」与「项目文件」页签放进 Details header，同时由通用 shell 保留关闭控件。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；写路径调用 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
+viewer 以 id `science`、`primary: true` 注册进 `conversation.details.view`——会话未显式选定某个配置项时,Details 列默认显示的就是这一项(ui-conversation 的 `DetailsPanel.tsx resolveActiveDetailsView`;整个注册表最多一个条目可以声明 `primary`,第二个在注册时抛错)。它的 keyed `conversation.details.header.actions` 条目把一级「产物」与「项目文件」页签放进 Details header，同时由通用 shell 保留关闭控件。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；写路径调用 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
 
 - **标签栏** — artifact tab 与 workspace file tab 共用同一条二级可关闭标签栏；没有打开文档时完全不渲染。文件库主页没有自己的文档 tab。点击任一一级页签会让活跃文档返回所选文件库页，但不关闭任何已打开 tab。点击会话记录 artifact 会打开其精确版本，工具栏返回键回到上次选择的文件库页，关闭最后一个文档也会自动回到那里。
 - **工具栏** — 面向活跃标签页的内容视图：文件库返回键、一个版本步进器（‹ v*n* ›），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。步进器默认只在两个相邻的非折叠版本间步进；当该 artifact 存在一个或多个同轮中间稿（`intermediate-versions.ts`——一个被同时共享授权 turn 与产生 session 的更晚版本取代的版本，永远不含 human-edit 保存）时，会出现一个「中间稿 ×*N*」按钮，点开后把它们临时纳入步进，直到再次收起（组件本地状态，切换到另一个 artifact 的标签页时重置）。溯源下钻按每个版本自身的确切标题列出全部版本。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
@@ -63,7 +64,7 @@ viewer 以 id `science` 注册进 `conversation.details.view`。它的 keyed `co
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **文件库主页** — 一级「产物」页通过 `sessions.scienceLibrary` 提供 Session 所属 project 内每个 logical artifact 的一张最新版本卡片，并提供搜索、排序和网格／列表控制。一级「项目文件」页通过 `sessions.workspaceFiles` 提供可搜索的单层目录浏览；file tab 通过 `sessions.workspaceFile` 读取至多 2 MiB，并把支持的媒体类型交给现有内容 renderer。主页内部不再有额外的分区开关。选中的页面每次显示时刷新，当前 Session 的 artifact 投影变化时也会刷新。
 
-在第一条 Science 事件之前，viewer 显示一个未绑定状态；当会话摘要携带 preset 时一并显示所选 preset。缺失投影支持、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，各自渲染不同文案。
+无论自身 `science` 投影处于什么状态，viewer 对任何当前会话都渲染产物库：Science 模式尚未绑定的会话（`science === null`——空白会话，或还没出现第一条 `science/mode-bound` 事件的会话）渲染的库主页，与一个已绑定但没有产物的会话完全一样，背后用一个惰性占位投影（`EMPTY_SCIENCE_PROJECTION`，`ScienceDetailsView.tsx`）支撑——库本身经 `sessions.scienceLibrary` 加载，这是一条项目级 RPC，与任何单一会话的投影无关，因此不需要真正绑定就能显示。缺失投影支持（`science === undefined`——本次部署压根没有组合 Science 会话投影）、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，仍各自渲染不同文案。
 
 **设计说明——原仪表盘中的事实去了哪里。** 常驻的环境概览与运行列表不会重新出现为会话级面板小节。环境事实只存在于溯源下钻的「环境」子标签页，作用域是某一个 artifact 的运行。Outcome 保留在折叠的 `publish_outcome` 会话单元格中，不再有独立 Details 目的地或落地视图小节。
 
@@ -93,11 +94,11 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 除了上面的文件 toggle 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——除 `global` 模式下的文件 toggle 之外，没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
 
-- **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个文件行；它打开 `science` Details 条目，没有当前 Science Session 时不渲染。
+- **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个产物行；它打开 `science` Details 条目，没有当前 Science Session 时不渲染。
 - **`conversation.page.utilities`** — 文件 toggle 在 `session` 模式下的欢迎页交接注册（`ScienceHeroAction`），或在 `global` 模式下的唯一注册（`ScienceGlobalToggle`）；见[文件 toggle](#files-toggle)。
 - **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
 - **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
-- **`details.files`**（`ScienceEmptyDetails`） — 没有当前 Session 时 Details 列的占位内容，说明选择一个 Session 后这里会显示其文件，并通过宿主提供的 `closeDetails` 关闭该列。
+- **`details.files`**（`ScienceEmptyDetails`） — 真正的欢迎页（完全没有当前 Session）时 Details 列的占位内容——`ui-layout` 的 `AppFrame` 只在这一态渲染这个 slot；只要有当前 Session（含空白、含 Science 未绑定）都改为在普通的 `details` slot 里渲染共享产物库（见 [Artifact viewer](#artifact-viewer-details-entry)）。说明打开一个会话后这里会显示项目产物，并通过宿主提供的 `closeDetails` 关闭该列。
 
 ## 组装
 

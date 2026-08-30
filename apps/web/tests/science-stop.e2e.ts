@@ -1,9 +1,9 @@
 // Web e2e scenario: a real composer turn invokes a persistent Science kernel
 // through the Runtime suite's wire-protocol fixture, so the UI acts on the
 // same run-started/run-finished and tool-result path production uses. Beyond
-// the original Stop scenario, this file also proves the eight-state
-// `run_python`/`run_r` row redesign, the generic adjacent-Tool-call group,
-// and Think-attach end to end: a real settled success (kernel badge, plain
+// the Stop scenario, this file also exercises the
+// `run_python`/`run_r` execution rows, the generic adjacent-Tool-call group,
+// and Think-attach end to end: a real settled success (kernel badge, folded
 // stdout), two real adjacent run_python calls folding into one generated
 // group title, a real kernel crash mid-run rendering the amber
 // kernel-exited state, and a real reasoning block ahead of a paired run
@@ -223,7 +223,7 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
     expect(await stoppedRow.getByText('Run stopped', { exact: true }).count()).toBe(1)
   }, 120_000)
 
-  it('renders a settled successful run with its kernel badge and full stdout, real kernel epoch included', async () => {
+  it('keeps the kernel badge visible and reveals complete stdout when expanded', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-run-success'))
     const input = page.locator('textarea').first()
     const settled = scaffold.whenTurnSettled(60_000)
@@ -235,7 +235,9 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
     await successRow.waitFor({ timeout: 15_000 })
     await expect.poll(async () => successRow.locator('text=/Kernel #\\d+/').count()).toBe(1)
     expect(await successRow.getByText(/Success · \d/u).count()).toBe(1)
-    expect(await successRow.getByText('max deviation = 0.0 px\nlongest label: 72 chars').count()).toBe(1)
+    expect(await successRow.locator('pre').count()).toBe(0)
+    await successRow.getByRole('button', { name: /^stdout 2 lines/ }).click()
+    expect(await successRow.locator('pre').textContent()).toBe('max deviation = 0.0 px\nlongest label: 72 chars')
   }, 90_000)
 
   it('folds two adjacent run_python calls into one generated Tool group, both nested rows real and settled', async () => {

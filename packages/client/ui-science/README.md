@@ -18,16 +18,15 @@ Science artifact presentation metadata accumulates in authoritative Turn data. A
 
 ## Execution cells
 
-`run_python` and `run_r` render across eight presentation states (`ScienceExecutionRow.tsx`, `run-output.ts`), driven from the durable tool-result text `tool-science`'s `formatRunResult` produces and the joined `science` Session projection run entry (matched by `toolCallId`) — never a new Host fact. A captured table/chart artifact never renders a chip on the row; every artifact surfaces once, in the Turn-tail group (see above).
+`run_python` and `run_r` render running, settled, and unavailable-kernel states (`ScienceExecutionRow.tsx`, `run-output.ts`), driven from the durable tool-result text `tool-science`'s `formatRunResult` produces and the joined `science` Session projection run entry (matched by `toolCallId`) — never a new Host fact. A captured table/chart artifact never renders a chip on the row; every artifact surfaces once, in the Turn-tail group (see above).
 
 1. **Running** — a live `mm:ss` elapsed status and a turn-level Stop (the composer's own control, reused through an injected `cancel`); the row degrades to a static "Running…" summary line since no stdout-streaming channel exists yet — a live tail is future work, not a new channel this row opens.
-2. **Success, short output** (≤ 8 retained lines) — the full stdout renders inline, no fold.
-3. **Success, long output** (> 8 lines) — a caret fold names the line count and retained byte size; the full text mounts only on expansion.
-4. **Success, output truncated** — the fold instead names the retained tail's byte size, with a banner explaining the cap and that the complete output is recoverable from provenance.
-5. **Failed** (any non-success status except a died kernel) — a tail-first stderr summary (its last two lines) renders inline in the error color; a second fold reveals the complete stderr.
-6. **Kernel exited mid-run** (`failureCode: 'KERNEL_DIED'`) — a distinct amber state naming the exited kernel epoch and the epoch the next run will start, with a "View exit reason" action reusing the row's own `inspect` (the same call-level Trajectory jump every other state offers — no separate kernel-state-event navigation exists yet).
+2. **Success, non-empty output** — stdout stays behind a collapsed row showing line count and byte size; expanding reveals all retained lines.
+3. **Success, output truncated** — the fold instead names the retained tail's byte size, with a banner explaining the cap and that the complete output is recoverable from provenance.
+4. **Failed** (any non-success status except a died kernel) — a tail-first stderr summary (its last two lines) renders inline in the error color; a second fold reveals the complete stderr.
+5. **Kernel exited mid-run** (`failureCode: 'KERNEL_DIED'`) — a distinct amber state naming the exited kernel epoch and the epoch the next run will start, with a "View exit reason" action reusing the row's own `inspect` (the same call-level Trajectory jump every other state offers — no separate kernel-state-event navigation exists yet).
 
-A row falls back to the pre-eight-state plain folded cell (collapsed code + settled output, expand-on-click) whenever the science projection has no run entry for this call, or the flattened text does not carry `formatRunResult`'s fixed section markers (a hand-built fixture, or a genuine tool-level exception/turn interruption) — both degrade rather than invent a state the durable facts do not support. Expansion and the live elapsed counter are component-local frontend state, never logged or projected into provider requests.
+A row falls back to a plain folded cell (collapsed code + settled output, expand-on-click) whenever the science projection has no run entry for this call, or the flattened text does not carry `formatRunResult`'s fixed section markers (a hand-built fixture, or a genuine tool-level exception/turn interruption) — both degrade rather than invent a state the durable facts do not support. Expansion and the live elapsed counter are component-local frontend state, never logged or projected into provider requests.
 
 **Deferred**: promoting an in-memory DataFrame result to its own artifact-like row (the design board's `df — …` chip) waits for the Notebook/Compute data-grounding stage; a "Restart and rerun" action on the kernel-exited state is deferred to keep a rerun routed through the model/conversation rather than a direct client control that would break trajectory consistency.
 

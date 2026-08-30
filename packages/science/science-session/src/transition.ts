@@ -335,16 +335,10 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   if (target === undefined) {
     const latest = logical.at(-1)
     if (latest === undefined) {
-      // A logicalName this session's own log has never recorded either
-      // opens a brand-new artifact at version 1, or continues one a
-      // different session in the same project already versioned (S3
-      // cross-session append): this session's fold, replaying only its own
-      // log, cannot tell those two apart without the project store, so it
-      // no longer requires exactly version 1 here (the codec's own
-      // POSITIVE_INTEGER schema already rejects anything but a positive
-      // ordinal). The live Runtime is what actually enforced the true prior
-      // ordinal (`store.appendVersion`'s own linearized MAX(ordinal)+1
-      // transaction) before this event ever committed.
+      // Historical logs can first record a logicalName above v1 because
+      // earlier capture joined chains across sessions. Accept those durable
+      // ordinals so existing sessions remain replayable; capture's create
+      // path enforces v1 for a name first encountered by a live session.
       const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
       if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
     } else if (artifact.artifactId !== latest.artifactId

@@ -791,90 +791,31 @@ describe('Science auto-capture', () => {
     expect(projection?.artifacts).toHaveLength(1)
   })
 
-  it('continues a prior session\'s artifact from a new session in the same project (S3 cross-session capture)', async () => {
+  it.each(['a,b\n3,4\n', 'a,b\n1,2\n'])('creates independent same-named artifacts in separate sessions even for identical bytes (%j)', async (data) => {
     const root = tmp('.science-capture-cross-session-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
-    // Both sessions share one workspace `cwd`, so both resolve to the SAME
-    // project — the only thing that makes this a same-project, cross-session
-    // continuation rather than two unrelated projects each with their own
-    // artifact.
     const workspace = tmp('.science-cross-session-workspace-')
     const sessionA = createScienceSession(harness.ctx, 'science-cross-session-a', workspace)
     const sessionB = createScienceSession(harness.ctx, 'science-cross-session-b', workspace)
-
     const first = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n1,2\n' })
     const versionA = first.result.capture?.captured.at(0)
-    if (versionA === undefined) throw new Error('cross-session test: expected session A to capture one version')
-    expect(versionA).toMatchObject({ logicalName: 'shared.csv', version: 1, origin: 'auto' })
-
-    // Session B has never seen `shared.csv` in its OWN log — it has to
-    // consult the project store to learn artifactId already owns that
-    // logicalName, rather than forking a second artifact with the same name.
-    const second = await runWithFiles(harness, root, sessionB, { 'shared.csv': 'a,b\n3,4\n' })
+    if (versionA === undefined) throw new Error('expected session A capture')
+    const second = await runWithFiles(harness, root, sessionB, { 'shared.csv': data })
     const versionB = second.result.capture?.captured.at(0)
-    if (versionB === undefined) throw new Error('cross-session test: expected session B to continue the same artifact')
-    expect(versionB).toMatchObject({ artifactId: versionA.artifactId, logicalName: 'shared.csv', version: 2, origin: 'auto' })
-
-    // Files still shows one artifact row for the project, its latest
-    // version now produced by session B.
+    if (versionB === undefined) throw new Error('expected session B capture')
+    expect(versionB).toMatchObject({ logicalName: 'shared.csv', version: 1, origin: 'auto' })
+    expect(versionB.artifactId).not.toBe(versionA.artifactId)
+    expect(versionB.parent).toBeUndefined()
     const artifacts = await harness.ctx.scienceArtifactStore.listArtifacts(versionA.projectId)
-    expect(artifacts).toHaveLength(1)
-    const artifactRecord = artifacts[0]
-    if (artifactRecord === undefined) throw new Error('cross-session test: expected exactly one project artifact')
-    expect(artifactRecord.artifactId).toBe(versionA.artifactId)
-    const latest = await harness.ctx.scienceArtifactStore.getVersion(versionA.projectId, artifactRecord.latestVersionId)
-    expect(latest).toMatchObject({ ordinal: 2, producerSessionId: sessionB.id })
-
-    // A THIRD session, its own local fold empty, reproduces session B's
-    // latest bytes byte-for-byte: the store fallback's own dedup check (not
-    // the local-history one, since this session has no local history at
-    // all) still recognizes it and opens no redundant version.
-    const sessionC = createScienceSession(harness.ctx, 'science-cross-session-c', workspace)
-    const third = await runWithFiles(harness, root, sessionC, { 'shared.csv': 'a,b\n3,4\n' })
-    expect(third.result.capture?.captured).toEqual([])
-  })
-
-  it('accepts session A\'s own append landing beyond its local knowledge after session B interleaves (S3 interleaving fix)', async () => {
-    const root = tmp('.science-capture-interleave-')
-    const prefix = createFakePythonPrefix(root)
-    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    contexts.push(harness.ctx)
-    const workspace = tmp('.science-interleave-workspace-')
-    const sessionA = createScienceSession(harness.ctx, 'science-interleave-a', workspace)
-    const sessionB = createScienceSession(harness.ctx, 'science-interleave-b', workspace)
-
-    const first = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n1,2\n' })
-    const versionA1 = first.result.capture?.captured.at(0)
-    if (versionA1 === undefined) throw new Error('interleaving test: expected session A to capture version 1')
-    expect(versionA1).toMatchObject({ version: 1, origin: 'auto' })
-
-    // Session B — not session A — takes the project's next ordinal (2).
-    // Session A's OWN log still locally knows only version 1.
-    const second = await runWithFiles(harness, root, sessionB, { 'shared.csv': 'a,b\n3,4\n' })
-    const versionB = second.result.capture?.captured.at(0)
-    if (versionB === undefined) throw new Error('interleaving test: expected session B to take version 2')
-    expect(versionB).toMatchObject({ artifactId: versionA1.artifactId, version: 2 })
-
-    // Session A appends again. It resolves the continuation from its OWN
-    // local fold (which still only knows version 1), so it calls
-    // `store.appendVersion` the same way a same-session continuation would
-    // — but the store's linearized ordinal assignment gives it version 3,
-    // not the 2 session A's own local history would predict. Before this
-    // fix, committing that `science/artifact-saved` fact into session A's
-    // own log would throw on replay (exact `latest.version + 1` only); the
-    // fix accepts any version beyond session A's own locally-recorded
-    // maximum, so the live Runtime's already-store-validated ordinal is
-    // trusted instead of re-derived.
+    expect(artifacts).toHaveLength(2)
+    expect(artifacts.every(artifact => artifact.logicalName === 'shared.csv')).toBe(true)
+    expect(artifacts.find(artifact => artifact.artifactId === versionA.artifactId)?.latestVersionId).toBe(versionA.versionId)
+    expect(artifacts.find(artifact => artifact.artifactId === versionB.artifactId)?.latestVersionId).toBe(versionB.versionId)
     const third = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n5,6\n' }, 'ok', true)
-    const versionA2 = third.result.capture?.captured.at(0)
-    if (versionA2 === undefined) throw new Error('interleaving test: expected session A to capture a further version')
-    expect(versionA2).toMatchObject({ artifactId: versionA1.artifactId, version: 3, origin: 'auto' })
-
-    // Session A's own session log replays cleanly with the accepted gap.
-    const projectionA = replayScience(sessionA.events)
-    expect(projectionA?.artifacts.map(v => v.version)).toEqual([1, 3])
+    expect(third.result.capture?.captured.at(0)).toMatchObject({ artifactId: versionA.artifactId, version: 2 })
+    expect(replayScience(sessionA.events)?.artifacts.map(version => version.version)).toEqual([1, 2])
   })
 
   it('continues writing to the same on-disk project store across a Host restart (fresh Context/Runtime, same project)', async () => {
@@ -896,12 +837,15 @@ describe('Science auto-capture', () => {
     const sessionB = createScienceSession(after.ctx, 'science-restart-b', workspace)
     const second = await runWithFiles(after, root, sessionB, { 'restart.csv': 'a,b\n3,4\n' })
     const versionB = second.result.capture?.captured.at(0)
-    if (versionB === undefined) throw new Error('restart test: expected session B to continue the same artifact after restart')
-    expect(versionB).toMatchObject({ artifactId: versionA.artifactId, logicalName: 'restart.csv', version: 2 })
+    if (versionB === undefined) throw new Error('restart test: expected session B to create its own artifact after restart')
+    expect(versionB).toMatchObject({ logicalName: 'restart.csv', version: 1 })
+    expect(versionB.artifactId).not.toBe(versionA.artifactId)
 
     const artifacts = await after.ctx.scienceArtifactStore.listArtifacts(versionA.projectId)
-    expect(artifacts).toHaveLength(1)
-    expect(artifacts[0]).toMatchObject({ artifactId: versionA.artifactId, originSessionId: sessionA.id })
+    expect(artifacts).toHaveLength(2)
+    expect(artifacts.find(artifact => artifact.artifactId === versionA.artifactId)).toMatchObject({
+      originSessionId: sessionA.id, latestVersionId: versionA.versionId,
+    })
   })
 
   /** Mount a store double whose writes fail with `failure` while `openProject` still resolves a stable project. */

@@ -197,3 +197,13 @@ describe('selection-store: view, provenance sub-tab, and lightbox', () => {
     expect(s.getSnapshot().lightboxOpen).toBe(false)
   })
 })
+
+describe('selection-store: persistence declaration', () => {
+  it('declares lightboxOpen and view transient (a reopened tab must not reopen its lightbox/drill-in over the content)', () => {
+    expect(createScienceSelectionStore().spec.transient).toEqual(['lightboxOpen', 'view'])
+  })
+
+  it('does not bump the v1 persist key: added fields rehydrate through the runtime merge, not a version suffix', () => {
+    expect(createScienceSelectionStore().spec.persist).toBe('dsh.science.selection.v1')
+  })
+})

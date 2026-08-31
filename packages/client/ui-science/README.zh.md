@@ -64,7 +64,7 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 选择状态存储
 
-artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在文件库主页处为 null；`libraryPage` 记住该主页显示产物还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 与 `provenanceSubTab` 仍是共享 viewer 字段：激活文档会回到 content，同时保留最近一次 provenance 子标签偏好。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括文件库页与折叠分组，因此刷新浏览器后仍会恢复。
+artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在文件库主页处为 null；`libraryPage` 记住该主页显示产物还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 与 `provenanceSubTab` 仍是共享 viewer 字段：激活文档会回到 content，同时保留最近一次 provenance 子标签偏好。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括已打开的标签页、文件库页与折叠分组，因此刷新浏览器后仍会恢复；`view` 与 `lightboxOpen` 被声明为瞬态字段（`defineStore` 的 `transient` 列表），始终来自 `init()`——标签页关闭时仍处于打开状态的灯箱或溯源下钻，不得在下次加载时重新盖在内容之上。
 
 产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；网格卡片是一张有边框的整体——上半是通栏 1:1 缩略图（图片裁到左上角，非图片则居中显示文件类型磁贴），下半是脚注，显示标题与 `vN · 相对时间`，不再显示媒体类型文字。列表布局仍是 76px 缩略行，脚注文案与网格一致。`ProjectLibrary` 每次渲染只取一次 `Date.now()`，组头与每张卡片的脚注共用同一个值。
 
@@ -141,7 +141,6 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 - **仅一个固定配置档案、两个字段** — 卡片只编辑内置 `science` 配置档案的 `pythonPrefix`/`rPrefix`，因为内置 preset 是当前唯一的产品消费方；其他部署配置档案 id 仍是文件/配置层面的事，不由浏览器管理。
 - **没有发现、探测或即时生效** — 卡片从不列出、探测或校验某个 Conda 环境，也没有文件系统选择器或即时生效控件；已存储的前缀只有到下一次 Host 重启才会生效，卡片的 `pendingRestart`/`effective` 状态会上报这一点，但无法缩短等待。
 - **环境历史仅保留单一版本** — `science` 投影只保留最新的一次环境绑定，因此一旦绑定发生变化，溯源下钻"环境"子标签页就无法展示某个较旧图表运行时的确切版本；它会转而报告仍然保留的版本号与指纹预览。
-- **已打开的标签页不做持久化保存** — 选择状态存储只存在于框架按 (句柄, 会话) 划分的缓存里，而非 `localStorage`：在同一次页面加载内，已打开的标签页与当前视图能在 Details 列关闭再重新打开、或会话切换再切回之间保持不变，但无法跨越一次页面刷新。
 - **超过其适用渲染上限的文本 artifact 无法在原地完整浏览** — 表格与 JSON/text 使用 `MAX_ARTIFACT_TABLE_ROWS`/`MAX_ARTIFACT_TEXT_CHARACTERS`。下载仍会取回完整的持久化字节。
 - **没有 PDF 图表导出** — 一个已禁用的本地化 Export 控件明确呈现该暂缓状态；确定性的 PDF 导出仍待后续实现。
 - **不暴露任何结构化目标的 spec 无法添加 composer chip** — 目标发现沿 `layer`、`hconcat`/`vconcat`/`concat` 成员以及 `facet`/`repeat` 的子 `spec` 遍历 `mark`/`encoding.*`；一份不含这些结构的文档不提供结构选择，但只读渲染与下载仍然可用。

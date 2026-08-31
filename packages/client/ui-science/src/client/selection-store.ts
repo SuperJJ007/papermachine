@@ -134,6 +134,9 @@ export function createScienceSelectionStore(): ScienceSelectionStore {
       libraryCollapsed: {}, libraryTabs: {}, openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
     }),
     persist: 'dsh.science.selection.v1',
+    // A lightbox or provenance/content view open when the tab closed must
+    // not reopen over the content on the next load — both are transient.
+    transient: ['lightboxOpen', 'view'],
     actions: {
       rememberLibraryArtifact: (draft, artifact) => { draft.libraryTabs[artifact.artifactId] = artifact },
       showLibrary: (draft) => {

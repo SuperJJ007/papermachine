@@ -1725,4 +1725,22 @@ describe('ScienceDetailsView: conversation groups', () => {
     expect(screen.getByText('v1 · 1小时前')).toBeTruthy()
     expect(screen.queryByText(/image\/png/)).toBeNull()
   })
+
+  it('rehydrates a legacy payload missing libraryCollapsed/libraryTabs and renders without throwing', async () => {
+    // A payload written before those fields existed on ScienceSelectionState
+    // (the reported "刷新后详情栏选中标记与折叠状态可能不一致" regression):
+    // whole-value rehydration used to leave both `undefined`, and reading
+    // `collapsed[sessionId]` / writing `draft.libraryTabs[...]` threw.
+    const scopeKey = crypto.randomUUID()
+    localStorage.setItem(`dsh.science.selection.v1.${scopeKey}`, JSON.stringify({
+      openArtifacts: [], activeTabId: null, libraryPage: 'artifacts', view: 'content', provenanceSubTab: 'code', lightboxOpen: false,
+    }))
+    const { value, store } = groupedProps(scopeKey)
+    expect(() => { render(<ScienceDetailsView {...value} />) }).not.toThrow()
+    const toggle = await screen.findByRole('button', { name: /^Current analysis · This session/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Alpha, version 1' }))
+    expect(await screen.findByRole('button', { name: 'File library' })).toBeTruthy()
+    expect(store.instance.getSnapshot().libraryTabs['alpha']).toBeDefined()
+  })
 })

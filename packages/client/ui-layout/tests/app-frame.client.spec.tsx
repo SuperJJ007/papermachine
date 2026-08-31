@@ -113,6 +113,11 @@ function drag(handle: Element, fromX: number, toX: number): void {
 }
 
 beforeEach(() => {
+  // The layout store now persists `details` (stores.ts) — clear before each
+  // test so one test's opened/dragged details panel cannot rehydrate into
+  // the next mountFrame() in this file (jsdom's localStorage survives across
+  // `it()` blocks within one test file).
+  localStorage.clear()
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false

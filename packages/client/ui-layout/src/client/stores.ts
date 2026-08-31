@@ -45,11 +45,27 @@ type LayoutActions = {
  * open/close transitions write 0 / the default explicitly. Below the
  * auto-collapse breakpoint (AppFrame feeds setNarrow) the sidebar toggle
  * flips the narrowExpanded override instead of the preference.
+ *
+ * Persistence is deliberately asymmetric between the two width fields,
+ * against this repo's usual preference for symmetric parallel values:
+ * `details` survives a reload, `sidebar` does not (declared `transient`
+ * alongside `narrow`/`narrowExpanded`). Details is the workspace surface for
+ * documents the user opened on purpose (artifact tabs, project files) and
+ * users asked for it to stay open across a reload; the sidebar is
+ * navigation chrome, not work state, and `apps/web/tests/smoke-real.e2e.ts`
+ * ("sidebar drag widens the column and resets across reload") pins its
+ * reset as intentional — persisting it here would fail that coverage.
+ * `narrow`/`narrowExpanded` are derived from the live viewport breakpoint
+ * (AppFrame's `setNarrow`), never a saved preference: persisting them would
+ * let a state captured at a narrow viewport leak into the next load at a
+ * wide one.
  * @returns the store handle (spec + type + identity + factory in one).
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
     init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false }),
+    persist: 'dsh.layout.panels.v1',
+    transient: ['sidebar', 'narrow', 'narrowExpanded'],
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },

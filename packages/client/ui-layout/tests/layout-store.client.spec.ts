@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * createLayoutStore unit account: init shape, the action write set (clamp
- * inside actions), and the absence of browser persistence. Uses the
+ * inside actions), and the details-only persistence split (details survives
+ * a reload; sidebar/narrow/narrowExpanded do not). Uses the
  * test-sanctioned path: factory self-call + .create() gives the
  * real engine instance (same create path as production).
  */
@@ -12,7 +13,7 @@ import {
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
-const PERSIST_KEY = 'dsh.layout.panels'
+const PERSIST_KEY = 'dsh.layout.panels.v1'
 
 beforeEach(() => { localStorage.clear() })
 
@@ -85,19 +86,50 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(0)
   })
 
-  it('does not persist panel geometry', () => {
+  it('persists the details width/open-closed preference across a reload, leaving the sidebar transient', () => {
     const first = createLayoutStore().create()
     first.actions.setSidebar(400)
     first.actions.openDetails()
     first.actions.setDetails(500)
-    expect(localStorage.getItem(PERSIST_KEY)).toBeNull()
+    expect(localStorage.getItem(PERSIST_KEY)).not.toBeNull()
 
+    // A fresh create() is the store's own model of "after a reload": rehydration
+    // merges the storage payload's own keys over init() (client/runtime's
+    // attachPersistence), so details survives while sidebar restarts at its default.
     const second = createLayoutStore().create()
     expect(second.store.getSnapshot()).toEqual({
       sidebar: SIDEBAR_DEFAULT,
-      details: 0,
+      details: 500,
       narrow: false,
       narrowExpanded: false,
     })
+  })
+
+  it('never writes narrow/narrowExpanded to storage even while set', () => {
+    const { actions } = createLayoutStore().create()
+    actions.setNarrow(true)
+    actions.toggleSidebar() // sets narrowExpanded: true
+    const stored: unknown = JSON.parse(localStorage.getItem(PERSIST_KEY) ?? '{}')
+    expect(stored).not.toHaveProperty('narrow')
+    expect(stored).not.toHaveProperty('narrowExpanded')
+    expect(stored).not.toHaveProperty('sidebar')
+  })
+
+  it('ignores a narrow/narrowExpanded value in a stored payload on rehydration (transient fields never read back)', () => {
+    // A payload could only carry these keys if a future build regressed the
+    // transient declaration, or a hand-edited/forged localStorage entry —
+    // exercise the read-side guarantee regardless of how it got there.
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ details: 500, narrow: true, narrowExpanded: true, sidebar: 999 }))
+    const { store } = createLayoutStore().create()
+    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 500, narrow: false, narrowExpanded: false })
+  })
+
+  it('rehydrates a legacy payload missing fields added since it was written, without throwing', () => {
+    // Simulates a payload written before `details` existed in this store (or
+    // before persistence existed at all): only an unrelated key survives.
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ unrelatedLegacyField: true }))
+    expect(() => createLayoutStore().create()).not.toThrow()
+    const { store } = createLayoutStore().create()
+    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false })
   })
 })

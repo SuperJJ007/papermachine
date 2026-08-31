@@ -1,6 +1,12 @@
 appId: com.papermachine.desktop
 productName: PaperMachine
 asar: true
+# The Host and the watchdog both re-enter this same Electron binary as plain
+# Node (`ELECTRON_RUN_AS_NODE=1`, src/main.ts), so the packaged app must keep
+# that fuse open. Electron's default is tightening; declaring it here pins the
+# behaviour the process model depends on instead of inheriting it.
+electronFuses:
+  runAsNode: true
 directories:
   output: release
 files:

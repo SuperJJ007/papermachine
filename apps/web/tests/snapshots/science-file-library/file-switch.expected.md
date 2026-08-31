@@ -1,4 +1,4 @@
-- tablist "File library":
+- tablist "Artifact library":
   - tab "Artifacts"
   - tab "Project files" [selected]
 - button "Close details"
@@ -9,7 +9,7 @@
   - tab "other.csv" [selected]
   - button "Close other.csv":
     - img
-- button "‹ File library"
+- button "‹ Artifact library"
 - strong: other.csv
 - table "other.csv":
   - rowgroup:

@@ -745,16 +745,20 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     const result = (ok: boolean, text: string): FileResult => ok
       ? { ok: true, value: { mediaType: 'text/plain', byteCount: text.length, data: new TextEncoder().encode(text) } }
       : { ok: false, error: { code: 'internal', message: text, details: {} } }
+    // `internal` carries no `WorkspaceReadError` reason (see the dedicated
+    // localization coverage above), so a failed read always renders the
+    // generic fallback rather than this mock's own message text.
+    const presented = (ok: boolean, text: string): string => ok ? text : 'Unable to open this file.'
     let finish!: (value: FileResult) => void
     const pending = new Promise<FileResult>((resolve) => { finish = resolve })
     const loadWorkspaceFile = vi.fn().mockResolvedValueOnce(result(firstOk, 'FIRST CONTENT')).mockReturnValueOnce(pending)
     render(<ScienceDetailsView {...props(baseProjection(), { store, loadWorkspaceFile })} />)
-    expect(await screen.findByText('FIRST CONTENT')).toBeTruthy()
+    expect(await screen.findByText(presented(firstOk, 'FIRST CONTENT'))).toBeTruthy()
     act(() => { store.actions.openFileTab('second.txt') })
-    expect(screen.queryByText('FIRST CONTENT')).toBeNull()
+    expect(screen.queryByText(presented(firstOk, 'FIRST CONTENT'))).toBeNull()
     expect(screen.getByRole('status')).toBeTruthy()
     await act(async () => { finish(result(secondOk, 'SECOND CONTENT')); await pending })
-    expect(await screen.findByText('SECOND CONTENT')).toBeTruthy()
+    expect(await screen.findByText(presented(secondOk, 'SECOND CONTENT'))).toBeTruthy()
     expect(screen.queryByRole('alert') !== null).toBe(!secondOk)
   })
 

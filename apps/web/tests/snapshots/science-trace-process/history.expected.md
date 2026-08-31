@@ -11,4 +11,4 @@
     - group "Step strip":
       - button "Read session state"
     - button "Expand steps · Steps 1 · Runs 0 · 7.0 s": Steps 1 · Runs 0 · 7.0 s
-    - text: No produced files
+    - text: No artifacts

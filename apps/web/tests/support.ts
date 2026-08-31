@@ -136,11 +136,14 @@ export function conversationContextKey(kind: string, id: string): string {
 }
 
 /**
- * Expand mounted tool groups before inspecting their individual cards.
+ * Expand every mounted tool group before inspecting their individual cards.
+ * Re-queries the closed-group locator between clicks rather than snapshotting
+ * `.all()` once: a floor-pinned virtualized transcript can remount or
+ * reorder groups as each expansion changes layout, which stales an
+ * index-bound `.all()` handle into a not-actionable element.
  * @param page - Browser page displaying the conversation.
  */
 export async function expandToolGroups(page: Page): Promise<void> {
-  for (const toggle of await page.locator('[data-tool-group] > button[aria-expanded="false"]').all()) {
-    await toggle.click()
-  }
+  const closedGroups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
+  while (await closedGroups.count() > 0) await closedGroups.first().click()
 }

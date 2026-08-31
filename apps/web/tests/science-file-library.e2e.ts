@@ -190,7 +190,7 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('tab', { name: 'Project files', exact: true }).click()
     await details.getByRole('button', { name: /seed\.csv/ }).click()
     await details.getByRole('table', { name: 'seed.csv' }).waitFor()
-    await details.getByRole('button', { name: 'Artifact library', exact: true }).click()
+    await details.getByRole('button', { name: /Artifact library$/ }).click()
     await details.getByRole('button', { name: /other\.csv/ }).click()
     await details.getByRole('table', { name: 'other.csv' }).waitFor()
     await details.getByRole('tab', { name: 'seed.csv', exact: true }).click()

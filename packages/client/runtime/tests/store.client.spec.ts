@@ -184,6 +184,21 @@ describe('createSnapshotStore', () => {
     })
   })
 
+  describe('transient fields', () => {
+    it('omits a transient field from what is written to storage', () => {
+      const backing = stubStorage()
+      const store = createSnapshotStore(init(), { persist: { name: 'spec-transient', transient: ['a'] } })
+      store.update((d) => { d.a.n = 2; d.b.list.push('y') })
+      expect(JSON.parse(backing.get('spec-transient')!)).toEqual({ b: { list: ['x', 'y'] } })
+    })
+
+    it('ignores a stored value for a transient field on read', () => {
+      const backing = stubStorage()
+      backing.set('spec-transient-read', JSON.stringify({ a: { n: 999 }, b: { list: ['stored'] } }))
+      const revived = createSnapshotStore(init(), { persist: { name: 'spec-transient-read', transient: ['a'] } })
+      expect(revived.getSnapshot()).toEqual({ a: { n: 1 }, b: { list: ['stored'] } })
+    })
+  })
 })
 
 describe('defineStore', () => {
@@ -261,6 +276,27 @@ describe('defineStore', () => {
     // jsdom-less lane: localStorage may exist here, so simulate its absence.
     vi.stubGlobal('localStorage', undefined)
     expect(() => { persisting.clearPersisted() }).not.toThrow()
+  })
+
+  it('excludes declared transient fields from what is written and read', () => {
+    const backing = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => backing.get(k) ?? null,
+      setItem: (k: string, v: string) => { backing.set(k, v) },
+      removeItem: (k: string) => { backing.delete(k) },
+    })
+    const handle = defineStore({
+      init: () => ({ draft: '', open: false }),
+      persist: 'spec.transient-decl',
+      transient: ['open'],
+      actions: {
+        setDraft: (d, text: string) => { d.draft = text },
+        setOpen: (d, open: boolean) => { d.open = open },
+      },
+    })
+    handle.create().actions.setOpen(true)
+    expect(JSON.parse(backing.get('spec.transient-decl')!)).toEqual({ draft: '' })
+    expect(handle.create().store.getSnapshot().open).toBe(false)
   })
 
   it('swallows storage failures in clearPersisted (same non-fatal contract as persistence)', () => {

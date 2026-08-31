@@ -1,9 +1,9 @@
 /**
  * Snapshot store engine (zustand vanilla + immer + subscribeWithSelector +
  * rafFlush middleware + opt-in persist + dev freeze) plus the declarative
- * shell over it: {@link defineStore} bakes an init/persist/actions literal
- * into a {@link StoreHandle}, the registration-side store seat of slot
- * terminals. Lives in the React-free runtime (the data layer owns its
+ * shell over it: {@link defineStore} bakes an init/persist/transient/actions
+ * literal into a {@link StoreHandle}, the registration-side store seat of
+ * slot terminals. Lives in the React-free runtime (the data layer owns its
  * engine; ui-renderer is shell-only React
  * glue): engine products are bare observables — subscribe/getSnapshot/
  * update/set, NO selector hook. Hook synthesis is ui-renderer's (the one
@@ -12,8 +12,8 @@
  * Persistence rehydrates by merging the stored payload's top-level keys over
  * `init()`'s value rather than replacing the state wholesale, so a field
  * added since an older build wrote the payload keeps its init value instead
- * of coming back `undefined`; see {@link attachPersistence} for the merge
- * contract.
+ * of coming back `undefined`; see {@link attachPersistence} for the full
+ * merge and transient-field contract.
  */
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { subscribeWithSelector } from 'zustand/middleware'
@@ -86,16 +86,20 @@ function rafBatch(notify: () => void): () => void {
  * frame-level skew, same nature as the object layer's microtask batching.
  *
  * @param init - initial state.
- * @param opts - flush mode and opt-in persistence (localStorage, keyed by name).
+ * @param opts - flush mode and opt-in persistence (localStorage, keyed by
+ * name; `transient` names top-level fields excluded from what is written to
+ * and read from storage — see {@link attachPersistence}).
  * @returns the store.
  */
 export function createSnapshotStore<T>(
-  init: T, opts?: { flush?: 'raf' | 'sync'; persist?: { name: string } }): SnapshotStore<T> {
+  init: T,
+  opts?: { flush?: 'raf' | 'sync'; persist?: { name: string; transient?: readonly (keyof T)[] } },
+): SnapshotStore<T> {
   // Immer enters through produce() in update() below (identical semantics to
   // the immer middleware without its setState-signature mutator generics).
   const withSelector = subscribeWithSelector(() => init)
   const api: StoreApi<T> = createStore<T>()(withSelector)
-  if (opts?.persist) attachPersistence(api, opts.persist.name)
+  if (opts?.persist) attachPersistence(api, opts.persist.name, opts.persist.transient)
 
   let subscribe = (fn: () => void) => api.subscribe(fn)
   if (opts?.flush === 'raf') {
@@ -143,18 +147,25 @@ export function createSnapshotStore<T>(
  * the same primitive/array kind otherwise) is rejected outright and
  * `init()` is kept, through the same non-fatal log path as a storage or
  * parse failure.
+ *
+ * `transient` names top-level fields excluded from both directions: never
+ * written to storage, and a stored value for one is ignored on read (a
+ * legacy payload predating the field's `transient` declaration does not
+ * leak back in).
  * @param api - the store to attach persistence to.
  * @param name - localStorage key.
+ * @param transient - top-level fields excluded from what is written to and read from storage.
  */
-function attachPersistence<T>(api: StoreApi<T>, name: string): void {
+function attachPersistence<T>(api: StoreApi<T>, name: string, transient?: readonly (keyof T)[]): void {
   // Non-browser runs (node e2e booting the client tree) have no localStorage:
   // persistence silently disables — same contract as a storage failure, minus
   // the per-store console noise a ReferenceError would produce.
   if (typeof localStorage === 'undefined') return
+  const transientKeys: ReadonlySet<PropertyKey> = new Set(transient ?? [])
   try {
     const raw = localStorage.getItem(name)
     if (raw !== null) {
-      const merged = mergeRehydrated(api.getState(), JSON.parse(raw) as unknown)
+      const merged = mergeRehydrated(api.getState(), JSON.parse(raw) as unknown, transientKeys)
       if (merged === undefined) throw new Error('persisted payload does not match the state init() declares')
       api.setState(devFreeze(merged), true)
     }
@@ -163,7 +174,7 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
   }
   api.subscribe((state) => {
     try {
-      localStorage.setItem(name, JSON.stringify(state))
+      localStorage.setItem(name, JSON.stringify(withoutTransient(state, transientKeys)))
     } catch (error) {
       console.error(`snapshot store '${name}' persistence failed:`, error)
     }
@@ -183,14 +194,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * same kind of value as the base.
  * @param base - the store's state at rehydration time (`init()`'s value).
  * @param parsed - the JSON-parsed persisted payload.
+ * @param transient - top-level fields excluded from the merge.
  * @returns the merged state, or `undefined` to reject the payload.
  */
-function mergeRehydrated<T>(base: T, parsed: unknown): T | undefined {
+function mergeRehydrated<T>(base: T, parsed: unknown, transient: ReadonlySet<PropertyKey>): T | undefined {
   if (isPlainObject(base)) {
     if (!isPlainObject(parsed)) return undefined
     const merged: Record<string, unknown> = { ...base }
     for (const key of Object.keys(base)) {
-      if (key in parsed) merged[key] = parsed[key]
+      if (!transient.has(key) && key in parsed) merged[key] = parsed[key]
     }
     return merged as T
   }
@@ -198,6 +210,22 @@ function mergeRehydrated<T>(base: T, parsed: unknown): T | undefined {
   if (Array.isArray(base) !== Array.isArray(parsed)) return undefined
   if (typeof parsed !== typeof base) return undefined
   return parsed as T
+}
+
+/**
+ * Strip transient fields before writing. A scalar or array state declares no
+ * fields, so it serializes unchanged regardless of `transient`.
+ * @param state - the state about to be serialized.
+ * @param transient - top-level fields excluded from what is written.
+ * @returns the value to serialize.
+ */
+function withoutTransient<T>(state: T, transient: ReadonlySet<PropertyKey>): T {
+  if (transient.size === 0 || !isPlainObject(state)) return state
+  const result: Record<string, unknown> = {}
+  for (const key of Object.keys(state)) {
+    if (!transient.has(key)) result[key] = state[key]
+  }
+  return result as T
 }
 
 /** Deep-freeze wholesale-set state outside production: set() bypasses immer's freeze. */
@@ -255,7 +283,9 @@ export interface EngineStoreHandle<T, A extends ActionsDecl<T>> extends StoreHan
  * so call sites write `(d, x: X) => { ... }` with no draft annotation. If a
  * future TS version breaks this single-literal inference, the design's
  * documented fallback is currying (`defineStore(init).actions({...})`).
- * @param decl - init lambda (fresh state per instance), optional persist key, actions table.
+ * @param decl - init lambda (fresh state per instance), optional persist
+ * key, optional transient field list (see {@link StoreSpec.transient}),
+ * actions table.
  * @returns the store handle.
  */
 export function defineStore<T, A extends ActionsDecl<T>>(
@@ -268,7 +298,9 @@ export function defineStore<T, A extends ActionsDecl<T>>(
         : scopeKey === undefined ? decl.persist : `${decl.persist}.${scopeKey}`
       const store = createSnapshotStore<T>(
         decl.init(),
-        persistKey !== undefined ? { persist: { name: persistKey } } : undefined)
+        persistKey !== undefined
+          ? { persist: { name: persistKey, ...(decl.transient === undefined ? {} : { transient: decl.transient }) } }
+          : undefined)
       const actions = {} as Record<string, (...params: unknown[]) => void>
       for (const key of Object.keys(decl.actions)) {
         const mutate = decl.actions[key] as (draft: T, ...params: unknown[]) => void

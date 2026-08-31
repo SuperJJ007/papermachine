@@ -39,11 +39,18 @@ export type BakedActions<T, A extends ActionsDecl<T>> = {
 /**
  * Store declaration spec: initial-state factory (a lambda so every instance
  * gets a fresh state), optional persistence key (mechanical, framework-run),
- * and the actions write set.
+ * an optional transient field list, and the actions write set.
  */
 export interface StoreSpec<T, A extends ActionsDecl<T>> {
   init: () => T
   persist?: string
+  /**
+   * Top-level state fields excluded from persistence: never written to
+   * storage, and a stored value for one (e.g. from a legacy payload
+   * predating this declaration) is ignored on read — the field always
+   * carries its `init()` value across a reload. No effect without `persist`.
+   */
+  transient?: readonly (keyof T)[]
   actions: A
 }
 

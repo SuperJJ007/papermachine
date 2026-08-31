@@ -79,7 +79,7 @@ Notifier 微任务合批 ──► ConversationSnapshot 缓存 ──uSES──�
 
 动态 ui-renderer 插件持有 ctx↔React 适配器、应用级安装、根挂载与标题投影。业务组件通过 slot props 接收绑定后的钩子，不对渲染器做值 import。
 
-- 快照 store 引擎**住 runtime 包**（zustand vanilla + 草稿式更新，缺省 `flush: 'sync'`，可选 `'raf'` 合批，可选整值 localStorage 持久化，dev 深冻结——全部从 `runtime` 的 `./client` 主出口导出，无子路径）：store 产物是裸的可观察源，不带任何钩子成员。插件只经 [slot 体系标准](2026-07-22-slot-type-chain-implementation.zh.md) 的 `defineStore` 声明触及引擎。ui-renderer 在绑定处（`bindSnapshotSelector`，按源缓存）从 React 消费的唯一数据约定合成每个钩子：`ObservableSnapshot<T>`（`getSnapshot`/`subscribe`）——Session 对象与快照 store 同构满足它。
+- 快照 store 引擎**住 runtime 包**（zustand vanilla + 草稿式更新，缺省 `flush: 'sync'`，可选 `'raf'` 合批，可选 localStorage 持久化——再水合时把载荷的顶层键叠加在 `init()` 之上，并排除任何声明为 `transient` 的字段（[再水合合并](../../proposed/architecture/2026-08-31-client-store-rehydration.zh.md)），dev 深冻结——全部从 `runtime` 的 `./client` 主出口导出，无子路径）：store 产物是裸的可观察源，不带任何钩子成员。插件只经 [slot 体系标准](2026-07-22-slot-type-chain-implementation.zh.md) 的 `defineStore` 声明触及引擎。ui-renderer 在绑定处（`bindSnapshotSelector`，按源缓存）从 React 消费的唯一数据约定合成每个钩子：`ObservableSnapshot<T>`（`getSnapshot`/`subscribe`）——Session 对象与快照 store 同构满足它。
 - `bindSnapshotSelector(source)`：把一个源绑定为经 uSES-with-selector 的带类型 selector 钩子。uSES 约定四条按构造成立：getSnapshot 恒返缓存引用；subscribe 是绑定期闭包（引用永稳）；纯 CSR 不传 server snapshot；相等性缺省 `Object.is`，按调用可选 `shallowEqual`。
 - 相等性协议，全链一致：生产端结构共享；消费方以 `Object.is` 或 `shallowEqual` 短路；`React.memo` 浅比较。深比较全链禁止。
 

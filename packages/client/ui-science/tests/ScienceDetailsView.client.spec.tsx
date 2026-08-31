@@ -556,15 +556,24 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
   })
 
   it('reports library and workspace failures plus unsupported and PNG file previews', async () => {
+    // Neither RPC returns a raw, non-localized message: an `internal` failure
+    // (host process failure, no structured reason) falls back to the generic
+    // localized notice — see the dedicated reason-mapping coverage below for
+    // the specific reasons each RPC can carry.
     const failedStore = testScienceSelectionStore()
     const failed = render(<ScienceDetailsView {...props(baseProjection(), {
-      loadLibrary: vi.fn().mockResolvedValue({ ok: false, error: { message: 'library offline' } }),
-      loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: false, error: { message: 'workspace offline' } }),
+      loadLibrary: vi.fn().mockResolvedValue({ ok: false, error: { code: 'internal', message: 'library offline', details: {} } }),
+      loadWorkspaceFiles: vi.fn().mockResolvedValue({ ok: false, error: { code: 'internal', message: 'workspace offline', details: {} } }),
       store: failedStore,
     })} />)
-    expect((await screen.findByRole('alert')).textContent).toContain('library offline')
+    const libraryAlert = await screen.findByRole('alert')
+    expect(libraryAlert.textContent).toContain('Unable to load the artifact library.')
+    expect(libraryAlert.textContent).not.toContain('library offline')
     act(() => { failedStore.actions.setLibraryPage('files') })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('workspace offline') })
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain('Unable to load the project file list.')
+    })
+    expect(screen.getByRole('alert').textContent).not.toContain('workspace offline')
     failed.unmount()
 
     const entries = vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [
@@ -631,6 +640,68 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       zhStore.actions.openFileTab('bad.csv')
       const zhRendered = render(
         <ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFile, store: zhStore })} t={makeTranslate(zh)} />,
+      )
+      expect((await screen.findByRole('alert')).textContent).toContain(zhText)
+      zhRendered.unmount()
+    }
+  })
+
+  it('localizes the science-library and project-files RPC failures by reason, and falls back for an unrecognized one', async () => {
+    // `scienceLibrary` (packages/host/apiproxy/src/api-proxy.ts) returns
+    // `NO_WORKSPACE` directly, or forwards a `ProjectArtifactStoreErrorCode`
+    // (e.g. BLOB_CORRUPT) as the same `science-artifact-error` reason; none
+    // of those store codes are user-actionable, so only NO_WORKSPACE gets
+    // specific text — everything else, including a reason this build does
+    // not recognize, falls back to the generic notice. The host's raw
+    // `error.message` must never reach the screen (the `internal`-code
+    // fallback is covered above).
+    const libraryCases: readonly [reason: string | undefined, enText: string, zhText: string][] = [
+      ['NO_WORKSPACE', 'This session has no workspace directory, so the artifact library cannot be loaded.', '该会话没有工作区，无法加载成果库。'],
+      ['BLOB_CORRUPT', 'Unable to load the artifact library.', '成果库加载失败。'],
+      ['SOME_FUTURE_REASON', 'Unable to load the artifact library.', '成果库加载失败。'],
+    ]
+    for (const [reason, enText, zhText] of libraryCases) {
+      const hostMessage = 'Artifact blob is corrupt.'
+      const loadLibrary = vi.fn().mockResolvedValue({
+        ok: false, error: { code: 'science-artifact-error', message: hostMessage, details: { reason } },
+      })
+      const rendered = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain(enText)
+      expect(alert.textContent).not.toContain(hostMessage)
+      rendered.unmount()
+
+      const zhRendered = render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} t={makeTranslate(zh)} />)
+      expect((await screen.findByRole('alert')).textContent).toContain(zhText)
+      zhRendered.unmount()
+    }
+
+    // `workspaceFiles` shares `resolveWorkspacePath` with `workspaceFile`, so
+    // it can carry the same `NO_WORKSPACE` or `PATH_OUTSIDE_WORKSPACE`
+    // reason — never `FILE_TOO_LARGE`, which only `workspaceFile`'s
+    // is-a-file check throws.
+    const filesCases: readonly [reason: string | undefined, enText: string, zhText: string][] = [
+      ['NO_WORKSPACE', 'This session has no workspace directory, so the project file list cannot be loaded.', '该会话没有工作区，无法加载项目文件列表。'],
+      ['PATH_OUTSIDE_WORKSPACE', 'This path is outside the project workspace and cannot be listed.', '该路径不在项目工作区内，无法加载文件列表。'],
+      ['SOME_FUTURE_REASON', 'Unable to load the project file list.', '项目文件列表加载失败。'],
+    ]
+    for (const [reason, enText, zhText] of filesCases) {
+      const hostMessage = 'Path is outside the session workspace.'
+      const loadWorkspaceFiles = vi.fn().mockResolvedValue({
+        ok: false, error: { code: 'science-artifact-error', message: hostMessage, details: { reason } },
+      })
+      const store = testScienceSelectionStore()
+      store.actions.setLibraryPage('files')
+      const rendered = render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, store })} />)
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain(enText)
+      expect(alert.textContent).not.toContain(hostMessage)
+      rendered.unmount()
+
+      const zhStore = testScienceSelectionStore()
+      zhStore.actions.setLibraryPage('files')
+      const zhRendered = render(
+        <ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFiles, store: zhStore })} t={makeTranslate(zh)} />,
       )
       expect((await screen.findByRole('alert')).textContent).toContain(zhText)
       zhRendered.unmount()

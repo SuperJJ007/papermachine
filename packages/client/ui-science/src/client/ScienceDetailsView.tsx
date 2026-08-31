@@ -319,10 +319,10 @@ function ProjectLibrary({
     void loadLibrary().then((result) => {
       if (!live) return
       if (result.ok) setArtifacts(result.value.artifacts)
-      else setError(result.error.message)
+      else setError(libraryErrorText(result.error, t))
     })
     return () => { live = false }
-  }, [loadLibrary, page])
+  }, [loadLibrary, page, t])
 
   useEffect(() => {
     if (page !== 'files') return
@@ -331,10 +331,10 @@ function ProjectLibrary({
     void loadWorkspaceFiles(path).then((result) => {
       if (!live) return
       if (result.ok) setEntries(result.value.entries)
-      else setError(result.error.message)
+      else setError(projectFilesErrorText(result.error, t))
     })
     return () => { live = false }
-  }, [loadWorkspaceFiles, path, page])
+  }, [loadWorkspaceFiles, path, page, t])
 
   const now = Date.now()
   const needle = query.trim().toLocaleLowerCase()
@@ -483,6 +483,18 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
 }
 
 /**
+ * The closed-enum reason a `science-artifact-error` failure carries in
+ * `details.reason`, when present. The wire type widens `reason` to `string`
+ * (`packages/host/apiproxy/src/api/rpc.ts`), so every caller below switches
+ * on this extracted value rather than narrowing the RPC error type further.
+ * @param error - the RPC failure to inspect.
+ * @returns the host's reason string, or `undefined` for any other error code.
+ */
+function scienceArtifactErrorReason(error: RpcError): string | undefined {
+  return error.code === 'science-artifact-error' ? error.details.reason : undefined
+}
+
+/**
  * Localize a `readWorkspaceFile` RPC failure for the project-file preview.
  * The host's `WorkspaceReadError` reason (`packages/host/apiproxy/src/api-proxy.ts`)
  * is a closed three-value enum carried as `science-artifact-error`'s
@@ -496,12 +508,66 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
  * @returns localized notice text for the preview body.
  */
 function workspaceFileErrorText(error: RpcError, t: TranslateNS<'science'>): string {
-  const reason = error.code === 'science-artifact-error' ? error.details.reason : undefined
-  switch (reason) {
+  switch (scienceArtifactErrorReason(error)) {
     case 'NO_WORKSPACE': return t('library.fileNoWorkspace')
     case 'PATH_OUTSIDE_WORKSPACE': return t('library.filePathOutside')
     case 'FILE_TOO_LARGE': return t('library.fileTooLarge')
+    // `internal` (host process/authorization failures) and any reason this
+    // build does not recognize (a future host value) fall back to the
+    // generic notice.
     default: return t('library.fileOpenFailed')
+  }
+}
+
+/**
+ * Localize a `readScienceLibrary` RPC failure for the project artifact
+ * library. `scienceLibrary` (`packages/host/apiproxy/src/api-proxy.ts`)
+ * returns `science-artifact-error`'s `NO_WORKSPACE` reason directly when the
+ * session carries no workspace directory, and otherwise forwards a
+ * `ProjectArtifactStoreErrorCode` (`SCHEMA_VERSION_MISMATCH` | `INVALID_MARKER`
+ * | `ARTIFACT_NOT_FOUND` | `VERSION_NOT_FOUND` | `BLOB_NOT_FOUND` |
+ * `BLOB_CORRUPT`, `packages/science/science-artifact-store/src/errors.ts`) as
+ * the same reason. None of those store codes are user-actionable, so only
+ * `NO_WORKSPACE` gets specific text; `internal` and every other reason
+ * (including every `ProjectArtifactStoreErrorCode`) fall back to the generic
+ * notice. `error.message` is the host's own English text for logs and
+ * non-localized callers; it must never reach this screen directly.
+ * @param error - the RPC failure from `loadLibrary`.
+ * @param t - the Science namespace translator.
+ * @returns localized notice text for the library panel.
+ */
+function libraryErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+  switch (scienceArtifactErrorReason(error)) {
+    case 'NO_WORKSPACE': return t('library.libraryNoWorkspace')
+    // `ProjectArtifactStoreErrorCode` values, `internal`, and any reason this
+    // build does not recognize are not user-actionable and fall back to the
+    // generic notice.
+    default: return t('library.libraryLoadFailed')
+  }
+}
+
+/**
+ * Localize a `readWorkspaceFiles` RPC failure for the project-file listing.
+ * `workspaceFiles` (`packages/host/apiproxy/src/api-proxy.ts`) resolves the
+ * requested directory through the same `resolveWorkspacePath` helper as
+ * `workspaceFile`, so it can carry the same `NO_WORKSPACE` or
+ * `PATH_OUTSIDE_WORKSPACE` `WorkspaceReadError` reason — never
+ * `FILE_TOO_LARGE`, which `workspaceFile` throws only past its is-a-file
+ * check. `internal` and any reason this build does not recognize fall back
+ * to the generic notice. `error.message` is the host's own English text for
+ * logs and non-localized callers; it must never reach this screen directly.
+ * @param error - the RPC failure from `loadWorkspaceFiles`.
+ * @param t - the Science namespace translator.
+ * @returns localized notice text for the project-file listing.
+ */
+function projectFilesErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+  switch (scienceArtifactErrorReason(error)) {
+    case 'NO_WORKSPACE': return t('library.filesNoWorkspace')
+    case 'PATH_OUTSIDE_WORKSPACE': return t('library.filesPathOutside')
+    // `internal` and any reason this build does not recognize (including a
+    // `FILE_TOO_LARGE` this RPC cannot actually produce) fall back to the
+    // generic notice.
+    default: return t('library.filesListFailed')
   }
 }
 

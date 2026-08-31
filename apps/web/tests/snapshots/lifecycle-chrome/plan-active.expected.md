@@ -39,7 +39,7 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- tablist "File library":
+- tablist "Artifact library":
   - tab "Artifacts" [selected]
   - tab "Project files"
 - button "Close details"

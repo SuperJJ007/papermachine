@@ -1,4 +1,4 @@
-- tablist "File library":
+- tablist "Artifact library":
   - tab "Artifacts" [selected]
   - tab "Project files"
 - button "Close details"
@@ -6,9 +6,9 @@
   - tab "Missing revision" [selected]
   - button "Close Missing revision":
     - img
-- button "File library":
+- button "Artifact library":
   - img
-  - text: File library
+  - text: Artifact library
 - button "Previous version" [disabled]:
   - img
 - text: v1

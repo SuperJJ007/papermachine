@@ -217,7 +217,7 @@ describe('ui-science on the real machinery stack', () => {
     const chatStore = b.runtime.storeOf('conversation.view', SID) as { getSnapshot(): { detailsView: string | null } }
     expect(chatStore.getSnapshot().detailsView).toBe('science')
 
-    expect(view.getByText('Files produced this turn: 1')).toBeTruthy()
+    expect(view.getByText('Artifacts produced this turn: 1')).toBeTruthy()
     expect(await view.findByRole('tab', { name: 'Loss curve' })).toBeTruthy()
     await b.runtime.dispose()
   })

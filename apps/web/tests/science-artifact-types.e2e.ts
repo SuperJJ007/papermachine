@@ -254,7 +254,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-artifact-types'))
     const centerCol = page.locator('[class*="centerCol"]')
     const detailsPanel = page.locator('[class*="detailsCol"]')
-    await centerCol.getByText('Files produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
+    await centerCol.getByText('Artifacts produced this turn: 4', { exact: true }).waitFor({ timeout: 15_000 })
     expect(await centerCol.getByText('Captured 4 artifacts', { exact: false }).count()).toBe(0)
     await compareOrRefreshGolden(
       TRANSCRIPT_EXPECTED,

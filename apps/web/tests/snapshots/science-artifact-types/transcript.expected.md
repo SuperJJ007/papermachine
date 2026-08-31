@@ -19,7 +19,7 @@
   - img
   - img
   - text: "R run {}"
-- paragraph: "Files produced this turn: 4"
+- paragraph: "Artifacts produced this turn: 4"
 - list:
   - listitem "summary.csv v1"
   - listitem "metrics.json v1"

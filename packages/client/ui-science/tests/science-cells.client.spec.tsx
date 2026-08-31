@@ -326,19 +326,19 @@ describe('Science execution cells', () => {
 
   it('summarizes annotation lifecycle states distinctly: running, failed, and stopped', () => {
     const runningView = render(<ScienceAnnotationRow {...props(running('annotate_artifact'), 'annotate_artifact')} />)
-    expect(runningView.container.textContent).toContain('正在标注文件')
+    expect(runningView.container.textContent).toContain('正在标注成果')
     cleanup()
 
     const errorView = render(<ScienceAnnotationRow {...props(settled('annotate_artifact', {
       isError: true, error: { name: 'Error', code: 'failed' }, content: [{ type: 'text', text: 'boom' }],
     }), 'annotate_artifact')} />)
-    expect(errorView.container.textContent).toContain('文件标注失败')
+    expect(errorView.container.textContent).toContain('成果标注失败')
     cleanup()
 
     const stoppedView = render(<ScienceAnnotationRow {...props(settled('annotate_artifact', {
       isError: true, error: { name: 'Error', code: 'interrupted' }, content: [{ type: 'text', text: 'stopped' }],
     }), 'annotate_artifact')} />)
-    expect(stoppedView.container.textContent).toContain('文件标注已中止')
+    expect(stoppedView.container.textContent).toContain('成果标注已中止')
   })
 })
 
@@ -388,7 +388,7 @@ describe('Science Outcome cell', () => {
       { useProjection: vi.fn(() => null) },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
-    expect(screen.getByText('引用的文件不可用')).toBeTruthy()
+    expect(screen.getByText('引用的成果不可用')).toBeTruthy()
     expect(document.querySelector('img')).toBeNull()
   })
 
@@ -405,7 +405,7 @@ describe('Science Outcome cell', () => {
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
     expect(screen.getByText('CSV')).toBeTruthy()
-    expect(screen.queryByText('引用的文件不可用')).toBeNull()
+    expect(screen.queryByText('引用的成果不可用')).toBeNull()
     expect(document.querySelector('img')).toBeNull()
   })
 

@@ -1,5 +1,5 @@
 ## Details column — artifact viewer (csv/json/md/png)
-- tablist "File library":
+- tablist "Artifact library":
   - tab "Artifacts" [selected]
   - tab "Project files"
 - button "Close details"
@@ -16,9 +16,9 @@
   - tab "plot.png" [selected]
   - button "Close plot.png":
     - img
-- button "File library":
+- button "Artifact library":
   - img
-  - text: File library
+  - text: Artifact library
 - button "Previous version" [disabled]:
   - img
 - text: v1

@@ -339,7 +339,7 @@ describe('ProducedFiles row', () => {
     const view = render(
       <ProducedFiles matched={paths} openFile={openFile} {...capability(true)} t={t} />,
     )
-    expect(view.getByText('产物')).toBeTruthy()
+    expect(view.getByText('产出文件')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
     // The third probe is 100px: two chips plus the remainder fit, three do not.

@@ -1,5 +1,5 @@
 ## Details column — artifact viewer
-- tablist "File library":
+- tablist "Artifact library":
   - tab "Artifacts" [selected]
   - tab "Project files"
 - button "Close details"

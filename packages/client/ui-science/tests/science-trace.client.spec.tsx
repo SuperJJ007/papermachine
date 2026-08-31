@@ -471,7 +471,7 @@ describe('Science process presentation', () => {
     expect(screen.getByRole('region', { name: 'Read file b' })).toBeTruthy()
     expect(screen.getAllByText('Result not yet recorded')).toHaveLength(2)
     expect(selectDetailed).not.toHaveBeenCalled()
-    expect(screen.getByText('No produced files')).toBeTruthy()
+    expect(screen.getByText('No artifacts')).toBeTruthy()
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
   })
   it('shows four final artifact chips for fourteen versions and exposes earlier versions inline', () => {

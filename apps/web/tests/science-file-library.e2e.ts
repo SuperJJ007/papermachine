@@ -136,7 +136,7 @@ describe('web e2e: project Science file library', () => {
     expect(await details.getByRole('button', { name: 'Back to original conversation', exact: true }).isDisabled()).toBe(true)
     await page.screenshot({ path: SHOT_CROSS_SESSION, fullPage: true })
     await details.getByRole('button', { name: 'Alpha results', exact: true }).click()
-    await details.getByRole('button', { name: 'File library', exact: true }).click()
+    await details.getByRole('button', { name: 'Artifact library', exact: true }).click()
     await details.getByRole('button', { name: 'Close Alpha results', exact: true }).click()
 
     await details.getByRole('tab', { name: 'Project files', exact: true }).click()

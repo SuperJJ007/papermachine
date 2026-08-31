@@ -15,7 +15,7 @@
 - button "Copy":
   - img
 - paragraph: I will generate the requested chart.
-- paragraph: "Files produced this turn: 1"
+- paragraph: "Artifacts produced this turn: 1"
 - list:
   - listitem "Observed series v1"
 - button "Copy":
@@ -55,7 +55,7 @@
 - button "Copy":
   - img
 - paragraph: I will revise the selected chart elements.
-- paragraph: "Files produced this turn: 1"
+- paragraph: "Artifacts produced this turn: 1"
 - list:
   - listitem "Missing revision v2"
 - button "Copy":

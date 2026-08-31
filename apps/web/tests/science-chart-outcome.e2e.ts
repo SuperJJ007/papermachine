@@ -629,13 +629,13 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
     expect(await scienceAction.count()).toBe(0)
 
-    // The Science action restores the viewer; File library opens the latest-artifact gallery.
+    // The Science action restores the viewer; Artifact library opens the latest-artifact gallery.
     await openSessionByTitle(SEED_TITLE)
     await expandProcessGroups()
     await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
-    await detailsPanel.getByRole('button', { name: 'File library', exact: true }).click()
+    await detailsPanel.getByRole('button', { name: 'Artifact library', exact: true }).click()
 
     // Only the latest accepted chart version renders in the gallery (v2, the missing object).
     await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).waitFor()

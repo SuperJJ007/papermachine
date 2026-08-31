@@ -129,7 +129,7 @@ describe('ScienceTurnArtifacts', () => {
       matched: { artifacts: [v2, second] }, actions: store.actions, useStore: store.useStore,
       loadImage: vi.fn(), openArtifact, t, sessionId: 'session-1',
     } as unknown as ScienceTurnArtifactsProps)} />)
-    expect(screen.getByText('本轮产出 2 个文件')).toBeTruthy()
+    expect(screen.getByText('本轮产出 2 个成果')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     fireEvent.click(screen.getByRole('listitem', { name: /^Result/u }))
     expect(store.instance.getSnapshot().openArtifacts).toEqual([{ kind: 'artifact', artifactId: 'a-1', version: 2 }])
@@ -198,27 +198,27 @@ function renderTray(count: number) {
 describe('ScienceTurnArtifacts turn-tail overflow', () => {
   it('shows all 5 cards with no "+N more" button below the threshold', () => {
     renderTray(5)
-    expect(screen.getByText('本轮产出 5 个文件')).toBeTruthy()
+    expect(screen.getByText('本轮产出 5 个成果')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('shows all 6 cards uncollapsed at the exact boundary', () => {
     renderTray(6)
-    expect(screen.getByText('本轮产出 6 个文件')).toBeTruthy()
+    expect(screen.getByText('本轮产出 6 个成果')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(6)
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('collapses 7 cards to 5 plus a "+2 更多" button, and expands to all 7 on click', () => {
     renderTray(7)
-    expect(screen.getByText('本轮产出 7 个文件')).toBeTruthy()
+    expect(screen.getByText('本轮产出 7 个成果')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(5)
     const more = screen.getByRole('button', { name: '+2 更多' })
     fireEvent.click(more)
     expect(screen.getAllByRole('listitem')).toHaveLength(7)
     expect(screen.queryByRole('button')).toBeNull()
     // The title's count is the total produced this Turn, never the visible slice.
-    expect(screen.getByText('本轮产出 7 个文件')).toBeTruthy()
+    expect(screen.getByText('本轮产出 7 个成果')).toBeTruthy()
   })
 })

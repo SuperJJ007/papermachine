@@ -12,6 +12,8 @@
  * @module @deepseek-ai/dsh-pwsh-sandbox
  */
 
+// The shell providers independently declare the same capability imports; imports do not warrant an adapter between providers.
+/* jscpd:ignore-start */
 import { Context } from '@deepseek-ai/cordis'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import {
@@ -31,6 +33,7 @@ import type {
   SandboxPolicy,
 } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
+/* jscpd:ignore-end */
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-pwsh-local'
 

@@ -251,6 +251,19 @@ function loadRelative(world: World, from: FileCtx, specifier: string): FileCtx {
   return loadFile(abs, rel, world.cache)
 }
 
+/** Relative source re-exports that can supply one public type or constant. */
+function* relativeReExports(ctx: FileCtx, name: string): Generator<{ spec: string; lookFor: string }> {
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
+    const spec = stmt.moduleSpecifier.text
+    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
+    if (!stmt.exportClause) { yield { spec, lookFor: name }; continue }
+    if (!ts.isNamedExports(stmt.exportClause)) continue
+    const el = stmt.exportClause.elements.find(e => e.name.text === name)
+    if (el) yield { spec, lookFor: (el.propertyName ?? el.name).text }
+  }
+}
+
 /** Find a type declaration EXPORTED (directly or via re-export chains) from a
  * file, following `export … from './x.ts'` and `export * from './x.ts'`. */
 function findExportedTypeDecl(world: World, ctx: FileCtx, name: string, seen = new Set<string>()): { decl: TypeDecl; ctx: FileCtx } | null {
@@ -259,18 +272,7 @@ function findExportedTypeDecl(world: World, ctx: FileCtx, name: string, seen = n
   seen.add(key)
   const local = findTypeDecl(ctx, name)
   if (local) return { decl: local, ctx }
-  for (const stmt of ctx.sf.statements) {
-    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
-    const spec = stmt.moduleSpecifier.text
-    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
-    let lookFor: string | null = null
-    if (!stmt.exportClause) {
-      lookFor = name // export * from './x.ts'
-    } else if (ts.isNamedExports(stmt.exportClause)) {
-      const el = stmt.exportClause.elements.find(e => e.name.text === name)
-      if (el) lookFor = (el.propertyName ?? el.name).text
-    }
-    if (lookFor === null) continue
+  for (const { spec, lookFor } of relativeReExports(ctx, name)) {
     const hit = findExportedTypeDecl(world, loadRelative(world, ctx, spec), lookFor, seen)
     if (hit) return hit
   }
@@ -536,17 +538,7 @@ function findExportedConstInitializer(
       }
     }
   }
-  for (const stmt of ctx.sf.statements) {
-    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
-    const spec = stmt.moduleSpecifier.text
-    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
-    let lookFor: string | null = null
-    if (!stmt.exportClause) lookFor = name
-    else if (ts.isNamedExports(stmt.exportClause)) {
-      const el = stmt.exportClause.elements.find(e => e.name.text === name)
-      if (el) lookFor = (el.propertyName ?? el.name).text
-    }
-    if (lookFor === null) continue
+  for (const { spec, lookFor } of relativeReExports(ctx, name)) {
     const hit = findExportedConstInitializer(world, loadRelative(world, ctx, spec), lookFor, seen)
     if (hit) return hit
   }

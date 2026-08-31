@@ -24,7 +24,7 @@
     "dev": "pnpm run build && electron lib/main.js",
     "fetch:micromamba": "node --import tsx/esm scripts/fetch-micromamba.ts",
     "stage:host": "node --import tsx/esm scripts/stage-host.ts",
-    "package:mac": "pnpm -w run build && pnpm run fetch:micromamba darwin-arm64 && pnpm run fetch:micromamba darwin-x64 && pnpm run stage:host && electron-builder --mac && node --import tsx/esm scripts/write-update-metadata.ts",
+    "package:mac": "DSH_BUILD_CLIENT_PROFILE=official pnpm -w run build && pnpm run fetch:micromamba darwin-arm64 && pnpm run fetch:micromamba darwin-x64 && pnpm run stage:host && electron-builder --mac && node --import tsx/esm scripts/write-update-metadata.ts",
     "test": "vitest run --root ../.. apps/desktop/tests"
   },
   "license": "MIT",

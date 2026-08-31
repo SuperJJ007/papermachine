@@ -7,6 +7,7 @@ asar: true
 # behaviour the process model depends on instead of inheriting it.
 electronFuses:
   runAsNode: true
+afterPack: ./scripts/after-pack.mjs
 directories:
   output: release
 files:
@@ -20,6 +21,8 @@ extraResources:
     to: bin
   - from: resources/onboarding.html
     to: onboarding.html
+  # `node_modules` is copied by scripts/after-pack.mjs: electron-builder drops
+  # it from this entry no matter the filter.
   - from: .stage/host
     to: host
 mac:

@@ -53,6 +53,93 @@ for (const dependency of Object.keys(manifest.dependencies ?? {})) {
   await cp(source, destination, { recursive: true, dereference: true })
 }
 
+// `pnpm deploy --prod` resolves dependencies but never peers, and this
+// repository routes most cross-package wiring through `workspace:^` peers: 19
+// of them are unsatisfied in a freshly deployed closure, starting with
+// `@deepseek-ai/cordis-plugin-group` under `dsh-app-boot`. A workspace install
+// hides this because pnpm links peers from the workspace root; the packaged
+// Host has no such root and exits before readiness on the first bare import.
+// Copy every unsatisfied non-optional peer that is itself a workspace package,
+// to a fixpoint, since a copied package can introduce peers of its own.
+await closeWorkspacePeers(join(staging, 'node_modules'))
+
+/**
+ * Copy unsatisfied non-optional workspace peers into a staged closure until
+ * none remain.
+ * @param modules - the closure's `node_modules` directory.
+ * @throws when a required peer names no workspace package, which means the
+ *   closure can never be completed by copying and the manifest is wrong.
+ */
+async function closeWorkspacePeers(modules: string): Promise<void> {
+  const workspace = await workspacePackages()
+  for (;;) {
+    const present = new Set(await installedPackages(modules))
+    const missing = new Set<string>()
+    for (const name of present) {
+      const manifestPath = join(modules, name, 'package.json')
+      if (!existsSync(manifestPath)) continue
+      const packageManifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+        readonly peerDependencies?: Readonly<Record<string, string>>
+        readonly peerDependenciesMeta?: Readonly<Record<string, { readonly optional?: boolean }>>
+      }
+      for (const peer of Object.keys(packageManifest.peerDependencies ?? {})) {
+        if (packageManifest.peerDependenciesMeta?.[peer]?.optional === true) continue
+        if (!present.has(peer)) missing.add(peer)
+      }
+    }
+    if (missing.size === 0) return
+    for (const name of missing) {
+      const source = workspace.get(name)
+      if (source === undefined) throw new Error(`desktop host staging: peer ${name} is not a workspace package`)
+      await cp(source, join(modules, name), {
+        recursive: true,
+        dereference: true,
+        filter: path => !path.split(sep).includes('node_modules') && !path.endsWith('.tsbuildinfo'),
+      })
+    }
+  }
+}
+
+/**
+ * List the packages a closure already carries, scope directories included.
+ * @param modules - the closure's `node_modules` directory.
+ * @returns package names as they are imported (`@scope/name` or `name`).
+ */
+async function installedPackages(modules: string): Promise<readonly string[]> {
+  const names: string[] = []
+  for (const entry of await readdir(modules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || !entry.isDirectory()) continue
+    if (!entry.name.startsWith('@')) { names.push(entry.name); continue }
+    for (const scoped of await readdir(join(modules, entry.name), { withFileTypes: true })) {
+      if (scoped.isDirectory()) names.push(`${entry.name}/${scoped.name}`)
+    }
+  }
+  return names
+}
+
+/**
+ * Index every workspace package by its declared name.
+ * @returns a map from package name to its directory in this repository.
+ */
+async function workspacePackages(): Promise<ReadonlyMap<string, string>> {
+  const index = new Map<string, string>()
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (['node_modules', 'lib', 'tests', 'src', '.stage', 'release', '.git'].includes(entry.name)) continue
+      const child = join(directory, entry.name)
+      const manifestPath = join(child, 'package.json')
+      if (existsSync(manifestPath)) {
+        const { name } = JSON.parse(await readFile(manifestPath, 'utf8')) as { readonly name?: string }
+        if (name !== undefined) index.set(name, child)
+      }
+      await walk(child)
+    }
+  }
+  for (const root of ['packages', 'vendor', 'apps', 'native']) await walk(join(repositoryRoot, root))
+  return index
+}
+
 const nodeModules = join(staging, 'node_modules')
 let link = await firstLink(nodeModules)
 while (link !== undefined) {

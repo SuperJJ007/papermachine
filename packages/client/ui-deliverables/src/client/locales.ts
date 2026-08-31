@@ -5,7 +5,7 @@ export const NS = 'deliverables'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'produced.label': '产物',
+  'produced.label': '产出文件',
   'produced.moreOne': '+ 1 个文件',
   'produced.more': '+ {count} 个文件',
   'produced.open': '打开 {name}',

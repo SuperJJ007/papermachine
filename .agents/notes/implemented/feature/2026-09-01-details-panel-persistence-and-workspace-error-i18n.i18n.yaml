@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-details-panel-persistence-and-workspace-error-i18n.md
-2026-09-01-details-panel-persistence-and-workspace-error-i18n.md: d10af73f1f1a8bbbde095f927645681473c3ab56
-2026-09-01-details-panel-persistence-and-workspace-error-i18n.zh.md: ee93e008bedfb5a0a59ab5ba6a173c39e4be89c2
+2026-09-01-details-panel-persistence-and-workspace-error-i18n.md: b915b58c86ced9abcf7c69f8fb5fde6cf74c4ccb
+2026-09-01-details-panel-persistence-and-workspace-error-i18n.zh.md: 4970c75f99265d96b3edd393b233c54f1d10de93

@@ -34,7 +34,7 @@ layout store 以带版本的键 `dsh.layout.panels.v1` 持久化，并将 `sideb
 
 对一个原本瞬态的 store 启用持久化改变了测试隔离条件：任何在同一进程内多次装载 `createLayoutStore()`（或装载它的 `AppFrame`）的测试文件，都必须在两次装载之间清空 `localStorage`。`packages/client/ui-layout/tests/app-frame.client.spec.tsx` 正需要这一点，在补上之前它的缩放与折叠断言会失败。
 
-三个错误映射各自的 `default` 分支都会丢弃本次构建未映射的 host reason（对 `libraryErrorText` 来说，是丢弃整个 `ProjectArtifactStoreErrorCode` 这一族）,改用通用文案，因此在 host 新增 `WorkspaceReadError` 或 `ProjectArtifactStoreErrorCode` 取值的维护者要补上对应的客户端分支，或者接受通用回落；三个映射都并非由构造保证穷尽。四处 Typert Remote 调用在上述推迟的 Remote/Host 改动落地之前会一直保持沉默地通用（英文 `internal` message 被吞掉，用户看不到比「操作失败」更多的细节）——改动 `ScienceEditService` 的维护者不应假定它的 `ScienceEditErrorCode` 今天对用户可见。
+三个错误映射各自的 `default` 分支都会丢弃本次构建未映射的 host reason（对 `libraryErrorText` 来说，是丢弃整个 `ProjectArtifactStoreErrorCode` 这一族）,改用通用文案，因此在 host 新增 `WorkspaceReadError` 或 `ProjectArtifactStoreErrorCode` 取值的维护者要补上对应的客户端分支，或者接受通用回落；三个映射都并非由构造保证穷尽。四处 Typert Remote 调用仍然把 host 的英文 `internal` message 原样渲染出来：它们是本地化界面上仅存的已知未翻译 host 文本，并且会一直保持到上述推迟的 Remote/Host 改动落地为止。今天就把这段文本换成一条通用的本地化提示，会让用户失去一次失败编辑必须传达的那一件事——版本已过期、图表不可寻址、操作非法——所以在原因能跨过连接之前，保留英文才是更小的损害。改动 `ScienceEditService` 的维护者不应假定它的 `ScienceEditErrorCode` 今天对用户可见。
 
 ## Testing
 

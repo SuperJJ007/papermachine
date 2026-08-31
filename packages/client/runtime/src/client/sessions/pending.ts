@@ -1,25 +1,11 @@
 // PendingWait: the carrier-protocol half of a pending host interaction. The runtime owns only
 // envelope knowledge (rpcId backfill into a client-response); domain result encoding belongs to
 // the interaction's consumer package.
-
-import type {
-  ClientResponse, MuxFrame, RpcId, RpcReceipt, SessionId,
-} from '@deepseek-ai/dsh-api-remotes/client'
-
-/** Kind-keyed payload map: the requested frame's domain fields (envelope fields stripped). */
-export interface PendingPayloads {
-  approval: Omit<Extract<MuxFrame, { type: 'approval/requested' }>, 'type' | 'sessionId'>
-  question: Omit<Extract<MuxFrame, { type: 'question/requested' }>, 'type' | 'sessionId'>
-}
-
-/** Pending-interaction discriminant (the keys of PendingPayloads). */
-export type PendingKind = keyof PendingPayloads
-
-/** Session-list summary of the user action currently blocking progress. */
-export type PendingInteractionStatus = 'approval' | 'plan-review' | 'question'
+import type { ClientResponse, RpcId, RpcReceipt, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PendingPayloads, PendingKind, PendingInteractionFace } from '../contract/pending.ts'
 
 /** Kind-discriminated union of concrete waits: narrowing on `kind` types `payload`. */
-export type PendingInteraction = { [K in PendingKind]: PendingWait<K> }[PendingKind]
+export type PendingWaitUnion = { [K in PendingKind]: PendingWait<K> }[PendingKind]
 
 /** Key prefixes, one per kind (the key doubles as the Session pending-map key). */
 const KEY_PREFIX: Record<PendingKind, string> = { approval: 'a', question: 'q' }
@@ -31,7 +17,7 @@ const KEY_PREFIX: Record<PendingKind, string> = { approval: 'a', question: 'q' }
  * ever sees the raw rpcId. Settlement is expressed only by pending-list
  * membership (the settled flag is a fail-loud guard, not a render input).
  */
-export class PendingWait<K extends PendingKind = PendingKind> {
+export class PendingWait<K extends PendingKind = PendingKind> implements PendingInteractionFace<K> {
   /** Interaction kind (union discriminant). */
   readonly kind: K
   /** Opaque render identity, `<prefix>:<rpcId>` — stable across baseline replay, usable as a React key. */

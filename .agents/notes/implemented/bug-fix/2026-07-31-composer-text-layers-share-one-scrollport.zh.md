@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-composer 的文本由两层叠放绘制（见 [InputBar](../../../../packages/client/ui-conversation/src/client/skeleton/InputBar.tsx)）：`<textarea>` 持有值、选区与光标，但它自己的字形以 `color: transparent` 渲染；用户看到的每一个字符都由其下的 `[data-input-backdrop]` 层绘制，该层同时承载 claim token 高亮、chip 与提示影子文本。这一拆分正是 chip 与高亮得以存在的前提——textarea 无法为自身文本的某个区间单独设置样式。草稿框的高度上限为 14 行，因此超过上限之后总得有东西滚动。
+composer 的文本由两层叠放绘制（见 [InputBar](../../../../packages/client/ui-conversation/src/client/input/InputBar.tsx)）：`<textarea>` 持有值、选区与光标，但它自己的字形以 `color: transparent` 渲染；用户看到的每一个字符都由其下的 `[data-input-backdrop]` 层绘制，该层同时承载 claim token 高亮、chip 与提示影子文本。这一拆分正是 chip 与高亮得以存在的前提——textarea 无法为自身文本的某个区间单独设置样式。草稿框的高度上限为 14 行，因此超过上限之后总得有东西滚动。
 
 两层各自持有一个滚动偏移，会分两个阶段失效，本次改动是其中的第二个。
 

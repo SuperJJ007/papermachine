@@ -60,16 +60,6 @@ export function formatLatencySeconds(ms: number): string {
 }
 
 /**
- * Decode-throughput figure: whole tokens from ten up, one decimal below.
- * @param tps - Tokens per second.
- * @returns Display number without unit.
- */
-export function formatTokensPerSecond(tps: number): string {
-  const clamped = Math.max(0, tps)
-  return clamped >= 10 ? String(Math.round(clamped)) : String(Math.round(clamped * 10) / 10)
-}
-
-/**
  * Compact local timestamp for message IconActions. Same calendar day →
  * `HH:mm`; earlier this year → the `clock.md` date template + clock; other
  * years → the `clock.ymd` template + clock. Pure: the date templates arrive

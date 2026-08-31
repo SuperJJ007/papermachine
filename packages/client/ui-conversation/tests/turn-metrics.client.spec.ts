@@ -1,9 +1,10 @@
-// Per-turn latency/throughput fold and the footer figure formatters.
-
+import { formatTokensPerSecond } from '../src/client/format-tokens-per-second.ts'
 import { describe, expect, it } from 'vitest'
 import type { AssistantMessageNode, ConversationNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
-import { assistantStepReading, deriveTurnMetrics } from '../src/client/chat/turn-metrics.ts'
-import { formatLatencySeconds, formatTokensPerSecond } from '../src/client/chat/message-chrome.ts'
+import { assistantStepReading, deriveTurnMetrics } from '../src/client/turn-metrics.ts'
+import { formatLatencySeconds } from '../src/client/chat/message-chrome.ts'
+
+// Per-turn latency/throughput fold and the footer figure formatters.
 
 interface StepSpec {
   seq: number

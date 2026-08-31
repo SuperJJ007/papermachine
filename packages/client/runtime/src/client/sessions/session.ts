@@ -7,20 +7,16 @@ import type {
   HistoryEntry, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
   RpcId, RpcResponse, RpcResult, SessionId, SubagentAddress, ToolEventView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionFace } from '../contract/session.ts'
 import { ConversationNodeAssembler } from './conversation-assembler.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import type { ConversationEventInput, ConversationPublication } from '../contract/conversation.ts'
-import type {
-  ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError,
-} from './conversation.ts'
+import type { ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError } from '../contract/session-state.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './conversation.ts'
-import type { PendingInteraction } from './pending.ts'
+import type { PendingWaitUnion } from './pending.ts'
 import { PendingWait } from './pending.ts'
-import { Notifier } from './notifier.ts'
+import { Notifier } from '../notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceLibraryArtifact, WorkspaceFileEntry } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -29,6 +25,9 @@ import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
+
+// Value import from the inline-safe wire layer (not the connection plugin):
+// plugin-to-plugin value imports are a bundle purity error.
 
 /** Messages requested per history page. */
 export const PAGE_MESSAGES = 50
@@ -80,9 +79,9 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
-  private pending = new Map<string, PendingInteraction>()
+  private pending = new Map<string, PendingWaitUnion>()
   private pendingRev = 0
-  private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
+  private pendingCache: { rev: number; value: PendingWaitUnion[] } | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
   /** Session-owned business Context engine over the contiguous raw window. */
@@ -676,13 +675,13 @@ export class Session implements SessionFace {
   // ---- Private ----
 
   /** Requested-frame arrival: the wait enters the pending map under its own key. */
-  private mint(wait: PendingInteraction): void {
+  private mint(wait: PendingWaitUnion): void {
     this.pending.set(wait.key, wait)
     this.pendingRev++
   }
 
   /** Authoritative resolved-frame settlement: mark, then drop from the pending map. */
-  private settle(wait: PendingInteraction): void {
+  private settle(wait: PendingWaitUnion): void {
     wait.markSettled()
     this.pending.delete(wait.key)
     this.pendingRev++

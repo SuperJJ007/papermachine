@@ -8,7 +8,7 @@
  * between production and the test bench.
  */
 import type { HostObservable, SessionMaybeProvideInfo, SessionProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionBinding, SessionProvideDescriptor } from './service.ts'
+import type { SessionBinding, SessionProvideDescriptor } from '../contract/sessions.ts'
 
 /** The owner-side hooks: how the channel reaches the owner's live bundles and current selection. */
 export interface SessionProvideChannelHost {

@@ -10,8 +10,8 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { ComposerBarProps } from '../contract/slots.ts'
-import { formatTokensPerSecond } from './message-chrome.ts'
-import { assistantStepReading } from './turn-metrics.ts'
+import { formatTokensPerSecond } from '../format-tokens-per-second.ts'
+import { assistantStepReading } from '../turn-metrics.ts'
 import css from './StatsLine.module.css'
 
 interface WindowStats {

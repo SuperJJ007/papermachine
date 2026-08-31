@@ -7,8 +7,8 @@
  * widening what features may do to the workspaces domain.
  */
 import type { DirectoryListing, SessionId, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceListState } from '../workspaces/service.ts'
 import type { ObservableSnapshot } from './store.ts'
+import type { RpcError } from '@deepseek-ai/dsh-api-remotes/client'
 
 /** The workspaces-service face injected as `ctx.workspaces`. */
 export interface IWorkspaces {
@@ -91,4 +91,27 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+}
+
+/** Monotone workspace-list arrival lifecycle. */
+export type WorkspaceListPhase = 'pending' | 'ready'
+
+/** Workspace list plus the two-baseline readiness and default-target projection. */
+export interface WorkspaceListState {
+  items: readonly WorkspaceView[]
+  /**
+   * Registry-global archive set in Host order: grouping surfaces hide these
+   * sessions everywhere (workspace groups and the ungrouped bucket) while
+   * their session logs and workspace accounting slots remain. A plain array
+   * (store-engine vocabulary; immer drafts reject Sets) — membership lookups
+   * build their own transient Set.
+   */
+  archivedSessionIds: readonly SessionId[]
+  state: 'idle' | 'loading' | 'error'
+  phase: WorkspaceListPhase
+  error: RpcError | null
+  /** True only after both workspace.list and session.list have succeeded. */
+  baselinesReady: boolean
+  /** Most recently active Workspace, derived without changing `items` order. */
+  recentWorkspaceId: WorkspaceId | undefined
 }

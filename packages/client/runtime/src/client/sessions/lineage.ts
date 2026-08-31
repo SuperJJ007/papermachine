@@ -4,7 +4,7 @@
 
 import type { SessionId, SessionSummary } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
-import type { PendingInteractionStatus } from './pending.ts'
+import type { PendingInteractionStatus } from '../contract/pending.ts'
 
 /** Host list summary enriched with the latest mux-projected durable title. */
 export interface TitledSessionSummary extends SessionSummary {

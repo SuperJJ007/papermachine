@@ -15,10 +15,8 @@
  */
 import type { CommandClaim, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type {
-  ConsumeTokenGuard, EditRange, EditSelection, InputEffect, InputEvent, InputMachineOptions,
-  InputState, Occurrence, PasteAttemptState, PasteComponent, SubmitAttempt,
-} from './contract.ts'
+import type { ConsumeTokenGuard, InputEffect, InputEvent, InputMachineOptions, SubmitAttempt } from './contract.ts'
+import type { EditRange, EditSelection, InputState, Occurrence, PasteAttemptState, PasteComponent } from '../contract/input.ts'
 
 /** Legacy fixed-width object replacement character rejected from pasted text. */
 export const PLACEHOLDER = '￼'

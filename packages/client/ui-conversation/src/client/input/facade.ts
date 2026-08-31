@@ -12,10 +12,9 @@ import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
   ReferenceInsert, InputTriggerController, SubmitImageAttachment, SubmitOutcome, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type {
-  DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
-  PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
-} from './contract.ts'
+import type { InputEffect, SubmitAttempt } from './contract.ts'
+import type { SessionInput } from '../contract/input.ts'
+import type { DraftAttachmentId, EditRange, EditSelection, InputActions, InputNotice, InputState, PasteComponent, QueuedMessage } from '../contract/input.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import { InputMachine, projectClipboard } from './machine.ts'
 

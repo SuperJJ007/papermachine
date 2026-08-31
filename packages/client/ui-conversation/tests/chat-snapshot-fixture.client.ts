@@ -4,7 +4,7 @@ import type {
   ConversationTurnDataMap, LegacyConversationSlice, PartialAssistant, RunningToolCall,
   ToolCallBlock, TurnLocation,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { deriveTurnMetrics } from '../src/client/chat/turn-metrics.ts'
+import { deriveTurnMetrics } from '../src/client/turn-metrics.ts'
 
 const EMPTY: readonly never[] = []
 

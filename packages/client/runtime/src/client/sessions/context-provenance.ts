@@ -1,31 +1,4 @@
-// Context source projection: the role and the human-facing producer name
-// of one logged non-user `user/message`, read from its durable `source` alone.
-// The client keeps no table of known plugin ids — a renamed or newly mounted
-// producer must never need a client release to stay identifiable, and a resumed
-// or foreign log must project the same way as a live one.
 
-/**
- * Which model-facing role a logged non-user message plays.
- *
- * `recall` marks material lifted out of another session's log; `inject` marks
- * every other producer-supplied context. Mid-turn steering is the third role
- * the transcript distinguishes, but it has its own event and node kind
- * (`steering/message` / `SteeringMessageNode`) and never reaches here.
- */
-export type ContextRole = 'inject' | 'recall'
-
-/** Role and producer name presented for one logged non-user message. */
-export interface ContextProvenanceView {
-  /** The role this context plays in the model-facing conversation. */
-  role: ContextRole
-  /**
-   * Producer name for the row header, taken from the durable source: the
-   * instruction paths, the referenced session titles, the plugin id, or the
-   * bare source kind for a producer this UI version does not know. Null only
-   * when the source carries no readable kind at all.
-   */
-  label: string | null
-}
 
 /** One durable source narrowed to the readable-record shape; null for anything else. */
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -115,9 +88,6 @@ export function contextProvenance(source: unknown): ContextProvenanceView {
  */
 const KNOWN_FORMS = ['instructions', 'catalog', 'snapshot', 'notice', 'relay', 'recall'] as const
 
-/** One durable context form this UI version knows how to present. */
-export type KnownContextForm = typeof KNOWN_FORMS[number]
-
 /**
  * Read the producer-declared form off one durable message source.
  * @param source - the logged `user/message` source, exactly as recorded.
@@ -130,3 +100,5 @@ export function contextForm(source: unknown): KnownContextForm | null {
     ? form as KnownContextForm
     : null
 }
+
+import type { ContextProvenanceView, KnownContextForm } from '../contract/session-state.ts'

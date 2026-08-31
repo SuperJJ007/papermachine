@@ -1,8 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-tools/types'
-import type {
-  ConversationNode, RunningToolCall, ToolCallBlock, ToolResultNode,
-} from './conversation.ts'
+import type { ConversationNode, RunningToolCall, ToolCallBlock, ToolResultNode } from '../contract/session-state.ts'
 
 interface ProjectedBlock {
   source: ToolCallBlock

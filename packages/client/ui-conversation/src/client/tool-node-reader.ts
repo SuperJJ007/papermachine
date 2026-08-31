@@ -2,7 +2,7 @@ import type {
   ConversationSnapshot, ToolCallBlock,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNode } from '../contract/chat-nodes.ts'
+import type { ChatNode } from './contract/chat-nodes.ts'
 
 function toolNode(node: ReturnType<ConversationSnapshot['chat']['nodes']['get']>): ChatNode<'tool-call'> | undefined {
   return node?.kind === 'tool-call' ? node as ChatNode<'tool-call'> : undefined

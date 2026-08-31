@@ -1,11 +1,7 @@
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm/types'
-import type {
-  AssistantProvenanceView, AssistantRequestConfig,
-} from './conversation.ts'
+import type { AssistantProvenanceView, AssistantRequestConfig } from '../contract/session-state.ts'
 
-export type {
-  AssistantProvenanceView, AssistantRequestConfig,
-} from './conversation.ts'
+export type { AssistantProvenanceView, AssistantRequestConfig } from '../contract/session-state.ts'
 
 /** Complete model-visible request header in force for an ordinary generation. */
 export interface ConversationPromptSnapshot {

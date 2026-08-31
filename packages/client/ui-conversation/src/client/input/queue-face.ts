@@ -6,7 +6,7 @@
  * projection — no second store, no copy.
  */
 import type { ObservableSnapshot, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
-import type { QueuedMessage } from '../input/contract.ts'
+import type { QueuedMessage } from '../contract/input.ts'
 
 /**
  * Project a session's transient inbox rows as a bare observable (subscribe/getSnapshot).

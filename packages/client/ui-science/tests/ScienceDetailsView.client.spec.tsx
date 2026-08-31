@@ -49,6 +49,7 @@ type HumanChartOverrides = Omit<Partial<ScienceClientHumanEditArtifactVersion>, 
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -455,6 +456,9 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'File library' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Open Cross-session chart, version 3' }))
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
     expect(screen.queryByRole('tab', { name: 'Cross-session chart' })).toBeNull()
     expect(screen.getByRole('textbox', { name: 'Search' })).toBeTruthy()
@@ -619,6 +623,43 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /late\.txt/ }))
     second.unmount()
     await act(async () => { settleFile({ ok: true, value: { mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(65) } }); await pendingFile })
+  })
+
+  it.each([[true, true], [false, true], [true, false]])('resets file presentation between reads (%s → %s)', async (firstOk, secondOk) => {
+    const store = testScienceSelectionStore()
+    store.actions.openFileTab('first.txt')
+    type FileResult = Awaited<ReturnType<Props['loadWorkspaceFile']>>
+    const result = (ok: boolean, text: string): FileResult => ok
+      ? { ok: true, value: { mediaType: 'text/plain', byteCount: text.length, data: new TextEncoder().encode(text) } }
+      : { ok: false, error: { code: 'internal', message: text, details: {} } }
+    let finish!: (value: FileResult) => void
+    const pending = new Promise<FileResult>((resolve) => { finish = resolve })
+    const loadWorkspaceFile = vi.fn().mockResolvedValueOnce(result(firstOk, 'FIRST CONTENT')).mockReturnValueOnce(pending)
+    render(<ScienceDetailsView {...props(baseProjection(), { store, loadWorkspaceFile })} />)
+    expect(await screen.findByText('FIRST CONTENT')).toBeTruthy()
+    act(() => { store.actions.openFileTab('second.txt') })
+    expect(screen.queryByText('FIRST CONTENT')).toBeNull()
+    expect(screen.getByRole('status')).toBeTruthy()
+    await act(async () => { finish(result(secondOk, 'SECOND CONTENT')); await pending })
+    expect(await screen.findByText('SECOND CONTENT')).toBeTruthy()
+    expect(screen.queryByRole('alert') !== null).toBe(!secondOk)
+  })
+
+  it('ignores an earlier file response after switching directly to another file', async () => {
+    const store = testScienceSelectionStore()
+    store.actions.openFileTab('first.txt')
+    type FileResult = Awaited<ReturnType<Props['loadWorkspaceFile']>>
+    let finish!: (value: FileResult) => void
+    const pending = new Promise<FileResult>((resolve) => { finish = resolve })
+    const loadWorkspaceFile = vi.fn().mockReturnValueOnce(pending).mockResolvedValueOnce({
+      ok: true, value: { mediaType: 'text/plain', byteCount: 6, data: new TextEncoder().encode('SECOND') },
+    })
+    render(<ScienceDetailsView {...props(baseProjection(), { store, loadWorkspaceFile })} />)
+    act(() => { store.actions.openFileTab('second.txt') })
+    expect(await screen.findByText('SECOND')).toBeTruthy()
+    await act(async () => { finish({ ok: false, error: { code: 'internal', message: 'OLD ERROR', details: {} } }); await pending })
+    expect(screen.queryByText('OLD ERROR')).toBeNull()
+    expect(screen.getByText('SECOND')).toBeTruthy()
   })
 
 })
@@ -1312,9 +1353,14 @@ describe('ScienceDetailsView: chart edit panel', () => {
     })
     render(<ScienceDetailsView {...props(science, { store, previewChartOps })} />)
     await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
-
+    vi.useFakeTimers()
     fireEvent.change(screen.getByLabelText('Enter text'), { target: { value: 'Preview title' } })
 
+    await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,cHJldmlldw==')
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    vi.useRealTimers()
+    expect(previewChartOps).toHaveBeenCalledTimes(1)
     await waitFor(() => {
       expect(previewChartOps).toHaveBeenCalledWith({
         artifactId: 'chart-1', version: 2, ops: [{ op: 'set_title', axes: null, text: 'Preview title' }],

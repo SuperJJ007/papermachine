@@ -32,6 +32,8 @@ if (fifoPath === undefined) {
 
 const fifoFd = openSync(fifoPath, 'w')
 let fifoClosed = false
+let registeredRun
+let executionCount = 0
 function send(frame) {
   if (fifoClosed) return
   writeSync(fifoFd, `${frame}\n`)
@@ -60,6 +62,7 @@ rl.on('line', (line) => {
           png: { width: 1, height: 1, dpi: 120 },
           elements: [
             { id: 'figure.title', kind: 'title', axes: null, label: null, current: 'Deterministic chart' },
+            { id: 'axes[0].subtitle', kind: 'subtitle', axes: 0, label: null, current: 'Deterministic subtitle' },
             { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: 'Input' },
             { id: 'axes[0].y_label', kind: 'y_label', axes: 0, label: null, current: 'Output' },
             { id: 'axes[0].series[0]', kind: 'series', axes: 0, label: 'observed', current: { color: '#1f77b4' } },
@@ -80,8 +83,13 @@ rl.on('line', (line) => {
   }
   if (parts[0] === 'CHART_APPLY') {
     const [, runId, requestPath, resultPath] = parts
+    if (registeredRun !== runId) {
+      send(`CHART\t${runId}\terror\tnot_registered`)
+      return
+    }
     const request = JSON.parse(readFileSync(requestPath, 'utf8'))
     const title = request.ops.findLast(op => op.op === 'set_title')?.text ?? 'Deterministic chart'
+    const subtitle = request.ops.findLast(op => op.op === 'set_subtitle')?.text ?? 'Deterministic subtitle'
     const xLabel = request.ops.findLast(op => op.op === 'set_axis_label' && op.axis === 'x')?.text ?? 'Input'
     const font = request.ops.findLast(op => op.op === 'set_font') ?? { family: 'sans-serif', size: 10 }
     writeFileSync(request.outputPath, PNG)
@@ -91,6 +99,7 @@ rl.on('line', (line) => {
         png: { width: 1, height: 1, dpi: request.dpi },
         elements: [
           { id: 'figure.title', kind: 'title', axes: null, label: null, current: title },
+          { id: 'axes[0].subtitle', kind: 'subtitle', axes: 0, label: null, current: subtitle },
           { id: 'axes[0].x_label', kind: 'x_label', axes: 0, label: null, current: xLabel },
           { id: 'figure.font', kind: 'font', axes: null, label: null, current: { family: font.family, size: font.size } },
         ],
@@ -104,6 +113,8 @@ rl.on('line', (line) => {
   }
   if (parts[0] !== 'RUN') return
   const [, runId, , cwd, stdoutPath, stderrPath, artifactDir] = parts
+  registeredRun = runId
+  executionCount += 1
   mkdirSync(artifactDir, { recursive: true })
   // One file per allowlisted auto-capture media type this snapshot pins —
   // csv, json, md, and png — proving one science/artifact-saved event per file.
@@ -115,7 +126,7 @@ rl.on('line', (line) => {
   if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source-1.png'))) writeFileSync(join(artifactDir, 'region-edit-1.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source-2.png'))) writeFileSync(join(artifactDir, 'region-edit-2.png'), PNG)
-  writeFileSync(stdoutPath, 'science snapshot run output\n')
+  writeFileSync(stdoutPath, `science snapshot run output (execution ${executionCount})\n`)
   writeFileSync(stderrPath, '')
   send(`DONE\t${runId}\tok\t\t`)
 })

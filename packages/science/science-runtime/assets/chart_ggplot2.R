@@ -362,6 +362,8 @@ apply_ops <- function(plot, ops) {
       name <- operation$op
       if (name == "set_title") {
         current <- current + ggplot2::labs(title = operation$text)
+      } else if (name == "set_subtitle") {
+        current <- current + ggplot2::labs(subtitle = operation$text)
       } else if (name == "set_axis_label") {
         current <- if (operation$axis == "x") current + ggplot2::labs(x = operation$text) else current + ggplot2::labs(y = operation$text)
       } else if (name == "set_legend_position") {

@@ -21,8 +21,8 @@ const FINGERPRINT = 'e'.repeat(64)
 const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
 type Stored = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
-function processFixture(projectId: ProjectId, stored: Stored): string {
-  const session = Session.create(SessionId(SEED_ID))
+function processFixture(projectId: ProjectId, stored: Stored, historyTail = false): string {
+  const session = Session.create(SessionId(historyTail ? `${SEED_ID}-history` : SEED_ID))
   const origin = Date.now() - 120_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
   session.append('turn/start', { turn: 1 })
@@ -45,7 +45,7 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
   session.append('science/kernel-state', { version: 1, kernel: { ...kernel, state: 'started', at: eventTime(3) } })
   const user = session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Draw a scatter plot.' }],
     source: { kind: 'user' } }), { surfaceOp: 'append' })
-  session.append('session/title', { title: 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
+  session.append('session/title', { title: historyTail ? 'Science process history' : 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
   const artifact = {
     artifactId: stored.artifact.artifactId, producerSessionId: session.id, logicalName: 'scatter_plot.png', version: 1,
     title: 'Scatter plot', origin: 'auto' as const, projectId, versionId: stored.version.versionId,
@@ -113,7 +113,34 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
       ...started, state: 'exited', reason: 'idle', startedAt: started.at, at: eventTime(session.events.length),
     } })
   }
+  if (historyTail) {
+    // More than one real history page separates the producing calls from the latest request.
+    for (let step = 9; step < 64; step++) {
+      session.append('step/start', { turn: 1, step })
+      session.append('assistant/message', { turn: 1, step, message: createAssistantMessage({
+        content: [{ type: 'text', text: `Analysis note ${step}` }], source: { provider: 'fixture', model: 'fixture' },
+      }) }, { surfaceOp: 'append' })
+      session.append('step/end', { turn: 1, step })
+    }
+  }
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  if (historyTail) {
+    session.append('turn/start', { turn: 2 })
+    session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Inspect the latest state.' }],
+      source: { kind: 'user' } }), { surfaceOp: 'append' })
+    session.append('step/start', { turn: 2, step: 1 })
+    const callId = CallId('history-current')
+    session.append('assistant/message', { turn: 2, step: 1, message: createAssistantMessage({
+      content: [{ type: 'tool-call', id: callId, name: 'get_science_state', arguments: '{}' }],
+      source: { provider: 'fixture', model: 'fixture' },
+    }) }, { surfaceOp: 'append' })
+    const call = session.append('tool/call', { turn: 2, step: 1, callId, name: 'get_science_state', arguments: '{}' })
+    session.append('tool/result', { turn: 2, step: 1, message: createToolResultMessage({
+      callId, content: [{ type: 'text', text: 'Retained Science history' }], isError: false,
+    }) }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    session.append('step/end', { turn: 2, step: 1 })
+    session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+  }
   const events = session.events.map(event => ({ ...event, time: eventTime(event.seq) }))
   foldScience(events)
   return [JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: origin,
@@ -123,6 +150,17 @@ function processFixture(projectId: ProjectId, stored: Stored): string {
 describe('web e2e: Science process view', () => {
   let scaffold: WebScaffold, browser: Browser, page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  async function openSeed(history: boolean): Promise<void> {
+    // Cold sidebar rows use the workspace name until opened; identify each seed by its loaded request.
+    await page.getByRole('treeitem').first().click()
+    await page.locator('[role="treeitem"][aria-selected]').first().click()
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await page.getByText(/^(Draw a scatter plot\.|Inspect the latest state\.)$/u).first().waitFor()
+    const request = page.getByText(history ? 'Inspect the latest state.' : 'Draw a scatter plot.', { exact: true })
+    if (await request.count() === 0) await page.locator('[role="treeitem"][aria-selected="false"]').click()
+    await request.waitFor()
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+  }
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
@@ -130,13 +168,16 @@ describe('web e2e: Science process view', () => {
       logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto', originSessionId: SessionId(SEED_ID),
     })
     await seedSession(scaffold, processFixture(projectId, stored), SEED_ID, 'science')
+    const historyStored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto',
+      originSessionId: SessionId(`${SEED_ID}-history`),
+    })
+    await seedSession(scaffold, processFixture(projectId, historyStored, true), `${SEED_ID}-history`, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 960)
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
-    await page.locator('[role="treeitem"]').first().click()
-    await page.locator('[role="treeitem"]').nth(1).click()
-    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await openSeed(false)
     await page.getByRole('tab', { name: 'Process', exact: true }).waitFor()
   }, 120_000)
   afterAll(async () => { await browser?.close(); await scaffold?.close() })
@@ -284,6 +325,36 @@ describe('web e2e: Science process view', () => {
     await expect.poll(renderedPalette).toEqual(dark)
     await page.emulateMedia({ colorScheme: 'light' })
     await expect.poll(renderedPalette).toEqual(light)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('keeps records outside the loaded history page separate from the latest request', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-science-process-history'))
+    await page.close()
+    page = await newEnglishPage(browser, 1280)
+    tripwire = watchConsole(page)
+    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await openSeed(true)
+    const process = page.getByRole('region', { name: 'Science process view' })
+    const history = process.getByRole('region', { name: 'Unassigned history' })
+    await history.waitFor()
+    expect(await history.innerText()).toContain('3 runs and 1 artifact versions')
+    const current = process.locator('article[data-anchor="turn:2"]')
+    expect(await current.innerText()).toContain('Runs 0')
+    expect(await current.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).count()).toBe(0)
+    const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+    mkdirSync(evidenceDir, { recursive: true })
+    await page.screenshot({ path: `${evidenceDir}/science-process-history.png`, fullPage: true })
+    await compareOrRefreshGolden(fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url)),
+      await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
+    await history.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
+    await page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u }).waitFor()
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await expect.poll(() => history.count()).toBe(0)
+    expect(await process.locator('article[data-anchor="turn:1"]').innerText()).toContain('Runs 3')
+    expect(await current.innerText()).toContain('Runs 0')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

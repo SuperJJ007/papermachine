@@ -44,7 +44,6 @@ if (fifoPath === undefined) {
 let fifoFd = openSync(fifoPath, 'w')
 let fifoClosed = false
 const runActions = new Map()
-const chartApplyCalls = new Map()
 
 function send(frame) {
   if (fifoClosed) return
@@ -87,14 +86,13 @@ rl.on('line', (line) => {
       writeFileSync(parts[3], JSON.stringify(action?.chartResult ?? { charts: {}, errors: {} }))
     }
     send(`CHART\t${parts[1]}\tok\t`)
+    if (action?.evictCharts) runActions.delete(parts[1])
     return
   }
   if (cmd === 'CHART_APPLY') {
     const action = runActions.get(parts[1])
-    const call = (chartApplyCalls.get(parts[1]) ?? 0) + 1
-    chartApplyCalls.set(parts[1], call)
     if (action?.chartApplyStatus === 'hang') return
-    if (action?.chartApplyStatus === 'not_registered' || (action?.chartApplyStatus === 'not_registered_once' && call === 1)) {
+    if (action === undefined || action.chartApplyStatus === 'not_registered') {
       send(`CHART\t${parts[1]}\terror\tnot_registered`)
       return
     }

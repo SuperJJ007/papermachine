@@ -54,40 +54,45 @@ p <- p + labs(title="Mutation after saving")
 `
 }
 
+async function chartHarness(language: ScienceLanguage, prefix: string) {
+  const root = await mkdtemp(join(process.cwd(), '.science-chart-fidelity-'))
+  roots.push(root)
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(InvariantRegistry, { enabled: true })
+  await ctx.plugin(ScienceSessionInvariant)
+  await ctx.plugin(LocalSubprocessRuntime)
+  await ctx.plugin(LocalSandboxProvider)
+  await ctx.plugin(ScienceArtifactStore, { dshHome: root })
+  const config = { dshHome: root, timeoutMs: 60_000, chartExtractTimeoutMs: 30_000,
+    profiles: { real: language === 'python' ? { pythonPrefix: prefix } : { rPrefix: prefix } } }
+  const runtimeFiber = await ctx.plugin(ScienceRuntime, config)
+  const session = createScienceSession(ctx, `chart-fidelity-${language}`, root)
+  const signal = new AbortController().signal
+  const binding = await ctx.scienceRuntime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('real'), signal })
+  expect(binding.status).toBe('applied')
+  let call = 0
+  const run = async (code: string, filename = 'plot.png', addressable = true) => {
+    const handle = await ctx.scienceRuntime.startRun({ session, language, code, rasterArtifacts: [filename],
+      ...authorizeRun(session, language, `chart-${++call}`), signal })
+    const result = await handle.done
+    expect(result.terminal.status, result.stderr.text).toBe('success')
+    const artifact = replayScience(session.events)!.artifacts.findLast(a => a.logicalName === filename)!
+    if (addressable) expect(artifact.chart, JSON.stringify(result.capture)).toBeDefined()
+    else expect(artifact.chart).toBeUndefined()
+    return artifact
+  }
+  const preview = (artifact: ScienceArtifactVersion, ops: readonly ScienceChartOp[]) =>
+    ctx.scienceRuntime.previewChartEdit({ session, artifactId: artifact.artifactId, version: artifact.version, ops, signal })
+  return { ctx, session, signal, run, preview, runtimeFiber, config }
+}
+
 for (const language of ['python', 'r'] as const) {
   const prefix = process.env[language === 'python' ? 'DSH_SCIENCE_RUNTIME_PYTHON_PREFIX' : 'DSH_SCIENCE_RUNTIME_R_PREFIX']
   describe.skipIf(!prefix)(`${language} chart fidelity with a configured real Conda prefix`, () => {
     it('preserves the latest source and export settings across discarded previews, commits, and cold replay', async () => {
-      const root = await mkdtemp(join(process.cwd(), '.science-chart-fidelity-'))
-      roots.push(root)
-      const ctx = new Context()
-      contexts.push(ctx)
-      await ctx.plugin(SessionStore)
-      await ctx.plugin(InvariantRegistry, { enabled: true })
-      await ctx.plugin(ScienceSessionInvariant)
-      await ctx.plugin(LocalSubprocessRuntime)
-      await ctx.plugin(LocalSandboxProvider)
-      await ctx.plugin(ScienceArtifactStore, { dshHome: root })
-      const config = { dshHome: root, timeoutMs: 60_000, chartExtractTimeoutMs: 30_000,
-        profiles: { real: language === 'python' ? { pythonPrefix: prefix! } : { rPrefix: prefix! } } }
-      const runtimeFiber = await ctx.plugin(ScienceRuntime, config)
-      const session = createScienceSession(ctx, `chart-fidelity-${language}`, root)
-      const signal = new AbortController().signal
-      const binding = await ctx.scienceRuntime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('real'), signal })
-      expect(binding.status).toBe('applied')
-      let call = 0
-      const run = async (code: string, filename = 'plot.png', addressable = true) => {
-        const handle = await ctx.scienceRuntime.startRun({ session, language, code, rasterArtifacts: [filename],
-          ...authorizeRun(session, language, `chart-${++call}`), signal })
-        const result = await handle.done
-        expect(result.terminal.status, result.stderr.text).toBe('success')
-        const artifact = replayScience(session.events)!.artifacts.findLast(a => a.logicalName === filename)!
-        if (addressable) expect(artifact.chart, JSON.stringify(result.capture)).toBeDefined()
-        else expect(artifact.chart).toBeUndefined()
-        return artifact
-      }
-      const preview = (artifact: ScienceArtifactVersion, ops: readonly ScienceChartOp[]) =>
-        ctx.scienceRuntime.previewChartEdit({ session, artifactId: artifact.artifactId, version: artifact.version, ops, signal })
+      const { ctx, session, signal, run, preview, runtimeFiber, config } = await chartHarness(language, prefix!)
       const titleOp = { op: 'set_title', axes: null, text: 'Edited title' } as const
       const labelOp = { op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'DISCARDED' } as const
       await run(source(language, 6, 'First title'))
@@ -134,6 +139,63 @@ fig.savefig(`)
         const png = await run(uncopyable, 'custom.png', false)
         expect(png.mediaType).toBe('image/png')
       }
+    }, 120_000)
+
+    const cases: { name: string; ratio: number; dpi: string; ops: readonly ScienceChartOp[] }[] = language === 'r'
+      ? [{ name: 'subtitle without changing the main title', ratio: 1, dpi: '100', ops: [
+        { op: 'set_subtitle', axes: null, text: 'Edited subtitle' },
+      ] }, { name: 'independent title and subtitle', ratio: 1, dpi: '100', ops: [
+        { op: 'set_title', axes: null, text: 'Edited title' },
+        { op: 'set_subtitle', axes: null, text: 'Edited subtitle' },
+      ] }]
+      : [
+        { name: 'every legend, including one after an axis without a legend', ratio: 1, dpi: '100',
+          ops: [{ op: 'set_legend_position', axes: null, position: 'lower right' }] },
+        { name: 'axes subtitle without changing the figure title', ratio: 1, dpi: '100',
+          ops: [{ op: 'set_subtitle', axes: 2, text: 'Edited subtitle' }] },
+        ...[1, 2].flatMap(ratio => ["'figure'", '150'].map(dpi => ({ name: `pixel ratio ${ratio} at export DPI ${dpi}`, ratio, dpi,
+          ops: [{ op: 'toggle_grid', axes: null, visible: true }] as const }))),
+      ]
+    it.each(cases)('preserves $name through preview, commit, and cold replay', async ({ ratio, dpi, ops }) => {
+      const { ctx, session, signal, run, preview, runtimeFiber, config } = await chartHarness(language, prefix!)
+      const code = (edited: boolean, filename: string) => language === 'r' ? `
+library(ggplot2)
+p <- ggplot(data.frame(x=1:3, y=3:1), aes(x,y)) + geom_point() +
+  labs(title=${JSON.stringify(edited && ops.some(op => op.op === 'set_title') ? 'Edited title' : 'Main title')}, subtitle=${JSON.stringify(edited ? 'Edited subtitle' : 'Original subtitle')})
+ggsave(file.path(Sys.getenv("SCIENCE_ARTIFACT_DIR"), ${JSON.stringify(filename)}), p, width=6, height=3, dpi=100)
+` : `
+import os
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+fig, axes = plt.subplots(1, 3, figsize=(6, 3), dpi=100)
+fig.suptitle("Main title")
+for index, ax in enumerate(axes):
+    ax.plot([0, 1], [0, 1], label="Line")
+    ax.set_title("Edited subtitle" if ${edited && ops[0]!.op === 'set_subtitle' ? 'True' : 'False'} and index == 2 else "Original subtitle")
+    if index != 1:
+        ax.legend(loc=${JSON.stringify(edited && ops[0]!.op === 'set_legend_position' ? 'lower right' : 'upper left')})
+    ax.grid(${edited && ops[0]!.op === 'toggle_grid' ? 'True' : 'False'})
+fig.canvas._set_device_pixel_ratio(${ratio})
+fig.savefig(os.path.join(os.environ["SCIENCE_ARTIFACT_DIR"], ${JSON.stringify(filename)}), dpi=${dpi})
+`
+      const original = await run(code(false, 'plot.png'))
+      const edited = await preview(original, ops)
+      expect(edited.failedOps).toEqual([])
+      const control = await run(code(true, 'control.png'), 'control.png')
+      expect(edited.chart.png).toEqual(control.chart!.png)
+      const expected = await ctx.scienceArtifactStore.readBlob(control.projectId, control.sha256)
+      expect(Buffer.from(edited.png).equals(Buffer.from(expected)), 'preview matches a direct source render').toBe(true)
+      const unchanged = await preview(original, [{ op: 'set_title', axes: null, text: 'Main title' }])
+      const baseline = await ctx.scienceArtifactStore.readBlob(original.projectId, original.sha256)
+      expect(Buffer.from(unchanged.png).equals(Buffer.from(baseline)), 'preview leaves the original unchanged').toBe(true)
+      const saved = await ctx.scienceRuntime.applyChartEdit({ session, artifactId: original.artifactId,
+        version: original.version, ops, signal })
+      expect(saved.artifact.sha256).toBe(control.sha256)
+      await runtimeFiber.dispose()
+      await ctx.plugin(ScienceRuntime, config)
+      const cold = await preview(saved.artifact, ops)
+      expect(Buffer.from(cold.png).equals(Buffer.from(expected)), 'cold replay preserves the committed image').toBe(true)
     }, 120_000)
   })
 }

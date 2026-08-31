@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-science-artifact-store/schema
  */
 
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { ProjectArtifactStoreError } from './errors.ts'
@@ -27,6 +27,8 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
  * Exclusively create a missing database file with owner-only permissions.
  * Existing files retain their modes, and errors other than `EEXIST` propagate.
  */
+// Each database owns file creation; sharing this setup must not couple durable artifacts to the disposable search index.
+/* jscpd:ignore-start */
 async function createDatabaseFile(path: string): Promise<void> {
   try {
     const handle = await open(path, 'wx', 0o600)
@@ -36,6 +38,7 @@ async function createDatabaseFile(path: string): Promise<void> {
   }
 }
 
+/* jscpd:ignore-end */
 /**
  * Open one project's `store.sqlite`, creating and stamping it on first use.
  * The write lock is acquired with `sqlite3_busy_timeout()` so concurrent
@@ -51,6 +54,7 @@ async function createDatabaseFile(path: string): Promise<void> {
 export async function openStoreDatabase(path: string, journalMode: JournalMode, busyTimeoutMs: number): Promise<DatabaseSync> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   await createDatabaseFile(path)
+  const { DatabaseSync } = await import('node:sqlite')
   const db = new DatabaseSync(path, { timeout: busyTimeoutMs })
   try {
     configureDatabase(db, path, journalMode)

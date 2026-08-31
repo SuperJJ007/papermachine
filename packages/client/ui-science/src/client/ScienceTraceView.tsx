@@ -116,10 +116,10 @@ function KernelMarker({ marker, profile, t }: {
 }
 
 function ArtifactChip({ artifact, open }: {
-  readonly artifact: ScienceTraceArtifactDelta
+  readonly artifact: Pick<ScienceTraceArtifactDelta, 'artifactId' | 'logicalName' | 'version'>
   readonly open: ScienceTraceInjected['openArtifact']
 }) {
-  return <button type="button" data-anchor={artifact.anchor} title={`${artifact.logicalName} v${String(artifact.version)}`}
+  return <button type="button" data-anchor={`artifact:${artifact.artifactId}@${String(artifact.version)}`} title={`${artifact.logicalName} v${String(artifact.version)}`}
     onClick={() => { open({ artifactId: artifact.artifactId, version: artifact.version }) }}>
     <IconFolderOpenOutline16 /> <code>{artifact.logicalName} v{artifact.version}</code>
   </button>
@@ -150,6 +150,7 @@ export function ScienceTraceView({
     [nodes, science, turnTimes],
   )
   if (model === undefined) return <p className={css.empty}>{t('trace.empty')}</p>
+  const hasUnassigned = model.unassigned.runs.length > 0 || model.unassigned.artifacts.length > 0
   const open: ScienceTraceInjected['openArtifact'] = (selection) => {
     actions.openTab(selection)
     openArtifact(selection)
@@ -167,12 +168,18 @@ export function ScienceTraceView({
       <header className={css.header}>
         <span className={css.summary}>{t('trace.summary', {
           turns: model.turns.length, steps: model.groups.reduce((sum, group) => sum + group.stepCount, 0),
-          runs: model.groups.reduce((sum, group) => sum + group.runs.length, 0),
+          runs: model.groups.reduce((sum, group) => sum + group.runs.length, model.unassigned.runs.length),
           artifacts: new Set(science?.artifacts.map(artifact => artifact.artifactId)).size,
           duration: formatScienceTraceDuration(duration, t),
         })}{science?.outcome != null && <> · {t('trace.published')}</>}</span>
       </header>
-      {model.groups.length === 0 && model.humanEdits.length === 0 && <p className={css.empty}>{t('trace.empty')}</p>}
+      {hasUnassigned && <section className={css.unassigned} aria-label={t('trace.unassigned')}>
+        <p>{t('trace.unassignedSummary', { runs: model.unassigned.runs.length, artifacts: model.unassigned.artifacts.length })}</p>
+        <div className={css.chips}>
+          {model.unassigned.artifacts.map(artifact => <ArtifactChip key={`${artifact.artifactId}@${String(artifact.version)}`} artifact={artifact} open={open} />)}
+        </div>
+      </section>}
+      {model.groups.length === 0 && model.humanEdits.length === 0 && !hasUnassigned && <p className={css.empty}>{t('trace.empty')}</p>}
       <div className={css.flow}>
         {model.turns.map((turn) => {
           const request = model.dialogues.find(item => item.turn === turn)

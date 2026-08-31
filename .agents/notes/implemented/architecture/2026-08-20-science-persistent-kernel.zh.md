@@ -20,6 +20,8 @@ Claude Science 会让 interpreter 状态在同一 session 内跨越多次 `run_p
 
 协议由三条通道承载，全部位于 sandbox 的可写 scratch 或标准 stdio pipe 之内：host 把单行、以 tab 分隔的请求写入 kernel 的 stdin；driver 把单行响应写入一个 response FIFO，该 FIFO 由 host 在 spawn 之前用 POSIX `mkfifo` 可执行文件在 kernel 自己的 scratch 目录中创建(之所以用 FIFO，是因为 base R 既不能打开 Unix domain socket，也不能 `dup2` 一个文件描述符，而 sandbox 又彻底拒绝 TCP)；一次 run 的 stdout/stderr 会写入请求所命名的 per-run 捕获文件，而不是 kernel 自身的 stdio。source 按路径而非按值传递——host 会在提交前把该 run 精确的 UTF-8 source 写入 run directory，driver 则对该文件执行 `exec(compile(...))` 或 `source()`，复用的正是一次性 run 一直在用的那套 source-flush 机制。
 
+FIFO 响应由受管转发进程读取，空闲内核不会耗尽 Host 文件系统线程池；[读取隔离决策](../bug-fix/2026-08-31-science-fifo-reader-isolation.zh.md)拥有传输收尾语义。
+
 Python 在文件描述符层级重定向一次 run 的输出(`os.dup2`)，因此 C 扩展与子进程的写入都会落入正确的捕获文件。R 只在 `sink()` 层级捕获：R 层面的 `print`/`cat`/`message` 输出会被正确归属，但 C 层面或子进程的写入会绕过 `sink()`，落入 kernel 自身长生命周期、有界的 stdout/stderr collector，永远不会归属回任何一次 run。当 driver 检测到自己无法完整恢复或归属某次 run 的捕获时，它的响应 frame 会携带一个降级标记，该 run 的 terminal event 则携带 `outputDegraded: true`；该 run 自身的 result 依然成立，只是其捕获的 tail 可能不完整。
 
 两个 driver 都针对只有当 kernel 存活超过单次 run 才会显现的崩溃路径做了加固。Python 在每次重定向与恢复前后，把 `sys.stdout`/`sys.stderr` 重新绑定为 `closefd=False` 的包装对象，因此用户代码调用 `sys.stdout.close()` 不会杀死 kernel 自身的 I/O。R 在每次 push 之前记录 `sink.number()`，并把每次 pop 都包在 `tryCatch` 中展开，因此用户调用 `close(stdout())` 或不成对的 `sink()` 都不会打乱下一次 run 的输出路由。R 的中断处理与 Python 存在一处硬性的不对称：`tryCatch(interrupt = ...)` 能可靠捕获 `Sys.sleep()` 期间与 CPU 密集循环中送达的 `SIGINT`，因此 run 进行中的中断是安全的；但一次 idle 状态下的 `SIGINT` 要么直接杀死 R process，要么被闩锁并使紧接着的下一次 run 被误判为 interrupted——R 没有像 Python 那种"默认忽略、仅在 `exec` 期间生效"的 idle-safe handler。下文的中断规则正是为了让这个 idle 时段的隐患变得不可触达而存在。

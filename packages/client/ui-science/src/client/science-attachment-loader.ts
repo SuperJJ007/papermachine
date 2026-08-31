@@ -11,7 +11,7 @@
  * never needs to revoke one.
  */
 
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISession, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
@@ -72,6 +72,15 @@ function bytesToBase64(data: Uint8Array): string {
   return btoa(binary)
 }
 
+/** Read authenticated bytes once the addressed session has a live binding. */
+async function readArtifact(sessions: ISessions, sessionId: SessionId, content: ScienceArtifactContentRef) {
+  const session: ISession | undefined = sessions.binding(sessionId)?.session
+  if (session === undefined) throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
+  const result = await session.readScienceArtifact(content.versionId as VersionId)
+  if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+  return result.value
+}
+
 /**
  * Build the Details entry's `loadImage` for one session mount.
  * @param sessions - the injected runtime sessions service.
@@ -80,15 +89,8 @@ function bytesToBase64(data: Uint8Array): string {
  */
 export function createScienceImageLoader(sessions: ISessions, sessionId: SessionId): ScienceImageLoader {
   return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
-    const session = sessions.binding(sessionId)?.session
-    if (session === undefined) {
-      throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
-    }
-    const result = await session.readScienceArtifact(content.versionId as VersionId)
-    if (!result.ok) {
-      throw new Error(`${result.error.code}: ${result.error.message}`)
-    }
-    return `data:${result.value.mediaType};base64,${bytesToBase64(result.value.data)}`
+    const value = await readArtifact(sessions, sessionId, content)
+    return `data:${value.mediaType};base64,${bytesToBase64(value.data)}`
   })
 }
 
@@ -101,14 +103,7 @@ export function createScienceImageLoader(sessions: ISessions, sessionId: Session
  */
 export function createScienceTextLoader(sessions: ISessions, sessionId: SessionId): TextLoader {
   return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
-    const session = sessions.binding(sessionId)?.session
-    if (session === undefined) {
-      throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
-    }
-    const result = await session.readScienceArtifact(content.versionId as VersionId)
-    if (!result.ok) {
-      throw new Error(`${result.error.code}: ${result.error.message}`)
-    }
-    return new TextDecoder('utf-8', { fatal: true }).decode(result.value.data)
+    const value = await readArtifact(sessions, sessionId, content)
+    return new TextDecoder('utf-8', { fatal: true }).decode(value.data)
   })
 }

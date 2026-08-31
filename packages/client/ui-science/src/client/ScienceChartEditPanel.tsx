@@ -73,6 +73,7 @@ function opTargetLabel(op: ScienceChartOp, multiAxes: boolean, t: TranslateNS<'s
   const prefix = multiAxes && op.axes !== null ? `${t('panel.panelSuffix', { index: op.axes + 1 })} · ` : ''
   switch (op.op) {
     case 'set_title': return `${prefix}${t('panel.kindTitle')}`
+    case 'set_subtitle': return `${prefix}${t('panel.kindSubtitle')}`
     case 'set_axis_label': return `${prefix}${t(op.axis === 'x' ? 'panel.kindXLabel' : 'panel.kindYLabel')}`
     case 'set_legend_position': return `${prefix}${t('panel.kindLegend')}`
     case 'toggle_grid': return `${prefix}${t('panel.kindGrid')}`
@@ -212,7 +213,7 @@ function ElementControl({ element, onStage, t }: {
     case 'title':
     case 'subtitle':
       return <TextControl initial={typeof element.current === 'string' ? element.current : ''}
-        onApply={(text) => { onStage({ op: 'set_title', axes: element.axes, text }) }} t={t} />
+        onApply={(text) => { onStage({ op: element.kind === 'subtitle' ? 'set_subtitle' : 'set_title', axes: element.axes, text }) }} t={t} />
     case 'x_label':
       return <TextControl initial={typeof element.current === 'string' ? element.current : ''}
         onApply={(text) => { onStage({ op: 'set_axis_label', axes: element.axes, axis: 'x', text }) }} t={t} />

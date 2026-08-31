@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-31-science-fifo-reader-isolation.md
+2026-08-31-science-fifo-reader-isolation.md: 65b261059bb3c89390b9013f4e29c98c77eb4b30
+2026-08-31-science-fifo-reader-isolation.zh.md: 91b6bed75a2f55f686480007c767b8d664f8739c

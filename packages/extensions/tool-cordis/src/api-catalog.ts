@@ -1334,7 +1334,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPreviewResult>',
-        description: 'Render one direct-edit request without publishing store or session state: the shared warm/replay path exports a PNG and re-extracts its chart, but no artifact version or `science/artifact-saved` event is committed.',
+        description: 'Render one direct-edit request without publishing store or session state: the shared warm/replay path exports a PNG and re-extracts its chart, but no artifact version or `science/artifact-saved` event is committed. Cold recovery uses an isolated interpreter and the operation\'s cancellation/deadline.',
         parameters: [{ name: 'request', description: 'Exact session, target artifact/version, and operations to render for preview.' }],
         returns: 'The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.',
       },
@@ -4350,7 +4350,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceChartOp',
-    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'toggle_grid\';\n    readonly axes: number | null;\n    readonly visible: boolean;\n} | {\n    readonly op: \'set_font\';\n    readonly axes: null;\n    readonly family: string;\n    readonly size: number;\n};',
+    declaration: 'export type ScienceChartOp = {\n    readonly op: \'set_title\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_subtitle\';\n    readonly axes: number | null;\n    readonly text: string;\n} | {\n    readonly op: \'set_axis_label\';\n    readonly axes: number | null;\n    readonly axis: \'x\' | \'y\';\n    readonly text: string;\n} | {\n    readonly op: \'set_legend_position\';\n    readonly axes: number | null;\n    readonly position: \'best\' | \'upper left\' | \'upper right\' | \'lower left\' | \'lower right\' | \'right\' | \'center left\' | \'center right\' | \'upper center\' | \'lower center\' | \'center\';\n} | {\n    readonly op: \'toggle_grid\';\n    readonly axes: number | null;\n    readonly visible: boolean;\n} | {\n    readonly op: \'set_font\';\n    readonly axes: null;\n    readonly family: string;\n    readonly size: number;\n};',
   },
   {
     name: 'ScienceChartPreviewReceipt',

@@ -57,6 +57,7 @@ import { prepareRunArtifacts } from './inputs.ts'
 import type { PreparedRunArtifacts } from './inputs.ts'
 import { attachRuntimeSettings } from './settings.ts'
 import {
+  createIsolatedKernelScratch,
   createRunScratch,
   materializeRunInputs,
   materializeSessionScratch,
@@ -697,6 +698,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * Render one direct-edit request without publishing store or session state:
    * the shared warm/replay path exports a PNG and re-extracts its chart, but
    * no artifact version or `science/artifact-saved` event is committed.
+   * Cold recovery uses an isolated interpreter and the operation's cancellation/deadline.
    * @param request - Exact session, target artifact/version, and operations to render for preview.
    * @returns The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.
    */
@@ -722,6 +724,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.assertHostLocal()
     const lease = await this.reserveQueued(request.session, request.signal)
     let replayScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
+    let replayKernel: KernelProcess | undefined
+    let usingReplay = false
+    let previewReady = false
     let sessionScratch: ScienceSessionScratch | undefined
     let editLanguage: ScienceLanguage | undefined
     try {
@@ -773,6 +778,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         cumulativeOps,
         parent.chart.png.dpi,
         planRunScratch(sessionScratch, source.runId, language).directory,
+        lease.control.signal,
       )
       if (application.kind === 'not-registered') {
         const sourceScratch = planRunScratch(sessionScratch, source.runId, language)
@@ -804,7 +810,13 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           sourceBytes,
         )
         await materializeRunInputs(replayScratch, prepared.materialized)
-        const replayFrame = await kernel.process.execute({
+        this.assertPrepublication(request.session, lease.control)
+        usingReplay = true
+        replayKernel = await this.kernels.startIsolated(
+          request.session, language, environment, await createIsolatedKernelScratch(replayScratch), lease.control.signal,
+        )
+        this.assertPrepublication(request.session, lease.control)
+        const replayOutcome = await settleKernelExecution(lease.control, replayKernel, {
           runId: source.runId,
           sourcePath: replayScratch.source,
           cwd: replayScratch.directory,
@@ -813,16 +825,18 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           artifactDir: replayScratch.artifacts,
           inputDir: replayScratch.inputs,
         })
-        if (replayFrame.status !== 'ok') {
+        this.assertPrepublication(request.session, lease.control)
+        if (replayOutcome.status !== 'success') {
           throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source replay failed; rerun the code to regenerate this figure')
         }
         application = await this.applyChartInKernel(
-          kernel.process,
+          replayKernel,
           source.runId,
           parent.chart.figureKey,
           cumulativeOps,
           parent.chart.png.dpi,
           replayScratch.directory,
+          lease.control.signal,
         )
       }
       if (application.kind === 'not-registered') {
@@ -844,7 +858,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         figureKey: parent.chart.figureKey,
         ops: [...parent.chart.ops, ...successfulOps],
       })
-      if (!commit) return { png: application.png, chart, failedOps }
+      this.assertPrepublication(request.session, lease.control)
+      if (!commit) {
+        previewReady = true
+        return { png: application.png, chart, failedOps }
+      }
       const stored = await this.ctx.scienceArtifactStore.appendVersion(projectId, parent.artifactId, {
         producerSessionId: request.session.id,
         data: application.png,
@@ -879,18 +897,27 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       request.session.append('science/artifact-saved', { version: 1, artifact })
       return { artifact, failedOps }
     } catch (error) {
-      if (error instanceof KernelProtocolError || error instanceof KernelExitedError) {
+      if (!usingReplay && (error instanceof KernelProtocolError || error instanceof KernelExitedError)) {
         // applyChartInKernel is reached only after editLanguage is assigned.
         /* v8 ignore next */
         if (editLanguage !== undefined) await this.kernels.retireForEscalation(request.session, editLanguage)
       }
+      if (lease.control.signal.aborted) throw this.prepublicationError(lease.control, undefined)
       throw error instanceof ScienceRuntimeError ? error : this.prepublicationError(lease.control, error)
     } finally {
-      if (sessionScratch !== undefined && replayScratch !== undefined) {
-        await removeUnpublishedRunScratch(sessionScratch, replayScratch)
+      try {
+        if (replayKernel !== undefined) {
+          const quiescence = await replayKernel.end('chart-replay-finished')
+          if (!quiescence.quiescent) await quiescence.eventualQuiescence
+        }
+        if (sessionScratch !== undefined && replayScratch !== undefined) {
+          await removeUnpublishedRunScratch(sessionScratch, replayScratch)
+        }
+      } finally {
+        if (editLanguage !== undefined) this.kernels.resetIdleTimer(request.session, editLanguage)
+        this.leases.release(lease)
       }
-      if (editLanguage !== undefined) this.kernels.resetIdleTimer(request.session, editLanguage)
-      this.leases.release(lease)
+      if (previewReady) this.assertPrepublication(request.session, lease.control)
     }
   }
 
@@ -902,6 +929,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     ops: readonly ScienceChartOp[],
     dpi: number,
     directory: string,
+    signal: AbortSignal,
   ): Promise<
     | { readonly kind: 'not-registered' }
     | { readonly kind: 'applied'; readonly chart: Record<string, unknown>; readonly failedOps: readonly ScienceChartFailedOp[]; readonly png: Uint8Array }
@@ -912,7 +940,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     const outputPath = join(directory, `chart-apply-${token}.png`)
     try {
       await writeFile(requestPath, JSON.stringify({ figureKey, ops, outputPath, dpi }), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      const frame = await kernel.applyChart({ runId, requestPath, resultPath, timeoutMs: this.chartExtractTimeoutMs })
+      const frame = await kernel.applyChart({ runId, requestPath, resultPath, timeoutMs: this.chartExtractTimeoutMs, signal })
       if (frame.status === 'error' && frame.detail === 'not_registered') return { kind: 'not-registered' }
       if (frame.status === 'error') throw new Error(`science-runtime: chart application failed: ${frame.detail}`)
       const root = plainRecord(JSON.parse(await readFile(resultPath, 'utf8')))

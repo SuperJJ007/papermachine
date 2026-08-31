@@ -1620,7 +1620,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-pwsh-local)
 
-Source: [`packages/shell/pwsh-sandbox/src/index.ts:45`](../packages/shell/pwsh-sandbox/src/index.ts)
+Source: [`packages/shell/pwsh-sandbox/src/index.ts:48`](../packages/shell/pwsh-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-repeat-tool-reminder"></a>
 

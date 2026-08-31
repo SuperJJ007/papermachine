@@ -380,9 +380,13 @@ export interface ScienceChartHit {
   readonly z: number
 }
 
-/** Deterministic operation supported by both live-figure runtimes. */
+/**
+ * Deterministic operation supported by both live-figure runtimes.
+ * Subtitle targets are ggplot2's plot subtitle or matplotlib axes titles; null selects all axes.
+ */
 export type ScienceChartOp =
   | { readonly op: 'set_title'; readonly axes: number | null; readonly text: string }
+  | { readonly op: 'set_subtitle'; readonly axes: number | null; readonly text: string }
   | { readonly op: 'set_axis_label'; readonly axes: number | null; readonly axis: 'x' | 'y'; readonly text: string }
   | { readonly op: 'set_legend_position'; readonly axes: number | null; readonly position: 'best' | 'upper left' | 'upper right' | 'lower left' | 'lower right' | 'right' | 'center left' | 'center right' | 'upper center' | 'lower center' | 'center' }
   | { readonly op: 'toggle_grid'; readonly axes: number | null; readonly visible: boolean }

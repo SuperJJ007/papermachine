@@ -336,6 +336,33 @@ export class KernelSet {
     return attempt
   }
 
+  /**
+   * Start a disposable chart-recovery process without registering an epoch or changing the live kernel.
+   * @param session - Exact session whose operation lease owns startup and cleanup.
+   * @param language - Interpreter language to recover.
+   * @param environment - Applied binding to use.
+   * @param scratch - Isolated scratch rooted inside the unpublished replay directory.
+   * @param signal - Operation cancellation, including session detach and service disposal.
+   * @returns A ready process the caller must end and quiesce before releasing its lease.
+   */
+  startIsolated(
+    session: Session,
+    language: ScienceLanguage,
+    environment: ScienceEnvironmentBinding,
+    scratch: ScienceSessionScratch,
+    signal: AbortSignal,
+  ): Promise<KernelProcess> {
+    resolveKernelChartAdapterPath(this.assetsRoot, language)
+    return KernelProcess.start({
+      services: { subprocess: this.subprocess, sandbox: this.sandbox, session, sessionScratch: scratch },
+      binding: selectBinding(environment, language),
+      driverPath: resolveKernelDriverPath(this.assetsRoot, language),
+      index: 0,
+      kernelStartTimeoutMs: this.kernelStartTimeoutMs,
+      signal,
+    })
+  }
+
   /** Drain a stale teardown, decide reuse vs. rebind vs. fresh spawn, and return the acquired kernel. */
   private async acquireKernel(
     entry: SessionEntry,

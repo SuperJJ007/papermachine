@@ -20,6 +20,8 @@ Kernel lifecycle markers replace the environment card because starts and exits h
 
 This decision partially supersedes the card summary and subview name in [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). Its nested Trajectory placement, preserved visited panels, transcript ownership and Turn-tail artifact reasoning remain useful. [Science transcript chrome suppression](2026-08-25-science-transcript-chrome-suppression.md) continues to own conversation chrome; both records remain active for those independent decisions.
 
+Retained runs and artifacts require a loaded producing call before joining a request. Missing calls leave these records in a separate unassigned-history section with counts and exact-version artifact links; earlier-page loading recomputes their assignment. Falling back to the latest turn invents provenance and inflates its duration and artifact totals. An annotation call cannot establish the producing turn of a run-owned version.
+
 ## Alternatives considered
 
 **Keep the Science-specific light palette.** A preset-specific document palette defeats the application preference once Science is the product default. Keeping it would leave the theme buttons changing stored state without changing the workbench.

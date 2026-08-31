@@ -134,3 +134,13 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
 export function conversationContextKey(kind: string, id: string): string {
   return `${kind.length}:${kind}${id}`
 }
+
+/**
+ * Expand mounted tool groups before inspecting their individual cards.
+ * @param page - Browser page displaying the conversation.
+ */
+export async function expandToolGroups(page: Page): Promise<void> {
+  for (const toggle of await page.locator('[data-tool-group] > button[aria-expanded="false"]').all()) {
+    await toggle.click()
+  }
+}

@@ -38,6 +38,8 @@ describe('Science chart codec', () => {
   it('decodes every supported chart operation', () => {
     const ops = [
       { op: 'set_title', axes: null, text: 'Updated title' },
+      { op: 'set_subtitle', axes: null, text: 'Updated subtitle' },
+      { op: 'set_subtitle', axes: 1, text: 'Panel subtitle' },
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Treatment' },
       { op: 'set_legend_position', axes: null, position: 'upper right' },
       { op: 'toggle_grid', axes: 0, visible: true },
@@ -47,6 +49,9 @@ describe('Science chart codec', () => {
   })
 
   it('rejects invalid operation operands and unknown operations', () => {
+    for (const invalid of [{ axes: -1, text: 'Subtitle' }, { axes: null, text: 'bad\u0000text' }]) {
+      expect(() => decodeScienceChartState(chart({ ops: [{ op: 'set_subtitle', ...invalid }] }))).toThrow()
+    }
     expect(() => decodeScienceChartState(chart({
       ops: [{ op: 'set_title', axes: -1, text: 'Title' }],
     }))).toThrow()

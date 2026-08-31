@@ -393,6 +393,7 @@ describe('headless stream-json snapshots', () => {
       expect(chartPreview).toContain('Preview title')
       expect(chartPreview).toContain('Edited input')
       expect(chartPreview).not.toContain('Discarded draft')
+      expect(JSON.parse(chartPreview)).toMatchObject({ liveKernelCount: 4 })
       const modelView = normalizeScienceJson(rawModelView, ids)
       const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
       if (refreshing) await writeFile(modelViewExpected, modelView)
@@ -408,11 +409,13 @@ describe('headless stream-json snapshots', () => {
       // no image bytes; the Client reads those from the durable event instead.
       expect(modelView).not.toContain('attachmentId')
       expect(modelView).not.toContain(PNG_BASE64)
-      expect(modelView).toContain('\\"editCount\\": 3')
+      expect(modelView).toContain('\\"editCount\\": 4')
       expect(modelView).toContain('\\"target\\": \\"title\\"')
+      expect(modelView).toContain('\\"target\\": \\"axes[0].subtitle\\"')
       expect(modelView).toContain('\\"target\\": \\"axes[0].x_label\\"')
       expect(modelView).toContain('\\"target\\": \\"font\\"')
       expect(modelView).not.toContain('Directly edited chart')
+      expect(modelView).not.toContain('Directly edited subtitle')
       expect(modelView).not.toContain('Edited input')
       const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
       expect(captured.filesystemTools).toEqual(['read'])

@@ -1,6 +1,6 @@
 /** Conversion between mutable strict replay state and its plain-JSON cache form. */
 
-import type { ScienceFoldState } from './fold-state.ts'
+import { cloneScienceFoldState, type ScienceFoldState } from './fold-state.ts'
 import type { ScienceProjectionFoldJson } from './projection-private.ts'
 
 /**
@@ -47,22 +47,11 @@ export function decodeScienceProjectionFold(
   state: ScienceProjectionFoldJson,
   nextSeq = 0,
 ): ScienceFoldState {
-  return {
+  return cloneScienceFoldState({
+    ...state,
     nextSeq,
     mode: state.mode ?? undefined,
     modeBoundSeq: state.modeBoundSeq ?? undefined,
-    preModeStepStarted: state.preModeStepStarted,
-    environments: [...state.environments],
-    runs: [...state.runs],
-    kernels: [...state.kernels],
-    kernelEpochWatermark: state.kernelEpochWatermark,
-    artifacts: [...state.artifacts],
-    outcomes: [...state.outcomes],
-    requestHeaders: [...state.requestHeaders],
-    toolCalls: [...state.toolCalls],
-    settledToolCallSeqs: [...state.settledToolCallSeqs],
-    consumedToolCallSeqs: [...state.consumedToolCallSeqs],
-    messageFacts: [...state.messageFacts],
     runFacts: state.runFacts.map(fact => ({
       runId: fact.runId,
       startedSeq: fact.startedSeq,
@@ -70,8 +59,7 @@ export function decodeScienceProjectionFold(
       ...(fact.terminalSeq === null ? {} : { terminalSeq: fact.terminalSeq }),
       ...(fact.terminalEventTime === null ? {} : { terminalEventTime: fact.terminalEventTime }),
     })),
-    artifactFacts: [...state.artifactFacts],
     lastScienceTime: state.lastScienceTime ?? undefined,
     lastScienceEventSeq: state.lastScienceEventSeq ?? undefined,
-  }
+  })
 }

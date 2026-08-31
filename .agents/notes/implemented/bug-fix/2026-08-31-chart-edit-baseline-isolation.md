@@ -18,6 +18,10 @@ Every preview and save renders a fresh copy with the committed operations follow
 
 This specifies saved-version rendering within the broader [live-figure editing design](../../proposed/architecture/2026-08-28-science-live-figure-editing.md); element catalogs, model references, and viewer ownership remain independent decisions there. The [element-id collision decision](2026-08-28-chart-element-id-collision.md) remains applicable without supersession.
 
+Cold source recovery uses a separate interpreter and operation-scoped cancellation; the [cold-replay decision](2026-08-31-science-cold-replay-isolation.md) owns analysis-state isolation and cleanup.
+
+Figure serialization restores logical DPI while retaining the copied display transform. Before export, the copy normalizes that transform to its logical DPI; changing metadata alone cannot correct the raster dimensions. Main titles and subtitles have separate operation identities, including ggplot2's two null-axes targets, so pending-edit coalescing cannot discard either. All-axes operations visit every target even after an earlier target succeeds.
+
 ## Alternatives considered
 
 **Choose the latest matching filename.** This can bypass a newer source that lacks addressable chart state. Version provenance must choose the source before checking addressability.

@@ -15,6 +15,7 @@ describe('scienceElementLabel', () => {
   it('uses annotation text from old references and resolves Greek series names', () => {
     expect(scienceElementLabel('annotation', null, t, undefined, '{"type":"text","text":"均值 0.14"}')).toBe('标注 · 均值 0.14')
     expect(scienceElementLabel('annotation', null, t, undefined, { text: '均值 0.14' }, 'annotation[text:均值 0.14]#2')).toBe('标注 · 均值 0.14 · #2')
+    expect(scienceElementLabel('series', '$\\unknown$', t)).toBe('数据系列 · $\\unknown$')
     expect(scienceElementLabel('series', '$\\alpha$ 无暴露 (n=923)', t)).toBe('数据系列 · α 无暴露 (n=923)')
   })
 

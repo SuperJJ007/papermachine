@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
-import { foldScience } from '@deepseek-ai/dsh-science-session'
+import { CallId } from '@deepseek-ai/dsh-llm'
+import { foldScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-tool-science'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 
@@ -21,6 +22,30 @@ let ctx: Context | undefined
 try {
   loadEnv(NAME)
   ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  // Three idle kernels keep the main agent's first run at the default
+  // filesystem thread-pool capacity throughout persistence and previews.
+  const idleSessions = []
+  for (let index = 0; index < 3; index += 1) {
+    const session = ctx.sessions.create(SessionId(`science-idle-${index}`), {
+      meta: { agentPreset: 'science', cwd: process.cwd() },
+    })
+    session.append('science/mode-bound', { version: 1,
+      mode: { modeId: 'science', presetId: 'science', modeRevision: 'snapshot-r3' } })
+    const signal = new AbortController().signal
+    await ctx.scienceRuntime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal })
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    const header = session.append('request/header', { header: { config: { provider: 'science-snapshot', model: 'science-snapshot' } }, reason: 'initial' })
+    const toolCallId = CallId(`idle-kernel-${index}`)
+    session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{}' })
+    const run = await ctx.scienceRuntime.startRun({ session, language: 'python', code: 'value = 99',
+      toolCallId, requestHeaderSeq: header.seq, signal })
+    if ((await run.done).terminal.status !== 'success') throw new Error(`${NAME}: idle kernel did not start`)
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await ctx.sessions.flush(session)
+    idleSessions.push(session)
+  }
   const sessionId = SessionId('science-tools-snapshot')
   await ctx.agents.create({
     sessionId,
@@ -49,14 +74,15 @@ try {
     version: chart.version,
     ops: [
       { op: 'set_title', axes: null, text: 'Directly edited chart' },
+      { op: 'set_subtitle', axes: 0, text: 'Directly edited subtitle' },
       { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited input' },
       { op: 'set_font', axes: null, family: 'DejaVu Sans', size: 14 },
     ],
   }, new AbortController().signal)
   const directChart = foldScience(agent.session.events).artifacts.find(artifact =>
     artifact.artifactId === directReceipt.artifactId && artifact.version === directReceipt.version)
-  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 3) {
-    throw new Error(`${NAME}: direct chart edit did not preserve its three cumulative operations`)
+  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 4) {
+    throw new Error(`${NAME}: direct chart edit did not preserve its four cumulative operations`)
   }
   const directEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'
     && event.data.artifact.artifactId === directChart.artifactId
@@ -72,11 +98,14 @@ try {
     ops: [{ op: 'set_title', axes: null, text: 'Preview title' }] })
   if (agent.session.events.length !== beforePreview
     || preview.chart.elements.find(element => element.kind === 'x_label')?.current !== 'Edited input'
-    || preview.chart.ops.length !== 4) {
+    || preview.chart.elements.find(element => element.kind === 'subtitle')?.current !== 'Directly edited subtitle'
+    || preview.chart.ops.length !== 5) {
     throw new Error(`${NAME}: preview did not retain the committed baseline independently of the discarded draft`)
   }
   await writeFile(join(process.cwd(), 'science-chart-preview.json'),
-    JSON.stringify({ chart: preview.chart, failedOps: preview.failedOps }))
+    JSON.stringify({ chart: preview.chart, failedOps: preview.failedOps,
+      liveKernelCount: [...idleSessions, agent.session].flatMap(session => foldScience(session.events).kernels)
+        .filter(kernel => kernel.state === 'started').length }))
   await runFixtureTurn(ctx, {
     task: 'Inspect the direct chart edit state.',
     onEvent: (sessionId: string, event: SessionEvent) => {

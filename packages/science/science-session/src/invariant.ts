@@ -71,11 +71,14 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   /* v8 ignore next -- session/event always follows list() or session/created seeding */
   const cursorFor = (session: Session): ScienceInvariantCursor => cursors.get(session) ?? seed(session)
 
+  // Each invariant owns its replay and publication state; this common Cordis event subscription does not share a domain fold.
+  /* jscpd:ignore-start */
   for (const session of ctx.sessions.list()) seed(session)
   ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
+    /* jscpd:ignore-end */
     const cursor = cursorFor(session)
     const state = cloneScienceFoldState(cursor.state)
     applyChecked(cursor.preset, state, event, fail)

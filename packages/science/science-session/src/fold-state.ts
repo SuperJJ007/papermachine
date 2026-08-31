@@ -104,7 +104,9 @@ export function emptyScienceFoldState(): ScienceFoldState {
  * @param state - accepted accumulator to detach.
  * @returns an independently mutable accumulator.
  */
-export function cloneScienceFoldState(state: ScienceFoldState): ScienceFoldState {
+export function cloneScienceFoldState(
+  state: { readonly [K in keyof ScienceFoldState]: Readonly<ScienceFoldState[K]> },
+): ScienceFoldState {
   return {
     nextSeq: state.nextSeq,
     mode: state.mode,

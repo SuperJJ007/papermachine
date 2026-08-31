@@ -1,0 +1,99 @@
+- tablist "File library":
+  - tab "Artifacts" [selected]
+  - tab "Project files"
+- button "Close details"
+- tablist "Open artifacts":
+  - tab "Missing revision" [selected]
+  - button "Close Missing revision":
+    - img
+- button "File library":
+  - img
+  - text: File library
+- button "Previous version" [disabled]:
+  - img
+- text: v1
+- button "Next version":
+  - img
+- button "Provenance"
+- button "Download":
+  - img
+- button "Export" [disabled]
+- text: Export will be available in C4
+- button "Expand":
+  - img
+- button "Close tab":
+  - img
+- 'button "View original: Observed series"':
+  - img "Observed series"
+- button "Select region to edit" [disabled]
+- paragraph: Save or discard the preview before referencing elements or selecting a region.
+- region "Modify elements":
+  - paragraph: Select an element to reference, then describe your edit in chat.
+  - region "Modify elements":
+    - heading "Modify elements" [level=4]
+    - list:
+      - listitem:
+        - text: Font
+        - combobox "Font family": sans-serif
+        - spinbutton "Font size": "12"
+        - button "Add Font to the conversation" [disabled]: +
+      - listitem:
+        - text: Title
+        - textbox "Enter text": Preview title
+        - button "Add Title to the conversation" [disabled]: +
+      - listitem:
+        - text: X-axis title
+        - textbox "Enter text": Exposure
+        - button "Add X-axis title to the conversation" [disabled]: +
+      - listitem:
+        - text: Y-axis title
+        - textbox "Enter text": Density
+        - button "Add Y-axis title to the conversation" [disabled]: +
+      - listitem:
+        - text: Legend
+        - combobox "Legend position":
+          - option "Best"
+          - option "Right"
+          - option "Upper left"
+          - option "Upper right" [selected]
+          - option "Lower left"
+          - option "Lower right"
+          - option "Center"
+        - button "Add Legend to the conversation" [disabled]: +
+      - listitem:
+        - text: Grid
+        - checkbox "Show grid"
+        - text: Show grid
+        - button "Add Grid to the conversation" [disabled]: +
+  - region "Reference for AI editing":
+    - heading "Reference for AI editing" [level=4]
+    - list:
+      - listitem:
+        - button "Add Figure size to the conversation" [disabled]: Figure size
+      - listitem:
+        - button "Add Tick labels to the conversation" [disabled]: Tick labels
+      - listitem:
+        - button "Add Series · α No exposure to the conversation" [disabled]: "Series · α No exposure #006ba2"
+      - listitem:
+        - button "Add Series · β LLM exposure to the conversation" [disabled]: "Series · β LLM exposure #ebb434"
+      - listitem:
+        - button "Add Series · γ LLM + other technology to the conversation" [disabled]: "Series · γ LLM + other technology #db444b"
+      - listitem:
+        - button "Add Axis range to the conversation" [disabled]: Axis range
+      - listitem:
+        - button "Add Axis scale to the conversation" [disabled]: Axis scale
+      - listitem:
+        - button "Add Annotation · Mean 0.14 to the conversation" [disabled]: "Annotation · Mean 0.14 #006ba2"
+      - listitem:
+        - button "Add Annotation · Mean 0.34 to the conversation" [disabled]: "Annotation · Mean 0.34 #ebb434"
+      - listitem:
+        - button "Add Annotation · Mean 0.55 to the conversation" [disabled]: "Annotation · Mean 0.55 #db444b"
+  - paragraph: "1 pending: set_title"
+  - button "Discard changes"
+  - button "Commit as new version"
+- paragraph: Durable browser fixture
+- region "Notes":
+  - heading "Notes" [level=3]
+  - textbox "Artifact note":
+    - /placeholder: "Add a private note\nThese notes belong only to you and never enter model context."
+  - button "Save" [disabled]

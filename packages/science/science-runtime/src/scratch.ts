@@ -441,6 +441,17 @@ export async function createKernelScratch(
   return planned
 }
 
+/**
+ * Create a disposable kernel home, state, and install tree inside unpublished replay scratch.
+ * @param run - Private replay directory, removed only after the replay process is quiescent.
+ * @returns Scratch whose sandbox writable root excludes the persistent session's state.
+ */
+export async function createIsolatedKernelScratch(run: ScienceRunScratch): Promise<ScienceSessionScratch> {
+  const scratch = sessionScratchPaths(run.directory)
+  await Promise.all([scratch.home, scratch.state, scratch.runs, scratch.probes, scratch.kernels].map(createPrivateDirectory))
+  return scratch
+}
+
 /** Language-independent run directory and reference, shared by every path derived below it. */
 function runDirectory(sessionScratch: ScienceSessionScratch, runId: ScienceRunId): { readonly ref: string; readonly directory: string } {
   const name = String(runId)

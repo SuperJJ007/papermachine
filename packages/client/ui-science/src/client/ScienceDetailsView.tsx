@@ -23,7 +23,7 @@
 // any other current Session (`EMPTY_SCIENCE_PROJECTION` above) instead of a
 // second notice.
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   formatRelativeTime, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
@@ -650,11 +650,18 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
   )
 }
 
+/** Loaders, mutations, and presentation supplied to every artifact tab. */
+type ArtifactControls = Pick<ScienceDetailsViewProps,
+  | 'loadImage' | 'loadText' | 'addToConversation' | 'removeFromConversation'
+  | 'composerSelections' | 'returnToConversation' | 'selectDetailed'
+  | 'addArtifactNote' | 'removeArtifactNote' | 'applyChartOps' | 'previewChartOps'
+  | 'actions' | 'inspectCall' | 't'>
+
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
   science, artifacts, chart, notes, currentSessionId, sourceSessionTitle, view, provenanceSubTab, snapshot, loadImage, loadText,
   addToConversation, removeFromConversation, composerSelections, returnToConversation, selectDetailed,
-  addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, useStore, actions, inspectCall, t,
+  addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, actions, inspectCall, t,
 }: {
   science: ScienceClientProjection
   artifacts: readonly ScienceClientArtifactVersion[]
@@ -665,23 +672,7 @@ function ArtifactTab({
   view: ScienceArtifactView
   provenanceSubTab: ScienceProvenanceSubTab
   snapshot: ConversationSnapshot
-  loadImage: ScienceImageLoader
-  loadText: TextLoader
-  addToConversation: ScienceDetailsInjected['addToConversation']
-  removeFromConversation: ScienceDetailsInjected['removeFromConversation']
-  composerSelections: ScienceDetailsInjected['composerSelections']
-  returnToConversation: ScienceDetailsInjected['returnToConversation']
-  selectDetailed: ScienceDetailsInjected['selectDetailed']
-  addArtifactNote: ScienceDetailsInjected['addArtifactNote']
-  removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
-  applyChartOps: ScienceDetailsInjected['applyChartOps']
-  previewChartOps: ScienceDetailsInjected['previewChartOps']
-  useStore: ScienceDetailsViewProps['useStore']
-  actions: ScienceDetailsViewProps['actions']
-  inspectCall: (callId: string) => void
-  t: TranslateNS<'science'>
-}) {
-  const lightboxOpen = useStore(s => s.lightboxOpen)
+} & ArtifactControls) {
   const versions = versionsOf(artifacts, chart.artifactId)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
   const [previewSrc, setPreviewSrc] = useState<string>()
@@ -743,11 +734,11 @@ function ArtifactTab({
       actions.setTabVersion({ artifactId: chart.artifactId, version: result.value.version })
       return { ok: true, failedOps: result.value.failedOps }
     })
-  const previewOps = (ops: readonly ScienceChartOp[]) => previewChartOps({
+  const previewOps = useCallback((ops: readonly ScienceChartOp[]) => previewChartOps({
     artifactId: chart.artifactId, version: chart.version, ops,
   }).then(result => result.ok
     ? { ok: true as const, pngBase64: result.value.pngBase64, failedOps: result.value.failedOps }
-    : { ok: false as const, error: result.error.message })
+    : { ok: false as const, error: result.error.message }), [previewChartOps, chart.artifactId, chart.version])
 
   if (view === 'provenance') {
     if (chart.origin === 'human-edit') {
@@ -836,50 +827,23 @@ function ArtifactTab({
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
-      {chart.mediaType === 'image/png' && (
-        <ArtifactLightbox
-          chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
-          loadImage={loadImage}
-          open={lightboxOpen}
-          onClose={() => { actions.setLightboxOpen(false) }}
-          t={t}
-        />
-      )}
     </>
   )
 }
 
 function ArtifactViewer({
-  science, notes, currentSessionId, sessionTitles, snapshot, loadImage, loadText,
-  loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, addToConversation, removeFromConversation,
-  composerSelections, returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps,
-  useStore, actions, inspectCall, t,
+  science, notes, currentSessionId, sessionTitles, snapshot,
+  loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, useStore, ...controls
 }: {
   science: ScienceClientProjection
   notes: ScienceArtifactNotesProjection
   currentSessionId: ScienceDetailsViewProps['sessionId']
   sessionTitles: Readonly<Record<string, string>>
   snapshot: ConversationSnapshot
-  loadImage: ScienceImageLoader
-  loadText: TextLoader
-  loadLibrary: ScienceDetailsInjected['loadLibrary']
-  loadWorkspaceFiles: ScienceDetailsInjected['loadWorkspaceFiles']
-  loadWorkspaceFile: ScienceDetailsInjected['loadWorkspaceFile']
-  addToConversation: ScienceDetailsInjected['addToConversation']
-  removeFromConversation: ScienceDetailsInjected['removeFromConversation']
-  composerSelections: ScienceDetailsInjected['composerSelections']
-  returnToConversation: ScienceDetailsInjected['returnToConversation']
-  selectDetailed: ScienceDetailsInjected['selectDetailed']
-  addArtifactNote: ScienceDetailsInjected['addArtifactNote']
-  removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
-  applyChartOps: ScienceDetailsInjected['applyChartOps']
-  previewChartOps: ScienceDetailsInjected['previewChartOps']
-  useStore: ScienceDetailsViewProps['useStore']
-  actions: ScienceDetailsViewProps['actions']
-  inspectCall: (callId: string) => void
-  t: TranslateNS<'science'>
-}) {
+} & ArtifactControls & Pick<ScienceDetailsViewProps, 'loadLibrary' | 'loadWorkspaceFiles' | 'loadWorkspaceFile' | 'useStore'>) {
+  const { loadImage, loadText, actions, t } = controls
   const openArtifacts = useStore(s => s.openArtifacts)
+  const lightboxOpen = useStore(s => s.lightboxOpen)
   const activeTabId = useStore(s => s.activeTabId)
   const libraryPage = useStore(s => s.libraryPage)
   const libraryCollapsed = useStore(s => s.libraryCollapsed)
@@ -915,7 +879,7 @@ function ArtifactViewer({
   }
 
   if (activeTab.kind === 'file') {
-    return <div className={css.body}><div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
+    return <div className={css.body}><div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview key={activeTab.path} path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
   }
 
   // The one remaining way `activeChart` resolves to undefined is the
@@ -965,23 +929,13 @@ function ArtifactViewer({
             view={view}
             provenanceSubTab={provenanceSubTab}
             snapshot={snapshot}
-            loadImage={loadImage}
-            loadText={loadText}
-            addToConversation={addToConversation}
-            removeFromConversation={removeFromConversation}
-            composerSelections={composerSelections}
-            returnToConversation={returnToConversation}
-            selectDetailed={selectDetailed}
-            addArtifactNote={addArtifactNote}
-            removeArtifactNote={removeArtifactNote}
-            applyChartOps={applyChartOps}
-            previewChartOps={previewChartOps}
-            useStore={useStore}
-            actions={actions}
-            inspectCall={inspectCall}
-            t={t}
+            {...controls}
           />
         )}
+      {activeChart?.mediaType === 'image/png' && <ArtifactLightbox
+        key={activeChart.versionId}
+        chart={activeChart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
+        loadImage={loadImage} open={lightboxOpen} onClose={() => { actions.setLightboxOpen(false) }} t={t} />}
     </div>
   )
 }
@@ -1017,9 +971,7 @@ const EMPTY_SCIENCE_PROJECTION: ScienceClientProjection = {
  */
 export function ScienceDetailsView({
   sessionId, useSessions, useSession, useProjection, useStore, actions,
-  inspectCall, loadImage, loadText, loadLibrary, loadWorkspaceFiles, loadWorkspaceFile,
-  addToConversation, removeFromConversation, composerSelections,
-  returnToConversation, selectDetailed, addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, t,
+  ...controls
 }: ScienceDetailsViewProps) {
   // Session display titles change only when a title or the session list
   // itself changes, not on every streamed event — shallowEqual over the
@@ -1040,7 +992,7 @@ export function ScienceDetailsView({
   if (science === undefined) {
     return (
       <div className={css.body}>
-        <p className={css.notice} role="status">{t('details.missingSupport')}</p>
+        <p className={css.notice} role="status">{controls.t('details.missingSupport')}</p>
       </div>
     )
   }
@@ -1048,14 +1000,7 @@ export function ScienceDetailsView({
   return (
     <ArtifactViewer
       science={science ?? EMPTY_SCIENCE_PROJECTION} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
-      snapshot={snapshot} loadImage={loadImage} loadText={loadText}
-      loadLibrary={loadLibrary} loadWorkspaceFiles={loadWorkspaceFiles} loadWorkspaceFile={loadWorkspaceFile}
-      addToConversation={addToConversation}
-      removeFromConversation={removeFromConversation} composerSelections={composerSelections} returnToConversation={returnToConversation}
-      selectDetailed={selectDetailed}
-      addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote}
-      applyChartOps={applyChartOps} previewChartOps={previewChartOps}
-      useStore={useStore} actions={actions} inspectCall={inspectCall} t={t}
+      snapshot={snapshot} useStore={useStore} actions={actions} {...controls}
     />
   )
 }

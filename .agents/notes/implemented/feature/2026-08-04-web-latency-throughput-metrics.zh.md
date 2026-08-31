@@ -10,7 +10,7 @@ Web 聊天已经记录了逐步骤的 LLM（大语言模型）计时（`stepStar
 
 ## 决策
 
-`ui-conversation` 包内的折算逻辑 `chat/turn-metrics.ts` 是从 assistant 节点推导延迟/吞吐读数的唯一位置。`assistantStepReading` 把一个节点转成一次步骤读数：TTFT（首 token 延迟）需要 `stepStartTime` 与 `firstTokenTime` 同时存在，解码时长需要 `firstTokenTime`，负时长钳制为零，输出 token 数只在不可信的 `usage` 值有限且非负时才采纳。`deriveTurnMetrics` 按轮次折算读数：编号最小的步骤拥有该轮次的 TTFT 槽位，吞吐用「同时携带两者的那些步骤」的输出 token 总和除以解码时长总和，因此缺采样的步骤直接退出而不是让比值失真；两个数字都没有的轮次不产生条目。
+`ui-conversation` 包内的折算逻辑 `turn-metrics.ts` 是从 assistant 节点推导延迟/吞吐读数的唯一位置。`assistantStepReading` 把一个节点转成一次步骤读数：TTFT（首 token 延迟）需要 `stepStartTime` 与 `firstTokenTime` 同时存在，解码时长需要 `firstTokenTime`，负时长钳制为零，输出 token 数只在不可信的 `usage` 值有限且非负时才采纳。`deriveTurnMetrics` 按轮次折算读数：编号最小的步骤拥有该轮次的 TTFT 槽位，吞吐用「同时携带两者的那些步骤」的输出 token 总和除以解码时长总和，因此缺采样的步骤直接退出而不是让比值失真；两个数字都没有的轮次不产生条目。
 
 assistant 页脚把读数追加到既有 hover 显示的时间附属元素中、`用时` 之后，形如 `首 token {s}秒 · {tps} tok/s`，未记录的数字各自省略。ChatView 仅在该轮次的 `turnTimings` 条目带有 `endTime` 时才显示读数：已加载窗口是日志的连续后缀，因此窗口内已结算的轮次必然带着它的全部步骤，首步 TTFT 是真实值而非窗口截断的产物。`formatLatencySeconds` 不带单位，各语言模板各自拥有秒后缀（`TTFT {seconds}s`／`首 token {seconds}秒`）。
 

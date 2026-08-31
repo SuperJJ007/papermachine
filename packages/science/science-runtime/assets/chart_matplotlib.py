@@ -51,6 +51,8 @@ def copy_chart(entry):
         copied = copy.deepcopy(entry)
     finally:
         canvas.manager = manager
+    # Figure serialization restores logical DPI but retains the display's pixel transform.
+    copied["fig"].dpi_scale_trans.clear().scale(copied["fig"].dpi)
     FigureCanvasAgg(copied["fig"])
     return copied
 
@@ -410,12 +412,17 @@ def apply_ops(fig, ops):
                 else:
                     axes[0].title.set_text(operation["text"])
                     applied = True
+            elif name == "set_subtitle":
+                for axis in axes:
+                    axis.title.set_text(operation["text"])
+                    applied = True
             elif name == "set_axis_label":
                 for axis in axes:
                     (axis.xaxis if operation["axis"] == "x" else axis.yaxis).label.set_text(operation["text"])
                     applied = True
             elif name == "set_legend_position":
-                applied = any(_set_legend_position(axis, operation["position"]) for axis in axes)
+                for axis in axes:
+                    applied = _set_legend_position(axis, operation["position"]) or applied
             elif name == "toggle_grid":
                 for axis in axes:
                     axis.grid(operation["visible"])

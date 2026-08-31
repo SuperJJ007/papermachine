@@ -14,7 +14,7 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 一个 `image/png` artifact version 可以携带 `ScienceChartState`：其 `runtime`、捕获相对 `figureKey`、保存时的像素尺寸与 DPI、有界 `elements`、累计 `ops`、`hitmap` 及 `hitmapStatus`。Python 与 R kernel 只为经 matplotlib savefig 或 ggplot2 ggsave 登记且被捕获的路径生成此投影。缺失或不可用的 chart 投影绝不会使 PNG 无效；`hitmapStatus: 'unavailable'` 要求空 hit map，同时保留已抽取的 elements。chart 状态归 Session event 与 client projection 所有，project artifact store 只保留 PNG 字节与普通版本元数据。
 
-`applyChartEdit` 把封闭的 `set_title`、`set_axis_label`、`set_legend_position`、`toggle_grid` 与 `set_font` 操作施加到确切的当前可寻址 version，并追加一个 `origin: 'human-edit'` 的子 PNG。图对象仍有登记时直接使用活对象；否则会私下重放源 run、确切物化输入与先前操作，且不追加 run event。成功操作累计到新 chart 状态，部分 target 失败以带索引的 `failedOps` 返回，陈旧、不可寻址、无效或全部无法解析的请求保留各自稳定错误码。字体操作检查精确可用性但不枚举已安装字体族；解析失败时返回 `font_not_found`，不修改图对象，也不改变 matplotlib 的全局 `rcParams`。`scienceEdits.applyChartOps` Remote 为 browser client 转换 chart 专用 Runtime 错误。`get_science_state` 与 artifact receipt 只公开每项操作的名称、元素 target 与编辑数量，绝不公开操作值。元素引用携带 id、kind、axes、label 与有界当前值摘要；Host 要求每个字段与被寻址 chart catalog 的确切条目一致。
+`applyChartEdit` 把封闭的 `set_title`、`set_subtitle`、`set_axis_label`、`set_legend_position`、`toggle_grid` 与 `set_font` 操作施加到确切的当前可寻址 version，并追加一个 `origin: 'human-edit'` 的子 PNG。图对象仍有登记时直接使用活对象；否则会私下重放源 run、确切物化输入与先前操作，且不追加 run event。成功操作累计到新 chart 状态，部分 target 失败以带索引的 `failedOps` 返回，陈旧、不可寻址、无效或全部无法解析的请求保留各自稳定错误码。字体操作检查精确可用性但不枚举已安装字体族；解析失败时返回 `font_not_found`，不修改图对象，也不改变 matplotlib 的全局 `rcParams`。`scienceEdits.applyChartOps` Remote 为 browser client 转换 chart 专用 Runtime 错误。`get_science_state` 与 artifact receipt 只公开每项操作的名称、元素 target 与编辑数量，绝不公开操作值。元素引用携带 id、kind、axes、label 与有界当前值摘要；Host 要求每个字段与被寻址 chart catalog 的确切条目一致。
 
 当一张图没有图级标题（`fig.suptitle()`；ggplot2 没有对应机制）且只有一个 axes 时，两个 runtime 都把该唯一 axes 的标题抽取为 `kind: 'title'`；matplotlib 只在存在 suptitle 或多个 axes 时才把 axes 标题保留为 `kind: 'subtitle'`。`set_legend_position` 的共享枚举可直接映射到 matplotlib 自身的 `loc`，但 ggplot2 4 的 `theme(legend.position = ...)` 没有对应的角/边词汇——未映射的字符串会静默丢弃图例而不报错——因此 ggplot2 adapter 把每个值确定性地映射到 `"right"` 或 `"inside"` 加一个归一化坐标（[完整对照表](../../packages/science/science-runtime/README.zh.md)）；未映射的 `position` 会使操作失败而不是静默处理。
 
@@ -229,6 +229,7 @@ async applyChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartEdit
  * Render one direct-edit request without publishing store or session state:
  * the shared warm/replay path exports a PNG and re-extracts its chart, but
  * no artifact version or `science/artifact-saved` event is committed.
+ * Cold recovery uses an isolated interpreter and the operation's cancellation/deadline.
  * @param request - Exact session, target artifact/version, and operations to render for preview.
  * @returns The rendered preview PNG bytes, its re-extracted chart state, and any operations whose targets could not be resolved.
  */

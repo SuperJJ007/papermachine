@@ -16,6 +16,13 @@
         "current": "Preview title"
       },
       {
+        "id": "axes[0].subtitle",
+        "kind": "subtitle",
+        "axes": 0,
+        "label": null,
+        "current": "Directly edited subtitle"
+      },
+      {
         "id": "axes[0].x_label",
         "kind": "x_label",
         "axes": 0,
@@ -40,6 +47,11 @@
         "text": "Directly edited chart"
       },
       {
+        "op": "set_subtitle",
+        "axes": 0,
+        "text": "Directly edited subtitle"
+      },
+      {
         "op": "set_axis_label",
         "axes": 0,
         "axis": "x",
@@ -60,5 +72,6 @@
     "hitmap": [],
     "hitmapStatus": "ok"
   },
-  "failedOps": []
+  "failedOps": [],
+  "liveKernelCount": 4
 }

@@ -2037,6 +2037,7 @@ describe('get_science_state artifact sanitization', () => {
         hitmap: [], hitmapStatus: 'unavailable', elements: [],
         ops: [
           { op: 'set_title', axes: null, text: 'Secret title' },
+          { op: 'set_subtitle', axes: null, text: 'Secret subtitle' },
           { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Secret label' },
           { op: 'set_legend_position', axes: null, position: 'upper right' },
           { op: 'toggle_grid', axes: 0, visible: true },
@@ -2045,9 +2046,10 @@ describe('get_science_state artifact sanitization', () => {
       },
     })] }), 20)
     expect(value.artifacts[0]).toMatchObject({
-      editCount: 5,
+      editCount: 6,
       edits: [
         { op: 'set_title', target: 'title' },
+        { op: 'set_subtitle', target: 'subtitle' },
         { op: 'set_axis_label', target: 'axes[0].x_label' },
         { op: 'set_legend_position', target: 'legend' },
         { op: 'toggle_grid', target: 'axes[0].grid' },

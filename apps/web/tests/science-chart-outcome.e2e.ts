@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
@@ -600,6 +600,33 @@ describe('web e2e: Science chart and Outcome replay', () => {
       await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
     )
     await saveFailureShot(page, 'science-reference-elements-verified')
+  })
+
+  it('sends one preview for a settled title edit without committing a version', async () => {
+    await openSessionByTitle(SEED_TITLE)
+    const center = page.locator('[class*="centerCol"]')
+    await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
+    const details = page.locator('[class*="detailsCol"]')
+    await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
+    const preview = vi.spyOn(scaffold.ctx.scienceRuntime, 'previewChartEdit')
+      .mockResolvedValue({ png: PNG, chart: CHART, failedOps: [] })
+    try {
+      await details.getByRole('textbox', { name: 'Enter text', exact: true }).first().fill('Preview title')
+      await expect.poll(() => preview.mock.calls.length).toBe(1)
+      // A parent repaint must not restart the 300 ms debounce after settlement.
+      await page.waitForTimeout(800)
+      expect(preview).toHaveBeenCalledTimes(1)
+      expect(preview.mock.calls[0]?.[0]).toMatchObject({
+        version: 1, ops: [{ op: 'set_title', axes: 0, text: 'Preview title' }],
+      })
+      await compareOrRefreshGolden(
+        fileURLToPath(new URL('./snapshots/science-artifacts/title-preview.expected.md', import.meta.url)),
+        await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
+      )
+    } finally {
+      preview.mockRestore()
+      await details.getByRole('button', { name: 'Discard changes', exact: true }).click()
+    }
   })
 
   it('renders a canonical post-dispatch abort as stopped while replay retains CANCELLED', async () => {

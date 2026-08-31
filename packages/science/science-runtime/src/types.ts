@@ -227,6 +227,8 @@ export interface ScienceRuntimeService {
   /**
    * Render the current version's cumulative operations from its producing run's saved figure and export settings,
    * then append one direct-edit PNG version. Pending previews never contribute to the committed result.
+   * Expired figures recover in a disposable interpreter, isolated from current analysis state.
+   * Cancellation and timeout include recovery and rendering; cleanup completes before the operation releases its lease.
    * @param request - Exact artifact version, operations, live Session, and cancellation.
    * @returns The committed version and operations whose element targets were absent.
    */
@@ -234,6 +236,7 @@ export interface ScienceRuntimeService {
   /**
    * Render validated operations against the exact current addressable chart without publishing a version
    * or mutating its saved figure. Every preview independently includes the committed operations.
+   * Cold source recovery cannot mutate the analysis interpreter. An aborted operation never returns preview bytes.
    * @param request - Exact artifact version, operations, live Session, and cancellation.
    * @returns Ephemeral PNG bytes, extracted chart state, and unresolved targets.
    */

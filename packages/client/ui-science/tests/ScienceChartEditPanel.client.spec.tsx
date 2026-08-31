@@ -194,13 +194,25 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(onAddTarget).not.toHaveBeenCalled()
   })
 
-  it.each(['Title', 'Subtitle'])('stages set_title for the %s row', async (name) => {
+  it.each([['Title', 'set_title'], ['Subtitle', 'set_subtitle']])('stages a distinct operation for the %s row', async (name, op) => {
     const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
     panel({ onSave })
     const row = expandRow(name)
     fireEvent.change(within(row).getByLabelText('Enter text'), { target: { value: 'New title' } })
     fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
-    expect(onSave).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'New title' }])
+    expect(onSave).toHaveBeenCalledWith([{ op, axes: null, text: 'New title' }])
+  })
+
+  it('keeps ggplot2 title and subtitle edits together', () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave, chart: chartState({ runtime: 'ggplot2' }) })
+    fireEvent.change(within(expandRow('Title')).getByLabelText('Enter text'), { target: { value: 'Main title' } })
+    fireEvent.change(within(expandRow('Subtitle')).getByLabelText('Enter text'), { target: { value: 'Subtitle text' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(onSave).toHaveBeenCalledWith([
+      { op: 'set_title', axes: null, text: 'Main title' },
+      { op: 'set_subtitle', axes: null, text: 'Subtitle text' },
+    ])
   })
 
   it('stages set_axis_label with axis x for the X-axis title row and axis y for the Y-axis title row', async () => {

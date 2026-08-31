@@ -1,4 +1,4 @@
-import type { ConversationNode } from './conversation.ts'
+import type { ConversationNode } from '../contract/session-state.ts'
 import type { ConversationPromptSnapshot } from './request-inspection.ts'
 
 /** Operation that started a new append-only model context. */

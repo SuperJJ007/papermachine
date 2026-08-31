@@ -8,6 +8,8 @@
 
 ## 过程视图
 
+运行及运行产出的产物只通过已加载对话中的来源调用归属请求。缺失来源调用的保留记录单独显示在未归属历史区域，提供数量与精确版本的产物链接，不计入任何请求的步骤、失败、产物或耗时。加载更早的对话页后重新计算归属。标注调用不替代版本的原始生产运行身份。
+
 「过程（Process）」以 `trajectory.view` id `process` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在「详细」之前，因此 Science 会话进入「轨迹」时默认显示过程，其他会话仍只有详细账本。单左轨右侧通栏排列 agent 与人工改图卡，人工改图保留用户图标与蓝色左边框。折叠的轮卡片有四个结构化行：截断的用户要求、通栏有序步骤条、右对齐的统计与展开控件，以及每个产物在本轮最终版本的小标签。要求之外不附加任何自由文本说明。长步骤条和产物标签行在卡片内换行。步骤条最多渲染 120 次调用并提示总数；展开清单仍然完整。
 
 点击卡片要求或背景可展开、收起步骤；原生展开按钮支持 Enter 与 Space，并报告展开状态。步骤色块展开并高亮对应行。独立控件及整个输入输出详情区域保留自身的点击、滚动与文本选择。行标题在原位展开所代表的全部调用，包括合并资料组的每个成员，绝不选择「详细」。精确版本的产物按钮打开共享文件查看器，不改变当前轨迹子视图。轮次展开、调用展开与高亮在子视图切换后保留，但不落盘。
@@ -71,12 +73,14 @@ artifact viewer 与会话记录行共享一个本包私有的按会话存储（`
 ## Artifact viewer（Details 条目）
 <a id="artifact-viewer-details-entry"></a>
 
+文件预览按工作区路径挂载，并忽略挂载结束后到达的响应。查看器统一持有当前会话及跨会话 PNG 版本的工具栏灯箱。图表预览完成后不会重新启动防抖计时；参见[查看器生命周期决策](../../../.agents/notes/implemented/bug-fix/2026-08-31-science-viewer-lifecycle.zh.md)。
+
 viewer 以 id `science`、`primary: true` 注册进 `conversation.details.view`——会话未显式选定某个配置项时,Details 列默认显示的就是这一项(ui-conversation 的 `DetailsPanel.tsx resolveActiveDetailsView`;整个注册表最多一个条目可以声明 `primary`,第二个在注册时抛错)。它的 keyed `conversation.details.header.actions` 条目把一级「成果」与「项目文件」页签放进 Details header，同时由通用 shell 保留关闭控件。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；写路径调用 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
 
 - **标签栏** — artifact tab 与 workspace file tab 共用同一条二级可关闭标签栏；没有打开文档时完全不渲染。成果库主页没有自己的文档 tab。点击任一一级页签会让活跃文档返回所选成果库页，但不关闭任何已打开 tab。点击会话记录 artifact 会打开其精确版本，工具栏返回键回到上次选择的成果库页，关闭最后一个文档也会自动回到那里。
 - **工具栏** — 面向活跃标签页的内容视图：成果库返回键、一个版本步进器（‹ v*n* ›），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。步进器只在两个相邻的非跳过版本间步进；同轮中间稿（`intermediate-versions.ts`——一个被同时共享授权 turn 与产生 session 的更晚版本取代的版本，永远不含 human-edit 保存）会从步进顺序中跳过，且没有入口可以展开它，除非它本身就是当前打开的版本。溯源下钻按每个版本自身的确切标题列出全部版本。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
 - **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化 project-store 媒体类型分派：`image/png` 经本包的 `ScienceArtifactImage` 渲染；文本媒体类型通过 `loadText` 取得并解码字节后再次分派——`text/csv` 渲染为可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。JSON 与纯文本在渲染前应用 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000），CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行。这些固定的浏览器呈现上限（`format.ts`）不是 `Config` 字段，也不改变部署的持久化文件准入上限。
-- **图表编辑**（`ScienceChartEditPanel.tsx`）— 对 `chart` 可寻址的 `image/png` 版本，在 raster 内容下方挂一张无卡片、无折叠层级的紧凑常显表单，直接提供标题／副标题、x/y 轴标签、网格、字体族／字号与图例位置控件。这些控件生成封闭的 `set_title`、`set_axis_label`、`toggle_grid`、`set_font` 与 `set_legend_position` 操作。字体字段通过简短固定候选表接受自由输入，不枚举已安装字体；字体不可用时显示本地化操作失败。每个可直接编辑行只能通过自身 `+`/`−` 操作添加精确引用，点击行或编辑控件都不改变引用状态。其余已抽取元素显示为可换行的引用行，展示完整名称与图中实际颜色，整行都可切换引用；annotation 只常显前六项，其余由一个数量控件展开。直接改动在组件本地态里累积为待存 `ScienceChartOp`——全程不经模型、不进 session log——并通过 Runtime 获得防抖预览；引用变化绝不请求预览。Save 经注入的 `applyChartOps`（`scienceEdits.applyChartOps`）提交待存操作，产出新的 `origin: 'human-edit'` 版本并把已打开标签步进到该版本；Discard 清空待存列表。已提交操作默认折叠，待定操作只占一行摘要；回执里非空的 `failedOps` 会按下标与原因逐条列出未生效的操作。修改元素与引用芯片并排两栏，窄栏时上下堆叠：详情列窄于 440px 时引用芯片折到直接修改下方。
+- **图表编辑**（`ScienceChartEditPanel.tsx`）— 对 `chart` 可寻址的 `image/png` 版本，在 raster 内容下方挂一张无卡片、无折叠层级的紧凑常显表单，直接提供标题／副标题、x/y 轴标签、网格、字体族／字号与图例位置控件。这些控件生成封闭的 `set_title`、`set_subtitle`、`set_axis_label`、`toggle_grid`、`set_font` 与 `set_legend_position` 操作。字体字段通过简短固定候选表接受自由输入，不枚举已安装字体；字体不可用时显示本地化操作失败。每个可直接编辑行只能通过自身 `+`/`−` 操作添加精确引用，点击行或编辑控件都不改变引用状态。其余已抽取元素显示为可换行的引用行，展示完整名称与图中实际颜色，整行都可切换引用；annotation 只常显前六项，其余由一个数量控件展开。直接改动在组件本地态里累积为待存 `ScienceChartOp`——全程不经模型、不进 session log——并通过 Runtime 获得防抖预览；引用变化绝不请求预览。Save 经注入的 `applyChartOps`（`scienceEdits.applyChartOps`）提交待存操作，产出新的 `origin: 'human-edit'` 版本并把已打开标签步进到该版本；Discard 清空待存列表。已提交操作默认折叠，待定操作只占一行摘要；回执里非空的 `failedOps` 会按下标与原因逐条列出未生效的操作。修改元素与引用芯片并排两栏，窄栏时上下堆叠：详情列窄于 440px 时引用芯片折到直接修改下方。
 - **编辑选择** — 每行的 `+`/`−` 控件通过共享的 `composerSelections` store 把确切 artifact 版本与 target 引用进主 composer：raster 的可选归一化拖拽层对应区域 target，元素行则对应它的 `ScienceElementTarget`（`{ elementId, elementKind, axes, label, current }`，不带像素坐标）。每张 PNG 都提供归一化区域框选，包括带元素目录的版本。选择、悬停或聚焦元素不会遮挡 PNG。显示未保存的预览时，禁止新增元素与区域引用，直到保存或放弃修改。标注文字、系列的希腊字母和重复项序号在查看器、composer 与已发送消息中使用同一个命名函数；原始 id 保持不变。单纯画出区域或列出元素不会暂存任何东西；显式的 `+`/`−` 控件才会暂存或撤销确切 target 及其可选备注。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id、版本，元素 target 还带元素 id），已暂存 target 的备注变化会立即同步。Composer chip 显示 artifact 的展示名（与标签栏相同的最新版本既定标题）、确切版本与本地化元素名称；`selection.logicalName` 仍是 Host 校验准入所依据的线上身份，不受展示文本影响。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本，并逐字段比对元素与被寻址的 chart catalog——区域 target 还要求 raster 媒体类型，并把选中图片铸造为消息附件；元素 target 既不读 store 也不铸造附件。任一缺失、媒体类型不匹配、格式错误、版本陈旧或目录不匹配的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。空输入框分两行显示备注提示与隐私说明。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
@@ -132,7 +136,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 ## 已知限制与暂缓事项
 
-- **预览只用于五种直接操作** — 标题、轴标签、图例位置、网格与字体变更使用 Runtime 的防抖预览路径。只可引用的元素选择不会渲染或修改图表，也不会在 PNG 上覆盖选择框。引用元素的已记录当前值有颜色时，元素名后才显示色块。
+- **预览只用于六种直接操作** — 标题、副标题、轴标签、图例位置、网格与字体变更使用 Runtime 的防抖预览路径。只可引用的元素选择不会渲染或修改图表，也不会在 PNG 上覆盖选择框。引用元素的已记录当前值有颜色时，元素名后才显示色块。
 - **运行中行的执行摘要是静态的，不是实时 tail** — Runtime 与浏览器之间尚无 stdout 增量通道，因此运行中的 `run_python`/`run_r` 行显示固定的「正在执行…」，而不是画板设想的最新 stdout 行预览，直到该通道存在为止。
 - **内核退出行的「查看退出原因」跳转到失败调用，而非其自身的 `kernel-state` 事件** — 该行复用与其他状态相同的调用级轨迹 `inspect`；跳转到精确的 `science/kernel-state` 事实是后续导航工作。
 - **不支持内存 DataFrame 提升** — 一次只产生内存值（画板中的「df — …」行）的 `run_python`/`run_r` 结果，在 Notebook/Compute 数据地基阶段落地前，没有可提升的产物式 chip。

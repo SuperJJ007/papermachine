@@ -99,7 +99,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
 import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema, textLimitsProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
-import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
+import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse, RpcResult } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
 import type {
   AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequest,
@@ -1479,6 +1479,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { workspace, target, display: delta.split(sep).join('/') }
   }
 
+  /** Resolve a content reader's session while retaining its operation-specific failure message. */
+  async function contentSession(
+    sessionId: SessionId,
+    failureMessage: (error: unknown) => string,
+  ): Promise<RpcResult<SessionReadState>> {
+    try { return { ok: true, value: await readSessionState(sessionId) } } catch (error: unknown) {
+      return { ok: false, error: error instanceof SessionNotFound
+        ? { code: 'session-not-found', message: error.message, details: { sessionId } }
+        : { code: 'internal', message: failureMessage(error), details: {} } }
+    }
+  }
+
   /** One attachment family's finder/reader/wire-encoding trio for {@link readReferencedAttachment}. */
   interface ReferencedAttachmentKind<Ref> {
     /** Authorizes `attachmentId` against the session's own event log, mirroring `ctx.sessionAttachments`'s image/text finder pair. */
@@ -1505,23 +1517,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     attachmentId: string,
     kind: ReferencedAttachmentKind<Ref>,
   ): Promise<RpcResponse<{ attachment: Ref; data: string }>> {
-    let state: SessionReadState
-    try {
-      state = await readSessionState(sessionId)
-    } catch (error: unknown) {
-      if (error instanceof SessionNotFound) {
-        return err(request, {
-          code: 'session-not-found',
-          message: error.message,
-          details: { sessionId },
-        })
-      }
-      return err(request, {
-        code: 'internal',
-        message: `attachment authorization unavailable for session "${sessionId}": ${String(error)}`,
-        details: {},
-      })
-    }
+    const loaded = await contentSession(sessionId, error => `attachment authorization unavailable for session "${sessionId}": ${String(error)}`)
+    if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+    const state = loaded.value
     let ref: Ref | undefined
     try {
       ref = kind.find(state.events, attachmentId)
@@ -2621,23 +2619,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async scienceArtifact(request) {
         const { sessionId } = request.payload
         const versionId = VersionId(String(request.payload.versionId))
-        let state: SessionReadState
-        try {
-          state = await readSessionState(sessionId)
-        } catch (error: unknown) {
-          if (error instanceof SessionNotFound) {
-            return err(request, {
-              code: 'session-not-found',
-              message: error.message,
-              details: { sessionId },
-            })
-          }
-          return err(request, {
-            code: 'internal',
-            message: `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`,
-            details: {},
-          })
-        }
+        const loaded = await contentSession(sessionId, error => `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`)
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
         const store = ctx.get('scienceArtifactStore')
         if (store === undefined) {
           return err(request, {
@@ -2689,13 +2673,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async scienceLibrary(request) {
         const { sessionId } = request.payload
-        let state: SessionReadState
-        try {
-          state = await readSessionState(sessionId)
-        } catch (error: unknown) {
-          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
-          return err(request, { code: 'internal', message: `Science library unavailable for session "${sessionId}": ${String(error)}`, details: {} })
-        }
+        const loaded = await contentSession(sessionId, error => `Science library unavailable for session "${sessionId}": ${String(error)}`)
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
         if (state.header.cwd === undefined) return err(request, { code: 'science-artifact-error', message: 'Session has no workspace directory.', details: { reason: 'NO_WORKSPACE' } })
         const store = ctx.get('scienceArtifactStore')
         if (store === undefined) return err(request, { code: 'internal', message: 'Science library is unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store', details: {} })
@@ -2736,11 +2716,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async workspaceFiles(request) {
         const { sessionId } = request.payload
-        let state: SessionReadState
-        try { state = await readSessionState(sessionId) } catch (error: unknown) {
-          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
-          return err(request, { code: 'internal', message: String(error), details: {} })
-        }
+        const loaded = await contentSession(sessionId, error => String(error))
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
         try {
           const resolved = await resolveWorkspacePath(state, request.payload.path ?? '')
           const children = (await readdir(resolved.target, { withFileTypes: true }))
@@ -2764,11 +2742,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async workspaceFile(request) {
         const { sessionId, path } = request.payload
-        let state: SessionReadState
-        try { state = await readSessionState(sessionId) } catch (error: unknown) {
-          if (error instanceof SessionNotFound) return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
-          return err(request, { code: 'internal', message: String(error), details: {} })
-        }
+        const loaded = await contentSession(sessionId, error => String(error))
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
         try {
           const resolved = await resolveWorkspacePath(state, path)
           const info = await stat(resolved.target)

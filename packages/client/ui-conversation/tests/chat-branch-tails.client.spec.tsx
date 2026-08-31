@@ -22,7 +22,7 @@ import {
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
-import { StatsLine, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
+import { StatsLine, type StatsLineProps } from '../src/client/input/StatsLine.tsx'
 import { zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 

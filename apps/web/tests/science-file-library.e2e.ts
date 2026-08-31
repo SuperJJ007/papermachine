@@ -1,7 +1,7 @@
 // Web e2e scenario: two cold sessions in one project contribute artifacts to
 // one project-level file library, which also exposes a read-only workspace file.
 import { Buffer } from 'node:buffer'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -164,4 +164,46 @@ describe('web e2e: project Science file library', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
+
+  it('maximizes an image from another session and switches file previews directly', async () => {
+    const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
+    await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'shared.png', mediaType: 'image/png',
+      data: new Uint8Array(await readFile(new URL('./fixtures/chart-references/plot.png', import.meta.url))),
+      originSessionId: SessionId(SESSION_A), origin: 'auto', title: 'Shared chart',
+    })
+    await writeFile(`${scaffold.workspaceCwd}/other.csv`, 'label,score\nsecond-file,73\n')
+    await page.reload({ waitUntil: 'load' })
+    await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+    const details = page.locator('[class*="detailsCol"]')
+    await details.getByRole('button', { name: 'Open Shared chart, version 1', exact: true }).click()
+    await details.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()
+    await details.getByRole('button', { name: 'Expand', exact: true }).click()
+    const lightbox = page.getByRole('dialog')
+    await lightbox.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./snapshots/science-file-library/lightbox.expected.md', import.meta.url)),
+      await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), MODE,
+    )
+    await lightbox.getByRole('button', { name: 'Close', exact: true }).click()
+    await details.getByRole('button', { name: 'Close tab', exact: true }).click()
+    await details.getByRole('tab', { name: 'Project files', exact: true }).click()
+    await details.getByRole('button', { name: /seed\.csv/ }).click()
+    await details.getByRole('table', { name: 'seed.csv' }).waitFor()
+    await details.getByRole('button', { name: 'Artifact library', exact: true }).click()
+    await details.getByRole('button', { name: /other\.csv/ }).click()
+    await details.getByRole('table', { name: 'other.csv' }).waitFor()
+    await details.getByRole('tab', { name: 'seed.csv', exact: true }).click()
+    await details.getByRole('table', { name: 'seed.csv' }).waitFor()
+    expect(await details.getByText('second-file', { exact: true }).count()).toBe(0)
+    await details.getByRole('tab', { name: 'other.csv', exact: true }).click()
+    await details.getByRole('table', { name: 'other.csv' }).waitFor()
+    expect(await details.getByText('project', { exact: true }).count()).toBe(0)
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./snapshots/science-file-library/file-switch.expected.md', import.meta.url)),
+      await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
+    )
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
 })

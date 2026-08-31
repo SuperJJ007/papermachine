@@ -195,7 +195,7 @@ export default defineConfig({
         'packages/client/ui-user-questions/src/client/QuestionComposer.tsx',
         'packages/client/ui-primitives/src/Menu.tsx',
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
-        'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
+        'packages/client/ui-workspace/src/client/browser/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
         'packages/client/ui-renderer/src/client/*',
         // This isolated settings-scope lifecycle has complete unit coverage;

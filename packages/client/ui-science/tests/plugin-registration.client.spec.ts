@@ -3,6 +3,8 @@
 
 import { createElement, type ComponentType } from 'react'
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
@@ -129,7 +131,8 @@ function setup(sessionsOverride?: unknown) {
     registerTranscriptDetailVisibility: vi.fn(() => () => {}), cancel: conversationCancel,
   }
   ctx.provide('conversation', conversation as never)
-  ctx.provide('conversationEvents', { register: vi.fn(), registerUserInput: vi.fn(() => () => {}) } as never)
+  const registerUserInput = vi.fn<Context['conversationEvents']['registerUserInput']>(() => () => {})
+  ctx.provide('conversationEvents', { register: vi.fn(), registerUserInput } as never)
   const trajectoryRegisterVisibility = vi.fn<TrajectorySubviewRegistry['registerVisibility']>(() => () => {})
   const trajectorySelect = vi.fn()
   ctx.provide('trajectorySubviews', {
@@ -138,7 +141,7 @@ function setup(sessionsOverride?: unknown) {
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   return {
     ctx, slots, scienceEdits, conversation, conversationCancel, conversationOpenDetailsView,
-    trajectoryRegisterVisibility, trajectorySelect,
+    trajectoryRegisterVisibility, trajectorySelect, registerUserInput,
     readScienceLibrary, readWorkspaceFiles, readWorkspaceFile,
   }
 }
@@ -171,6 +174,40 @@ describe('ui-science apply', () => {
     expect(slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     expect(slots.entries('trajectory.view')).toHaveLength(0)
     expect(slots.entries('conversation.details.header.actions')).toHaveLength(0)
+  })
+
+  it('projects viewer edits as user instructions, images, and exact element or region references', async () => {
+    const { ctx, registerUserInput } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const registration = must(registerUserInput.mock.calls[0])
+    expect(registration[0]).toBe('science-edit')
+    const project = registration[1]
+    const image = { type: 'image' as const, attachment: {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), mediaType: 'image/png' as const, bytes: 4, width: 1, height: 1,
+    } }
+    const element = (elementId: string, axes: number | null): ScienceEditSelection => ({
+      artifactId: 'chart-1' as ScienceEditSelection['artifactId'], logicalName: 'trend', version: 2,
+      target: { kind: 'element', elementId, elementKind: 'title', axes, label: null, current: 'Before' },
+    })
+    const message: SessionEvent<'user/message'>['data'] = {
+      id: 'edit-1' as SessionEvent<'user/message'>['data']['id'], role: 'user',
+      content: [{ type: 'text', text: 'Model-facing context' }, image],
+      source: { kind: 'science-edit', instruction: 'Change the title', targets: [
+        { ...element('axes[0].title', 0), comment: 'Shorter' },
+        element('axes[1].title', null), element('figure.title', null),
+        { ...element('figure.title', null), target: { kind: 'normalized-region', x: 0.1, y: 0.2, width: 0.3, height: 0.4 } },
+      ] },
+    }
+    expect(project(message)).toEqual({
+      content: [{ type: 'text', text: 'Change the title' }, image],
+      references: [
+        'trend v2 · panel.kindTitle · panel.panelSuffix: Shorter',
+        'trend v2 · panel.kindTitle', 'trend v2 · panel.kindTitle', 'trend v2 · edit.regionTarget',
+      ],
+    })
+    expect(() => project({ ...message, source: { kind: 'user' } })).toThrow('Science input requires a science-edit source')
+    await fiber.dispose()
   })
 
   it('the run_python/run_r toolview registrations inject a cancel that drives the existing whole-turn Stop', async () => {

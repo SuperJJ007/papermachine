@@ -1,0 +1,24 @@
+- tablist "File library":
+  - tab "Artifacts"
+  - tab "Project files" [selected]
+- button "Close details"
+- tablist "Open artifacts":
+  - tab "seed.csv"
+  - button "Close seed.csv":
+    - img
+  - tab "other.csv" [selected]
+  - button "Close other.csv":
+    - img
+- button "‹ File library"
+- strong: other.csv
+- table "other.csv":
+  - rowgroup:
+    - row "Sort by label Sort by score":
+      - columnheader "Sort by label":
+        - button "Sort by label": label
+      - columnheader "Sort by score":
+        - button "Sort by score": score
+  - rowgroup:
+    - row "second-file 73":
+      - cell "second-file"
+      - cell "73"

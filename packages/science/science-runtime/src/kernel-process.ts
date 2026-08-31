@@ -2,14 +2,14 @@
  * One confined persistent Science kernel subprocess speaking the kernel wire
  * protocol (`stdin` RUN/CHART_EXTRACT/CHART_APPLY/EXIT request frames, response-FIFO READY/DONE/CHART frames): spawn
  * sequence, execute-serialization, cooperative interrupt passthrough, and
- * teardown. Session-scoped lifecycle is out of scope here: this module knows
+ * teardown. An owned forwarding process reads the FIFO; Host reads its
+ * stdout pipe without retaining a filesystem worker. Session-scoped lifecycle is out of scope here: this module knows
  * nothing about session events, kernel epochs, idle timers, or durable end
  * reasons beyond the generic diagnostic string `end()` accepts.
  * @module @deepseek-ai/dsh-science-runtime/kernel-process
  */
 
-import { constants as fsConstants, createReadStream } from 'node:fs'
-import { open, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { deadline } from '@deepseek-ai/dsh-timeout'
@@ -125,7 +125,10 @@ export interface KernelChartExtractRequest {
 }
 
 /** One private-file chart operation request. */
-export interface KernelChartApplyRequest extends KernelChartExtractRequest {}
+export interface KernelChartApplyRequest extends KernelChartExtractRequest {
+  /** Operation cancellation; abort faults the outstanding exchange and terminates the kernel. */
+  readonly signal?: AbortSignal
+}
 
 /** Parsed CHART response for one extraction request. */
 export interface KernelChartFrame {
@@ -193,53 +196,51 @@ async function unlinkFifo(fifoPath: string): Promise<void> {
   }
 }
 
-/**
- * Force-complete a response FIFO's blocking read-side `open()` when it may
- * still be stuck in the libuv threadpool because no writer ever connected —
- * a confine/spawn failure, or a driver that never reached its own
- * open-for-write before the READY deadline. Opening the write
- * end non-blockingly rendezvous with a still-pending blocking read-open and
- * lets it return; closing that transient writer immediately afterward
- * leaves no writer behind. Best-effort and always safe to call: when the
- * read side already opened successfully this is a harmless no-op class
- * (POSIX tolerates a second writer opening and closing), and every failure
- * here (the path already gone, `ENXIO` from a benign ordering race) is
- * swallowed because the caller's own destroy/unlink cleanup is what
- * actually matters.
- * @param fifoPath - absolute path of the response FIFO.
- */
-async function releaseBlockedFifoOpen(fifoPath: string): Promise<void> {
-  let handle: Awaited<ReturnType<typeof open>> | undefined
+/** Forward FIFO bytes over a subprocess pipe without blocking Host filesystem workers. */
+async function startResponseReader(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<SubprocessHandle> {
+  const cat = await subprocess.resolveExecutable('cat')
+  return subprocess.spawn({
+    argv: [cat, fifoPath],
+    cwd,
+    stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 4_096 } },
+    graceMs: DESCENDANT_GRACE_MS,
+    environmentBase: 'empty',
+  })
+}
+
+/** Stop a reader that may still be blocked opening its FIFO, retaining the provider's quiescence observation. */
+async function stopResponseReader(reader: SubprocessHandle): Promise<Quiescence> {
   try {
-    handle = await open(fifoPath, fsConstants.O_WRONLY | fsConstants.O_NONBLOCK)
+    reader.terminate()
   } catch {
-    return
+    // A failed termination request leaves quiesce responsible for retry and exit observation.
   }
-  try {
-    await handle.close()
-  } catch {
-    // A transient unblocking writer's own close is best-effort.
-  }
+  return quiesce(reader)
 }
 
 /**
  * Full teardown for a kernel that failed anywhere between response-FIFO
  * creation and a successful READY handshake: quiesce the
- * subprocess when one was spawned, destroy the host's read stream, release
- * a still-blocked read-side open so its libuv threadpool worker is freed,
- * then remove the FIFO file.
+ * subprocess when one was spawned, destroy the host's pipe reader, then
+ * remove the FIFO file.
  * @param handle - the spawned subprocess handle, or `undefined` when spawn itself never ran.
  * @param fifoPath - absolute path of the response FIFO.
- * @param readStream - the host's response-FIFO read stream.
+ * @param reader - the FIFO forwarding subprocess, if spawned.
  */
 async function cleanupOnStartFailure(
   handle: SubprocessHandle | undefined,
   fifoPath: string,
-  readStream: Readable,
+  reader: SubprocessHandle | undefined,
 ): Promise<void> {
-  readStream.destroy()
-  await releaseBlockedFifoOpen(fifoPath)
-  if (handle !== undefined) await quiesce(handle)
+  if (handle !== undefined) {
+    const result = await quiesce(handle)
+    if (!result.quiescent) await result.eventualQuiescence
+  }
+  if (reader !== undefined) {
+    const result = await stopResponseReader(reader)
+    if (!result.quiescent) await result.eventualQuiescence
+    reader.stdout?.destroy()
+  }
   await unlinkFifo(fifoPath)
 }
 
@@ -333,6 +334,7 @@ export class KernelProcess {
   private constructor(
     private readonly handle: SubprocessHandle,
     private readonly fifoPath: string,
+    private readonly reader: SubprocessHandle,
     private readonly readStream: Readable,
   ) {
     const stdin = handle.stdin
@@ -351,6 +353,7 @@ export class KernelProcess {
       (outcome) => { this.settleExit(outcome.exitCode, outcome.signal) },
       () => { this.settleExit(null, null) },
     )
+    void reader.done.catch((error: unknown) => { this.onFifoError(error) })
   }
 
   /**
@@ -376,16 +379,15 @@ export class KernelProcess {
     }
     const fifoPath = join(kernelScratch.directory, 'resp.fifo')
     await createResponseFifo(services.subprocess, kernelScratch.directory, fifoPath)
-    // Open the read side before spawning the kernel: the safer FIFO-ordering
-    // default — no window where the kernel's own
-    // open-for-write races an as-yet-nonexistent reader.
-    const readStream = createReadStream(fifoPath, { encoding: 'utf8' })
-    // Everything from here through a successful READY handshake shares one
-    // failure path: a confine/spawn throw, or an awaitReady
-    // rejection, must release the FIFO's read-side open and remove the FIFO
-    // file the same way, whether or not a subprocess was ever spawned.
+    let reader: SubprocessHandle | undefined
     let handle: SubprocessHandle | undefined
     try {
+      // The helper owns blocking FIFO open/read; Host observes its ordinary
+      // subprocess pipe, including EOF on macOS and Linux.
+      reader = await startResponseReader(services.subprocess, kernelScratch.directory, fifoPath)
+      const readStream = reader.stdout
+      if (readStream === undefined) throw new Error('science-runtime: FIFO reader was not spawned with a stdout pipe')
+      readStream.setEncoding('utf8')
       const confined = confineInterpreterArgv(
         services.session,
         services.sessionScratch,
@@ -413,11 +415,11 @@ export class KernelProcess {
         environmentBase: 'empty',
         env: kernelEnvironment(binding, services.sessionScratch, kernelScratch),
       })
-      const kernel = new KernelProcess(handle, fifoPath, readStream)
+      const kernel = new KernelProcess(handle, fifoPath, reader, readStream)
       await kernel.awaitReady(kernelStartTimeoutMs, signal)
       return kernel
     } catch (error) {
-      await cleanupOnStartFailure(handle, fifoPath, readStream)
+      await cleanupOnStartFailure(handle, fifoPath, reader)
       throw error
     }
   }
@@ -491,10 +493,11 @@ export class KernelProcess {
 
   /**
    * Write one CHART_APPLY frame and await its matching CHART response.
-   * A timeout retires the protocol-faulted kernel through the owning KernelSet.
+   * A timeout or cancellation faults and terminates the process; its owner
+   * must quiesce it before releasing its resources.
    * The caller owns both paths inside run scratch; the result PNG may be an
    * ephemeral preview and is never published merely by this protocol exchange.
-   * @param request - source run id, private request/result paths, and deadline.
+   * @param request - source run id, private request/result paths, deadline, and cancellation.
    * @returns the matching CHART response.
    */
   applyChart(request: KernelChartApplyRequest): Promise<KernelChartFrame> {
@@ -508,19 +511,22 @@ export class KernelProcess {
     assertNoFrameDelimiters(request.resultPath, 'CHART_APPLY resultPath')
     const resolvers = Promise.withResolvers<KernelChartFrame>()
     this.pending = { kind: 'chart', runId: request.runId, resolve: resolvers.resolve, reject: resolvers.reject }
-    let timeout: NodeJS.Timeout | undefined
+    const bound = deadline(request.signal, request.timeoutMs, 'CHART_APPLY_TIMEOUT')
+    const abort = (): void => {
+      this.failProtocol(new KernelProtocolError('science-runtime: chart application was cancelled or timed out'))
+    }
+    bound.signal.addEventListener('abort', abort, { once: true })
     try {
       this.stdin.write(`CHART_APPLY\t${request.runId}\t${request.requestPath}\t${request.resultPath}\n`)
-      timeout = setTimeout(() => {
-        this.failProtocol(new KernelProtocolError(
-          `science-runtime: kernel did not finish chart application within ${String(request.timeoutMs)}ms`,
-        ))
-      }, request.timeoutMs)
+      if (bound.signal.aborted) abort()
     } catch (error) {
       this.pending = undefined
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+      resolvers.reject(error instanceof Error ? error : new Error(String(error)))
     }
-    return resolvers.promise.finally(() => { clearTimeout(timeout) })
+    return resolvers.promise.finally(() => {
+      bound.signal.removeEventListener('abort', abort)
+      bound[Symbol.dispose]()
+    })
   }
 
   /** Deliver a cooperative SIGINT request to the kernel process; a pure {@link SubprocessHandle.interrupt} passthrough. */
@@ -529,8 +535,8 @@ export class KernelProcess {
   }
 
   /**
-   * Best-effort EXIT frame, then the seam's quiesce escalation, then FIFO
-   * stream/file cleanup. Idempotent: a second call awaits the same teardown.
+   * Best-effort EXIT frame, then quiesce the interpreter and its FIFO
+   * forwarder, then stream/file cleanup. Idempotent: a second call awaits the same teardown.
    * Returns the escalation's {@link Quiescence} verdict rather than
    * discarding it: a caller responsible for same-id
    * quarantine bookkeeping (`KernelSet.teardown`) must keep quarantine
@@ -553,9 +559,18 @@ export class KernelProcess {
       // Best-effort: a closed or broken stdin means the kernel is already gone.
     }
     const quiescence = await quiesce(this.handle)
+    const readerQuiescence = await stopResponseReader(this.reader)
     this.readStream.destroy()
     await unlinkFifo(this.fifoPath)
-    return quiescence
+    if (quiescence.quiescent && readerQuiescence.quiescent) {
+      return { quiescent: true, forced: quiescence.forced || readerQuiescence.forced }
+    }
+    return {
+      quiescent: false,
+      forced: true,
+      eventualQuiescence: Promise.all([quiescence, readerQuiescence].map(result =>
+        result.quiescent ? Promise.resolve(true) : result.eventualQuiescence)).then(results => results.every(Boolean)),
+    }
   }
 
   private awaitReady(timeoutMs: number, signal: AbortSignal | undefined): Promise<void> {
@@ -570,6 +585,7 @@ export class KernelProcess {
       this.failProtocol(new KernelProtocolError(`science-runtime: kernel did not send READY within ${String(timeoutMs)}ms`))
     }
     bound.signal.addEventListener('abort', onTimeout, { once: true })
+    if (bound.signal.aborted) onTimeout()
     // A process death before any line was parsed never reaches failProtocol
     // through onFrameLine, so also fail the handshake when exit settles first.
     void this.exited.then((fact) => {

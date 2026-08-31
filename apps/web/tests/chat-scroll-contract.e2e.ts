@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { expandToolGroups, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -753,8 +753,7 @@ describe('web e2e: long Chat scroll contract', () => {
       // default Tool group; the transcript is virtualized and pinned to the
       // floor, so the only closed group mounted here is that one. Expand it
       // so the member row exists before focusing it.
-      const closedGroups = world.page.locator('[data-tool-group] > button[aria-expanded="false"]')
-      while (await closedGroups.count() > 0) await closedGroups.first().click()
+      await expandToolGroups(world.page)
 
       // Focus rides the last seeded tool row (a tabbable button whose keydown
       // handler passes scrolling keys through). End first normalizes the

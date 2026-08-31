@@ -6,38 +6,25 @@ import type {
   IApiClient, HostFrame, MuxFrame, RpcError, RpcRequest, RpcResult, SessionId,
   SessionSummary, SubagentAddress, SubagentCatalog, JobView, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import type { SessionListEntry, TitledSessionSummary } from './lineage.ts'
 import { flattenLineage } from './lineage.ts'
-import type { PendingInteractionStatus } from './pending.ts'
-// Type-only merge edge: the title domain's client-namespace outlet declares
-// the 'title' projection key this manager projects into list rows (and any
-// useProjection('title') consumer reads). Zero value imports by construction.
+import type { PendingInteractionStatus } from '../contract/pending.ts'
 import type {} from '@deepseek-ai/dsh-session-title/client'
-import { Notifier } from './notifier.ts'
+import { Notifier } from '../notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
+import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from '../contract/sessions.ts'
 
-/**
- * List arrival lifecycle, orthogonal to the pull-activity `state` axis:
- * `pending` (no successful pull yet — an empty items array means "nothing
- * arrived", not "nothing exists") → `ready` (at least one pull landed).
- * Monotone: `ready` never steps back — later pull failures and reconnect
- * re-pulls ride the `state`/`error` axis, which is where failure is modeled
- * (no `error` phase here; that would duplicate `state`).
- */
-export type SessionListPhase = 'pending' | 'ready'
+// Value import from the inline-safe wire layer (not the connection plugin):
+// plugin-to-plugin value imports are a bundle purity error.
 
-/** Request-local content hit returned to sidebar search consumers. */
-export interface SessionSearchResultItem {
-  sessionId: SessionId
-  snippet: string
-}
+// Type-only merge edge: the title domain's client-namespace outlet declares
+// the 'title' projection key this manager projects into list rows (and any
+// useProjection('title') consumer reads). Zero value imports by construction.
 
 /** Immutable session-list snapshot for useSessionList. */
 export interface SessionListSnapshot {
@@ -52,12 +39,6 @@ export interface SessionListSnapshot {
   /** Background jobs per session; an absent key is an empty set. */
   jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   currentAddress: SubagentAddress | undefined
-}
-
-/** One parent-addressed durable catalog projected through the sessions snapshot. */
-export interface SubagentCatalogSnapshot extends SubagentCatalog {
-  state: 'loading' | 'ready' | 'error'
-  error: RpcError | null
 }
 
 interface CatalogInflight {

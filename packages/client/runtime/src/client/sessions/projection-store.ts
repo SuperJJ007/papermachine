@@ -10,7 +10,7 @@
  */
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { ObservableSnapshot } from '../contract/store.ts'
-import { Notifier } from './notifier.ts'
+import { Notifier } from '../notifier.ts'
 
 // The single projection type table, typed end to end (host unit, wire block,
 // client store, React hook) — the Service Definition package's pure-type outlet

@@ -15,87 +15,26 @@
  * survives frozen (read-only view) until the stage moves on.
  */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type {
-  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView, WorkspaceId,
-} from '@deepseek-ai/dsh-api-remotes/client'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
+import type { IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, WorkspaceId } from '@deepseek-ai/dsh-api-remotes/client'
 import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type {
   HostObservable, SessionMaybeProvideInfo, SessionProvideInfo,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
-import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
+import { createScope, scopeOf as scopeTagOf } from '../agent-scope.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
-import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
-import type { PendingInteractionStatus } from './pending.ts'
+import type { SessionSearchResultItem } from '../contract/sessions.ts'
 import { SessionProvideChannel } from './provide.ts'
 import type { Session } from './session.ts'
+import type { SessionSummary, SessionListState, SessionBinding, SessionProvideDescriptor } from '../contract/sessions.ts'
 
-/** Session list row projected from the host list RPC plus live stream increments. */
-export interface SessionSummary {
-  id: SessionId
-  /** Latest durable log-backed title, absent until the host projects one. */
-  title?: string
-  /** Human-facing label: durable title, project basename, then session id. */
-  displayTitle: string
-  cwd?: string
-  /**
-   * Agent preset this session's agent was composed from; absent when the
-   * deployment composes no presets. The session header labels what the
-   * session actually runs rather than the deployment's current default.
-   */
-  agentPreset?: string
-  parentId?: SessionId
-  /** Coarse durable origin for navigation filtering; not a continuation capability. */
-  origin?: 'subagent'
-  running: boolean
-  /** User interaction currently blocking this session (sidebar amber-dot state). */
-  pendingInteraction?: PendingInteractionStatus
-  /** Finished while not selected and not yet opened — the sidebar's green "done" reminder. Absent = false. */
-  completed?: boolean
-  /**
-   * Empty-log bit (host summary derivation mirror). New Session reuses a blank
-   * one targeting the same workspace. Filtering stays with the consumer: the
-   * store carries every row, while the Workspace browser shows only the
-   * selected blank entry.
-   */
-  blank: boolean
-  updatedAt: number
-  /** Current host-computed projection values retained by the object layer. */
-  projectionValues?: Readonly<Partial<SessionProjectionMap>>
-}
-
-/**
- * Session list store shape. `current` rides the same snapshot (arbitrated:
- * the single useSessions standard hook reads list and selection together —
- * sidebar highlighting and SessionProvider share one fact source).
- */
-export interface SessionListState {
-  /** Host-list order; addressed breadcrumb-only rows are excluded. */
-  ids: SessionId[]
-  /** Host rows plus the current addressed subagent route used by navigation. */
-  byId: Record<SessionId, SessionSummary>
-  current: SessionId | undefined
-  /** Arrival lifecycle projected 1:1 from the manager snapshot (see SessionListPhase): empty-with-ready means "truly no sessions". */
-  phase: SessionListPhase
-  /** Direct durable catalogs keyed by their selected parent address. */
-  subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
-  /**
-   * Background jobs each session can see, mirrored last-wins from
-   * `session/jobs`. A missing key is an empty set — the Host sends no baseline
-   * for a session without tasks — so consumers read absence, never a sentinel.
-   */
-  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
-  /** Current session's catalog-derived address, absent on ordinary navigation. */
-  currentAddress: SubagentAddress | undefined
-}
+// Value import from the inline-safe wire layer (not the connection plugin):
+// plugin-to-plugin value imports are a bundle purity error.
 
 /**
  * Persisted navigation cell: address survives refresh for correct history
@@ -141,18 +80,8 @@ export class SessionForkError extends Error {
   }
 }
 
-/** Session assembly handle for SessionProvider/inject factories (identity-stable per session). */
-export interface SessionBinding {
-  readonly sessionId: SessionId
-  /** The outward session face only — feature code never sees the concrete class. */
-  readonly session: SessionFace
-  readonly ctx: AgentContext
-}
-
-// Scope primitives live in ../agents/scope.ts (the client mirror of host
-// dsh-scope, keyed by Agent identity); re-exported here so existing
-// consumers keep their import site.
-export { scopeOf } from '../agents/scope.ts'
+// Shared scope primitives mirror host dsh-scope, keyed by Agent identity.
+export { scopeOf } from '../agent-scope.ts'
 
 /**
  * Workspace display title of a session cwd: the path's last non-empty
@@ -207,28 +136,6 @@ interface ScopeRecord {
   session: Session
   /** Render-layer standard-props bundle (identity-stable per scope; the renderer's per-info caches key off it). */
   provideInfo: SessionProvideInfo
-}
-
-/** One plugin's per-session standard-props contribution (see {@link SessionRuntime.provide}). */
-export interface SessionProvideContribution {
-  /** Bare observable sources, keyed by hook base name ('input' → useInput). */
-  hooks?: Record<string, HostObservable<unknown>>
-  /** Stable plain members (action callbacks etc.), spread into standard props verbatim. */
-  props?: Record<string, unknown>
-}
-
-/**
- * Static declaration plus per-session resolver for one standard-kit
- * contribution. The declared names let the renderer construct the same hook
- * and prop surface while no session is current.
- */
-export interface SessionProvideDescriptor {
-  /** Hook base names (`input` becomes `useInput`). */
-  hooks?: readonly string[]
-  /** Plain standard-prop names. */
-  props?: readonly string[]
-  /** Resolve every declared member for one definite session. */
-  resolve(binding: SessionBinding): SessionProvideContribution
 }
 
 /** Root sessions service: list store, current selection, object-layer manager, scope tree, bindings, and breadcrumb routes. */

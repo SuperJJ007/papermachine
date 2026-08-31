@@ -4,6 +4,8 @@
 
 Project 级 Science artifact 注册表与内容寻址版本存储。Session 只是某个 artifact 的生产者、消费者与溯源来源——从不拥有它:同一 Project 内的第二个 Session 可以读取、引用并追加第一个 Session 创建的 artifact,artifact 的生命周期不随产生它的 Session 结束。设计依据:[project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.zh.md)。
 
+加载服务不会加载 SQLite。引擎仅在打开项目数据库时导入 `node:sqlite`，空闲 Web Host 不会触发数据库启动工作或 SQLite 实验性功能告警。
+
 ## Project 身份
 
 一个 Project 就是一个工作区目录。`openProject(workspacePath)` 通过工作区下的标记文件 `<workspace>/.papermachine/project.json`(`{projectId, createdAt}`)解析其身份,首次使用时创建该文件。存储自身在 `<storeRoot>/project.json` 保留一份记录(`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`),每次打开时刷新——这份记录本身就是注册表,不存在另外的全局索引文件。

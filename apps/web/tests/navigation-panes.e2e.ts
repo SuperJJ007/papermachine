@@ -1,3 +1,4 @@
+import { expandToolGroups } from './support.ts'
 // Web e2e scenarios: navigation & panes — the Trajectory view and timing
 // overview, its local details inspector, and sidebar search, all over ONE rich
 // two-turn seeded fixture rendered purely from the log (the seeded-history
@@ -75,16 +76,6 @@ async function ensureSeedOpen(page: Page): Promise<void> {
     await search.fill('')
     await expect.poll(() => search.inputValue(), { timeout: 5_000 }).toBe('')
   }
-}
-
-// Adjacent tool calls fold into one collapsed-by-default Tool group; the
-// fixture's turn-1 bash-then-two-reads run folds into a single group, so
-// member rows like [data-sample="bash"] don't render until it opens. The
-// header's category text is mixed (run + read) and thus not worth pinning,
-// so this expands by the group's own toggle attribute instead.
-async function expandToolGroups(page: Page): Promise<void> {
-  const groups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
-  while (await groups.count() > 0) await groups.first().click()
 }
 
 describe('web e2e: navigation & panes over a rich seeded session', () => {
@@ -447,6 +438,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // tool-row interaction): open it if this fresh view leaves it collapsed.
     // Expanded, the recorded command's own output sits in the message flow,
     // derived from the logged call/result presentations alone.
+    await expandToolGroups(page)
     const bashRow = page.locator('[data-sample="bash"]').first()
     await bashRow.waitFor({ timeout: 15_000 })
     if (await bashRow.getAttribute('aria-expanded') !== 'true') await bashRow.click()

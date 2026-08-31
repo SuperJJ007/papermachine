@@ -221,7 +221,7 @@ describe('Science process model', () => {
     expect(model.dialogues.find(item => item.seq === 21)?.turn).toBe(2)
     expect(model.environment?.languages).toEqual(['Python'])
   })
-  it('retains orphan artifacts, assigns out-of-turn edits to the last turn, and tolerates empty dialogue', () => {
+  it('keeps orphan records outside request groups and tolerates empty dialogue', () => {
     const human = fixture().science.artifacts[3]!
     const orphan = fixture().science.artifacts[0]!
     const nodes = [
@@ -231,7 +231,8 @@ describe('Science process model', () => {
       step(4, 1, [], 2),
     ] as ConversationNode[]
     const model = build(nodes, { artifacts: [orphan, human], runs: [run('unseen', 1)] }, new Map([[2, { startTime: 30_000 }]]))
-    expect(model.groups[0]).toMatchObject({ turn: 2, stepCount: 0, durationMs: 500, steps: [] })
+    expect(model.groups).toEqual([])
+    expect(model).toMatchObject({ unassigned: { runs: [run('unseen', 1)], artifacts: [orphan] } })
     expect(model.humanEdits[0]?.turn).toBe(2)
     expect(model.dialogues[0]?.turn).toBe(1)
     const ongoing = build([step(1, 1, [], 2)], { artifacts: [human] }, new Map([[1, { startTime: 0 }]]))
@@ -252,18 +253,24 @@ describe('Science process model', () => {
     expect(model.groups[1]?.steps[0]?.artifacts).toEqual([])
     const missingRun = build(nodes, { artifacts: [artifact] })
     expect(missingRun.groups.flatMap(group => group.steps.flatMap(row => row.artifacts))).toEqual([])
-    expect(missingRun.groups[1]?.artifacts).toHaveLength(1)
+    expect(missingRun.groups[1]?.artifacts).toHaveLength(0)
+    expect(missingRun).toMatchObject({ unassigned: { artifacts: [artifact] } })
   })
   it('uses call ownership for a version without run provenance', () => {
     const artifact = { ...fixture().science.artifacts[0]!, runId: undefined, toolCallId: 'produce' } as unknown as ScienceClientProjection['artifacts'][number]
     const model = build([step(1, 1, [{ name: 'run_python', callId: 'produce' }])], { artifacts: [artifact] })
     expect(model.groups[0]?.steps[0]?.artifacts).toMatchObject([{ logicalName: 'chart.png' }])
   })
-  it('retains a produced artifact in the last turn when its call is absent from the conversation', () => {
-    const model = build([step(1, 1, [], 2)], {
-      runs: [run('produce', 8)], artifacts: [fixture().science.artifacts[0]!],
-    })
-    expect(model.groups).toMatchObject([{ turn: 2, steps: [], artifacts: [{ logicalName: 'chart.png', version: 1 }] }])
+  it('only assigns retained history after its producing call is loaded', () => {
+    const artifact = { ...fixture().science.artifacts[0]!, turn: 50, toolCallId: 'annotate' } as ScienceClientProjection['artifacts'][number]
+    const science = { runs: [run('produce', 8), run('current', 9)], artifacts: [artifact] }
+    const recent = step(50, 1, [{ name: 'run_python', callId: 'current' }], 50)
+    const model = build([recent], science)
+    expect(model.groups).toMatchObject([{ turn: 50, artifacts: [], runs: [{ run: run('current', 9) }], durationMs: 500 }])
+    expect(model).toMatchObject({ unassigned: { runs: [run('produce', 8)], artifacts: [artifact] } })
+    const loaded = build([step(1, 1, [{ name: 'run_python', callId: 'produce' }]), recent], science)
+    expect(loaded.groups[0]).toMatchObject({ turn: 1, artifacts: [{ logicalName: 'chart.png', version: 1 }] })
+    expect(loaded).toMatchObject({ unassigned: { runs: [], artifacts: [] } })
   })
   it('expands terminal epochs and places sorted markers before their containing or next turn', () => {
     const base = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprintPreview: 'abc' }
@@ -288,6 +295,24 @@ describe('Science process model', () => {
 })
 
 describe('Science process presentation', () => {
+  it('keeps unassigned history outside request cards and opens exact artifact versions', () => {
+    const artifact = fixture().science.artifacts[0]!
+    const { openArtifact } = mount([step(50, 1, [{ name: 'run_python', callId: 'current' }], 50)],
+      projection({ runs: [run('produce', 8), run('current', 9)], artifacts: [artifact] }))
+    const history = screen.getByRole('region', { name: 'Unassigned history' })
+    expect(history.textContent).toContain('1 runs and 1 artifact versions')
+    expect(history.closest('[data-actor]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Expand steps · Steps 1 · Runs 1 · 500 ms' })).toBeTruthy()
+    fireEvent.click(within(history).getByRole('button', { name: 'chart.png v1' }))
+    expect(openArtifact).toHaveBeenCalledWith({ artifactId: artifact.artifactId, version: 1 })
+  })
+
+  it('shows retained runs when no conversation nodes are loaded', () => {
+    mount([], projection({ runs: [run('produce', 8)] }))
+    expect(screen.getByRole('region', { name: 'Unassigned history' }).textContent).toContain('1 runs and 0 artifact versions')
+    expect(screen.queryByText('Intent groups will appear after a Science research conversation starts.')).toBeNull()
+  })
+
   it('bounds source code and arbitrary arguments, with separate truncation notices', () => {
     mount([step(1, 1, [{ name: 'run_python', argsRaw: JSON.stringify({ code: 'x'.repeat(100_001), context: 'y'.repeat(100_001) }) }])])
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))

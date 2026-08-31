@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Project-owned Science artifact registry and content-addressed version store. Sessions are producers, consumers, and provenance of an artifact — never its owner: a second session in the same project reads, references, and appends to an artifact a first session created, and an artifact outlives the session that produced it. Design rationale: [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md).
 
+Loading the service does not load SQLite. The engine imports `node:sqlite` only when it opens a project database; an idle Web host does not incur database startup work or SQLite experimental warnings.
+
 ## Project identity
 
 A project is a workspace directory. `openProject(workspacePath)` resolves its identity from a marker file at `<workspace>/.papermachine/project.json` (`{projectId, createdAt}`), creating one on first use. The store keeps its own record at `<storeRoot>/project.json` (`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`), refreshed on every open — this record is the registry; there is no separate global index.

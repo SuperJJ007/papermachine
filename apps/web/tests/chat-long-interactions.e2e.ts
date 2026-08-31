@@ -194,12 +194,11 @@ describe('web e2e: long Chat interaction contract', () => {
     const expectedUserText = textContent(branchUserEvent.data.content)
 
     // The last turn's two seeded bash calls fold into one collapsed-by-
-    // default Tool group; its header is already mounted (the setup above
-    // waited for this turn's assistant text), but the member rows —
-    // including [data-chat-call-id] — don't render until it opens.
-    const closedGroups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
-    while (await closedGroups.count() > 0) await closedGroups.first().click()
-    await wheelUntilMounted(page, `[data-chat-call-id="${TARGET_CALL_2}"]`, -1_100)
+    // default Tool group; scroll to its own group key (not the member rows,
+    // which don't render until it opens) and expand it.
+    const groupSelector = `[data-tool-group="tool-group:${conversationContextKey('tool-call', TARGET_CALL_1)}"]`
+    await wheelUntilMounted(page, groupSelector, -1_100)
+    await page.locator(`${groupSelector} > button[aria-expanded="false"]`).click()
     const toolUserKey = messageKey(toolUserEvent)
     const toolAssistantKey = assistantKey(toolAssistantEvent)
     const toolUserRow = page.locator(`[data-chat-anchor-key="${toolUserKey}"]`)

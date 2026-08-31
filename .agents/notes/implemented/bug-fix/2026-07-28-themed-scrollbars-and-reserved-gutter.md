@@ -8,7 +8,7 @@ English | [中文](2026-07-28-themed-scrollbars-and-reserved-gutter.zh.md)
 
 `design-platform.css` declares four `--dsw-alias-scrollbar-*` tokens (`bg-l1`, `bg-l2`, `hover-l1`, `hover-l2`) in both palettes, and no rule anywhere in the client read them. A defined token with no consumer is not a theme: every scrolling region rendered the user agent's own scrollbar, which knows nothing about the palette, so the dark theme showed a light native bar against dark surfaces.
 
-The visible symptom that surfaced the gap was elsewhere. The workspace browser's session list (`.list` in `WorkspaceBrowser.module.css`) is the sidebar's only scrolling region, and each row's trailing content sits flush against the row's 8px right padding — `.time` in `rows/Rows.module.css` is `flex: none`, as are the action buttons that replace it on hover. An overlaid scrollbar therefore painted on top of the relative timestamp. Reserving space in that one list would have left the bar itself unthemed, so the two halves are one change.
+The visible symptom that surfaced the gap was elsewhere. The workspace browser's session list (`.list` in `WorkspaceBrowser.module.css`) is the sidebar's only scrolling region, and each row's trailing content sits flush against the row's 8px right padding — `.time` in `browser/rows/Rows.module.css` is `flex: none`, as are the action buttons that replace it on hover. An overlaid scrollbar therefore painted on top of the relative timestamp. Reserving space in that one list would have left the bar itself unthemed, so the two halves are one change.
 
 ## Decision
 

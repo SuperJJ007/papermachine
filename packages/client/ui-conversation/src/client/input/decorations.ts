@@ -4,7 +4,7 @@
  * highlight, the claim hint as ghost text). Zero React — the skeleton renders
  * the instructions; tests drive this directly.
  */
-import type { InputState } from './contract.ts'
+import type { InputState } from '../contract/input.ts'
 
 /** The claim-token highlight range (always draft-leading while the watch holds). */
 export interface TokenRange {

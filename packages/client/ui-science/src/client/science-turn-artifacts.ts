@@ -42,6 +42,8 @@ function presentation(value: unknown): ScienceArtifactPresentation | undefined {
 /** Definition accumulating tool-result artifact receipts by authoritative Turn. */
 export const scienceTurnArtifactsDefinition: ConversationNodeDefinition<ScienceTurnArtifactsState> = {
   kind: 'science-turn-artifacts',
+  // Each Conversation Definition owns its event matcher; sharing it with file deliverables would couple independent plugin features.
+  /* jscpd:ignore-start */
   match: (event) => {
     if (event.type === 'turn/start') return { id: String(event.data.turn), role: 'start' }
     if (event.type === 'tool/result' && isAppendSurfaceEvent(event)) {
@@ -49,6 +51,7 @@ export const scienceTurnArtifactsDefinition: ConversationNodeDefinition<ScienceT
     }
     return null
   },
+  /* jscpd:ignore-end */
   start: (_context, match) => {
     if (match.event.type !== 'turn/start') throw new Error('science-turn-artifacts start requires turn/start')
     return { turn: match.event.data.turn, artifacts: [] }

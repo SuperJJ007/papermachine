@@ -1,3 +1,4 @@
+import { expandToolGroups } from './support.ts'
 // Web e2e scenario for the opt-in Cordis tools. Record mode drives a real
 // model through inspect, define, run, and stop; replay pins the same shipped Web
 // composition, durable calls, Cordis-owned rows, the define card's own source view,
@@ -144,8 +145,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     // one collapsed-by-default Tool group ("Ran 3 other steps"; cordis tool
     // names bucket as the generic "other" category). Expand it so the member
     // rows below exist. cordis_stop starts a new turn and stays ungrouped.
-    const closedGroups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
-    while (await closedGroups.count() > 0) await closedGroups.first().click()
+    await expandToolGroups(page)
 
     const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').filter({ hasText: 'Inspect' }).first()
     await inspectRow.waitFor({ timeout: 10_000 })

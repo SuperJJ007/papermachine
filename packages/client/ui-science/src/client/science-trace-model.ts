@@ -141,6 +141,11 @@ export interface ScienceTraceModel {
    */
   readonly dialogues: readonly ScienceTraceDialogue[]
   readonly groups: readonly ScienceTraceGroup[]
+  /** Retained records whose producing calls are absent from the loaded conversation. */
+  readonly unassigned: {
+    readonly runs: readonly ScienceClientRun[]
+    readonly artifacts: readonly ScienceClientArtifactVersion[]
+  }
   readonly humanEdits: readonly ScienceTraceHumanEdit[]
   readonly kernelMarkers: readonly ScienceTraceKernelMarker[]
 }
@@ -149,14 +154,11 @@ function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>):
   return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
 }
 
-function artifactTurn(
-  artifact: ScienceClientArtifactVersion,
-  callId: string | undefined,
-  callTurns: ReadonlyMap<string, number>,
+function humanEditTurn(
+  artifact: ScienceClientArtifactVersion & { readonly origin: 'human-edit' },
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
   lastTurn: number,
 ): number {
-  if (artifact.origin !== 'human-edit') return callId === undefined ? lastTurn : callTurns.get(callId) ?? lastTurn
   for (const [turn, timing] of turnTimes) {
     if (artifact.createdAt >= timing.startTime && artifact.createdAt <= (timing.endTime ?? Number.POSITIVE_INFINITY)) return turn
   }
@@ -307,25 +309,38 @@ export function buildScienceTraceModel(
 
   const lastTurn = Math.max(1, inferredTurn)
   const runsById = new Map(science.runs.map(run => [run.runId, run]))
-  const artifactsByTurn = new Map<number, Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>[]>()
+  const artifactsByTurn = new Map<number, {
+    artifact: Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>
+    callId: string
+  }[]>()
   const humanEdits: ScienceTraceHumanEdit[] = []
+  const unassigned: { runs: ScienceClientRun[]; artifacts: ScienceClientArtifactVersion[] } = { runs: [], artifacts: [] }
   const seenVersions = new Set<string>()
   for (const artifact of science.artifacts) {
-    const callId = artifact.origin === 'human-edit' ? undefined : artifactCallId(artifact, runsById)
-    const turn = artifactTurn(artifact, callId, callTurns, turnTimes, lastTurn)
     if (artifact.origin === 'human-edit') {
+      const turn = humanEditTurn(artifact, turnTimes, lastTurn)
       humanEdits.push({ actor: 'user', turn, artifact, anchor: `artifact:${artifact.artifactId}@${artifact.version}` })
       continue
     }
+    const callId = artifactCallId(artifact, runsById)
+    const turn = callId === undefined ? undefined : callTurns.get(callId)
+    if (callId === undefined || turn === undefined) {
+      unassigned.artifacts.push(artifact)
+      continue
+    }
     const list = artifactsByTurn.get(turn) ?? []
-    list.push(artifact)
+    list.push({ artifact, callId })
     artifactsByTurn.set(turn, list)
   }
 
   const runsByTurn = new Map<number, ScienceClientRun[]>()
   const runsByCall = new Map(science.runs.map(run => [run.toolCallId as string, run]))
   for (const run of science.runs) {
-    const turn = callTurns.get(run.toolCallId) ?? lastTurn
+    const turn = callTurns.get(run.toolCallId)
+    if (turn === undefined) {
+      unassigned.runs.push(run)
+      continue
+    }
     const list = runsByTurn.get(turn) ?? []
     list.push(run)
     runsByTurn.set(turn, list)
@@ -342,7 +357,7 @@ export function buildScienceTraceModel(
       anchor: `run:${run.runId}`,
     }))
     const artifactsByCall = new Map<string, ScienceTraceArtifactDelta[]>()
-    const artifacts = (artifactsByTurn.get(turn) ?? []).map((artifact): ScienceTraceArtifactDelta => {
+    const artifacts = (artifactsByTurn.get(turn) ?? []).map(({ artifact, callId }): ScienceTraceArtifactDelta => {
       const key = `${artifact.artifactId}@${artifact.version}`
       const curated = seenVersions.has(key)
       seenVersions.add(key)
@@ -354,12 +369,9 @@ export function buildScienceTraceModel(
       const delta: ScienceTraceArtifactDelta = curated ? { ...base, action: 'curated' }
         : artifact.parent === undefined ? { ...base, action: 'created' }
           : { ...base, action: 'advanced', parentVersion: artifact.parent.version }
-      const callId = artifactCallId(artifact, runsById)
-      if (callId !== undefined) {
-        const list = artifactsByCall.get(callId) ?? []
-        list.push(delta)
-        artifactsByCall.set(callId, list)
-      }
+      const list = artifactsByCall.get(callId) ?? []
+      list.push(delta)
+      artifactsByCall.set(callId, list)
       return delta
     })
     const turnCalls = orderedCalls.filter(call => call.turn === turn)
@@ -410,6 +422,6 @@ export function buildScienceTraceModel(
   }
   kernelMarkers.sort((a, b) => a.at - b.at)
   return environment === undefined
-    ? { turns, dialogues, groups, humanEdits, kernelMarkers }
-    : { environment, turns, dialogues, groups, humanEdits, kernelMarkers }
+    ? { turns, dialogues, groups, unassigned, humanEdits, kernelMarkers }
+    : { environment, turns, dialogues, groups, unassigned, humanEdits, kernelMarkers }
 }

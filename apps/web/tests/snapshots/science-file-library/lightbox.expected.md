@@ -1,0 +1,4 @@
+- dialog "Original":
+  - img "Shared chart"
+  - button "Close":
+    - img

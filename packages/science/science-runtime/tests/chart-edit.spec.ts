@@ -9,6 +9,7 @@ import type { ScienceChartOp, ScienceHumanEditArtifactVersion } from '@deepseek-
 import type { Session } from '@deepseek-ai/dsh-session'
 import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
+import type { Config } from '../src/config.ts'
 import {
   authorizeAnnotateArtifact,
   authorizePythonRun,
@@ -48,7 +49,7 @@ const ops: readonly ScienceChartOp[] = [
   { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Dose' },
 ]
 
-async function harness(id: string, action: Record<string, unknown> = {}): Promise<{
+async function harness(id: string, action: Record<string, unknown> = {}, timeoutMs = 10_000, config: Partial<Config> = {}): Promise<{
   readonly root: string
   readonly runtime: Awaited<ReturnType<typeof createKernelRuntimeHarness>>['runtime']
   readonly session: Session
@@ -59,10 +60,10 @@ async function harness(id: string, action: Record<string, unknown> = {}): Promis
   const assembled = await createKernelRuntimeHarness(
     root,
     { fake: { pythonPrefix: prefix } },
-    10_000,
+    timeoutMs,
     1_800_000,
     undefined,
-    { chartExtractTimeoutMs: 30 },
+    { chartExtractTimeoutMs: 30, ...config },
   )
   contexts.push(assembled.ctx)
   const session = createScienceSession(assembled.ctx, id)
@@ -141,9 +142,9 @@ describe('ScienceRuntime.applyChartEdit', () => {
     }
   })
 
-  it.each(['ok', 'not_registered_once'])('sends all committed operations on %s kernels and reports new failure indices', async (chartApplyStatus) => {
-    const { runtime, session } = await harness(`chart-edit-cumulative-${chartApplyStatus}`, {
-      chartApplyStatus, chartApplyResult: { chart: editExtraction, failedOps: [{ index: 2, reason: 'element_not_found' }] },
+  it.each(['warm', 'evicted'])('sends all committed operations on %s kernels and reports new failure indices', async (registration) => {
+    const { runtime, session } = await harness(`chart-edit-cumulative-${registration}`, {
+      evictCharts: registration === 'evicted', chartApplyResult: { chart: editExtraction, failedOps: [{ index: 2, reason: 'element_not_found' }] },
     })
     const parent = chart(session)
     appendHumanEdit(session, parent, { chart: { ...parent.chart!, ops: [titleOp] } })
@@ -158,7 +159,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
     const result = await runtime.previewChartEdit({
       session, artifactId: parent.artifactId, version: 2, ops, signal: new AbortController().signal,
     })
-    expect(received).toHaveLength(chartApplyStatus === 'ok' ? 1 : 2)
+    expect(received).toHaveLength(registration === 'warm' ? 1 : 2)
     for (const request of received) expect(request).toMatchObject({ ops: [titleOp, ...ops] })
     expect(result.failedOps).toEqual([{ index: 1, reason: 'element_not_found' }])
     expect(result.chart.ops).toEqual([titleOp, titleOp])
@@ -189,7 +190,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
   })
 
   it('replays an unregistered source without publishing a scientific run', async () => {
-    const { runtime, session, root } = await harness('chart-edit-replay', { chartApplyStatus: 'not_registered_once' })
+    const { runtime, session, root } = await harness('chart-edit-replay', { evictCharts: true })
     const parent = chart(session)
     const result = await runtime.applyChartEdit({
       session, artifactId: parent.artifactId, version: parent.version, ops: [titleOp], signal: new AbortController().signal,
@@ -198,6 +199,56 @@ describe('ScienceRuntime.applyChartEdit', () => {
     expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
     const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
     expect(readdirSync(sessionScratch.runs).filter(name => name.startsWith('replay-'))).toEqual([])
+  })
+
+  for (const cause of ['cancel', 'timeout'] as const) {
+    it.each([true, false])(`rejects ${cause} during cold replay (cooperative=%s) and releases the session for another run`, async (trapSigint) => {
+      const { runtime, session, root } = await harness(`chart-replay-${cause}`,
+        { evictCharts: true })
+      const parent = chart(session)
+      if (parent.origin === 'human-edit') throw new Error('expected a run artifact')
+      const scratch = planRunScratch(await planSessionScratch(join(root, 'dsh-home'), session), parent.runId, 'python')
+      writeFileSync(scratch.source, kernelAction({ action: 'sleep', sleepMs: 60_000, trapSigint,
+        chartApplyResult: { chart: editExtraction, failedOps: [] } }))
+      const controller = new AbortController()
+      // The saved method is invoked with the exact kernel receiver inside the spy.
+      // oxlint-disable-next-line typescript/unbound-method
+      const execute = KernelProcess.prototype.execute
+      const spy = vi.spyOn(KernelProcess.prototype, 'execute').mockImplementation(function (this: KernelProcess, request) {
+        const result = execute.call(this, request)
+        if (cause === 'cancel' && request.sourcePath.includes('replay-')) setTimeout(() => { controller.abort() }, 50)
+        return result
+      })
+      const events = session.events.length
+      await expect(runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
+        ops: [titleOp], signal: controller.signal })).rejects.toMatchObject({
+        code: cause === 'cancel' ? 'OPERATION_CANCELLED' : 'OPERATION_TIMED_OUT',
+      })
+      spy.mockRestore()
+      expect(session.events).toHaveLength(events)
+      expect(readdirSync((await planSessionScratch(join(root, 'dsh-home'), session)).runs).some(name => name.startsWith('replay-'))).toBe(false)
+      const next = await runtime.startRun({ session, language: 'python', code: kernelAction({ stdout: 'available' }),
+        ...authorizePythonRun(session, `after-${cause}`), signal: new AbortController().signal })
+      expect((await next.done).stdout.text).toBe('available')
+    })
+  }
+
+  it.each([false, true])('cancels chart rendering itself (cold=%s) before returning a preview', async (cold) => {
+    const { runtime, session } = await harness(`chart-render-cancel-${cold}`,
+      { evictCharts: cold, chartApplyStatus: 'hang' }, 10_000, { chartExtractTimeoutMs: 5_000 })
+    const parent = chart(session)
+    const controller = new AbortController()
+    // The saved method is invoked with the exact kernel receiver inside the spy.
+    // oxlint-disable-next-line typescript/unbound-method
+    const apply = KernelProcess.prototype.applyChart
+    vi.spyOn(KernelProcess.prototype, 'applyChart').mockImplementation(function (this: KernelProcess, request) {
+      const result = apply.call(this, request)
+      if (!cold || request.requestPath.includes('replay-')) setTimeout(() => { controller.abort() }, 50)
+      return result
+    })
+    await expect(runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
+      ops: [titleOp], signal: controller.signal })).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
+    expect(replayScience(session.events)?.artifacts).toHaveLength(1)
   })
 
   it('rejects stale, unaddressable, empty, and wholly unresolved edits', async () => {
@@ -272,7 +323,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
   }, 90_000)
 
   it('rejects failed and still-unregistered source replay', async () => {
-    const failedReplay = await harness('chart-edit-failed-replay', { chartApplyStatus: 'not_registered_once' })
+    const failedReplay = await harness('chart-edit-failed-replay', { evictCharts: true })
     const failedReplayParent = chart(failedReplay.session)
     const failedRun = replayScience(failedReplay.session.events)?.runs[0]
     if (failedRun === undefined) throw new Error('source run was not recorded')
@@ -351,7 +402,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
     })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
     expect(replayScience(timed.session.events)?.kernels.some(kernel => kernel.state === 'exited')).toBe(true)
 
-    const missing = await harness('chart-edit-missing-source', { chartApplyStatus: 'not_registered_once' })
+    const missing = await harness('chart-edit-missing-source', { evictCharts: true })
     const missingParent = chart(missing.session)
     const run = replayScience(missing.session.events)?.runs[0]
     if (run === undefined) throw new Error('source run was not recorded')
@@ -365,6 +416,44 @@ describe('ScienceRuntime.applyChartEdit', () => {
 })
 
 describe('ScienceRuntime.previewChartEdit', () => {
+  it('holds the lease through delayed replay quiescence and rejects cancellation during cleanup', async () => {
+    const { runtime, session, root } = await harness('chart-preview-cleanup-cancel', { evictCharts: true })
+    const parent = chart(session)
+    const entered = Promise.withResolvers<undefined>()
+    const quiescent = Promise.withResolvers<boolean>()
+    // oxlint-disable-next-line typescript/unbound-method -- call() below supplies the intercepted kernel as this.
+    const originalEnd = KernelProcess.prototype.end
+    vi.spyOn(KernelProcess.prototype, 'end').mockImplementation(async function (this: KernelProcess, reason) {
+      const result = await originalEnd.call(this, reason)
+      if (reason !== 'chart-replay-finished') return result
+      entered.resolve(undefined)
+      return { quiescent: false, forced: true, eventualQuiescence: quiescent.promise }
+    })
+    const controller = new AbortController()
+    const annotation = { session, logicalName: parent.logicalName, title: parent.title,
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal }
+    const authorization = authorizePythonRun(session, 'after-preview-cleanup')
+    const events = session.events.length
+    const preview = runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
+      ops: [titleOp], signal: controller.signal })
+    const rejection = expect(preview).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
+    await entered.promise
+    const scratch = await planSessionScratch(join(root, 'dsh-home'), session)
+    const nextRun = { session, language: 'python' as const, code: kernelAction({ status: 'ok' }),
+      ...authorization, signal: new AbortController().signal }
+    try {
+      controller.abort()
+      await expect(runtime.annotateArtifact(annotation)).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+      expect(readdirSync(scratch.runs).some(name => name.startsWith('replay-'))).toBe(true)
+      expect(session.events).toHaveLength(events)
+    } finally {
+      quiescent.resolve(true)
+      await rejection
+    }
+    expect(readdirSync(scratch.runs).some(name => name.startsWith('replay-'))).toBe(false)
+    expect((await (await runtime.startRun(nextRun)).done).terminal.status).toBe('success')
+  })
+
   it('renders through a warm kernel without publishing a version or artifact event', async () => {
     const { runtime, session } = await harness('chart-preview-warm')
     const parent = chart(session)
@@ -380,7 +469,7 @@ describe('ScienceRuntime.previewChartEdit', () => {
   })
 
   it('replays an unregistered source and removes its private scratch without publishing a run', async () => {
-    const { runtime, session, root } = await harness('chart-preview-replay', { chartApplyStatus: 'not_registered_once' })
+    const { runtime, session, root } = await harness('chart-preview-replay', { evictCharts: true })
     const parent = chart(session)
     const result = await runtime.previewChartEdit({
       session, artifactId: parent.artifactId, version: parent.version,

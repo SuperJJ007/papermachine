@@ -42,18 +42,6 @@ const BAD_READY_DRIVER_PATH = join(FIXTURES, 'fake-kernel-driver-bad-ready.mjs')
 /** Every real response-FIFO read stream this file's KernelProcess.start() calls have created, for a focused test to command directly. */
 const capturedReadStreams: Readable[] = []
 
-vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs')>()
-  return {
-    ...original,
-    createReadStream: (...args: Parameters<typeof original.createReadStream>) => {
-      const stream = original.createReadStream(...args)
-      capturedReadStreams.push(stream)
-      return stream
-    },
-  }
-})
-
 /**
  * Wraps the real local subprocess provider so the kernel's own confined spawn
  * (identified by `stdio.stdin === 'pipe'`, unique among this harness's spawns
@@ -121,6 +109,25 @@ class RejectedDoneSubprocess extends LocalSubprocessRuntime {
   }
 }
 
+/** Delay the provider's proof of exit while still terminating its real process trees. */
+class DeferredExitSubprocess extends LocalSubprocessRuntime {
+  defer: 'reader' | 'interpreter' | 'both' | undefined
+  readonly observing = Promise.withResolvers<undefined>()
+  readonly proof = Promise.withResolvers<undefined>()
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    const role = spec.stdio.stdin === 'pipe' ? 'interpreter' : spec.stdio.stdout === 'pipe' ? 'reader' : undefined
+    if (role === undefined) return handle
+    return { ...handle, waitForExit: (signal) => {
+      if (this.defer !== role && this.defer !== 'both') return handle.waitForExit(signal)
+      if (signal !== undefined) return Promise.resolve(false)
+      this.observing.resolve(undefined)
+      return this.proof.promise.then(() => handle.waitForExit())
+    } }
+  }
+}
+
 const roots: string[] = []
 const contexts: Context[] = []
 
@@ -185,6 +192,12 @@ async function createHarness(
   contexts.push(ctx)
   await ctx.plugin(SessionStore)
   await ctx.plugin(options.subprocess ?? LocalSubprocessRuntime)
+  const spawn = ctx.subprocess.spawn.bind(ctx.subprocess)
+  vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+    const handle = spawn(spec)
+    if (spec.stdio.stdout === 'pipe' && handle.stdout !== undefined) capturedReadStreams.push(handle.stdout)
+    return handle
+  })
   const runner = createFakeSandboxRunner(root)
   await ctx.plugin(LocalSandboxProvider, {
     runnerCommand: [runner],
@@ -203,7 +216,12 @@ async function createHarness(
 function startKernel(
   harness: Harness,
   language: ScienceLanguage,
-  overrides: { readonly driverPath?: string; readonly index?: number; readonly kernelStartTimeoutMs?: number } = {},
+  overrides: {
+    readonly driverPath?: string
+    readonly index?: number
+    readonly kernelStartTimeoutMs?: number
+    readonly signal?: AbortSignal
+  } = {},
 ): Promise<KernelProcess> {
   const prefix = createFakeInterpreterPrefix(harness.root, language)
   return KernelProcess.start({
@@ -212,6 +230,7 @@ function startKernel(
     driverPath: overrides.driverPath ?? DRIVER_PATH,
     index: overrides.index ?? 0,
     kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? TEST_KERNEL_START_TIMEOUT_MS,
+    signal: overrides.signal,
   })
 }
 
@@ -273,11 +292,125 @@ async function prepareChartApplyRequest(
 }
 
 describe('KernelProcess', () => {
+  it.each(['reader', 'interpreter', 'both'] as const)('retains eventual exit observation for the %s during teardown', async (role) => {
+    const harness = await createHarness(`kernel-delayed-${role}`, { subprocess: DeferredExitSubprocess })
+    const subprocess = harness.services.subprocess as DeferredExitSubprocess
+    const kernel = await startKernel(harness, 'python')
+    subprocess.defer = role
+    try {
+      const result = await kernel.end('test-teardown')
+      expect(result.quiescent).toBe(false)
+      if (result.quiescent) throw new Error('process exit was reported before its provider confirmed it')
+      let finished = false
+      void result.eventualQuiescence.then(() => { finished = true })
+      await new Promise(resolve => setImmediate(resolve))
+      expect(finished).toBe(false)
+      subprocess.proof.resolve(undefined)
+      await expect(result.eventualQuiescence).resolves.toBe(true)
+    } finally {
+      subprocess.proof.resolve(undefined)
+    }
+  })
+
+  it.each(['reader', 'interpreter'] as const)('awaits the %s before removing a failed startup FIFO', async (role) => {
+    const harness = await createHarness(`kernel-failed-delayed-${role}`, { subprocess: DeferredExitSubprocess })
+    const subprocess = harness.services.subprocess as DeferredExitSubprocess
+    subprocess.defer = role
+    const start = startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, signal: AbortSignal.abort() })
+    const rejection = expect(start).rejects.toThrow(KernelProtocolError)
+    try {
+      await subprocess.observing.promise
+      expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(true)
+    } finally {
+      subprocess.proof.resolve(undefined)
+    }
+    await rejection
+    expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
+  })
+
+  it('cleans up a forwarding process that lacks the requested stdout pipe', async () => {
+    const harness = await createHarness('kernel-reader-missing-stdout')
+    const spawn = LocalSubprocessRuntime.prototype.spawn.bind(harness.services.subprocess)
+    let reader: SubprocessHandle | undefined
+    vi.spyOn(harness.services.subprocess, 'spawn').mockImplementation((spec) => {
+      const handle = spawn(spec)
+      if (spec.stdio.stdout !== 'pipe') return handle
+      reader = handle
+      return { ...handle, stdout: undefined }
+    })
+    await expect(startKernel(harness, 'python')).rejects.toThrow('FIFO reader was not spawned with a stdout pipe')
+    expect(await reader!.waitForExit(AbortSignal.timeout(1_000))).toBe(true)
+    expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
+  })
+
+  it('faults the kernel on a forwarding-provider rejection and still observes exit when reader termination fails', async () => {
+    const harness = await createHarness('kernel-reader-provider-error')
+    const spawn = LocalSubprocessRuntime.prototype.spawn.bind(harness.services.subprocess)
+    const failure = Promise.withResolvers<never>()
+    let terminationAttempts = 0
+    vi.spyOn(harness.services.subprocess, 'spawn').mockImplementation((spec) => {
+      const handle = spawn(spec)
+      if (spec.stdio.stdout !== 'pipe') return handle
+      return { ...handle, done: Promise.race([handle.done, failure.promise]), terminate: () => {
+        terminationAttempts += 1
+        if (terminationAttempts === 1) throw new Error('temporary provider failure')
+        handle.terminate()
+      } }
+    })
+    const kernel = await startKernel(harness, 'python')
+    failure.reject(new Error('forwarding provider failed'))
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
+    await expect(kernel.end('test-teardown')).resolves.toMatchObject({ quiescent: true })
+    expect(terminationAttempts).toBeGreaterThanOrEqual(1)
+  })
+
+  it('removes the FIFO when the forwarding executable cannot be resolved', async () => {
+    const harness = await createHarness('kernel-reader-unavailable')
+    const resolve = harness.services.subprocess.resolveExecutable.bind(harness.services.subprocess)
+    vi.spyOn(harness.services.subprocess, 'resolveExecutable').mockImplementation((executable, options) => {
+      if (executable === 'cat') return Promise.reject(new Error('cat unavailable'))
+      return resolve(executable, options)
+    })
+    await expect(startKernel(harness, 'python')).rejects.toThrow('cat unavailable')
+    expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
+  })
+
+  it('settles chart application when its operation was cancelled before the exchange', async () => {
+    const harness = await createHarness('kernel-chart-already-cancelled')
+    const kernel = await startKernel(harness, 'python')
+    await expect(kernel.applyChart({ ...await prepareChartApplyRequest(harness.root, 'chart-cancelled'),
+      signal: AbortSignal.abort() })).rejects.toThrow(KernelProtocolError)
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
+    await kernel.end('test-teardown')
+  })
+
   it('completes the READY handshake', async () => {
     const harness = await createHarness('kernel-handshake')
     const kernel = await startKernel(harness, 'python')
     expect(kernel).toBeInstanceOf(KernelProcess)
     await kernel.end('test-teardown')
+  })
+
+  it('keeps host file I/O available while four persistent kernels are idle', async () => {
+    const harness = await createHarness('kernel-idle-threadpool')
+    const request = await prepareRun(harness.root, 'run-with-four-kernels', { status: 'ok' })
+    const kernels: KernelProcess[] = []
+    try {
+      for (let index = 0; index < 4; index += 1) {
+        kernels.push(await startKernel(harness, index % 2 === 0 ? 'python' : 'r', { index }))
+      }
+      // A timer can still fire when FIFO reads occupy every filesystem worker.
+      const result = await Promise.race([
+        stat(request.sourcePath).then(() => 'readable'),
+        new Promise<string>(resolve => setTimeout(() => { resolve('blocked') }, 2_000)),
+      ])
+      expect(result).toBe('readable')
+      for (const kernel of kernels) {
+        await expect(kernel.execute(request)).resolves.toMatchObject({ status: 'ok' })
+      }
+    } finally {
+      await Promise.all(kernels.map(kernel => kernel.end('test-teardown')))
+    }
   })
 
   it('spawns a Python kernel without isolated mode and with a kernel-scoped PYTHONUSERBASE', async () => {
@@ -314,6 +447,16 @@ describe('KernelProcess', () => {
     const harness = await createHarness('kernel-ready-timeout')
     await expect(startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, kernelStartTimeoutMs: 200 }))
       .rejects.toThrow(KernelProtocolError)
+  })
+
+  it('settles an already-cancelled startup even when its driver never opens the FIFO', async () => {
+    const harness = await createHarness('kernel-start-already-cancelled')
+    const start = startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, signal: AbortSignal.abort() })
+    const result = await Promise.race([
+      start.then(() => 'ready', () => 'rejected'),
+      new Promise<string>(resolve => setTimeout(() => { resolve('blocked') }, 2_000)),
+    ])
+    expect(result).toBe('rejected')
   })
 
   it('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker', async () => {

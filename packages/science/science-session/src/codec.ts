@@ -151,6 +151,7 @@ const chartOpTextSchema = z.string().max(500).regex(/^[^\u0000-\u001f\u007f-\u00
 })
 const chartOpSchema: z.ZodType<ScienceChartOp> = z.discriminatedUnion('op', [
   z.object({ op: z.literal('set_title'), axes: chartAxesSchema, text: chartOpTextSchema }).strict(),
+  z.object({ op: z.literal('set_subtitle'), axes: chartAxesSchema, text: chartOpTextSchema }).strict(),
   z.object({
     op: z.literal('set_axis_label'),
     axes: chartAxesSchema,

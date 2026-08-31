@@ -30,7 +30,7 @@ host 侧 `session.create(workspaceId)` 一体产出 Session + Agent + cwd（作�
 
 ### Agent scope：actx 是 client 侧 cordis 世界的唯一会话载体
 
-运行时 `agents/scope.ts` 与 host `dsh-scope` 机制层一致（fiber + tag + filter 过滤；不 value-import：host 包携带 scoped-events 的 `Events` merge，进 client program 撞 Context merge）：
+运行时 `agent-scope.ts` 与 host `dsh-scope` 机制层一致（fiber + tag + filter 过滤；不 value-import：host 包携带 scoped-events 的 `Events` merge，进 client program 撞 Context merge）：
 
 - `createScope(ctx, key)`：no-op 插件 fiber + `extend({[kScope]: key, [Context.filter]: …})`——filter 直接住 actx：untagged listener 全局可收，tagged 只收本 scope。
 - 派发就是 cordis 原语，thisArg = actx 本身：`actx.bail(actx, event, req)` / `actx.emit(actx, event, payload)`。

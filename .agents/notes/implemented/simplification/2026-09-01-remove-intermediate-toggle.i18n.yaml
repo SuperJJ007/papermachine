@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-01-remove-intermediate-toggle.md
+2026-09-01-remove-intermediate-toggle.md: f2de7c6c9f53f5f64235e5a60099be2b3bf1a74d
+2026-09-01-remove-intermediate-toggle.zh.md: 37337bf53580e8faac707d299961074d0e3d6dd5

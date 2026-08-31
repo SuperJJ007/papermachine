@@ -835,8 +835,8 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
   })
 
   // C2: a same-turn intermediate draft (occ_emp_wage_scatter's shape — a
-  // self-check re-render inside one turn) collapses out of the stepper's
-  // default walk order behind an expand toggle.
+  // self-check re-render inside one turn) is skipped by the stepper's
+  // default walk order; the user never sees an entry point back to it.
   function sameTurnPair() {
     const science = baseProjection({
       artifacts: [
@@ -849,30 +849,30 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     return { science, store }
   }
 
-  it('collapses a same-turn superseded version behind an expand toggle, reachable once expanded', () => {
+  it('skips a same-turn superseded version in the stepper by default, with no entry point to reveal it', () => {
     const { science, store } = sameTurnPair()
     render(<ScienceDetailsView {...props(science, { store })} />)
 
-    const toggle = screen.getByRole('button', { name: 'Intermediate drafts ×1' })
-    expect(toggle.getAttribute('aria-pressed')).toBe('false')
-    // v1 is collapsed and this tab is open at v2, so ‹ has nothing to step to.
+    // v1 is skipped and this tab is open at v2, so ‹ has nothing to step to.
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
-
-    fireEvent.click(toggle)
-    const collapseToggle = screen.getByRole('button', { name: 'Collapse intermediate drafts' })
-    expect(collapseToggle.getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }))
-    expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse intermediate drafts' }))
-    expect(screen.getByRole('button', { name: 'Intermediate drafts ×1' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByRole('button', { name: /Intermediate drafts/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /intermediate/iu })).toBeNull()
   })
 
-  it('shows no intermediate toggle when a human-edit save splits two different-turn versions', () => {
+  it('keeps a same-turn superseded version walkable when it is the currently open tab', () => {
+    const { science, store } = sameTurnPair()
+    store.actions.openTab({ artifactId: 'chart-1' as never, version: 1 })
+    render(<ScienceDetailsView {...props(science, { store })} />)
+
+    // v1 is itself the intermediate draft, but it is the open version, so it
+    // stays walkable and steps forward to v2.
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('never skips a version when a human-edit save splits two different-turn versions', () => {
     // mpl_grouped's shape — v1 auto(turn 1), v2 human-edit, v3 auto(turn 2) —
-    // never collapses anything (a human-edit version has no turn to match).
+    // never folds anything (a human-edit version has no turn to match).
     const science = baseProjection({
       artifacts: [
         chart({ version: 1, turn: 1, title: 'v1 title', attachment: { attachmentId: 'sha256:a', mediaType: 'image/png', bytes: 100, width: 10, height: 10 } }),
@@ -884,7 +884,6 @@ describe('ScienceDetailsView: toolbar version stepper', () => {
     store.actions.openTab({ artifactId: 'chart-1' as never, version: 2 })
     render(<ScienceDetailsView {...props(science, { store })} />)
 
-    expect(screen.queryByRole('button', { name: /Intermediate drafts/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
   })

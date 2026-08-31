@@ -195,19 +195,11 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
 }) {
   // C2: same-turn intermediate drafts (a self-check re-render the model made
   // within one turn before curating a title) collapse out of the stepper's
-  // default walk order; they stay reachable behind the expand toggle below,
-  // and the currently open version is always kept walkable even if it is
-  // itself one of them (a provenance drill-in or a direct link can still
-  // open one directly).
-  const [showIntermediates, setShowIntermediates] = useState(false)
-  // The toolbar instance is not remounted on a tab switch (`ArtifactTab`
-  // resolves the same component at the same position); reset the toggle so
-  // a different artifact's tab never opens already expanded.
-  useEffect(() => { setShowIntermediates(false) }, [chart.artifactId])
+  // default walk order; the currently open version is always kept walkable
+  // even if it is itself one of them (a provenance drill-in or a direct link
+  // can still open one directly).
   const intermediateVersions = foldIntermediateVersions(versions)
-  const walkable = showIntermediates
-    ? versions
-    : versions.filter(candidate => candidate.version === chart.version || !intermediateVersions.has(candidate.version))
+  const walkable = versions.filter(candidate => candidate.version === chart.version || !intermediateVersions.has(candidate.version))
   // `chart` is always one of `walkable` (either it is not collapsed, or the
   // filter above keeps the open version in regardless), so `index` is never
   // -1 — no defensive branch for it.
@@ -245,16 +237,6 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
             <IconChevronRightOutline14 size={12} />
           </button>
         </div>
-        {intermediateVersions.size > 0 && (
-          <button
-            type="button"
-            className={css.intermediateToggle}
-            aria-pressed={showIntermediates}
-            onClick={() => { setShowIntermediates(value => !value) }}
-          >
-            {showIntermediates ? t('toolbar.intermediateCollapse') : t('toolbar.intermediateExpand', { count: intermediateVersions.size })}
-          </button>
-        )}
         <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
           <IconInspectOutline12 size={12} />
         </button>

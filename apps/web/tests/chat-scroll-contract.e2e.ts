@@ -755,6 +755,8 @@ describe('web e2e: long Chat scroll contract', () => {
       const lastToolRow = world.page.locator(
         `[data-chat-call-id="chat-scroll-${String(INPUTS_FIXTURE.turns).padStart(3, '0')}-1"] [data-sample="bash"]`,
       )
+      const lastGroup = world.page.locator('[data-tool-group] > button').last()
+      if (await lastGroup.getAttribute('aria-expanded') === 'false') await lastGroup.click()
       await lastToolRow.focus()
       await world.page.keyboard.press('End')
       await expectBottom(world.page)

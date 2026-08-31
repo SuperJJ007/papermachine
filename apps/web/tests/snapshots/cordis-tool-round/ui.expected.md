@@ -16,6 +16,9 @@
   - img
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
+- button "Ran 3 other steps 3 steps" [expanded]:
+  - img
+  - text: Ran 3 other steps 3 steps
 - button "Think I will inspect the current Session's dynamic Cordis Plugins before defining the snapshot Package.":
   - img
   - img

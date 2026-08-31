@@ -60,6 +60,7 @@ async function bootWeb(
   profilePackages: readonly string[] = [],
   profileBundles?: readonly string[],
   presetRoot = join(CONFIG_DIR, 'agent-presets'),
+  prepare?: (ctx: Context) => Promise<void> | void,
 ): Promise<Context> {
   const storageRoot = join(dirname(settingsFile), 'storages')
   const overrides: PatchOptions[] = [
@@ -74,6 +75,7 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
+    { id: 'science-artifact-store', config: { dshHome: dirname(settingsFile) } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
     // stay ENABLED on purpose — the api-proxy is the host row that injects
@@ -154,6 +156,7 @@ async function bootWeb(
   await writeFile(rootConfig, '[]\n')
   return await boot('dsh-test', rootConfig, [...bundlePatches, ...overrides], (bootCtx) => {
     provideCmdline(bootCtx, { args: [], exit: () => {} })
+    return prepare?.(bootCtx)
   })
 }
 
@@ -674,24 +677,23 @@ describe('a fake-backed Science Runtime mounted for the science preset', () => {
     // mounting a second `scienceRuntime` registration beside it: Cordis
     // rejects a duplicate service registration, and this section's fake-
     // backed instance below is a replacement, not an addition.
-    runtimeCtx = await bootWeb(settingsFile, [{ id: 'science-runtime', disabled: true }])
-    // Repo-relative, not os.tmpdir(): Science Runtime scratch roots must not
-    // overlap a generic sandbox temp grant (same reason `dsh-tool-science`'s
-    // own real-composition test picks its scratch root the same way).
+    // The configured provider must exist before the Loader activates the
+    // preset consumer; installing it after boot waits forever on that exact
+    // dependency. The prepare callback runs before the config tree mounts.
     scratch = await mkdtemp(join(REPO_ROOT, '.web-science-runtime-scratch-'))
-    // The shipped Web bundle already provides real `subprocess`/`sandbox`
-    // Host rows (bash/pwsh need them) — a second plugin providing the same
-    // service name collides. Isolating just those two names gives the fake
-    // providers their own scope for the Science Runtime to inject, while its
-    // OWN `scienceRuntime` registration — not isolated — still reaches the
-    // outer context, exactly like a preset's `isolate` realm.
-    const isolated = runtimeCtx.isolate('subprocess').isolate('sandbox')
-    await isolated.plugin(FakeSubprocess)
-    await isolated.plugin(DirectSandbox)
-    await isolated.plugin(ScienceRuntime, {
-      dshHome: join(scratch, 'dsh-home'),
-      profiles: { science: { pythonPrefix: createFakePythonPrefix(scratch) } },
-    })
+    runtimeCtx = await bootWeb(settingsFile, [{ id: 'science-runtime', disabled: true }], [], undefined,
+      join(CONFIG_DIR, 'agent-presets'), async (bootCtx) => {
+        // The shipped Web bundle later provides real subprocess/sandbox rows.
+        // Isolate only the fake provider names while publishing scienceRuntime
+        // to the outer context for the preset consumer.
+        const isolated = bootCtx.isolate('subprocess').isolate('sandbox')
+        await isolated.plugin(FakeSubprocess)
+        await isolated.plugin(DirectSandbox)
+        await isolated.plugin(ScienceRuntime, {
+          dshHome: join(scratch, 'dsh-home'),
+          profiles: { science: { pythonPrefix: createFakePythonPrefix(scratch) } },
+        })
+      })
   }, 120_000)
 
   afterAll(async () => {
@@ -702,7 +704,7 @@ describe('a fake-backed Science Runtime mounted for the science preset', () => {
   it('binds a real environment through the fake-backed Runtime and assembles a real request', async () => {
     const handle = await runtimeCtx.agents.create({
       sessionId: SessionId('preset-science-fake-runtime'),
-      meta: { agentPreset: 'science' },
+      meta: { agentPreset: 'science', cwd: scratch },
       setup: agentCtx => runtimeCtx.agentPresets.mount(agentCtx, 'science').then(() => undefined),
     })
     try {

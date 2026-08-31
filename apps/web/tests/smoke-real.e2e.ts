@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
+import { REPO_ROOT, expandToolGroups, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
 
 const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./snapshots/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
 
@@ -534,10 +534,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
 
   it('empty-state first send completes a real model round', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-first-round'))
-    // This scenario spawns its own server against a fresh $DSH_HOME with the
-    // DeepSeek credential inherited from the environment, so no onboarding
-    // step mounts and the page is immediately interactive.
-    // Fresh world: connect a Workspace so the composer starts live.
+    // A credential skips provider setup, but a fresh harness home still
+    // requires explicit acknowledgement of the product welcome notice.
+    const welcome = page.getByRole('dialog', { name: 'Internal Testing Notice' })
+    await welcome.getByRole('button', { name: 'Continue' }).click()
+    await welcome.waitFor({ state: 'detached' })
     await connectFreshWorkspace(page, sessionsDir)
     const input = page.locator('textarea').first()
     await input.waitFor({ timeout: 10_000 })
@@ -581,11 +582,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
 
   it('view tabs: Chat and Trajectory switch', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-tabs'))
-    await page.locator('button', { hasText: /Trajectory/i }).first().click()
+    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
     await screen(page, '05-trajectory-tab')
     await page.getByLabel('Trajectory timeline').waitFor()
     await expect.poll(() => page.getByRole('tab', { name: 'Waterfall' }).count()).toBe(0)
-    await page.locator('button', { hasText: /^Chat$/i }).first().click()
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
     await screen(page, '07-back-to-chat')
   })
 
@@ -599,7 +600,10 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     // exact row: other clickable variants (for example Think disclosure)
     // may precede the tool call in document order.
     const toolRow = page.locator('[data-sample="bash"]')
-    await toolRow.waitFor({ timeout: 120_000 })
+    await expect.poll(async () => {
+      await expandToolGroups(page)
+      return toolRow.count()
+    }, { timeout: 120_000 }).toBe(1)
     await screen(page, '08-bash-round')
     expect(await detailsTrack(page)).toBe(0)
     await toolRow.click()

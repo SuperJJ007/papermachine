@@ -193,7 +193,9 @@ describe('web e2e: long Chat interaction contract', () => {
     if (boundary === undefined) throw new Error(`turn ${String(BRANCH_TURN)} has no turn/end event`)
     const expectedUserText = textContent(branchUserEvent.data.content)
 
-    await wheelUntilMounted(page, `[data-chat-call-id="${TARGET_CALL_2}"]`, -1_100)
+    const groupSelector = `[data-tool-group="tool-group:${conversationContextKey('tool-call', TARGET_CALL_1)}"]`
+    await wheelUntilMounted(page, groupSelector, -1_100)
+    await page.locator(`${groupSelector} > button[aria-expanded="false"]`).click()
     const toolUserKey = messageKey(toolUserEvent)
     const toolAssistantKey = assistantKey(toolAssistantEvent)
     const toolUserRow = page.locator(`[data-chat-anchor-key="${toolUserKey}"]`)

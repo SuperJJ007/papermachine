@@ -1,3 +1,4 @@
+import { expandToolGroups } from './support.ts'
 // Web e2e scenario for the opt-in Cordis tools. Record mode drives a real
 // model through inspect, define, run, and stop; replay pins the same shipped Web
 // composition, durable calls, Cordis-owned rows, the define card's own source view,
@@ -139,6 +140,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     await expect.poll(() => page.getByText('CORDIS_UI_DONE', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
 
+    await expandToolGroups(page)
     const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').filter({ hasText: 'Inspect' }).first()
     await inspectRow.waitFor({ timeout: 10_000 })
 

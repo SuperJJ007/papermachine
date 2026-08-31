@@ -1,3 +1,4 @@
+import { expandToolGroups } from './support.ts'
 // Web e2e scenarios: navigation & panes — the Trajectory view and timing
 // overview, its local details inspector, and sidebar search, all over ONE rich
 // two-turn seeded fixture rendered purely from the log (the seeded-history
@@ -400,6 +401,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('bash and file-path rows leave the default details column closed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-details'))
     await ensureSeedOpen(page)
+    await expandToolGroups(page)
     const bashRow = page.locator('[data-sample="bash"]').first()
     await bashRow.waitFor({ timeout: 15_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
@@ -435,6 +437,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // tool-row interaction): open it if this fresh view leaves it collapsed.
     // Expanded, the recorded command's own output sits in the message flow,
     // derived from the logged call/result presentations alone.
+    await expandToolGroups(page)
     const bashRow = page.locator('[data-sample="bash"]').first()
     await bashRow.waitFor({ timeout: 15_000 })
     if (await bashRow.getAttribute('aria-expanded') !== 'true') await bashRow.click()

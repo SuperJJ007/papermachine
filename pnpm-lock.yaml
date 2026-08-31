@@ -369,14 +369,13 @@ importers:
         version: 10.0.0
 
   apps/desktop:
-    dependencies:
-      electron:
-        specifier: 43.4.1
-        version: 43.4.1
     devDependencies:
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
+      electron:
+        specifier: 43.4.1
+        version: 43.4.1
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)

@@ -573,7 +573,11 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
       { name: 'broken.txt', kind: 'file', byteCount: 1, modifiedAt: 1, mediaType: 'text/plain' },
     ] } })
     const file = vi.fn().mockImplementation((path: string) => Promise.resolve(path === 'broken.txt'
-      ? { ok: false, error: { message: 'file unavailable' } }
+      // A non-`science-artifact-error` failure (or one this build cannot
+      // classify) falls back to the generic localized notice, never the
+      // host's own English `message` — see the dedicated reason-mapping
+      // coverage below for the three known `WorkspaceReadError` reasons.
+      ? { ok: false, error: { code: 'internal', message: 'file unavailable', details: {} } }
       : { ok: true, value: path === 'pixel.png'
         ? { mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(255) }
         : { mediaType: 'application/octet-stream', byteCount: 1_048_576, data: Uint8Array.of() } }))
@@ -591,8 +595,46 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
     expect(await screen.findByRole('img', { name: 'pixel.png' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Artifact library/ }))
     fireEvent.click(await screen.findByRole('button', { name: /broken\.txt/ }))
-    expect((await screen.findByRole('alert')).textContent).toContain('file unavailable')
+    expect((await screen.findByRole('alert')).textContent).toContain('Unable to open this file.')
     unsupported.unmount()
+  })
+
+  it('localizes each closed WorkspaceReadError reason and falls back for an unrecognized one', async () => {
+    // Host reasons (packages/host/apiproxy/src/api-proxy.ts `WorkspaceReadError`):
+    // NO_WORKSPACE, PATH_OUTSIDE_WORKSPACE, FILE_TOO_LARGE. The host's English
+    // `error.message` (e.g. "Workspace file exceeds the 2 MiB preview limit.")
+    // must never reach the screen — only the mapped localized text may.
+    const cases: readonly [reason: string | undefined, en: string, zhText: string][] = [
+      ['NO_WORKSPACE', 'This session has no workspace directory, so the file cannot be opened.', '该会话没有工作区，无法打开项目文件。'],
+      ['PATH_OUTSIDE_WORKSPACE', 'This path is outside the project workspace and cannot be opened.', '该路径不在项目工作区内，无法打开。'],
+      ['FILE_TOO_LARGE', 'File is too large to preview.', '文件过大，不支持预览。'],
+      // A reason absent or unrecognized by this build (e.g. a future host
+      // value) falls back to the generic notice, never the host's raw text.
+      [undefined, 'Unable to open this file.', '无法打开该文件。'],
+      ['SOME_FUTURE_REASON', 'Unable to open this file.', '无法打开该文件。'],
+    ]
+    for (const [reason, enText, zhText] of cases) {
+      const hostMessage = 'Workspace file exceeds the 2 MiB preview limit.'
+      const loadWorkspaceFile = vi.fn().mockResolvedValue({
+        ok: false,
+        error: { code: 'science-artifact-error', message: hostMessage, details: { reason } },
+      })
+      const store = testScienceSelectionStore()
+      store.actions.openFileTab('bad.csv')
+      const rendered = render(<ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFile, store })} />)
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain(enText)
+      expect(alert.textContent).not.toContain(hostMessage)
+      rendered.unmount()
+
+      const zhStore = testScienceSelectionStore()
+      zhStore.actions.openFileTab('bad.csv')
+      const zhRendered = render(
+        <ScienceDetailsView {...props(baseProjection(), { loadWorkspaceFile, store: zhStore })} t={makeTranslate(zh)} />,
+      )
+      expect((await screen.findByRole('alert')).textContent).toContain(zhText)
+      zhRendered.unmount()
+    }
   })
 
   it('ignores workspace listing and file reads that settle after the library unmounts', async () => {

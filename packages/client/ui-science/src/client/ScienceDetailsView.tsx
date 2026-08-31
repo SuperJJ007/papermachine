@@ -32,6 +32,7 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { shallowEqual } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ISession, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { RpcError } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -499,6 +500,29 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
   />
 }
 
+/**
+ * Localize a `readWorkspaceFile` RPC failure for the project-file preview.
+ * The host's `WorkspaceReadError` reason (`packages/host/apiproxy/src/api-proxy.ts`)
+ * is a closed three-value enum carried as `science-artifact-error`'s
+ * `details.reason`, but the wire type widens it to `string` — an
+ * unrecognized reason (a future host value this build predates) and every
+ * other error code fall back to a generic localized notice. `error.message`
+ * is the host's own English text for logs and non-localized callers; it
+ * must never reach this screen directly.
+ * @param error - the RPC failure from `loadWorkspaceFile`.
+ * @param t - the Science namespace translator.
+ * @returns localized notice text for the preview body.
+ */
+function workspaceFileErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+  const reason = error.code === 'science-artifact-error' ? error.details.reason : undefined
+  switch (reason) {
+    case 'NO_WORKSPACE': return t('library.fileNoWorkspace')
+    case 'PATH_OUTSIDE_WORKSPACE': return t('library.filePathOutside')
+    case 'FILE_TOO_LARGE': return t('library.fileTooLarge')
+    default: return t('library.fileOpenFailed')
+  }
+}
+
 function WorkspaceFilePreview({ path, loadWorkspaceFile, t }: {
   path: string
   loadWorkspaceFile: ScienceDetailsInjected['loadWorkspaceFile']
@@ -510,10 +534,10 @@ function WorkspaceFilePreview({ path, loadWorkspaceFile, t }: {
     let live = true
     void loadWorkspaceFile(path).then((result) => {
       if (!live) return
-      if (result.ok) setLoaded(result.value); else setError(result.error.message)
+      if (result.ok) setLoaded(result.value); else setError(workspaceFileErrorText(result.error, t))
     })
     return () => { live = false }
-  }, [loadWorkspaceFile, path])
+  }, [loadWorkspaceFile, path, t])
   if (error !== undefined) return <p role="alert" className={css.notice}>{error}</p>
   if (loaded === undefined) return <p role="status" className={css.notice}>{t('artifact.loading')}</p>
   if (!isPreviewMediaType(loaded.mediaType)) {

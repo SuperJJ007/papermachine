@@ -77,6 +77,16 @@ async function ensureSeedOpen(page: Page): Promise<void> {
   }
 }
 
+// Adjacent tool calls fold into one collapsed-by-default Tool group; the
+// fixture's turn-1 bash-then-two-reads run folds into a single group, so
+// member rows like [data-sample="bash"] don't render until it opens. The
+// header's category text is mixed (run + read) and thus not worth pinning,
+// so this expands by the group's own toggle attribute instead.
+async function expandToolGroups(page: Page): Promise<void> {
+  const groups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
+  while (await groups.count() > 0) await groups.first().click()
+}
+
 describe('web e2e: navigation & panes over a rich seeded session', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -400,6 +410,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('bash and file-path rows leave the default details column closed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-details'))
     await ensureSeedOpen(page)
+    await expandToolGroups(page)
     const bashRow = page.locator('[data-sample="bash"]').first()
     await bashRow.waitFor({ timeout: 15_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
@@ -431,6 +442,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   it.skipIf(MODE === 'record')('renders the bash row as a terminal card in the real browser', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-terminal'))
     await ensureSeedOpen(page)
+    await expandToolGroups(page)
     // The card is expand-gated behind the whole-row toggle (the unified
     // tool-row interaction): open it if this fresh view leaves it collapsed.
     // Expanded, the recorded command's own output sits in the message flow,

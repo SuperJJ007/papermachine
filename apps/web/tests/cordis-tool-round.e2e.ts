@@ -139,6 +139,14 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     await expect.poll(() => page.getByText('CORDIS_UI_DONE', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
 
+    // The three run-turn calls (inspect_self, define, run — each preceded by
+    // its own reasoning row) are adjacent tool-call Chat Nodes and fold into
+    // one collapsed-by-default Tool group ("Ran 3 other steps"; cordis tool
+    // names bucket as the generic "other" category). Expand it so the member
+    // rows below exist. cordis_stop starts a new turn and stays ungrouped.
+    const closedGroups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
+    while (await closedGroups.count() > 0) await closedGroups.first().click()
+
     const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').filter({ hasText: 'Inspect' }).first()
     await inspectRow.waitFor({ timeout: 10_000 })
 

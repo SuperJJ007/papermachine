@@ -749,6 +749,13 @@ describe('web e2e: long Chat scroll contract', () => {
       await expectBottom(world.page)
       const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
 
+      // The last turn's two seeded bash calls fold into one collapsed-by-
+      // default Tool group; the transcript is virtualized and pinned to the
+      // floor, so the only closed group mounted here is that one. Expand it
+      // so the member row exists before focusing it.
+      const closedGroups = world.page.locator('[data-tool-group] > button[aria-expanded="false"]')
+      while (await closedGroups.count() > 0) await closedGroups.first().click()
+
       // Focus rides the last seeded tool row (a tabbable button whose keydown
       // handler passes scrolling keys through). End first normalizes the
       // focus-driven scrollIntoView back to the floor.

@@ -12,6 +12,17 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/** Stubs a `localStorage` backed by an in-memory map and returns it for direct inspection. */
+function stubStorage(): Map<string, string> {
+  const backing = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => backing.get(k) ?? null,
+    setItem: (k: string, v: string) => { backing.set(k, v) },
+    removeItem: (k: string) => { backing.delete(k) },
+  })
+  return backing
+}
+
 describe('createSnapshotStore', () => {
   it('applies update through a draft and preserves untouched branch references', () => {
     const store = createSnapshotStore(init())
@@ -109,6 +120,21 @@ describe('createSnapshotStore', () => {
     expect(revived.getSnapshot()).toBe('hello')
   })
 
+  it('discards a scalar payload of a different kind than the base and keeps init()', () => {
+    const backing = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => backing.get(k) ?? null,
+      setItem: (k: string, v: string) => { backing.set(k, v) },
+      removeItem: (k: string) => { backing.delete(k) },
+    })
+    backing.set('spec-kind-mismatch', JSON.stringify(42))
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const revived = createSnapshotStore<string>('fallback', { persist: { name: 'spec-kind-mismatch' } })
+    expect(revived.getSnapshot()).toBe('fallback')
+    expect(spy).toHaveBeenCalledOnce()
+    spy.mockRestore()
+  })
+
   it('persists to localStorage under the given name and rehydrates', () => {
     const backing = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -122,6 +148,42 @@ describe('createSnapshotStore', () => {
     const revived = createSnapshotStore(init(), { persist: { name: 'spec-store' } })
     expect(revived.getSnapshot().a.n).toBe(42)
   })
+
+  describe('rehydration merge', () => {
+    it('keeps init() value for a field absent from the persisted payload', () => {
+      const backing = stubStorage()
+      backing.set('spec-partial', JSON.stringify({ a: { n: 9 } }))
+      const revived = createSnapshotStore(init(), { persist: { name: 'spec-partial' } })
+      expect(revived.getSnapshot()).toEqual({ a: { n: 9 }, b: { list: ['x'] } })
+    })
+
+    it('drops a payload field the base does not declare', () => {
+      const backing = stubStorage()
+      backing.set('spec-extra', JSON.stringify({ a: { n: 9 }, b: { list: [] }, ghost: true }))
+      const revived = createSnapshotStore(init(), { persist: { name: 'spec-extra' } })
+      expect(revived.getSnapshot()).toEqual({ a: { n: 9 }, b: { list: [] } })
+      expect('ghost' in revived.getSnapshot()).toBe(false)
+    })
+
+    it('discards a non-object payload and keeps init()', () => {
+      const backing = stubStorage()
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      for (const malformed of ['null', '[1,2]', '"oops"', '42']) {
+        backing.set('spec-malformed', malformed)
+        const revived = createSnapshotStore(init(), { persist: { name: 'spec-malformed' } })
+        expect(revived.getSnapshot()).toEqual(init())
+      }
+      expect(spy).toHaveBeenCalledTimes(4)
+      spy.mockRestore()
+    })
+
+    it('keeps init() when no payload is stored', () => {
+      stubStorage()
+      const revived = createSnapshotStore(init(), { persist: { name: 'spec-absent' } })
+      expect(revived.getSnapshot()).toEqual(init())
+    })
+  })
+
 })
 
 describe('defineStore', () => {

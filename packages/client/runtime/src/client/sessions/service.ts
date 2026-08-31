@@ -97,10 +97,16 @@ export interface SessionListState {
   currentAddress: SubagentAddress | undefined
 }
 
-/** Persisted navigation cell: address survives refresh for correct history routing. */
+/**
+ * Persisted navigation cell: address survives refresh for correct history
+ * routing. Fields are optional-with-explicit-`undefined` (not bare `?:`) so
+ * `init()`'s object literal below carries both keys as its own properties —
+ * the persistence merge in `contract/store.ts` only restores keys the base
+ * object already has.
+ */
 interface SessionSelection {
-  sessionId?: SessionId
-  subagentAddress?: SubagentAddress
+  sessionId?: SessionId | undefined
+  subagentAddress?: SubagentAddress | undefined
 }
 
 /** Structured session-create failure. */
@@ -282,7 +288,7 @@ export class SessionRuntime implements ISessions {
     conversationRuntime?: ConversationRuntime,
   ) {
     this.selection = createSnapshotStore<SessionSelection>(
-      {},
+      { sessionId: undefined, subagentAddress: undefined },
       { persist: { name: 'dsh.sessions.current' } })
     const restored = this.selection.getSnapshot()
     const conversationEvents = rootCtx.get('conversationEvents')

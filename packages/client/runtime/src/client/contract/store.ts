@@ -8,6 +8,12 @@
  * glue): engine products are bare observables — subscribe/getSnapshot/
  * update/set, NO selector hook. Hook synthesis is ui-renderer's (the one
  * uSES bridge, cached per source at the binding site).
+ *
+ * Persistence rehydrates by merging the stored payload's top-level keys over
+ * `init()`'s value rather than replacing the state wholesale, so a field
+ * added since an older build wrote the payload keeps its init value instead
+ * of coming back `undefined`; see {@link attachPersistence} for the merge
+ * contract.
  */
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { subscribeWithSelector } from 'zustand/middleware'
@@ -117,12 +123,28 @@ export function createSnapshotStore<T>(
 }
 
 /**
- * Whole-value JSON persistence to localStorage. Hand-rolled instead of the
- * zustand persist middleware: its write path spreads state into an object
- * (`partialize({ ...get() })`), exploding primitive state (a persisted string
- * draft becomes {0:'h',1:'e',...}) — not fixable via merge/deserialize options
- * because the corruption happens before serialization. Storage failures
- * (quota, private mode) only disable persistence, never break the store.
+ * Whole-value JSON persistence to localStorage, merged over `init()` on
+ * read. Hand-rolled instead of the zustand persist middleware: its write
+ * path spreads state into an object (`partialize({ ...get() })`), exploding
+ * primitive state (a persisted string draft becomes {0:'h',1:'e',...}) — not
+ * fixable via merge/deserialize options because the corruption happens
+ * before serialization. Storage failures (quota, private mode) only disable
+ * persistence, never break the store.
+ *
+ * Rehydration takes the store's state at call time — `init()`'s value; no
+ * mutation has happened yet — as the base and overlays only the persisted
+ * payload's own top-level keys that the base already has: a field added to
+ * `init()` since the payload was written keeps its init value instead of
+ * coming back `undefined`, and a field the current build no longer declares
+ * is dropped instead of reappearing. This is a shallow, one-level merge —
+ * nested shape drift (a field whose own internal shape changed) is not
+ * reconciled and stays the version-suffix's job. A payload that does not
+ * match the base's kind (a plain object where the base is a plain object;
+ * the same primitive/array kind otherwise) is rejected outright and
+ * `init()` is kept, through the same non-fatal log path as a storage or
+ * parse failure.
+ * @param api - the store to attach persistence to.
+ * @param name - localStorage key.
  */
 function attachPersistence<T>(api: StoreApi<T>, name: string): void {
   // Non-browser runs (node e2e booting the client tree) have no localStorage:
@@ -132,7 +154,9 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
   try {
     const raw = localStorage.getItem(name)
     if (raw !== null) {
-      api.setState(devFreeze(JSON.parse(raw) as T), true)
+      const merged = mergeRehydrated(api.getState(), JSON.parse(raw) as unknown)
+      if (merged === undefined) throw new Error('persisted payload does not match the state init() declares')
+      api.setState(devFreeze(merged), true)
     }
   } catch (error) {
     console.error(`snapshot store '${name}' rehydration failed:`, error)
@@ -144,6 +168,36 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
       console.error(`snapshot store '${name}' persistence failed:`, error)
     }
   })
+}
+
+/** Type guard for plain JSON objects: excludes arrays, `null`, and every non-object JSON value. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Reconcile a rehydrated payload against the live base state (see
+ * {@link attachPersistence} for the merge contract). Object states merge
+ * top-level keys the base already has; scalar/array states declare no
+ * fields to merge, so the payload is accepted whole only when it is the
+ * same kind of value as the base.
+ * @param base - the store's state at rehydration time (`init()`'s value).
+ * @param parsed - the JSON-parsed persisted payload.
+ * @returns the merged state, or `undefined` to reject the payload.
+ */
+function mergeRehydrated<T>(base: T, parsed: unknown): T | undefined {
+  if (isPlainObject(base)) {
+    if (!isPlainObject(parsed)) return undefined
+    const merged: Record<string, unknown> = { ...base }
+    for (const key of Object.keys(base)) {
+      if (key in parsed) merged[key] = parsed[key]
+    }
+    return merged as T
+  }
+  if (isPlainObject(parsed)) return undefined
+  if (Array.isArray(base) !== Array.isArray(parsed)) return undefined
+  if (typeof parsed !== typeof base) return undefined
+  return parsed as T
 }
 
 /** Deep-freeze wholesale-set state outside production: set() bypasses immer's freeze. */

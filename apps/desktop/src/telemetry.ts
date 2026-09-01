@@ -8,8 +8,8 @@
 import { randomUUID } from 'node:crypto'
 
 /** Platform/arch vocabulary this application ships for; matches `DesktopPlatform` in `environment-declaration.ts`. */
-export type TelemetryPlatform = 'darwin'
-export type TelemetryArch = 'arm64' | 'x64'
+type TelemetryPlatform = 'darwin'
+type TelemetryArch = 'arm64' | 'x64'
 
 /** Fields identical across every event, filled in by {@link TelemetryReporter.report}. */
 interface TelemetryEnvelope {
@@ -46,7 +46,7 @@ export type TelemetryEventInput =
   }
 
 /** One complete telemetry event as sent over the wire. */
-export type TelemetryEvent = TelemetryEnvelope & TelemetryEventInput
+type TelemetryEvent = TelemetryEnvelope & TelemetryEventInput
 
 /** The envelope fields constant for the lifetime of one desktop process. */
 export interface TelemetryReporterContext {

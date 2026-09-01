@@ -635,7 +635,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       // than one), and only a 'failed' outcome tries the next URL — a
       // 'cancelled'/'timed-out' outcome shares this call's OperationControl
       // across every attempt, so retrying would immediately observe the same
-      // abort. See the channel-fallback Agent Note.
+      // abort. See the [package-install Agent Note](../../../../.agents/notes/implemented/feature/2026-09-01-science-package-install.md).
       let outcome: InstallOutcome | undefined
       for (const [index, channelUrl] of installer.channels.entries()) {
         const argv = installArgv(executable, binding.canonicalPrefix, request.packages, channelUrl)

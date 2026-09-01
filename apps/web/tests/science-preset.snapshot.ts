@@ -156,7 +156,7 @@ describe('science agent preset', () => {
     const rosterTools = requestHeader.tools?.map(tool => tool.name)
       .filter(name => name !== 'glob' && name !== 'grep').sort()
     expect(rosterTools).toEqual([
-      'annotate_artifact', 'ask_user_question', 'get_science_state', 'install_science_packages',
+      'annotate_artifact', 'ask_user_question', 'exit_plan_mode', 'get_science_state', 'install_science_packages',
       'read', 'read_image', 'run_python', 'run_r', 'skill', 'todo_write', 'web_fetch', 'web_search',
     ])
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))

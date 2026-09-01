@@ -27,15 +27,21 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 /** One version row still missing fields only a v1-era session log ever held, handed to a `backfillProvenance` hook. */
 export interface BackfillProvenanceRow {
+  /** The migrated version's id — the key the hook's returned map is looked up by. */
   readonly versionId: string
+  /** The artifact this version belongs to, for scoping which session logs are relevant. */
   readonly artifactId: string
+  /** The session that produced this version, for scoping which session logs are relevant. */
   readonly producerSessionId: string
 }
 
 /** Live-figure-object state a `backfillProvenance` hook recovered for one version. */
 export interface BackfillProvenanceFigureState {
+  /** Identifies which live figure this state belongs to, opaque to this package. */
   readonly figureKey: string
+  /** Rendering resolution, dots per inch. */
   readonly dpi: number
+  /** Opaque JSON text for the chart's live-object state; this package stores it verbatim without parsing. */
   readonly stateJson: string
 }
 
@@ -48,7 +54,9 @@ export interface BackfillProvenanceFigureState {
 export interface BackfillProvenanceValue {
   /** Full 64-hex-character digest, not a preview. */
   readonly environmentFingerprint?: string
+  /** The request/response turn number of the authorizing tool call. */
   readonly producerTurn?: number
+  /** The live-figure-object state to write into `figure_state` for this version. */
   readonly figureState?: BackfillProvenanceFigureState
   /** The authorizing tool call for the version's ONE migration-derived annotation row, if the log still names it. */
   readonly annotationToolCallId?: string

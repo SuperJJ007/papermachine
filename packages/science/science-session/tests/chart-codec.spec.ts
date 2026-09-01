@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import {
-  decodeScienceArtifact,
   decodeScienceChartState,
   MAX_CHART_ELEMENTS,
   MAX_CHART_OPS,
 } from '../src/index.ts'
 import type { ScienceChartElement, ScienceChartState } from '../src/index.ts'
-import { artifact } from './fixtures.ts'
 
 const element = (id = 'title', current: JsonValue = 'Quarterly revenue'): ScienceChartElement => ({
   id,
@@ -29,10 +27,9 @@ const chart = (overrides: Partial<ScienceChartState> = {}): ScienceChartState =>
 })
 
 describe('Science chart codec', () => {
-  it('decodes a bounded live-figure state and a PNG artifact carrying it', () => {
+  it('decodes a bounded live-figure state', () => {
     const value = chart()
     expect(decodeScienceChartState(value)).toEqual(value)
-    expect(decodeScienceArtifact(artifact({ chart: value }))).toMatchObject({ chart: value })
   })
 
   it('decodes every supported chart operation', () => {
@@ -126,9 +123,5 @@ describe('Science chart codec', () => {
     expect(() => decodeScienceChartState(chart({
       hitmap: [{ id: 'title', bbox: [0, 0, 641, 1], z: 0 }],
     }))).toThrow(/PNG pixel bounds/)
-  })
-
-  it('rejects chart state on a non-PNG artifact version', () => {
-    expect(() => decodeScienceArtifact(artifact({ mediaType: 'text/plain', chart: chart() }))).toThrow(/only image\/png/)
   })
 })

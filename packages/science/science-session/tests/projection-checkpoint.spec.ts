@@ -11,13 +11,11 @@ import {
   viewScienceProjectionState,
 } from '../src/projection.ts'
 import {
-  foldScience,
   replayScience,
   ScienceArtifactId,
   ScienceRunId,
   ScienceVersionId,
   toClientScienceProjection,
-  toolCallTurnsOf,
 } from '../src/index.ts'
 import type {
   ScienceOutcomePublication,
@@ -27,7 +25,6 @@ import type {
 import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
-  ARTIFACT_ID,
   artifact,
   event,
   kernelExited,
@@ -157,36 +154,28 @@ describe('Science private projection checkpoint', () => {
     expect(scienceProjectionStateSeq(observed)).toBe(11)
     expect(scienceProjectionChanged(complete, observed)).toBe(false)
     const withIrrelevant = [...legalEvents(), irrelevant]
-    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(
-      replayScience(withIrrelevant),
-      toolCallTurnsOf(foldScience(withIrrelevant)),
-    ))
+    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(replayScience(withIrrelevant)))
     expect(scienceProjectionStateSchema.safeParse(observed).success).toBe(true)
   })
 
-  it('round-trips artifact ancestry and run inputs through the witness-backed checkpoint', () => {
-    const branchCall = CallId('checkpoint-branch-call')
+  it('round-trips a run input referencing a prior committed artifact version through the witness-backed checkpoint', () => {
     const branchId = ScienceArtifactId('checkpoint-branch')
-    const parent = { artifactId: ARTIFACT_ID, version: 1 }
     const runCall = CallId('checkpoint-input-run')
     const inputs = [{ artifactId: branchId, version: 1, path: 'source/branch.png' }]
     const events: SessionEvent[] = [
       ...legalEvents().slice(0, 9),
-      toolCall(9, 175, branchCall, 'annotate_artifact'),
-      event('science/artifact-saved', 10, 180, {
+      event('science/artifact-saved', 9, 180, {
         version: 1,
         artifact: artifact({
           artifactId: branchId,
           logicalName: 'checkpoint-branch.png',
-          parent,
-          toolCallId: branchCall,
           versionId: ScienceVersionId('checkpoint-branch-v1'),
           sha256: '3'.repeat(64),
-          createdAt: 179,
+          seenAt: 179,
         }),
       }),
-      toolCall(11, 185, runCall, 'run_python', { turn: 2, step: 1 }),
-      event('science/run-started', 12, 190, {
+      toolCall(10, 185, runCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 11, 190, {
         version: 1,
         run: runStarted({
           runId: ScienceRunId('checkpoint-input-run'),
@@ -200,7 +189,7 @@ describe('Science private projection checkpoint', () => {
 
     const state = projectState(events)
     expect(scienceProjectionStateSchema.safeParse(state).success).toBe(true)
-    expect(viewScienceProjectionState(state)?.artifacts.at(-1)).toMatchObject({ parent })
+    expect(viewScienceProjectionState(state)?.artifacts.at(-1)).toMatchObject({ artifactId: branchId })
     expect(viewScienceProjectionState(state)?.runs.at(-1)).toMatchObject({ inputs })
   })
 

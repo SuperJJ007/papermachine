@@ -3,7 +3,7 @@
 import { isJsonValue } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import type { ZodType } from 'zod'
-import { decodeScienceChartState, decodeScienceMode } from './codec.ts'
+import { decodeScienceMode } from './codec.ts'
 import type { ScienceClientProjection, ScienceKernelEndReason } from './types.ts'
 
 /**
@@ -216,64 +216,23 @@ function validKernel(value: unknown): boolean {
       || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }
 
-const ARTIFACT_MEDIA_TYPES = [
-  'image/png',
-  'text/csv',
-  'application/json',
-  'text/markdown',
-  'text/plain',
-]
-
 function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
-  const humanEdit = candidate['origin'] === 'human-edit'
-  const keys = ['artifactId', 'producerSessionId', 'logicalName', 'version', 'title', 'origin',
-    'versionId', 'sha256', 'mediaType', 'byteCount',
-    'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
-  if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq', 'turn')
+  const keys = ['artifactId', 'logicalName', 'version', 'title', 'versionId', 'sha256', 'seenAt']
   if (candidate['caption'] !== undefined) keys.push('caption')
-  if (candidate['parent'] !== undefined) keys.push('parent')
-  if (candidate['chart'] !== undefined) keys.push('chart')
-  let validChart = true
-  if (candidate['chart'] !== undefined) {
-    if (candidate['mediaType'] !== 'image/png') validChart = false
-    else {
-      try {
-        decodeScienceChartState(candidate['chart'])
-      } catch {
-        validChart = false
-      }
-    }
-  }
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && candidate['artifactId'].length > 0
-    && typeof candidate['producerSessionId'] === 'string'
-    && candidate['producerSessionId'].length > 0
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
-    && (humanEdit ? validArtifactVersionRef(candidate['parent']) : candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
-    && (humanEdit || candidate['origin'] === 'auto' || candidate['origin'] === 'model')
     && typeof candidate['versionId'] === 'string'
     && candidate['versionId'].length > 0
     && typeof candidate['sha256'] === 'string'
     && /^[a-f0-9]{64}$/.test(candidate['sha256'])
-    && typeof candidate['mediaType'] === 'string'
-    && ARTIFACT_MEDIA_TYPES.includes(candidate['mediaType'])
-    && (!humanEdit || candidate['mediaType'] === 'image/png')
-    && safeInteger(candidate['byteCount'], 1)
-    && (humanEdit || typeof candidate['runId'] === 'string')
-    && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)
-    && (humanEdit || safeInteger(candidate['requestHeaderSeq']))
-    && (humanEdit || safeInteger(candidate['turn'], 1))
-    && safeInteger(candidate['environmentRevision'], 1)
-    && typeof candidate['environmentFingerprintPreview'] === 'string'
-    && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
-    && safeInteger(candidate['createdAt'])
-    && validChart
+    && safeInteger(candidate['seenAt'])
 }
 
 function validEvidence(value: unknown): boolean {

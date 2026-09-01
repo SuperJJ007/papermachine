@@ -1,9 +1,10 @@
 /**
  * Science Session Domain: typed durable facts, strict replay validation, and
- * the optional `science` session projection. Artifact bytes live in the
- * project artifact store (`@deepseek-ai/dsh-science-artifact-store`);
- * `science/artifact-saved` carries store references and optional bounded
- * PNG chart state. This package
+ * the optional `science` session projection. The project artifact store
+ * (`@deepseek-ai/dsh-science-artifact-store`) is the sole authority for an
+ * artifact version's provenance; `science/artifact-saved` carries only the
+ * store reference and the title/caption presentation snapshot the model or
+ * user saw when the event committed. This package
  * exposes no mutation service of its own and performs no environment
  * or process work; `@deepseek-ai/dsh-science-runtime` and
  * `@deepseek-ai/dsh-tool-science` own every durable append.
@@ -30,7 +31,7 @@ import {
 } from './projection.ts'
 import type { ScienceProjectionState } from './projection-private.ts'
 import type { ScienceArtifactNotesProjection } from './types.ts'
-import { toClientScienceProjection, toolCallTurnsOf } from './projection-value.ts'
+import { toClientScienceProjection } from './projection-value.ts'
 
 // Type-only re-exports keep event and projection declaration merging visible
 // without turning the pure type outlet into a runtime module.
@@ -69,7 +70,7 @@ export {
   replayScience,
 } from './fold.ts'
 export type { ScienceFoldState } from './fold.ts'
-export { toClientScienceProjection, toolCallTurnsOf }
+export { toClientScienceProjection }
 export { applyScienceArtifactNotes, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from './artifact-notes.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */

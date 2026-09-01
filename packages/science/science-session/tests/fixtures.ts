@@ -1,5 +1,5 @@
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -9,7 +9,7 @@ import {
   ScienceVersionId,
 } from '../src/index.ts'
 import type {
-  ScienceRunArtifactVersion,
+  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterAvailableBinding,
   ScienceInterpreterUnavailableBinding,
@@ -27,7 +27,6 @@ const CODE_SHA = 'c'.repeat(64)
 const SCRATCH_KEY = ScienceScratchKey('d'.repeat(64))
 export const RUN_ID = ScienceRunId('run-1')
 export const ARTIFACT_ID = ScienceArtifactId('artifact-1')
-const PRODUCER_SESSION_ID = SessionId('science-fixture-session')
 export const PROJECT_ID = ScienceProjectId('project-1')
 export const VERSION_ID = ScienceVersionId('version-1')
 const AUTO_VERSION_ID = ScienceVersionId('version-2')
@@ -146,41 +145,34 @@ export const kernelExited = (
   ...overrides,
 })
 
+/**
+ * A durable Science artifact version, as `science/artifact-saved` records it
+ * under the store-is-authority rule: a store reference (`artifactId`,
+ * `versionId`, `version`, `sha256`, `projectId`) plus the title/caption
+ * presentation snapshot the model or user saw when this event committed.
+ */
 export const artifact = (
-  overrides: Partial<ScienceRunArtifactVersion> = {},
-): ScienceRunArtifactVersion => ({
+  overrides: Partial<ScienceArtifactVersion> = {},
+): ScienceArtifactVersion => ({
   artifactId: ARTIFACT_ID,
-  producerSessionId: PRODUCER_SESSION_ID,
   logicalName: 'trend',
   version: 1,
   title: 'Trend',
-  origin: 'model',
   projectId: PROJECT_ID,
   versionId: VERSION_ID,
   sha256: ARTIFACT_SHA,
-  mediaType: 'image/png',
-  byteCount: 128,
-  runId: RUN_ID,
-  toolCallId: ARTIFACT_CALL_ID,
-  requestHeaderSeq: 3,
-  environmentRevision: 1,
-  environmentFingerprint: FINGERPRINT,
-  createdAt: 169,
+  seenAt: 169,
   ...overrides,
 })
 
-/** A durable auto-captured artifact version: carries its source run's own toolCallId/requestHeaderSeq, never a curation call's. */
+/** A durable auto-captured artifact version, distinct from `artifact()`'s curated one only by identity and content. */
 export const autoArtifact = (
-  overrides: Partial<ScienceRunArtifactVersion> = {},
-): ScienceRunArtifactVersion => artifact({
+  overrides: Partial<ScienceArtifactVersion> = {},
+): ScienceArtifactVersion => artifact({
   logicalName: 'summary.csv',
   title: 'summary.csv',
-  origin: 'auto',
   versionId: AUTO_VERSION_ID,
   sha256: AUTO_ARTIFACT_SHA,
-  mediaType: 'text/csv',
-  byteCount: 32,
-  toolCallId: RUN_CALL_ID,
   ...overrides,
 })
 
@@ -194,7 +186,10 @@ export const outcome = (
   publishedAt: 179,
   toolCallId: OUTCOME_CALL_ID,
   requestHeaderSeq: 3,
-  environmentRevisions: [1],
+  // Chart evidence contributes no environmentRevisions: an artifact
+  // version's environment provenance lives only in the project artifact
+  // store, not in this session log (see ScienceOutcomePublication's JSDoc).
+  environmentRevisions: [],
   ...overrides,
 })
 
@@ -317,8 +312,7 @@ export function appendFixtureEvents(
   const artifactSaved = session.append('science/artifact-saved', {
     version: 1,
     artifact: artifact({
-      requestHeaderSeq: request.seq,
-      createdAt: Math.max(runFinish.time, artifactCall.time),
+      seenAt: Math.max(runFinish.time, artifactCall.time),
     }),
   })
   if (events.length === 9) return

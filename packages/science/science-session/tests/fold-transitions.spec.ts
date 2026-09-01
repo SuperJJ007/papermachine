@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  ScienceArtifactId,
   ScienceEnvironmentProfileId,
   ScienceRunId,
   ScienceVersionId,
@@ -10,16 +9,12 @@ import {
 import { foldScience } from '../src/fold.ts'
 import { emptyScienceFoldState } from '../src/fold-state.ts'
 import { applyScienceEvent } from '../src/transition.ts'
-import type { ScienceArtifactVersion, ScienceRunArtifactVersion } from '../src/index.ts'
 import {
-  ARTIFACT_CALL_ID,
   ARTIFACT_ID,
   OUTCOME_CALL_ID,
-  PROJECT_ID,
   RUN_CALL_ID,
   RUN_ID,
   artifact,
-  autoArtifact,
   environment,
   event,
   failedInterpreter,
@@ -34,138 +29,8 @@ import {
 } from './fixtures.ts'
 
 describe('strict Science fold transitions', () => {
-  const pngParent = (overrides: Partial<ScienceRunArtifactVersion> = {}): ScienceArtifactVersion => artifact({
-    logicalName: 'trend.png',
-    versionId: ScienceVersionId('version-png-1'),
-    sha256: '7'.repeat(64),
-    mediaType: 'image/png',
-    byteCount: 128,
-    ...overrides,
-  })
-
-  const humanEdit = (
-    overrides: Partial<Extract<ScienceArtifactVersion, { origin: 'human-edit' }>> = {},
-  ): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> => ({
-    artifactId: ARTIFACT_ID,
-    producerSessionId: artifact().producerSessionId,
-    logicalName: 'trend.png',
-    version: 2,
-    parent: { artifactId: ARTIFACT_ID, version: 1 },
-    title: 'Trend',
-    origin: 'human-edit',
-    projectId: PROJECT_ID,
-    versionId: ScienceVersionId('version-png-2'),
-    sha256: '8'.repeat(64),
-    mediaType: 'image/png',
-    byteCount: 144,
-    environmentRevision: 1,
-    environmentFingerprint: 'b'.repeat(64),
-    createdAt: 179,
-    ...overrides,
-  })
-
-  const pngHistory = (): SessionEvent[] => legalEvents().slice(0, 9).map((candidate, index) => index === 8
-    ? event('science/artifact-saved', 8, 170, { version: 1, artifact: pngParent() })
-    : candidate)
-
-  it('admits a direct PNG edit without run provenance and retains exact ancestry', () => {
-    const state = foldScience([
-      ...pngHistory(),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit() }),
-    ])
-    expect(state.artifacts[1]).toEqual(humanEdit())
-    expect(state.artifacts[1]).not.toHaveProperty('runId')
-    expect(state.artifacts[1]).not.toHaveProperty('toolCallId')
-    expect(state.artifacts[1]).not.toHaveProperty('requestHeaderSeq')
-  })
-
-  it('rejects every invalid direct-edit ancestry and media transition', () => {
-    const invalidCases: Array<readonly [ScienceArtifactVersion, RegExp]> = [
-      [humanEdit({ parent: { artifactId: ARTIFACT_ID, version: 99 } }), /does not identify a committed artifact version/],
-      [humanEdit({ artifactId: ScienceArtifactId('other') }), /parent must be the current committed version/],
-      [humanEdit({ logicalName: 'other.png' }), /retain its parent logical name/],
-      [humanEdit({ environmentRevision: 2 }), /copy its parent environment provenance/],
-      [humanEdit({ createdAt: 169 }), /parent-to-commit event interval/],
-      [humanEdit({ createdAt: 181 }), /parent-to-commit event interval/],
-      [humanEdit({ version: 1 }), /parent cannot name the version being committed/],
-    ]
-    for (const [candidate, expected] of invalidCases) {
-      expect(() => foldScience([
-        ...pngHistory(),
-        event('science/artifact-saved', 9, 180, { version: 1, artifact: candidate }),
-      ])).toThrow(expected)
-    }
-
-    expect(() => foldScience([
-      ...legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: pngParent({ mediaType: 'application/json' }),
-        })
-        : candidate),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit() }),
-    ])).toThrow(/parent must be a PNG/)
-  })
-
-  it('requires each direct edit to name the current committed parent, but not necessarily the immediate next version', () => {
-    const v2 = humanEdit()
-    const history = [
-      ...pngHistory(),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
-    ]
-    expect(() => foldScience([
-      ...history,
-      event('science/artifact-saved', 10, 190, {
-        version: 1,
-        artifact: humanEdit({
-          version: 3,
-          parent: { artifactId: ARTIFACT_ID, version: 1 },
-          versionId: ScienceVersionId('version-png-3'),
-          sha256: '9'.repeat(64),
-          createdAt: 189,
-        }),
-      }),
-    ])).toThrow(/parent must be the current committed version/)
-
-    // A direct edit naming the correct current-committed parent may still
-    // open a version beyond this session's own local maximum without being
-    // exactly the next one: like any other artifact-saved fact, the store's
-    // own transaction already proved that ordinal real (a concurrent
-    // session's own interleaved append may have taken version 2).
-    const state = foldScience([
-      ...pngHistory(),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: humanEdit({ version: 3 }) }),
-    ])
-    expect(state.artifacts.at(-1)).toMatchObject({ artifactId: ARTIFACT_ID, version: 3 })
-  })
-
-  it('rejects model curation of a direct-edit version', () => {
-    const v2 = humanEdit()
-    const annotationCall = CallId('call-annotate-human-edit')
-    expect(() => foldScience([
-      ...pngHistory(),
-      event('science/artifact-saved', 9, 180, { version: 1, artifact: v2 }),
-      toolCall(10, 185, annotationCall, 'annotate_artifact'),
-      event('science/artifact-saved', 11, 190, {
-        version: 1,
-        artifact: artifact({
-          logicalName: v2.logicalName,
-          version: 2,
-          parent: v2.parent,
-          toolCallId: annotationCall,
-          versionId: v2.versionId,
-          sha256: v2.sha256,
-          mediaType: v2.mediaType,
-          byteCount: v2.byteCount,
-          createdAt: 189,
-        }),
-      }),
-    ])).toThrow(/cannot curate a human-edited Science artifact version/)
-  })
-
   it('rejects every strict transition discontinuity without mutating the contract', () => {
     const secondCall = CallId('call-second')
-    const thirdChartCall = CallId('call-chart-regress')
     const secondRunId = ScienceRunId('run-2')
     const invalidEnvironment = environment({
       revision: 2,
@@ -220,19 +85,6 @@ describe('strict Science fold transitions', () => {
         run: runStarted({ requestHeaderSeq: 4, startedAt: 139, environmentRevision: 2 }),
       }),
     ]
-    const secondChart = (overrides: Partial<ScienceRunArtifactVersion>): SessionEvent[] => [
-      ...legalEvents().slice(0, 9),
-      toolCall(9, 180, secondCall, 'annotate_artifact'),
-      event('science/artifact-saved', 10, 190, {
-        version: 1,
-        artifact: artifact({
-          toolCallId: secondCall,
-          createdAt: 189,
-          ...overrides,
-        }),
-      }),
-    ]
-
     const cases: Array<readonly [string, SessionEvent[], RegExp]> = [
       ['duplicate mode', [
         legalEvents()[0]!,
@@ -331,58 +183,13 @@ describe('strict Science fold transitions', () => {
       ['chart before mode', [
         event('science/artifact-saved', 0, 170, { version: 1, artifact: artifact() }),
       ], /prior mode binding/],
-      ['chart from running run', [
-        ...legalEvents().slice(0, 6),
-        toolCall(6, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 7, 160, {
+      ['chart versionId reused by a different committed version', [
+        ...legalEvents().slice(0, 9),
+        event('science/artifact-saved', 9, 180, {
           version: 1,
-          artifact: artifact({ createdAt: 159 }),
+          artifact: artifact({ version: 2 }),
         }),
-      ], /reference a run that reached a terminal status/],
-      ['auto artifact toolCallId does not match its source run', [
-        ...legalEvents().slice(0, 7),
-        event('science/artifact-saved', 7, 165, {
-          version: 1,
-          artifact: autoArtifact({ toolCallId: CallId('mismatched-call'), createdAt: 165 }),
-        }),
-      ], /must carry its source run's own toolCallId/],
-      ['auto artifact requestHeaderSeq does not match its source run', [
-        ...legalEvents().slice(0, 7),
-        event('request/header', 7, 165, {
-          header: { config: { provider: 'test', model: 'test-model' } },
-          reason: 'second',
-        }),
-        event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: autoArtifact({ requestHeaderSeq: 7, createdAt: 170 }),
-        }),
-      ], /must carry its source run's own toolCallId/],
-      ['chart without tool call', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: artifact({ toolCallId: CallId('missing-call') }),
-        })
-        : candidate), /does not identify one call after its cited request\/header/],
-      ['chart environment revision mismatch', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: artifact({ environmentRevision: 2 }),
-        })
-        : candidate), /environment provenance/],
-      ['chart fingerprint mismatch', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: artifact({ environmentFingerprint: 'e'.repeat(64) }),
-        })
-        : candidate), /environment provenance/],
-      ['chart before run finish', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact({ createdAt: 148 }) })
-        : candidate), /creation time/],
-      ['chart after event', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact({ createdAt: 171 }) })
-        : candidate), /creation time/],
-      ['artifactId reused for another logical artifact', secondChart({ logicalName: 'other' }), /two logical artifacts/],
-      ['chart version changes identity', secondChart({ artifactId: ScienceArtifactId('chart-2'), version: 2 }), /advance beyond the locally committed version/],
+      ], /versionId cannot back two committed versions/],
       // Once this session's own log carries versions 1 and 4 for ARTIFACT_ID
       // (the version-4 save itself accepted as an S3 interleaving gap, see
       // fold.spec.ts), a value inside that locally-known range which
@@ -390,27 +197,13 @@ describe('strict Science fold transitions', () => {
       // can catch, and throws.
       ['chart version regresses inside the locally-known range', [
         ...legalEvents().slice(0, 9),
-        toolCall(9, 180, secondCall, 'annotate_artifact'),
-        event('science/artifact-saved', 10, 190, {
+        event('science/artifact-saved', 9, 190, {
           version: 1,
-          artifact: artifact({ version: 4, toolCallId: secondCall, createdAt: 189, versionId: ScienceVersionId('version-gap-ahead') }),
+          artifact: artifact({ version: 4, versionId: ScienceVersionId('version-gap-ahead') }),
         }),
-        toolCall(11, 195, thirdChartCall, 'annotate_artifact'),
-        event('science/artifact-saved', 12, 200, {
+        event('science/artifact-saved', 10, 200, {
           version: 1,
-          artifact: artifact({ version: 2, toolCallId: thirdChartCall, createdAt: 199 }),
-        }),
-      ], /advance beyond the locally committed version/],
-      ['chart version moves creation time backwards', [
-        ...legalEvents().slice(0, 9),
-        toolCall(9, 168, secondCall, 'annotate_artifact'),
-        event('science/artifact-saved', 10, 190, {
-          version: 1,
-          artifact: artifact({
-            version: 2,
-            toolCallId: secondCall,
-            createdAt: 168,
-          }),
+          artifact: artifact({ version: 2, versionId: ScienceVersionId('version-gap-mismatch') }),
         }),
       ], /advance beyond the locally committed version/],
       ['outcome before mode', [
@@ -459,6 +252,7 @@ describe('strict Science fold transitions', () => {
             evidence: [{ kind: 'message', seq: 3 }],
             publishedAt: 139,
             requestHeaderSeq: 2,
+            environmentRevisions: [1],
           }),
         }),
       ], /environment revision 1 was not applied/],
@@ -543,11 +337,15 @@ describe('strict Science fold transitions', () => {
       toolCall(10, 176, OUTCOME_CALL_ID, 'publish_outcome'),
       event('science/outcome-published', 11, 180, {
         version: 1,
-        outcome: outcome({ evidence: [
-          { kind: 'run', runId: RUN_ID },
-          { kind: 'chart', chartId: ARTIFACT_ID, version: 1 },
-          { kind: 'message', seq: 9 },
-        ] }),
+        outcome: outcome({
+          evidence: [
+            { kind: 'run', runId: RUN_ID },
+            { kind: 'chart', chartId: ARTIFACT_ID, version: 1 },
+            { kind: 'message', seq: 9 },
+          ],
+          // Chart evidence contributes no environmentRevisions; only the run does.
+          environmentRevisions: [1],
+        }),
       }),
     ]
     expect(() => foldScience(withMessageEvidence)).not.toThrow()
@@ -598,38 +396,31 @@ describe('strict Science fold transitions', () => {
 
     const chartVersionTwo = [
       ...legalEvents().slice(0, 9),
-      toolCall(9, 180, CallId('call-chart-2'), 'annotate_artifact'),
-      event('science/artifact-saved', 10, 190, {
+      event('science/artifact-saved', 9, 190, {
         version: 1,
         artifact: artifact({
           version: 2,
-          toolCallId: CallId('call-chart-2'),
           versionId: ScienceVersionId('version-chart-2'),
-          createdAt: 189,
         }),
       }),
     ]
     expect(foldScience(chartVersionTwo).artifacts.map(candidate => candidate.version)).toEqual([1, 2])
   })
 
-  it('creates a new version for a curation-only re-save with identical content bytes', () => {
+  it('accepts a new version whose content sha256 repeats a prior version verbatim', () => {
     // The fold has no content-hash dedup of its own — deciding whether
     // unchanged content warrants a new version is the capture/curation
-    // caller's decision (see the Runtime), not this package's. A re-save
-    // that only changes title, caption, and origin must still be accepted
-    // as the next contiguous version, provided its store row is fresh.
+    // caller's decision (see the Runtime), not this package's. A fresh
+    // store row must still be accepted as the next contiguous version even
+    // when its content matches a prior version byte for byte.
     const events = [
       ...legalEvents().slice(0, 9),
-      toolCall(9, 180, CallId('call-chart-2'), 'annotate_artifact'),
-      event('science/artifact-saved', 10, 190, {
+      event('science/artifact-saved', 9, 190, {
         version: 1,
         artifact: artifact({
           version: 2,
-          toolCallId: CallId('call-chart-2'),
-          createdAt: 189,
           title: 'Curated trend',
           caption: 'Selected by the model.',
-          origin: 'model',
           // Identical sha256 to the version-1 fixture; fresh store row.
           versionId: ScienceVersionId('version-resave'),
         }),
@@ -640,15 +431,13 @@ describe('strict Science fold transitions', () => {
       version: candidate.version,
       title: candidate.title,
       caption: candidate.caption,
-      origin: candidate.origin,
       sha256: candidate.sha256,
     }))).toEqual([
-      { version: 1, title: 'Trend', caption: undefined, origin: 'model', sha256: artifact().sha256 },
+      { version: 1, title: 'Trend', caption: undefined, sha256: artifact().sha256 },
       {
         version: 2,
         title: 'Curated trend',
         caption: 'Selected by the model.',
-        origin: 'model',
         sha256: artifact().sha256,
       },
     ])

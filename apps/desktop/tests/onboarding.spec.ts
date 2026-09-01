@@ -1,20 +1,14 @@
 // @vitest-environment jsdom
 /**
- * DOM behavior of onboarding's `renderGroup`/selection state machine:
- * presence-filtered listing, version-unknown rendering, preselection
- * preserved across a re-detect that still finds the chosen candidate (and
- * falling back to the default preselect when it does not), and the
- * error-state reset. `apps/` sits outside the repository coverage gate, so
- * this suite is the only net catching a regression in `src/onboarding.ts`.
+ * DOM behavior of onboarding's single install route: the confirm panel's
+ * size/disk statement and package-source picker, the standard and custom
+ * provisioning paths, progress rendering, and failure recovery. `apps/`
+ * sits outside the repository coverage gate, so this suite is the only net
+ * catching a regression in `src/onboarding.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CondaCandidate } from '../src/detection.ts'
 import type { DesktopOnboardingBridge, OfferedEnvironment } from '../src/preload.ts'
 import type { ProvisioningProgress } from '../src/provisioning.ts'
-
-const NOTHING_DETECTED_MESSAGE = '未检测到本机环境，可以直接安装下面的标准环境。 · No environment was found on this machine; install the standard one below.'
-const DETECTION_FAILED_MESSAGE = '检测失败，仍可安装下面的标准环境。 · Detection failed; the standard environment below can still be installed.'
-const VERSION_UNAVAILABLE = '解释器版本未知 · interpreter version unavailable'
 
 const STANDARD: OfferedEnvironment = {
   id: 'general',
@@ -23,35 +17,16 @@ const STANDARD: OfferedEnvironment = {
   packages: ['python=3.13', 'numpy=2.3', 'r-base=4.5'],
   estimatedDownloadBytes: 520_000_000,
   requiredFreeBytes: 6_000_000_000,
-}
-
-function pythonOnly(prefix: string, pythonVersion?: string): CondaCandidate {
-  return { prefix, presence: { python: true, r: false }, ...(pythonVersion === undefined ? {} : { pythonVersion }) }
-}
-
-function rOnly(prefix: string, rVersion?: string): CondaCandidate {
-  return { prefix, presence: { python: false, r: true }, ...(rVersion === undefined ? {} : { rVersion }) }
-}
-
-function both(prefix: string, pythonVersion?: string, rVersion?: string): CondaCandidate {
-  return {
-    prefix,
-    presence: { python: true, r: true },
-    ...(pythonVersion === undefined ? {} : { pythonVersion }),
-    ...(rVersion === undefined ? {} : { rVersion }),
-  }
+  sources: [
+    { id: 'tuna', name: 'TUNA mirror' },
+    { id: 'ustc', name: 'USTC mirror' },
+    { id: 'official', name: 'Official channel' },
+  ],
+  defaultSourceId: 'official',
 }
 
 function setDom(): void {
   document.body.innerHTML = `
-    <section id="detected" hidden>
-      <section id="python-section" hidden><div id="python-choices"></div></section>
-      <section id="r-section" hidden><div id="r-choices"></div></section>
-      <div class="actions"><button id="bind" disabled></button><button id="redetect"></button></div>
-    </section>
-    <div id="guidance" hidden>
-      <p id="guidance-message"></p>
-    </div>
     <section id="install">
       <p id="install-summary"></p>
       <ul id="packages"></ul>
@@ -63,6 +38,7 @@ function setDom(): void {
     </section>
     <section id="confirm" hidden>
       <p id="confirm-detail"></p>
+      <div id="confirm-sources"></div>
       <div class="actions"><button id="confirm-start"></button><button id="confirm-cancel"></button></div>
     </section>
     <section id="progress" hidden>
@@ -80,25 +56,15 @@ function requireElement(selector: string): Element {
   return element
 }
 
-/** Every `<label class="choice">` radio value and its rendered version text, in DOM order, None first. */
-function renderedChoices(containerSelector: string): readonly { readonly value: string; readonly version: string }[] {
-  return [...document.querySelectorAll(`${containerSelector} label.choice`)].map((label) => {
-    const input = label.querySelector('input')
-    if (!(input instanceof HTMLInputElement)) throw new Error('onboarding spec: choice missing its radio input')
-    const small = label.querySelector('small')
-    return { value: input.value, version: small?.textContent ?? '' }
-  })
-}
-
 function checkedValue(containerSelector: string): string {
   const checked = document.querySelector<HTMLInputElement>(`${containerSelector} input:checked`)
   if (checked === null) throw new Error('onboarding spec: no radio checked')
   return checked.value
 }
 
-/** Select `value` in a rendered group by dispatching the same `change` event a real click produces. */
-function choose(containerSelector: string, value: string): void {
-  const input = requireElement(`${containerSelector} input[value="${value}"]`) as HTMLInputElement
+/** Select `value` in the confirm panel's source group by dispatching the same `change` event a real click produces. */
+function chooseSource(value: string): void {
+  const input = requireElement(`#confirm-sources input[value="${value}"]`) as HTMLInputElement
   input.checked = true
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
@@ -106,14 +72,9 @@ function choose(containerSelector: string, value: string): void {
 /** The provisioning-progress listener the loaded module subscribed with, for tests that drive progress. */
 let progressListener: ((progress: ProvisioningProgress) => void) | undefined
 
-function makeBridge(
-  detect: DesktopOnboardingBridge['detect'],
-  overrides: Partial<DesktopOnboardingBridge> = {},
-): DesktopOnboardingBridge {
+function makeBridge(overrides: Partial<DesktopOnboardingBridge> = {}): DesktopOnboardingBridge {
   return {
     onboardingStatus: vi.fn(async () => undefined),
-    detect,
-    bind: vi.fn(async () => {}),
     environments: vi.fn(async () => [STANDARD]),
     provision: vi.fn(async () => {}),
     provisionCustom: vi.fn(async () => {}),
@@ -128,9 +89,9 @@ async function loadOnboarding(bridge: DesktopOnboardingBridge): Promise<void> {
   setDom()
   ;(window as unknown as { desktopOnboarding: DesktopOnboardingBridge }).desktopOnboarding = bridge
   vi.resetModules()
-  // onboarding.ts runs its initial detection as a top-level await; dynamic
-  // import()'s returned promise settles only once that full module
-  // evaluation (including the awaited runDetection() call) completes.
+  // onboarding.ts runs its initial environment load as a top-level await;
+  // dynamic import()'s returned promise settles only once that full module
+  // evaluation (including the awaited loadEnvironments() call) completes.
   await import('../src/onboarding.ts')
 }
 
@@ -139,104 +100,12 @@ beforeEach(() => {
   progressListener = undefined
 })
 
-describe('onboarding renderGroup', () => {
-  it('lists each group by interpreter presence, not by a successful version probe', async () => {
-    await loadOnboarding(makeBridge(vi.fn(async () => [
-      pythonOnly('/env/py'),
-      rOnly('/env/r'),
-      both('/env/both', 'Python 3.11.0', 'R version 4.5.3'),
-    ])))
-
-    expect(renderedChoices('#python-choices').map(choice => choice.value)).toEqual(['', '/env/py', '/env/both'])
-    expect(renderedChoices('#r-choices').map(choice => choice.value)).toEqual(['', '/env/r', '/env/both'])
-  })
-
-  it('renders a version-unavailable line for a presence-qualified candidate whose probe failed', async () => {
-    await loadOnboarding(makeBridge(vi.fn(async () => [pythonOnly('/env/py')])))
-
-    const choice = renderedChoices('#python-choices').find(entry => entry.value === '/env/py')
-    expect(choice?.version).toBe(VERSION_UNAVAILABLE)
-  })
-
-  it('renders the probed version when the probe succeeded', async () => {
-    await loadOnboarding(makeBridge(vi.fn(async () => [pythonOnly('/env/py', 'Python 3.11.0')])))
-
-    const choice = renderedChoices('#python-choices').find(entry => entry.value === '/env/py')
-    expect(choice?.version).toBe('Python 3.11.0')
-  })
-
-  it('preselects the first candidate in scan order on first render', async () => {
-    await loadOnboarding(makeBridge(vi.fn(async () => [pythonOnly('/env/a'), pythonOnly('/env/b')])))
-
-    expect(checkedValue('#python-choices')).toBe('/env/a')
-  })
-
-  it('preserves the user\'s prior selection across a re-detect that still finds it', async () => {
-    const detect = vi.fn(async () => [pythonOnly('/env/a'), pythonOnly('/env/b')])
-    await loadOnboarding(makeBridge(detect))
-    expect(checkedValue('#python-choices')).toBe('/env/a')
-
-    choose('#python-choices', '/env/b')
-    expect(checkedValue('#python-choices')).toBe('/env/b')
-
-    ;(requireElement('#redetect') as HTMLButtonElement).click()
-    await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
-    await vi.waitFor(() => { expect(checkedValue('#python-choices')).toBe('/env/b') })
-  })
-
-  it('falls back to the default preselect when the prior selection is no longer present', async () => {
-    let call = 0
-    const detect = vi.fn(async () => (call++ === 0
-      ? [pythonOnly('/env/a'), pythonOnly('/env/b')]
-      : [pythonOnly('/env/a')]))
-    await loadOnboarding(makeBridge(detect))
-    choose('#python-choices', '/env/b')
-    expect(checkedValue('#python-choices')).toBe('/env/b')
-
-    ;(requireElement('#redetect') as HTMLButtonElement).click()
-    await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
-    await vi.waitFor(() => { expect(checkedValue('#python-choices')).toBe('/env/a') })
-  })
-
-  it('shows the nothing-detected message and disables Bind when detection finds no candidate', async () => {
-    await loadOnboarding(makeBridge(vi.fn(async () => [])))
-
-    expect((requireElement('#guidance') as HTMLDivElement).hidden).toBe(false)
-    expect((requireElement('#guidance-message') as HTMLParagraphElement).textContent).toBe(NOTHING_DETECTED_MESSAGE)
-    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('resets to the error state on a detection failure, distinct from nothing-detected', async () => {
-    let call = 0
-    const detect = vi.fn(async () => {
-      if (call++ === 0) return [pythonOnly('/env/a')]
-      throw new Error('boom')
-    })
-    await loadOnboarding(makeBridge(detect))
-    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(false)
-
-    ;(requireElement('#redetect') as HTMLButtonElement).click()
-    await vi.waitFor(() => { expect(detect).toHaveBeenCalledTimes(2) })
-
-    await vi.waitFor(() => {
-      expect((requireElement('#guidance-message') as HTMLParagraphElement).textContent).toBe(DETECTION_FAILED_MESSAGE)
-    })
-    expect((requireElement('#guidance') as HTMLDivElement).hidden).toBe(false)
-    expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(true)
-    expect((requireElement('#python-section') as HTMLElement).hidden).toBe(true)
-    expect((requireElement('#python-choices') as HTMLDivElement).childElementCount).toBe(0)
-  })
-})
-
-
 /** A bridge whose install-route calls are held as locals, so assertions never reference a bridge method unbound. */
 function installBridge(overrides: Partial<DesktopOnboardingBridge> = {}) {
-  const provision = vi.fn(async (_id: string) => {})
-  const provisionCustom = vi.fn(async (_packages: readonly string[]) => {})
+  const provision = vi.fn(async (_id: string, _sourceId: string) => {})
+  const provisionCustom = vi.fn(async (_packages: readonly string[], _sourceId: string) => {})
   const cancelProvisioning = vi.fn(async () => {})
-  const bridge = makeBridge(vi.fn(async () => []), {
-    provision, provisionCustom, cancelProvisioning, ...overrides,
-  })
+  const bridge = makeBridge({ provision, provisionCustom, cancelProvisioning, ...overrides })
   return { bridge, provision, provisionCustom, cancelProvisioning }
 }
 
@@ -282,16 +151,39 @@ describe('onboarding install route', () => {
     expect(provision).not.toHaveBeenCalled()
   })
 
-  it('downloads the shipped environment only after the confirmation is accepted', async () => {
+  it('preselects the offered default source in the confirm panel', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+
+    expect(checkedValue('#confirm-sources')).toBe('official')
+    expect([...document.querySelectorAll('#confirm-sources label')].map(label => label.textContent)).toEqual([
+      'TUNA mirror', 'USTC mirror', 'Official channel',
+    ])
+  })
+
+  it('downloads the shipped environment with the preselected source after confirmation', async () => {
     const { bridge, provision } = installBridge()
     await loadOnboarding(bridge)
 
     click('#provision')
     click('#confirm-start')
 
-    await vi.waitFor(() => { expect(provision).toHaveBeenCalledWith('general') })
+    await vi.waitFor(() => { expect(provision).toHaveBeenCalledWith('general', 'official') })
     expect(hiddenState('#confirm')).toBe(true)
     expect(hiddenState('#progress')).toBe(false)
+  })
+
+  it('downloads with the source the user picked instead of the default', async () => {
+    const { bridge, provision } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    chooseSource('tuna')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(provision).toHaveBeenCalledWith('general', 'tuna') })
   })
 
   it('starts nothing when the confirmation is dismissed', async () => {
@@ -306,15 +198,16 @@ describe('onboarding install route', () => {
     expect(provision).not.toHaveBeenCalled()
   })
 
-  it('sends the edited list, trimmed and without blank lines, through the custom route', async () => {
+  it('sends the edited list, trimmed and without blank lines, through the custom route with the chosen source', async () => {
     const { bridge, provision, provisionCustom } = installBridge()
     await loadOnboarding(bridge)
 
     ;(requireElement('#custom-packages') as HTMLTextAreaElement).value = '  python=3.13 \n\n scipy\n'
     click('#provision-custom')
+    chooseSource('tuna')
     click('#confirm-start')
 
-    await vi.waitFor(() => { expect(provisionCustom).toHaveBeenCalledWith(['python=3.13', 'scipy']) })
+    await vi.waitFor(() => { expect(provisionCustom).toHaveBeenCalledWith(['python=3.13', 'scipy'], 'tuna') })
     expect(provision).not.toHaveBeenCalled()
   })
 
@@ -387,12 +280,15 @@ describe('onboarding install route', () => {
     expect(cancelProvisioning).toHaveBeenCalled()
   })
 
-  it('hides the detected section entirely when nothing was found, leaving install as the only route', async () => {
+  it('offers no bind-an-existing-environment route: the bridge exposes only the install methods', async () => {
     const { bridge } = installBridge()
     await loadOnboarding(bridge)
 
-    expect(hiddenState('#detected')).toBe(true)
-    expect(textOf('#guidance-message')).toBe(NOTHING_DETECTED_MESSAGE)
-    expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(false)
+    expect(Object.keys(bridge).sort()).toEqual([
+      'cancelProvisioning', 'environments', 'onProvisioningProgress', 'onboardingStatus', 'provision', 'provisionCustom',
+    ])
+    expect(document.querySelector('#detected')).toBeNull()
+    expect(document.querySelector('#bind')).toBeNull()
+    expect(document.querySelector('#redetect')).toBeNull()
   })
 })

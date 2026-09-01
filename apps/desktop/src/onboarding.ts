@@ -1,7 +1,10 @@
-/** Renderer controller for onboarding's two routes into a Science environment: bind one already on this machine, or install one. */
+/**
+ * Renderer controller for onboarding's single route into a Science
+ * environment: install one, standard or customised, from a chosen package
+ * source.
+ */
 
-import type { DesktopOnboardingBridge, OfferedEnvironment } from './preload.ts'
-import type { CondaCandidate } from './detection.ts'
+import type { DesktopOnboardingBridge, OfferedEnvironment, OfferedSource } from './preload.ts'
 
 declare global {
   interface Window {
@@ -9,15 +12,6 @@ declare global {
   }
 }
 
-const detectedElement = document.querySelector('#detected')
-const pythonSectionElement = document.querySelector('#python-section')
-const pythonChoicesElement = document.querySelector('#python-choices')
-const rSectionElement = document.querySelector('#r-section')
-const rChoicesElement = document.querySelector('#r-choices')
-const guidanceElement = document.querySelector('#guidance')
-const guidanceMessageElement = document.querySelector('#guidance-message')
-const bindElement = document.querySelector('#bind')
-const redetectElement = document.querySelector('#redetect')
 const installSummaryElement = document.querySelector('#install-summary')
 const packagesElement = document.querySelector('#packages')
 const advancedElement = document.querySelector('#advanced')
@@ -26,6 +20,7 @@ const provisionElement = document.querySelector('#provision')
 const provisionCustomElement = document.querySelector('#provision-custom')
 const confirmElement = document.querySelector('#confirm')
 const confirmDetailElement = document.querySelector('#confirm-detail')
+const confirmSourcesElement = document.querySelector('#confirm-sources')
 const confirmStartElement = document.querySelector('#confirm-start')
 const confirmCancelElement = document.querySelector('#confirm-cancel')
 const progressElement = document.querySelector('#progress')
@@ -33,16 +28,7 @@ const progressPhaseElement = document.querySelector('#progress-phase')
 const progressMessageElement = document.querySelector('#progress-message')
 const cancelElement = document.querySelector('#cancel')
 const statusElement = document.querySelector('#status')
-if (!(detectedElement instanceof HTMLElement)
-  || !(pythonSectionElement instanceof HTMLElement)
-  || !(pythonChoicesElement instanceof HTMLDivElement)
-  || !(rSectionElement instanceof HTMLElement)
-  || !(rChoicesElement instanceof HTMLDivElement)
-  || !(guidanceElement instanceof HTMLDivElement)
-  || !(guidanceMessageElement instanceof HTMLParagraphElement)
-  || !(bindElement instanceof HTMLButtonElement)
-  || !(redetectElement instanceof HTMLButtonElement)
-  || !(installSummaryElement instanceof HTMLParagraphElement)
+if (!(installSummaryElement instanceof HTMLParagraphElement)
   || !(packagesElement instanceof HTMLUListElement)
   || !(advancedElement instanceof HTMLDetailsElement)
   || !(customPackagesElement instanceof HTMLTextAreaElement)
@@ -50,6 +36,7 @@ if (!(detectedElement instanceof HTMLElement)
   || !(provisionCustomElement instanceof HTMLButtonElement)
   || !(confirmElement instanceof HTMLElement)
   || !(confirmDetailElement instanceof HTMLParagraphElement)
+  || !(confirmSourcesElement instanceof HTMLDivElement)
   || !(confirmStartElement instanceof HTMLButtonElement)
   || !(confirmCancelElement instanceof HTMLButtonElement)
   || !(progressElement instanceof HTMLElement)
@@ -59,15 +46,6 @@ if (!(detectedElement instanceof HTMLElement)
   || !(statusElement instanceof HTMLParagraphElement)) {
   throw new Error('desktop onboarding: required controls are missing')
 }
-const detected = detectedElement
-const pythonSection = pythonSectionElement
-const pythonChoices = pythonChoicesElement
-const rSection = rSectionElement
-const rChoices = rChoicesElement
-const guidance = guidanceElement
-const guidanceMessage = guidanceMessageElement
-const bind = bindElement
-const redetect = redetectElement
 const installSummary = installSummaryElement
 const packages = packagesElement
 const advanced = advancedElement
@@ -76,6 +54,7 @@ const provision = provisionElement
 const provisionCustom = provisionCustomElement
 const confirm = confirmElement
 const confirmDetail = confirmDetailElement
+const confirmSources = confirmSourcesElement
 const confirmStart = confirmStartElement
 const confirmCancel = confirmCancelElement
 const progress = progressElement
@@ -84,28 +63,18 @@ const progressMessage = progressMessageElement
 const cancel = cancelElement
 const statusNode = statusElement
 
-const NOTHING_DETECTED_MESSAGE = '未检测到本机环境，可以直接安装下面的标准环境。 · No environment was found on this machine; install the standard one below.'
-const DETECTION_FAILED_MESSAGE = '检测失败，仍可安装下面的标准环境。 · Detection failed; the standard environment below can still be installed.'
 const ENVIRONMENTS_UNAVAILABLE_MESSAGE = '无法读取环境清单 · The environment list could not be read.'
 const EMPTY_CUSTOM_MESSAGE = '自定义清单不能为空 · The custom list cannot be empty.'
 
-// The prefix chosen in each group, or `undefined` when that group's "不绑定
-// / None" option is selected (or nothing has rendered yet). `desktop:bind`
-// takes both independently — a Python-only, R-only, or both-interpreters
-// binding are all valid, matching environment-binding.ts's own
-// pythonPrefix/rPrefix independence.
-let pythonSelected: string | undefined
-let rSelected: string | undefined
 // The shipped environment, once `desktop:environments` has answered. Absent
 // until then and after a failed read, which is what disables Install.
 let standard: OfferedEnvironment | undefined
 // What the confirm panel is currently asking the user to approve, cleared
 // when they confirm or dismiss it.
 let pending: { readonly packages?: readonly string[]; readonly detail: string } | undefined
-
-function updateBindEnabled(): void {
-  bind.disabled = pythonSelected === undefined && rSelected === undefined
-}
+// The source chosen in the confirm panel's radio group, seeded from the
+// offered environment's `defaultSourceId` each time the panel opens.
+let selectedSourceId: string | undefined
 
 /**
  * Render a byte count the way the confirm panel states it: whole megabytes
@@ -120,112 +89,33 @@ function formatBytes(bytes: number): string {
     : `${String(Math.round(bytes / 1_000_000))} MB`
 }
 
-/** Best-effort `--version` text for a candidate's interpreter, or a copy fallback when the probe failed. */
-const VERSION_UNAVAILABLE = '解释器版本未知 · interpreter version unavailable'
-
 /**
- * Render one interpreter group's single-select radio choices: an explicit
- * "不绑定 / None" option first, then every candidate whose {@link
- * CondaCandidate.presence} has this interpreter — presence, not a
- * successful `--version` probe, is the qualification authority, so a
- * candidate whose probe failed (or timed out) still appears here with
- * {@link VERSION_UNAVAILABLE} in place of its version. A candidate with
- * both interpreters appears in both groups. The group section itself is
- * shown whenever detection found any candidate at all, even one with zero
- * matches for this interpreter, so a Python-only machine still shows an R
- * group offering only None.
- *
- * Preselects `previousSelection` when it still names a candidate in this
- * render (preserving the user's choice across a re-detect that still finds
- * it), otherwise the first matching candidate in detection's root-scan
- * order, or None if there is no match.
- * @param section - the group's `<section>`, hidden when detection found nothing at all.
- * @param container - the group's choice-list container.
- * @param name - the radio input group name (must not collide with the other group's).
- * @param candidates - every candidate detection found, filtered here to this interpreter's presence.
- * @param interpreter - which interpreter this group selects for.
- * @param previousSelection - the prefix selected in this group before this render, if any.
- * @param onSelect - called with the chosen prefix (`undefined` for None) on
- *   every selection change, including once during render for the preselection.
+ * Render the confirm panel's package-source radio group: one choice per
+ * offered source, preselecting `selected` (falling back to the first source
+ * if `selected` names none of them).
+ * @param sources - the environment's sources, in fallback order.
+ * @param selected - the source id to preselect.
  */
-function renderGroup(
-  section: HTMLElement,
-  container: HTMLDivElement,
-  name: string,
-  candidates: readonly CondaCandidate[],
-  interpreter: 'python' | 'r',
-  previousSelection: string | undefined,
-  onSelect: (prefix: string | undefined) => void,
-): void {
-  container.replaceChildren()
-  section.hidden = candidates.length === 0
-
-  const noneInput = document.createElement('input')
-  noneInput.type = 'radio'
-  noneInput.name = name
-  noneInput.value = ''
-  noneInput.addEventListener('change', () => { onSelect(undefined) })
-  const noneStrong = document.createElement('strong')
-  noneStrong.textContent = '不绑定 · None'
-  const noneCopy = document.createElement('span')
-  noneCopy.append(noneStrong)
-  const noneLabel = document.createElement('label')
-  noneLabel.className = 'choice'
-  noneLabel.append(noneInput, noneCopy)
-  container.append(noneLabel)
-
-  const matching = candidates.filter(candidate => (interpreter === 'python' ? candidate.presence.python : candidate.presence.r))
-  const preselectPrefix = previousSelection !== undefined && matching.some(candidate => candidate.prefix === previousSelection)
-    ? previousSelection
-    : matching[0]?.prefix
-
-  for (const candidate of matching) {
-    const version = (interpreter === 'python' ? candidate.pythonVersion : candidate.rVersion) ?? VERSION_UNAVAILABLE
+function renderSources(sources: readonly OfferedSource[], selected: string | undefined): void {
+  confirmSources.replaceChildren()
+  const preselect = sources.some(source => source.id === selected) ? selected : sources[0]?.id
+  selectedSourceId = preselect
+  for (const source of sources) {
     const label = document.createElement('label')
     label.className = 'choice'
     const input = document.createElement('input')
     input.type = 'radio'
-    input.name = name
-    input.value = candidate.prefix
-    input.addEventListener('change', () => { onSelect(candidate.prefix) })
+    input.name = 'package-source'
+    input.value = source.id
+    input.checked = source.id === preselect
+    input.addEventListener('change', () => { selectedSourceId = source.id })
     const copy = document.createElement('span')
     const strong = document.createElement('strong')
-    strong.textContent = candidate.prefix
-    const small = document.createElement('small')
-    small.textContent = version
-    copy.append(strong, small)
+    strong.textContent = source.name
+    copy.append(strong)
     label.append(input, copy)
-    container.append(label)
-    if (candidate.prefix === preselectPrefix) input.checked = true
+    confirmSources.append(label)
   }
-  if (preselectPrefix === undefined) noneInput.checked = true
-  onSelect(preselectPrefix)
-}
-
-/** Reset both groups and Bind to their pre-detection state: hidden, unselected, disabled. */
-function resetSelectionState(): void {
-  pythonSelected = undefined
-  rSelected = undefined
-  updateBindEnabled()
-  detected.hidden = true
-  pythonSection.hidden = true
-  rSection.hidden = true
-  pythonChoices.replaceChildren()
-  rChoices.replaceChildren()
-}
-
-function renderCandidates(candidates: readonly CondaCandidate[]): void {
-  guidanceMessage.textContent = NOTHING_DETECTED_MESSAGE
-  guidance.hidden = candidates.length > 0
-  detected.hidden = candidates.length === 0
-  renderGroup(pythonSection, pythonChoices, 'python-environment', candidates, 'python', pythonSelected, (prefix) => {
-    pythonSelected = prefix
-    updateBindEnabled()
-  })
-  renderGroup(rSection, rChoices, 'r-environment', candidates, 'r', rSelected, (prefix) => {
-    rSelected = prefix
-    updateBindEnabled()
-  })
 }
 
 /**
@@ -247,16 +137,15 @@ function renderStandard(environment: OfferedEnvironment): void {
 
 /** Enable or disable every control that starts new work, for the lifetime of one provisioning run. */
 function setBusy(busy: boolean): void {
-  redetect.disabled = busy
   provision.disabled = busy || standard === undefined
   provisionCustom.disabled = busy
-  bind.disabled = busy || (pythonSelected === undefined && rSelected === undefined)
 }
 
 /** Show the confirm panel for a download the user has not yet approved. */
 function askToConfirm(detail: string, custom?: readonly string[]): void {
   pending = { detail, ...(custom === undefined ? {} : { packages: custom }) }
   confirmDetail.textContent = detail
+  renderSources(standard?.sources ?? [], standard?.defaultSourceId)
   confirm.hidden = false
   statusNode.textContent = ''
 }
@@ -264,22 +153,6 @@ function askToConfirm(detail: string, custom?: readonly string[]): void {
 function dismissConfirm(): void {
   pending = undefined
   confirm.hidden = true
-}
-
-async function runDetection(): Promise<void> {
-  redetect.disabled = true
-  statusNode.textContent = '检测中… Detecting…'
-  try {
-    renderCandidates(await window.desktopOnboarding.detect())
-    statusNode.textContent = entryStatus ?? ''
-  } catch (error) {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
-    resetSelectionState()
-    guidanceMessage.textContent = DETECTION_FAILED_MESSAGE
-    guidance.hidden = false
-  } finally {
-    redetect.disabled = false
-  }
 }
 
 async function loadEnvironments(): Promise<void> {
@@ -295,23 +168,6 @@ async function loadEnvironments(): Promise<void> {
   }
 }
 
-async function bindSelected(): Promise<void> {
-  if (pythonSelected === undefined && rSelected === undefined) return
-  dismissConfirm()
-  setBusy(true)
-  bind.disabled = true
-  statusNode.textContent = '绑定中… Binding…'
-  try {
-    await window.desktopOnboarding.bind({
-      ...(pythonSelected === undefined ? {} : { pythonPrefix: pythonSelected }),
-      ...(rSelected === undefined ? {} : { rPrefix: rSelected }),
-    })
-  } catch (error) {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
-    setBusy(false)
-  }
-}
-
 /**
  * Run the download the confirm panel is holding. The workspace opens from
  * the main process when the run succeeds, so this window is replaced rather
@@ -320,6 +176,7 @@ async function bindSelected(): Promise<void> {
 async function startConfirmed(): Promise<void> {
   const approved = pending
   if (approved === undefined) return
+  const sourceId = selectedSourceId
   dismissConfirm()
   setBusy(true)
   progress.hidden = false
@@ -329,8 +186,8 @@ async function startConfirmed(): Promise<void> {
   statusNode.textContent = ''
   try {
     await (approved.packages === undefined
-      ? window.desktopOnboarding.provision(standard?.id ?? '')
-      : window.desktopOnboarding.provisionCustom(approved.packages))
+      ? window.desktopOnboarding.provision(standard?.id ?? '', sourceId ?? '')
+      : window.desktopOnboarding.provisionCustom(approved.packages, sourceId ?? ''))
   } catch (error) {
     statusNode.textContent = error instanceof Error ? error.message : String(error)
     progress.hidden = true
@@ -338,8 +195,6 @@ async function startConfirmed(): Promise<void> {
   }
 }
 
-bind.addEventListener('click', () => { void bindSelected() })
-redetect.addEventListener('click', () => { void runDetection() })
 advanced.addEventListener('toggle', () => { provisionCustom.hidden = !advanced.open })
 provision.addEventListener('click', () => {
   if (standard === undefined) return
@@ -367,12 +222,7 @@ window.desktopOnboarding.onProvisioningProgress((update) => {
 })
 
 // The loud status this window opened with (an invalid binding found at
-// launch), if any. `runDetection`'s closure above reads this module-scope
-// binding once it is set here, before the first `runDetection()` call
-// below; detection's own transient "Detecting…"/cleared status must not
-// erase it, so a successful detection restores this instead of blanking
-// the status line.
+// launch), if any.
 const entryStatus = await window.desktopOnboarding.onboardingStatus()
 if (entryStatus !== undefined) statusNode.textContent = entryStatus
 await loadEnvironments()
-await runDetection()

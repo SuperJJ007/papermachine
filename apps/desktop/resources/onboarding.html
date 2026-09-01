@@ -4,31 +4,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Set up DeepSeek Science</title>
 <style>
-  :root{font:16px system-ui;color:#17212b;background:#f4f7fa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 0}main{width:min(680px,calc(100vw - 40px));background:white;border:1px solid #dce3ea;border-radius:18px;padding:36px;box-shadow:0 18px 60px #1d344515}h1{margin:0 0 8px;font-size:28px}p{color:#596875;line-height:1.5}.group{margin:24px 0;padding-top:20px;border-top:1px solid #eef2f6}.group>h2{margin:0 0 10px;font-size:15px;font-weight:600;color:#33424e}.subgroup{margin:16px 0}.subgroup h3{margin:0 0 8px;font-size:13px;font-weight:600;color:#5b6975}.choices{display:grid;gap:12px;overflow-y:auto;max-height:min(200px,26vh)}.choice{display:flex;gap:14px;padding:14px 18px;border:1px solid #d8e0e8;border-radius:12px;cursor:pointer}.choice:has(input:checked){border-color:#1769aa;background:#f2f8fd}.choice input{margin-top:4px}.choice span{display:grid;gap:5px}.choice small{color:#687783}#guidance{margin:20px 0;padding:18px;border:1px dashed #c7d2db;border-radius:12px;background:#f8fafc}#guidance p{margin:0}.actions{display:flex;gap:10px;align-items:center;margin-top:20px;flex-wrap:wrap}button{border:0;border-radius:9px;padding:11px 18px;font:inherit;cursor:pointer}.primary{background:#1769aa;color:white}.primary:disabled{opacity:.45;cursor:default}.secondary{background:#e8edf2;color:#273542}.secondary:disabled{opacity:.45;cursor:default}details{margin-top:14px}summary{cursor:pointer;color:#33424e;font-size:14px}#packages{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}#packages li{font:13px ui-monospace,monospace;background:#f1f5f9;border-radius:6px;padding:3px 8px;color:#3b4a57}#custom-packages{width:100%;margin-top:10px;font:13px ui-monospace,monospace;border:1px solid #d8e0e8;border-radius:10px;padding:12px;color:#26333f;resize:vertical}#confirm{margin-top:18px;padding:18px;border:1px solid #f0c67a;border-radius:12px;background:#fffaf0}#confirm p{margin:0 0 6px;color:#6b5426}#confirm p:last-of-type{margin-bottom:0}#progress{margin-top:24px;padding:18px;border:1px solid #d8e0e8;border-radius:12px;background:#f8fafc}#progress-phase{margin:0 0 6px;font-size:14px;font-weight:600;color:#33424e}#progress-message{margin:0;font:13px ui-monospace,monospace;color:#5b6975;word-break:break-all}#status{margin-top:18px}
+  :root{font:16px system-ui;color:#17212b;background:#f4f7fa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 0}main{width:min(680px,calc(100vw - 40px));background:white;border:1px solid #dce3ea;border-radius:18px;padding:36px;box-shadow:0 18px 60px #1d344515}h1{margin:0 0 8px;font-size:28px}p{color:#596875;line-height:1.5}.group{margin:24px 0;padding-top:20px;border-top:1px solid #eef2f6}.group>h2{margin:0 0 10px;font-size:15px;font-weight:600;color:#33424e}.choices{display:grid;gap:12px;overflow-y:auto;max-height:min(200px,26vh)}.choice{display:flex;gap:14px;padding:14px 18px;border:1px solid #d8e0e8;border-radius:12px;cursor:pointer}.choice:has(input:checked){border-color:#1769aa;background:#f2f8fd}.choice input{margin-top:4px}.choice span{display:grid;gap:5px}.choice small{color:#687783}.actions{display:flex;gap:10px;align-items:center;margin-top:20px;flex-wrap:wrap}button{border:0;border-radius:9px;padding:11px 18px;font:inherit;cursor:pointer}.primary{background:#1769aa;color:white}.primary:disabled{opacity:.45;cursor:default}.secondary{background:#e8edf2;color:#273542}.secondary:disabled{opacity:.45;cursor:default}details{margin-top:14px}summary{cursor:pointer;color:#33424e;font-size:14px}#packages{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}#packages li{font:13px ui-monospace,monospace;background:#f1f5f9;border-radius:6px;padding:3px 8px;color:#3b4a57}#custom-packages{width:100%;margin-top:10px;font:13px ui-monospace,monospace;border:1px solid #d8e0e8;border-radius:10px;padding:12px;color:#26333f;resize:vertical}#confirm{margin-top:18px;padding:18px;border:1px solid #f0c67a;border-radius:12px;background:#fffaf0}#confirm p{margin:0 0 6px;color:#6b5426}#confirm p:last-of-type{margin-bottom:0}#confirm-sources{margin:10px 0}#confirm-sources .choice{padding:10px 14px;border-color:#eeddb0}#confirm-sources .choice:has(input:checked){border-color:#b8860b;background:#fff3d6}#progress{margin-top:24px;padding:18px;border:1px solid #d8e0e8;border-radius:12px;background:#f8fafc}#progress-phase{margin:0 0 6px;font-size:14px;font-weight:600;color:#33424e}#progress-message{margin:0;font:13px ui-monospace,monospace;color:#5b6975;word-break:break-all}#status{margin-top:18px}
 </style>
 <main>
   <h1>Set up your Science workspace</h1>
-  <p>DeepSeek Science 需要一个带 Python 和 R 的环境。可以绑定本机已有的，也可以让我们装一个。<br>Science needs a Python and R environment: bind one already on this machine, or install ours.</p>
-
-  <section id="detected" class="group" hidden>
-    <h2>本机已有环境 · Environments found on this machine</h2>
-    <section id="python-section" class="subgroup" hidden>
-      <h3>Python 环境 · Python environment</h3>
-      <div id="python-choices" class="choices"></div>
-    </section>
-    <section id="r-section" class="subgroup" hidden>
-      <h3>R 环境 · R environment</h3>
-      <div id="r-choices" class="choices"></div>
-    </section>
-    <div class="actions">
-      <button id="bind" class="primary" disabled>绑定并继续 · Bind and continue</button>
-      <button id="redetect" class="secondary">重新检测 · Re-detect</button>
-    </div>
-  </section>
-
-  <div id="guidance" hidden>
-    <p id="guidance-message">未检测到可用环境 · No usable environment was detected.</p>
-  </div>
+  <p>DeepSeek Science 会安装并管理属于自己的 Python 与 R 环境，不使用本机已有的 conda 环境。<br>DeepSeek Science installs and manages its own Python and R environment; it does not use a conda environment already on this machine.</p>
 
   <section id="install" class="group">
     <h2>安装标准环境 · Install the standard environment</h2>
@@ -50,6 +30,8 @@
 
   <section id="confirm" hidden>
     <p id="confirm-detail"></p>
+    <p>选择下载源，可随时更改。若所选源安装失败，将自动按顺序尝试其余的源。<br>Choose a download source; you can change it anytime. If the chosen source fails, the others are tried in order automatically.</p>
+    <div id="confirm-sources" class="choices"></div>
     <p>这是一次性下载，之后离线可用。<br>A one-time download; the environment works offline afterwards.</p>
     <div class="actions">
       <button id="confirm-start" class="primary">确认下载 · Confirm and download</button>

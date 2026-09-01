@@ -1,9 +1,10 @@
 /** Desktop-owned pointer to the conda-family prefix(es) the user bound during onboarding. */
 
 import { readFile, stat } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
-import type { InterpreterPresence } from './detection.ts'
+import type { InterpreterPresence } from './interpreter-presence.ts'
+import { desktopEnvironmentsRoot, provisionedEnvironmentsDirectory } from './provisioning.ts'
 
 /** The persisted binding: at least one prefix, both if the same environment carries Python and R. */
 export interface EnvironmentBinding {
@@ -13,9 +14,12 @@ export interface EnvironmentBinding {
 }
 
 /**
- * A bind request from onboarding's independent Python and R selection
- * groups: each names a prefix chosen from that group's candidates, or is
- * absent when the group's "不绑定 / None" option was chosen.
+ * A bind request naming the prefix(es) to persist as the environment
+ * binding: `bindProvisionedPrefix` (`main.ts`) is the only caller, passing
+ * the one prefix a provisioning run just published as both fields (one
+ * provisioned prefix carries both interpreters). Python and R remain
+ * independent fields because {@link EnvironmentBinding} itself keeps them
+ * independent.
  */
 export interface BindRequest {
   readonly pythonPrefix?: string
@@ -24,23 +28,22 @@ export interface BindRequest {
 
 /**
  * Resolve a {@link BindRequest} into the {@link EnvironmentBinding} to
- * persist, re-validating each chosen prefix against the specific
- * interpreter its group selected it for. The candidate list a request is
- * built from comes from an earlier detection call, and the filesystem can
- * change underneath it before the user clicks Bind (the environment
- * removed, `conda-meta` corrupted, an interpreter binary deleted), so this
- * is a TOCTOU re-check, not redundant validation. Each given prefix is
- * checked structurally (an absolute path) before this probe runs, so a
- * malformed prefix is rejected without touching the filesystem. A prefix
- * chosen in both groups is re-checked once per group since each check
- * targets a different interpreter. Rejects the whole request — never binds
- * a partial result — when either chosen prefix is not an absolute path or
- * no longer qualifies for the interpreter it was chosen for.
- * @param request - the prefixes selected in the Python and R groups.
- * @param qualify - re-checks a prefix's current interpreter presence (production: {@link qualifyingInterpreters} from `./detection.ts`).
+ * persist, re-validating each named prefix against the specific interpreter
+ * it is bound for. This is a defense-in-depth re-check, not redundant
+ * validation: it re-proves the health checks that already ran during
+ * provisioning against the exact path about to be written, rather than
+ * trusting them a second time untested. Each given prefix is checked
+ * structurally (an absolute path) before this probe runs, so a malformed
+ * prefix is rejected without touching the filesystem. A prefix given for
+ * both fields is re-checked once per interpreter. Rejects the whole
+ * request — never binds a partial result — when either named prefix is not
+ * an absolute path or does not qualify for the interpreter it was named for.
+ * @param request - the prefix(es) to bind.
+ * @param qualify - re-checks a prefix's current interpreter presence
+ *   (production: {@link qualifyingInterpreters} from `./interpreter-presence.ts`).
  * @returns the binding to persist.
  * @throws when neither prefix is given, a given prefix is not an absolute
- *   path, or a given prefix no longer has the interpreter its group selected it for.
+ *   path, or a given prefix does not have the interpreter it was named for.
  */
 export async function resolveBindRequest(
   request: BindRequest,
@@ -117,12 +120,16 @@ export async function writeEnvironmentBinding(dshHome: string, binding: Environm
 }
 
 /**
- * `bound` — a binding file exists, parses, and every prefix it names still
- * exists on disk. `unbound` — no binding file exists yet; onboarding is a
- * first run. `invalid` — a binding file exists but cannot be trusted (parse
- * failure, an unreadable file, or a prefix it names has since disappeared);
- * `reason` is a loud, user-facing status, never a silent fall-through to
- * onboarding's first-run copy.
+ * `bound` — a binding file exists, parses, every prefix it names still
+ * exists on disk, and every prefix it names is inside this application's own
+ * provisioned environments root. `unbound` — no binding file exists yet;
+ * onboarding is a first run. `invalid` — a binding file exists but cannot be
+ * trusted (parse failure, an unreadable file, a prefix it names has since
+ * disappeared, or a prefix it names is outside this application's own
+ * provisioned environments root — a foreign conda-family environment a prior
+ * build once bound, from before this application owned its environment
+ * outright); `reason` is a loud, user-facing status, never a silent
+ * fall-through to onboarding's first-run copy.
  */
 export type EnvironmentBindingStatus =
   | { readonly kind: 'bound'; readonly binding: EnvironmentBinding }
@@ -139,11 +146,29 @@ async function directoryExists(path: string): Promise<boolean> {
 }
 
 /**
+ * Whether `prefix` sits strictly inside this application's own provisioned
+ * environments root (`<dshHome>/desktop-environments/environments/`), the
+ * only prefixes this application may ever bind since it stopped offering a
+ * bind-an-existing-environment route. A binding written before that change,
+ * or one otherwise naming a foreign conda-family install, must not silently
+ * keep working — {@link resolveEnvironmentBindingStatus} routes it back to
+ * onboarding instead.
+ * @param dshHome - the Harness home the binding is scoped to.
+ * @param prefix - the bound prefix to check.
+ */
+function isWithinProvisionedRoot(dshHome: string, prefix: string): boolean {
+  const root = provisionedEnvironmentsDirectory(desktopEnvironmentsRoot(dshHome))
+  const rel = relative(root, prefix)
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+/**
  * Resolve the binding status driving `openInitialSurface`: read and parse
  * `environment-binding.json`, then confirm every prefix it names is still a
- * directory. This performs filesystem I/O (unlike `discipline-status.ts`'s
- * pure comparison over already-loaded data) because prefix existence can
- * only be answered by checking the disk at launch time.
+ * directory inside this application's own provisioned environments root.
+ * This performs filesystem I/O (unlike `discipline-status.ts`'s pure
+ * comparison over already-loaded data) because prefix existence can only be
+ * answered by checking the disk at launch time.
  * @param dshHome - the Harness home directory the binding is scoped to.
  * @returns the status routing the caller to the workspace or onboarding.
  */
@@ -163,8 +188,15 @@ export async function resolveEnvironmentBindingStatus(dshHome: string): Promise<
     return { kind: 'invalid', reason: error instanceof Error ? error.message : String(error) }
   }
   for (const prefix of [binding.pythonPrefix, binding.rPrefix]) {
-    if (prefix !== undefined && !(await directoryExists(prefix))) {
+    if (prefix === undefined) continue
+    if (!(await directoryExists(prefix))) {
       return { kind: 'invalid', reason: `desktop environment binding: bound prefix no longer exists (${prefix})` }
+    }
+    if (!isWithinProvisionedRoot(dshHome, prefix)) {
+      return {
+        kind: 'invalid',
+        reason: `desktop environment binding: ${prefix} is not an environment PaperMachine installed; the environment must be reinstalled`,
+      }
     }
   }
   return { kind: 'bound', binding }

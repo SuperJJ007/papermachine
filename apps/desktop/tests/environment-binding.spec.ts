@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import type { InterpreterPresence } from '../src/detection.ts'
+import type { InterpreterPresence } from '../src/interpreter-presence.ts'
+import { desktopEnvironmentsRoot, provisionedEnvironmentsDirectory } from '../src/provisioning.ts'
 import {
   parseEnvironmentBinding,
   resolveBindRequest,
@@ -13,6 +14,11 @@ import {
 
 async function makeDshHome(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'dsh-desktop-binding-'))
+}
+
+/** A prefix path inside `dshHome`'s own provisioned environments root, the only prefixes a valid binding may name. */
+function provisionedPrefix(dshHome: string, ...segments: readonly string[]): string {
+  return join(provisionedEnvironmentsDirectory(desktopEnvironmentsRoot(dshHome)), ...segments)
 }
 
 describe('parseEnvironmentBinding', () => {
@@ -155,7 +161,7 @@ describe('resolveBindRequest', () => {
     await expect(resolveBindRequest({ pythonPrefix: '/env/py-gone', rPrefix: '/env/r' }, qualify)).rejects.toThrow(/no longer has a Python interpreter/)
   })
 
-  it('leaves no binding file on disk when a TOCTOU re-check fails, matching desktop:bind\'s sequential resolve-then-write', async () => {
+  it('leaves no binding file on disk when a TOCTOU re-check fails, matching bindProvisionedPrefix\'s sequential resolve-then-write', async () => {
     const dshHome = await makeDshHome()
     const qualify = fakeQualify({ '/env/py': { python: true, r: false } })
 
@@ -207,14 +213,36 @@ describe('resolveEnvironmentBindingStatus', () => {
     expect(await resolveEnvironmentBindingStatus(dshHome)).toEqual({ kind: 'unbound' })
   })
 
-  it('reports bound when the binding parses and every referenced prefix exists', async () => {
+  it('reports bound when the binding parses and every referenced prefix exists inside the provisioned environments root', async () => {
     const dshHome = await makeDshHome()
-    const prefix = join(dshHome, 'env')
+    const prefix = provisionedPrefix(dshHome, 'general', '2026.09.1')
     await mkdir(prefix, { recursive: true })
     const binding = { pythonPrefix: prefix, boundAt: 7 }
     await writeEnvironmentBinding(dshHome, binding)
 
     expect(await resolveEnvironmentBindingStatus(dshHome)).toEqual({ kind: 'bound', binding })
+  })
+
+  it('reports invalid for a prefix that exists but sits outside the provisioned environments root, never silently binding a foreign environment', async () => {
+    const dshHome = await makeDshHome()
+    const foreign = join(dshHome, 'not-ours')
+    await mkdir(foreign, { recursive: true })
+    await writeEnvironmentBinding(dshHome, { pythonPrefix: foreign, boundAt: 1 })
+
+    const status = await resolveEnvironmentBindingStatus(dshHome)
+    expect(status.kind).toBe('invalid')
+    expect(status.kind === 'invalid' && status.reason).toContain(foreign)
+    expect(status.kind === 'invalid' && status.reason).toMatch(/reinstalled/)
+  })
+
+  it('reports invalid for a prefix that exists directly at the provisioned environments root itself, not strictly inside it', async () => {
+    const dshHome = await makeDshHome()
+    const root = provisionedEnvironmentsDirectory(desktopEnvironmentsRoot(dshHome))
+    await mkdir(root, { recursive: true })
+    await writeEnvironmentBinding(dshHome, { pythonPrefix: root, boundAt: 1 })
+
+    const status = await resolveEnvironmentBindingStatus(dshHome)
+    expect(status.kind).toBe('invalid')
   })
 
   it('reports invalid with a loud reason for unparseable JSON', async () => {

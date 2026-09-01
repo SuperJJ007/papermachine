@@ -8,13 +8,14 @@ import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
-import { DesktopEnvironmentProvisioner, type ProvisioningProgress } from './provisioning.ts'
+import { DesktopEnvironmentProvisioner, desktopEnvironmentsRoot, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
-import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
+import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
 import { buildCustomDeclaration, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
+import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -32,7 +33,7 @@ let provisioning: AbortController | undefined
 // status (an invalid/corrupt binding at launch); consumed once by the
 // `desktop:onboarding-status` handler so the freshly loaded onboarding
 // document can display it. `undefined` for an ordinary first-run or
-// user-requested ("Rebind Environment…") open.
+// user-requested ("Change Environment…") open.
 let onboardingStatus: string | undefined
 
 const hostLifecycle = new HostLifecycle({
@@ -48,7 +49,7 @@ const hostLifecycle = new HostLifecycle({
 })
 
 // Owns the decisions that race one in-flight provisioning run: aborting and
-// waiting for it before "Rebind Environment…" opens onboarding, `activate`
+// waiting for it before "Change Environment…" opens onboarding, `activate`
 // waiting for it, and `before-quit` waiting for it alongside the Host stop.
 const coordinator = new ProvisioningCoordinator({
   abort: () => { provisioning?.abort() },
@@ -75,10 +76,6 @@ function desktopPlatform(): DesktopPlatform {
 /** The one environment this build ships; disciplines are added as further declarations. */
 const SHIPPED_ENVIRONMENT_ID = 'general'
 
-function environmentsRoot(dshHome: string): string {
-  return join(dshHome, 'desktop-environments')
-}
-
 /** Read the shipped declaration; the standard package set onboarding offers and the custom editor starts from. */
 async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
   return parseEnvironmentDeclaration(
@@ -94,17 +91,29 @@ async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
  * `unknown-discipline`.
  */
 async function declarations(dshHome: string): Promise<readonly EnvironmentDeclaration[]> {
-  const custom = await readCustomDeclaration(environmentsRoot(dshHome))
+  const custom = await readCustomDeclaration(desktopEnvironmentsRoot(dshHome))
   return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
 }
 
 function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
   const platform = desktopPlatform()
   return new DesktopEnvironmentProvisioner({
-    root: environmentsRoot(dshHome),
+    root: desktopEnvironmentsRoot(dshHome),
     micromambaPath: join(resourceRoot(), 'bin', platform, 'micromamba'),
     platform,
   })
+}
+
+/**
+ * The system locale signals {@link resolveDefaultSourceId} decides the
+ * confirmation panel's default package source from — deterministic system
+ * settings only, never a network reachability probe.
+ */
+function localeSignals(): LocaleSignals {
+  return {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    languages: app.getPreferredSystemLanguages(),
+  }
 }
 
 /**
@@ -128,14 +137,16 @@ async function bindProvisionedPrefix(dshHome: string, prefix: string): Promise<v
  * renderer cannot both claim the slot.
  * @param dshHome - the Harness home the run binds into.
  * @param declaration - the environment to provision.
+ * @param sourceId - the package source to try first; `undefined` starts
+ *   from `declaration.sources`' own order.
  * @throws when another provisioning run is already in flight.
  */
-async function startProvisioning(dshHome: string, declaration: EnvironmentDeclaration): Promise<void> {
+async function startProvisioning(dshHome: string, declaration: EnvironmentDeclaration, sourceId: string | undefined): Promise<void> {
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const control = new AbortController()
   provisioning = control
   const run = (async () => {
-    const published = await provisioner(dshHome).provision(declaration, control.signal, reportProvisioningProgress)
+    const published = await provisioner(dshHome).provision(declaration, control.signal, reportProvisioningProgress, sourceId)
     await bindProvisionedPrefix(dshHome, published.prefix)
     await openWorkspace()
   })().finally(() => { provisioning = undefined })
@@ -442,19 +453,18 @@ function buildApplicationMenu(): Menu {
       label: app.name,
       submenu: [
         {
-          label: 'Rebind Environment…',
-          // Opens onboarding so the user can detect and bind a different
-          // conda-family environment, or rebind the same one after a
-          // repair. A live Host would otherwise keep running against the
-          // prefix onboarding is about to replace, so ProvisioningCoordinator
-          // stops the Host before onboarding opens. It also aborts and
-          // awaits any in-flight run first (the retained, entry-less
-          // micromamba provisioning path), so clicking mid-run opens
-          // onboarding once that run has actually unwound instead of
-          // hitting "another operation is running" until it does, and a
-          // second click while the first is still unwinding coalesces
-          // rather than queuing another open.
-          click: () => { runDetached(() => coordinator.changeDiscipline(), 'rebind environment') },
+          label: 'Change Environment…',
+          // Opens onboarding so the user can install a different
+          // environment, or reinstall the current one after a repair. A
+          // live Host would otherwise keep running against the prefix
+          // onboarding is about to replace, so ProvisioningCoordinator stops
+          // the Host before onboarding opens. It also aborts and awaits any
+          // in-flight run first, so clicking mid-run opens onboarding once
+          // that run has actually unwound instead of hitting "another
+          // operation is running" until it does, and a second click while
+          // the first is still unwinding coalesces rather than queuing
+          // another open.
+          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
         },
         { type: 'separator' },
         { role: 'quit' },
@@ -480,62 +490,45 @@ app.setName('PaperMachine')
  */
 async function boot(): Promise<void> {
   Menu.setApplicationMenu(buildApplicationMenu())
-  ipcMain.handle('desktop:environments', async () => (await declarations(await harnessHome())).map(item => ({
-    id: item.id,
-    name: item.name,
-    revision: item.revision,
-    packages: item.packages,
-    estimatedDownloadBytes: item.estimatedDownloadBytes,
-    requiredFreeBytes: item.requiredFreeBytes,
-  })))
+  ipcMain.handle('desktop:environments', async () => {
+    const signals = localeSignals()
+    return (await declarations(await harnessHome())).map(item => ({
+      id: item.id,
+      name: item.name,
+      revision: item.revision,
+      packages: item.packages,
+      estimatedDownloadBytes: item.estimatedDownloadBytes,
+      requiredFreeBytes: item.requiredFreeBytes,
+      sources: item.sources.map(source => ({ id: source.id, name: source.name })),
+      defaultSourceId: resolveDefaultSourceId(item.sources, signals),
+    }))
+  })
   ipcMain.handle('desktop:onboarding-status', () => {
     const value = onboardingStatus
     onboardingStatus = undefined
     return value
   })
-  ipcMain.handle('desktop:detect', async () => detectCondaEnvironments())
-  ipcMain.handle('desktop:bind', async (_event, request: unknown) => {
-    if (request === null || typeof request !== 'object' || Array.isArray(request)) {
-      throw new Error('desktop bind: request must be an object')
-    }
-    const { pythonPrefix, rPrefix } = request as Record<string, unknown>
-    if (pythonPrefix !== undefined && typeof pythonPrefix !== 'string') throw new Error('desktop bind: pythonPrefix must be a string')
-    if (rPrefix !== undefined && typeof rPrefix !== 'string') throw new Error('desktop bind: rPrefix must be a string')
-    // resolveBindRequest re-validates each chosen prefix for its own
-    // interpreter (TOCTOU: the candidate lists the renderer is acting on
-    // were built from an earlier `desktop:detect` call, and the filesystem
-    // can have changed underneath them by the time the user clicks bind)
-    // and is routed through the same parser resolveEnvironmentBindingStatus
-    // reads with, so this IPC boundary enforces exactly the invariants
-    // (isAbsolute among them) the reader relies on rather than a second,
-    // potentially divergent copy of them.
-    const binding: EnvironmentBinding = await resolveBindRequest({
-      ...(pythonPrefix === undefined ? {} : { pythonPrefix }),
-      ...(rPrefix === undefined ? {} : { rPrefix }),
-    }, qualifyingInterpreters)
-    const dshHome = await harnessHome()
-    await writeEnvironmentBinding(dshHome, binding)
-    await openWorkspace()
-  })
   ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
-  ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
+  ipcMain.handle('desktop:provision', async (_event, id: unknown, sourceId: unknown) => {
     if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
+    if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')
     const dshHome = await harnessHome()
     const declaration = (await declarations(dshHome)).find(item => item.id === id)
     if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
-    await startProvisioning(dshHome, declaration)
+    await startProvisioning(dshHome, declaration, sourceId)
   })
-  ipcMain.handle('desktop:provision-custom', async (_event, packages: unknown) => {
+  ipcMain.handle('desktop:provision-custom', async (_event, packages: unknown, sourceId: unknown) => {
     if (!Array.isArray(packages) || packages.some(item => typeof item !== 'string')) {
       throw new Error('desktop provisioning: custom packages must be a string array')
     }
+    if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')
     const dshHome = await harnessHome()
     // buildCustomDeclaration validates every token before it can reach the
     // solver's argv; persisting only after that keeps an unusable set out of
     // the file the next launch resolves the applied environment against.
-    const declaration = buildCustomDeclaration(packages as string[], [desktopPlatform()], (await shippedDeclaration()).channels)
-    await writeCustomDeclaration(environmentsRoot(dshHome), declaration)
-    await startProvisioning(dshHome, declaration)
+    const declaration = buildCustomDeclaration(packages as string[], [desktopPlatform()], (await shippedDeclaration()).sources)
+    await writeCustomDeclaration(desktopEnvironmentsRoot(dshHome), declaration)
+    await startProvisioning(dshHome, declaration, sourceId)
   })
   await openInitialSurface().catch(async (error: unknown) => {
     window ??= createWindow()

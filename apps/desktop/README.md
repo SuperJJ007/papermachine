@@ -54,6 +54,12 @@ A user-authored package set (`src/custom-environment.ts`) is published as one fu
 
 `pnpm --filter @deepseek-ai/dsh-desktop package:mac` builds the repository, downloads both pinned micromamba architectures, stages a symlink-free production Host closure, and asks Electron Builder for arm64 and x64 DMGs. The generated app owns its Host, environment declarations, and micromamba executable; the Harness home and applied environments stay under `~/.papermachine`, outside the application payload and outside Electron `userData`.
 
+## Bundled default skills
+
+The DMG ships three default Science skills — `scientific-visualization`, `statistical-analysis`, and `scientific-writing` — vendored read-only under `resources/skills/` from the upstream `K-Dense-AI/scientific-agent-skills` repository (exact commit and license in `resources/skills/SOURCES.md`). Electron Builder's `extraResources` stages the directory unmodified at `process.resourcesPath/skills`, outside the asar archive. The generated Host overlay's `skill-filesystem` row (`src/runtime-overlay.ts`) mounts that path as an isolated, global-scope skill provider (`bundledSkillDir`, `includeDefaultRoots: false`, so it discovers nothing else).
+
+A user's own skill of the same name wins. The `science` agent preset's own `skill-filesystem` row keeps discovering project, custom, and `~/.papermachine/skills` roots in the preset's own scope layer, and `dsh-skill`'s registry resolves a duplicate name by nearest scope layer first — the preset's layer is nearer than this bundled row's global layer, so it always shadows a same-named bundled skill regardless of either root's discovery rank. Adding a new skill or overriding a bundled one is a matter of dropping a `<name>/SKILL.md` (or `<name>.md`) under `~/.papermachine/skills`; nothing under `resources/skills` needs editing, and re-copying the bundled set from upstream never touches a user's own skills.
+
 ## Usage telemetry
 
 PaperMachine reports three metadata-only events, never content: `app.launch` (once per process start), `environment.installed`, and `environment.install-failed` (a provisioning run's package source, duration or last phase, and whether it was cancelled). Every event carries a fresh `eventId`, the anonymous id shared with the Host's identity plugin (`<dshHome>/.anonymous-user-id`; `src/anonymous-id.ts` creates it in that plugin's exact format when desktop's own first `app.launch` runs before any Host has), a timestamp, `appVersion`, `platform`, `arch`, and `schemaVersion: 1` — no hostnames, paths, package lists, or error text.

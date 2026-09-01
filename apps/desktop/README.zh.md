@@ -54,6 +54,12 @@ Onboarding 只有一条路径：安装。PaperMachine 不提供绑定机器上�
 
 `pnpm --filter @deepseek-ai/dsh-desktop package:mac` 会构建仓库、下载两个 pinned micromamba architectures、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成 arm64 与 x64 DMG。生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 `~/.papermachine` 下，既在 application payload 之外，也在 Electron `userData` 之外。
 
+## 随应用内置的默认 skill
+
+DMG 内置三个默认 Science skill——`scientific-visualization`、`statistical-analysis`、`scientific-writing`——以只读方式 vendor 在 `resources/skills/` 下，来自上游仓库 `K-Dense-AI/scientific-agent-skills`（确切 commit 与 license 见 `resources/skills/SOURCES.md`）。Electron Builder 的 `extraResources` 会把该目录原样暂存到 `process.resourcesPath/skills`，在 asar 归档之外。生成的 Host overlay 中 `skill-filesystem` 这一行（`src/runtime-overlay.ts`）把该路径挂载为一个隔离的、global-scope 的 skill provider（`bundledSkillDir`、`includeDefaultRoots: false`，因此它不发现任何其他内容）。
+
+用户自己的同名 skill 会胜出。`science` agent preset 自身的 `skill-filesystem` 行仍在 preset 自己的 scope layer 中发现 project、custom 与 `~/.papermachine/skills` 这些 root，而 `dsh-skill` 的 registry 解析同名冲突时优先按最近的 scope layer 判定——preset 的 layer 比这一行内置 skill 所在的 global layer 更近，因此无论两个 root 各自的 discovery rank 如何，它总会遮蔽同名的内置 skill。新增一个 skill 或覆盖一个内置 skill，只需把 `<name>/SKILL.md`(或 `<name>.md`)放到 `~/.papermachine/skills` 下即可；`resources/skills` 下无需任何改动，从上游重新拷贝内置集合也绝不会碰到用户自己的 skill。
+
 ## 使用统计（telemetry）
 
 PaperMachine 上报三个只含元数据、绝不含内容的事件：`app.launch`（每次进程启动一次）、`environment.installed`、`environment.install-failed`（一次 provisioning 运行的 package source、耗时或最后阶段，以及是否被取消）。每个事件都带有新生成的 `eventId`、与 Host identity 插件共享的匿名 id（`<dshHome>/.anonymous-user-id`；desktop 自己的首个 `app.launch` 会在任何 Host 运行之前先发生，此时 `src/anonymous-id.ts` 会按该插件的确切格式创建这个文件）、时间戳、`appVersion`、`platform`、`arch`，以及 `schemaVersion: 1`——不含 hostname、路径、package 清单或错误文本。

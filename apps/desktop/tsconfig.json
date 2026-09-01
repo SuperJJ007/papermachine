@@ -10,5 +10,10 @@
   "include": [
     "src",
     "tests"
+  ],
+  "references": [
+    { "path": "../../vendor/cordis" },
+    { "path": "../../packages/skill/skill" },
+    { "path": "../../packages/skill/skill-filesystem" }
   ]
 }

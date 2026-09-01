@@ -42,6 +42,7 @@ function collectIds(entries: readonly CordisEntry[]): Set<string> {
 const installer = {
   micromambaPath: '/Applications/PaperMachine.app/Contents/Resources/bin/darwin-arm64/micromamba',
   installChannels: ['https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge', 'https://conda.anaconda.org/conda-forge'],
+  skillsRoot: '/Applications/PaperMachine.app/Contents/Resources/skills',
 } as const
 
 describe('desktop Runtime overlay', () => {
@@ -69,6 +70,12 @@ describe('desktop Runtime overlay', () => {
     expect(byId.get('hmr')?.disabled).toBe(true)
     expect(byId.get('ui-brand-official')?.disabled).toBe(true)
     expect(byId.get('ui-brand-papermachine')?.disabled).toBe(false)
+    expect(byId.get('skill-filesystem')?.disabled).toBe(false)
+    expect(byId.get('skill-filesystem')?.config).toEqual({
+      providerName: 'bundled-skills',
+      includeDefaultRoots: false,
+      bundledSkillDir: installer.skillsRoot,
+    })
   })
 
   it('renders only the fields present when the prefixes come from different environments', () => {
@@ -85,8 +92,12 @@ describe('desktop Runtime overlay', () => {
   })
 
   it('rejects an empty install-channel list, since science-runtime requires the channels alongside micromambaPath', () => {
-    expect(() => renderDesktopRuntimeOverlay({ pythonPrefix: '/py/prefix', micromambaPath: installer.micromambaPath, installChannels: [] }))
-      .toThrow(/requires at least one install channel/)
+    expect(() => renderDesktopRuntimeOverlay({
+      pythonPrefix: '/py/prefix',
+      micromambaPath: installer.micromambaPath,
+      installChannels: [],
+      skillsRoot: installer.skillsRoot,
+    })).toThrow(/requires at least one install channel/)
   })
 
   it('patches ids the base web-app bundle actually declares', async () => {

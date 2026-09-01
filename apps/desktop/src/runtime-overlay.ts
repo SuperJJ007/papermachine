@@ -18,6 +18,11 @@ export interface RuntimeOverlayInput {
    * (`writeRuntimeOverlay` in `main.ts` decides the order).
    */
   readonly installChannels: readonly string[]
+  /**
+   * Absolute path to the app-bundled default Science skills
+   * (`resources/skills`, staged from `process.resourcesPath` by `main.ts`).
+   */
+  readonly skillsRoot: string
 }
 
 /**
@@ -39,8 +44,20 @@ export interface RuntimeOverlayInput {
  * swaps the brand-slot occupant: it disables `ui-brand-official` and enables
  * `ui-brand-papermachine`, since the sidebar and hero brand slots are
  * `single` and reject two same-priority registrations.
- * @param input - the prefix(es) to bind, the micromamba executable, and the
- *   ordered install channels.
+ *
+ * It also re-enables the base bundle's host-plane `skill-filesystem` row
+ * (disabled there because the `science` agent preset owns its own
+ * project/custom/user discovery in the preset's own scope layer — see
+ * `apps/cli/config/agent-presets/science/agent.cordis.yml`) as an isolated,
+ * globally-scoped provider that discovers only `input.skillsRoot`
+ * (`includeDefaultRoots: false`, so it does not re-scan the roots the
+ * preset's own row already covers). `dsh-skill`'s registry resolves a
+ * duplicate skill name by nearest scope layer first: the preset's layer is
+ * nearer than this row's global layer, so a user skill under
+ * `~/.papermachine/skills` (the preset row's `user-dsh` root) always wins
+ * over a same-named bundled one, regardless of either root's discovery rank.
+ * @param input - the prefix(es) to bind, the micromamba executable, the
+ *   ordered install channels, and the bundled skills root.
  * @throws when neither prefix is present or `installChannels` is empty.
  */
 export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string {
@@ -55,5 +72,5 @@ export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string 
     ...(input.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(input.rPrefix)}`]),
   ].join('\n')
   const channels = input.installChannels.map(url => `      - ${JSON.stringify(url)}`).join('\n')
-  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n`
+  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n- id: skill-filesystem\n  disabled: false\n  config:\n    providerName: bundled-skills\n    includeDefaultRoots: false\n    bundledSkillDir: ${JSON.stringify(input.skillsRoot)}\n`
 }

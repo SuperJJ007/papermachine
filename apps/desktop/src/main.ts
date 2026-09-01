@@ -133,6 +133,11 @@ function micromambaPath(): string {
   return join(resourceRoot(), 'bin', desktopPlatform(), 'micromamba')
 }
 
+/** The app-bundled default Science skills, staged alongside the app payload. */
+function skillsRoot(): string {
+  return join(resourceRoot(), 'skills')
+}
+
 function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
   return new DesktopEnvironmentProvisioner({
     root: desktopEnvironmentsRoot(dshHome),
@@ -242,6 +247,7 @@ async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding)
     ...(binding.rPrefix === undefined ? {} : { rPrefix: binding.rPrefix }),
     micromambaPath: micromambaPath(),
     installChannels: sources.flatMap(source => source.channels),
+    skillsRoot: skillsRoot(),
   }), { mode: 0o600 })
   return overlay
 }

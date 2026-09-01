@@ -10,6 +10,8 @@
 
 `scienceEdits.applyChartOps` 把确切的 `{ artifactId, version, ops }` 请求与取消信号转发给 `ctx.scienceRuntime.applyChartEdit`。receipt 会命名已提交的 `origin: 'human-edit'` version 与任何带索引的部分失败。它把陈旧、不可寻址以及无效或全部无法解析的操作分别映射为 `CHART_STALE`、`CHART_NOT_ADDRESSABLE` 与 `CHART_OP_INVALID`；Runtime 仍是唯一校验者。面向模型的 state 与 artifact receipt 不再概括累计直接编辑操作——自 artifact 来源权威迁移以来，底层活图对象状态只存在于项目 artifact store 的 `figure_state` 侧表里；为模型文本重建一行编辑历史被推迟到未来一个仅供 Web 行使用的呈现层。
 
+`scienceEdits.saveArtifactAs` 把一个 store `sourceVersionId` 与一个 `newLogicalName` 转发给 `ctx.scienceRuntime.saveArtifactAs`，返回新 artifact 的 `{ artifactId, logicalName, version }`。这是一个仅供 viewer 使用的操作——本包不为它注册任何模型工具。它把 Runtime 的 `ARTIFACT_VERSION_NOT_FOUND`/`ARTIFACT_LOGICAL_NAME_CONFLICT` 拒绝翻译为 `SAVE_AS_SOURCE_NOT_FOUND`/`SAVE_AS_NAME_CONFLICT`，其余 Runtime 错误原样透传，与 `applyChartOps` 自身的翻译形状一致。
+
 `ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `annotate_artifact`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。
 
 编辑引导明确 `artifactId` 是捕获回执与 `get_science_state` 中的 UUID，不能填写文件名。

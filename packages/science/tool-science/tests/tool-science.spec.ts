@@ -2214,6 +2214,46 @@ describe('scienceEdits submit', () => {
       target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 },
     }], instruction: 'brighten it' })).rejects.toThrow(/no longer identifies a committed store version/)
   })
+
+  it('forwards a save-as request to the Runtime and returns the new artifact identity', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-save-as-remote')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const artifact = artifactVersionFixture({ artifactId: ScienceArtifactId('artifact-copy'), logicalName: 'copy.csv', version: 1 })
+    const saveArtifactAs = vi.spyOn(ctx.scienceRuntime, 'saveArtifactAs').mockResolvedValue(artifact)
+
+    const receipt = await service.saveArtifactAs(agent, { sourceVersionId: 'store-version-1', newLogicalName: 'copy.csv' }, testSignal)
+
+    expect(receipt).toEqual({ artifactId: 'artifact-copy', logicalName: 'copy.csv', version: 1 })
+    expect(saveArtifactAs).toHaveBeenCalledWith({
+      session, sourceVersionId: ScienceVersionId('store-version-1'), newLogicalName: 'copy.csv', signal: testSignal,
+    })
+  })
+
+  it('translates stable Runtime save-as rejections and passes through every other error unchanged', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-save-as-remote-errors')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const saveArtifactAs = vi.spyOn(ctx.scienceRuntime, 'saveArtifactAs')
+    const request = { sourceVersionId: 'store-version-1', newLogicalName: 'copy.csv' }
+
+    for (const [runtimeCode, remoteCode] of [
+      ['ARTIFACT_VERSION_NOT_FOUND', 'SAVE_AS_SOURCE_NOT_FOUND'],
+      ['ARTIFACT_LOGICAL_NAME_CONFLICT', 'SAVE_AS_NAME_CONFLICT'],
+    ] as const) {
+      saveArtifactAs.mockRejectedValueOnce(new ScienceRuntimeError(runtimeCode, runtimeCode))
+      await expect(service.saveArtifactAs(agent, request, testSignal))
+        .rejects.toMatchObject({ code: remoteCode, message: runtimeCode })
+    }
+    const infrastructure = new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'store failed')
+    saveArtifactAs.mockRejectedValueOnce(infrastructure)
+    await expect(service.saveArtifactAs(agent, request, testSignal)).rejects.toBe(infrastructure)
+    const unexpected = new Error('unexpected save-as failure')
+    saveArtifactAs.mockRejectedValueOnce(unexpected)
+    await expect(service.saveArtifactAs(agent, request, testSignal)).rejects.toBe(unexpected)
+  })
 })
 
 

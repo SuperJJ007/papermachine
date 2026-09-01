@@ -7,7 +7,7 @@ import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
-import { applyScienceArtifactNotes, decodeScienceChartState, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
+import { applyScienceArtifactNotes, decodeScienceChartState, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import type { ScienceChartElement, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -26,6 +26,8 @@ import type {
   ScienceEditSelection,
   ScienceEditTarget,
   ScienceNormalizedRegionTarget,
+  ScienceSaveArtifactAsReceipt,
+  ScienceSaveArtifactAsRequest,
 } from './types.ts'
 
 /** Admission error with a stable Science edit classification. */
@@ -523,5 +525,35 @@ export class ScienceEditService extends TypertRemoteService {
       removedAt: Date.now(),
     }, { ignorable: true })
     return { accepted: true }
+  }
+
+  /**
+   * Duplicate one exact committed artifact version into a brand-new logical
+   * artifact in the same project. A viewer-only operation — never exposed
+   * as a model tool.
+   * @param agent - Agent whose session owns the new artifact's origin.
+   * @param request - Store version id to duplicate and the new logical name.
+   * @param signal - Client-owned cancellation for the Runtime operation.
+   * @returns the new artifact's identity and first version.
+   */
+  @Remote('saveArtifactAs')
+  async saveArtifactAs(
+    agent: Agent, request: ScienceSaveArtifactAsRequest, signal: AbortSignal,
+  ): Promise<ScienceSaveArtifactAsReceipt> {
+    try {
+      const artifact = await this.ctx.scienceRuntime.saveArtifactAs({
+        session: agent.session,
+        sourceVersionId: ScienceVersionId(request.sourceVersionId),
+        newLogicalName: request.newLogicalName,
+        signal,
+      })
+      return { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: artifact.version }
+    } catch (error: unknown) {
+      if (error instanceof ScienceRuntimeError) {
+        if (error.code === 'ARTIFACT_VERSION_NOT_FOUND') throw new ScienceEditError(error.message, 'SAVE_AS_SOURCE_NOT_FOUND')
+        if (error.code === 'ARTIFACT_LOGICAL_NAME_CONFLICT') throw new ScienceEditError(error.message, 'SAVE_AS_NAME_CONFLICT')
+      }
+      throw error
+    }
   }
 }

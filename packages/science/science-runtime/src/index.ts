@@ -30,7 +30,7 @@ import type {
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
-import type {} from '@deepseek-ai/dsh-science-artifact-store'
+import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -85,6 +85,7 @@ import type {
   BindScienceEnvironmentRequest,
   InstallScienceEnvironmentPackagesRequest,
   InstallScienceEnvironmentPackagesResult,
+  SaveScienceArtifactAsRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -101,6 +102,7 @@ export type {
   InstallScienceEnvironmentPackagesRequest,
   InstallScienceEnvironmentPackagesResult,
   InstallScienceEnvironmentPackagesStatus,
+  SaveScienceArtifactAsRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -1222,6 +1224,101 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         projectId: target.projectId,
         versionId: target.versionId,
         sha256: currentVersion.sha256,
+        seenAt: Date.now(),
+      }
+      this.assertPrepublication(request.session, lease.control)
+      request.session.append('science/artifact-saved', { version: 1, artifact })
+      return artifact
+    } catch (error) {
+      throw this.prepublicationError(lease.control, error)
+    } finally {
+      this.leases.release(lease)
+    }
+  }
+
+  /**
+   * Duplicate one existing artifact version into a brand-new logical
+   * artifact in the same project. Content-addressed bytes are reused (the
+   * store's blob admission is idempotent by digest, so re-admitting the
+   * source's own bytes never duplicates them on disk); provenance is a
+   * fresh fact this session originates, not a copy of the source's own
+   * producer — `baseVersionId` names the source explicitly instead. A
+   * viewer operation: no authorizing tool call, so `session.append` records
+   * only the store reference and the presentation snapshot the store just
+   * committed.
+   * @param request - Exact Session, the store version to duplicate, and the new logical name.
+   * @returns The durable new artifact version this operation appended.
+   * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when
+   *   `sourceVersionId` does not identify a committed version in the
+   *   session's owning project, or (`ARTIFACT_LOGICAL_NAME_CONFLICT`) when
+   *   `newLogicalName` is already used in that project.
+   */
+  async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion> {
+    this.assertSession(request.session)
+    const lease = this.reserve(request.session, request.signal)
+    try {
+      this.assertPrepublication(request.session, lease.control)
+      const projectId = await this.sessionProject(request.session)
+      const store = this.ctx.scienceArtifactStore
+      const source = await store.getVersion(projectId, request.sourceVersionId)
+      if (source === undefined) {
+        throw new ScienceRuntimeError(
+          'ARTIFACT_VERSION_NOT_FOUND',
+          `version ${JSON.stringify(request.sourceVersionId)} does not identify a committed version in this project`,
+        )
+      }
+      const sourceArtifact = await store.getArtifact(projectId, source.artifactId)
+      /* v8 ignore next 3 -- a version's own store row always names an artifact row the same store still holds */
+      if (sourceArtifact === undefined) {
+        throw new Error('science-runtime: save-as source version no longer identifies a committed artifact')
+      }
+      const sourceFigureState = await store.getFigureState(projectId, source.versionId)
+      const data = await store.readBlob(projectId, source.sha256)
+      this.assertPrepublication(request.session, lease.control)
+      let created: Awaited<ReturnType<typeof store.createArtifact>>
+      try {
+        created = await store.createArtifact(projectId, {
+          logicalName: request.newLogicalName,
+          kind: sourceArtifact.kind,
+          originSessionId: request.session.id,
+          data,
+          mediaType: source.mediaType,
+          contentOrigin: source.contentOrigin,
+          baseVersionId: source.versionId,
+          ...source.environmentRevision === undefined ? {} : { environmentRevision: source.environmentRevision },
+          ...source.environmentFingerprint === undefined ? {} : { environmentFingerprint: source.environmentFingerprint },
+          ...sourceFigureState === undefined ? {} : {
+            figureState: { figureKey: sourceFigureState.figureKey, dpi: sourceFigureState.dpi, stateJson: sourceFigureState.stateJson },
+          },
+        })
+      } catch (error) {
+        if (error instanceof ProjectArtifactStoreError && error.code === 'LOGICAL_NAME_CONFLICT') {
+          throw new ScienceRuntimeError(
+            'ARTIFACT_LOGICAL_NAME_CONFLICT',
+            `an artifact named ${JSON.stringify(request.newLogicalName)} already exists in this project`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
+      // Title/caption are inherited verbatim from the source's current
+      // presentation (a separate annotation, not a `versions` column — T1
+      // dropped title/caption from `createArtifact` entirely).
+      await store.annotateVersion(projectId, created.version.versionId, {
+        actor: 'human',
+        sessionId: request.session.id,
+        title: source.title ?? request.newLogicalName,
+        caption: source.caption ?? null,
+      })
+      const artifact: ScienceArtifactVersion = {
+        artifactId: created.artifact.artifactId,
+        logicalName: request.newLogicalName,
+        version: created.version.ordinal,
+        title: source.title ?? request.newLogicalName,
+        ...source.caption === undefined ? {} : { caption: source.caption },
+        projectId,
+        versionId: created.version.versionId,
+        sha256: created.version.sha256,
         seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)

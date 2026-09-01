@@ -157,7 +157,8 @@ describe('science agent preset', () => {
       .filter(name => name !== 'glob' && name !== 'grep').sort()
     expect(rosterTools).toEqual([
       'annotate_artifact', 'ask_user_question', 'exit_plan_mode', 'get_science_state', 'install_science_packages',
-      'read', 'read_image', 'run_python', 'run_r', 'skill', 'todo_write', 'web_fetch', 'web_search',
+      'interrupt_agent', 'list_agents', 'read', 'read_image', 'run_python', 'run_r', 'send_message', 'skill',
+      'subagent', 'todo_write', 'web_fetch', 'web_search',
     ])
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
       .toEqual(scaffold.ctx.tools.schemas(agentHandle.agent).toSorted((left, right) => left.name.localeCompare(right.name)))

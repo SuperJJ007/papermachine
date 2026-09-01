@@ -165,6 +165,11 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '**/__pycache__/**',
   '**/.pytest_cache/**',
   'apps/web/dist/**',
+  // Packaged desktop output: `.stage/host` is a deployed Host closure and
+  // `release/` holds the built `.app` bundles, both of which carry copies of
+  // documentation whose relative links no longer resolve from their new depth.
+  'apps/desktop/.stage/**',
+  'apps/desktop/release/**',
   '.artifacts/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/**',

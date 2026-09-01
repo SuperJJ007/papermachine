@@ -88,7 +88,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
-import type { ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ArtifactId, ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
@@ -1054,6 +1054,47 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
 }
 
 /**
+ * Content-Disposition filename for one Science artifact raw-bytes download:
+ * the logical name with its own extension stripped, `-v<ordinal>` inserted,
+ * and that same extension re-appended (`chart.png` v3 → `chart-v3.png`). A
+ * logical name with no extension keeps none — this never fabricates one from
+ * `mediaType`.
+ * @param logicalName - the owning artifact's current logical name.
+ * @param ordinal - the downloaded version's 1-based position among its artifact's versions.
+ * @returns the filename, still requiring RFC 5987/6266 encoding before use in a header.
+ */
+function scienceArtifactDownloadFilename(logicalName: string, ordinal: number): string {
+  const ext = extname(logicalName)
+  const base = ext === '' ? logicalName : logicalName.slice(0, -ext.length)
+  return `${base}-v${ordinal}${ext}`
+}
+
+/**
+ * Percent-encode a filename for RFC 5987's `ext-value` production, the
+ * `filename*=UTF-8''…` half of `Content-Disposition`. `encodeURIComponent`
+ * already escapes everything outside `unreserved`/most `sub-delims`; RFC
+ * 5987 §3.2.1 additionally excludes `!'()*` from `attr-char`, so those four
+ * are percent-encoded a second pass.
+ * @param filename - the filename to encode.
+ * @returns the `attr-char`-safe percent-encoded value.
+ */
+function encodeRfc5987Filename(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/gu, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+/**
+ * ASCII-only fallback for `Content-Disposition`'s plain `filename=` parameter
+ * (RFC 6266 recommends pairing it with `filename*` for user agents that
+ * ignore the extended form). Non-printable-ASCII and quote/backslash
+ * characters — which would otherwise break the quoted-string — degrade to `_`.
+ * @param filename - the filename to sanitize.
+ * @returns an ASCII, quote/backslash-free filename of the same length.
+ */
+function asciiFallbackFilename(filename: string): string {
+  return filename.replace(/[^\u0020-\u007E]|["\\]/gu, '_')
+}
+
+/**
  * Implement ApiProxy over a composed host context.
  * @param ctx - a context with the Host spine and Workspace registry mounted.
  * @param defaults - host routing and project-directory defaults.
@@ -1585,7 +1626,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   /** Store row plus project identity proven by a session's strict Science fold. */
   interface AuthorizedScienceArtifact {
     readonly projectId: Parameters<ScienceArtifactStore['readBlob']>[0]
+    readonly artifactId: ArtifactId
     readonly versionId: VersionId
+    /** This version's 1-based position among its artifact's versions — the raw-bytes download filename's `-v<ordinal>` suffix. */
+    readonly ordinal: number
     readonly sha256: string
     readonly mediaType: string
     readonly byteCount: number
@@ -1614,7 +1658,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       if (version === undefined) return undefined
       return {
         projectId: local.projectId,
+        artifactId: version.artifactId,
         versionId: local.versionId,
+        ordinal: version.ordinal,
         sha256: local.sha256,
         mediaType: version.mediaType,
         byteCount: version.byteCount,
@@ -1636,7 +1682,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       const matched = versions.find(version => version.versionId === requestedVersionId && ordinals.has(version.ordinal))
       if (matched !== undefined) return {
         projectId,
+        artifactId: matched.artifactId,
         versionId: matched.versionId,
+        ordinal: matched.ordinal,
         sha256: matched.sha256,
         mediaType: matched.mediaType,
         byteCount: matched.byteCount,
@@ -1645,7 +1693,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const projectVersion = await store.getVersion(projectId, requestedVersionId)
     return projectVersion === undefined ? undefined : {
       projectId,
+      artifactId: projectVersion.artifactId,
       versionId: projectVersion.versionId,
+      ordinal: projectVersion.ordinal,
       sha256: projectVersion.sha256,
       mediaType: projectVersion.mediaType,
       byteCount: projectVersion.byteCount,
@@ -3923,6 +3973,80 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             },
           },
         )
+      },
+
+      async scienceArtifact(request, signal) {
+        // Clean error path first, mirroring sessionLog: an unproven session
+        // or version answers 404 without naming a reason (unauthorized and
+        // nonexistent are indistinguishable on the wire, and the response
+        // never echoes a projectId the client did not supply).
+        let state: SessionReadState
+        try {
+          state = await readSessionState(request.sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) return new Response('not found', { status: 404 })
+          signal.throwIfAborted()
+          return new Response('science artifact download failed to resolve the session', { status: 500 })
+        }
+        const store = ctx.get('scienceArtifactStore')
+        if (store === undefined) {
+          return new Response(
+            'science artifact downloads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
+            { status: 500 },
+          )
+        }
+        let artifact: AuthorizedScienceArtifact | undefined
+        try {
+          artifact = await authorizedScienceArtifact(state, request.versionId, store)
+        } catch {
+          signal.throwIfAborted()
+          return new Response('science artifact download failed to authorize the requested version', { status: 500 })
+        }
+        if (artifact === undefined) return new Response('not found', { status: 404 })
+
+        // Integrity: readBlob hashes the whole blob before returning, so a
+        // corrupt or missing blob is caught here, before any response byte
+        // is produced — no partial download ever reaches the client claiming
+        // a Content-Length it cannot deliver. See this package's README and
+        // the accompanying Agent Note for why this differs from streaming a
+        // disk read: `readBlob` (verify-then-return) is the only blob read
+        // this package's store dependency exposes across the package
+        // boundary; a genuinely streaming read-with-abort would require a
+        // new public method on `@deepseek-ai/dsh-science-artifact-store`,
+        // out of this endpoint's scope.
+        let data: Uint8Array
+        try {
+          data = await store.readBlob(artifact.projectId, artifact.sha256)
+        } catch (error: unknown) {
+          if (error instanceof ProjectArtifactStoreError && error.code === 'BLOB_NOT_FOUND') {
+            return new Response('science artifact content is missing from the store', {
+              status: 410,
+              headers: { 'x-science-artifact-error': 'missing_content' },
+            })
+          }
+          if (error instanceof ProjectArtifactStoreError && error.code === 'BLOB_CORRUPT') {
+            return new Response('science artifact content failed integrity verification', {
+              status: 409,
+              headers: { 'x-science-artifact-error': 'content_corrupt' },
+            })
+          }
+          signal.throwIfAborted()
+          return new Response('unable to read science artifact content', { status: 500 })
+        }
+
+        const owner = await store.getArtifact(artifact.projectId, artifact.artifactId)
+        const filename = scienceArtifactDownloadFilename(owner?.logicalName ?? artifact.versionId, artifact.ordinal)
+        return new Response(Buffer.from(data), {
+          headers: {
+            // No charset parameter for text/* — see this package's README:
+            // the browser resolves encoding from the bytes (BOM/heuristics)
+            // rather than this endpoint guessing one.
+            'content-type': artifact.mediaType,
+            'content-length': String(data.byteLength),
+            'content-disposition': `attachment; filename="${asciiFallbackFilename(filename)}"; filename*=UTF-8''${encodeRfc5987Filename(filename)}`,
+            'x-content-type-options': 'nosniff',
+          },
+        })
       },
     },
 

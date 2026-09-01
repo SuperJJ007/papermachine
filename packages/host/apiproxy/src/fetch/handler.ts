@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { ApiProxy, MuxFrame, HostFrame } from '../api/index.ts'
-import { sessionLogQuerySchema } from '../api/downloads.schema.ts'
+import { scienceArtifactDownloadPathSchema, sessionLogQuerySchema } from '../api/downloads.schema.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerRequest, ServerResponse } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
@@ -278,6 +278,23 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
         if (req.method === 'GET') return response
         await response.body?.cancel()
         return new Response(null, { status: response.status, headers: response.headers })
+      }
+      // `/api/science/artifact/:sessionId/:versionId`: opaque path segments,
+      // not a query string, since the client always knows both ids up front
+      // (unlike session.export's optional includeDescendants flag). The
+      // regex's two capturing groups are non-optional, so a match guarantees
+      // both segments are non-empty; `.parse()` (not `.safeParse()`) reflects
+      // that this domain schema's `.min(1)` brand cast cannot actually reject
+      // a matched segment, so there is no separate 400 branch to answer.
+      const scienceArtifactMatch = req.method === 'GET'
+        ? /^\/api\/science\/artifact\/([^/]+)\/([^/]+)$/u.exec(path)
+        : null
+      if (scienceArtifactMatch !== null) {
+        const parsed = scienceArtifactDownloadPathSchema.parse({
+          sessionId: decodeURIComponent(scienceArtifactMatch[1] as string),
+          versionId: decodeURIComponent(scienceArtifactMatch[2] as string),
+        })
+        return api.downloads.scienceArtifact(parsed, req.signal)
       }
 
       if (req.method !== 'POST' || !path.startsWith('/api/')) {

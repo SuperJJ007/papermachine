@@ -277,6 +277,10 @@ case " $* " in
 esac
 `, { mode: 0o700 }),
     writeFile(join(prefix, 'conda-meta', 'history'), '==> 2026-08-16 <==\n+python-3.13.5\n'),
+    // Always-succeeding stand-in for micromamba: `install_science_packages`
+    // reaches this through the real sandbox passthrough runner, so it must
+    // be a real executable a real subprocess can spawn, not a fake handle.
+    writeFile(join(root, 'fake-micromamba'), '#!/bin/sh\nexit 0\n', { mode: 0o700 }),
   ])
 }
 
@@ -419,6 +423,14 @@ describe('headless stream-json snapshots', () => {
       expect(modelView).not.toContain('Edited input')
       const captured = JSON.parse(modelView) as { filesystemTools?: unknown }
       expect(captured.filesystemTools).toEqual(['read'])
+      // install_science_packages is registered and described alongside the
+      // run tools' own persistence guidance, and its captured configured
+      // channels never leak (a Host path/identity fact, matching every
+      // other Runtime-owned free-text field this scenario checks above).
+      expect(modelView).toContain('install_science_packages')
+      expect(modelView).toContain('use install_science_packages to persist a package')
+      expect(modelView).not.toContain('conda.anaconda.org')
+      expect(modelView).not.toContain('fake-micromamba')
 
       const stream = normalizeScienceStream(result.stdout, runCwd, runtimeRoot, ids)
       const streamExpected = join(scienceToolsScenarioDir, 'stream-json.expected.jsonl')
@@ -500,6 +512,26 @@ describe('headless stream-json snapshots', () => {
       const secondRegionArtifact = ((secondRegionSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
       expect(secondRegionArtifact.parent).toEqual({ artifactId: selectedArtifact.artifactId, version: 1 })
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
+
+      // install_science_packages: two whole-value environment-bound
+      // revisions on this session (the initial bind, then the fresh
+      // revision the install appended) and a result that tells the model
+      // plainly the install is not in effect yet.
+      const environmentBoundRevisions = parseJsonl(result.stdout).flatMap((record) => {
+        if (record.type !== 'session_event' || record.sessionId !== 'science-tools-snapshot') return []
+        if (record.event === null || typeof record.event !== 'object') return []
+        const event = record.event as JsonObject
+        if (event.type !== 'science/environment-bound') return []
+        return [((event.data as JsonObject).environment as JsonObject).revision as number]
+      })
+      expect(environmentBoundRevisions).toEqual([1, 2])
+      expect(result.stdout).toContain('SCIENCE_INSTALL_SNAPSHOT_OK')
+      expect(result.stdout).toContain('takes effect on the next run_python/run_r call')
+      expect(result.stdout).toContain('lost then')
+      // The next run_python call (inside the region-edit flow below) proves
+      // the lazy-restart mechanic end to end: it finds the newer applied
+      // revision and starts a fresh kernel before executing.
+      expect(result.stdout).toContain('kernel restarted (environment re-bind): variables from earlier runs are gone')
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })
     }

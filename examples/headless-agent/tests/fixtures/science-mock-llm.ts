@@ -14,7 +14,7 @@ import type { ScienceEditMessageSource } from '@deepseek-ai/dsh-tool-science/typ
 const capturePath = join(process.cwd(), 'science-model-view.json')
 
 /** Science tools whose model-facing schemas this snapshot pins verbatim. */
-const SCIENCE_TOOLS = ['annotate_artifact', 'get_science_state', 'run_python', 'run_r']
+const SCIENCE_TOOLS = ['annotate_artifact', 'get_science_state', 'install_science_packages', 'run_python', 'run_r']
 
 /** The auto-captured file this scenario curates through `annotate_artifact`. */
 const CURATED_LOGICAL_NAME = 'plot.png'
@@ -42,6 +42,16 @@ function toolResultTexts(options: GenerateOptions): string[] {
 function requestsDirectEditState(options: GenerateOptions): boolean {
   return options.messages.some(message => message.source.kind === 'user'
     && message.content.some(block => block.type === 'text' && block.text === 'Inspect the direct chart edit state.'))
+}
+
+function requestsInstall(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.source.kind === 'user'
+    && message.content.some(block => block.type === 'text' && block.text === 'Install numpy into the bound Python environment.'))
+}
+
+function answeredInstall(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.role === 'assistant'
+    && message.content.some(block => block.type === 'text' && block.text === 'SCIENCE_INSTALL_SNAPSHOT_OK'))
 }
 
 function answeredDirectEditState(options: GenerateOptions): boolean {
@@ -120,6 +130,18 @@ class ScienceMockAdapter extends LlmAdapter {
         return
       }
       const reply = 'SCIENCE_DIRECT_EDIT_STATE_OK'
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: reply }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
+    if (requestsInstall(options) && !answeredInstall(options)) {
+      if (!served.has('science-install-call')) {
+        yield * toolCall('science-install-call', 'install_science_packages', { language: 'python', packages: ['numpy'] })
+        return
+      }
+      const reply = 'SCIENCE_INSTALL_SNAPSHOT_OK'
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: reply }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }

@@ -69,6 +69,15 @@
               profiles:
                 fake:
                   pythonPrefix: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/fake-conda'"
+              # install_science_packages's own always-succeeding fixture
+              # executable (`prepareScienceFixture` in
+              # `tests/headless.snapshot.ts`); the ordered channel list
+              # mirrors the desktop provisioning's own mirror-then-official
+              # shape without touching a real host.
+              micromambaPath: !!js "process.env.DSH_SCIENCE_SNAPSHOT_ROOT + '/fake-micromamba'"
+              installChannels:
+                - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+                - https://conda.anaconda.org/conda-forge
           - id: science-runtime-invariant
             name: '@deepseek-ai/dsh-science-runtime/invariant'
           - id: science-edit-service

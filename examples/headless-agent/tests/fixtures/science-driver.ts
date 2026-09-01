@@ -112,6 +112,17 @@ try {
       process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
     },
   })
+  const revisionBefore = foldScience(agent.session.events).environments.at(-1)?.revision ?? 0
+  await runFixtureTurn(ctx, {
+    task: 'Install numpy into the bound Python environment.',
+    onEvent: (sessionId: string, event: SessionEvent) => {
+      process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
+    },
+  })
+  const revisionAfter = foldScience(agent.session.events).environments.at(-1)?.revision
+  if (revisionAfter !== revisionBefore + 1) {
+    throw new Error(`${NAME}: install_science_packages did not append a fresh environment revision`)
+  }
   let editOutput = ''
   const disposeEditListener = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return

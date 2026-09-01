@@ -11,6 +11,7 @@ export type ProjectArtifactStoreErrorCode =
   | 'LOGICAL_NAME_CONFLICT'
   | 'BLOB_NOT_FOUND'
   | 'BLOB_CORRUPT'
+  | 'RECONCILE_ORDINAL_CONFLICT'
 
 /** Thrown for every failure this package owns: a stable `code` names the failure kind. */
 export class ProjectArtifactStoreError extends Error {

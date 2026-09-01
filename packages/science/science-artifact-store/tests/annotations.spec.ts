@@ -12,7 +12,7 @@ const SESSION_A = 'session-a' as SessionId
 async function makeEngine(): Promise<ProjectArtifactStoreEngine> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-home-'))
   dirs.push(home)
-  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, dshHome: home })
+  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
   engines.push(engine)
   return engine
 }

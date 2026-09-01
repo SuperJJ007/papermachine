@@ -9,9 +9,11 @@ import type { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { admitBlob, readBlob as readBlobBytes } from './blobs.ts'
+import { admitBlob, blobByteCount, readBlob as readBlobBytes } from './blobs.ts'
 import { ProjectArtifactStoreError } from './errors.ts'
 import { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
+import { reconcileProject as runReconciliation } from './reconcile.ts'
+import type { ReconcileArtifactSavedEvent, ReconcileResult } from './reconcile.ts'
 import { deleteProjectStore, resolveProjectIdentity, storeRootForProject } from './registry.ts'
 import { openStoreDatabase, type BackfillProvenanceHook, type JournalMode, type OpenStoreDatabaseOptions } from './schema.ts'
 import type {
@@ -26,6 +28,8 @@ import type {
   FigureStateRecord,
   OpenedProject,
   PutNoteInput,
+  ReconciliationSummary,
+  ReconstructVersionInput,
   VersionAnnotationRecord,
   VersionHealthPatch,
   VersionHealthRecord,
@@ -40,6 +44,12 @@ export interface ProjectArtifactStoreOptions {
   readonly dshHome?: string
   /** How many pre-upgrade `.bak` copies of a project's `store.sqlite` to retain. */
   readonly storeBackupRetention: number
+  /**
+   * Upper bound on how many version rows and dangling events one
+   * `reconcileProject` call processes; a project with more outstanding work
+   * reports `truncated: true` rather than blocking the caller.
+   */
+  readonly reconcileMaxVersions: number
   /** Consulted at most once per project, during a v1→v2 upgrade's optional step 4. See `schema.ts`'s `BackfillProvenanceHook`. */
   readonly backfillProvenance?: BackfillProvenanceHook
   /** Diagnostic sink for a migration's non-fatal degradations. */
@@ -113,6 +123,18 @@ interface VersionHealthRow {
   readonly reconstructed: number
   readonly missing_content: number
   readonly checked_at: number
+}
+
+/** Fields `insertAnnotation` needs, shared by `annotateVersion` and `reconstructVersion`. */
+interface InsertAnnotationFields {
+  readonly title: string | null
+  readonly caption: string | null
+  readonly actor: AnnotationActor
+  readonly sessionId?: SessionId
+  readonly toolCallId?: string
+  readonly requestHeaderSeq?: number
+  readonly derived: boolean
+  readonly createdAt: number
 }
 
 function toArtifactRecord(row: ArtifactRow): ArtifactRecord {
@@ -311,6 +333,27 @@ export class ProjectArtifactStoreEngine {
   }
 
   /**
+   * Insert one `version_annotations` row and advance the version's
+   * `latestAnnotationId` to it. Shared by `annotateVersion` (`derived:
+   * false`, a live call) and `reconstructVersion` (`derived: true`, a
+   * reconciliation-synthesized row) — the same append-only mechanism, two
+   * different callers.
+   */
+  private insertAnnotation(db: DatabaseSync, versionId: VersionId, fields: InsertAnnotationFields): AnnotationId {
+    const annotationId = AnnotationId(randomUUID())
+    db.prepare(`
+      INSERT INTO version_annotations (annotation_id, version_id, title, caption, actor, session_id, tool_call_id, request_header_seq, derived, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      annotationId, versionId, fields.title, fields.caption, fields.actor,
+      fields.sessionId ?? null, fields.toolCallId ?? null, fields.requestHeaderSeq ?? null,
+      fields.derived ? 1 : 0, fields.createdAt,
+    )
+    db.prepare('UPDATE versions SET latest_annotation_id = ? WHERE version_id = ?').run(annotationId, versionId)
+    return annotationId
+  }
+
+  /**
    * Create a new artifact and its first version (ordinal 1). Carries no
    * title/caption — curate the version afterward with `annotateVersion`.
    * @param projectId - the owning project; its store is opened if not already.
@@ -401,7 +444,6 @@ export class ProjectArtifactStoreEngine {
    */
   async annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord> {
     const db = await this.connectionFor(projectId)
-    const annotationId = AnnotationId(randomUUID())
     const now = Date.now()
     runWriteTransaction(db, () => {
       const versionRow = db.prepare('SELECT latest_annotation_id FROM versions WHERE version_id = ?').get(versionId) as
@@ -411,11 +453,14 @@ export class ProjectArtifactStoreEngine {
       const existing = versionRow.latest_annotation_id === null ? undefined : this.getAnnotationRow(db, versionRow.latest_annotation_id)
       const title = patch.title !== undefined ? patch.title : existing?.title ?? null
       const caption = patch.caption !== undefined ? patch.caption : existing?.caption ?? null
-      db.prepare(`
-        INSERT INTO version_annotations (annotation_id, version_id, title, caption, actor, session_id, tool_call_id, request_header_seq, derived, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-      `).run(annotationId, versionId, title, caption, patch.actor, patch.sessionId ?? null, patch.toolCallId ?? null, patch.requestHeaderSeq ?? null, now)
-      db.prepare('UPDATE versions SET latest_annotation_id = ? WHERE version_id = ?').run(annotationId, versionId)
+      this.insertAnnotation(db, versionId, {
+        title, caption, actor: patch.actor,
+        ...patch.sessionId === undefined ? {} : { sessionId: patch.sessionId },
+        ...patch.toolCallId === undefined ? {} : { toolCallId: patch.toolCallId },
+        ...patch.requestHeaderSeq === undefined ? {} : { requestHeaderSeq: patch.requestHeaderSeq },
+        derived: false,
+        createdAt: now,
+      })
     })
     return this.getVersionRow(db, versionId)
   }
@@ -586,6 +631,127 @@ export class ProjectArtifactStoreEngine {
   async readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array> {
     const root = await this.rootFor(projectId)
     return readBlobBytes(root, sha256)
+  }
+
+  /**
+   * Check one blob's on-disk presence and size without reading or
+   * digest-verifying its bytes, for reconciliation's `missingContent` check.
+   * @param projectId - the owning project.
+   * @param sha256 - the digest from an already-resolved version row.
+   * @returns the blob's byte count, or `undefined` when it is missing.
+   */
+  async blobByteCount(projectId: ProjectId, sha256: string): Promise<number | undefined> {
+    const root = await this.rootFor(projectId)
+    return blobByteCount(root, sha256)
+  }
+
+  /**
+   * Rebuild one version row (and its owning artifact row, when this
+   * project's store no longer has one) from a session-log event's fallback
+   * fields — reconciliation's response to a dangling event (the store row
+   * that once backed it was lost while the event survived). Idempotent: a
+   * `versionId` that already names a version row is left completely
+   * untouched and that existing row is returned, treating the call as
+   * already-applied rather than throwing — a batched reconciliation run may
+   * call this again after a previous batch already created the row.
+   * `contentOrigin` is always `'import'` on the row this writes: a
+   * reconstructed row's real origin (a run, or a human edit) is exactly the
+   * fact this reconstruction has no way to recover, and `'import'` is the
+   * one {@link ContentOrigin} value that does not claim otherwise. Never
+   * called by any path but reconciliation — every ordinary content commit
+   * goes through `createArtifact`/`appendVersion`.
+   * @param projectId - the owning project.
+   * @param input - the exact ids, ordinal, content address, and best-available provenance to reconstruct.
+   * @returns the reconstructed (or, if idempotent, the pre-existing) version row.
+   * @throws {@link ProjectArtifactStoreError} with code `RECONCILE_ORDINAL_CONFLICT`
+   * when the artifact already has a DIFFERENT version committed at this ordinal.
+   */
+  async reconstructVersion(projectId: ProjectId, input: ReconstructVersionInput): Promise<VersionRecord> {
+    const db = await this.connectionFor(projectId)
+    runWriteTransaction(db, () => {
+      const existingVersion = db.prepare('SELECT 1 FROM versions WHERE version_id = ?').get(input.versionId)
+      if (existingVersion !== undefined) return
+      const artifactRow = db.prepare('SELECT 1 FROM artifacts WHERE artifact_id = ?').get(input.artifactId)
+      if (artifactRow === undefined) {
+        const nameConflict = db.prepare('SELECT 1 FROM artifacts WHERE owning_project_id = ? AND logical_name = ?')
+          .get(String(projectId), input.logicalName)
+        if (nameConflict !== undefined) {
+          throw new ProjectArtifactStoreError(
+            `cannot reconstruct artifact "${input.artifactId}": an artifact named "${input.logicalName}" already exists in project "${projectId}" under a different id`,
+            'LOGICAL_NAME_CONFLICT',
+          )
+        }
+        db.prepare(`
+          INSERT INTO artifacts (artifact_id, owning_project_id, origin_session_id, logical_name, kind, latest_version_id, created_at)
+          VALUES (?, ?, ?, ?, ?, NULL, ?)
+        `).run(input.artifactId, String(projectId), input.producerSessionId, input.logicalName, input.kind, input.createdAt)
+      }
+      const ordinalConflict = db.prepare('SELECT version_id FROM versions WHERE artifact_id = ? AND ordinal = ?')
+        .get(input.artifactId, input.ordinal) as { version_id: string } | undefined
+      if (ordinalConflict !== undefined && ordinalConflict.version_id !== input.versionId) {
+        throw new ProjectArtifactStoreError(
+          `artifact "${input.artifactId}" already has a different committed version at ordinal ${String(input.ordinal)}; `
+          + `cannot reconstruct version "${input.versionId}" there`,
+          'RECONCILE_ORDINAL_CONFLICT',
+        )
+      }
+      db.prepare(INSERT_VERSION_SQL).run(
+        input.versionId, input.artifactId, input.ordinal, null, 0,
+        input.sha256, input.mediaType, input.byteCount, 'import', input.producerSessionId,
+        null, null, null, null, null, null, input.createdAt,
+      )
+      const currentMax = db.prepare('SELECT MAX(ordinal) AS max_ordinal FROM versions WHERE artifact_id = ?')
+        .get(input.artifactId) as { max_ordinal: number }
+      if (input.ordinal === currentMax.max_ordinal) {
+        db.prepare('UPDATE artifacts SET latest_version_id = ? WHERE artifact_id = ?').run(input.versionId, input.artifactId)
+      }
+      if (input.title !== null || input.caption !== null) {
+        this.insertAnnotation(db, input.versionId, {
+          title: input.title, caption: input.caption, actor: 'capture', sessionId: input.producerSessionId,
+          derived: true, createdAt: input.createdAt,
+        })
+      }
+    })
+    return this.getVersionRow(db, input.versionId)
+  }
+
+  /**
+   * Read project-wide reconciliation health from `version_health`: counts
+   * plus every version with at least one true flag. A pure read — building
+   * the comparison that decides these flags is `reconcileProject`'s job.
+   * @param projectId - the owning project.
+   * @returns aggregate counts and the unhealthy version list, most recently checked first.
+   */
+  async getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary> {
+    const db = await this.connectionFor(projectId)
+    const rows = db.prepare(`
+      SELECT * FROM version_health
+      WHERE orphan = 1 OR reconstructed = 1 OR missing_content = 1
+      ORDER BY checked_at DESC
+    `).all() as unknown as VersionHealthRow[]
+    const items = rows.map(toVersionHealthRecord)
+    return {
+      orphanCount: items.filter(item => item.orphan).length,
+      reconstructedCount: items.filter(item => item.reconstructed).length,
+      missingContentCount: items.filter(item => item.missingContent).length,
+      items,
+    }
+  }
+
+  /**
+   * Reconcile one project's store against session-log events a caller has
+   * already read and folded — see `reconcile.ts`'s `reconcileProject` for
+   * the full algorithm. This wrapper supplies the configured
+   * `reconcileMaxVersions` work bound; the algorithm itself never writes a
+   * session log and never fails the whole call for one bad item.
+   * @param projectId - the project to reconcile.
+   * @param events - every `science/artifact-saved` event the caller read
+   * from this project's session logs, folded per `versionId` (last write wins).
+   * @returns what this call checked, reconstructed, and could not fully reconcile.
+   */
+  async reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult> {
+    await this.connectionFor(projectId)
+    return runReconciliation(this, projectId, events, { maxVersions: this.options.reconcileMaxVersions })
   }
 
   /**

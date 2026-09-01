@@ -34,7 +34,7 @@ async function makeEngine(): Promise<ProjectArtifactStoreEngine> {
 async function makeEngineWithHome(): Promise<{ engine: ProjectArtifactStoreEngine; home: string }> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-engine-'))
   dirs.push(home)
-  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, dshHome: home })
+  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
   engines.push(engine)
   return { engine, home }
 }
@@ -469,7 +469,7 @@ describe('ProjectArtifactStoreEngine', () => {
     await expect(engine.close()).resolves.toBeUndefined()
     await expect(stillPending).rejects.toMatchObject({ code: 'SCHEMA_VERSION_NEWER' })
 
-    const engine2 = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, dshHome: home })
+    const engine2 = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 2000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
     engines.push(engine2)
     const secondPending = engine2.getArtifact(projectId, ArtifactId('x'))
     secondPending.catch(() => {})
@@ -491,7 +491,7 @@ describe('ProjectArtifactStoreEngine', () => {
     const blocker = await openRawStore(home, projectId)
     blocker.exec('BEGIN IMMEDIATE')
     try {
-      const shortTimeout = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 50, storeBackupRetention: 1, dshHome: home })
+      const shortTimeout = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 50, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
       try {
         await expect(shortTimeout.appendVersion(projectId, artifact.artifactId, {
           producerSessionId: SESSION_A, data: new TextEncoder().encode('v2'), mediaType: 'image/png', contentOrigin: 'run-auto',

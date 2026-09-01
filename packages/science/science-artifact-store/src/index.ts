@@ -9,6 +9,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ReconcileArtifactSavedEvent, ReconcileResult } from './reconcile.ts'
 import { ProjectArtifactStoreEngine } from './store.ts'
 import type { BackfillProvenanceHook, JournalMode } from './schema.ts'
 import type {
@@ -20,6 +21,7 @@ import type {
   FigureStateRecord,
   OpenedProject,
   PutNoteInput,
+  ReconciliationSummary,
   VersionHealthPatch,
   VersionHealthRecord,
   VersionRecord,
@@ -38,6 +40,14 @@ export {
   type JournalMode,
   type StoreMigration,
 } from './schema.ts'
+export {
+  classifyVersion,
+  type ReconcileArtifactSavedEvent,
+  type ReconcileOptions,
+  type ReconcileOutcome,
+  type ReconcileResult,
+  type ReconcileVersionKind,
+} from './reconcile.ts'
 export type {
   AnnotateVersionInput,
   AnnotationActor,
@@ -52,6 +62,8 @@ export type {
   OpenedProject,
   ProjectIdentityOutcome,
   PutNoteInput,
+  ReconciliationSummary,
+  ReconstructVersionInput,
   VersionAnnotationRecord,
   VersionHealthPatch,
   VersionHealthRecord,
@@ -92,6 +104,16 @@ export interface Config {
    */
   storeBackupRetention?: number
   /**
+   * Upper bound on how many version rows and dangling session-log events one
+   * `reconcileProject` call processes before reporting `truncated: true` and
+   * returning rather than continuing. Deployment-varying: a larger project
+   * (more versions accumulated, more sessions to fold events from) can
+   * afford — or need — a larger single-call budget than a small one; the
+   * caller (`dsh-science-runtime`) decides whether and how to schedule a
+   * follow-up call for the remainder.
+   */
+  reconcileMaxVersions?: number
+  /**
    * Consulted at most once per project, during a v1→v2 store upgrade's
    * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
    * figure state/annotation provenance this package's v1 rows never held
@@ -121,6 +143,7 @@ export class ScienceArtifactStore extends Service {
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
     busyTimeoutMs: z.number().min(0).default(5000),
     storeBackupRetention: z.number().min(0).default(1),
+    reconcileMaxVersions: z.number().min(1).max(1_000_000).default(2000),
     backfillProvenance: z.any(),
   })
 
@@ -132,11 +155,13 @@ export class ScienceArtifactStore extends Service {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'scienceArtifactStore')
-    const resolved = config as Required<Pick<Config, 'journalMode' | 'busyTimeoutMs' | 'storeBackupRetention'>> & Config
+    const resolved = config as
+      Required<Pick<Config, 'journalMode' | 'busyTimeoutMs' | 'storeBackupRetention' | 'reconcileMaxVersions'>> & Config
     this.engine = new ProjectArtifactStoreEngine({
       journalMode: resolved.journalMode,
       busyTimeoutMs: resolved.busyTimeoutMs,
       storeBackupRetention: resolved.storeBackupRetention,
+      reconcileMaxVersions: resolved.reconcileMaxVersions,
       onWarning: (message) => { ctx.logger.warn(message) },
       ...config.dshHome === undefined ? {} : { dshHome: config.dshHome },
       ...config.backfillProvenance === undefined ? {} : { backfillProvenance: config.backfillProvenance },
@@ -293,6 +318,36 @@ export class ScienceArtifactStore extends Service {
    */
   readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array> {
     return this.engine.readBlob(projectId, sha256)
+  }
+
+  /**
+   * Reconcile one project's store against session-log events a caller has
+   * already read and folded — see the package README's Reconciliation
+   * section for the six-case table this decides. This package never reads
+   * session logs itself; `dsh-science-runtime` reads them (bounded by its
+   * own `reconcileMaxSessions` Config) and folds duplicate events per
+   * `versionId` (last write wins) before calling this. Never throws for one
+   * bad item — see `ReconcileResult.errors` — and never writes a session
+   * log; the store is the sole write target.
+   * @param projectId - the project to reconcile.
+   * @param events - every `science/artifact-saved` event the caller read from this project's session logs, folded per `versionId`.
+   * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
+   */
+  reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult> {
+    return this.engine.reconcileProject(projectId, events)
+  }
+
+  /**
+   * Read project-wide reconciliation health — the read interface a Host
+   * BFF (`dsh-api-proxy`) surfaces to a client's Files panel: aggregate
+   * `orphan`/`reconstructed`/`missingContent` counts plus the per-version
+   * list backing them. A pure read of whatever the last `reconcileProject`
+   * call recorded; it never itself compares the store against a session log.
+   * @param projectId - the owning project.
+   * @returns aggregate counts and the unhealthy version list, most recently checked first.
+   */
+  getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary> {
+    return this.engine.getReconciliationSummary(projectId)
   }
 
   /**

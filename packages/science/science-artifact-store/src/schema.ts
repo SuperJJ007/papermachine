@@ -267,13 +267,18 @@ interface V1VersionRow {
 }
 
 /**
- * v1's `versions.media_type` → v2's `artifacts.kind`. Exhaustive over the
- * only media types any v1 producer ever wrote; a media type outside this set
- * falls back to `document` rather than failing the migration, since a future
- * producer's new media type needs a schema decision this migration cannot
- * make on its own.
+ * A media type → `artifacts.kind`. Exhaustive over the only media types any
+ * producer in this build ever writes; a media type outside this set falls
+ * back to `document` rather than failing, since a future producer's new
+ * media type needs a schema decision this mapping cannot make on its own.
+ * Used by the v1→v2 migration (inferring `kind` from a version's
+ * `media_type`) and by `reconcile.ts` (inferring both a reconstructed
+ * version's `mediaType` and its owning artifact's `kind` from a dangling
+ * event's `logicalName` extension).
+ * @param mediaType - the media type to classify, or `undefined` when unknown.
+ * @returns the inferred artifact kind.
  */
-function inferArtifactKind(mediaType: string | undefined): 'figure' | 'dataset' | 'document' | 'job-output' {
+export function inferArtifactKind(mediaType: string | undefined): 'figure' | 'dataset' | 'document' | 'job-output' {
   switch (mediaType) {
     case 'image/png': return 'figure'
     case 'text/csv': return 'dataset'

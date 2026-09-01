@@ -2,9 +2,22 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { admitBlob, readBlob } from '../src/blobs.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { admitBlob, blobByteCount, readBlob } from '../src/blobs.ts'
 import { ProjectArtifactStoreError } from '../src/errors.ts'
+
+const statControl = vi.hoisted(() => ({ forceError: undefined as (NodeJS.ErrnoException | undefined) }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    async stat(...args: Parameters<typeof actual.stat>): ReturnType<typeof actual.stat> {
+      if (statControl.forceError !== undefined) throw statControl.forceError
+      return actual.stat(...args)
+    },
+  }
+})
 
 function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
@@ -20,6 +33,7 @@ async function makeRoot(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  statControl.forceError = undefined
 })
 
 describe('admitBlob', () => {
@@ -99,5 +113,25 @@ describe('readBlob', () => {
     await expect(readBlob(root, sha256)).rejects.toMatchObject({
       code: 'BLOB_CORRUPT',
     } satisfies Partial<ProjectArtifactStoreError>)
+  })
+})
+
+describe('blobByteCount', () => {
+  it('returns the on-disk byte count for an admitted blob, without reading or verifying its bytes', async () => {
+    const root = await makeRoot()
+    const data = new TextEncoder().encode('twelve bytes')
+    const { sha256, byteCount } = await admitBlob(root, data)
+    await expect(blobByteCount(root, sha256)).resolves.toBe(byteCount)
+  })
+
+  it('returns undefined for a digest that was never admitted', async () => {
+    const root = await makeRoot()
+    await expect(blobByteCount(root, 'e'.repeat(64))).resolves.toBeUndefined()
+  })
+
+  it('rethrows an unexpected (non-ENOENT) filesystem error unwrapped', async () => {
+    const root = await makeRoot()
+    statControl.forceError = Object.assign(new Error('forced stat failure'), { code: 'EACCES' })
+    await expect(blobByteCount(root, 'f'.repeat(64))).rejects.toThrow('forced stat failure')
   })
 })

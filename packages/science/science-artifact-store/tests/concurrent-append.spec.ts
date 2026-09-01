@@ -39,7 +39,7 @@ describe('concurrent append across separate processes', () => {
     const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-concurrent-ws-'))
     dirs.push(home, workspace)
 
-    const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, dshHome: home })
+    const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
     const { projectId } = await engine.openProject(workspace)
     const { artifact } = await engine.createArtifact(projectId, {
       logicalName: 'shared.txt',
@@ -75,7 +75,7 @@ describe('concurrent append across separate processes', () => {
 
     const third = a.ordinal === 3 ? a : b
 
-    const readEngine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, dshHome: home })
+    const readEngine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
     try {
       const versions = await readEngine.listVersions(projectId, artifact.artifactId)
       expect(versions).toHaveLength(3)

@@ -101,6 +101,21 @@ export interface VersionHealthRecord {
 }
 
 /**
+ * Project-wide reconciliation health, read from `version_health` — see
+ * `getReconciliationSummary`. Counts and `items` cover only versions with at
+ * least one true flag; a fully healthy project reports all-zero counts and
+ * an empty `items`. This is a pure read of whatever the last `reconcileProject`
+ * call recorded; it never itself compares the store against a session log.
+ */
+export interface ReconciliationSummary {
+  readonly orphanCount: number
+  readonly reconstructedCount: number
+  readonly missingContentCount: number
+  /** Every version with at least one true health flag, most recently checked first. */
+  readonly items: readonly VersionHealthRecord[]
+}
+
+/**
  * One immutable artifact version: content and producer provenance are fixed
  * at creation and never change; `latestAnnotationId` is the one column that
  * does, advancing to point at the newest {@link VersionAnnotationRecord} row.
@@ -237,6 +252,41 @@ export interface VersionHealthPatch {
   readonly orphan?: boolean
   readonly reconstructed?: boolean
   readonly missingContent?: boolean
+}
+
+/**
+ * Input to `reconstructVersion`: rebuild one version row (and its owning
+ * artifact row, when the store no longer has one) from a session-log
+ * event's fallback fields, for the case a store row was lost while its
+ * `science/artifact-saved` event survived. Every EXACT id (`versionId`,
+ * `artifactId`) is caller-supplied rather than store-generated, since the
+ * reconstructed row must be reachable by the same id the surviving event
+ * already names. `contentOrigin` is always fixed to `'import'` by the
+ * engine — never a caller input — since a reconstructed row's real content
+ * origin is exactly the fact this reconstruction cannot recover.
+ */
+export interface ReconstructVersionInput {
+  readonly versionId: VersionId
+  readonly artifactId: ArtifactId
+  /** Used only when the owning artifact row does not exist yet. */
+  readonly logicalName: string
+  /** Used only when the owning artifact row does not exist yet. */
+  readonly kind: ArtifactKind
+  readonly ordinal: number
+  readonly sha256: string
+  readonly mediaType: string
+  /**
+   * The blob's real on-disk size when reconciliation found it present, or
+   * `0` when the blob is also missing — an honest sentinel, not a claimed
+   * byte count; callers cross-check `missingContent` before trusting this
+   * field on a reconstructed row.
+   */
+  readonly byteCount: number
+  readonly producerSessionId: SessionId
+  /** The event's own `seenAt` — the closest available approximation to a content-commit time this reconstruction has. */
+  readonly createdAt: number
+  readonly title: string | null
+  readonly caption: string | null
 }
 
 /** How `openProject` resolved workspace identity for this call. */

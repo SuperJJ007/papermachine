@@ -82,6 +82,33 @@ describe('ScienceArtifactStore Cordis service', () => {
     await ctx.fiber.dispose()
   })
 
+  it('reconciles a project through the Cordis service and reads its health back through getReconciliationSummary', async () => {
+    const home = await makeDir('home')
+    const workspace = await makeDir('workspace')
+    const ctx = new Context()
+    await ctx.plugin(ScienceArtifactStore, { dshHome: home, reconcileMaxVersions: 100 })
+    const opened = await ctx.scienceArtifactStore.openProject(workspace)
+    const sessionId = 'session-1' as SessionId
+    const { version } = await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'orphaned.png', kind: 'figure', originSessionId: sessionId,
+      data: new TextEncoder().encode('bytes'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+
+    const emptySummaryBefore = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+    expect(emptySummaryBefore).toEqual({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })
+
+    const result = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map())
+    expect(result.outcomes).toEqual([{ versionId: version.versionId, kind: 'orphan' }])
+    expect(result.errors).toEqual([])
+
+    const summary = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+    expect(summary.orphanCount).toBe(1)
+    expect(summary.items).toHaveLength(1)
+    expect(summary.items[0]?.versionId).toBe(version.versionId)
+
+    await ctx.fiber.dispose()
+  })
+
   it('resolves the default harness home when dshHome is omitted from Config', async () => {
     const ctx = new Context()
     // Construction alone never touches the filesystem — only a method call

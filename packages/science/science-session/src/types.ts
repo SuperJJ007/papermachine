@@ -8,7 +8,7 @@
  */
 
 import type { CallId } from '@deepseek-ai/dsh-llm'
-import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { JsonValue } from '@deepseek-ai/dsh-session/types'
 import type {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -393,31 +393,32 @@ export type ScienceChartOp =
   | { readonly op: 'set_font'; readonly axes: null; readonly family: string; readonly size: number }
 
 /**
- * Fields carried by every immutable Science artifact version. The bytes live
- * in the owning project's artifact store; the event pins them by store
- * coordinates ({@link projectId}, {@link versionId}) and content checksum
- * ({@link sha256}), so everything the model saw stays reconstructable from
- * the session log plus the store.
+ * One immutable Science artifact version, as `science/artifact-saved`
+ * records it. The project artifact store
+ * (`@deepseek-ai/dsh-science-artifact-store`) is the sole authority for this
+ * version's provenance — content origin, producer, base version, and
+ * creation time all live there only, keyed by {@link projectId} and
+ * {@link versionId}; this event never carries them. {@link sha256} pins the
+ * exact bytes the model or user saw, independent of the store, so a reader
+ * can verify content without trusting the store. {@link title} and
+ * {@link caption} are the presentation the model or user saw when this
+ * event committed — a historical snapshot, not necessarily the store's
+ * current value, which a later metadata edit may have since changed.
  */
-interface ScienceArtifactVersionBase {
+export interface ScienceArtifactVersion {
   /** Stable artifact identity, shared verbatim with the store's artifact row. */
   readonly artifactId: ScienceArtifactId
-  /** Session whose run or direct edit produced this immutable version. */
-  readonly producerSessionId: SessionId
   /** Stable logical artifact name within the session. */
   readonly logicalName: string
   /**
    * Positive version, contiguous within the logical artifact and equal to
    * the store row's ordinal. New content always opens the next version;
-   * metadata curation supersedes the version it names in place.
+   * a metadata-curation snapshot re-records the version it names, unchanged.
    */
   readonly version: number
-  /**
-   * Human-readable title: always populated, either model-supplied or the
-   * captured file's basename.
-   */
+  /** Title displayed when this event committed. */
   readonly title: string
-  /** Optional human-readable caption; only ever model-supplied. */
+  /** Caption displayed when this event committed, or absent when none was shown. */
   readonly caption?: string
   /** Project store that owns this version's bytes and index row. One session writes into exactly one project. */
   readonly projectId: ScienceProjectId
@@ -425,48 +426,13 @@ interface ScienceArtifactVersionBase {
   readonly versionId: ScienceVersionId
   /** SHA-256 digest over the version's exact bytes; the store resolves it to content. */
   readonly sha256: string
-  /** Media type recorded on the store version row. */
-  readonly mediaType: ScienceArtifactMediaType
-  /** Exact byte count recorded on the store version row. */
-  readonly byteCount: number
-  /** Environment revision inherited from the source run. */
-  readonly environmentRevision: number
-  /** Environment fingerprint inherited from the source run. */
-  readonly environmentFingerprint: string
-  /** Epoch milliseconds when this version's current content and metadata were committed. */
-  readonly createdAt: number
+  /**
+   * Epoch milliseconds when this event committed — when the model or user
+   * saw this presentation snapshot, distinct from the store's own
+   * content-commit timestamp.
+   */
+  readonly seenAt: number
 }
-
-/** Artifact version produced by a model-issued run or metadata-curation call. */
-export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {
-  /** Addressable state for a PNG produced through a supported figure save API. */
-  readonly chart?: ScienceChartState
-  /** Exact baseline version this content descends from, when an operation named one. */
-  readonly parent?: ScienceArtifactVersionRef
-  /** Whether this version's current title and caption are capture-derived or model-curated. */
-  readonly origin: 'auto' | 'model'
-  /** Successful run that produced this artifact's content. */
-  readonly runId: ScienceRunId
-  /** Model-issued call that authorized saving this artifact version. */
-  readonly toolCallId: CallId
-  /** Prior `request/header` carrying the authorizing request facts. */
-  readonly requestHeaderSeq: number
-}
-
-/** PNG version committed directly by a person through an artifact editor. */
-export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {
-  /** Addressable state inherited or produced by the direct PNG editor. */
-  readonly chart?: ScienceChartState
-  /** Exact prior PNG version that was edited. */
-  readonly parent: ScienceArtifactVersionRef
-  /** Direct-editor provenance; no run, tool call, or model request authorized this version. */
-  readonly origin: 'human-edit'
-  /** PNG bytes saved by the direct editor. */
-  readonly mediaType: 'image/png'
-}
-
-/** One immutable version of a logical Science artifact. */
-export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion
 
 /** One active user-only note attached to a logical Science artifact. */
 export interface ScienceArtifactNote {
@@ -527,8 +493,10 @@ export interface ScienceOutcomePublication {
   /** Prior `request/header` carrying the publishing request facts. */
   readonly requestHeaderSeq: number
   /**
-   * Exact sorted applied-environment revisions used by cited run or chart
-   * evidence; empty for message-only evidence.
+   * Exact sorted applied-environment revisions used by cited run evidence;
+   * empty for message-only or chart-only evidence. Chart evidence never
+   * contributes: an artifact version's environment provenance lives only in
+   * the project artifact store, not in this session log.
    */
   readonly environmentRevisions: readonly number[]
 }
@@ -675,54 +643,25 @@ export interface ScienceClientKernelInterrupted {
 export type ScienceClientKernel = ScienceClientKernelState | ScienceClientKernelInterrupted
 
 /**
- * Browser-safe artifact version retaining the store version reference needed
+ * Browser-safe Science artifact version: the store version reference needed
  * for authorized reads (the read endpoint is session-addressed; the Host
- * resolves the owning project itself). `toolCallId` and `requestHeaderSeq`
- * are session-log identities the browser already holds; they let an artifact
- * version join its authorizing transcript call for provenance.
+ * resolves the owning project itself) and the title/caption presentation
+ * snapshot the model or user saw when this event committed. Carries no
+ * `projectId` (session-addressed reads never need it) and no provenance
+ * fields — content origin, producer, base version, and creation time live
+ * only in the project artifact store, not in this client-safe mirror of the
+ * durable {@link ScienceArtifactVersion}.
  */
-interface ScienceClientArtifactVersionBase {
+export interface ScienceClientArtifactVersion {
   readonly artifactId: ScienceArtifactId
-  readonly producerSessionId: SessionId
   readonly logicalName: string
   readonly version: number
   readonly title: string
   readonly caption?: string
   readonly versionId: ScienceVersionId
   readonly sha256: string
-  readonly mediaType: ScienceArtifactMediaType
-  readonly byteCount: number
-  readonly environmentRevision: number
-  readonly environmentFingerprintPreview: string
-  readonly createdAt: number
-  readonly chart?: ScienceChartState
+  readonly seenAt: number
 }
-
-/**
- * Browser-safe run-produced artifact version with transcript provenance.
- * `turn` is the authorizing tool call's agent turn (from the session log's
- * `tool/call` event), letting the client group same-turn versions of one
- * artifact without reconstructing turn numbers from raw events; a
- * human-edit version has no authorizing tool call and so no `turn`.
- */
-export interface ScienceClientRunArtifactVersion extends ScienceClientArtifactVersionBase {
-  readonly parent?: ScienceArtifactVersionRef
-  readonly origin: 'auto' | 'model'
-  readonly runId: ScienceRunId
-  readonly toolCallId: CallId
-  readonly requestHeaderSeq: number
-  readonly turn: number
-}
-
-/** Browser-safe direct style edit with exact ancestry and no synthetic run provenance. */
-export interface ScienceClientHumanEditArtifactVersion extends ScienceClientArtifactVersionBase {
-  readonly parent: ScienceArtifactVersionRef
-  readonly origin: 'human-edit'
-  readonly mediaType: 'image/png'
-}
-
-/** Browser-safe Science artifact version. */
-export type ScienceClientArtifactVersion = ScienceClientRunArtifactVersion | ScienceClientHumanEditArtifactVersion
 
 /** Browser-safe Outcome publication without authorizing request facts. */
 export interface ScienceClientOutcomePublication {

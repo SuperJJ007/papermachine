@@ -3,7 +3,7 @@
 import { Buffer } from 'node:buffer'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { isJsonValue } from '@deepseek-ai/dsh-session'
-import type { JsonValue, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue, SessionEvent } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
   SCIENCE_EVENT_VERSION,
@@ -404,18 +404,26 @@ const kernelStateSchema = z.object({
   }
 })
 
-/** Every media type an artifact version may carry: a PNG image, or admitted UTF-8 text. */
-const ARTIFACT_MEDIA_TYPES = [
-  'image/png',
-  'text/csv',
-  'application/json',
-  'text/markdown',
-  'text/plain',
-] as const
-
-const artifactBaseSchema = z.object({
+/**
+ * `science/artifact-saved` value decoder. Deliberately not `.strict()`: the
+ * project artifact store is now the sole authority for a version's
+ * provenance (`producerSessionId`/`runId`/`toolCallId`/`requestHeaderSeq`/
+ * `environmentRevision`/`environmentFingerprint`/`parent`/`origin`/
+ * `byteCount`/`mediaType`/`chart`/`createdAt`), so those fields no longer
+ * appear in this event — but a log written before that change still carries
+ * them, and `z.object`'s default (non-strict) parsing silently strips any
+ * key this schema does not declare, which is exactly the required
+ * tolerance. `seenAt` replaces `createdAt`: an older log has no `seenAt` at
+ * all, so a missing `seenAt` falls back to the legacy `createdAt` value —
+ * not semantically identical (the old field was a content-commit time, the
+ * new one is a display-time snapshot), but the closest available fact, and
+ * this compatibility read is the only place either name matters. This
+ * relaxation is deliberately not a `SESSION_FORMAT_VERSION` bump: the event
+ * is a domain payload, not the header/envelope/surface mechanism that
+ * version gates ([mechanism](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)).
+ */
+const artifactSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
-  producerSessionId: SAFE_ID.transform(value => value as SessionId),
   logicalName: SAFE_LOGICAL_NAME,
   version: POSITIVE_INTEGER,
   title: text(MAX_LABEL_LENGTH),
@@ -423,31 +431,17 @@ const artifactBaseSchema = z.object({
   projectId: SAFE_ID.transform(value => ScienceProjectId(value)),
   versionId: SAFE_ID.transform(value => ScienceVersionId(value)),
   sha256: SHA256,
-  mediaType: z.enum(ARTIFACT_MEDIA_TYPES),
-  byteCount: POSITIVE_INTEGER,
-  environmentRevision: POSITIVE_INTEGER,
-  environmentFingerprint: SHA256,
-  createdAt: SAFE_INTEGER,
-  chart: chartStateSchema.optional(),
-})
-
-const artifactSchema = z.discriminatedUnion('origin', [
-  artifactBaseSchema.extend({
-    parent: artifactVersionRefSchema.optional(),
-    origin: z.enum(['auto', 'model']),
-    runId: SAFE_ID.transform(value => ScienceRunId(value)),
-    toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
-    requestHeaderSeq: SAFE_INTEGER,
-  }).strict(),
-  artifactBaseSchema.extend({
-    parent: artifactVersionRefSchema,
-    origin: z.literal('human-edit'),
-    mediaType: z.literal('image/png'),
-  }).strict(),
-]).superRefine((artifact, ctx) => {
-  if (artifact.chart !== undefined && artifact.mediaType !== 'image/png') {
-    issue(ctx, 'only image/png artifact versions may carry chart state', ['chart'])
+  seenAt: SAFE_INTEGER.optional(),
+  /** Legacy content-commit timestamp; read-compatibility fallback for {@link seenAt} only, never written by this build. */
+  createdAt: SAFE_INTEGER.optional(),
+}).transform((value, ctx) => {
+  const { seenAt, createdAt, ...rest } = value
+  const resolvedSeenAt = seenAt ?? createdAt
+  if (resolvedSeenAt === undefined) {
+    ctx.addIssue({ code: 'custom', message: 'artifact value requires seenAt, or legacy createdAt to fall back to' })
+    return z.NEVER
   }
+  return { ...rest, seenAt: resolvedSeenAt }
 })
 
 /**

@@ -416,9 +416,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
   // schemastery normalizes an omitted `z.array(...).required(false)` field to
   // `[]`, not `undefined` (matching `dsh-terminal-bash`'s own `shellArgs`
   // precedent), so an empty array reaching here is the unconfigured state,
-  // not a user-declared empty channel list — `parseInstallChannels` itself
-  // still rejects `[]` for a caller that constructs `ResolvedConfig` by
-  // calling `resolveConfig` directly with an explicit empty array.
+  // not a user-declared empty channel list. A caller that passes an explicit
+  // `[]` reads the same way, which is why `parseInstallChannels` never sees
+  // an empty list and does not re-check for one.
   const installChannels = config.installChannels === undefined || config.installChannels.length === 0
     ? undefined
     : parseInstallChannels(config.installChannels)

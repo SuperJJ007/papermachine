@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-01-desktop-general-environment.md) | 中文
 
+> 本文档描述的「绑定已有环境」路径已被移除；参见[PaperMachine 完全拥有自己的环境](2026-09-01-desktop-owns-its-environment.zh.md)。本文档中 environment declaration、custom environment 与 DMG 相关机制仍然有效，唯一例外是：declaration 的 `channels: readonly string[]` 字段现已改为 `sources: readonly EnvironmentSource[]`（每项含 id、显示名称与 channel URL），详见该文档。
+
 ## 问题
 
 `apps/desktop` 随应用发布了一个内嵌 micromamba 可执行文件、两份学科 environment declaration（`social-science`、`biology`）、一个完整的 `DesktopEnvironmentProvisioner`，以及 `main.ts` 中的 `desktop:environments`/`desktop:provision`/`desktop:cancel-provisioning` 这三个 IPC handlers——全部实现并测试覆盖，却没有一个可从 UI 触达。`preload.ts` 只暴露了 `onboardingStatus`/`detect`/`bind`，`resources/onboarding.html` 也只提供唯一一条路径：绑定机器上已有的 conda-family 环境。这是刻意的 v1 反转（见[桌面产品 Agent Note](../../proposed/architecture/2026-08-23-science-desktop-product.zh.md)），不是疏漏，但它让一台没有 conda-family 安装的机器上的用户走到死路，只看到「未检测到可用环境」，没有任何前进方向。

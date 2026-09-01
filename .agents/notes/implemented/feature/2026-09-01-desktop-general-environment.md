@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-01-desktop-general-environment.zh.md)
 
+> The bind-an-existing-environment route this note describes is removed; see [PaperMachine owns its environment outright](2026-09-01-desktop-owns-its-environment.md). This note's environment-declaration, custom-environment, and DMG mechanics remain current, except that the declaration's `channels: readonly string[]` field is now `sources: readonly EnvironmentSource[]` (each an id, a display name, and channel URL(s)), described there.
+
 ## Problem
 
 `apps/desktop` shipped a bundled micromamba binary, two discipline environment declarations (`social-science`, `biology`), a full `DesktopEnvironmentProvisioner`, and the `desktop:environments`/`desktop:provision`/`desktop:cancel-provisioning` IPC handlers in `main.ts` — all implemented and tested, none reachable. `preload.ts` exposed only `onboardingStatus`/`detect`/`bind`, and `resources/onboarding.html` offered exactly one route: bind an existing conda-family environment already on the machine. This was a deliberate v1 reversal (see [the desktop-product Agent Note](../../proposed/architecture/2026-08-23-science-desktop-product.md)), not an oversight, but it left a user with no conda-family installation at a dead end reading "未检测到可用环境" with no path forward.

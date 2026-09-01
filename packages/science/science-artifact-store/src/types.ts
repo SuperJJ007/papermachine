@@ -1,10 +1,26 @@
 /** Public record and input types for the project artifact store. */
 
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { ArtifactId, ProjectId, VersionId } from './ids.ts'
+import type { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 
-/** How one version's bytes came to exist. */
-export type ArtifactVersionOrigin = 'auto' | 'model' | 'human-edit'
+/**
+ * What kind of thing an artifact is. Determines which kind-specific side
+ * table (if any) its versions may carry — today only `figure_state`; the
+ * remaining kinds have no side table yet, and stay valid `artifacts.kind`
+ * values so this build never has to migrate this column again to admit them.
+ */
+export type ArtifactKind = 'figure' | 'dataset' | 'document' | 'job-output'
+
+/**
+ * How one version's BYTES came to exist. Immutable once written — curation
+ * (an `annotateVersion` call) never changes it. Distinct from
+ * {@link AnnotationActor}, which records who most recently changed the
+ * version's METADATA.
+ */
+export type ContentOrigin = 'run-auto' | 'human-edit' | 'import'
+
+/** Who wrote one {@link VersionAnnotationRecord} row. */
+export type AnnotationActor = 'capture' | 'model' | 'human'
 
 /** One logical artifact: stable identity, owning project, and its current latest version. */
 export interface ArtifactRecord {
@@ -13,80 +29,214 @@ export interface ArtifactRecord {
   /** The session that created this artifact's first version. */
   readonly originSessionId: SessionId
   readonly logicalName: string
+  readonly kind: ArtifactKind
   readonly latestVersionId: VersionId
   readonly createdAt: number
 }
 
-/** One immutable artifact version: content, provenance, and curated metadata. */
+/**
+ * One metadata edit on a version, in the order it was applied. Rows are
+ * never updated in place — a new edit appends a new row and the version's
+ * `latestAnnotationId` advances to it — so this table is the version's full
+ * metadata history, and `actor`/`sessionId`/`toolCallId` name the source of
+ * EACH edit independently of who produced the version's bytes.
+ */
+export interface VersionAnnotationRecord {
+  readonly annotationId: AnnotationId
+  readonly versionId: VersionId
+  /** `null` when this row leaves the title cleared (either it was never set, or a later edit explicitly cleared it). */
+  readonly title: string | null
+  readonly caption: string | null
+  readonly actor: AnnotationActor
+  readonly sessionId: SessionId | undefined
+  readonly toolCallId: string | undefined
+  readonly requestHeaderSeq: number | undefined
+  /**
+   * `true` when this row was synthesized by the v1→v2 migration rather than
+   * recorded from a live call. A derived row's `createdAt` equals the
+   * version's own `createdAt` (the migration had no independent edit
+   * timestamp to record) and its `toolCallId` is `undefined` unless a
+   * `backfillProvenance` hook recovered the real one from the session log,
+   * in which case the migration clears `derived` back to `false`.
+   */
+  readonly derived: boolean
+  readonly createdAt: number
+}
+
+/** One version's live-figure-object state, for kinds that carry `figure_state`. */
+export interface FigureStateRecord {
+  readonly versionId: VersionId
+  readonly figureKey: string
+  readonly dpi: number
+  /**
+   * Opaque JSON text for the chart's live-object state (elements, op log,
+   * hit regions). This package stores and returns it verbatim without
+   * parsing — the shape belongs to `dsh-science-runtime`, not this package.
+   */
+  readonly stateJson: string
+}
+
+/** One user-authored note, optionally pinned to a specific version. */
+export interface ArtifactNoteRecord {
+  readonly noteId: NoteId
+  readonly artifactId: ArtifactId
+  readonly versionId: VersionId | undefined
+  readonly text: string
+  /** `undefined` for a note this package wrote itself (e.g. a v1→v2 rename explanation), which has no authoring session. */
+  readonly sessionId: SessionId | undefined
+  readonly createdAt: number
+  readonly removedAt: number | undefined
+}
+
+/** Reconciliation status for one version, written by the store's caller — see `setVersionHealth`. */
+export interface VersionHealthRecord {
+  readonly versionId: VersionId
+  /** No session event has ever referenced this version — the content is real, but no session claims producing it. */
+  readonly orphan: boolean
+  /** This row was rebuilt from a session event's fallback fields after its own store row was lost. */
+  readonly reconstructed: boolean
+  /** The row exists but its blob is missing from `blobs/sha256/`. */
+  readonly missingContent: boolean
+  readonly checkedAt: number
+}
+
+/**
+ * One immutable artifact version: content and producer provenance are fixed
+ * at creation and never change; `latestAnnotationId` is the one column that
+ * does, advancing to point at the newest {@link VersionAnnotationRecord} row.
+ */
 export interface VersionRecord {
   readonly versionId: VersionId
   readonly artifactId: ArtifactId
   /** Contiguous 1-based position among this artifact's versions. */
   readonly ordinal: number
   /**
-   * The version this one descends from. May name a version of a DIFFERENT
-   * artifact (an explicit `editBaselines` branch point); `undefined` only for
-   * an artifact's first version.
+   * The content baseline this version was built from. On a version created
+   * by THIS schema version, set only when the caller supplied one (a model
+   * `edit_of`, a viewer edit, or a `save_artifact_as`) — a plain chain
+   * continuation (the common case: a second `run` overwrites the same file)
+   * leaves this `undefined`, since the chain predecessor is always derivable
+   * from `(artifactId, ordinal - 1)` and is never stored here on its own.
+   * May name a version of a DIFFERENT artifact. The one exception: a version
+   * migrated from schema v1 may carry its old `parent_version_id` here with
+   * `baseExplicit` still `false` — v1 could not distinguish an explicit
+   * baseline from an auto-defaulted chain predecessor, so the migration
+   * copies the value without claiming it was explicit (see the v1→v2
+   * migration's Agent Note).
    */
-  readonly parentVersionId: VersionId | undefined
+  readonly baseVersionId: VersionId | undefined
+  /**
+   * `true` exactly when `baseVersionId` is known to have been explicitly
+   * supplied; `false` for a plain chain continuation OR an
+   * honestly-uncertain value carried over from a v1 migration.
+   */
+  readonly baseExplicit: boolean
   readonly sha256: string
   readonly mediaType: string
   readonly byteCount: number
-  readonly origin: ArtifactVersionOrigin
-  readonly title: string | undefined
-  readonly caption: string | undefined
+  readonly contentOrigin: ContentOrigin
   /** The session that produced this version — never the store's cascade boundary. */
   readonly producerSessionId: SessionId
   readonly producerRunId: string | undefined
   readonly producerToolCallId: string | undefined
   readonly producerRequestHeaderSeq: number | undefined
-  readonly environmentRevision: string | undefined
-  readonly environmentFingerprintPreview: string | undefined
+  /** The request/response turn number of the authorizing tool call, when known. */
+  readonly producerTurn: number | undefined
+  readonly environmentRevision: number | undefined
+  /** Full 64-hex-character digest, not a preview. */
+  readonly environmentFingerprint: string | undefined
+  /** Content-commit time. Never changes after creation — metadata-edit time lives on `latestAnnotation.createdAt` instead. */
   readonly createdAt: number
-}
-
-/** Input to `createArtifact`: bytes plus the first version's provenance and metadata. */
-export interface CreateArtifactInput {
-  readonly logicalName: string
-  readonly originSessionId: SessionId
-  readonly data: Uint8Array
-  readonly mediaType: string
-  readonly origin: ArtifactVersionOrigin
-  readonly title?: string
-  readonly caption?: string
-  readonly producerRunId?: string
-  readonly producerToolCallId?: string
-  readonly producerRequestHeaderSeq?: number
-  readonly environmentRevision?: string
-  readonly environmentFingerprintPreview?: string
-}
-
-/** Input to `appendVersion`: bytes plus the new version's provenance and metadata. */
-export interface AppendVersionInput {
-  readonly producerSessionId: SessionId
-  readonly data: Uint8Array
-  readonly mediaType: string
-  readonly origin: ArtifactVersionOrigin
-  readonly title?: string
-  readonly caption?: string
   /**
-   * Explicit parent, naming a branch point instead of the artifact's current
-   * latest version. May name a version of a different artifact. Omitted
-   * appends onto the artifact's current latest version.
+   * This version's current metadata, or `undefined` when it has never been
+   * annotated (a version created but not yet curated, or captured without
+   * an initial-title call).
    */
-  readonly editBaselines?: VersionId
+  readonly latestAnnotation: VersionAnnotationRecord | undefined
+  /** Convenience read of `latestAnnotation?.title`. */
+  readonly title: string | undefined
+  /** Convenience read of `latestAnnotation?.caption`. */
+  readonly caption: string | undefined
+}
+
+/** Input to `createArtifact`/`appendVersion`: the live-figure-object state to store alongside the new version. */
+export interface FigureStateInput {
+  readonly figureKey: string
+  readonly dpi: number
+  readonly stateJson: string
+}
+
+/** Fields shared by `createArtifact` and `appendVersion`: one version's bytes and producer provenance. */
+interface VersionProducerInput {
+  readonly data: Uint8Array
+  readonly mediaType: string
+  readonly contentOrigin: ContentOrigin
+  /**
+   * An explicitly declared content baseline — omit for a plain chain
+   * continuation. See {@link VersionRecord.baseVersionId}; `baseExplicit` is
+   * never a separate input, it is `true` exactly when this is provided.
+   */
+  readonly baseVersionId?: VersionId
   readonly producerRunId?: string
   readonly producerToolCallId?: string
   readonly producerRequestHeaderSeq?: number
-  readonly environmentRevision?: string
-  readonly environmentFingerprintPreview?: string
+  readonly producerTurn?: number
+  readonly environmentRevision?: number
+  /** Full 64-hex-character digest, not a preview. */
+  readonly environmentFingerprint?: string
+  readonly figureState?: FigureStateInput
 }
 
-/** Metadata-only patch applied in place to the named version; bytes and ordinal never change. */
+/**
+ * Input to `createArtifact`: bytes plus the first version's provenance.
+ * Carries no title/caption — curate the version afterward with `annotateVersion`.
+ */
+export interface CreateArtifactInput extends VersionProducerInput {
+  readonly logicalName: string
+  readonly kind: ArtifactKind
+  readonly originSessionId: SessionId
+}
+
+/**
+ * Input to `appendVersion`: bytes plus the new version's provenance. Carries
+ * no title/caption — curate the version afterward with `annotateVersion`.
+ */
+export interface AppendVersionInput extends VersionProducerInput {
+  readonly producerSessionId: SessionId
+}
+
+/**
+ * Input to `annotateVersion`: appends one new {@link VersionAnnotationRecord}
+ * row and advances the version's `latestAnnotationId` to it. `title` and
+ * `caption` are independently tri-state: omit to carry the current value
+ * forward unchanged, pass `null` to explicitly clear it, pass a string to
+ * set it.
+ */
 export interface AnnotateVersionInput {
-  readonly title?: string
-  readonly caption?: string
-  readonly origin?: ArtifactVersionOrigin
+  readonly actor: AnnotationActor
+  readonly sessionId?: SessionId
+  readonly toolCallId?: string
+  readonly requestHeaderSeq?: number
+  readonly title?: string | null
+  readonly caption?: string | null
+}
+
+/** Input to `putNote`: always creates a new note row: there is no update-in-place. */
+export interface PutNoteInput {
+  readonly artifactId: ArtifactId
+  readonly versionId?: VersionId
+  readonly text: string
+  readonly sessionId?: SessionId
+}
+
+/**
+ * Input to `setVersionHealth`: an omitted field keeps its current (or
+ * default `false`) value; `checkedAt` always advances to the call time.
+ */
+export interface VersionHealthPatch {
+  readonly orphan?: boolean
+  readonly reconstructed?: boolean
+  readonly missingContent?: boolean
 }
 
 /** How `openProject` resolved workspace identity for this call. */

@@ -10,28 +10,51 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { ProjectArtifactStoreEngine } from './store.ts'
-import type { JournalMode } from './schema.ts'
+import type { BackfillProvenanceHook, JournalMode } from './schema.ts'
 import type {
   AnnotateVersionInput,
   AppendVersionInput,
+  ArtifactNoteRecord,
   ArtifactRecord,
   CreateArtifactInput,
+  FigureStateRecord,
   OpenedProject,
+  PutNoteInput,
+  VersionHealthPatch,
+  VersionHealthRecord,
   VersionRecord,
 } from './types.ts'
-import type { ArtifactId, ProjectId, VersionId } from './ids.ts'
+import type { ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 
-export { ArtifactId, ProjectId, VersionId } from './ids.ts'
+export { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 export { ProjectArtifactStoreError, type ProjectArtifactStoreErrorCode } from './errors.ts'
-export { PROJECT_ARTIFACT_STORE_SCHEMA_VERSION, type JournalMode } from './schema.ts'
+export {
+  PROJECT_ARTIFACT_STORE_SCHEMA_VERSION,
+  STORE_MIGRATIONS,
+  type BackfillProvenanceFigureState,
+  type BackfillProvenanceHook,
+  type BackfillProvenanceRow,
+  type BackfillProvenanceValue,
+  type JournalMode,
+  type StoreMigration,
+} from './schema.ts'
 export type {
   AnnotateVersionInput,
+  AnnotationActor,
   AppendVersionInput,
+  ArtifactKind,
+  ArtifactNoteRecord,
   ArtifactRecord,
-  ArtifactVersionOrigin,
+  ContentOrigin,
   CreateArtifactInput,
+  FigureStateInput,
+  FigureStateRecord,
   OpenedProject,
   ProjectIdentityOutcome,
+  PutNoteInput,
+  VersionAnnotationRecord,
+  VersionHealthPatch,
+  VersionHealthRecord,
   VersionRecord,
 } from './types.ts'
 
@@ -61,6 +84,22 @@ export interface Config {
    * processes instead of failing the second writer outright.
    */
   busyTimeoutMs?: number
+  /**
+   * How many pre-upgrade `.bak` copies of a project's `store.sqlite` to
+   * retain when a schema migration runs. Deployment-varying because it
+   * trades disk space against how far back a bad migration can be undone
+   * by hand.
+   */
+  storeBackupRetention?: number
+  /**
+   * Consulted at most once per project, during a v1→v2 store upgrade's
+   * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
+   * figure state/annotation provenance this package's v1 rows never held
+   * and only that project's session logs still do. This package never reads
+   * session-log format itself; a consumer that does (e.g. `dsh-science-runtime`)
+   * supplies this hook. Omitted: step 4 is skipped and logged as a warning.
+   */
+  backfillProvenance?: BackfillProvenanceHook
 }
 
 /**
@@ -71,11 +110,18 @@ export interface Config {
  * knows the id of.
  */
 export class ScienceArtifactStore extends Service {
-  /** Schemastery validator for {@link Config}. */
+  /**
+   * Schemastery validator for {@link Config}. `backfillProvenance` is a
+   * function value, validated by `z.any()` like other injected-instance
+   * config fields in this repo (e.g. `dsh-session-telemetry-otel`'s
+   * `exporter`/`processor`).
+   */
   static Config: z<Config> = z.object({
     dshHome: z.string(),
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
     busyTimeoutMs: z.number().min(0).default(5000),
+    storeBackupRetention: z.number().min(0).default(1),
+    backfillProvenance: z.any(),
   })
 
   private readonly engine: ProjectArtifactStoreEngine
@@ -86,11 +132,14 @@ export class ScienceArtifactStore extends Service {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'scienceArtifactStore')
-    const resolved = config as Required<Config>
+    const resolved = config as Required<Pick<Config, 'journalMode' | 'busyTimeoutMs' | 'storeBackupRetention'>> & Config
     this.engine = new ProjectArtifactStoreEngine({
       journalMode: resolved.journalMode,
       busyTimeoutMs: resolved.busyTimeoutMs,
+      storeBackupRetention: resolved.storeBackupRetention,
+      onWarning: (message) => { ctx.logger.warn(message) },
       ...config.dshHome === undefined ? {} : { dshHome: config.dshHome },
+      ...config.backfillProvenance === undefined ? {} : { backfillProvenance: config.backfillProvenance },
     })
     ctx.effect(() => () => this.engine.close(), 'science-artifact-store.close')
   }
@@ -107,7 +156,7 @@ export class ScienceArtifactStore extends Service {
   /**
    * Create a new artifact and its first version.
    * @param projectId - the owning project.
-   * @param input - the first version's bytes, media type, origin, and metadata.
+   * @param input - the first version's bytes, kind, provenance, and optional explicit baseline.
    * @returns the created artifact and its first version.
    */
   createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }> {
@@ -119,7 +168,7 @@ export class ScienceArtifactStore extends Service {
    * other concurrent append to the same artifact.
    * @param projectId - the owning project.
    * @param artifactId - the artifact to append to.
-   * @param input - the new version's bytes, media type, origin, and metadata.
+   * @param input - the new version's bytes, provenance, and optional explicit baseline.
    * @returns the appended version.
    */
   appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord> {
@@ -127,11 +176,11 @@ export class ScienceArtifactStore extends Service {
   }
 
   /**
-   * Apply a metadata-only patch to one version in place.
+   * Append one metadata edit onto a version.
    * @param projectId - the owning project.
-   * @param versionId - the version to curate.
-   * @param patch - fields to overwrite; an omitted field keeps its current value.
-   * @returns the updated version.
+   * @param versionId - the version to annotate.
+   * @param patch - the edit's author and the fields to change.
+   * @returns the version, reflecting the newly appended annotation.
    */
   annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord> {
     return this.engine.annotateVersion(projectId, versionId, patch)
@@ -184,6 +233,56 @@ export class ScienceArtifactStore extends Service {
    */
   listVersions(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly VersionRecord[]> {
     return this.engine.listVersions(projectId, artifactId)
+  }
+
+  /**
+   * List one artifact's active (non-removed) notes, oldest first.
+   * @param projectId - the owning project.
+   * @param artifactId - the artifact whose notes to list.
+   * @returns every note that has not been removed.
+   */
+  listNotes(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly ArtifactNoteRecord[]> {
+    return this.engine.listNotes(projectId, artifactId)
+  }
+
+  /**
+   * Add a new note.
+   * @param projectId - the owning project.
+   * @param input - the artifact (and optional version) to attach the note to, its text, and its author.
+   * @returns the created note.
+   */
+  putNote(projectId: ProjectId, input: PutNoteInput): Promise<ArtifactNoteRecord> {
+    return this.engine.putNote(projectId, input)
+  }
+
+  /**
+   * Soft-delete a note.
+   * @param projectId - the owning project.
+   * @param noteId - the note to remove.
+   */
+  removeNote(projectId: ProjectId, noteId: NoteId): Promise<void> {
+    return this.engine.removeNote(projectId, noteId)
+  }
+
+  /**
+   * Look up one version's live-figure-object state.
+   * @param projectId - the owning project.
+   * @param versionId - the version whose figure state to fetch.
+   * @returns the figure state, or `undefined` when this version carries none.
+   */
+  getFigureState(projectId: ProjectId, versionId: VersionId): Promise<FigureStateRecord | undefined> {
+    return this.engine.getFigureState(projectId, versionId)
+  }
+
+  /**
+   * Apply a reconciliation-status patch to one version.
+   * @param projectId - the owning project.
+   * @param versionId - the version whose health to update.
+   * @param patch - fields to overwrite; an omitted field keeps its current value.
+   * @returns the updated health row.
+   */
+  setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealthPatch): Promise<VersionHealthRecord> {
+    return this.engine.setVersionHealth(projectId, versionId, patch)
   }
 
   /**

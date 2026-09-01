@@ -639,11 +639,12 @@ const TOOL_PACKAGES: ToolPackage[] = [
     source: {
       annotate_artifact: 'packages/science/tool-science/src/annotate-artifact.ts',
       get_science_state: 'packages/science/tool-science/src/state.ts',
+      install_science_packages: 'packages/science/tool-science/src/install.ts',
       run_python: 'packages/science/tool-science/src/run.ts',
       run_r: 'packages/science/tool-science/src/run.ts',
     },
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)'],
-    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'science/artifact-saved', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime (first use, each run_python/run_r call, annotate_artifact, and install_science_packages)'],
+    writes: ['tool/call', 'science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)', 'a fresh science/environment-bound revision on a successful install_science_packages call', 'science/artifact-saved', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ToolScience, {
         profileId: 'catalog',

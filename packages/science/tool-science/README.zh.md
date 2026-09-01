@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及四个工具：`get_science_state`、`run_python`、`run_r`、`annotate_artifact`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类、run 写出文件的自动捕获，以及纯元数据的 artifact 策展。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Environment、run 与 artifact fact 由 Runtime 追加。结果通过普通 assistant 回复呈现，没有发布工具或独立的 Outcome 修订。
+**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`install_science_packages`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类、run 写出文件的自动捕获、纯元数据的 artifact 策展，以及 micromamba package 安装。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Environment、run 与 artifact fact 由 Runtime 追加。结果通过普通 assistant 回复呈现，没有发布工具或独立的 Outcome 修订。
 
 一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、`@deepseek-ai/dsh-science-artifact-store`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
 
@@ -38,8 +38,9 @@
 | `run_python` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of`、可选 `raster_artifacts` | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 Python kernel 中运行 `code`，并转发该工具调用的取消信号。`artifact_inputs` 把精确的 `{artifactId, version}` 物化到 `SCIENCE_INPUT_DIR` 下的路径；`edit_of` 把捕获相对输出路径映射到精确父版本；`raster_artifacts` 指名这次 run 在 Runtime 默认的 `rasterCapture: 'declared'` 策略下声明要自动捕获的捕获相对 `.png` 路径。以 `fig.savefig()` 或 `plt.savefig()` 保存的已声明 PNG 会在抽取成功时保留可寻址的 matplotlib 图表状态。其结果会列出本次 run 被自动捕获并持久保存的文件，以及未声明而被跳过的 `.png`（见"Run 结果"）。 |
 | `run_r` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of`、可选 `raster_artifacts` | 对该 session 的持久化 R kernel 应用相同的精确版本 input、edit parent 与 raster 声明行为。以 `ggsave()` 保存的已声明 PNG 会在抽取成功时保留可寻址的 ggplot2 图表状态。 |
 | `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，因此它为所命名的版本重新加标题，而不会提交一个字节与其前身完全相同的新版本。返回文本 receipt，绝不返回文件字节。 |
+| `install_science_packages` | `language`(`python`/`r`)、`packages`(非空的 conda-forge spec 数组) | 通过 `ctx.scienceRuntime.installPackages` 安装进该 session 已绑定的 environment，并转发该工具调用的取消信号。要求部署方已配置安装器(`micromambaPath`/`installChannels`)；否则以 Runtime 的 `INSTALLER_NOT_CONFIGURED` 消息拒绝。返回 `status`、成功时的新 environment revision，以及有界的 `stdout`/`stderr`；一次成功的安装只会在该语言下一次 `run_python`/`run_r` 调用时才生效，那次调用会重启 kernel 并丢失其当前保有的一切内存状态(见"安装结果")。 |
 
-三个 mutation 工具都要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact success 值为所有客户端渲染有用文本；`run_python`/`run_r` 与 `annotate_artifact` 还会为每一个被捕获或被策展的 artifact（任意受支持媒体类型）额外保留一条带标签、带版本的 presentation 值，供专用 Web 行使用。四个工具都使用 generic render intent，不带 editor location。
+`run_python`、`run_r` 与 `annotate_artifact` 要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。`install_science_packages` 只要求 direct 顶层 dispatch——它自己不携带 `toolCallId`/`requestHeaderSeq` 溯源信息，与 `bindEnvironment` 自身的整值 environment 追加一致。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact success 值为所有客户端渲染有用文本；`run_python`/`run_r` 与 `annotate_artifact` 还会为每一个被捕获或被策展的 artifact（任意受支持媒体类型）额外保留一条带标签、带版本的 presentation 值，供专用 Web 行使用。五个工具都使用 generic render intent，不带 editor location——`install_science_packages` 也不例外，因为绝不能让任何 Host path 泄漏进只依据 `args` 渲染的 presenter。
 
 ## 模型体验
 
@@ -47,17 +48,17 @@
 
 #### 模型看到的内容
 
-本包贡献一段固定的静态区段，描述 run 工具的进程模型、状态持久化规则，以及失败与错误的区分，原文照录如下；`run_python`/`run_r` 各自的工具描述也用各语言自己的措辞携带同一条持久化规则——重启原因、指向"Run 结果"一节中同一 kernel fact 的"下次 run 结果会说明"提示，以及 inline install 与 environment install 的区分（`pip install`/`install.packages()` 与 kernel 同生共死；安装进 environment 则是桌面 provisioning 那条工作线拥有的、更长生命周期的独立操作）。
+本包贡献一段固定的静态区段，描述 run 工具的进程模型、状态持久化规则，以及失败与错误的区分，原文照录如下；`run_python`/`run_r` 各自的工具描述也用各语言自己的措辞携带同一条持久化规则——重启原因、指向"Run 结果"一节中同一 kernel fact 的"下次 run 结果会说明"提示，以及 inline install 与 environment install 的区分（`pip install`/`install.packages()` 与 kernel 同生共死；`install_science_packages` 把 package 持久安装进 environment、跨 kernel 存续，详见下方"安装结果"）。
 
 ##### Science 工具指引
 
 ```markdown
-Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR. When modifying or regenerating an existing artifact, reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path under SCIENCE_ARTIFACT_DIR so automatic capture appends the existing version chain. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. Make charts with matplotlib (Python) or ggplot2 (R), save each one as a PNG under SCIENCE_ARTIFACT_DIR, and name it in raster_artifacts so it is captured. Do not use Altair or Vega-Lite. Save matplotlib figures with fig.savefig()/plt.savefig() and ggplot2 charts with ggsave(); figures saved that way stay addressable for direct edits in the viewer. A run's eligible written files (csv/json/md/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts, and a PNG only when named in raster_artifacts; no separate save step is needed otherwise. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Write a render, preview, or debug dump meant only for your own inspection outside SCIENCE_ARTIFACT_DIR (for example a temp directory), never into it, so it is never captured as an artifact. Do not open a new artifact version to reconcile a cosmetic difference the user did not ask for; mention the difference in your reply instead.
+Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR. When modifying or regenerating an existing artifact, reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path under SCIENCE_ARTIFACT_DIR so automatic capture appends the existing version chain. artifactId is the UUID printed in the capture receipt and by get_science_state, never the file name. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. Make charts with matplotlib (Python) or ggplot2 (R), save each one as a PNG under SCIENCE_ARTIFACT_DIR, and name it in raster_artifacts so it is captured. Do not use Altair or Vega-Lite. Save matplotlib figures with fig.savefig()/plt.savefig() and ggplot2 charts with ggsave(); figures saved that way stay addressable for direct edits in the viewer. A run's eligible written files (csv/json/md/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts, and a PNG only when named in raster_artifacts; no separate save step is needed otherwise. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Write a render, preview, or debug dump meant only for your own inspection outside SCIENCE_ARTIFACT_DIR (for example a temp directory), never into it, so it is never captured as an artifact. Do not open a new artifact version to reconcile a cosmetic difference the user did not ask for; mention the difference in your reply instead. Use install_science_packages to persist a package into the bound environment across kernel restarts; an in-kernel pip install/install.packages() only lasts until the current kernel restarts.
 ```
 
 #### Token 影响
 
-只要插件处于活动状态，每次请求都有固定的指引开销；相对此前"一次性进程"措辞，本区段与两个 run 工具描述因持久化规则的句子而变长——这是一次性的固定增量，不是按次 run 计费的开销。
+只要插件处于活动状态，每次请求都有固定的指引开销；相对此前"一次性进程"措辞，本区段与两个 run 工具描述因持久化规则的句子而变长，又各自因提及 `install_science_packages` 的一句话再变长一次——两者都是一次性的固定增量，不是按次 run 计费的开销。`install_science_packages` 自身的 schema 是另一项固定的按请求开销，详见下方"工具 schema"。
 
 #### KV Cache 影响
 
@@ -81,7 +82,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
+模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`install_science_packages` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册，与所组合的 Runtime 是否配置了安装器无关；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
 
 #### Token 影响
 
@@ -133,6 +134,20 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
 
+### 安装结果
+
+#### 模型看到的内容
+
+`install_science_packages` 会渲染 `status: <status>`。在 `'success'` 时，第二行会明确说明这个新 revision 尚未生效：`environment revision <n> applied — this takes effect on the next run_python/run_r call for this language, not now: that call restarts the kernel (an environment re-bind) and every variable, import, and definition it currently holds in memory is lost then`。任何 status 之后都会渲染 `--- stdout ---`/`--- stderr ---` 两个区段，展示安装器捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时会附带 `(stdout truncated)`/`(stderr truncated)` 行。非 success 的 status(`'failed'`、`'timed-out'`、`'cancelled'`)是需要阅读的一等结果，与其它每个 Science 工具的失败/错误区分一致；它不会追加任何 environment revision，也不会 durable 地改变任何东西。这条回执从不命名成功尝试所用的已配置 channel URL、micromamba 可执行文件路径，或究竟是哪个已配置 channel——这些都是 Runtime 拥有的部署事实，不是模型需要推理的内容。
+
+#### Token 影响
+
+受 Runtime 的 stdout/stderr 捕获上限约束；保留的调用与结果会在压缩之前被重复发送。
+
+#### KV Cache 影响
+
+Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
+
 ### Science 状态结果
 
 #### 模型看到的内容
@@ -165,7 +180,7 @@ Append-only；新出现的结果文本位于可复用 request prefix 之后。
 
 #### 模型看到的内容
 
-配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、空 source、嵌套 mutation dispatch、重复的 `edit_of` path、无法解析或无效的 artifact input/edit parent/raster artifact path、未知的 artifact `logical_name`/`version`。
+配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、安装器未配置、空 source、嵌套 mutation dispatch、重复的 `edit_of` path、无法解析或无效的 artifact input/edit parent/raster artifact path、未知的 artifact `logical_name`/`version`。
 
 #### Token 影响
 

@@ -45,7 +45,7 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
-| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`、`get_science_state`、`run_python`、`run_r` | `ctx.tools`、`ctx.systemPrompt`、`ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)` | `tool/call`、`science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`、`science/artifact-saved`、`tool/result` | - | 直接运行与 artifact 策展都要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要 Host 执行的操作时读取，绝不作为硬性 inject。 |
+| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`、`get_science_state`、`install_science_packages`、`run_python`、`run_r` | `ctx.tools`、`ctx.systemPrompt`、`ctx.scienceRuntime (first use, each run_python/run_r call, annotate_artifact, and install_science_packages)` | `tool/call`、`science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`、`a fresh science/environment-bound revision on a successful install_science_packages call`、`science/artifact-saved`、`tool/result` | - | 直接运行与 artifact 策展都要求存在一个发起调用的 Agent，其 Session 已绑定 science preset 与 mode；`ctx.scienceRuntime` 是可选读取的，只在最早需要 Host 执行的操作时读取，绝不作为硬性 inject。 |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -2280,9 +2280,42 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 来源：[`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
 
+### `install_science_packages`
+
+通过 conda-forge 把一个或多个 package 安装进该 session 已绑定的 Python 或 R environment，跨 kernel 重启持久保存——这与 kernel 内的 `pip install`/`install.packages()` 不同，后者会在重启时丢失。Package spec 使用 conda 语法，例如 "numpy" 或 "numpy=1.26"；R package 会以预编译的 conda-forge 二进制形式安装，因此无需本地编译工具链。成功时，受影响语言当前的 kernel 会在其下一次 run_python/run_r 调用时重启（一次 environment re-bind——与 run 结果已经命名的是同一个事件），清空该 kernel 当时保有的一切内存内容；失败时不会有任何 durable 改动。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "description": "Interpreter whose environment receives the install.",
+      "enum": [
+        "python",
+        "r"
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "description": "One or more conda-forge package specs, e.g. \"numpy\" or \"numpy=1.26\".",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "language",
+    "packages"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/install.ts`](../packages/science/tool-science/src/install.ts)
+
 ### `run_python`
 
-在该 session 绑定的 persistent Python kernel 上运行 Python 源码：变量、import 与定义会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 SCIENCE_INPUT_DIR 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `pip install` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent Python kernel 上运行 Python 源码：变量、import 与定义会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 SCIENCE_INPUT_DIR 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `pip install` 只影响正在运行的 kernel，会随重启丢失；使用 install_science_packages 把 package 持久安装进 environment、跨 kernel 存续。异常是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {
@@ -2358,7 +2391,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `run_r`
 
-在该 session 绑定的 persistent R kernel 上运行 R 源码：变量与已加载的 package 会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 SCIENCE_INPUT_DIR 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `install.packages()` 只影响正在运行的 kernel，会随重启丢失；安装进 environment 会跨 kernel 持久化，是一个独立的操作。error condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
+在该 session 绑定的 persistent R kernel 上运行 R 源码：变量与已加载的 package 会在多次调用之间保留在内存中，直到 kernel 重启。使用 `artifact_inputs` 把精确产物版本物化到 SCIENCE_INPUT_DIR 下；使用 `edit_of` 为每个正在编辑的 output path 命名精确父版本。kernel 会在 idle timeout、environment 被重新绑定到新 revision、interrupt escalation、crash 或 session 结束时重启——每次重启都会清空内存中保留的一切，下一次 run 结果会说明这一点。一次 run 内的 `install.packages()` 只影响正在运行的 kernel，会随重启丢失；使用 install_science_packages 把 package 持久安装进 environment、跨 kernel 存续。error condition 是需要在 stdout/stderr 中查看的结果，而不是工具故障。
 
 ```json
 {

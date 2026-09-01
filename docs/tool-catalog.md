@@ -41,7 +41,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
-| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, each run_python/run_r call, and annotate_artifact)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `science/artifact-saved`, `tool/result` | - | Direct run and artifact-curation mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject. |
+| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `install_science_packages`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime (first use, each run_python/run_r call, annotate_artifact, and install_science_packages)` | `tool/call`, `science/mode-bound and science/environment-bound on first use (via ctx.scienceRuntime)`, `a fresh science/environment-bound revision on a successful install_science_packages call`, `science/artifact-saved`, `tool/result` | - | Direct run and artifact-curation mutations require an initiating Agent whose Session is bound to the science preset and mode; ctx.scienceRuntime is read optionally at the earliest operation that needs Host execution, never as a hard inject. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -2272,9 +2272,42 @@ Return the current Science session state: mode, sanitized bound environment, eve
 
 Source: [`packages/science/tool-science/src/state.ts`](../packages/science/tool-science/src/state.ts)
 
+### `install_science_packages`
+
+Install one or more packages into this session's bound Python or R environment through conda-forge, persisting them across kernel restarts — unlike an in-kernel `pip install`/`install.packages()`, which is lost on restart. Package specs use conda syntax, e.g. "numpy" or "numpy=1.26"; R packages install as prebuilt conda-forge binaries, so no local compiler toolchain is required. On success the affected language's current kernel restarts on its next run_python/run_r call (an environment re-bind — the same event a run result already names), clearing whatever that kernel held in memory; nothing durable changes on failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "description": "Interpreter whose environment receives the install.",
+      "enum": [
+        "python",
+        "r"
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "description": "One or more conda-forge package specs, e.g. \"numpy\" or \"numpy=1.26\".",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "language",
+    "packages"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/install.ts`](../packages/science/tool-science/src/install.ts)
+
 ### `run_python`
 
-Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An exception is a result to inspect in stdout/stderr, not a tool failure.
+Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An exception is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {
@@ -2350,7 +2383,7 @@ Source: [`packages/science/tool-science/src/run.ts`](../packages/science/tool-sc
 
 ### `run_r`
 
-Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; installing into the environment persists across kernels and is a separate operation. An error condition is a result to inspect in stdout/stderr, not a tool failure.
+Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An error condition is a result to inspect in stdout/stderr, not a tool failure.
 
 ```json
 {

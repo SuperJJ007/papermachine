@@ -82,6 +82,25 @@ The v1→v2 migration (`STORE_MIGRATIONS`'s only step today) does six things in 
 
 `deleteProject(projectId)` permanently removes `<storeRoot>/` — index and blobs — the one cascade this package performs. There is no session-scoped delete operation: deleting a session's log is a `dsh-session` concern this package never observes, and every stored row keeps its producer `sessionId` as provenance regardless of whether that session still exists.
 
+## Reconciliation
+
+`reconcile.ts` compares the store's own version rows against `science/artifact-saved` events a caller has already read from that project's session logs and folded per `versionId` (last write wins) — this package never reads session logs itself. `ScienceArtifactStore.reconcileProject(projectId, events)` runs the comparison and repairs the store to match; `getReconciliationSummary(projectId)` is a pure read of whatever the last reconciliation run recorded. The hard rule: **reconciliation only ever writes the store, never a session log** — the log is append-only, and rewriting its history would break the replay contract.
+
+Six cases, classified per version:
+
+| Case | Condition | Handling |
+|---|---|---|
+| Consistent | store row and event both name this `versionId`, same `sha256`, same title/caption | no write |
+| Orphan (W1/W2) | store row exists, no event names this `versionId` | `version_health.orphan = 1`; the row and its bytes stay exactly as committed — an orphan is a real, complete artifact version with no session claiming it produced |
+| Dangling event | an event names a `versionId` the store has no row for (the store row was lost while the event survived) | `reconstructVersion` rebuilds a version row (and its owning artifact row, if that is also missing) from the event's fallback fields, `content_origin` fixed to `'import'` (the one `ContentOrigin` value that does not claim a real origin this reconstruction cannot recover); `version_health.reconstructed = 1` |
+| Content conflict | same `versionId` in both, different `sha256` | not reachable through any normal write path; recorded as a diagnostic error, the store row marked `orphan`, the event untouched |
+| Metadata divergence | same `versionId`, same `sha256`, but the event's title/caption snapshot differs from the store's current annotation | no write — the store's latest annotation already is the current fact; the event is a historical presentation snapshot, correctly left as it was |
+| Missing blob | the version row exists but its blob is absent from `blobs/sha256/` | `version_health.missingContent = 1`; the row is never deleted |
+
+Reconciliation is idempotent: rerunning it over an unchanged store and event set produces the same `version_health` state, since every write recomputes from the current comparison instead of accumulating. Work is bounded by `reconcileMaxVersions` (Config, below): a project with more version rows and dangling events than the bound admits is processed as a truncated prefix, reported via `ReconcileResult.truncated`, rather than blocking the caller. `reconstructVersion`'s reconstructed row is honest about what it cannot recover: `mediaType` is inferred from the dangling event's `logicalName` extension (falling back to `application/octet-stream` for an unrecognized one), and `byteCount` is the blob's real on-disk size when present or `0` — a sentinel, not a claimed size — when also missing (in which case `missingContent` is set too, so a caller checks that flag before trusting the byte count).
+
+Who calls `reconcileProject`, and how the event set is built, is a consumer's job: `dsh-science-runtime`'s `sessionProject` triggers one full-project pass the first time it resolves a project id in a given Host's lifetime, reading that project's own session logs through `@deepseek-ai/dsh-session-persistence`'s `SessionPersistence.inspect()` (bounded by its own `reconcileMaxSessions` Config) — see that package's README for the trigger mechanism and W2/W3 crash-window narrowing at its own `annotateArtifact`/`performChartEdit`/`saveArtifactAs` append sites.
+
 ## Configuration (schemastery)
 
 ```ts
@@ -90,6 +109,7 @@ interface Config {
   journalMode?: 'wal' | 'delete' | 'truncate' | 'persist'   // journal_mode pragma; default 'wal'
   busyTimeoutMs?: number     // sqlite3_busy_timeout() for every project connection; default 5000
   storeBackupRetention?: number   // pre-upgrade .bak files kept per project; default 1
+  reconcileMaxVersions?: number   // version rows + dangling events one reconcileProject call processes; default 2000
   backfillProvenance?: BackfillProvenanceHook   // see Schema migration; omitted skips step 4 with a warning
 }
 ```
@@ -110,4 +130,4 @@ None — this package never assembles or sends provider requests; it has no live
 - **Workspace identity uses `resolve()`, not `realpath()`** — a workspace reached through two different symlink paths is not recognized as the same directory; only literal path equality distinguishes reopen from move/copy.
 - **Copy detection is heuristic at open time** — a copy opened while the original is unreachable (e.g. an unmounted disk) is indistinguishable from a move and keeps the id, per the design note's accepted v1 risk.
 - **No cross-project read/write, retention policy, or dependency DAG** — this package implements spec items 1/2/5/6/10 of the [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md) only; cross-project access, version retention, and dependency tracking are explicitly deferred.
-- **Store ↔ session reconciliation is not run by this package** — `setVersionHealth` only records a caller's result; the algorithm that decides `orphan`/`reconstructed`/`missingContent` (comparing store rows against session-log events) lives in a consumer, not here.
+- **`reconstructVersion`'s recovered `mediaType`/`kind` is inferred, not verified** — a dangling event whose `logicalName` extension is not in the fixed five-type set falls back to `application/octet-stream`/`document`; there is no way to recover the real value once both the store row and the event have stopped carrying it.

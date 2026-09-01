@@ -1781,6 +1781,16 @@ export interface Config {
    */
   storeBackupRetention?: number
   /**
+   * Upper bound on how many version rows and dangling session-log events one
+   * `reconcileProject` call processes before reporting `truncated: true` and
+   * returning rather than continuing. Deployment-varying: a larger project
+   * (more versions accumulated, more sessions to fold events from) can
+   * afford — or need — a larger single-call budget than a small one; the
+   * caller (`dsh-science-runtime`) decides whether and how to schedule a
+   * follow-up call for the remainder.
+   */
+  reconcileMaxVersions?: number
+  /**
    * Consulted at most once per project, during a v1→v2 store upgrade's
    * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
    * figure state/annotation provenance this package's v1 rows never held
@@ -1860,7 +1870,7 @@ export interface BackfillProvenanceFigureState {
 }
 ```
 
-来源：[`packages/science/science-artifact-store/src/index.ts:71`](../packages/science/science-artifact-store/src/index.ts)
+来源：[`packages/science/science-artifact-store/src/index.ts:83`](../packages/science/science-artifact-store/src/index.ts)
 
 <a id="deepseek-aidsh-science-runtime"></a>
 
@@ -1958,6 +1968,14 @@ export interface Config {
   readonly chartExtractTimeoutMs?: number
   /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
   readonly chartLiveRunsRetained?: number
+  /**
+   * Maximum session logs read, per project, when building the event set for
+   * one store ↔ session reconciliation pass. A project with more matching
+   * sessions than this reports its walk truncated rather than reading them
+   * all in one call — bounded so a large multi-session project's first
+   * Science operation is never blocked scanning every session it has ever had.
+   */
+  readonly reconcileMaxSessions?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1979,7 +1997,7 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:105`](../packages/science/science-runtime/src/config.ts)
+来源：[`packages/science/science-runtime/src/config.ts:112`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

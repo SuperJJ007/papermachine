@@ -412,10 +412,16 @@ describe('v1 → v2 migration', () => {
     const path = await makeDbPath()
     seedRealisticV1Fixture(path)
 
-    const realPrepare: (...args: unknown[]) => unknown = Reflect.get(DatabaseSync.prototype, 'prepare')
-    const spy = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (this: DatabaseSync, sql: string, ...rest: unknown[]) {
+    // Captured before spyOn replaces the prototype slot, then invoked with the live `this`
+    // via `.call()` on every mock invocation below — never called unbound. oxlint's
+    // staged-file pre-commit pass lacks full cross-file type info and misreports this
+    // disable as unused; the canonical whole-package run (`npx oxlint <package>`) still
+    // needs it — verified by removing it and re-running that canonical check.
+    // oxlint-disable-next-line typescript/unbound-method
+    const realPrepare: unknown = DatabaseSync.prototype.prepare
+    const spy = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (this: DatabaseSync, sql: string) {
       if (sql.includes('INSERT INTO version_annotations')) throw new Error('injected mid-migration failure')
-      return realPrepare.apply(this, [sql, ...rest])
+      return (realPrepare as (sql: string) => ReturnType<DatabaseSync['prepare']>).call(this, sql)
     })
     try {
       await expect(openStoreDatabase(path, PROJECT, OPTIONS)).rejects.toThrow('injected mid-migration failure')

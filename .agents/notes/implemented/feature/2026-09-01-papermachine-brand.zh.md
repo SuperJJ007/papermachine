@@ -23,7 +23,7 @@ PaperMachine 的 Electron 外壳（`apps/desktop`）在侧边栏和对话区 Her
 
 ## Consequences
 
-桌面产品的侧边栏字标现在渲染为 "PaperMachine"，两个 mark slot 在 PaperMachine 专属美术出现之前仍由共享的鲸鱼图形填充，Web 产品的 `ui-brand-official` 组合逐字节保持不变（它自己的行、自己的构建 profile 守卫，与新包之间没有共享状态）。以后补上 PaperMachine 标记，只需在 `ui-brand-papermachine` 内部改一次 `Brand.tsx`；不涉及 bundle、overlay 或 slot 契约的任何改动。`ui-brand-papermachine` 这一行（禁用状态）会永久出现在每一个 Web/headless 组合里，这是共享 bundle 的一个无害既定事实——只要桌面端 overlay 不运行，它就是惰性的。
+桌面产品的侧边栏字标现在渲染为 "PaperMachine"，两个 mark slot 在 PaperMachine 专属美术出现之前仍由共享的鲸鱼图形填充，Web 产品的 `ui-brand-official` 组合逐字节保持不变（它自己的行、自己的构建 profile 守卫，与新包之间没有共享状态）。以后补上 PaperMachine 标记，只需在 `ui-brand-papermachine` 内部改一次 `Brand.tsx`；不涉及 bundle、overlay 或 slot 契约的任何改动。`ui-brand-papermachine` 这一行（禁用状态）会永久出现在每一个 Web/headless 组合里，这是共享 bundle 的一个无害既定事实——只要桌面端 overlay 不运行，它就是惰性的。两个品牌包现在也各自提供 `Context.clientBrand` 的 `productName`（`dsh-client-runtime`）——`ui-brand-official` 给 "DeepSeek Harness"，`ui-brand-papermachine` 给 "PaperMachine"——`ui-renderer` 的 `DocumentTitle` 改为读取它，而不是构建期的 `DSH_CLIENT_TITLE` 常量，因此桌面窗口标题与浏览器标签页现在与侧边栏字标同步切换。
 
 ## Verification
 

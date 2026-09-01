@@ -34,11 +34,12 @@ describe('PaperMachine browser-brand plugin', () => {
     expect(inject).toEqual(['slots'])
   })
 
-  it('fills declarations before or after apply and removes every occupant on teardown', async () => {
+  it('fills declarations before or after apply, provides clientBrand, and removes every occupant on teardown', async () => {
     const before = await bench()
     const fiber = before.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(1)
+    expect(before.ctx.get('clientBrand')).toEqual({ productName: 'PaperMachine' })
 
     before.disposeHoles?.()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
@@ -48,6 +49,7 @@ describe('PaperMachine browser-brand plugin', () => {
 
     await fiber.dispose()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
+    expect(before.ctx.get('clientBrand')).toBeUndefined()
 
     const after = await bench(false)
     await after.ctx.plugin({ inject: [...inject], apply }).await()

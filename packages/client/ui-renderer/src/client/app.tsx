@@ -24,12 +24,15 @@ export function buildRenderApp(deps: AssemblyDeps): () => ReactNode {
   const sessions = ctx.get('sessions')
   if (sessions === undefined) throw new Error('ui renderer: sessions service unavailable')
   const useSessions = bindSnapshotSelector(sessions.list)
+  // Optional: no default provider (see `ClientBrandFace`) — a composition
+  // with no brand plugin falls back to DocumentTitle's own generic title.
+  const productName = ctx.get('clientBrand')?.productName
   const SessionDocumentTitle = (): ReactNode => {
     const title = useSessions((state) => {
       const id = state.current
       return id === undefined ? undefined : state.byId[id]?.title
     })
-    return <DocumentTitle {...title === undefined ? {} : { title }} />
+    return <DocumentTitle {...title === undefined ? {} : { title }} {...productName === undefined ? {} : { productName }} />
   }
   return () => (
     <>

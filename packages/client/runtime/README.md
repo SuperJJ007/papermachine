@@ -12,6 +12,8 @@ For each prompt that can reach a local root or continuable child Agent, the runt
 
 Settings owners share the React-free `SettingsScopeSpec`, `SettingsScope`, and snapshot types defined here, including the path-addressed `setPath`/`unsetPath` write primitives and the per-field `secrets` presence list. ui-settings owns `ctx.settingsScope.bind(spec)`, its Host transport, schema validation, and lifecycle; see [its package contract](../ui-settings/README.md).
 
+This package declares `Context.clientBrand` (`ClientBrandFace`, `{ productName: string }`) but provides no default implementation: a brand plugin (`ui-brand-official` for official builds, `ui-brand-papermachine` for the desktop build's Runtime overlay) provides it, and `ui-renderer`'s document-title projection reads it with `ctx.get('clientBrand')`, falling back to its own generic title in a composition with neither plugin (headless, ACP, a bare local source-launch run).
+
 ## Slot declaration injection
 
 `ctx.slots.inject(name, callback)` makes a full `SlotMap` key the dependency for a contribution whose plugin can activate independently from the declaring entry. It runs `callback` synchronously when the declaration exists, otherwise waits; declaration collapse disposes the callback effect, and redeclaration reruns it. The controller belongs to the caller's plugin fiber, so unloading the contributor cancels either the wait or its active registrations. A direct `slots.register()` into an undeclared slot still throws.

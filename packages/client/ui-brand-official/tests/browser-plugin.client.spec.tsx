@@ -34,19 +34,21 @@ describe('official browser-brand plugin', () => {
     expect(inject).toEqual(['slots'])
   })
 
-  it('leaves every slot empty outside the official build profile', async () => {
+  it('leaves every slot empty and provides no clientBrand outside the official build profile', async () => {
     vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'local')
     const subject = await bench()
     await subject.ctx.plugin({ inject: [...inject], apply }).await()
     for (const hole of HOLES) expect(subject.slots.entries(hole)).toHaveLength(0)
+    expect(subject.ctx.get('clientBrand')).toBeUndefined()
   })
 
-  it('fills declarations before or after apply and removes every occupant on teardown', async () => {
+  it('fills declarations before or after apply, provides clientBrand, and removes every occupant on teardown', async () => {
     vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'official')
     const before = await bench()
     const fiber = before.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(1)
+    expect(before.ctx.get('clientBrand')).toEqual({ productName: 'DeepSeek Harness' })
 
     before.disposeHoles?.()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
@@ -56,6 +58,7 @@ describe('official browser-brand plugin', () => {
 
     await fiber.dispose()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
+    expect(before.ctx.get('clientBrand')).toBeUndefined()
 
     const after = await bench(false)
     await after.ctx.plugin({ inject: [...inject], apply }).await()

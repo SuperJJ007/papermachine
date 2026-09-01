@@ -8,7 +8,9 @@ import { PaperMachineBrandMark, PaperMachineBrandName } from './Brand.tsx'
 export const inject = ['slots']
 
 /**
- * Fill every shipped brand slot as one declaration-aware registration set.
+ * Fill every shipped brand slot as one declaration-aware registration set,
+ * and provide the `clientBrand` product name the document-title projection
+ * (`ui-renderer`) reads.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -19,4 +21,5 @@ export function apply(ctx: ClientContext): void {
         yield ctx.slots.register({ name: 'sidebar.brand.name' }, PaperMachineBrandName)
         yield ctx.slots.register({ name: 'conversation.hero.brand.mark' }, PaperMachineBrandMark)
       })))
+  ctx.provide('clientBrand', { productName: 'PaperMachine' })
 }

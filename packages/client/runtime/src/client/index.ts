@@ -100,6 +100,17 @@ export type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 /** Client-side Cordis context after declaration merging. */
 export type ClientContext = Context
 
+/**
+ * The active build's product identity, provided by a brand plugin
+ * (`ui-brand-official` for official builds, `ui-brand-papermachine` for the
+ * desktop build's Runtime overlay) so document-title projection stays a
+ * build-time-agnostic runtime read instead of a bundler-inlined constant.
+ */
+export interface ClientBrandFace {
+  /** Product name suffixed onto the browser title (`"<session title> — <productName>"`), and shown bare with no session selected. */
+  readonly productName: string
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertContextMap {
     /** Client Agent scope identity; the agent and session share one wire id. */
@@ -165,6 +176,12 @@ declare module '@deepseek-ai/cordis' {
     sessions: import('./contract/sessions.ts').ISessions
     /** The outward face only; the concrete service stays inside the runtime. */
     workspaces: import('./contract/workspaces.ts').IWorkspaces
+    /**
+     * Optional: no default provider. A brand plugin provides this (see
+     * {@link ClientBrandFace}); absent in a composition with none (headless,
+     * ACP, a bare local source-launch run) — read with `ctx.get('clientBrand')`.
+     */
+    clientBrand: ClientBrandFace
   }
 }
 

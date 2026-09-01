@@ -12,6 +12,8 @@
 
 设置所有者共用本包定义的不依赖 React 的 `SettingsScopeSpec`、`SettingsScope` 与快照类型，包括路径寻址的 `setPath`／`unsetPath` 写入原语与按字段列出的 `secrets` 是否持有值列表。ui-settings 拥有 `ctx.settingsScope.bind(spec)`、对应的 Host 传输、schema 校验与生命周期；详见[该包的约定](../ui-settings/README.zh.md)。
 
+本包声明了 `Context.clientBrand`（`ClientBrandFace`，`{ productName: string }`），但不提供默认实现：由品牌插件（官方构建用 `ui-brand-official`，桌面构建 Runtime overlay 用 `ui-brand-papermachine`）提供，`ui-renderer` 的 document title 投影通过 `ctx.get('clientBrand')` 读取；两者都不在场的组合（headless、ACP、纯本地 source-launch 运行）回退到它自己的通用标题。
+
 <a id="slot-declaration-injection"></a>
 
 ## Slot 声明注入

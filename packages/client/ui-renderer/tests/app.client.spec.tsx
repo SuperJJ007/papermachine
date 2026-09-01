@@ -16,9 +16,10 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
-async function bench() {
+async function bench(setup?: (ctx: Context) => void) {
   runtime = await SlotTestRuntime.create()
   await runtime.root.declare({}, () => <div data-testid="frame" />)
+  setup?.(runtime.ctx)
   return { runtime, renderApp: buildRenderApp({ ctx: runtime.ctx }) }
 }
 
@@ -34,9 +35,8 @@ describe('buildRenderApp', () => {
   })
 
   it('projects the selected durable session title', async () => {
-    vi.stubEnv('DSH_CLIENT_TITLE', 'Product')
     document.title = 'stale title'
-    const b = await bench()
+    const b = await bench((ctx) => { ctx.provide('clientBrand', { productName: 'Product' }) })
     render(<>{b.renderApp()}</>)
     expect(document.title).toBe('Product')
     await b.runtime.sessions.add({ id: 's1', summary: { title: 'First' } })
@@ -48,14 +48,20 @@ describe('buildRenderApp', () => {
   })
 
   it('falls back when the selected id has no list row', async () => {
-    vi.stubEnv('DSH_CLIENT_TITLE', 'Product')
     document.title = 'stale title'
-    const b = await bench()
+    const b = await bench((ctx) => { ctx.provide('clientBrand', { productName: 'Product' }) })
     await b.runtime.sessions.add({ id: 's1', summary: { title: 'First' } })
     render(<>{b.renderApp()}</>)
     expect(document.title).toBe('First — Product')
     b.runtime.sessions.list.update((draft) => { draft.current = 'ghost' as SessionId })
     await b.runtime.flush()
     expect(document.title).toBe('Product')
+  })
+
+  it('falls back to the generic title when no brand plugin provides a product name', async () => {
+    document.title = 'stale title'
+    const b = await bench()
+    render(<>{b.renderApp()}</>)
+    expect(document.title).toBe('DSH Local Build')
   })
 })

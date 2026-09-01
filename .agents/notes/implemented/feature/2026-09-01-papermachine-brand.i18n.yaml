@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-papermachine-brand.md
-2026-09-01-papermachine-brand.md: dc5c8e52712ff78a1ffd302a507bb9e16b26e697
-2026-09-01-papermachine-brand.zh.md: 93b91b5e299721dd9303eed81ce52986d93e0e08
+2026-09-01-papermachine-brand.md: 804a764f61054d68cd7c7f1ec3dd97725c25205d
+2026-09-01-papermachine-brand.zh.md: 6673457e363169aa18369d5c86beb574c92ded21

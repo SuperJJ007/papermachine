@@ -66,6 +66,10 @@ export type ScienceRuntimeErrorCode =
   | 'CHART_NOT_ADDRESSABLE'
   | 'CHART_ELEMENT_NOT_FOUND'
   | 'CHART_OP_INVALID'
+  /** `installPackages` was called with no configured `micromambaPath`: this deployment cannot install packages. */
+  | 'INSTALLER_NOT_CONFIGURED'
+  /** The configured `micromambaPath` does not resolve to a usable executable. */
+  | 'INSTALLER_UNAVAILABLE'
 
 /** Typed error for a Runtime operation that cannot return a durable value. */
 export class ScienceRuntimeError extends Error {
@@ -146,6 +150,44 @@ export interface ScienceRunResult {
    * discoverable through `get_science_state`.
    */
   readonly capture?: CaptureRunArtifactsResult
+}
+
+/** Inputs for installing packages into this session's applied environment for one language. */
+export interface InstallScienceEnvironmentPackagesRequest {
+  /** Exact live Science Session whose applied environment receives the install. */
+  readonly session: Session
+  /** Interpreter whose prefix receives the install; the whole environment still re-binds a fresh whole-value revision. */
+  readonly language: ScienceLanguage
+  /** Non-empty conda-forge package specs, e.g. `"numpy"` or `"numpy=1.26"`. */
+  readonly packages: readonly string[]
+  /** Caller-owned cancellation signal. */
+  readonly signal: AbortSignal
+}
+
+/**
+ * Terminal classification for one install attempt, mirroring
+ * {@link ScienceRunTerminal.status}: `'success'` is the only status that
+ * appends a fresh environment revision.
+ */
+export type InstallScienceEnvironmentPackagesStatus = 'success' | 'failed' | 'timed-out' | 'cancelled'
+
+/** Operational result of one install attempt. */
+export interface InstallScienceEnvironmentPackagesResult {
+  /** Terminal classification for this attempt. */
+  readonly status: InstallScienceEnvironmentPackagesStatus
+  /**
+   * The fresh whole-value environment revision this install appended,
+   * present iff {@link status} is `'success'`. A live kernel serving the
+   * superseded revision is unaffected by this call itself; the next
+   * `startRun` for either language of this session finds the revision
+   * mismatch and ends it (`environment-rebound`) before starting a fresh one,
+   * the same path an out-of-band rebind already takes.
+   */
+  readonly environment?: ScienceEnvironmentBinding
+  /** Bounded standard-output tail from the installer process. */
+  readonly stdout: ScienceRunOutput
+  /** Bounded standard-error tail from the installer process. */
+  readonly stderr: ScienceRunOutput
 }
 
 /** Inputs for curating one existing artifact version with a title and optional caption. */
@@ -251,4 +293,15 @@ export interface ScienceRuntimeService {
    * @returns The durable curated version this operation appended.
    */
   annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
+  /**
+   * Install packages into the applied environment's configured prefix for
+   * one language through micromamba, then, only on success, re-observe the
+   * whole profile and append a fresh whole-value `science/environment-bound`
+   * revision. Requires a configured micromamba executable
+   * (`INSTALLER_NOT_CONFIGURED` otherwise) and an applied environment with no
+   * run in flight.
+   * @param request - Exact Session, target language, package specs, and cancellation.
+   * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+   */
+  installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>
 }

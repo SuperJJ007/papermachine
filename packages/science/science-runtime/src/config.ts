@@ -106,6 +106,15 @@ export interface Config {
   /** Explicit Harness home; omitted follows the shared resolver. */
   readonly dshHome?: string
   /**
+   * Absolute path to the deployment's micromamba executable. Required for
+   * `ScienceRuntime.installPackages`; omitted means this deployment cannot
+   * install packages, and `installPackages` rejects with
+   * `INSTALLER_NOT_CONFIGURED` rather than silently degrading to an
+   * in-kernel `pip install`/`install.packages()`. Never used for anything
+   * else — binding and running an environment need no installer.
+   */
+  readonly micromambaPath?: string
+  /**
    * Map of profile identifiers to existing language prefixes. An empty map
    * is a valid explicit unconfigured state — for example a deployment that
    * defers every profile to the restart-scoped `science-runtime` settings
@@ -178,6 +187,7 @@ const PROFILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u
 /** Loader schema. {@link resolveConfig} validates closed-object rules. */
 export const configSchema: z<Config> = z.object({
   dshHome: z.string(),
+  micromambaPath: z.string(),
   profiles: z.dict(z.object({
     pythonPrefix: z.string(),
     rPrefix: z.string(),
@@ -223,6 +233,8 @@ export const configSchema: z<Config> = z.object({
 export interface ResolvedConfig {
   /** Explicit Harness home, when configured. */
   readonly dshHome: string | undefined
+  /** Absolute micromamba executable path, when configured; `undefined` means this deployment cannot install packages. */
+  readonly micromambaPath: string | undefined
   /** Allowlisted profiles; an empty map is a valid explicit unconfigured state. */
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
@@ -322,7 +334,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   assertKnownKeys(
     config,
     [
-      'dshHome', 'profiles', 'timeoutMs',
+      'dshHome', 'micromambaPath', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'rasterCapture',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
@@ -334,6 +346,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
   )
   if (config.dshHome !== undefined && typeof config.dshHome !== 'string') {
     throw new Error('science-runtime: dshHome must be a string when configured')
+  }
+  if (config.micromambaPath !== undefined && (typeof config.micromambaPath !== 'string' || !isAbsolute(config.micromambaPath))) {
+    throw new Error('science-runtime: micromambaPath must be an absolute path when configured')
   }
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
@@ -410,6 +425,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   }
   return {
     dshHome: config.dshHome,
+    micromambaPath: config.micromambaPath,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
     packagesMaxEntries,

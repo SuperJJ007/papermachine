@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
-import { ScienceEnvironmentProfileId, ScienceProjectId } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -19,6 +19,7 @@ import { observeProfile, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
   ControlledSubprocess,
+  createControlledRuntimeHarness,
   createFastRuntimeHarness,
   createFakeRPrefix,
   createFakePythonPrefix,
@@ -59,6 +60,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
+const fixedInstallUuid = vi.hoisted(() => ({ value: undefined as string | undefined }))
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:crypto')>()
+  const randomUUID = (...args: Parameters<typeof original.randomUUID>): ReturnType<typeof original.randomUUID> =>
+    fixedInstallUuid.value ?? original.randomUUID(...args)
+  return { ...original, randomUUID }
+})
+
 const roots: string[] = []
 const contexts: Context[] = []
 
@@ -66,6 +76,7 @@ afterEach(async () => {
   Object.assign(staticFsFault, {
     history: '', executable: '', nonObject: '', cleanupPath: '',
   })
+  fixedInstallUuid.value = undefined
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -1383,6 +1394,19 @@ describe('Science Runtime configuration', () => {
     })
   })
 
+  it('requires micromambaPath to be an absolute string when configured, undefined otherwise', () => {
+    expect(resolveConfig({ profiles: {} }).micromambaPath).toBeUndefined()
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: 'relative/micromamba',
+    })).toThrow(/micromambaPath/)
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: 1 as never,
+    })).toThrow(/micromambaPath/)
+    expect(resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba',
+    }).micromambaPath).toBe('/opt/dsh/micromamba')
+  })
+
   it('validates the package-inventory entry and byte bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 0,
@@ -1520,5 +1544,216 @@ describe('Science Runtime configuration', () => {
     const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
     expect(resolved.kernelIdleTimeoutMs).toBe(1_800_000)
     expect(resolved.kernelStartTimeoutMs).toBe(30_000)
+  })
+})
+
+describe('ScienceRuntime.installPackages', () => {
+  function makeMicromamba(root: string): string {
+    const executable = join(root, 'fake-micromamba')
+    writeFileSync(executable, '#!/bin/sh\nexit 0\n')
+    chmodSync(executable, 0o755)
+    return executable
+  }
+
+  async function boundHarness(id: string, utf8Probe: 'valid' | 'invalid' = 'valid'): Promise<{
+    readonly runtime: ScienceRuntime
+    readonly session: ReturnType<typeof createScienceSession>
+    readonly subprocess: ControlledSubprocess
+    readonly micromambaPath: string
+    readonly root: string
+  }> {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, id)
+    harness.subprocess.utf8Probe = utf8Probe
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    return { runtime: harness.runtime, session, subprocess: harness.subprocess, micromambaPath, root }
+  }
+
+  it('rejects with INSTALLER_NOT_CONFIGURED when no micromambaPath is configured', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-not-configured')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INSTALLER_NOT_CONFIGURED' })
+  })
+
+  it('rejects invalid package specs before touching the environment', async () => {
+    const { runtime, session } = await boundHarness('install-invalid-request')
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: [], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY before the environment is bound', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-no-environment')
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY when the applied environment status is not applied', async () => {
+    const { runtime, session } = await boundHarness('install-invalid-environment', 'invalid')
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY when the requested language has no binding', async () => {
+    const { runtime, session } = await boundHarness('install-missing-language')
+    await expect(runtime.installPackages({
+      session, language: 'r', packages: ['r-dplyr'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with INSTALLER_UNAVAILABLE when the configured micromamba path is absent', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, {
+      micromambaPath: join(root, 'missing-micromamba'),
+    })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-missing-micromamba')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+  })
+
+  it('rejects with RUNTIME_BUSY when the projection has an orphaned open run', async () => {
+    const { runtime, session } = await boundHarness('install-orphan-run')
+    const projection = replayScience(session.events)
+    const binding = projection?.environment?.python
+    if (binding?.capability !== 'available') throw new Error('test setup: expected an available Python binding')
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: 1, language: 'python', state: 'started',
+        environmentRevision: 1, environmentFingerprint: binding.bindingFingerprint, at: Date.now(),
+      },
+    })
+    const { toolCallId, requestHeaderSeq } = authorizePythonRun(session)
+    session.append('science/run-started', {
+      version: 1,
+      run: {
+        runId: ScienceRunId('r1'),
+        language: 'python',
+        toolCallId,
+        requestHeaderSeq,
+        environmentRevision: 1,
+        environmentFingerprint: binding.bindingFingerprint,
+        startedAt: Date.now(),
+        codeSha256: 'a'.repeat(64),
+        scratchKey: ScienceScratchKey('b'.repeat(64)),
+        runDirectoryRef: 'runs/r1/',
+        kernelEpoch: 1,
+        status: 'running',
+      },
+    })
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+  })
+
+  it('appends a fresh whole-value environment revision and returns it on a successful install', async () => {
+    const { runtime, session } = await boundHarness('install-success')
+    const before = replayScience(session.events)?.environment
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environment?.revision).toBe((before?.revision ?? 0) + 1)
+    expect(result.environment?.status).toBe('applied')
+    const after = replayScience(session.events)?.environment
+    expect(after?.revision).toBe((before?.revision ?? 0) + 1)
+    expect(result.stdout.text.length >= 0).toBe(true)
+  })
+
+  it('does not append a fresh revision when the install fails', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-failed')
+    const before = replayScience(session.events)?.environment
+    const run = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
+    run.complete({ exitCode: 1, signal: null })
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['does-not-exist'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('failed')
+    expect(result.environment).toBeUndefined()
+    const after = replayScience(session.events)?.environment
+    expect(after?.revision).toBe(before?.revision)
+  })
+
+  it('logs and swallows a scratch-cleanup failure without failing the install', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-cleanup-failure')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const warnings: string[] = []
+    harness.ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
+    fixedInstallUuid.value = 'fixed-install-uuid'
+    staticFsFault.cleanupPath = join(prefix, '.dsh-science-install', 'fixed-install-uuid')
+    const result = await harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(warnings.some(message => message.includes('package-install scratch cleanup failed'))).toBe(true)
+  })
+
+  it('re-observes an R-only profile, omitting python and including r in the fresh revision', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const rPrefix = createFakeRPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { rPrefix } }, 10_000, undefined, { micromambaPath })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-r-only')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const result = await harness.runtime.installPackages({
+      session, language: 'r', packages: ['r-dplyr'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environment?.python).toBeUndefined()
+    expect(result.environment?.r?.capability).toBe('available')
+  })
+
+  it('marks the fresh revision invalid when re-observation fails after a successful install', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-reobserve-invalid')
+    subprocess.utf8Probe = 'invalid'
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environment?.status).toBe('invalid')
+    expect(result.environment?.failureReason).toBeDefined()
   })
 })

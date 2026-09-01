@@ -39,8 +39,19 @@ import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.t
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
-import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, startCandidate } from './execution.ts'
+import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
+import {
+  assertValidPackageSpecs,
+  confineInstallArgv,
+  createInstallScratch,
+  installArgv,
+  installEnvironment,
+  planInstallScratch,
+  removeInstallScratch,
+  runMicromambaInstall,
+  staticMicromamba,
+} from './install.ts'
 import { KERNEL_ASSETS_ROOT } from './kernel-assets.ts'
 import { KernelExitedError, KernelProtocolError } from './kernel-process.ts'
 import type { KernelDoneFrame, KernelExecuteRequest, KernelProcess } from './kernel-process.ts'
@@ -71,6 +82,8 @@ import { ScienceRuntimeError } from './types.ts'
 import type {
   AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
+  InstallScienceEnvironmentPackagesRequest,
+  InstallScienceEnvironmentPackagesResult,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -84,6 +97,9 @@ import type {
 export type {
   AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
+  InstallScienceEnvironmentPackagesRequest,
+  InstallScienceEnvironmentPackagesResult,
+  InstallScienceEnvironmentPackagesStatus,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -302,6 +318,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly timeoutMs: number
   /** Explicit or shared-resolver Harness home input. */
   private readonly dshHome: string | undefined
+  /** Configured micromamba executable path; `undefined` means this deployment cannot install packages. */
+  private readonly micromambaPath: string | undefined
   /** Configured package-inventory entry bound. */
   private readonly packagesMaxEntries: number
   /** Configured package-inventory byte bound. */
@@ -345,6 +363,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.cordisConfig = config
     this.timeoutMs = resolved.timeoutMs
     this.dshHome = resolved.dshHome
+    this.micromambaPath = resolved.micromambaPath
     this.packagesMaxEntries = resolved.packagesMaxEntries
     this.packagesMaxBytes = resolved.packagesMaxBytes
     this.rasterCapture = resolved.rasterCapture
@@ -548,6 +567,108 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           'science-runtime: pre-publication Session scratch rollback failed',
         ))
       }
+      throw this.prepublicationError(lease.control, error)
+    } finally {
+      this.leases.release(lease)
+    }
+  }
+
+  /**
+   * Install packages into one language's applied prefix through micromamba,
+   * then, only on a successful install, re-observe the whole profile and
+   * append a fresh whole-value `science/environment-bound` revision —
+   * exactly the operation `bindEnvironment`'s own post-first-run guard
+   * refuses. A live kernel serving the superseded revision is left running:
+   * the next `startRun` for either language finds the revision mismatch and
+   * ends it (`environment-rebound`) before starting a fresh one, the same
+   * path an out-of-band rebind already takes (`kernel-set.ts`).
+   * @param request - Exact live Session, target language, package specs, and cancellation.
+   * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+   */
+  async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult> {
+    this.assertSession(request.session)
+    this.assertHostLocal()
+    if (this.micromambaPath === undefined) {
+      throw new ScienceRuntimeError('INSTALLER_NOT_CONFIGURED', 'Science package installation requires a configured micromamba executable path')
+    }
+    assertValidPackageSpecs(request.packages)
+    const lease = await this.reserveQueued(request.session, request.signal)
+    try {
+      this.assertPrepublication(request.session, lease.control)
+      const projection = this.assertSession(request.session)
+      const environment = projection.environment
+      if (environment === null || environment.status !== 'applied') {
+        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
+      }
+      // Mirrors startRun's own orphan check: the lease itself is free, but an
+      // orphaned durable 'running' run (a crash before its own terminal
+      // committed) must still block a whole-value environment rebind.
+      if (projection.runs.some(run => run.status === 'running')) {
+        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
+      }
+      const binding = selectBinding(environment, request.language)
+      const profile = this.profile(String(environment.profileId))
+      const executable = await staticMicromamba(this.micromambaPath)
+      this.assertPrepublication(request.session, lease.control)
+      const argv = installArgv(executable, binding.canonicalPrefix, request.packages)
+      const confined = confineInstallArgv(this.ctx.sandbox, request.session, binding.canonicalPrefix, argv)
+      const scratch = planInstallScratch(binding.canonicalPrefix)
+      await createInstallScratch(scratch)
+      try {
+        const env = installEnvironment(binding.canonicalPrefix, scratch)
+        const outcome = await runMicromambaInstall(this.ctx.subprocess, confined, env, scratch.directory, lease.control)
+        if (outcome.status !== 'success') {
+          return { status: outcome.status, stdout: outcome.stdout, stderr: outcome.stderr }
+        }
+        this.assertPrepublication(request.session, lease.control)
+        const sessionScratch = await planSessionScratch(this.dshHome, request.session)
+        const observed = await observeProfile({
+          subprocess: this.ctx.subprocess,
+          sandbox: this.ctx.sandbox,
+          sessionScratch,
+          sessionId: request.session.id,
+          signal: lease.control.signal,
+          packagesMaxEntries: this.packagesMaxEntries,
+          packagesMaxBytes: this.packagesMaxBytes,
+        }, profile)
+        this.assertPrepublication(request.session, lease.control)
+        const current = this.assertSession(request.session).environment
+        // Unreachable: the durable Science fold only ever appends an
+        // environment revision, never clears one, so a session already
+        // holding an applied revision above can never replay back to
+        // `environment === null`. Narrows the type the projection's `.environment`
+        // field carries rather than asserting past a real defensive gap.
+        /* v8 ignore next 3 */
+        if (current === null) {
+          throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
+        }
+        const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
+        const failures = bindings.filter(candidate => candidate.capability !== 'available')
+        const now = Date.now()
+        const fresh: ScienceEnvironmentBinding = {
+          revision: current.revision + 1,
+          profileId: current.profileId,
+          configuredAt: now,
+          validatedAt: now,
+          status: failures.length === 0 ? 'applied' : 'invalid',
+          ...(observed.python === undefined ? {} : { python: observed.python.binding }),
+          ...(observed.r === undefined ? {} : { r: observed.r.binding }),
+          ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
+        }
+        this.assertPrepublication(request.session, lease.control)
+        request.session.append('science/environment-bound', { version: 1, environment: fresh })
+        return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
+      } finally {
+        // Low-stakes cleanup of a throwaway scratch subdirectory under the
+        // prefix, unlike Session-scratch rollback above: never worth masking
+        // the install's own outcome, so a failure here only logs.
+        try {
+          await removeInstallScratch(scratch)
+        } catch (cleanupError) {
+          this.ctx.logger.warn(`science-runtime: package-install scratch cleanup failed: ${String(cleanupError)}`)
+        }
+      }
+    } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {
       this.leases.release(lease)

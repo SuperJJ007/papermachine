@@ -97,13 +97,18 @@ describe('assertValidPackageSpecs', () => {
 })
 
 describe('installArgv', () => {
-  it('builds a fixed, non-interactive, conda-forge-only argv with the trailing packages', () => {
-    expect(installArgv('/opt/micromamba', '/opt/prefix', ['numpy', 'pandas'])).toEqual([
+  it('builds a fixed, non-interactive, single-channel argv with the trailing packages', () => {
+    expect(installArgv('/opt/micromamba', '/opt/prefix', ['numpy', 'pandas'], 'https://conda.anaconda.org/conda-forge')).toEqual([
       '/opt/micromamba', 'install', '--yes', '--no-rc',
       '--prefix', '/opt/prefix',
-      '--override-channels', '--channel', 'conda-forge',
+      '--override-channels', '--channel', 'https://conda.anaconda.org/conda-forge',
       'numpy', 'pandas',
     ])
+  })
+
+  it('never merges more than the one requested channel URL into the argv', () => {
+    const argv = installArgv('/opt/micromamba', '/opt/prefix', ['numpy'], 'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge')
+    expect(argv.filter(token => token === '--channel')).toHaveLength(1)
   })
 })
 

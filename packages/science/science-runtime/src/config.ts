@@ -111,9 +111,29 @@ export interface Config {
    * install packages, and `installPackages` rejects with
    * `INSTALLER_NOT_CONFIGURED` rather than silently degrading to an
    * in-kernel `pip install`/`install.packages()`. Never used for anything
-   * else — binding and running an environment need no installer.
+   * else — binding and running an environment need no installer. Must be
+   * configured together with {@link Config.installChannels}: setting one
+   * without the other fails config resolution.
    */
   readonly micromambaPath?: string
+  /**
+   * Ordered, non-empty list of `https://` conda channel URLs `installPackages`
+   * tries in turn, each as one complete, independent `micromamba install`
+   * attempt (never merged into one `--channel` list, which would let a
+   * single solve pull packages from different mirrors into one inconsistent
+   * install) — the same whole-attempt-fallback shape
+   * `apps/desktop/src/environment-declaration.ts`'s `EnvironmentSource.channels`
+   * uses for provisioning, so a deployment that provisioned through a
+   * mirror can also install through it. Only a `'failed'` attempt tries the
+   * next URL; `'cancelled'`/`'timed-out'` stop immediately, since every
+   * attempt shares the same operation deadline and cancellation signal.
+   * Validated identically to the desktop's own channel URLs: `https://`
+   * only, every later character drawn from a fixed allowlist (letters,
+   * digits, and `._~/-`) that admits no whitespace, control character, or
+   * shell metacharacter, since the value reaches `micromamba` argv
+   * unescaped. Must be configured together with {@link Config.micromambaPath}.
+   */
+  readonly installChannels?: string[]
   /**
    * Map of profile identifiers to existing language prefixes. An empty map
    * is a valid explicit unconfigured state — for example a deployment that
@@ -184,10 +204,51 @@ export interface ConfiguredProfile {
 
 const PROFILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u
 
+/** Fixed maximum accepted `installChannels` entries — a safety backstop on the whole-attempt retry loop, not a deployment tunable. */
+export const MAX_INSTALL_CHANNELS = 16
+
+/**
+ * A conda channel URL that reaches `micromamba` argv unescaped: `https://`
+ * only, and every character after the scheme drawn from a fixed allowlist
+ * (letters, digits, and `._~/-`) that admits no whitespace, control
+ * character, or shell metacharacter (`;&|$()<>\`'"\\`) — this is a parser
+ * boundary the value crosses on the way to a child process argv, so it is
+ * validated by allowlist rather than by excluding known-bad characters.
+ * Identical to `apps/desktop/src/environment-declaration.ts`'s own
+ * `CHANNEL_URL`, duplicated here rather than imported since this package
+ * never depends on `apps/desktop`.
+ */
+const CHANNEL_URL = /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9._~/-]*[A-Za-z0-9])?$/u
+
+/**
+ * Validate one ordered list of `https://` conda channel URLs. The caller
+ * (`resolveConfig`) already treats an omitted or empty `installChannels` as
+ * the unconfigured state before calling this, so this only re-validates the
+ * array's own element type against untyped `cordis.yml`/JS input — a
+ * non-empty precondition, not re-checked here.
+ * @param channels - the configured `installChannels` value, already known non-empty.
+ * @returns the validated, order-preserved channel list.
+ */
+function parseInstallChannels(channels: unknown): readonly string[] {
+  if (!Array.isArray(channels)) {
+    throw new Error('science-runtime: installChannels must be an array of strings when configured')
+  }
+  if (channels.length > MAX_INSTALL_CHANNELS) {
+    throw new Error(`science-runtime: installChannels accepts at most ${String(MAX_INSTALL_CHANNELS)} entries`)
+  }
+  for (const url of channels) {
+    if (typeof url !== 'string' || !CHANNEL_URL.test(url)) {
+      throw new Error(`science-runtime: installChannels entry ${JSON.stringify(url)} is not a valid https channel URL`)
+    }
+  }
+  return channels as readonly string[]
+}
+
 /** Loader schema. {@link resolveConfig} validates closed-object rules. */
 export const configSchema: z<Config> = z.object({
   dshHome: z.string(),
   micromambaPath: z.string(),
+  installChannels: z.array(z.string()).required(false),
   profiles: z.dict(z.object({
     pythonPrefix: z.string(),
     rPrefix: z.string(),
@@ -235,6 +296,8 @@ export interface ResolvedConfig {
   readonly dshHome: string | undefined
   /** Absolute micromamba executable path, when configured; `undefined` means this deployment cannot install packages. */
   readonly micromambaPath: string | undefined
+  /** Ordered, validated install-channel URLs; defined iff {@link ResolvedConfig.micromambaPath} is. */
+  readonly installChannels: readonly string[] | undefined
   /** Allowlisted profiles; an empty map is a valid explicit unconfigured state. */
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
@@ -334,7 +397,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   assertKnownKeys(
     config,
     [
-      'dshHome', 'micromambaPath', 'profiles', 'timeoutMs',
+      'dshHome', 'micromambaPath', 'installChannels', 'profiles', 'timeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'rasterCapture',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
@@ -349,6 +412,18 @@ export function resolveConfig(config: Config): ResolvedConfig {
   }
   if (config.micromambaPath !== undefined && (typeof config.micromambaPath !== 'string' || !isAbsolute(config.micromambaPath))) {
     throw new Error('science-runtime: micromambaPath must be an absolute path when configured')
+  }
+  // schemastery normalizes an omitted `z.array(...).required(false)` field to
+  // `[]`, not `undefined` (matching `dsh-terminal-bash`'s own `shellArgs`
+  // precedent), so an empty array reaching here is the unconfigured state,
+  // not a user-declared empty channel list — `parseInstallChannels` itself
+  // still rejects `[]` for a caller that constructs `ResolvedConfig` by
+  // calling `resolveConfig` directly with an explicit empty array.
+  const installChannels = config.installChannels === undefined || config.installChannels.length === 0
+    ? undefined
+    : parseInstallChannels(config.installChannels)
+  if ((config.micromambaPath === undefined) !== (installChannels === undefined)) {
+    throw new Error('science-runtime: micromambaPath and installChannels must be configured together, or neither')
   }
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
@@ -426,6 +501,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
+    installChannels,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
     packagesMaxEntries,

@@ -14,7 +14,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
-import { MIN_PACKAGES_MAX_BYTES, resolveConfig } from '../src/config.ts'
+import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig } from '../src/config.ts'
 import { observeProfile, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
@@ -1397,14 +1397,63 @@ describe('Science Runtime configuration', () => {
   it('requires micromambaPath to be an absolute string when configured, undefined otherwise', () => {
     expect(resolveConfig({ profiles: {} }).micromambaPath).toBeUndefined()
     expect(() => resolveConfig({
-      profiles: {}, micromambaPath: 'relative/micromamba',
+      profiles: {}, micromambaPath: 'relative/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
     })).toThrow(/micromambaPath/)
     expect(() => resolveConfig({
-      profiles: {}, micromambaPath: 1 as never,
+      profiles: {}, micromambaPath: 1 as never, installChannels: ['https://conda.anaconda.org/conda-forge'],
     })).toThrow(/micromambaPath/)
     expect(resolveConfig({
-      profiles: {}, micromambaPath: '/opt/dsh/micromamba',
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
     }).micromambaPath).toBe('/opt/dsh/micromamba')
+  })
+
+  it('requires installChannels and micromambaPath to be configured together, or neither', () => {
+    expect(resolveConfig({ profiles: {} }).installChannels).toBeUndefined()
+    // schemastery normalizes an omitted `installChannels` to `[]`, which
+    // must read as unconfigured, not as a declared-empty channel list.
+    expect(resolveConfig({ profiles: {}, installChannels: [] }).installChannels).toBeUndefined()
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba',
+    })).toThrow(/must be configured together/)
+    expect(() => resolveConfig({
+      profiles: {}, installChannels: ['https://conda.anaconda.org/conda-forge'],
+    })).toThrow(/must be configured together/)
+    expect(resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
+    }).installChannels).toEqual(['https://conda.anaconda.org/conda-forge'])
+  })
+
+  it('rejects a non-array installChannels value reaching resolveConfig directly (bypassing the schema)', () => {
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: 'not-an-array' as never,
+    })).toThrow(/must be an array of strings/)
+  })
+
+  it('validates each installChannels entry as an https-only URL drawn from the fixed character allowlist', () => {
+    const withChannels = (installChannels: string[]): unknown => ({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels,
+    })
+    expect(() => resolveConfig(withChannels(['http://conda.anaconda.org/conda-forge']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda forge']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda-forge;rm -rf /']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda-forge`id`']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels([1 as never]))).toThrow(/not a valid https channel URL/)
+    expect(resolveConfig(withChannels([
+      'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge',
+      'https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge',
+      'https://conda.anaconda.org/conda-forge',
+    ])).installChannels).toEqual([
+      'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge',
+      'https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge',
+      'https://conda.anaconda.org/conda-forge',
+    ])
+  })
+
+  it('rejects more than the fixed maximum installChannels entries', () => {
+    const channels = Array.from({ length: MAX_INSTALL_CHANNELS + 1 }, (_v, i) => `https://mirror-${String(i)}.example.com/conda-forge`)
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: channels,
+    })).toThrow(/at most/)
   })
 
   it('validates the package-inventory entry and byte bounds, defaulting when omitted', () => {
@@ -1555,7 +1604,13 @@ describe('ScienceRuntime.installPackages', () => {
     return executable
   }
 
-  async function boundHarness(id: string, utf8Probe: 'valid' | 'invalid' = 'valid'): Promise<{
+  const DEFAULT_INSTALL_CHANNELS = ['https://conda.anaconda.org/conda-forge']
+
+  async function boundHarness(
+    id: string,
+    utf8Probe: 'valid' | 'invalid' = 'valid',
+    installChannels: string[] = DEFAULT_INSTALL_CHANNELS,
+  ): Promise<{
     readonly runtime: ScienceRuntime
     readonly session: ReturnType<typeof createScienceSession>
     readonly subprocess: ControlledSubprocess
@@ -1566,7 +1621,9 @@ describe('ScienceRuntime.installPackages', () => {
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
     const micromambaPath = makeMicromamba(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels },
+    )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, id)
     harness.subprocess.utf8Probe = utf8Probe
@@ -1574,6 +1631,11 @@ describe('ScienceRuntime.installPackages', () => {
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })
     return { runtime: harness.runtime, session, subprocess: harness.subprocess, micromambaPath, root }
+  }
+
+  /** Every install-attempt spawn (never a version/package-inventory/UTF-8 probe) in issue order. */
+  function installAttempts(subprocess: ControlledSubprocess): SubprocessSpawnSpec[] {
+    return subprocess.specs.filter(spec => spec.argv.includes('install') && spec.argv.includes('--override-channels'))
   }
 
   it('rejects with INSTALLER_NOT_CONFIGURED when no micromambaPath is configured', async () => {
@@ -1603,7 +1665,9 @@ describe('ScienceRuntime.installPackages', () => {
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
     const micromambaPath = makeMicromamba(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'install-no-environment')
     await expect(harness.runtime.installPackages({
@@ -1631,6 +1695,7 @@ describe('ScienceRuntime.installPackages', () => {
     const prefix = createFakePythonPrefix(root)
     const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, {
       micromambaPath: join(root, 'missing-micromamba'),
+      installChannels: DEFAULT_INSTALL_CHANNELS,
     })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'install-missing-micromamba')
@@ -1710,7 +1775,9 @@ describe('ScienceRuntime.installPackages', () => {
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
     const micromambaPath = makeMicromamba(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath })
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'install-cleanup-failure')
     await harness.runtime.bindEnvironment({
@@ -1732,7 +1799,9 @@ describe('ScienceRuntime.installPackages', () => {
     roots.push(root)
     const rPrefix = createFakeRPrefix(root)
     const micromambaPath = makeMicromamba(root)
-    const harness = await createControlledRuntimeHarness(root, { fake: { rPrefix } }, 10_000, undefined, { micromambaPath })
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { rPrefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'install-r-only')
     await harness.runtime.bindEnvironment({
@@ -1755,5 +1824,68 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.status).toBe('success')
     expect(result.environment?.status).toBe('invalid')
     expect(result.environment?.failureReason).toBeDefined()
+  })
+
+  describe('channel fallback', () => {
+    const TUNA = 'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge'
+    const OFFICIAL = 'https://conda.anaconda.org/conda-forge'
+
+    it('tries the next configured channel only after a failed attempt, appending a fresh revision from the succeeding one', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-success', 'valid', [TUNA, OFFICIAL])
+      const failing = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
+      failing.complete({ exitCode: 1, signal: null })
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('success')
+      const attempts = installAttempts(subprocess)
+      expect(attempts).toHaveLength(2)
+      expect(attempts[0]?.argv).toContain(TUNA)
+      expect(attempts[1]?.argv).toContain(OFFICIAL)
+      // Every attempt argv names exactly the one channel it searched, never both.
+      for (const attempt of attempts) expect(attempt.argv.filter(token => token === '--channel')).toHaveLength(1)
+    })
+
+    it('reports failure only after every configured channel has failed', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-exhausted', 'valid', [TUNA, OFFICIAL])
+      for (const stderr of ['first mirror unreachable\n', 'second mirror unreachable\n']) {
+        const failing = subprocess.queueRun('immediate', { stdout: '', stderr })
+        failing.complete({ exitCode: 1, signal: null })
+      }
+      const before = replayScience(session.events)?.environment
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('failed')
+      expect(result.stderr.text).toBe('second mirror unreachable\n')
+      expect(installAttempts(subprocess)).toHaveLength(2)
+      const after = replayScience(session.events)?.environment
+      expect(after?.revision).toBe(before?.revision)
+    })
+
+    it('does not try a further channel once the caller cancels an in-flight attempt', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-cancelled', 'valid', [TUNA, OFFICIAL])
+      const pendingRun = subprocess.queueRun('deferred')
+      const controller = new AbortController()
+      // Abort exactly once the first channel attempt's own subprocess spawn
+      // is in flight: an earlier abort would be caught by installPackages'
+      // pre-publication checks and reject outright (matching startRun's own
+      // pre-publication rejections) rather than settle a 'cancelled' outcome
+      // from inside the install attempt itself.
+      subprocess.onSpawn = (spec) => {
+        if (spec.argv.includes('--override-channels')) controller.abort()
+      }
+      const pending = runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: controller.signal,
+      })
+      // Mirrors runMicromambaInstall's own cancellation test: a real
+      // subprocess provider reacts to the fused signal by terminating the
+      // tree, which this fake requires driven explicitly.
+      pendingRun.complete({ exitCode: null, signal: 'SIGTERM' })
+      pendingRun.proveQuiescence()
+      const result = await pending
+      expect(result.status).toBe('cancelled')
+      expect(installAttempts(subprocess)).toHaveLength(1)
+    })
   })
 })

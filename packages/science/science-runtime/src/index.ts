@@ -52,6 +52,7 @@ import {
   runMicromambaInstall,
   staticMicromamba,
 } from './install.ts'
+import type { InstallOutcome } from './install.ts'
 import { KERNEL_ASSETS_ROOT } from './kernel-assets.ts'
 import { KernelExitedError, KernelProtocolError } from './kernel-process.ts'
 import type { KernelDoneFrame, KernelExecuteRequest, KernelProcess } from './kernel-process.ts'
@@ -318,8 +319,14 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly timeoutMs: number
   /** Explicit or shared-resolver Harness home input. */
   private readonly dshHome: string | undefined
-  /** Configured micromamba executable path; `undefined` means this deployment cannot install packages. */
-  private readonly micromambaPath: string | undefined
+  /**
+   * Combined installer identity, narrowing `ResolvedConfig`'s two
+   * independently-optional `micromambaPath`/`installChannels` fields into
+   * one typed invariant: `undefined` means this deployment cannot install
+   * packages; defined always carries both, since `resolveConfig` rejects a
+   * deployment that sets one without the other.
+   */
+  private readonly installer: { readonly micromambaPath: string; readonly channels: readonly string[] } | undefined
   /** Configured package-inventory entry bound. */
   private readonly packagesMaxEntries: number
   /** Configured package-inventory byte bound. */
@@ -363,7 +370,18 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.cordisConfig = config
     this.timeoutMs = resolved.timeoutMs
     this.dshHome = resolved.dshHome
-    this.micromambaPath = resolved.micromambaPath
+    if (resolved.micromambaPath === undefined) {
+      this.installer = undefined
+    } else {
+      // resolveConfig's own cross-field check already proved installChannels
+      // is defined whenever micromambaPath is; this is not a second policy
+      // decision, only narrowing that proof into one typed field.
+      /* v8 ignore next 3 */
+      if (resolved.installChannels === undefined) {
+        throw new Error('science-runtime: resolved micromambaPath with no resolved installChannels')
+      }
+      this.installer = { micromambaPath: resolved.micromambaPath, channels: resolved.installChannels }
+    }
     this.packagesMaxEntries = resolved.packagesMaxEntries
     this.packagesMaxBytes = resolved.packagesMaxBytes
     this.rasterCapture = resolved.rasterCapture
@@ -588,7 +606,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult> {
     this.assertSession(request.session)
     this.assertHostLocal()
-    if (this.micromambaPath === undefined) {
+    const installer = this.installer
+    if (installer === undefined) {
       throw new ScienceRuntimeError('INSTALLER_NOT_CONFIGURED', 'Science package installation requires a configured micromamba executable path')
     }
     assertValidPackageSpecs(request.packages)
@@ -608,66 +627,79 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const binding = selectBinding(environment, request.language)
       const profile = this.profile(String(environment.profileId))
-      const executable = await staticMicromamba(this.micromambaPath)
+      const executable = await staticMicromamba(installer.micromambaPath)
       this.assertPrepublication(request.session, lease.control)
-      const argv = installArgv(executable, binding.canonicalPrefix, request.packages)
-      const confined = confineInstallArgv(this.ctx.sandbox, request.session, binding.canonicalPrefix, argv)
-      const scratch = planInstallScratch(binding.canonicalPrefix)
-      await createInstallScratch(scratch)
-      try {
-        const env = installEnvironment(binding.canonicalPrefix, scratch)
-        const outcome = await runMicromambaInstall(this.ctx.subprocess, confined, env, scratch.directory, lease.control)
-        if (outcome.status !== 'success') {
-          return { status: outcome.status, stdout: outcome.stdout, stderr: outcome.stderr }
-        }
-        this.assertPrepublication(request.session, lease.control)
-        const sessionScratch = await planSessionScratch(this.dshHome, request.session)
-        const observed = await observeProfile({
-          subprocess: this.ctx.subprocess,
-          sandbox: this.ctx.sandbox,
-          sessionScratch,
-          sessionId: request.session.id,
-          signal: lease.control.signal,
-          packagesMaxEntries: this.packagesMaxEntries,
-          packagesMaxBytes: this.packagesMaxBytes,
-        }, profile)
-        this.assertPrepublication(request.session, lease.control)
-        const current = this.assertSession(request.session).environment
-        // Unreachable: the durable Science fold only ever appends an
-        // environment revision, never clears one, so a session already
-        // holding an applied revision above can never replay back to
-        // `environment === null`. Narrows the type the projection's `.environment`
-        // field carries rather than asserting past a real defensive gap.
-        /* v8 ignore next 3 */
-        if (current === null) {
-          throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
-        }
-        const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
-        const failures = bindings.filter(candidate => candidate.capability !== 'available')
-        const now = Date.now()
-        const fresh: ScienceEnvironmentBinding = {
-          revision: current.revision + 1,
-          profileId: current.profileId,
-          configuredAt: now,
-          validatedAt: now,
-          status: failures.length === 0 ? 'applied' : 'invalid',
-          ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-          ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-          ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
-        }
-        this.assertPrepublication(request.session, lease.control)
-        request.session.append('science/environment-bound', { version: 1, environment: fresh })
-        return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
-      } finally {
-        // Low-stakes cleanup of a throwaway scratch subdirectory under the
-        // prefix, unlike Session-scratch rollback above: never worth masking
-        // the install's own outcome, so a failure here only logs.
+      // Whole-attempt channel fallback, mirroring the desktop provisioning's
+      // own retry shape: each configured channel URL runs as one complete,
+      // independent micromamba invocation (installArgv never receives more
+      // than one), and only a 'failed' outcome tries the next URL — a
+      // 'cancelled'/'timed-out' outcome shares this call's OperationControl
+      // across every attempt, so retrying would immediately observe the same
+      // abort. See the channel-fallback Agent Note.
+      let outcome: InstallOutcome | undefined
+      for (const [index, channelUrl] of installer.channels.entries()) {
+        const argv = installArgv(executable, binding.canonicalPrefix, request.packages, channelUrl)
+        const confined = confineInstallArgv(this.ctx.sandbox, request.session, binding.canonicalPrefix, argv)
+        const scratch = planInstallScratch(binding.canonicalPrefix)
+        await createInstallScratch(scratch)
         try {
-          await removeInstallScratch(scratch)
-        } catch (cleanupError) {
-          this.ctx.logger.warn(`science-runtime: package-install scratch cleanup failed: ${String(cleanupError)}`)
+          const env = installEnvironment(binding.canonicalPrefix, scratch)
+          outcome = await runMicromambaInstall(this.ctx.subprocess, confined, env, scratch.directory, lease.control)
+        } finally {
+          // Low-stakes cleanup of a throwaway scratch subdirectory under the
+          // prefix, unlike Session-scratch rollback below: never worth masking
+          // the install's own outcome, so a failure here only logs.
+          try {
+            await removeInstallScratch(scratch)
+          } catch (cleanupError) {
+            this.ctx.logger.warn(`science-runtime: package-install scratch cleanup failed: ${String(cleanupError)}`)
+          }
         }
+        if (outcome.status !== 'failed' || index === installer.channels.length - 1) break
       }
+      /* v8 ignore next -- installChannels is validated non-empty at config resolution, so the loop always assigns outcome once */
+      if (outcome === undefined) throw new Error('science-runtime: package install ran no channel attempt')
+      if (outcome.status !== 'success') {
+        return { status: outcome.status, stdout: outcome.stdout, stderr: outcome.stderr }
+      }
+      this.assertPrepublication(request.session, lease.control)
+      const sessionScratch = await planSessionScratch(this.dshHome, request.session)
+      const observed = await observeProfile({
+        subprocess: this.ctx.subprocess,
+        sandbox: this.ctx.sandbox,
+        sessionScratch,
+        sessionId: request.session.id,
+        signal: lease.control.signal,
+        packagesMaxEntries: this.packagesMaxEntries,
+        packagesMaxBytes: this.packagesMaxBytes,
+      }, profile)
+      this.assertPrepublication(request.session, lease.control)
+      const current = this.assertSession(request.session).environment
+      // Unreachable: the durable Science fold only ever appends an
+      // environment revision, never clears one, so a session already
+      // holding an applied revision above can never replay back to
+      // `environment === null`. Narrows the type the projection's `.environment`
+      // field carries rather than asserting past a real defensive gap.
+      /* v8 ignore next 3 */
+      if (current === null) {
+        throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
+      }
+      const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
+      const failures = bindings.filter(candidate => candidate.capability !== 'available')
+      const now = Date.now()
+      const fresh: ScienceEnvironmentBinding = {
+        revision: current.revision + 1,
+        profileId: current.profileId,
+        configuredAt: now,
+        validatedAt: now,
+        status: failures.length === 0 ? 'applied' : 'invalid',
+        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
+        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
+        ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
+      }
+      this.assertPrepublication(request.session, lease.control)
+      request.session.append('science/environment-bound', { version: 1, environment: fresh })
+      return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {

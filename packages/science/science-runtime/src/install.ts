@@ -102,20 +102,25 @@ export async function staticMicromamba(configuredPath: string): Promise<string> 
 
 /**
  * Direct, unconfined argv for one non-interactive micromamba install into an
- * existing prefix: pinned to conda-forge (the deciding factor for R, whose
- * CRAN source builds need a toolchain most researchers do not have), and
- * `--no-rc` so no ambient `.condarc` (user, system, or otherwise) can widen
- * or narrow channel selection out from under this fixed policy.
+ * existing prefix: pinned to exactly the one configured `channelUrl` for
+ * this attempt (`--override-channels` excludes every other channel, so
+ * `.condarc`, an ambient default, or any other configured channel URL from
+ * this deployment's own `installChannels` list can never widen the solve
+ * this attempt performs), and `--no-rc` so no ambient `.condarc` (user,
+ * system, or otherwise) can widen or narrow channel selection either. A
+ * conda-forge-family channel is the deciding factor for R, whose CRAN
+ * source builds need a toolchain most researchers do not have.
  * @param executable - canonical micromamba executable.
  * @param canonicalPrefix - canonicalized target Conda prefix.
  * @param packages - validated package specs.
+ * @param channelUrl - the exact configured channel URL this attempt searches.
  * @returns the complete direct argv, unconfined.
  */
-export function installArgv(executable: string, canonicalPrefix: string, packages: readonly string[]): string[] {
+export function installArgv(executable: string, canonicalPrefix: string, packages: readonly string[], channelUrl: string): string[] {
   return [
     executable, 'install', '--yes', '--no-rc',
     '--prefix', canonicalPrefix,
-    '--override-channels', '--channel', 'conda-forge',
+    '--override-channels', '--channel', channelUrl,
     ...packages,
   ]
 }

@@ -1321,6 +1321,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The accepted durable environment revision.',
       },
       {
+        signature: 'async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>',
+        description: 'Install packages into one language\'s applied prefix through micromamba, then, only on a successful install, re-observe the whole profile and append a fresh whole-value `science/environment-bound` revision — exactly the operation `bindEnvironment`\'s own post-first-run guard refuses. A live kernel serving the superseded revision is left running: the next `startRun` for either language finds the revision mismatch and ends it (`environment-rebound`) before starting a fresh one, the same path an out-of-band rebind already takes (`kernel-set.ts`).',
+        parameters: [{ name: 'request', description: 'Exact live Session, target language, package specs, and cancellation.' }],
+        returns: 'The install\'s terminal classification, output tails, and — on success — the fresh environment revision.',
+      },
+      {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
         description: 'Resolve and materialize exact artifact inputs, acquire this run\'s persistent kernel, publish its run start, then settle exactly one matching terminal fact and baseline-attributed capture walk.',
         parameters: [{ name: 'request', description: 'Exact live Session, source, authorization facts, optional artifact inputs and edit baselines, and cancellation.' }],
@@ -3747,6 +3753,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesRequest',
+    declaration: 'export interface InstallScienceEnvironmentPackagesRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly packages: readonly string[];\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesResult',
+    declaration: 'export interface InstallScienceEnvironmentPackagesResult {\n    readonly status: InstallScienceEnvironmentPackagesStatus;\n    readonly environment?: ScienceEnvironmentBinding;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesStatus',
+    declaration: 'export type InstallScienceEnvironmentPackagesStatus = \'success\' | \'failed\' | \'timed-out\' | \'cancelled\';',
   },
   {
     name: 'InvariantFailure',

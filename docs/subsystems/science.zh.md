@@ -209,6 +209,20 @@ Folded local Science Runtime provider with public types free of Host paths.
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
 
 /**
+ * Install packages into one language's applied prefix through micromamba,
+ * then, only on a successful install, re-observe the whole profile and
+ * append a fresh whole-value `science/environment-bound` revision —
+ * exactly the operation `bindEnvironment`'s own post-first-run guard
+ * refuses. A live kernel serving the superseded revision is left running:
+ * the next `startRun` for either language finds the revision mismatch and
+ * ends it (`environment-rebound`) before starting a fresh one, the same
+ * path an out-of-band rebind already takes (`kernel-set.ts`).
+ * @param request - Exact live Session, target language, package specs, and cancellation.
+ * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+ */
+async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>
+
+/**
  * Resolve and materialize exact artifact inputs, acquire this run's
  * persistent kernel, publish its run start, then settle exactly one
  * matching terminal fact and baseline-attributed capture walk.

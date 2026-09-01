@@ -28,6 +28,12 @@ carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，�
 
 Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTERM`，使 Host 得以 dispose（资源释放）Cordis 及其子进程树，随后在限定宽限期后升级为 `SIGKILL`。一个同级的纯 Node 看门狗进程观察 Electron，并在 Electron 被强制终止时停止该 Host 进程组。
 
+## Host 端口
+
+Host 会在它上一次成功绑定的端口上启动——该端口记录在 `<dshHome>/host-port.json`（`src/host-port.ts`）——而不是每次都请求一个全新的 OS 分配端口。浏览器端状态以 origin 为 key，而 OS 分配端口每次启动都会改变 origin，因而会悄悄丢弃客户端此前写入 `localStorage` 的所有内容。目前受影响的包括:侧边栏 details panel 的宽度、当前 session 选中项、trajectory-duration 偏好、workspace browser 的分组/排序/展开状态、per-session 的 chat draft 与 view 选择,以及 Science artifact viewer 的已打开标签页与 library 状态(`packages/client/*/src/**/stores.ts` 中任何通过 `defineStore`/`createSnapshotStore` 选择 `persist` 的 store);sidebar 自身宽度在上游被特意排除在持久化之外,不受此影响。跨普通启动保持 origin 稳定,就能保住上述全部状态。把这部分状态从 `localStorage` 迁移到 settings service 才是真正的长期方案——那样连 fallback 也能保住状态——但它跨越多个 client package,不在本次范围内。
+
+Host 在上报 bind 失败时,不会给这个 carrier 留下任何可与其他启动失败区分开的信号:端口被占用和一个无关的启动错误,表现完全一样——都是子进程在打印 readiness line 之前就退出了。因此 `src/host-launch.ts` 的 `launchHostOnRememberedPort` 不去诊断失败原因——在记忆端口上启动失败(可能是另一个进程占用了它,也可能是已有一个 PaperMachine 实例在运行)会被重试一次,改用 OS 分配端口(`0`);之后被记住的是 Host 实际上报的端口,而不是当初请求的那个。`host-port.json` 缺失、不可读或损坏,会以同样的方式退化为 OS 分配端口,而不会阻塞或使启动失败。剩下的情形——偶尔一次 fallback 启动——仍会在那一次 session 中丢失上述状态;这只是把丢失范围从"每次启动"收窄到"例外情况",而不是彻底消除。
+
 ## Onboarding 与 environment binding
 
 启动时的路由完全依据 `<dshHome>/environment-binding.json`（`src/environment-binding.ts`）：文件不存在是普通的首次运行，会打开 onboarding。文件解析失败、所命名的 prefix 已不存在，或所命名的 prefix 位于本应用自己的 provisioned environments root（`<dshHome>/desktop-environments/environments/`）之外，同样会路由到 onboarding 并带上醒目的状态提示——最后一种情况覆盖了本应用完全拥有自己环境之前写入的 binding，或任何其他外部 conda-family 安装，绝不会被悄悄保留。binding 有效则直接打开 workspace。下文“环境声明”中描述的学科包 `applied.json` pointer 在这条路由中不起任何作用。

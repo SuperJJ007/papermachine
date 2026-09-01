@@ -13,6 +13,7 @@ import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
+import { launchHostOnRememberedPort } from './host-launch.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
 import { buildCustomDeclaration, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
@@ -159,7 +160,7 @@ async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding)
   return overlay
 }
 
-function hostCommand(dshHome: string, overlay: string): HostCommand {
+function hostCommand(dshHome: string, overlay: string, port: number): HostCommand {
   const packagedHost = join(process.resourcesPath, 'host')
   return {
     executable: process.execPath,
@@ -169,7 +170,7 @@ function hostCommand(dshHome: string, overlay: string): HostCommand {
         : ['--import', 'tsx/esm', join(REPOSITORY_ROOT, 'apps/cli/src/bin.ts')]),
       '--profile', 'web',
       '--patch', overlay,
-      '--port', '0',
+      '--port', String(port),
       '--trusted-host', '127.0.0.1',
       '--no-open',
     ],
@@ -327,7 +328,10 @@ async function launchHost(): Promise<void> {
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
   const overlay = await writeRuntimeOverlay(dshHome, status.binding)
-  const url = await hostLifecycle.launch(hostCommand(dshHome, overlay), onUnexpectedHostExit)
+  const url = await launchHostOnRememberedPort(
+    dshHome,
+    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port), onUnexpectedHostExit),
+  )
   activeOrigin = url.origin
   await window?.loadURL(url.href)
 }

@@ -1,6 +1,6 @@
 # Agent Note: Science artifact identity belongs to the producing session
 
-Status: proposed
+Status: rejected — superseded by the artifact-store authority-rule redesign, which restores cross-session continuation under a store-enforced unique logical name instead of scoping identity to the producing session
 
 English | [中文](2026-08-30-science-artifact-identity-per-session.zh.md)
 

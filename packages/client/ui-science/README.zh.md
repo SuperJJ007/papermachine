@@ -85,6 +85,7 @@ viewer 以 id `science`、`primary: true` 注册进 `conversation.details.view`�
 - **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。空输入框分两行显示备注提示与隐私说明。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **成果库主页** — 一级「成果」页通过 `sessions.scienceLibrary` 提供 Session 所属 project 内每个 logical artifact 的一张最新版本卡片，并提供搜索、排序和网格／列表控制。一级「项目文件」页通过 `sessions.workspaceFiles` 提供可搜索的单层目录浏览；file tab 通过 `sessions.workspaceFile` 读取至多 2 MiB，并把支持的媒体类型交给现有内容 renderer。主页内部不再有额外的分区开关。选中的页面每次显示时刷新，当前 Session 的 artifact 投影变化时也会刷新。
+- **对账条幅** — 当 `scienceLibrary` 的 `health.reconstructed` 或 `health.missingContent` 非零时，「成果」页显示一条非模态条幅（`ReconcileBanner`，`ScienceDetailsView.tsx`），标出各自的计数，并可展开受影响成果的清单（取自每条成果自己的 `latest.health` 标记——仅当其确切的 latest 版本恰是受影响版本之一；`health` 计入但并非该成果 `latest` 行的、较旧的受影响版本不会单独列出）。`health.orphan` 无论在条幅还是逐项标记里都从不提及：孤儿版本是 `dsh-science-artifact-store` 文档已接受的正常崩溃窗口结果，不值得当作警告呈现。`latest.health.missingContent` 已置位的库内打开标签页，会以明确的"内容已丢失"文案取代其内容，工具栏禁用下载（图片版本还会隐藏放大），而不是尝试一次注定失败的加载——这种处理只覆盖 `scienceLibrary` 响应标记的那个确切最新版本；版本步进器还够不到等价处理（更旧的版本完全没有逐项健康标记）。
 
 无论自身 `science` 投影处于什么状态，viewer 对任何当前会话都渲染产物库：Science 模式尚未绑定的会话（`science === null`——空白会话，或还没出现第一条 `science/mode-bound` 事件的会话）渲染的库主页，与一个已绑定但没有产物的会话完全一样，背后用一个惰性占位投影（`EMPTY_SCIENCE_PROJECTION`，`ScienceDetailsView.tsx`）支撑——库本身经 `sessions.scienceLibrary` 加载，这是一条项目级 RPC，与任何单一会话的投影无关，因此不需要真正绑定就能显示。缺失投影支持（`science === undefined`——本次部署压根没有组合 Science 会话投影）、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，仍各自渲染不同文案。
 

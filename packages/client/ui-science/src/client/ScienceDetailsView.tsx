@@ -32,7 +32,7 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { shallowEqual } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ISession, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { RpcError } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RpcError, RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -49,7 +49,7 @@ import { scienceArtifactDisplayTitleOrSelf } from './artifact-display-title.ts'
 import { foldIntermediateVersions } from './intermediate-versions.ts'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
-import type { ScienceLibraryArtifact } from './library-artifact.ts'
+import type { ScienceLibraryArtifact, ScienceLibraryHealth } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
 import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
@@ -62,8 +62,18 @@ export interface ScienceDetailsInjected {
   loadImage: ScienceImageLoader
   /** Session-scoped text artifact loader (science-attachment-loader.ts). */
   loadText: TextLoader
-  /** Read the project-level latest-artifact library. */
-  loadLibrary: ISession['readScienceLibrary']
+  /**
+   * Read the project-level latest-artifact library, plus store↔session
+   * reconciliation health. `health` is declared optional here rather than
+   * inherited verbatim from `ISession['readScienceLibrary']`: that
+   * injected-runtime type has not yet widened to name it (`dsh-client-runtime`
+   * is a different package's territory), but the real Host always includes
+   * it — `ISession['readScienceLibrary']`'s narrower return is structurally
+   * assignable to this wider local one, so nothing here narrows what the wire
+   * actually sends; a build wired against the not-yet-widened runtime type
+   * simply reads `health` as possibly `undefined` until that type catches up.
+   */
+  loadLibrary: () => Promise<RpcResult<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health?: ScienceLibraryHealth }>>
   /** List one project workspace directory. */
   loadWorkspaceFiles: ISession['readWorkspaceFiles']
   /** Read one project workspace file. */
@@ -181,7 +191,10 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   )
 }
 
-function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t }: {
+function ArtifactToolbar({
+  chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t,
+  contentUnavailable = false,
+}: {
   chart: ScienceClientArtifactVersion
   versions: readonly ScienceClientArtifactVersion[]
   onBack: () => void
@@ -192,6 +205,8 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   loadImage: ScienceImageLoader
   loadText: TextLoader
   t: TranslateNS<'science'>
+  /** T3 reconciliation: this version's blob is missing from the store — download and maximize are unavailable, not silently broken. */
+  contentUnavailable?: boolean
 }) {
   // C2: same-turn intermediate drafts (a self-check re-render the model made
   // within one turn before curating a title) collapse out of the stepper's
@@ -208,6 +223,7 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
   const next = index < walkable.length - 1 ? walkable[index + 1] : undefined
   const isImage = chart.mediaType === 'image/png'
   const exportUnavailableId = useId()
+  const downloadUnavailableId = useId()
 
   return (
     <div className={css.toolbar}>
@@ -240,12 +256,25 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
         <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
           <IconInspectOutline12 size={12} />
         </button>
-        <button
-          type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
-          onClick={() => { void downloadArtifact(chart, loadImage, loadText).catch(() => {}) }}
-        >
-          <IconDownloadOutline16 size={14} />
-        </button>
+        {contentUnavailable ? (
+          <Tooltip label={t('library.reconcile.downloadUnavailable')} side="bottom" delayMs={300}>
+            {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+            <button
+              type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
+              aria-disabled aria-describedby={downloadUnavailableId} data-unavailable
+            >
+              <IconDownloadOutline16 size={14} />
+            </button>
+          </Tooltip>
+        ) : (
+          <button
+            type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
+            onClick={() => { void downloadArtifact(chart, loadImage, loadText).catch(() => {}) }}
+          >
+            <IconDownloadOutline16 size={14} />
+          </button>
+        )}
+        {contentUnavailable && <span id={downloadUnavailableId} className={css.visuallyHidden}>{t('library.reconcile.downloadUnavailable')}</span>}
         <Tooltip label={t('toolbar.exportUnavailable')} side="bottom" delayMs={300}>
           {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
           <button
@@ -262,7 +291,7 @@ function ArtifactToolbar({ chart, versions, onBack, onStepVersion, onOpenProvena
         <span id={exportUnavailableId} className={css.visuallyHidden}>{t('toolbar.exportUnavailable')}</span>
         {/* Maximize opens the shared image lightbox; a text attachment has no
             raster to maximize, so this control is image-only. */}
-        {isImage && (
+        {isImage && !contentUnavailable && (
           <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
             <IconFullscreenOutline16 size={14} />
           </button>
@@ -289,6 +318,49 @@ interface WorkspaceEntry {
   mediaType?: string
 }
 
+/**
+ * Non-modal T3 reconciliation notice for the Files panel's artifacts page.
+ * Shows only when `reconstructed` or `missingContent` is non-zero — `orphan`
+ * is a documented, accepted crash-window outcome and is never surfaced here
+ * (see the `dsh-science-artifact-store` README's Reconciliation section).
+ * The expandable list only names artifacts whose CURRENT latest version
+ * carries a `health` mark; an older, non-latest affected version counted in
+ * `health` is not individually listed (it is not otherwise visible in this
+ * panel either).
+ */
+function ReconcileBanner({ health, artifacts, t }: {
+  health: ScienceLibraryHealth
+  artifacts: readonly ScienceLibraryArtifact[]
+  t: TranslateNS<'science'>
+}) {
+  const [expanded, setExpanded] = useState(false)
+  if (health.reconstructed === 0 && health.missingContent === 0) return null
+  const affected = artifacts.filter(item => item.latest.health?.reconstructed === true || item.latest.health?.missingContent === true)
+  return (
+    <div className={css.reconcileBanner} role="status">
+      {health.reconstructed > 0 && <p className={css.notice}>{t('library.reconcile.reconstructed', { count: health.reconstructed })}</p>}
+      {health.missingContent > 0 && <p className={css.notice}>{t('library.reconcile.missingContent', { count: health.missingContent })}</p>}
+      {affected.length > 0 && (
+        <button type="button" className={css.reconcileBannerToggle} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
+          {expanded ? t('library.reconcile.collapse') : t('library.reconcile.expand')}
+        </button>
+      )}
+      {expanded && (
+        <ul className={css.reconcileBannerList}>
+          {affected.map(item => (
+            <li key={item.artifactId}>
+              <span>{item.title ?? item.logicalName}</span>
+              <span className={css.badge}>
+                {item.latest.health?.reconstructed === true ? t('library.reconcile.itemReconstructed') : t('library.reconcile.itemMissingContent')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 /** Project-level library home: latest artifacts plus bounded workspace browsing. */
 function ProjectLibrary({
   page, loadLibrary, loadWorkspaceFiles, loadImage, onOpenArtifact, onOpenFile, currentSessionId, collapsed, onToggleGroup, t,
@@ -308,6 +380,7 @@ function ProjectLibrary({
   const [sort, setSort] = useState<'newest' | 'oldest' | 'name'>('newest')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [artifacts, setArtifacts] = useState<ScienceLibraryArtifact[]>([])
+  const [health, setHealth] = useState<ScienceLibraryHealth>()
   const [path, setPath] = useState('')
   const [entries, setEntries] = useState<WorkspaceEntry[]>([])
   const [error, setError] = useState<string>()
@@ -318,7 +391,7 @@ function ProjectLibrary({
     setError(undefined)
     void loadLibrary().then((result) => {
       if (!live) return
-      if (result.ok) setArtifacts(result.value.artifacts)
+      if (result.ok) { setArtifacts(result.value.artifacts); setHealth(result.value.health) }
       else setError(libraryErrorText(result.error, t))
     })
     return () => { live = false }
@@ -376,6 +449,7 @@ function ProjectLibrary({
         <span>{page === 'artifacts' ? t('library.artifactCount', { count: visibleArtifacts.length }) : t('library.fileCount', { count: visibleEntries.length })}</span>
       </div>
       {error !== undefined && <p role="alert" className={css.notice}>{error}</p>}
+      {page === 'artifacts' && health !== undefined && <ReconcileBanner health={health} artifacts={artifacts} t={t} />}
       {page === 'artifacts' ? <>
         {visibleArtifacts.length === 0 && <p className={css.libraryEmpty} role="status">{t('details.artifacts.empty')}</p>}
         <div className={css.libraryGroups}>{groups.map(([sessionId, group]) => {
@@ -887,6 +961,11 @@ function ArtifactViewer({
   // stale tab, handled below as "artifact unavailable".
   const activeChart = tabArtifacts.find(candidate =>
     candidate.artifactId === activeTab.artifactId && candidate.version === activeTab.version)
+  // T3 reconciliation: only a library-opened tab (never a live in-session
+  // one) carries a `latest.health` mark at all — see `scienceLibrary`'s
+  // response shape (`dsh-host-apiproxy`).
+  const libraryContentUnavailable = activeChart !== undefined
+    && libraryTabs[activeChart.artifactId]?.latest.health?.missingContent === true
 
   return (
     <div className={css.body}>
@@ -916,8 +995,10 @@ function ArtifactViewer({
               onStepVersion={() => {}} onOpenProvenance={() => { actions.setView('provenance') }}
               onMaximize={() => { actions.setLightboxOpen(true) }}
               onCloseTab={() => { actions.closeTab(`artifact:${activeChart.artifactId}`) }}
-              loadImage={loadImage} loadText={loadText} t={t} />
-            <ReadOnlyPreview chart={activeChart} loadImage={loadImage} loadText={loadText} t={t} /></>
+              loadImage={loadImage} loadText={loadText} t={t} contentUnavailable={libraryContentUnavailable} />
+            {libraryContentUnavailable
+              ? <p className={css.notice} role="status">{t('library.reconcile.detailMissingContent')}</p>
+              : <ReadOnlyPreview chart={activeChart} loadImage={loadImage} loadText={loadText} t={t} />}</>
         ) : (
           <ArtifactTab
             science={science}

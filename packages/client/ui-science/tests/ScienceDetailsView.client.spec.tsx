@@ -781,6 +781,89 @@ describe('ScienceDetailsView: landing view (no open tabs)', () => {
 
 })
 
+describe('ScienceDetailsView: T3 store↔session reconciliation health', () => {
+  it('shows the non-modal banner and expandable per-artifact list for reconstructed/missing-content counts', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1',
+      artifacts: [
+        {
+          artifactId: 'reconstructed-chart', logicalName: 'reconstructed.png', title: 'Reconstructed chart',
+          originSessionId: 'session-a', originSessionTitle: 'Source experiment',
+          latest: {
+            versionId: 'reconstructed-version', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 10,
+            health: { reconstructed: true },
+          },
+        },
+        {
+          // No `title` — the banner list falls back to `logicalName`, distinct
+          // from the gallery card (whose own title fallback is covered
+          // elsewhere in this file).
+          artifactId: 'missing-chart', logicalName: 'missing.png',
+          originSessionId: 'session-a', originSessionTitle: 'Source experiment',
+          latest: {
+            versionId: 'missing-version', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 11,
+            health: { missingContent: true },
+          },
+        },
+      ],
+      // `orphan: 3` is a real, non-zero count in this same response — the
+      // banner still never mentions it (only reconstructed/missingContent do).
+      health: { orphan: 3, reconstructed: 1, missingContent: 1 },
+    } })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
+    expect(await screen.findByText('Records were repaired for 1 artifacts')).toBeTruthy()
+    expect(screen.getByText('Content is missing for 1 artifacts')).toBeTruthy()
+    expect(screen.queryByText(/orphan/i)).toBeNull()
+    expect(screen.queryByText('Record repaired')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'View affected artifacts' }))
+    // The badges are unique to the expandable list — each artifact's title
+    // also renders in its (already-visible) gallery card, so only these
+    // badges can prove the list itself rendered its per-artifact marks.
+    expect(screen.getByText('Record repaired')).toBeTruthy()
+    expect(screen.getByText('Content missing')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }))
+    expect(screen.queryByText('Record repaired')).toBeNull()
+  })
+
+  it('never shows the banner when only the orphan count is non-zero', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1', artifacts: [], health: { orphan: 2, reconstructed: 0, missingContent: 0 },
+    } })
+    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
+    await waitFor(() => { expect(loadLibrary).toHaveBeenCalled() })
+    expect(screen.queryByText(/repaired/)).toBeNull()
+    expect(screen.queryByText(/content is missing/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'View affected artifacts' })).toBeNull()
+  })
+
+  it('shows explicit missing-content text in the detail panel and disables download/maximize, without loading content', async () => {
+    const loadLibrary = vi.fn().mockResolvedValue({ ok: true, value: {
+      projectId: 'project-1',
+      artifacts: [{
+        artifactId: 'missing-chart', logicalName: 'missing.png', title: 'Missing content chart',
+        originSessionId: 'session-a', originSessionTitle: 'Source experiment',
+        latest: {
+          versionId: 'missing-version', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 10,
+          health: { missingContent: true },
+        },
+      }],
+      health: { orphan: 0, reconstructed: 0, missingContent: 1 },
+    } })
+    const loadImage = vi.fn().mockResolvedValue('data:image/png;base64,abc')
+    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadImage })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Missing content chart, version 1' }))
+    expect(screen.getByText("This version's content is missing and cannot be downloaded or previewed.")).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Expand' })).toBeNull()
+    const downloadButton = screen.getByRole('button', { name: 'Download' })
+    expect(downloadButton.getAttribute('aria-disabled')).not.toBeNull()
+    // `loadImage` is already called once for the gallery thumbnail before this
+    // click; the disabled download button must add no further call.
+    const callsBeforeClick = loadImage.mock.calls.length
+    fireEvent.click(downloadButton)
+    expect(loadImage.mock.calls.length).toBe(callsBeforeClick)
+  })
+})
+
 describe('ScienceDetailsView: opening a tab', () => {
   it('switches the active artifact body without advancing the selected version', () => {
     const store = testScienceSelectionStore()

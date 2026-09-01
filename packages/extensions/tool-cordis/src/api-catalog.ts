@@ -1214,20 +1214,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }>',
         description: 'Create a new artifact and its first version.',
-        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'input', description: 'the first version\'s bytes, media type, origin, and metadata.' }],
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'input', description: 'the first version\'s bytes, kind, provenance, and optional explicit baseline.' }],
         returns: 'the created artifact and its first version.',
       },
       {
         signature: 'appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord>',
         description: 'Append a new version onto an existing artifact, linearized against every other concurrent append to the same artifact.',
-        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact to append to.' }, { name: 'input', description: 'the new version\'s bytes, media type, origin, and metadata.' }],
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact to append to.' }, { name: 'input', description: 'the new version\'s bytes, provenance, and optional explicit baseline.' }],
         returns: 'the appended version.',
       },
       {
         signature: 'annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord>',
-        description: 'Apply a metadata-only patch to one version in place.',
-        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version to curate.' }, { name: 'patch', description: 'fields to overwrite; an omitted field keeps its current value.' }],
-        returns: 'the updated version.',
+        description: 'Append one metadata edit onto a version.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version to annotate.' }, { name: 'patch', description: 'the edit\'s author and the fields to change.' }],
+        returns: 'the version, reflecting the newly appended annotation.',
       },
       {
         signature: 'getArtifact(projectId: ProjectId, artifactId: ArtifactId): Promise<ArtifactRecord | undefined>',
@@ -1260,6 +1260,35 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'every version of the artifact, oldest first.',
       },
       {
+        signature: 'listNotes(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly ArtifactNoteRecord[]>',
+        description: 'List one artifact\'s active (non-removed) notes, oldest first.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'artifactId', description: 'the artifact whose notes to list.' }],
+        returns: 'every note that has not been removed.',
+      },
+      {
+        signature: 'putNote(projectId: ProjectId, input: PutNoteInput): Promise<ArtifactNoteRecord>',
+        description: 'Add a new note.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'input', description: 'the artifact (and optional version) to attach the note to, its text, and its author.' }],
+        returns: 'the created note.',
+      },
+      {
+        signature: 'removeNote(projectId: ProjectId, noteId: NoteId): Promise<void>',
+        description: 'Soft-delete a note.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'noteId', description: 'the note to remove.' }],
+      },
+      {
+        signature: 'getFigureState(projectId: ProjectId, versionId: VersionId): Promise<FigureStateRecord | undefined>',
+        description: 'Look up one version\'s live-figure-object state.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version whose figure state to fetch.' }],
+        returns: 'the figure state, or `undefined` when this version carries none.',
+      },
+      {
+        signature: 'setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealthPatch): Promise<VersionHealthRecord>',
+        description: 'Apply a reconciliation-status patch to one version.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'versionId', description: 'the version whose health to update.' }, { name: 'patch', description: 'fields to overwrite; an omitted field keeps its current value.' }],
+        returns: 'the updated health row.',
+      },
+      {
         signature: 'readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>',
         description: 'Read one version\'s bytes by content address.',
         parameters: [{ name: 'projectId', description: 'the owning project.' }, { name: 'sha256', description: 'the digest from an already-resolved version row.' }],
@@ -1279,7 +1308,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
-        description: 'Validate exact current artifact selections and queue one structured edit message. A region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target must match one addressable chart entry\'s id, kind, axes, label, and current-value summary, and never reads the store or mints an attachment.',
+        description: 'Validate exact current artifact selections and queue one structured edit message. Media type and live-figure-object state — the store\'s, since the T1/T2 artifact-authority migration — gate each target: a region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target must match one addressable chart entry\'s id, kind, axes, label, and current-value summary, read from the store\'s `figure_state` row and never minting an attachment.',
         parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
         returns: 'durable-inbox admission receipt.',
       },
@@ -1307,6 +1336,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agent', description: 'Agent whose session owns the note.' }, { name: 'request', description: 'Logical artifact and add-event sequence identifying the note.' }],
         returns: 'acceptance receipt after the removal event commits.',
       },
+      {
+        signature: '@Remote(\'saveArtifactAs\') async saveArtifactAs( agent: Agent, request: ScienceSaveArtifactAsRequest, signal: AbortSignal, ): Promise<ScienceSaveArtifactAsReceipt>',
+        description: 'Duplicate one exact committed artifact version into a brand-new logical artifact in the same project. A viewer-only operation — never exposed as a model tool.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the new artifact\'s origin.' }, { name: 'request', description: 'Store version id to duplicate and the new logical name.' }, { name: 'signal', description: 'Client-owned cancellation for the Runtime operation.' }],
+        returns: 'the new artifact\'s identity and first version.',
+      },
     ],
   },
   {
@@ -1319,6 +1354,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Observe one configured existing Conda profile and append its whole-value environment revision. Static unusability becomes an honest `invalid` revision; capability, cancellation, and I/O failures append nothing.',
         parameters: [{ name: 'request', description: 'Exact live Session, profile identity, and caller signal.' }],
         returns: 'The accepted durable environment revision.',
+      },
+      {
+        signature: 'async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>',
+        description: 'Install packages into one language\'s applied prefix through micromamba, then, only on a successful install, re-observe the whole profile and append a fresh whole-value `science/environment-bound` revision — exactly the operation `bindEnvironment`\'s own post-first-run guard refuses. A live kernel serving the superseded revision is left running: the next `startRun` for either language finds the revision mismatch and ends it (`environment-rebound`) before starting a fresh one, the same path an out-of-band rebind already takes (`kernel-set.ts`).',
+        parameters: [{ name: 'request', description: 'Exact live Session, target language, package specs, and cancellation.' }],
+        returns: 'The install\'s terminal classification, output tails, and — on success — the fresh environment revision.',
       },
       {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
@@ -1340,9 +1381,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>',
-        description: 'Re-commit an existing artifact version\'s exact store content reference with a curated title and caption: metadata-only, so it supersedes the version it names rather than opening a new one whose bytes would repeat their predecessor\'s. The store row\'s metadata is curated in place first (`annotateVersion`), then the superseding event commits; a vetoed append after the store update leaves the store curated with no matching event — accepted metadata decay, resolved by the fold\'s own value staying the projection authority. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
+        description: 'Re-commit an existing artifact version\'s exact store content reference with a curated title and caption: metadata-only, appending one new `version_annotations` row (`annotateVersion`) rather than opening a new version whose bytes would repeat their predecessor\'s. The store\'s annotation write is the sole authority for this metadata edit\'s own provenance (`actor: \'model\'`, `sessionId`, `toolCallId`, `requestHeaderSeq`) — this operation never rebuilds a full version value and never lets the curating call\'s identity stand in for the content\'s own producer. A vetoed append after the store update leaves the store curated with no matching event — accepted metadata decay, resolved by the fold\'s own value staying the projection authority. A committed event is never rolled back because a later step fails; there is no later step here that can fail after the append.',
         parameters: [{ name: 'request', description: 'Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.' }],
         returns: 'The durable curated version this operation committed.',
+      },
+      {
+        signature: 'async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion>',
+        description: 'Duplicate one existing artifact version into a brand-new logical artifact in the same project. Content-addressed bytes are reused (the store\'s blob admission is idempotent by digest, so re-admitting the source\'s own bytes never duplicates them on disk); provenance is a fresh fact this session originates, not a copy of the source\'s own producer — `baseVersionId` names the source explicitly instead. A viewer operation: no authorizing tool call, so `session.append` records only the store reference and the presentation snapshot the store just committed.',
+        parameters: [{ name: 'request', description: 'Exact Session, the store version to duplicate, and the new logical name.' }],
+        returns: 'The durable new artifact version this operation appended.',
+        throws: ['{@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when `sourceVersionId` does not identify a committed version in the session\'s owning project, or (`ARTIFACT_LOGICAL_NAME_CONFLICT`) when `newLogicalName` is already used in that project.'],
       },
     ],
   },
@@ -3106,7 +3154,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnnotateVersionInput',
-    declaration: 'export interface AnnotateVersionInput {\n    readonly title?: string;\n    readonly caption?: string;\n    readonly origin?: ArtifactVersionOrigin;\n}',
+    declaration: 'export interface AnnotateVersionInput {\n    readonly actor: AnnotationActor;\n    readonly sessionId?: SessionId;\n    readonly toolCallId?: string;\n    readonly requestHeaderSeq?: number;\n    readonly title?: string | null;\n    readonly caption?: string | null;\n}',
+  },
+  {
+    name: 'AnnotationActor',
+    declaration: 'export type AnnotationActor = \'capture\' | \'model\' | \'human\';',
+  },
+  {
+    name: 'AnnotationId',
+    declaration: 'export type AnnotationId = Branded<\'ScienceStoreAnnotationId\'>;',
   },
   {
     name: 'ApiKeyRecord',
@@ -3114,7 +3170,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AppendVersionInput',
-    declaration: 'export interface AppendVersionInput {\n    readonly producerSessionId: SessionId;\n    readonly data: Uint8Array;\n    readonly mediaType: string;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title?: string;\n    readonly caption?: string;\n    readonly editBaselines?: VersionId;\n    readonly producerRunId?: string;\n    readonly producerToolCallId?: string;\n    readonly producerRequestHeaderSeq?: number;\n    readonly environmentRevision?: string;\n    readonly environmentFingerprintPreview?: string;\n}',
+    declaration: 'export interface AppendVersionInput extends VersionProducerInput {\n    readonly producerSessionId: SessionId;\n}',
   },
   {
     name: 'ApprovalOutcome',
@@ -3137,12 +3193,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ArtifactId = Branded<\'ScienceStoreArtifactId\'>;',
   },
   {
-    name: 'ArtifactRecord',
-    declaration: 'export interface ArtifactRecord {\n    readonly artifactId: ArtifactId;\n    readonly owningProjectId: ProjectId;\n    readonly originSessionId: SessionId;\n    readonly logicalName: string;\n    readonly latestVersionId: VersionId;\n    readonly createdAt: number;\n}',
+    name: 'ArtifactKind',
+    declaration: 'export type ArtifactKind = \'figure\' | \'dataset\' | \'document\' | \'job-output\';',
   },
   {
-    name: 'ArtifactVersionOrigin',
-    declaration: 'export type ArtifactVersionOrigin = \'auto\' | \'model\' | \'human-edit\';',
+    name: 'ArtifactNoteRecord',
+    declaration: 'export interface ArtifactNoteRecord {\n    readonly noteId: NoteId;\n    readonly artifactId: ArtifactId;\n    readonly versionId: VersionId | undefined;\n    readonly text: string;\n    readonly sessionId: SessionId | undefined;\n    readonly createdAt: number;\n    readonly removedAt: number | undefined;\n}',
+  },
+  {
+    name: 'ArtifactRecord',
+    declaration: 'export interface ArtifactRecord {\n    readonly artifactId: ArtifactId;\n    readonly owningProjectId: ProjectId;\n    readonly originSessionId: SessionId;\n    readonly logicalName: string;\n    readonly kind: ArtifactKind;\n    readonly latestVersionId: VersionId;\n    readonly createdAt: number;\n}',
   },
   {
     name: 'AskUserQuestionAnswer',
@@ -3373,6 +3433,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ContentBlockType = keyof ContentBlockMap;',
   },
   {
+    name: 'ContentOrigin',
+    declaration: 'export type ContentOrigin = \'run-auto\' | \'human-edit\' | \'import\';',
+  },
+  {
     name: 'ContextFormed',
     declaration: 'export type ContextFormed = {\n    readonly form?: never;\n} | {\n    readonly form: \'instructions\';\n} | {\n    readonly form: \'catalog\';\n} | {\n    readonly form: \'snapshot\';\n    readonly sections: readonly ContextSnapshotSection[];\n} | {\n    readonly form: \'notice\';\n    readonly summary: string;\n} | {\n    readonly form: \'relay\';\n} | {\n    readonly form: \'recall\';\n};',
   },
@@ -3438,7 +3502,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateArtifactInput',
-    declaration: 'export interface CreateArtifactInput {\n    readonly logicalName: string;\n    readonly originSessionId: SessionId;\n    readonly data: Uint8Array;\n    readonly mediaType: string;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title?: string;\n    readonly caption?: string;\n    readonly producerRunId?: string;\n    readonly producerToolCallId?: string;\n    readonly producerRequestHeaderSeq?: number;\n    readonly environmentRevision?: string;\n    readonly environmentFingerprintPreview?: string;\n}',
+    declaration: 'export interface CreateArtifactInput extends VersionProducerInput {\n    readonly logicalName: string;\n    readonly kind: ArtifactKind;\n    readonly originSessionId: SessionId;\n}',
   },
   {
     name: 'CreateGoalRequest',
@@ -3597,6 +3661,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ExtractableEvent = Pick<SessionEvent, \'type\' | \'data\'> & {\n    readonly ignorable?: true;\n};',
   },
   {
+    name: 'FigureStateRecord',
+    declaration: 'export interface FigureStateRecord {\n    readonly versionId: VersionId;\n    readonly figureKey: string;\n    readonly dpi: number;\n    readonly stateJson: string;\n}',
+  },
+  {
     name: 'FileDiff',
     declaration: 'export interface FileDiff {\n    path: string;\n    oldText: string | null;\n    newText: string;\n}',
   },
@@ -3747,6 +3815,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesRequest',
+    declaration: 'export interface InstallScienceEnvironmentPackagesRequest {\n    readonly session: Session;\n    readonly language: ScienceLanguage;\n    readonly packages: readonly string[];\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesResult',
+    declaration: 'export interface InstallScienceEnvironmentPackagesResult {\n    readonly status: InstallScienceEnvironmentPackagesStatus;\n    readonly environment?: ScienceEnvironmentBinding;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
+  },
+  {
+    name: 'InstallScienceEnvironmentPackagesStatus',
+    declaration: 'export type InstallScienceEnvironmentPackagesStatus = \'success\' | \'failed\' | \'timed-out\' | \'cancelled\';',
   },
   {
     name: 'InvariantFailure',
@@ -4057,6 +4137,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
   },
   {
+    name: 'NoteId',
+    declaration: 'export type NoteId = Branded<\'ScienceStoreNoteId\'>;',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -4163,6 +4247,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PruneResult',
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
+  },
+  {
+    name: 'PutNoteInput',
+    declaration: 'export interface PutNoteInput {\n    readonly artifactId: ArtifactId;\n    readonly versionId?: VersionId;\n    readonly text: string;\n    readonly sessionId?: SessionId;\n}',
   },
   {
     name: 'ReadFileLine',
@@ -4293,6 +4381,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n    normalization?: \'normalize\' | \'verbatim\';\n}',
   },
   {
+    name: 'SaveScienceArtifactAsRequest',
+    declaration: 'export interface SaveScienceArtifactAsRequest {\n    readonly session: Session;\n    readonly sourceVersionId: ScienceVersionId;\n    readonly newLogicalName: string;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
     name: 'SaveTextAttachment',
     declaration: 'export interface SaveTextAttachment {\n    data: Uint8Array;\n    mediaType: TextMediaType;\n    name?: string;\n}',
   },
@@ -4326,7 +4418,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceArtifactVersion',
-    declaration: 'export type ScienceArtifactVersion = ScienceRunArtifactVersion | ScienceHumanEditArtifactVersion;',
+    declaration: 'export interface ScienceArtifactVersion {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n    readonly title: string;\n    readonly caption?: string;\n    readonly projectId: ScienceProjectId;\n    readonly versionId: ScienceVersionId;\n    readonly sha256: string;\n    readonly seenAt: number;\n}',
   },
   {
     name: 'ScienceArtifactVersionRef',
@@ -4401,10 +4493,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceEnvironmentStatus = \'applied\' | \'invalid\' | \'drifted\';',
   },
   {
-    name: 'ScienceHumanEditArtifactVersion',
-    declaration: 'export interface ScienceHumanEditArtifactVersion extends ScienceArtifactVersionBase {\n    readonly chart?: ScienceChartState;\n    readonly parent: ScienceArtifactVersionRef;\n    readonly origin: \'human-edit\';\n    readonly mediaType: \'image/png\';\n}',
-  },
-  {
     name: 'ScienceInterpreterAvailableBinding',
     declaration: 'export type ScienceInterpreterAvailableBinding = ScienceInterpreterSelection & ScienceInterpreterIdentity & {\n    readonly capability: \'available\';\n    readonly reason?: never;\n};',
   },
@@ -4453,10 +4541,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ScienceRunArtifactInput extends ScienceArtifactVersionRef {\n    readonly path: string;\n}',
   },
   {
-    name: 'ScienceRunArtifactVersion',
-    declaration: 'export interface ScienceRunArtifactVersion extends ScienceArtifactVersionBase {\n    readonly chart?: ScienceChartState;\n    readonly parent?: ScienceArtifactVersionRef;\n    readonly origin: \'auto\' | \'model\';\n    readonly runId: ScienceRunId;\n    readonly toolCallId: CallId;\n    readonly requestHeaderSeq: number;\n}',
-  },
-  {
     name: 'ScienceRunHandle',
     declaration: 'export interface ScienceRunHandle {\n    readonly runId: ScienceRunId;\n    readonly done: Promise<ScienceRunResult>;\n    cancel(): void;\n}',
   },
@@ -4489,8 +4573,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceRunTerminalStatus = \'success\' | \'failed\' | \'timed-out\' | \'cancelled\';',
   },
   {
+    name: 'ScienceSaveArtifactAsReceipt',
+    declaration: 'export interface ScienceSaveArtifactAsReceipt {\n    readonly artifactId: ScienceArtifactId;\n    readonly logicalName: string;\n    readonly version: number;\n}',
+  },
+  {
+    name: 'ScienceSaveArtifactAsRequest',
+    declaration: 'export interface ScienceSaveArtifactAsRequest {\n    readonly sourceVersionId: string;\n    readonly newLogicalName: string;\n}',
+  },
+  {
     name: 'ScienceScratchKey',
     declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
+  },
+  {
+    name: 'ScienceVersionId',
+    declaration: 'export type ScienceVersionId = VersionId;',
   },
   {
     name: 'Scoped',
@@ -5425,12 +5521,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
   },
   {
+    name: 'VersionAnnotationRecord',
+    declaration: 'export interface VersionAnnotationRecord {\n    readonly annotationId: AnnotationId;\n    readonly versionId: VersionId;\n    readonly title: string | null;\n    readonly caption: string | null;\n    readonly actor: AnnotationActor;\n    readonly sessionId: SessionId | undefined;\n    readonly toolCallId: string | undefined;\n    readonly requestHeaderSeq: number | undefined;\n    readonly derived: boolean;\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'VersionHealthPatch',
+    declaration: 'export interface VersionHealthPatch {\n    readonly orphan?: boolean;\n    readonly reconstructed?: boolean;\n    readonly missingContent?: boolean;\n}',
+  },
+  {
+    name: 'VersionHealthRecord',
+    declaration: 'export interface VersionHealthRecord {\n    readonly versionId: VersionId;\n    readonly orphan: boolean;\n    readonly reconstructed: boolean;\n    readonly missingContent: boolean;\n    readonly checkedAt: number;\n}',
+  },
+  {
     name: 'VersionId',
     declaration: 'export type VersionId = Branded<\'ScienceStoreVersionId\'>;',
   },
   {
     name: 'VersionRecord',
-    declaration: 'export interface VersionRecord {\n    readonly versionId: VersionId;\n    readonly artifactId: ArtifactId;\n    readonly ordinal: number;\n    readonly parentVersionId: VersionId | undefined;\n    readonly sha256: string;\n    readonly mediaType: string;\n    readonly byteCount: number;\n    readonly origin: ArtifactVersionOrigin;\n    readonly title: string | undefined;\n    readonly caption: string | undefined;\n    readonly producerSessionId: SessionId;\n    readonly producerRunId: string | undefined;\n    readonly producerToolCallId: string | undefined;\n    readonly producerRequestHeaderSeq: number | undefined;\n    readonly environmentRevision: string | undefined;\n    readonly environmentFingerprintPreview: string | undefined;\n    readonly createdAt: number;\n}',
+    declaration: 'export interface VersionRecord {\n    readonly versionId: VersionId;\n    readonly artifactId: ArtifactId;\n    readonly ordinal: number;\n    readonly baseVersionId: VersionId | undefined;\n    readonly baseExplicit: boolean;\n    readonly sha256: string;\n    readonly mediaType: string;\n    readonly byteCount: number;\n    readonly contentOrigin: ContentOrigin;\n    readonly producerSessionId: SessionId;\n    readonly producerRunId: string | undefined;\n    readonly producerToolCallId: string | undefined;\n    readonly producerRequestHeaderSeq: number | undefined;\n    readonly producerTurn: number | undefined;\n    readonly environmentRevision: number | undefined;\n    readonly environmentFingerprint: string | undefined;\n    readonly createdAt: number;\n    readonly latestAnnotation: VersionAnnotationRecord | undefined;\n    readonly title: string | undefined;\n    readonly caption: string | undefined;\n}',
   },
   {
     name: 'WebBootEntry',

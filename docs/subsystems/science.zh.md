@@ -47,7 +47,7 @@ openProject(workspacePath: string): Promise<OpenedProject>
 /**
  * Create a new artifact and its first version.
  * @param projectId - the owning project.
- * @param input - the first version's bytes, media type, origin, and metadata.
+ * @param input - the first version's bytes, kind, provenance, and optional explicit baseline.
  * @returns the created artifact and its first version.
  */
 createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }>
@@ -57,17 +57,17 @@ createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ arti
  * other concurrent append to the same artifact.
  * @param projectId - the owning project.
  * @param artifactId - the artifact to append to.
- * @param input - the new version's bytes, media type, origin, and metadata.
+ * @param input - the new version's bytes, provenance, and optional explicit baseline.
  * @returns the appended version.
  */
 appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord>
 
 /**
- * Apply a metadata-only patch to one version in place.
+ * Append one metadata edit onto a version.
  * @param projectId - the owning project.
- * @param versionId - the version to curate.
- * @param patch - fields to overwrite; an omitted field keeps its current value.
- * @returns the updated version.
+ * @param versionId - the version to annotate.
+ * @param patch - the edit's author and the fields to change.
+ * @returns the version, reflecting the newly appended annotation.
  */
 annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord>
 
@@ -111,6 +111,46 @@ listArtifacts(projectId: ProjectId): Promise<readonly ArtifactRecord[]>
 listVersions(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly VersionRecord[]>
 
 /**
+ * List one artifact's active (non-removed) notes, oldest first.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact whose notes to list.
+ * @returns every note that has not been removed.
+ */
+listNotes(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly ArtifactNoteRecord[]>
+
+/**
+ * Add a new note.
+ * @param projectId - the owning project.
+ * @param input - the artifact (and optional version) to attach the note to, its text, and its author.
+ * @returns the created note.
+ */
+putNote(projectId: ProjectId, input: PutNoteInput): Promise<ArtifactNoteRecord>
+
+/**
+ * Soft-delete a note.
+ * @param projectId - the owning project.
+ * @param noteId - the note to remove.
+ */
+removeNote(projectId: ProjectId, noteId: NoteId): Promise<void>
+
+/**
+ * Look up one version's live-figure-object state.
+ * @param projectId - the owning project.
+ * @param versionId - the version whose figure state to fetch.
+ * @returns the figure state, or `undefined` when this version carries none.
+ */
+getFigureState(projectId: ProjectId, versionId: VersionId): Promise<FigureStateRecord | undefined>
+
+/**
+ * Apply a reconciliation-status patch to one version.
+ * @param projectId - the owning project.
+ * @param versionId - the version whose health to update.
+ * @param patch - fields to overwrite; an omitted field keeps its current value.
+ * @returns the updated health row.
+ */
+setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealthPatch): Promise<VersionHealthRecord>
+
+/**
  * Read one version's bytes by content address.
  * @param projectId - the owning project.
  * @param sha256 - the digest from an already-resolved version row.
@@ -137,12 +177,14 @@ Remote service admitting browser edit gestures into the addressed live agent.
 ```ts cordis-catalog
 /**
  * Validate exact current artifact selections and queue one structured edit
- * message. A region target's raster is read back from the project artifact
- * store and admitted as an ordinary session message attachment, so the
- * model-visible image stays reconstructable from the session log alone; an
- * element target must match one addressable chart entry's id, kind, axes,
- * label, and current-value summary, and never reads the store or mints an
- * attachment.
+ * message. Media type and live-figure-object state — the store's, since
+ * the T1/T2 artifact-authority migration — gate each target: a region
+ * target's raster is read back from the project artifact store and
+ * admitted as an ordinary session message attachment, so the model-visible
+ * image stays reconstructable from the session log alone; an element
+ * target must match one addressable chart entry's id, kind, axes, label,
+ * and current-value summary, read from the store's `figure_state` row and
+ * never minting an attachment.
  * @param agent - exact live agent resolved by the Remote lookup policy.
  * @param request - selected versions, targets, and shared user instruction.
  * @returns durable-inbox admission receipt.
@@ -184,6 +226,17 @@ Remote service admitting browser edit gestures into the addressed live agent.
  * @returns acceptance receipt after the removal event commits.
  */
 @Remote('removeArtifactNote') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt
+
+/**
+ * Duplicate one exact committed artifact version into a brand-new logical
+ * artifact in the same project. A viewer-only operation — never exposed
+ * as a model tool.
+ * @param agent - Agent whose session owns the new artifact's origin.
+ * @param request - Store version id to duplicate and the new logical name.
+ * @param signal - Client-owned cancellation for the Runtime operation.
+ * @returns the new artifact's identity and first version.
+ */
+@Remote('saveArtifactAs') async saveArtifactAs( agent: Agent, request: ScienceSaveArtifactAsRequest, signal: AbortSignal, ): Promise<ScienceSaveArtifactAsReceipt>
 ```
 
 Types: [Agent](core.zh.md)
@@ -205,6 +258,20 @@ Folded local Science Runtime provider with public types free of Host paths.
  * @returns The accepted durable environment revision.
  */
 async bindEnvironment(request: BindScienceEnvironmentRequest): Promise<ScienceEnvironmentBinding>
+
+/**
+ * Install packages into one language's applied prefix through micromamba,
+ * then, only on a successful install, re-observe the whole profile and
+ * append a fresh whole-value `science/environment-bound` revision —
+ * exactly the operation `bindEnvironment`'s own post-first-run guard
+ * refuses. A live kernel serving the superseded revision is left running:
+ * the next `startRun` for either language finds the revision mismatch and
+ * ends it (`environment-rebound`) before starting a fresh one, the same
+ * path an out-of-band rebind already takes (`kernel-set.ts`).
+ * @param request - Exact live Session, target language, package specs, and cancellation.
+ * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+ */
+async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>
 
 /**
  * Resolve and materialize exact artifact inputs, acquire this run's
@@ -235,19 +302,41 @@ async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPr
 
 /**
  * Re-commit an existing artifact version's exact store content reference
- * with a curated title and caption: metadata-only, so it supersedes the
- * version it names rather than opening a new one whose bytes would repeat
- * their predecessor's. The store row's metadata is curated in place first
- * (`annotateVersion`), then the superseding event commits; a vetoed append
- * after the store update leaves the store curated with no matching event —
- * accepted metadata decay, resolved by the fold's own value staying the
- * projection authority. A committed event is never rolled back because a
- * later step fails; there is no later step here that can fail after the
- * append.
+ * with a curated title and caption: metadata-only, appending one new
+ * `version_annotations` row (`annotateVersion`) rather than opening a new
+ * version whose bytes would repeat their predecessor's. The store's
+ * annotation write is the sole authority for this metadata edit's own
+ * provenance (`actor: 'model'`, `sessionId`, `toolCallId`,
+ * `requestHeaderSeq`) — this operation never rebuilds a full version value
+ * and never lets the curating call's identity stand in for the content's
+ * own producer. A vetoed append after the store update leaves the store
+ * curated with no matching event — accepted metadata decay, resolved by
+ * the fold's own value staying the projection authority. A committed
+ * event is never rolled back because a later step fails; there is no
+ * later step here that can fail after the append.
  * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
  * @returns The durable curated version this operation committed.
  */
 async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
+
+/**
+ * Duplicate one existing artifact version into a brand-new logical
+ * artifact in the same project. Content-addressed bytes are reused (the
+ * store's blob admission is idempotent by digest, so re-admitting the
+ * source's own bytes never duplicates them on disk); provenance is a
+ * fresh fact this session originates, not a copy of the source's own
+ * producer — `baseVersionId` names the source explicitly instead. A
+ * viewer operation: no authorizing tool call, so `session.append` records
+ * only the store reference and the presentation snapshot the store just
+ * committed.
+ * @param request - Exact Session, the store version to duplicate, and the new logical name.
+ * @returns The durable new artifact version this operation appended.
+ * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when
+ *   `sourceVersionId` does not identify a committed version in the
+ *   session's owning project, or (`ARTIFACT_LOGICAL_NAME_CONFLICT`) when
+ *   `newLogicalName` is already used in that project.
+ */
+async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion>
 ```
 
 Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)

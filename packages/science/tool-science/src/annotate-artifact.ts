@@ -9,18 +9,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
+import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
-import { latestRequestHeaderSeq, requireScienceSession } from './run.ts'
+import { latestRequestHeaderSeq, requireScienceSession, resolveArtifactStoreVersion } from './run.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
-import { formatScienceArtifactEdits, scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
 
 const artifactReceiptSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     ...scienceArtifactSchemaProperties,
-    runId: { type: 'string', required: true },
     // Store version reference for the canonical result; `render` deliberately
     // omits versionId from the model-visible text (it is an internal
     // storage coordinate, not a fact the model reasons about), while it
@@ -35,35 +35,35 @@ export type ScienceArtifactReceiptValue = InferValue<typeof artifactReceiptSchem
 /**
  * Flatten a durable artifact version into the tool's canonical value.
  * @param artifact - the durable artifact version `ctx.scienceRuntime.annotateArtifact(...)` appended.
+ * @param store - the store's current version row for `artifact.versionId`.
  * @returns the canonical structured value the tool returns.
  */
-export function artifactReceiptFromArtifact(artifact: ScienceArtifactVersion): ScienceArtifactReceiptValue {
-  if (artifact.origin === 'human-edit') {
-    throw new Error('tool-science: annotate_artifact cannot return a human-edited artifact')
-  }
+export function artifactReceiptFromArtifact(
+  artifact: ScienceArtifactVersion,
+  store: Parameters<typeof scienceArtifactValueFields>[1],
+): ScienceArtifactReceiptValue {
   return {
-    ...scienceArtifactValueFields(artifact),
-    runId: String(artifact.runId),
+    ...scienceArtifactValueFields(artifact, store),
     versionId: String(artifact.versionId),
   }
 }
 
 /**
  * Render one artifact receipt as plain text. The model-safe receipt names
- * identity, version, source run, title/caption, and media type/byte count —
- * never the internal store version id and never file bytes.
+ * identity, version, content origin, curation status, title/caption, and
+ * media type/byte count — never the internal store version id and never
+ * file bytes.
  * @param value - the canonical artifact receipt to render.
  * @returns the rendered Native text.
  */
 export function formatArtifactReceipt(value: ScienceArtifactReceiptValue): string {
+  const status = value.curated ? 'curated' : 'auto-captured'
   const lines = [
-    `artifact "${value.logicalName}" v${String(value.version)} (${value.artifactId}) curated from run ${value.runId}`,
+    `artifact "${value.logicalName}" v${String(value.version)} (${value.artifactId}), ${value.contentOrigin}, ${status}`,
     `title: ${value.title}`,
   ]
   if (value.caption !== undefined) lines.push(`caption: ${value.caption}`)
   lines.push(`${value.mediaType}, ${String(value.bytes)} bytes`)
-  const edits = formatScienceArtifactEdits(value.edits ?? [])
-  if (edits !== undefined) lines.push(edits)
   return lines.join('\n')
 }
 
@@ -123,7 +123,8 @@ export function applyAnnotateArtifactTool(ctx: Context): void {
         requestHeaderSeq,
         signal: exec.signal,
       })
-      return artifactReceiptFromArtifact(artifact)
+      const store = await resolveArtifactStoreVersion(ctx, artifact)
+      return artifactReceiptFromArtifact(artifact, store)
     },
   }))
 }

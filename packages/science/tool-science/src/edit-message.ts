@@ -7,9 +7,9 @@ import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
-import { applyScienceArtifactNotes, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
+import { applyScienceArtifactNotes, decodeScienceChartState, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
-import type { ScienceChartElement } from '@deepseek-ai/dsh-science-session'
+import type { ScienceChartElement, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { scienceElementCurrentSummary } from './element-summary.ts'
 import type {
@@ -139,9 +139,25 @@ export interface ResolvedScienceEdit {
   readonly instruction: string
 }
 
-function resolveSelection(
-  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditSelection,
-): ResolvedScienceEdit['targets'][number] {
+/**
+ * Store-derived facts one target-match check needs: `mediaType` and, for a
+ * PNG version, its live-figure-object state. `mediaType`/`chart` left the
+ * session-level `ScienceArtifactVersion` with the T1/T2 artifact-authority
+ * migration (they live in the store's `versions`/`figure_state` rows now),
+ * so a caller resolves them per addressed version through
+ * {@link ReadArtifactTargetFacts} before this check can run.
+ */
+export interface TargetMatchFacts {
+  readonly mediaType: string
+  readonly chart: ScienceChartState | undefined
+}
+
+/** Resolve one addressed artifact version's store-owned target-match facts. */
+export type ReadArtifactTargetFacts = (artifact: ScienceArtifactVersion) => Promise<TargetMatchFacts>
+
+async function resolveSelection(
+  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditSelection, readFacts: ReadArtifactTargetFacts,
+): Promise<ResolvedScienceEdit['targets'][number]> {
   const versions = artifacts.filter(artifact => artifact.artifactId === request.artifactId)
   const latest = versions.at(-1)
   if (latest === undefined) {
@@ -164,7 +180,7 @@ function resolveSelection(
   }
   const target = resolveTarget(request.target)
   const comment = request.comment === undefined ? undefined : resolveFreeText(request.comment, 'target comment')
-  assertTargetMatches(latest, target)
+  assertTargetMatches(target, await readFacts(latest))
   return { artifact: latest, target, ...comment === undefined ? {} : { comment } }
 }
 
@@ -172,11 +188,12 @@ function resolveSelection(
  * Resolve one multi-target request against the authoritative committed artifact history.
  * @param artifacts - strictly folded committed versions for the addressed session.
  * @param request - exact version, selected target, and instruction from the viewer.
+ * @param readFacts - resolves each addressed version's store-owned target-match facts.
  * @returns detached targets and instruction beside the authoritative artifact versions.
  */
-export function resolveScienceEdit(
-  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditRequest,
-): ResolvedScienceEdit {
+export async function resolveScienceEdit(
+  artifacts: readonly ScienceArtifactVersion[], request: ScienceEditRequest, readFacts: ReadArtifactTargetFacts,
+): Promise<ResolvedScienceEdit> {
   const instruction = resolveFreeText(request.instruction, 'instruction')
   if (request.targets.length === 0) invalid('Science edit request must select at least one target')
   const selections = new Map<string, { version: number; targets: Set<string> }>()
@@ -195,16 +212,16 @@ export function resolveScienceEdit(
       existing.targets.add(targetKey)
     }
   }
-  const targets = request.targets.map((selection, index) => {
+  const targets = await Promise.all(request.targets.map(async (selection, index) => {
     try {
-      return resolveSelection(artifacts, selection)
+      return await resolveSelection(artifacts, selection, readFacts)
     } catch (error: unknown) {
       // Decoded selections and authoritative folded artifacts only reach
       // ScienceEditError paths inside resolveSelection.
       const cause = error as ScienceEditError
       throw new ScienceEditError(`Science edit target ${String(index + 1)}: ${cause.message}`, cause.code as ScienceEditErrorCode)
     }
-  })
+  }))
   return { targets, instruction }
 }
 
@@ -214,18 +231,18 @@ export function resolveScienceEdit(
  * image attachment); an element target names an already-addressable chart
  * element and carries no independent media constraint of its own.
  */
-function assertTargetMatches(artifact: ScienceArtifactVersion, target: ScienceEditTarget): void {
+function assertTargetMatches(target: ScienceEditTarget, facts: TargetMatchFacts): void {
   switch (target.kind) {
     case 'normalized-region':
-      if (artifact.mediaType !== 'image/png') {
+      if (facts.mediaType !== 'image/png') {
         throw new ScienceEditError('Science region edits require a raster image artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
       }
       return
     case 'element': {
-      if (artifact.chart === undefined) {
+      if (facts.chart === undefined) {
         throw new ScienceEditError('Science element edits require an addressable chart artifact', 'SCIENCE_EDIT_TARGET_MISMATCH')
       }
-      const element = artifact.chart.elements.find(candidate => candidate.id === target.elementId)
+      const element = facts.chart.elements.find(candidate => candidate.id === target.elementId)
       if (element === undefined
         || element.kind !== target.elementKind
         || element.axes !== target.axes
@@ -346,12 +363,14 @@ export class ScienceEditService extends TypertRemoteService {
 
   /**
    * Validate exact current artifact selections and queue one structured edit
-   * message. A region target's raster is read back from the project artifact
-   * store and admitted as an ordinary session message attachment, so the
-   * model-visible image stays reconstructable from the session log alone; an
-   * element target must match one addressable chart entry's id, kind, axes,
-   * label, and current-value summary, and never reads the store or mints an
-   * attachment.
+   * message. Media type and live-figure-object state — the store's, since
+   * the T1/T2 artifact-authority migration — gate each target: a region
+   * target's raster is read back from the project artifact store and
+   * admitted as an ordinary session message attachment, so the model-visible
+   * image stays reconstructable from the session log alone; an element
+   * target must match one addressable chart entry's id, kind, axes, label,
+   * and current-value summary, read from the store's `figure_state` row and
+   * never minting an attachment.
    * @param agent - exact live agent resolved by the Remote lookup policy.
    * @param request - selected versions, targets, and shared user instruction.
    * @returns durable-inbox admission receipt.
@@ -359,7 +378,19 @@ export class ScienceEditService extends TypertRemoteService {
   @Remote('submit')
   async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt> {
     const state = foldScience(agent.session.events)
-    const resolved = resolveScienceEdit(state.artifacts, request)
+    const resolved = await resolveScienceEdit(state.artifacts, request, async (artifact) => {
+      const store = await this.ctx.scienceArtifactStore.getVersion(artifact.projectId, artifact.versionId)
+      if (store === undefined) {
+        throw new ScienceEditError('Science edit target no longer identifies a committed store version', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
+      }
+      const figureState = store.mediaType !== 'image/png'
+        ? undefined
+        : await this.ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+      return {
+        mediaType: store.mediaType,
+        chart: figureState === undefined ? undefined : decodeScienceChartState(JSON.parse(figureState.stateJson)),
+      }
+    })
     const regionImages = new Map<string, ImageAttachmentRef>()
     for (const { artifact, target } of resolved.targets) {
       if (target.kind !== 'normalized-region') continue

@@ -8,31 +8,54 @@ import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
-import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceRunArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import { ScienceArtifactId, ScienceProjectId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import { createScienceEditMessage, resolveScienceEdit, ScienceEditError, ScienceEditService } from '../src/edit-message.ts'
+import type { ReadArtifactTargetFacts, TargetMatchFacts } from '../src/edit-message.ts'
 import * as EditService from '../src/edit-service.ts'
 import { scienceElementCurrentSummary } from '../src/element-summary.ts'
 
-function image(over: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
+/** Chart state matching `imageFacts()`'s default two addressable elements. */
+const DEFAULT_CHART: ScienceChartState = {
+  runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+  elements: [
+    { id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' },
+    { id: 'subtitle', kind: 'subtitle', axes: null, label: null, current: 'Subtitle' },
+  ],
+  ops: [], hitmap: [], hitmapStatus: 'unavailable',
+}
+
+/** Minimal `ScienceArtifactVersion` fixture (the session-level presentation snapshot); callers override only what they test. */
+function image(over: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
   return {
-    artifactId: ScienceArtifactId('chart-1'), producerSessionId: SessionId('session-1'), logicalName: 'loss.png',
-    version: 1, title: 'Loss', origin: 'auto', projectId: ScienceProjectId('project-1'),
-    versionId: ScienceVersionId('store-version-image'), sha256: 'a'.repeat(64), mediaType: 'image/png', byteCount: 100,
-    runId: ScienceRunId('run-1'), toolCallId: CallId('call-1'), requestHeaderSeq: 2,
-    environmentRevision: 1, environmentFingerprint: 'b'.repeat(64), createdAt: 1,
-    chart: {
-      runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
-      elements: [
-        { id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' },
-        { id: 'subtitle', kind: 'subtitle', axes: null, label: null, current: 'Subtitle' },
-      ],
-      ops: [], hitmap: [], hitmapStatus: 'unavailable',
-    },
+    artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, title: 'Loss',
+    projectId: ScienceProjectId('project-1'), versionId: ScienceVersionId('store-version-image'),
+    sha256: 'a'.repeat(64), seenAt: 1,
     ...over,
+  }
+}
+
+/** Store-derived `TargetMatchFacts` fixture matching `image()`'s default identity; callers override only what they test. */
+function imageFacts(over: Partial<TargetMatchFacts> = {}): TargetMatchFacts {
+  return { mediaType: 'image/png', chart: DEFAULT_CHART, ...over }
+}
+
+/**
+ * A `ReadArtifactTargetFacts` resolver returning the same facts regardless
+ * of which addressed artifact is queried — for a test that resolves exactly
+ * one artifact identity, or several that all share one media/chart fact set.
+ */
+function singleFacts(facts: TargetMatchFacts = imageFacts()): ReadArtifactTargetFacts {
+  return () => Promise.resolve(facts)
+}
+
+/** A `ReadArtifactTargetFacts` resolver over fixed facts keyed by `versionId`. */
+function factsFor(entries: ReadonlyMap<string, TargetMatchFacts>): ReadArtifactTargetFacts {
+  return (artifact) => {
+    const facts = entries.get(String(artifact.versionId))
+    if (facts === undefined) throw new Error(`test fixture: no TargetMatchFacts for versionId ${String(artifact.versionId)}`)
+    return Promise.resolve(facts)
   }
 }
 
@@ -77,12 +100,12 @@ describe('Science edit-message admission', () => {
     }
   })
 
-  it('emits the exact normalized region and immutable version with its minted image', () => {
+  it('emits the exact normalized region and immutable version with its minted image', async () => {
     const artifact = image()
     const minted = mintedImage('minted-image')
-    const resolved = resolveScienceEdit([artifact], { targets: [{
+    const resolved = await resolveScienceEdit([artifact], { targets: [{
       artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region(), comment: ' brighten this area ',
-    }], instruction: ' increase contrast ' })
+    }], instruction: ' increase contrast ' }, singleFacts())
     const message = createScienceEditMessage(resolved, new Map([[String(artifact.versionId), minted]]))
     expect(message.source).toEqual({
       kind: 'science-edit', targets: [{ artifactId: 'chart-1', logicalName: 'loss.png', version: 1, target: region(), comment: 'brighten this area' }],
@@ -100,27 +123,28 @@ describe('Science edit-message admission', () => {
     ])
   })
 
-  it('admits an element target the viewer built from the shared scienceElementCurrentSummary, including a non-string current', () => {
+  it('admits an element target the viewer built from the shared scienceElementCurrentSummary, including a non-string current', async () => {
     // ScienceChartEditPanel.tsx builds an element target's `current` field
     // with this exact same exported function; a legend element's current is
     // a JSON object, not a string, so this proves the shared serialization
     // — not just a hand-typed string literal — is what Host admission
     // recomputes and matches.
     const legendCurrent = { position: 'right', title: null, visible: true }
-    const artifact = image({
+    const artifact = image()
+    const facts = imageFacts({
       chart: {
         runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
         elements: [{ id: 'axes[0].legend', kind: 'legend', axes: 0, label: null, current: legendCurrent }],
         ops: [], hitmap: [], hitmapStatus: 'unavailable',
       },
     })
-    const resolved = resolveScienceEdit([artifact], { targets: [{
+    const resolved = await resolveScienceEdit([artifact], { targets: [{
       artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
       target: {
         kind: 'element', elementId: 'axes[0].legend', elementKind: 'legend', axes: 0, label: null,
         current: scienceElementCurrentSummary(legendCurrent),
       },
-    }], instruction: 'move the legend' })
+    }], instruction: 'move the legend' }, singleFacts(facts))
     expect(resolved.targets).toHaveLength(1)
     expect(resolved.targets[0]?.target).toEqual({
       kind: 'element', elementId: 'axes[0].legend', elementKind: 'legend', axes: 0, label: null,
@@ -128,72 +152,73 @@ describe('Science edit-message admission', () => {
     })
   })
 
-  it('rejects a region target whose message image was not minted', () => {
+  it('rejects a region target whose message image was not minted', async () => {
     const artifact = image()
-    const resolved = resolveScienceEdit([artifact], {
+    const resolved = await resolveScienceEdit([artifact], {
       targets: [{ artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region() }], instruction: 'increase contrast',
-    })
+    }, singleFacts())
     expect(() => createScienceEditMessage(resolved)).toThrow(/has no minted message image/)
   })
 
-  it('rejects stale, missing, malformed, and media-mismatched selections', () => {
-    expect(() => resolveScienceEdit([image(), image({ version: 2, createdAt: 2 })], { targets: [{
+  it('rejects stale, missing, malformed, and media-mismatched selections', async () => {
+    await expect(resolveScienceEdit([image(), image({ version: 2, seenAt: 2 })], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
-    }], instruction: 'edit selected version' }))
-      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_STALE_VERSION' }))
-    expect(() => resolveScienceEdit([], { targets: [{
+    }], instruction: 'edit selected version' }, singleFacts()))
+      .rejects.toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_STALE_VERSION' }))
+    await expect(resolveScienceEdit([], { targets: [{
       artifactId: ScienceArtifactId('missing'), logicalName: 'missing.png', version: 1, target: region(),
-    }], instruction: 'edit selected version' }))
-      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' }))
-    expect(() => resolveScienceEdit([image()], { targets: [{
+    }], instruction: 'edit selected version' }, singleFacts()))
+      .rejects.toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_NOT_FOUND' }))
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(0.8, 0, 0.3, 1),
-    }], instruction: 'crop' }))
-      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
-    expect(() => resolveScienceEdit([image({ mediaType: 'application/json' })], { targets: [{
+    }], instruction: 'crop' }, singleFacts()))
+      .rejects.toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_INVALID_REQUEST' }))
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
-    }], instruction: 'crop' }))
-      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
+    }], instruction: 'crop' }, singleFacts(imageFacts({ mediaType: 'application/json' }))))
+      .rejects.toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
     // The artifactId resolves and the version matches, but the caller's
     // logicalName is stale relative to the current committed artifact
     // (renamed since the caller last saw it) — a distinct mismatch from the
     // media-type one above, checked before target resolution runs at all.
-    expect(() => resolveScienceEdit([image()], { targets: [{
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'renamed.png', version: 1, target: region(),
-    }], instruction: 'crop' }))
-      .toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
+    }], instruction: 'crop' }, singleFacts()))
+      .rejects.toThrow(expect.objectContaining<Partial<ScienceEditError>>({ code: 'SCIENCE_EDIT_TARGET_MISMATCH' }))
   })
 
-  it('validates region coordinates, instructions, and target comments', () => {
+  it('validates region coordinates, instructions, and target comments', async () => {
     for (const target of [
       region(Number.NaN), region(-0.1), region(0, -0.1), region(0, 0, 0), region(0, 0, 1, 0), region(0, 0.5, 1, 0.6),
     ]) {
-      expect(() => resolveScienceEdit([image()], { targets: [{
+      await expect(resolveScienceEdit([image()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
-      }], instruction: 'change it' })).toThrow(/positive rectangle/)
+      }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/positive rectangle/)
     }
     for (const instruction of ['', '   ', 'has\u0000null', '\uD800 lone surrogate']) {
-      expect(() => resolveScienceEdit([image()], { targets: [{
+      await expect(resolveScienceEdit([image()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(),
-      }], instruction })).toThrow(/instruction must be non-empty/)
+      }], instruction }, singleFacts())).rejects.toThrow(/instruction must be non-empty/)
     }
-    expect(() => resolveScienceEdit([image()], { targets: [{
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region(), comment: '  ',
-    }], instruction: 'change it' })).toThrow(/target comment must be non-empty/)
+    }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/target comment must be non-empty/)
   })
 
-  it('admits multiple targets atomically, deduplicates version images, and identifies a failing position', () => {
+  it('admits multiple targets atomically, deduplicates version images, and identifies a failing position', async () => {
     const first = image()
     const second = image({ artifactId: ScienceArtifactId('chart-2'), logicalName: 'residuals.png',
       versionId: ScienceVersionId('store-version-residuals') })
     const firstMinted = mintedImage('first')
     const secondMinted = mintedImage('second')
-    const message = createScienceEditMessage(resolveScienceEdit([first, second], {
+    const facts = factsFor(new Map([[String(first.versionId), imageFacts()], [String(second.versionId), imageFacts()]]))
+    const message = createScienceEditMessage(await resolveScienceEdit([first, second], {
       targets: [
         { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region(0, 0, 0.5, 1) },
         { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region(0.5, 0, 0.5, 1) },
         { artifactId: second.artifactId, logicalName: second.logicalName, version: 1, target: region() },
       ], instruction: 'use one palette',
-    }), new Map([[String(first.versionId), firstMinted], [String(second.versionId), secondMinted]]))
+    }, facts), new Map([[String(first.versionId), firstMinted], [String(second.versionId), secondMinted]]))
     expect(message.source.kind === 'science-edit' && message.source.targets).toHaveLength(3)
     expect(message.content.filter(block => block.type === 'image')).toEqual([
       { type: 'image', attachment: firstMinted }, { type: 'image', attachment: secondMinted },
@@ -204,10 +229,10 @@ describe('Science edit-message admission', () => {
 
     let caught: unknown
     try {
-      resolveScienceEdit([first], { targets: [
+      await resolveScienceEdit([first], { targets: [
         { artifactId: first.artifactId, logicalName: first.logicalName, version: 1, target: region() },
         { artifactId: ScienceArtifactId('missing'), logicalName: 'missing.png', version: 1, target: region() },
-      ], instruction: 'change both' })
+      ], instruction: 'change both' }, singleFacts())
     } catch (error: unknown) {
       caught = error
     }
@@ -215,12 +240,12 @@ describe('Science edit-message admission', () => {
     expect((caught as ScienceEditError).message).toContain('target 2')
   })
 
-  it('resolves a precise element target against the addressed chart and renders every identity field', () => {
+  it('resolves a precise element target against the addressed chart and renders every identity field', async () => {
     const artifact = image()
-    const resolved = resolveScienceEdit([artifact], { targets: [
+    const resolved = await resolveScienceEdit([artifact], { targets: [
       { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element({ current: 'Loss' }) },
       { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element({ elementId: 'subtitle', elementKind: 'subtitle', axes: null, current: 'Subtitle' }) },
-    ], instruction: 'shorten the title' })
+    ], instruction: 'shorten the title' }, singleFacts())
     const message = createScienceEditMessage(resolved)
     expect(message.source).toMatchObject({ kind: 'science-edit',
       targets: [
@@ -237,50 +262,49 @@ describe('Science edit-message admission', () => {
     ].join('\n') }])
   })
 
-  it('rejects incomplete, malformed, or mismatched element identity fields', () => {
+  it('rejects incomplete, malformed, or mismatched element identity fields', async () => {
     for (const target of [element({ elementId: '' }), element({ elementId: '  ' }), element({ elementKind: '' as never })]) {
-      expect(() => resolveScienceEdit([image()], { targets: [{
+      await expect(resolveScienceEdit([image()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
-      }], instruction: 'change it' })).toThrow(/valid element id and kind/)
+      }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/valid element id and kind/)
     }
     for (const current of ['', 'has\u0000null', '\uD800 lone surrogate']) {
-      expect(() => resolveScienceEdit([image()], { targets: [{
+      await expect(resolveScienceEdit([image()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: element({ current }),
-      }], instruction: 'change it' })).toThrow(/current value must be non-empty well-formed/)
+      }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/current value must be non-empty well-formed/)
     }
     for (const target of [element({ axes: -1 }), element({ label: '' })]) {
-      expect(() => resolveScienceEdit([image()], { targets: [{
+      await expect(resolveScienceEdit([image()], { targets: [{
         artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target,
-      }], instruction: 'change it' })).toThrow(/target (axes|label)/)
+      }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/target (axes|label)/)
     }
-    expect(() => resolveScienceEdit([image()], { targets: [{
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1,
       target: element({ elementId: 'missing' }),
-    }], instruction: 'change it' })).toThrow(/does not match the addressed chart element/)
-    const { chart: _chart, ...withoutChart } = image()
-    expect(() => resolveScienceEdit([withoutChart], { targets: [{
+    }], instruction: 'change it' }, singleFacts())).rejects.toThrow(/does not match the addressed chart element/)
+    await expect(resolveScienceEdit([image()], { targets: [{
       artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: element(),
-    }], instruction: 'change it' })).toThrow(/addressable chart/)
+    }], instruction: 'change it' }, singleFacts(imageFacts({ chart: undefined })))).rejects.toThrow(/addressable chart/)
   })
 
-  it('omits the image attachment for an element target and mixes cleanly with a region target on the same version', () => {
+  it('omits the image attachment for an element target and mixes cleanly with a region target on the same version', async () => {
     const artifact = image()
     const minted = mintedImage('minted-image')
-    const resolved = resolveScienceEdit([artifact], { targets: [
+    const resolved = await resolveScienceEdit([artifact], { targets: [
       { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: region() },
       { artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1, target: element() },
-    ], instruction: 'use one palette and shorten the title' })
+    ], instruction: 'use one palette and shorten the title' }, singleFacts())
     const message = createScienceEditMessage(resolved, new Map([[String(artifact.versionId), minted]]))
     expect(message.content.filter(block => block.type === 'image')).toEqual([{ type: 'image', attachment: minted }])
   })
 
-  it('rejects empty, duplicate, and cross-version target sets before admission', () => {
-    expect(() => resolveScienceEdit([image()], { targets: [], instruction: 'change it' })).toThrow(/select at least one/)
+  it('rejects empty, duplicate, and cross-version target sets before admission', async () => {
+    await expect(resolveScienceEdit([image()], { targets: [], instruction: 'change it' }, singleFacts())).rejects.toThrow(/select at least one/)
     const duplicate = { artifactId: ScienceArtifactId('chart-1'), logicalName: 'loss.png', version: 1, target: region() }
-    expect(() => resolveScienceEdit([image()], { targets: [duplicate, duplicate], instruction: 'change it' }))
-      .toThrow(/target 2 duplicates/)
-    expect(() => resolveScienceEdit([image(), image({ version: 2 })], {
+    await expect(resolveScienceEdit([image()], { targets: [duplicate, duplicate], instruction: 'change it' }, singleFacts()))
+      .rejects.toThrow(/target 2 duplicates/)
+    await expect(resolveScienceEdit([image(), image({ version: 2 })], {
       targets: [duplicate, { ...duplicate, version: 2, target: region(0.5, 0, 0.5, 1) }], instruction: 'change it',
-    })).toThrow(/target 2 selects a second version/)
+    }, singleFacts())).rejects.toThrow(/target 2 selects a second version/)
   })
 })

@@ -151,6 +151,23 @@ describe('mcp-client plugin module exports', () => {
       reconnect: { maxAttempts: 0 },
     } as never)).toThrow()
   })
+
+  it('Config schema materializes tools defaults when omitted and keeps explicit values', () => {
+    const omitted = ConfigSchema({
+      transport: 'stdio',
+      serverName: 'srv',
+      command: 'echo',
+    } as never)
+    expect(omitted.tools).toEqual({ include: [], exclude: [], rename: {}, describe: {} })
+
+    const explicit = ConfigSchema({
+      transport: 'stdio',
+      serverName: 'srv',
+      command: 'echo',
+      tools: { include: ['search'], rename: { search: 'find' } },
+    } as never)
+    expect(explicit.tools).toEqual({ include: ['search'], exclude: [], rename: { search: 'find' }, describe: {} })
+  })
 })
 
 describe('apply (plugin lifecycle)', () => {
@@ -198,6 +215,15 @@ describe('apply (plugin lifecycle)', () => {
     await activation
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     await fiber.dispose()
+  })
+
+  it('fails loud at load on a tools.rename collision, before any effect registers', async () => {
+    await expect(apply(ctx, {
+      ...stdioConfig,
+      tools: { rename: { a: 'x', b: 'x' } },
+    })).rejects.toThrow(/rename targets must be unique/)
+
+    expect(mockConnect).not.toHaveBeenCalled()
   })
 
   it('rejects a duplicate serverName at load and leaves the first instance intact', async () => {

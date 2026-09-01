@@ -1433,6 +1433,12 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -1455,6 +1461,12 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Automatic reconnect policy for one MCP server connection. */
@@ -1468,9 +1480,31 @@ export interface ReconnectConfig {
   /** Consecutive failed attempts per outage before giving up for good (default 10). */
   maxAttempts?: number
 }
+
+/**
+ * Deployment-level curation of one MCP server's tool set (`cordis.yml`
+ * `tools:`), applied on every sync — initial, reconnect, and
+ * `notifications/tools/list_changed` re-sync alike. Every rawName referenced
+ * anywhere below must be one the connected server actually advertises;
+ * {@link syncTools} fails loud per sync when one is not.
+ */
+export interface ToolFilterConfig {
+  /** Only these server-advertised rawNames are registered; empty or omitted registers every discovered tool. */
+  include?: string[]
+  /** rawNames removed after `include` narrows the set; empty or omitted removes none. */
+  exclude?: string[]
+  /**
+   * rawName → public-name suffix override. The public name stays
+   * `mcp__<serverName>__<suffix>`, normalized by {@link publicToolName} like
+   * any other tool; two different rawNames may not target the same suffix.
+   */
+  rename?: Record<string, string>
+  /** rawName → model-facing description override; empty or omitted keeps the server-provided description. */
+  describe?: Record<string, string>
+}
 ```
 
-Source: [`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+Source: [`packages/mcp/mcp-client/src/index.ts:112`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 

@@ -18,7 +18,7 @@ import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepse
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type JsonValue } from '@deepseek-ai/dsh-tools'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
-import { publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { publicToolName, resolveToolFilter, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import { createTransport } from '@deepseek-ai/dsh-mcp-client/src/transport.ts'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
 
@@ -168,6 +168,7 @@ const defaultOpts: ToolBridgeOptions = {
   registrationFailure: 'contain',
   serverName: 'srv',
   toolCallTimeoutMs: 60_000,
+  toolFilter: resolveToolFilter(undefined, 'test.tools'),
 }
 
 // ---- Tests ----
@@ -260,7 +261,7 @@ describe('syncTools', () => {
     ])
 
     await expect(syncTools(client as never, ctx, defaultOpts, new Map()))
-      .rejects.toThrow(/listed tool "dup" more than once/)
+      .rejects.toThrow(/tool "dup" resolves to public name "mcp__srv__dup", already claimed/)
     // Nothing registered, previous generation untouched (it was empty).
     expect(ctx.tools.get('mcp__srv__dup')).toBeUndefined()
   })
@@ -1272,5 +1273,160 @@ describe('tool execution — non-object args fallback', () => {
       undefined,
       expect.anything(),
     )
+  })
+})
+
+describe('resolveToolFilter', () => {
+  it('resolves omission to an empty, no-op filter', () => {
+    const filter = resolveToolFilter(undefined, 'test.tools')
+    expect(filter.include.size).toBe(0)
+    expect(filter.exclude.size).toBe(0)
+    expect(filter.rename.size).toBe(0)
+    expect(filter.describe.size).toBe(0)
+  })
+
+  it('resolves include/exclude/rename/describe into Sets and Maps', () => {
+    const filter = resolveToolFilter({
+      include: ['a', 'b'],
+      exclude: ['b'],
+      rename: { a: 'alpha' },
+      describe: { a: 'Alpha tool' },
+    }, 'test.tools')
+    expect([...filter.include]).toEqual(['a', 'b'])
+    expect([...filter.exclude]).toEqual(['b'])
+    expect(filter.rename.get('a')).toBe('alpha')
+    expect(filter.describe.get('a')).toBe('Alpha tool')
+  })
+
+  it('rejects two rawNames renaming to the same suffix', () => {
+    expect(() => resolveToolFilter({ rename: { a: 'x', b: 'x' } }, 'test.tools'))
+      .toThrow(/test\.tools\.rename: "a" and "b" both rename to "x" — rename targets must be unique/)
+  })
+})
+
+describe('syncTools — deployment-level tool filter', () => {
+  let ctx: Context
+
+  beforeEach(async () => {
+    ctx = await mountRegistry()
+  })
+
+  it('registers only the included rawNames', async () => {
+    const client = createMockClient([
+      { name: 'a', inputSchema: { type: 'object' } },
+      { name: 'b', inputSchema: { type: 'object' } },
+      { name: 'c', inputSchema: { type: 'object' } },
+    ])
+    const opts: ToolBridgeOptions = { ...defaultOpts, toolFilter: resolveToolFilter({ include: ['a', 'c'] }, 'test.tools') }
+
+    const disposers = await syncTools(client as never, ctx, opts, new Map())
+
+    expect(disposers.size).toBe(2)
+    expect(ctx.tools.get('mcp__srv__a')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__b')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__c')).toBeDefined()
+  })
+
+  it('removes excluded rawNames after include narrows the set', async () => {
+    const client = createMockClient([
+      { name: 'a', inputSchema: { type: 'object' } },
+      { name: 'b', inputSchema: { type: 'object' } },
+      { name: 'c', inputSchema: { type: 'object' } },
+    ])
+    const opts: ToolBridgeOptions = {
+      ...defaultOpts,
+      toolFilter: resolveToolFilter({ include: ['a', 'b', 'c'], exclude: ['b'] }, 'test.tools'),
+    }
+
+    const disposers = await syncTools(client as never, ctx, opts, new Map())
+
+    expect(disposers.size).toBe(2)
+    expect(ctx.tools.get('mcp__srv__a')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__b')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__c')).toBeDefined()
+  })
+
+  it('excludes without an include restriction', async () => {
+    const client = createMockClient([
+      { name: 'a', inputSchema: { type: 'object' } },
+      { name: 'b', inputSchema: { type: 'object' } },
+    ])
+    const opts: ToolBridgeOptions = { ...defaultOpts, toolFilter: resolveToolFilter({ exclude: ['b'] }, 'test.tools') }
+
+    const disposers = await syncTools(client as never, ctx, opts, new Map())
+
+    expect(disposers.size).toBe(1)
+    expect(ctx.tools.get('mcp__srv__a')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__b')).toBeUndefined()
+  })
+
+  it('renames the public-name suffix while the wire call still uses rawName', async () => {
+    const client = createMockClient(
+      [{ name: 'read_pubmed_paper', inputSchema: { type: 'object' } }],
+      { content: [{ type: 'text', text: 'ok' }] },
+    )
+    const opts: ToolBridgeOptions = {
+      ...defaultOpts,
+      toolFilter: resolveToolFilter({ rename: { read_pubmed_paper: 'read_paper' } }, 'test.tools'),
+    }
+
+    await syncTools(client as never, ctx, opts, new Map())
+
+    expect(ctx.tools.get('mcp__srv__read_paper')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__read_pubmed_paper')).toBeUndefined()
+    await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c1'), name: 'mcp__srv__read_paper', arguments: {} })
+    expect(client.callTool).toHaveBeenCalledWith(
+      { name: 'read_pubmed_paper', arguments: {} },
+      undefined,
+      expect.anything(),
+    )
+  })
+
+  it('overrides the model-facing description', async () => {
+    const client = createMockClient([
+      { name: 'search_papers', description: 'Server description', inputSchema: { type: 'object' } },
+    ])
+    const opts: ToolBridgeOptions = {
+      ...defaultOpts,
+      toolFilter: resolveToolFilter({ describe: { search_papers: 'Deployment description' } }, 'test.tools'),
+    }
+
+    await syncTools(client as never, ctx, opts, new Map())
+
+    expect(ctx.tools.get('mcp__srv__search_papers')?.description).toBe('Deployment description')
+  })
+
+  it('rejects an include reference the server never advertised', async () => {
+    const client = createMockClient([{ name: 'a', inputSchema: { type: 'object' } }])
+    const opts: ToolBridgeOptions = { ...defaultOpts, toolFilter: resolveToolFilter({ include: ['a', 'ghost'] }, 'test.tools') }
+
+    await expect(syncTools(client as never, ctx, opts, new Map()))
+      .rejects.toThrow(/tools\.include\/exclude\/rename\/describe reference "ghost", which the server does not advertise/)
+    expect(ctx.tools.get('mcp__srv__a')).toBeUndefined()
+  })
+
+  it('rejects exclude/rename/describe references the server never advertised, batched into one error', async () => {
+    const client = createMockClient([{ name: 'a', inputSchema: { type: 'object' } }])
+    const opts: ToolBridgeOptions = {
+      ...defaultOpts,
+      toolFilter: resolveToolFilter(
+        { exclude: ['ghost1'], rename: { ghost2: 'x' }, describe: { ghost3: 'y' } },
+        'test.tools',
+      ),
+    }
+
+    await expect(syncTools(client as never, ctx, opts, new Map()))
+      .rejects.toThrow(/"ghost1", "ghost2", "ghost3"/)
+  })
+
+  it('leaves the previous generation registered when a re-sync references a missing tool', async () => {
+    const client = createMockClient([{ name: 'stable', inputSchema: { type: 'object' } }])
+    const first = await syncTools(client as never, ctx, defaultOpts, new Map())
+    expect(ctx.tools.get('mcp__srv__stable')).toBeDefined()
+
+    const badOpts: ToolBridgeOptions = { ...defaultOpts, toolFilter: resolveToolFilter({ include: ['ghost'] }, 'test.tools') }
+    await expect(syncTools(client as never, ctx, badOpts, first)).rejects.toThrow(/does not advertise/)
+
+    expect(ctx.tools.get('mcp__srv__stable')).toBeDefined()
   })
 })

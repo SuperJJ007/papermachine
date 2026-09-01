@@ -1,13 +1,23 @@
 /**
- * Tool bridge: discovers MCP tools, registers them on the harness ToolRuntime
- * under deterministic server-qualified public names, and handles re-sync when
- * the server's tool list changes.
+ * Tool bridge: discovers MCP tools, applies deployment-level curation,
+ * registers the result on the harness ToolRuntime under deterministic
+ * server-qualified public names, and handles re-sync when the server's tool
+ * list changes.
  *
  * Naming contract (see the mcp-client Agent Note "Naming invariants"): every MCP tool
  * has the stable identity `(serverName, rawName)`; the model-facing public name
  * is `mcp__<serverName>__<rawName>`, normalized to the DeepSeek function-name
  * constraints. The raw name is only ever sent on the wire (`tools/call`); the
- * public name is never parsed to recover it.
+ * public name is never parsed to recover it. A `tools.rename` entry
+ * substitutes its suffix for `rawName` only in this naming step — the wire
+ * name is unaffected.
+ *
+ * Tool curation (see the mcp-client Agent Note "Deployment-level tool
+ * curation"): `cordis.yml` `tools.include`/`exclude`/`rename`/`describe`
+ * narrow and relabel what a server's tools look like to the model, decided
+ * by the deployment rather than the model. The filter is resolved once at
+ * plugin load ({@link resolveToolFilter}) and re-applied identically on
+ * every sync in {@link syncTools}, including after a reconnect.
  *
  * @module
  */
@@ -31,6 +41,77 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /** Deployment-level include/exclude/rename/describe applied to every discovered tool, every sync. */
+  toolFilter: ResolvedToolFilter
+}
+
+/**
+ * Deployment-level curation of one MCP server's tool set (`cordis.yml`
+ * `tools:`), applied on every sync — initial, reconnect, and
+ * `notifications/tools/list_changed` re-sync alike. Every rawName referenced
+ * anywhere below must be one the connected server actually advertises;
+ * {@link syncTools} fails loud per sync when one is not.
+ */
+export interface ToolFilterConfig {
+  /** Only these server-advertised rawNames are registered; empty or omitted registers every discovered tool. */
+  include?: string[]
+  /** rawNames removed after `include` narrows the set; empty or omitted removes none. */
+  exclude?: string[]
+  /**
+   * rawName → public-name suffix override. The public name stays
+   * `mcp__<serverName>__<suffix>`, normalized by {@link publicToolName} like
+   * any other tool; two different rawNames may not target the same suffix.
+   */
+  rename?: Record<string, string>
+  /** rawName → model-facing description override; empty or omitted keeps the server-provided description. */
+  describe?: Record<string, string>
+}
+
+/** Resolved, config-validated tool curation the bridge applies on every sync. */
+export interface ResolvedToolFilter {
+  /** Empty means no restriction: every discovered rawName passes. */
+  readonly include: ReadonlySet<string>
+  /** rawNames removed after `include`; checked whether or not `include` restricts anything. */
+  readonly exclude: ReadonlySet<string>
+  /** rawName → public-name suffix; unique by construction (validated at resolve time). */
+  readonly rename: ReadonlyMap<string, string>
+  /** rawName → model-facing description override. */
+  readonly describe: ReadonlyMap<string, string>
+}
+
+/**
+ * The one explicit resolve step from raw `tools` config to the filter the
+ * bridge applies on every sync. Programmatic construction may bypass
+ * Schemastery normalization, so `config` may be `undefined` here even though
+ * the Config schema always materializes the field with empty defaults —
+ * misconfiguration fails the plugin instance at load.
+ *
+ * Only rename-target uniqueness is self-contained (two rawNames cannot both
+ * target the same suffix regardless of what the server advertises) and is
+ * checked here. Whether every referenced rawName actually exists on the
+ * server cannot be judged without a live tool list, so that check runs per
+ * sync in {@link syncTools} — the earliest point it is resolvable.
+ *
+ * @param config - Raw `tools` config; omission (or all-empty fields) applies no filtering.
+ * @param path - Diagnostic prefix naming the config location in thrown messages.
+ * @returns The frozen resolved filter.
+ */
+export function resolveToolFilter(config: ToolFilterConfig | undefined, path: string): ResolvedToolFilter {
+  const rename = config?.rename ?? {}
+  const claimedBy = new Map<string, string>()
+  for (const [rawName, suffix] of Object.entries(rename)) {
+    const first = claimedBy.get(suffix)
+    if (first !== undefined) {
+      throw new Error(`${path}.rename: "${first}" and "${rawName}" both rename to "${suffix}" — rename targets must be unique`)
+    }
+    claimedBy.set(suffix, rawName)
+  }
+  return Object.freeze({
+    include: new Set(config?.include ?? []),
+    exclude: new Set(config?.exclude ?? []),
+    rename: new Map(Object.entries(rename)),
+    describe: new Map(Object.entries(config?.describe ?? {})),
+  })
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -76,6 +157,9 @@ function listToolsUncached(client: Client, cursor?: string) {
   )
 }
 
+/** One MCP SDK `tools/list` entry, keyed to {@link listToolsUncached}'s return shape. */
+type ListedTool = Awaited<ReturnType<typeof listToolsUncached>>['tools'][number]
+
 /** Call without the SDK pre-validating an output schema the bridge may not support. */
 function callToolUncached(
   client: Client,
@@ -116,16 +200,49 @@ export function publicToolName(serverName: string, rawName: string): string {
   return `${normalized.slice(0, MAX_PUBLIC_NAME_LENGTH - HASH_LENGTH - 1)}_${hash}`
 }
 
+/** Whether a deployment's `include`/`exclude` filter admits one discovered rawName. */
+function isIncludedByFilter(filter: ResolvedToolFilter, rawName: string): boolean {
+  if (filter.include.size > 0 && !filter.include.has(rawName)) return false
+  return !filter.exclude.has(rawName)
+}
+
+/**
+ * Fail loud when the deployment's `tools` config references a rawName the
+ * server never advertised — the earliest point a live tool list makes that
+ * resolvable. Checked against every rawName the server lists, independent of
+ * `include`/`exclude`, so an excluded-but-misspelled name is still caught.
+ */
+function validateToolFilterReferences(serverName: string, filter: ResolvedToolFilter, rawNames: ReadonlySet<string>): void {
+  const referenced = new Set<string>([
+    ...filter.include,
+    ...filter.exclude,
+    ...filter.rename.keys(),
+    ...filter.describe.keys(),
+  ])
+  const missing = [...referenced].filter(name => !rawNames.has(name))
+  if (missing.length === 0) return
+  throw new Error(
+    `mcp-client(${serverName}): tools.include/exclude/rename/describe reference `
+    + `${missing.map(name => JSON.stringify(name)).join(', ')}, which the server does not advertise`,
+  )
+}
+
 /**
  * Sync the MCP server's tool list into the harness ToolRuntime.
  *
- * Two phases keep the swap safe:
+ * Three phases keep the swap safe:
  *
- * 1. Fetch: drain uncached `tools/list` pagination and build the full next
- *    generation of `ToolDefinition`s under public names. Any failure here
- *    (network error, duplicate raw name in the server's list) rejects and
- *    leaves the previous generation registered untouched.
- * 2. Swap: dispose the previous generation, register the new one. A registry
+ * 1. Fetch: drain uncached `tools/list` pagination into the full raw listing.
+ *    A failure here (network error) rejects and leaves the previous
+ *    generation registered untouched.
+ * 2. Filter and build: validate that every rawName `opts.toolFilter`
+ *    references was actually advertised (a stale or misspelled reference
+ *    rejects here, same as a network failure), then apply `include`/
+ *    `exclude`/`rename`/`describe` and build the next generation of
+ *    `ToolDefinition`s under public names. A duplicate resolved public name
+ *    — a server listing one raw name twice, or a rename colliding with
+ *    another tool's name — also rejects here.
+ * 3. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
  *    server's `mcp__<serverName>__` namespace — the partial generation is
  *    rolled back (zero tools from this server) and logged. Initial strict
@@ -134,9 +251,9 @@ export function publicToolName(serverName: string, rawName: string): string {
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
- * @param opts - Bridge options: server namespace and per-call timeout.
+ * @param opts - Bridge options: server namespace, per-call timeout, and tool filter.
  * @param previous - Disposer map from the prior sync generation; disposed
- *   during the swap phase (only after the fetch phase succeeded).
+ *   during the swap phase (only after phases 1–2 succeeded).
  * @returns A map of registered public tool names to their unregister
  *   disposers — the exact set of live registrations owned by this server.
  */
@@ -146,34 +263,44 @@ export async function syncTools(
   opts: ToolBridgeOptions,
   previous: ToolDisposers,
 ): Promise<ToolDisposers> {
-  // Phase 1: fetch and build the next generation without touching the registry.
-  const definitions = new Map<string, ToolDefinition>()
+  // Phase 1: drain uncached `tools/list` pagination into the full raw listing.
+  const rawTools: ListedTool[] = []
   let cursor: string | undefined
   do {
     const response = await listToolsUncached(client, cursor)
-    for (const tool of response.tools) {
-      const publicName = publicToolName(opts.serverName, tool.name)
-      if (definitions.has(publicName)) {
-        throw new Error(
-          `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
-        )
-      }
-      definitions.set(publicName, createDefinition(
-        client,
-        ctx,
-        publicName,
-        tool.name,
-        tool.description ?? '',
-        tool.inputSchema,
-        supportedOutputSchema(tool.outputSchema),
-        tool.execution?.taskSupport === 'required',
-        opts,
-      ))
-    }
+    rawTools.push(...response.tools)
     cursor = response.nextCursor
   } while (cursor)
 
-  // Phase 2: swap generations.
+  // Phase 2: validate the deployment's filter against the live list, then
+  // apply include/exclude/rename/describe and build the next generation
+  // without touching the registry.
+  validateToolFilterReferences(opts.serverName, opts.toolFilter, new Set(rawTools.map(tool => tool.name)))
+  const definitions = new Map<string, ToolDefinition>()
+  for (const tool of rawTools) {
+    if (!isIncludedByFilter(opts.toolFilter, tool.name)) continue
+    const suffix = opts.toolFilter.rename.get(tool.name) ?? tool.name
+    const publicName = publicToolName(opts.serverName, suffix)
+    if (definitions.has(publicName)) {
+      throw new Error(
+        `mcp-client(${opts.serverName}): tool "${tool.name}" resolves to public name "${publicName}", `
+        + 'already claimed by another discovered tool — check for a duplicate server-listed name or a tools.rename collision',
+      )
+    }
+    definitions.set(publicName, createDefinition(
+      client,
+      ctx,
+      publicName,
+      tool.name,
+      opts.toolFilter.describe.get(tool.name) ?? tool.description ?? '',
+      tool.inputSchema,
+      supportedOutputSchema(tool.outputSchema),
+      tool.execution?.taskSupport === 'required',
+      opts,
+    ))
+  }
+
+  // Phase 3: swap generations.
   for (const dispose of previous.values()) dispose()
   const disposers: ToolDisposers = new Map()
   try {

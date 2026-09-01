@@ -18,10 +18,12 @@ import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
+import { resolveToolFilter } from './tools.ts'
+import type { ToolFilterConfig } from './tools.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
 
-export type { McpResult } from './tools.ts'
+export type { McpResult, ResolvedToolFilter, ToolFilterConfig } from './tools.ts'
 export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -70,6 +72,12 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -92,6 +100,12 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Configuration for one stdio or Streamable HTTP MCP server. */
@@ -102,6 +116,13 @@ const Reconnect: z<ReconnectConfig> = z.object({
   initialDelayMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(RECONNECT_DEFAULTS.initialDelayMs),
   maxDelayMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(RECONNECT_DEFAULTS.maxDelayMs),
   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
+})
+
+const ToolFilter: z<ToolFilterConfig> = z.object({
+  include: z.array(String).default([]),
+  exclude: z.array(String).default([]),
+  rename: z.dict(String).default({}),
+  describe: z.dict(String).default({}),
 })
 
 export const Config = z.union([
@@ -115,6 +136,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
+    tools: ToolFilter,
   }),
   z.object({
     transport: z.const('streamable-http'),
@@ -124,6 +146,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
+    tools: ToolFilter,
   }),
 ]) as unknown as z<Config>
 
@@ -138,10 +161,13 @@ export const Config = z.union([
  * @returns startup readiness after connection and initial tool discovery settle.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
-  // Fail loud at load: reconnect misconfiguration (including programmatic
-  // construction that bypassed Schemastery) rejects THIS instance before any
-  // effect registers.
+  // Fail loud at load: reconnect and tool-filter misconfiguration (including
+  // programmatic construction that bypassed Schemastery) rejects THIS
+  // instance before any effect registers. Tool-filter resolution only
+  // catches what is self-contained (rename-target uniqueness); whether a
+  // referenced rawName exists is checked per sync, once a live list exists.
   const reconnect = resolveReconnectPolicy(config.reconnect, `mcp-client(${config.serverName}): reconnect`)
+  const toolFilter = resolveToolFilter(config.tools, `mcp-client(${config.serverName}): tools`)
 
   // Reserve the namespace next: a duplicate `serverName` fails THIS instance
   // at load with an actionable error and leaves the earlier instance intact.
@@ -163,7 +189,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // The supervisor owns the client/transport generations, the reconnect
   // loop, and the live tool registrations; disposal stops reconnection,
   // quiesces in-flight work, and unregisters the current generation.
-  const connection = startConnection(ctx, config, reconnect)
+  const connection = startConnection(ctx, config, reconnect, toolFilter)
 
   ctx.effect(() => {
     return () => connection.dispose()

@@ -4,8 +4,15 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
-import { buildProvisioningEnv, DesktopEnvironmentProvisioner, runProvisioningProcess, stopProcessGroup, type ProcessRequest } from '../src/provisioning.ts'
+import {
+  buildProvisioningEnv, DesktopEnvironmentProvisioner, orderSourcesFrom, runProvisioningProcess, stopProcessGroup,
+  type ProcessRequest,
+} from '../src/provisioning.ts'
 import { resolveDisciplineStatus } from '../src/discipline-status.ts'
+
+const SOURCE_A = { id: 'source-a', name: 'Source A', channels: ['https://a.example/conda-forge'] }
+const SOURCE_B = { id: 'source-b', name: 'Source B', channels: ['https://b.example/conda-forge'] }
+const SOURCE_C = { id: 'source-c', name: 'Source C', channels: ['https://c.example/conda-forge'] }
 
 const declaration = parseEnvironmentDeclaration({
   schemaVersion: 1,
@@ -13,7 +20,7 @@ const declaration = parseEnvironmentDeclaration({
   revision: '2026.08.1',
   name: 'Test science',
   supportedPlatforms: ['darwin-arm64'],
-  channels: ['conda-forge'],
+  sources: [SOURCE_A],
   packages: ['python=3.13', 'r-base=4.5'],
   estimatedDownloadBytes: 100,
   requiredFreeBytes: 200,
@@ -236,6 +243,130 @@ describe('DesktopEnvironmentProvisioner', () => {
     })
     await expect(provisioner.provision(declaration, control.signal)).rejects.toThrow('cancelled')
     expect(await provisioner.applied()).toBeUndefined()
+  })
+
+  describe('ordered source fallback', () => {
+    const multiSource = parseEnvironmentDeclaration({ ...declaration, sources: [SOURCE_A, SOURCE_B, SOURCE_C] })
+
+    it('falls back to the next source as a whole retried attempt when the first source fails', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-'))
+      const attemptedChannels: (readonly string[])[] = []
+      const phases: string[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          attemptedChannels.push(channelArgs)
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          if (channelArgs[0] === SOURCE_A.channels[0]) throw new Error('source A unreachable')
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+        },
+      })
+      const applied = await provisioner.provision(multiSource, new AbortController().signal, (update) => {
+        phases.push(`${update.phase}:${update.message}`)
+      })
+
+      // Every source is a whole, independent attempt: source A's channel
+      // never appears alongside source B's in one args array.
+      expect(attemptedChannels).toEqual([[SOURCE_A.channels[0]], [SOURCE_B.channels[0]]])
+      expect(applied.id).toBe(multiSource.id)
+      expect(phases.some(entry => entry.includes(SOURCE_B.name))).toBe(true)
+    })
+
+    it('tries every source and surfaces the last error when all sources fail', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-all-fail-'))
+      const attempts: string[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          const source = [SOURCE_A, SOURCE_B, SOURCE_C].find(candidate => candidate.channels[0] === channelArgs[0])!
+          attempts.push(source.id)
+          throw new Error(`${source.id} failed`)
+        },
+      })
+
+      await expect(provisioner.provision(multiSource, new AbortController().signal)).rejects.toThrow('source-c failed')
+      expect(attempts).toEqual(['source-a', 'source-b', 'source-c'])
+      expect(await provisioner.applied()).toBeUndefined()
+    })
+
+    it('reuses the shared micromamba cache root across every source attempt', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-cache-'))
+      const cacheRoots = new Set<string>()
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          cacheRoots.add(request.env.MAMBA_ROOT_PREFIX ?? '')
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          if (channelArgs[0] === SOURCE_A.channels[0]) throw new Error('source A unreachable')
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+        },
+      })
+      await provisioner.provision(multiSource, new AbortController().signal)
+
+      expect(cacheRoots.size).toBe(1)
+    })
+
+    it('does not try a later source once cancellation interrupts an earlier attempt', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-cancel-'))
+      const control = new AbortController()
+      const attempts: string[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          const source = [SOURCE_A, SOURCE_B, SOURCE_C].find(candidate => candidate.channels[0] === channelArgs[0])!
+          attempts.push(source.id)
+          control.abort()
+          throw new Error('cancelled')
+        },
+      })
+
+      await expect(provisioner.provision(multiSource, control.signal)).rejects.toThrow('cancelled')
+      expect(attempts).toEqual(['source-a'])
+    })
+
+    it('starts from a preferred source id, keeping the rest in their declared order', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-fallback-preferred-'))
+      const attempts: string[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          const source = [SOURCE_A, SOURCE_B, SOURCE_C].find(candidate => candidate.channels[0] === channelArgs[0])!
+          attempts.push(source.id)
+          throw new Error(`${source.id} failed`)
+        },
+      })
+
+      await expect(provisioner.provision(multiSource, new AbortController().signal, undefined, 'source-c')).rejects.toThrow()
+      expect(attempts).toEqual(['source-c', 'source-a', 'source-b'])
+    })
+  })
+})
+
+describe('orderSourcesFrom', () => {
+  it('leaves the order unchanged when no preferred id is given', () => {
+    expect(orderSourcesFrom([SOURCE_A, SOURCE_B], undefined)).toEqual([SOURCE_A, SOURCE_B])
+  })
+
+  it('leaves the order unchanged when the preferred id is not in the list', () => {
+    expect(orderSourcesFrom([SOURCE_A, SOURCE_B], 'not-a-source')).toEqual([SOURCE_A, SOURCE_B])
+  })
+
+  it('moves the preferred source to the front, keeping the rest in order', () => {
+    expect(orderSourcesFrom([SOURCE_A, SOURCE_B, SOURCE_C], 'source-c')).toEqual([SOURCE_C, SOURCE_A, SOURCE_B])
+  })
+
+  it('leaves a list already starting with the preferred source unchanged', () => {
+    expect(orderSourcesFrom([SOURCE_A, SOURCE_B], 'source-a')).toEqual([SOURCE_A, SOURCE_B])
   })
 })
 

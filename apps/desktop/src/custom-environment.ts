@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
-import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
+import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration, type EnvironmentSource } from './environment-declaration.ts'
 
 /** The single id every custom package set is published under; one custom environment exists at a time. */
 export const CUSTOM_ENVIRONMENT_ID = 'custom'
@@ -44,12 +44,17 @@ function customPath(root: string): string {
  * same packages listed in a different order are the same environment) and
  * stable across launches, so re-entering onboarding with an unchanged list
  * resolves to `current` instead of re-downloading.
+ *
+ * Deliberately excludes sources: a source names where packages are
+ * downloaded from, not which packages the resulting environment has, so
+ * trying a different mirror (or the ordered fallback moving on to one) for
+ * the same package list must not mint a new revision and force a
+ * redundant re-provision of an environment that would come out identical.
  * @param packages - the requested package tokens.
- * @param channels - the channels the set resolves against.
  * @returns a decimal digest, the third field of the revision.
  */
-function digest(packages: readonly string[], channels: readonly string[]): string {
-  const canonical = JSON.stringify([[...channels].sort(), [...packages].sort()])
+function digest(packages: readonly string[]): string {
+  const canonical = JSON.stringify([...packages].sort())
   return String(Number.parseInt(createHash('sha256').update(canonical).digest('hex').slice(0, 10), 16))
 }
 
@@ -60,22 +65,23 @@ function digest(packages: readonly string[], channels: readonly string[]): strin
  * declaration faces before it can reach the solver's argv.
  * @param packages - the requested package tokens, in the order the user listed them.
  * @param platforms - the platforms this build provisions for.
- * @param channels - the channels to resolve against.
+ * @param sources - the same ordered sources the shipped declaration carries;
+ *   a custom package set does not choose its own sources.
  * @returns the declaration to persist and provision.
  * @throws when the set is empty or a token is not a valid package spec.
  */
 export function buildCustomDeclaration(
   packages: readonly string[],
   platforms: readonly DesktopPlatform[],
-  channels: readonly string[],
+  sources: readonly EnvironmentSource[],
 ): EnvironmentDeclaration {
   return parseEnvironmentDeclaration({
     schemaVersion: 1,
     id: CUSTOM_ENVIRONMENT_ID,
-    revision: `${REVISION_PREFIX}.${digest(packages, channels)}`,
+    revision: `${REVISION_PREFIX}.${digest(packages)}`,
     name: '自定义环境 · Custom environment',
     supportedPlatforms: platforms,
-    channels,
+    sources,
     packages,
     estimatedDownloadBytes: ESTIMATED_DOWNLOAD_BYTES,
     requiredFreeBytes: REQUIRED_FREE_BYTES,

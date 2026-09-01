@@ -4,7 +4,23 @@
   "revision": "2026.09.1",
   "name": "通用科学环境 · General science",
   "supportedPlatforms": ["darwin-arm64", "darwin-x64"],
-  "channels": ["conda-forge"],
+  "sources": [
+    {
+      "id": "tuna",
+      "name": "清华 TUNA 镜像 · TUNA mirror",
+      "channels": ["https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge"]
+    },
+    {
+      "id": "ustc",
+      "name": "中科大 USTC 镜像 · USTC mirror",
+      "channels": ["https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge"]
+    },
+    {
+      "id": "official",
+      "name": "官方源 · Official channel",
+      "channels": ["https://conda.anaconda.org/conda-forge"]
+    }
+  ],
   "packages": [
     "python=3.13", "numpy=2.3", "scipy=1.16", "pandas=2.3", "matplotlib=3.10", "seaborn=0.13",
     "statsmodels=0.14", "scikit-learn=1.7", "pyarrow=21", "openpyxl=3.1", "pyreadstat=1.3", "pillow=11",

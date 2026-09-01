@@ -10,7 +10,7 @@ function declaration(id: string, revision: string): ReturnType<typeof parseEnvir
     revision,
     name: id,
     supportedPlatforms: ['darwin-arm64'],
-    channels: ['conda-forge'],
+    sources: [{ id: 'official', name: 'Official channel', channels: ['https://conda.anaconda.org/conda-forge'] }],
     packages: ['python=3.13'],
     estimatedDownloadBytes: 100,
     requiredFreeBytes: 200,

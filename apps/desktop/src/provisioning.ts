@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
-import type { DesktopPlatform, EnvironmentDeclaration } from './environment-declaration.ts'
+import type { DesktopPlatform, EnvironmentDeclaration, EnvironmentSource } from './environment-declaration.ts'
 
 type ProvisioningPhase = 'checking' | 'solving' | 'installing' | 'verifying' | 'publishing' | 'ready'
 
@@ -208,6 +208,51 @@ export function buildProvisioningEnv(source: NodeJS.ProcessEnv = process.env): N
   return env
 }
 
+/**
+ * The provisioner root under a Harness home: `applied.json`, the
+ * micromamba package cache, and every provisioned environment prefix live
+ * here. Shared with `environment-binding.ts`'s
+ * {@link isWithinProvisionedRoot}, so a binding naming a prefix outside this
+ * root — a foreign conda-family environment from before this application
+ * owned its environment outright — is recognised as no longer valid.
+ * @param dshHome - the Harness home directory.
+ */
+export function desktopEnvironmentsRoot(dshHome: string): string {
+  return join(dshHome, 'desktop-environments')
+}
+
+/**
+ * The directory under the provisioner root holding every provisioned
+ * environment's prefix, keyed by declaration id and revision
+ * (`environments/<id>/<revision>`).
+ * @param root - the provisioner root, {@link desktopEnvironmentsRoot}.
+ */
+export function provisionedEnvironmentsDirectory(root: string): string {
+  return join(root, 'environments')
+}
+
+/**
+ * Order `sources` for one provisioning run: `preferredId`, if given and
+ * matches a source, moves to the front; every other source keeps its
+ * existing relative order behind it. Provisioning tries each source in this
+ * order as a whole, independent `create` attempt (see
+ * {@link EnvironmentDeclaration.sources}) — this decides only where the run
+ * starts, never which sources are tried or skipped.
+ * @param sources - the declaration's ordered sources.
+ * @param preferredId - the source id to start from; `undefined` or an id
+ *   absent from `sources` leaves the order unchanged.
+ * @returns `sources` reordered to start from `preferredId`.
+ */
+export function orderSourcesFrom(
+  sources: readonly EnvironmentSource[],
+  preferredId: string | undefined,
+): readonly EnvironmentSource[] {
+  if (preferredId === undefined) return sources
+  const preferred = sources.find(source => source.id === preferredId)
+  if (preferred === undefined) return sources
+  return [preferred, ...sources.filter(source => source.id !== preferredId)]
+}
+
 export interface ProvisionerOptions {
   readonly root: string
   readonly micromambaPath: string
@@ -260,11 +305,23 @@ export class DesktopEnvironmentProvisioner {
    * environment advertised as `current` if the recreate fails partway
    * through, and clearing the pointer first turns that failure into an
    * honest not-ready status that routes back to onboarding instead.
+   *
+   * `declaration.sources`, reordered to start from `preferredSourceId` (see
+   * {@link orderSourcesFrom}), are tried in order as whole `create`
+   * attempts: a source that fails for any reason — network unreachable, a
+   * bad package spec, anything — is abandoned entirely and the next source
+   * is tried against a freshly cleared prefix, never merged into the same
+   * attempt's channel list. Cancellation during a `create` attempt is not
+   * retried; it propagates immediately. The last source's error is thrown
+   * only once every source has failed.
+   * @param preferredSourceId - the source id to try first; `undefined` or
+   *   an id absent from `declaration.sources` starts from that list's own order.
    */
   async provision(
     declaration: EnvironmentDeclaration,
     signal: AbortSignal,
     onProgress: (progress: ProvisioningProgress) => void = () => {},
+    preferredSourceId?: string,
   ): Promise<AppliedEnvironment> {
     if (!declaration.supportedPlatforms.includes(this.options.platform)) {
       throw new Error(`desktop provisioning: ${declaration.id} does not support ${this.options.platform}`)
@@ -274,27 +331,45 @@ export class DesktopEnvironmentProvisioner {
     if (await this.#freeBytes() < declaration.requiredFreeBytes) {
       throw new Error(`desktop provisioning: ${declaration.name} needs ${String(declaration.requiredFreeBytes)} free bytes`)
     }
-    const environments = join(this.options.root, 'environments')
+    const environments = provisionedEnvironmentsDirectory(this.options.root)
     const prefix = join(environments, declaration.id, declaration.revision)
     await mkdir(join(environments, declaration.id), { recursive: true, mode: 0o700 })
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
     if (alreadyPublished) await rm(join(this.options.root, 'applied.json'), { force: true })
-    await rm(prefix, { recursive: true, force: true })
-    onProgress({ phase: 'solving', message: `Resolving ${declaration.name} packages` })
-    await this.#run({
-      executable: this.options.micromambaPath,
-      args: [
-        'create', '--yes', '--no-rc', '--override-channels', '--prefix', prefix,
-        ...declaration.channels.flatMap(channel => ['--channel', channel]),
-        ...declaration.packages,
-      ],
-      env: { ...buildProvisioningEnv(), MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba') },
-      signal,
-      timeoutMs: declaration.timeoutMs,
-      onLine: (line) => { onProgress({ phase: 'installing', message: line }) },
-    })
+    const attempts = orderSourcesFrom(declaration.sources, preferredSourceId)
+    let lastError: unknown
+    let created = false
+    for (const [index, source] of attempts.entries()) {
+      await rm(prefix, { recursive: true, force: true })
+      onProgress({
+        phase: 'solving',
+        message: index === 0
+          ? `Resolving ${declaration.name} packages via ${source.name}`
+          : `Retrying via ${source.name} (source ${String(index + 1)} of ${String(attempts.length)})`,
+      })
+      try {
+        await this.#run({
+          executable: this.options.micromambaPath,
+          args: [
+            'create', '--yes', '--no-rc', '--override-channels', '--prefix', prefix,
+            ...source.channels.flatMap(channel => ['--channel', channel]),
+            ...declaration.packages,
+          ],
+          env: { ...buildProvisioningEnv(), MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba') },
+          signal,
+          timeoutMs: declaration.timeoutMs,
+          onLine: (line) => { onProgress({ phase: 'installing', message: line }) },
+        })
+        created = true
+        break
+      } catch (error) {
+        lastError = error
+        if (signal.aborted) throw error
+      }
+    }
+    if (!created) throw lastError instanceof Error ? lastError : new Error(String(lastError))
     onProgress({ phase: 'verifying', message: 'Verifying Python and R' })
     for (const check of declaration.healthChecks) {
       await this.#run({

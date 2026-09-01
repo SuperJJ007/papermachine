@@ -8,7 +8,7 @@ import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
-import { DesktopEnvironmentProvisioner, desktopEnvironmentsRoot, type ProvisioningProgress } from './provisioning.ts'
+import { DesktopEnvironmentProvisioner, desktopEnvironmentsRoot, orderSourcesFrom, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { qualifyingInterpreters } from './interpreter-presence.ts'
@@ -128,12 +128,16 @@ async function declarations(dshHome: string): Promise<readonly EnvironmentDeclar
   return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
 }
 
+/** The bundled micromamba executable for this machine, shared by provisioning and the Host's package installer. */
+function micromambaPath(): string {
+  return join(resourceRoot(), 'bin', desktopPlatform(), 'micromamba')
+}
+
 function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
-  const platform = desktopPlatform()
   return new DesktopEnvironmentProvisioner({
     root: desktopEnvironmentsRoot(dshHome),
-    micromambaPath: join(resourceRoot(), 'bin', platform, 'micromamba'),
-    platform,
+    micromambaPath: micromambaPath(),
+    platform: desktopPlatform(),
   })
 }
 
@@ -157,9 +161,11 @@ function localeSignals(): LocaleSignals {
  * the run's own health checks a second time.
  * @param dshHome - the Harness home the binding is scoped to.
  * @param prefix - the published environment prefix.
+ * @param sourceId - the package source the run succeeded through; the Host's
+ *   package installs start from it.
  */
-async function bindProvisionedPrefix(dshHome: string, prefix: string): Promise<void> {
-  const binding = await resolveBindRequest({ pythonPrefix: prefix, rPrefix: prefix }, qualifyingInterpreters)
+async function bindProvisionedPrefix(dshHome: string, prefix: string, sourceId: string): Promise<void> {
+  const binding = await resolveBindRequest({ pythonPrefix: prefix, rPrefix: prefix, sourceId }, qualifyingInterpreters)
   await writeEnvironmentBinding(dshHome, binding)
 }
 
@@ -193,7 +199,7 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
         if (update.sourceId !== undefined) lastSourceId = update.sourceId
         reportProvisioningProgress(update)
       }, sourceId)
-      await bindProvisionedPrefix(dshHome, published.prefix)
+      await bindProvisionedPrefix(dshHome, published.prefix, published.sourceId)
       void telemetry?.report({
         event: 'environment.installed',
         sourceId: published.sourceId,
@@ -214,9 +220,29 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   await coordinator.trackRun(run)
 }
 
+/**
+ * Write the Host overlay for `binding`. The install channels are the shipped
+ * declaration's sources reordered to start from the bound source, flattened
+ * to their channel URLs, so a package install first tries the mirror the
+ * environment itself came from; a bound source id the shipped declaration no
+ * longer lists (a later build renamed its sources) keeps the declaration's
+ * own order, the same rule `orderSourcesFrom` applies to provisioning's
+ * preferred source. A custom package set shares the shipped sources
+ * unchanged (`buildCustomDeclaration`), so the shipped declaration is the
+ * one source list for both.
+ * @param dshHome - the Harness home the overlay is written into.
+ * @param binding - the bound environment.
+ * @returns the overlay path passed to the Host as `--patch`.
+ */
 async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
   const overlay = join(dshHome, 'desktop-science.cordis.patch.yml')
-  await writeFile(overlay, renderDesktopRuntimeOverlay(binding), { mode: 0o600 })
+  const sources = orderSourcesFrom((await shippedDeclaration()).sources, binding.sourceId)
+  await writeFile(overlay, renderDesktopRuntimeOverlay({
+    ...(binding.pythonPrefix === undefined ? {} : { pythonPrefix: binding.pythonPrefix }),
+    ...(binding.rPrefix === undefined ? {} : { rPrefix: binding.rPrefix }),
+    micromambaPath: micromambaPath(),
+    installChannels: sources.flatMap(source => source.channels),
+  }), { mode: 0o600 })
   return overlay
 }
 

@@ -51,7 +51,8 @@ export interface EnvironmentDeclaration {
   readonly healthChecks: readonly EnvironmentHealthCheck[]
 }
 
-const ID = /^[a-z][a-z0-9-]*$/u
+/** The closed identifier vocabulary shared by declaration ids, source ids, and the environment binding's recorded source id. */
+export const IDENTIFIER = /^[a-z][a-z0-9-]*$/u
 const REVISION = /^[0-9]{4}\.[0-9]{2}\.[0-9]+$/u
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:+<>=!*~-]*$/u
 // A conda channel URL that reaches micromamba's argv unescaped; see {@link HTTPS_URL}.
@@ -87,7 +88,7 @@ export function parseEnvironmentDeclaration(value: unknown): EnvironmentDeclarat
     if (!(FIELDS as readonly string[]).includes(key)) throw new Error(`desktop environment: unknown field ${key}`)
   }
   if (value.schemaVersion !== 1) throw new Error('desktop environment: schemaVersion must be 1')
-  if (typeof value.id !== 'string' || !ID.test(value.id)) throw new Error('desktop environment: invalid id')
+  if (typeof value.id !== 'string' || !IDENTIFIER.test(value.id)) throw new Error('desktop environment: invalid id')
   if (typeof value.revision !== 'string' || !REVISION.test(value.revision)) throw new Error('desktop environment: invalid revision')
   if (typeof value.name !== 'string' || value.name.trim().length === 0) throw new Error('desktop environment: name must be non-empty')
   nonEmptyStrings(value.supportedPlatforms, 'supportedPlatforms')
@@ -103,7 +104,7 @@ export function parseEnvironmentDeclaration(value: unknown): EnvironmentDeclarat
     if (Object.keys(item).some(key => !(SOURCE_FIELDS as readonly string[]).includes(key))) {
       throw new Error('desktop environment: source has an unknown field')
     }
-    if (typeof item.id !== 'string' || !ID.test(item.id)) throw new Error('desktop environment: invalid source id')
+    if (typeof item.id !== 'string' || !IDENTIFIER.test(item.id)) throw new Error('desktop environment: invalid source id')
     if (sourceIds.has(item.id)) throw new Error('desktop environment: duplicate source id')
     sourceIds.add(item.id)
     if (typeof item.name !== 'string' || item.name.trim().length === 0) {

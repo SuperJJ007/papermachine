@@ -38,15 +38,24 @@ function collectIds(entries: readonly CordisEntry[]): Set<string> {
   return ids
 }
 
+/** The installer fields every overlay carries; the channel order is decided by the caller and rendered verbatim. */
+const installer = {
+  micromambaPath: '/Applications/PaperMachine.app/Contents/Resources/bin/darwin-arm64/micromamba',
+  installChannels: ['https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge', 'https://conda.anaconda.org/conda-forge'],
+} as const
+
 describe('desktop Runtime overlay', () => {
-  it('binds both interpreters and removes product-mode selection', () => {
+  it('binds both interpreters, the installer, and removes product-mode selection', () => {
     const parsed = yaml.load(renderDesktopRuntimeOverlay({
       pythonPrefix: '/Applications Support/Science/env',
       rPrefix: '/Applications Support/Science/env',
+      ...installer,
     })) as CordisEntry[]
     const byId = new Map(parsed.map(entry => [entry.id, entry]))
 
-    expect(byId.get('science-runtime')?.config).toMatchObject({
+    expect(byId.get('science-runtime')?.config).toEqual({
+      micromambaPath: installer.micromambaPath,
+      installChannels: [...installer.installChannels],
       profiles: {
         science: {
           pythonPrefix: '/Applications Support/Science/env',
@@ -61,22 +70,27 @@ describe('desktop Runtime overlay', () => {
   })
 
   it('renders only the fields present when the prefixes come from different environments', () => {
-    const parsed = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/py/prefix' })) as CordisEntry[]
+    const parsed = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/py/prefix', ...installer })) as CordisEntry[]
     const byId = new Map(parsed.map(entry => [entry.id, entry]))
 
-    expect(byId.get('science-runtime')?.config).toEqual({
+    expect(byId.get('science-runtime')?.config).toMatchObject({
       profiles: { science: { pythonPrefix: '/py/prefix' } },
     })
   })
 
   it('rejects a call with neither prefix', () => {
-    expect(() => renderDesktopRuntimeOverlay({})).toThrow(/requires pythonPrefix or rPrefix/)
+    expect(() => renderDesktopRuntimeOverlay({ ...installer })).toThrow(/requires pythonPrefix or rPrefix/)
+  })
+
+  it('rejects an empty install-channel list, since science-runtime requires the channels alongside micromambaPath', () => {
+    expect(() => renderDesktopRuntimeOverlay({ pythonPrefix: '/py/prefix', micromambaPath: installer.micromambaPath, installChannels: [] }))
+      .toThrow(/requires at least one install channel/)
   })
 
   it('patches ids the base web-app bundle actually declares', async () => {
     const base = yaml.load(await readFile(basePatchPath, 'utf8'), { schema: cordisSchema }) as CordisEntry[]
     const baseIds = collectIds(base)
-    const overlay = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/prefix', rPrefix: '/prefix' })) as CordisEntry[]
+    const overlay = yaml.load(renderDesktopRuntimeOverlay({ pythonPrefix: '/prefix', rPrefix: '/prefix', ...installer })) as CordisEntry[]
 
     for (const entry of overlay) {
       expect(baseIds.has(entry.id ?? ''), `overlay entry ${JSON.stringify(entry.id)} has no matching base row`).toBe(true)

@@ -1,9 +1,23 @@
 /** Desktop-owned Host composition applied above the generic Web bundle. */
 
-/** The prefix(es) to bind into the `science` profile; at least one is required. */
-export interface RuntimeOverlayPrefixes {
+/**
+ * The Runtime facts the overlay carries into the Host: the prefix(es) bound
+ * into the `science` profile (at least one is required), the bundled
+ * micromamba executable, and the ordered install channels — the two
+ * `science-runtime` fields `install_science_packages` requires together.
+ */
+export interface RuntimeOverlayInput {
   readonly pythonPrefix?: string
   readonly rPrefix?: string
+  /** Absolute path to the bundled micromamba executable the Host installs packages with. */
+  readonly micromambaPath: string
+  /**
+   * Ordered, non-empty conda channel URLs the Host tries as whole,
+   * independent `micromamba install` attempts: the bound source's channels
+   * first, then the remaining shipped sources in declaration order
+   * (`writeRuntimeOverlay` in `main.ts` decides the order).
+   */
+  readonly installChannels: readonly string[]
 }
 
 /**
@@ -22,16 +36,21 @@ export interface RuntimeOverlayPrefixes {
  * — appropriate because this same overlay already forces Science as the
  * product default (`agent-presets`), so there is no other-preset session for
  * the generic Web session-gated placement to distinguish.
- * @param prefixes - the Python and/or R prefix to bind; at least one is required.
- * @throws when neither prefix is present.
+ * @param input - the prefix(es) to bind, the micromamba executable, and the
+ *   ordered install channels.
+ * @throws when neither prefix is present or `installChannels` is empty.
  */
-export function renderDesktopRuntimeOverlay(prefixes: RuntimeOverlayPrefixes): string {
-  if (prefixes.pythonPrefix === undefined && prefixes.rPrefix === undefined) {
+export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string {
+  if (input.pythonPrefix === undefined && input.rPrefix === undefined) {
     throw new Error('desktop runtime overlay: requires pythonPrefix or rPrefix')
   }
+  if (input.installChannels.length === 0) {
+    throw new Error('desktop runtime overlay: requires at least one install channel')
+  }
   const fields = [
-    ...(prefixes.pythonPrefix === undefined ? [] : [`        pythonPrefix: ${JSON.stringify(prefixes.pythonPrefix)}`]),
-    ...(prefixes.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(prefixes.rPrefix)}`]),
+    ...(input.pythonPrefix === undefined ? [] : [`        pythonPrefix: ${JSON.stringify(input.pythonPrefix)}`]),
+    ...(input.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(input.rPrefix)}`]),
   ].join('\n')
-  return `- id: science-runtime\n  config:\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n`
+  const channels = input.installChannels.map(url => `      - ${JSON.stringify(url)}`).join('\n')
+  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n`
 }

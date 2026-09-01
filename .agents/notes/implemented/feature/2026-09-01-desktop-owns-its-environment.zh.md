@@ -32,6 +32,8 @@ Onboarding 现在只有一条路径：安装。绑定已有环境被完全移除
 
 `buildCustomDeclaration`（`custom-environment.ts`）原样沿用随应用发布的 declaration 的 `sources`，不允许用户按包挑选各自的源——自定义包清单不能选择包从何而来，只能选择要哪些包。它的 revision digest 特意只根据 `packages` 计算，不包含 `sources`：源描述的是包从哪里下载，而不是最终装了什么，因此换一个镜像（无论是用户主动选择，还是有序回退自动往后走）对同一份包清单而言，绝不能铸造出一个新 revision、迫使对一个本应完全相同的环境做多余的重新配备。
 
+binding（`environment-binding.json`）以 `sourceId` 记录本次安装成功所经由的源的 id（`bindProvisionedPrefix` 传入 provisioner 的 `published.sourceId`；缺少它的 binding 视为无效），而 `writeRuntimeOverlay`（`main.ts`）把它带进 workspace：Host overlay 的 `science-runtime` 行新增 `micromambaPath`（随应用打包的可执行文件，与 provisioning 运行的是同一路径）与 `installChannels`——随应用发布的 declaration 的 sources 经 `orderSourcesFrom(sources, binding.sourceId)` 重排后展开成 channel URL——因此 `install_science_packages` 会先尝试环境本身所来自的镜像，再按 declaration 顺序尝试其余的源，每一次都是 `packages/science/science-runtime` 的 `installChannels` 契约之下完整且相互独立的 `micromamba install` 尝试。若已绑定的源 id 已不在随应用发布的 declaration 中，则保持 declaration 自身的顺序，与 provisioning 对待首选源 id 的规则相同。`science-runtime` 要求这两个字段同时配置，因此 `renderDesktopRuntimeOverlay` 拒绝空的 channel 列表，而不是生成一个会在 Host 加载时被拒绝的 overlay。
+
 ## 备选方案
 
 - **把绑定路径保留为一个可选的「高级」设置。** 对本次改动而言予以拒绝：这样仍会留下两种磁盘格式（一个绑定的外部 prefix 和一个自有的已配备 prefix）与两条校验路径，去维护一条产品决定认为根本不应存在的路径。如果将来确实需要一个「使用我自己的环境」设置，可以从 git 历史中恢复，而不是让它带着一个已经删除的入口在代码树里休眠——这正是本分支刚刚修复过的那个缺陷（一条已实现、已测试却无法触达的路径）在另一个方向上的重演，绝不能再犯。

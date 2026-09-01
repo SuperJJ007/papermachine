@@ -3,13 +3,19 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
+import { IDENTIFIER } from './environment-declaration.ts'
 import type { InterpreterPresence } from './interpreter-presence.ts'
 import { desktopEnvironmentsRoot, provisionedEnvironmentsDirectory } from './provisioning.ts'
 
-/** The persisted binding: at least one prefix, both if the same environment carries Python and R. */
+/**
+ * The persisted binding: at least one prefix (both if the same environment
+ * carries Python and R), and the id of the package source whose provisioning
+ * attempt succeeded — the Host's package installs start from that source.
+ */
 export interface EnvironmentBinding {
   readonly pythonPrefix?: string
   readonly rPrefix?: string
+  readonly sourceId: string
   readonly boundAt: number
 }
 
@@ -24,6 +30,8 @@ export interface EnvironmentBinding {
 export interface BindRequest {
   readonly pythonPrefix?: string
   readonly rPrefix?: string
+  /** The id of the package source the provisioning run succeeded through. */
+  readonly sourceId: string
 }
 
 /**
@@ -42,8 +50,9 @@ export interface BindRequest {
  * @param qualify - re-checks a prefix's current interpreter presence
  *   (production: {@link qualifyingInterpreters} from `./interpreter-presence.ts`).
  * @returns the binding to persist.
- * @throws when neither prefix is given, a given prefix is not an absolute
- *   path, or a given prefix does not have the interpreter it was named for.
+ * @throws when neither prefix is given, `sourceId` is not an identifier, a
+ *   given prefix is not an absolute path, or a given prefix does not have the
+ *   interpreter it was named for.
  */
 export async function resolveBindRequest(
   request: BindRequest,
@@ -51,6 +60,9 @@ export async function resolveBindRequest(
 ): Promise<EnvironmentBinding> {
   if (request.pythonPrefix === undefined && request.rPrefix === undefined) {
     throw new Error('desktop bind: request must include pythonPrefix or rPrefix')
+  }
+  if (!IDENTIFIER.test(request.sourceId)) {
+    throw new Error(`desktop bind: sourceId must be a lowercase identifier (${request.sourceId})`)
   }
   if (request.pythonPrefix !== undefined) {
     if (!isAbsolute(request.pythonPrefix)) {
@@ -69,7 +81,7 @@ export async function resolveBindRequest(
   return parseEnvironmentBinding({ ...request, boundAt: Date.now() })
 }
 
-const FIELDS = ['pythonPrefix', 'rPrefix', 'boundAt'] as const
+const FIELDS = ['pythonPrefix', 'rPrefix', 'sourceId', 'boundAt'] as const
 
 function bindingPath(dshHome: string): string {
   return join(dshHome, 'environment-binding.json')
@@ -78,7 +90,7 @@ function bindingPath(dshHome: string): string {
 /**
  * Parse an untrusted JSON value into an {@link EnvironmentBinding}.
  * @param value - the parsed JSON content of `environment-binding.json`.
- * @throws when a field is missing, has the wrong shape, or neither prefix is present.
+ * @throws when a field is missing, has the wrong type, `sourceId` is not an identifier, or neither prefix is present.
  */
 export function parseEnvironmentBinding(value: unknown): EnvironmentBinding {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -97,12 +109,16 @@ export function parseEnvironmentBinding(value: unknown): EnvironmentBinding {
   if (record.pythonPrefix === undefined && record.rPrefix === undefined) {
     throw new Error('desktop environment binding: requires pythonPrefix or rPrefix')
   }
+  if (typeof record.sourceId !== 'string' || !IDENTIFIER.test(record.sourceId)) {
+    throw new Error('desktop environment binding: sourceId must be a lowercase identifier')
+  }
   if (!Number.isSafeInteger(record.boundAt)) {
     throw new Error('desktop environment binding: boundAt must be a safe integer')
   }
   return {
     ...(record.pythonPrefix === undefined ? {} : { pythonPrefix: record.pythonPrefix as string }),
     ...(record.rPrefix === undefined ? {} : { rPrefix: record.rPrefix as string }),
+    sourceId: record.sourceId,
     boundAt: record.boundAt as number,
   }
 }

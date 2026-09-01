@@ -1,7 +1,7 @@
 /**
  * Focused behavior tests for `@deepseek-ai/dsh-tool-science`: config
  * validation, registration/disposal, first-use binding, context rendering,
- * and the four tools — composed directly with `ctx.plugin(...)` (not
+ * and the five tools — composed directly with `ctx.plugin(...)` (not
  * through the real agent loop; see `loader-composition.spec.ts` for the
  * required REAL-composition coverage).
  */

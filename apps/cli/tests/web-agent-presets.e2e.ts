@@ -590,7 +590,7 @@ describe('the science preset', () => {
       // `glob`/`grep` excluded for the same ripgrep-availability reason the
       // `standard` roster assertion above excludes them.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-        'annotate_artifact', 'ask_user_question', 'get_science_state', 'read', 'read_image',
+        'annotate_artifact', 'ask_user_question', 'get_science_state', 'install_science_packages', 'read', 'read_image',
         'run_python', 'run_r', 'skill', 'todo_write',
       ])
     } finally {

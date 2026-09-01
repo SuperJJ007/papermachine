@@ -86,10 +86,15 @@ function artifactVersion(
   return artifact
 }
 
-/** The fields a run input actually needs from its resolved artifact version, whichever authority resolved it. */
+/**
+ * The field a run input actually needs from its resolved artifact version,
+ * whichever authority resolved it. `byteCount` is store-only now (T1's
+ * authority rule — the session projection no longer carries it), so the
+ * aggregate bound below is enforced solely from bytes actually read rather
+ * than a declared-length pre-check.
+ */
 interface ResolvedRunInputVersion {
   readonly sha256: string
-  readonly byteCount: number
 }
 
 /**
@@ -112,7 +117,7 @@ interface ResolvedRunInputVersion {
  * @param projectId - the session's already-resolved owning project.
  * @param ref - the caller-supplied artifactId/version reference.
  * @param subject - caller-facing noun used in the stable error message.
- * @returns the resolved version's content digest and byte count.
+ * @returns the resolved version's content digest.
  */
 async function resolveInputArtifactVersion(
   projection: ScienceProjection,
@@ -178,10 +183,6 @@ export async function prepareRunArtifacts(
     input,
     artifact: await resolveInputArtifactVersion(projection, store, projectId, input, 'Science artifact input'),
   })))
-  const declaredBytes = resolved.reduce((sum, entry) => sum + entry.artifact.byteCount, 0)
-  if (declaredBytes > maxBytes) {
-    throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxBytes)}-byte bound`)
-  }
 
   const materialized: ScienceRunInputBytes[] = []
   let actualBytes = 0

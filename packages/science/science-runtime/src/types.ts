@@ -52,6 +52,11 @@ export type ScienceRuntimeErrorCode =
    * viewer's own style editor.
    */
   | 'ARTIFACT_NOT_CURATABLE'
+  /**
+   * `annotate_artifact`'s `toolCallId` already authorized a prior artifact
+   * annotation: one authorizing model call cannot back two curation facts.
+   */
+  | 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED'
   /** A requested run input does not identify a committed artifact version. */
   | 'INPUT_NOT_FOUND'
   /** A requested run input path is unsafe or collides with another input path. */

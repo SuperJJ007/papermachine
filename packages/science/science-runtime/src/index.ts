@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-science-artifact-store'
+import type { CallId } from '@deepseek-ai/dsh-llm'
 import {
   decodeScienceChartState,
   MAX_CHART_OPS,
@@ -27,10 +27,10 @@ import type {
   ScienceProjectId,
   ScienceProjection,
   ScienceRunTerminal,
-  ScienceRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
+import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -890,20 +890,61 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (parent === undefined || parent.version !== request.version) {
         throw new ScienceRuntimeError('CHART_STALE_VERSION', 'Chart edit must name the current artifact version')
       }
-      if (parent.mediaType !== 'image/png' || parent.chart === undefined) {
+      const projectId = parent.projectId
+      const store = this.ctx.scienceArtifactStore
+      // mediaType/contentOrigin/figure_state live only in the store now (T1's
+      // authority rule): the session projection carries no more than the
+      // versionId this exact reference names.
+      const parentRecord = await store.getVersion(projectId, parent.versionId)
+      const parentFigureState = await store.getFigureState(projectId, parent.versionId)
+      /* v8 ignore next 3 -- projection already resolved this versionId; a missing store row is a durable invariant violation */
+      if (parentRecord === undefined) {
+        throw new Error('science-runtime: chart edit target no longer identifies a committed store version')
+      }
+      if (parentRecord.mediaType !== 'image/png' || parentFigureState === undefined) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart edit target is not an addressable PNG version')
       }
+      const parentChart = decodeScienceChartState(JSON.parse(parentFigureState.stateJson))
       try {
-        decodeScienceChartState({ ...parent.chart, ops: [...parent.chart.ops, ...request.ops] })
+        decodeScienceChartState({ ...parentChart, ops: [...parentChart.ops, ...request.ops] })
       } catch (error) {
         throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations are invalid or exceed chart state bounds', { cause: error })
       }
       // Human edits must parent the current version, so the nearest run-origin version owns their baseline.
-      const source = versions.findLast((candidate): candidate is ScienceRunArtifactVersion => candidate.origin !== 'human-edit')
-      if (source?.chart === undefined || source.chart.figureKey !== parent.chart.figureKey) {
+      // `contentOrigin` lives only in the store, so the artifact's full
+      // ordinal history is read from there rather than the session's own
+      // (possibly partial) local knowledge of this artifactId.
+      const artifactHistory = await store.listVersions(projectId, parent.artifactId)
+      const sourceVersion = artifactHistory.findLast(candidate => candidate.contentOrigin !== 'human-edit')
+      // A version's baseVersionId chain always terminates at ordinal 1, and
+      // `commitStyleEdit` only ever appends onto an existing artifact
+      // (`createArtifact` always supplies its own contentOrigin, never
+      // `commitStyleEdit`'s hardcoded 'human-edit') — so ordinal 1 is never
+      // itself human-edit, and this findLast always resolves.
+      /* v8 ignore next 3 */
+      if (sourceVersion === undefined) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
-      const sourceRun = projection.runs.find(candidate => candidate.runId === source.runId)
+      const sourceFigureState = await store.getFigureState(projectId, sourceVersion.versionId)
+      // `parentChart.figureKey` chains back, unchanged, to whichever
+      // run-auto version's own successful chart extraction first produced
+      // it (every step here and in capture.ts's figureState copies the
+      // prior figureKey verbatim) — so that same ancestor's figure_state
+      // row still exists whenever `sourceVersion` does.
+      /* v8 ignore next 3 */
+      if (sourceFigureState === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const sourceChart = decodeScienceChartState(JSON.parse(sourceFigureState.stateJson))
+      if (sourceChart.figureKey !== parentChart.figureKey) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      /* v8 ignore next 3 -- a run-auto version's producer always carries the run id that produced it */
+      if (sourceVersion.producerRunId === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const sourceRunId = ScienceRunId(sourceVersion.producerRunId)
+      const sourceRun = projection.runs.find(candidate => candidate.runId === sourceRunId)
       const environment = projection.environment
       // The durable Science invariant requires every run-origin artifact to reference a terminal
       // run under an applied environment revision.
@@ -911,30 +952,29 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (sourceRun === undefined || environment === null || environment.status !== 'applied') {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
-      const language: ScienceLanguage = parent.chart.runtime === 'matplotlib' ? 'python' : 'r'
+      const language: ScienceLanguage = parentChart.runtime === 'matplotlib' ? 'python' : 'r'
       editLanguage = language
       if (sourceRun.language !== language) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart runtime does not match its source run language')
       }
       const scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
       sessionScratch = scratchPreparation.scratch
-      const projectId = parent.projectId
       const kernel = await this.acquireKernel(request.session, language, environment, sessionScratch, lease.control)
       this.kernels.disarmIdleTimer(request.session, language)
 
-      const cumulativeOps = [...parent.chart.ops, ...request.ops]
-      const failedOffset = parent.chart.ops.length
+      const cumulativeOps = [...parentChart.ops, ...request.ops]
+      const failedOffset = parentChart.ops.length
       let application = await this.applyChartInKernel(
         kernel.process,
-        source.runId,
-        parent.chart.figureKey,
+        sourceRunId,
+        parentChart.figureKey,
         cumulativeOps,
-        parent.chart.png.dpi,
-        planRunScratch(sessionScratch, source.runId, language).directory,
+        parentChart.png.dpi,
+        planRunScratch(sessionScratch, sourceRunId, language).directory,
         lease.control.signal,
       )
       if (application.kind === 'not-registered') {
-        const sourceScratch = planRunScratch(sessionScratch, source.runId, language)
+        const sourceScratch = planRunScratch(sessionScratch, sourceRunId, language)
         let sourceBytes: Uint8Array
         try {
           sourceBytes = await readFile(sourceScratch.source)
@@ -970,7 +1010,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         )
         this.assertPrepublication(request.session, lease.control)
         const replayOutcome = await settleKernelExecution(lease.control, replayKernel, {
-          runId: source.runId,
+          runId: sourceRunId,
           sourcePath: replayScratch.source,
           cwd: replayScratch.directory,
           stdoutPath: replayScratch.stdout,
@@ -984,10 +1024,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         }
         application = await this.applyChartInKernel(
           replayKernel,
-          source.runId,
-          parent.chart.figureKey,
+          sourceRunId,
+          parentChart.figureKey,
           cumulativeOps,
-          parent.chart.png.dpi,
+          parentChart.png.dpi,
           replayScratch.directory,
           lease.control.signal,
         )
@@ -1008,43 +1048,49 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const chart = decodeScienceChartState({
         ...application.chart,
-        figureKey: parent.chart.figureKey,
-        ops: [...parent.chart.ops, ...successfulOps],
+        figureKey: parentChart.figureKey,
+        ops: [...parentChart.ops, ...successfulOps],
       })
       this.assertPrepublication(request.session, lease.control)
       if (!commit) {
         previewReady = true
         return { png: application.png, chart, failedOps }
       }
-      const stored = await this.ctx.scienceArtifactStore.appendVersion(projectId, parent.artifactId, {
+      // Human-edit provenance (T2§6): the new version's base is the exact
+      // parent version, its content_origin is 'human-edit', its
+      // environment* fields are ASSIGNED from the parent's own store-read
+      // values (never re-validated against a fold check — the store row is
+      // already the fact), and it carries no run/tool-call producer fields
+      // of its own.
+      const stored = await store.appendVersion(projectId, parent.artifactId, {
         producerSessionId: request.session.id,
         data: application.png,
         mediaType: 'image/png',
-        origin: 'human-edit',
+        contentOrigin: 'human-edit',
+        baseVersionId: parent.versionId,
+        ...parentRecord.environmentRevision === undefined ? {} : { environmentRevision: parentRecord.environmentRevision },
+        ...parentRecord.environmentFingerprint === undefined ? {} : { environmentFingerprint: parentRecord.environmentFingerprint },
+        figureState: { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) },
+      })
+      // Title/caption are inherited verbatim from the parent's current
+      // presentation (a separate annotation, not a `versions` column — T1
+      // dropped title/caption from `createArtifact`/`appendVersion` entirely).
+      await store.annotateVersion(projectId, stored.versionId, {
+        actor: 'human',
+        sessionId: request.session.id,
         title: parent.title,
-        ...parent.caption === undefined ? {} : { caption: parent.caption },
-        editBaselines: parent.versionId,
-        environmentRevision: String(parent.environmentRevision),
-        environmentFingerprintPreview: parent.environmentFingerprint.slice(0, 12),
+        caption: parent.caption ?? null,
       })
       const artifact: ScienceArtifactVersion = {
         artifactId: parent.artifactId,
-        producerSessionId: stored.producerSessionId,
         logicalName: parent.logicalName,
         version: stored.ordinal,
-        parent: { artifactId: parent.artifactId, version: parent.version },
         title: parent.title,
         ...parent.caption === undefined ? {} : { caption: parent.caption },
-        origin: 'human-edit',
         projectId,
         versionId: stored.versionId,
         sha256: stored.sha256,
-        mediaType: 'image/png',
-        byteCount: stored.byteCount,
-        environmentRevision: parent.environmentRevision,
-        environmentFingerprint: parent.environmentFingerprint,
-        createdAt: stored.createdAt,
-        chart,
+        seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/artifact-saved', { version: 1, artifact })
@@ -1120,15 +1166,18 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Re-commit an existing artifact version's exact store content reference
-   * with a curated title and caption: metadata-only, so it supersedes the
-   * version it names rather than opening a new one whose bytes would repeat
-   * their predecessor's. The store row's metadata is curated in place first
-   * (`annotateVersion`), then the superseding event commits; a vetoed append
-   * after the store update leaves the store curated with no matching event —
-   * accepted metadata decay, resolved by the fold's own value staying the
-   * projection authority. A committed event is never rolled back because a
-   * later step fails; there is no later step here that can fail after the
-   * append.
+   * with a curated title and caption: metadata-only, appending one new
+   * `version_annotations` row (`annotateVersion`) rather than opening a new
+   * version whose bytes would repeat their predecessor's. The store's
+   * annotation write is the sole authority for this metadata edit's own
+   * provenance (`actor: 'model'`, `sessionId`, `toolCallId`,
+   * `requestHeaderSeq`) — this operation never rebuilds a full version value
+   * and never lets the curating call's identity stand in for the content's
+   * own producer. A vetoed append after the store update leaves the store
+   * curated with no matching event — accepted metadata decay, resolved by
+   * the fold's own value staying the projection authority. A committed
+   * event is never rolled back because a later step fails; there is no
+   * later step here that can fail after the append.
    * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
    * @returns The durable curated version this operation committed.
    */
@@ -1137,12 +1186,44 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     const lease = this.reserve(request.session, request.signal)
     try {
       this.assertPrepublication(request.session, lease.control)
-      const artifact = this.curatedVersion(projection, request)
-      await this.ctx.scienceArtifactStore.annotateVersion(artifact.projectId, artifact.versionId, {
-        title: artifact.title,
-        ...artifact.caption === undefined ? {} : { caption: artifact.caption },
-        origin: 'model',
+      const target = this.resolveAnnotateTarget(projection, request)
+      const store = this.ctx.scienceArtifactStore
+      const currentVersion = await store.getVersion(target.projectId, target.versionId)
+      /* v8 ignore next 3 -- projection already resolved this versionId; a missing store row is a durable invariant violation */
+      if (currentVersion === undefined) {
+        throw new Error('science-runtime: annotate target no longer identifies a committed store version')
+      }
+      if (currentVersion.contentOrigin === 'human-edit') {
+        throw new ScienceRuntimeError(
+          'ARTIFACT_NOT_CURATABLE',
+          `artifact ${JSON.stringify(request.logicalName)} version ${String(target.version)} exists but is a direct human style edit and cannot be curated; `
+            + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
+        )
+      }
+      await this.assertAnnotateToolCallUnused(target.projectId, projection, request.toolCallId)
+      this.assertPrepublication(request.session, lease.control)
+      await store.annotateVersion(target.projectId, target.versionId, {
+        actor: 'model',
+        sessionId: request.session.id,
+        toolCallId: request.toolCallId,
+        requestHeaderSeq: request.requestHeaderSeq,
+        title: request.title,
+        caption: request.caption ?? null,
       })
+      const artifact: ScienceArtifactVersion = {
+        artifactId: target.artifactId,
+        logicalName: request.logicalName,
+        // Curation is metadata over content the session already holds, so it
+        // supersedes the version it names instead of opening one whose bytes
+        // would be identical to its predecessor's.
+        version: target.version,
+        title: request.title,
+        ...request.caption === undefined ? {} : { caption: request.caption },
+        projectId: target.projectId,
+        versionId: target.versionId,
+        sha256: currentVersion.sha256,
+        seenAt: Date.now(),
+      }
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/artifact-saved', { version: 1, artifact })
       return artifact
@@ -1155,18 +1236,15 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Resolve the exact source version `request` names (its exact `version`,
-   * or the logical artifact's latest version), then build that same version's
-   * curated replacement, reusing its store content reference and
-   * originating-run provenance unchanged.
+   * or the logical artifact's latest version) from this session's own live
+   * projection.
    * @param projection - exact live Science projection.
    * @param request - the annotate request naming the target logical artifact.
-   * @returns the complete curated version to commit.
+   * @returns the resolved target version's session-visible identity.
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
    *   (or its named `version`) does not exist in this session.
-   * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_CURATABLE`) when the
-   *   resolved version's `origin` is `'human-edit'`.
    */
-  private curatedVersion(
+  private resolveAnnotateTarget(
     projection: ScienceProjection,
     request: AnnotateScienceArtifactRequest,
   ): ScienceArtifactVersion {
@@ -1186,37 +1264,43 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         `artifact ${JSON.stringify(request.logicalName)} has no version ${JSON.stringify(request.version)}. Available: ${available}.`,
       )
     }
-    if (source.origin === 'human-edit') {
-      throw new ScienceRuntimeError(
-        'ARTIFACT_NOT_CURATABLE',
-        `artifact ${JSON.stringify(request.logicalName)} version ${String(source.version)} exists but is a direct human style edit and cannot be curated; `
-          + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
-      )
-    }
-    return {
-      artifactId: latest.artifactId,
-      producerSessionId: source.producerSessionId,
-      logicalName: request.logicalName,
-      // Curation is metadata over content the session already holds, so it
-      // supersedes the version it names instead of opening one whose bytes
-      // would be identical to its predecessor's.
-      version: source.version,
-      title: request.title,
-      ...(request.caption === undefined ? {} : { caption: request.caption }),
-      origin: 'model',
-      ...(source.parent === undefined ? {} : { parent: source.parent }),
-      projectId: source.projectId,
-      versionId: source.versionId,
-      sha256: source.sha256,
-      mediaType: source.mediaType,
-      byteCount: source.byteCount,
-      ...(source.chart === undefined ? {} : { chart: source.chart }),
-      runId: source.runId,
-      toolCallId: request.toolCallId,
-      requestHeaderSeq: request.requestHeaderSeq,
-      environmentRevision: source.environmentRevision,
-      environmentFingerprint: source.environmentFingerprint,
-      createdAt: Date.now(),
+    return source
+  }
+
+  /**
+   * Reject an `annotate_artifact` call whose `toolCallId` already authorized
+   * a prior curation. `science/artifact-saved` no longer carries a
+   * `toolCallId` a session-log replay could cross-check for reuse (the fold
+   * check this replaces is documented in
+   * `2026-09-02-science-artifact-event-slimming.md`'s residual-gap table),
+   * so this checks the store's own `version_annotations` rows instead — a
+   * durable, restart-safe record, unlike an in-memory Runtime set. Scoped to
+   * the logical artifacts this SESSION's own projection already knows
+   * (`annotate_artifact` can only ever target one of those) and checked
+   * against each version's CURRENT `latestAnnotation` only: a toolCallId
+   * superseded by a later annotation is no longer visible through the
+   * store's public API, which exposes no per-version annotation history.
+   * Both narrowings are accepted incompleteness, not silently dropped
+   * coverage — see the Agent Note.
+   * @param projectId - the owning project.
+   * @param projection - this session's own live Science projection.
+   * @param toolCallId - the authorizing call to check for reuse.
+   * @throws {@link ScienceRuntimeError} (`ARTIFACT_ANNOTATE_TOOL_CALL_REUSED`) when reused.
+   */
+  private async assertAnnotateToolCallUnused(
+    projectId: ScienceProjectId,
+    projection: ScienceProjection,
+    toolCallId: CallId,
+  ): Promise<void> {
+    const artifactIds = new Set(projection.artifacts.map(candidate => candidate.artifactId))
+    for (const artifactId of artifactIds) {
+      const versions = await this.ctx.scienceArtifactStore.listVersions(projectId, artifactId)
+      if (versions.some(candidate => candidate.latestAnnotation?.toolCallId === toolCallId)) {
+        throw new ScienceRuntimeError(
+          'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED',
+          `toolCallId ${JSON.stringify(toolCallId)} already authorized a prior artifact annotation and cannot authorize another`,
+        )
+      }
     }
   }
 

@@ -237,7 +237,7 @@ describe('confineInstallArgv', () => {
   it('maps SandboxUnavailableError to CONFINEMENT_UNAVAILABLE', async () => {
     class UnavailableSandbox extends DirectSandbox {
       override confine(): ConfinedArgv {
-        throw new SandboxUnavailableError('no sandbox available')
+        throw new SandboxUnavailableError('workspace-write', 'no sandbox available')
       }
     }
     const sandbox = await mountSandbox(UnavailableSandbox)

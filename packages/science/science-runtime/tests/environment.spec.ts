@@ -14,7 +14,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
-import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig } from '../src/config.ts'
+import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig, type Config } from '../src/config.ts'
 import { observeProfile, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
@@ -65,7 +65,7 @@ const fixedInstallUuid = vi.hoisted(() => ({ value: undefined as string | undefi
 vi.mock('node:crypto', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:crypto')>()
   const randomUUID = (...args: Parameters<typeof original.randomUUID>): ReturnType<typeof original.randomUUID> =>
-    fixedInstallUuid.value ?? original.randomUUID(...args)
+    (fixedInstallUuid.value as ReturnType<typeof original.randomUUID> | undefined) ?? original.randomUUID(...args)
   return { ...original, randomUUID }
 })
 
@@ -1430,7 +1430,7 @@ describe('Science Runtime configuration', () => {
   })
 
   it('validates each installChannels entry as an https-only URL drawn from the fixed character allowlist', () => {
-    const withChannels = (installChannels: string[]): unknown => ({
+    const withChannels = (installChannels: string[]): Config => ({
       profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels,
     })
     expect(() => resolveConfig(withChannels(['http://conda.anaconda.org/conda-forge']))).toThrow(/not a valid https channel URL/)

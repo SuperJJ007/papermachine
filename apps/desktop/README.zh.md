@@ -4,7 +4,7 @@
 
 `@deepseek-ai/dsh-desktop` 是 Science 桌面产品的 macOS-first Electron carrier。它把现有 Web profile 作为独立 Host process 启动，把 `~/.papermachine` 指定为 Harness home（`DSH_HOME`），并在受限 BrowserWindow 内加载 Host 通过 OS 分配的 loopback URL。Harness home 由 `src/harness-home.ts` 解析，位于 OS user home directory 之下，刻意与 Electron 自身的 `userData` directory 相互独立（后者继续只保存 Electron 的 cookies、caches 等状态）：R 拒绝在其 scratch `TMPDIR` 中出现任何 ASCII space，而 macOS 的 `userData` 路径（`~/Library/Application Support/PaperMachine`）恰好含有一个空格，因此若 OS user home 本身的路径含有空格，解析会转而 fail loud。
 
-全新的 home 会先打开 desktop onboarding，再进入 workspace。PaperMachine 完全拥有自己的 Python 与 R environment：onboarding 安装随应用发布的 `general` environment（或用户在高级编辑器中自定的 package 清单），绝不绑定机器上已有的 conda-family environment。安装完成后写入 `<dshHome>/environment-binding.json`，再打开 workspace；生成的 Host overlay 把已配备的 prefix 绑定到固定的 `science` Runtime profile，把随应用打包的 micromamba 可执行文件与 `install_science_packages` 所用的有序安装 channel 交给 Host，以 Science 作为 session default，移除通用 product-mode picker，并禁用共享的 module-reload `hmr` 行。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。详见下文“Onboarding 与 environment binding”。
+全新的 home 会先打开 desktop onboarding，再进入 workspace。PaperMachine 完全拥有自己的 Python 与 R environment：onboarding 安装随应用发布的 `general` environment（或用户在高级编辑器中自定的 package 清单），绝不绑定机器上已有的 conda-family environment。安装完成后写入 `<dshHome>/environment-binding.json`，再打开 workspace；生成的 Host overlay 把已配备的 prefix 绑定到固定的 `science` Runtime profile，把随应用打包的 micromamba 可执行文件与 `install_science_packages` 所用的有序安装 channel 交给 Host，以 Science 作为 session default，移除通用 product-mode picker，禁用共享的 module-reload `hmr` 行，并把侧边栏/hero 的品牌 slot 从官方 occupant 换成 PaperMachine occupant。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。详见下文“Onboarding 与 environment binding”。
 
 ## 开发
 

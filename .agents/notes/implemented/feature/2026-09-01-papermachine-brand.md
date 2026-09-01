@@ -1,0 +1,30 @@
+# Agent Note: PaperMachine brand as the desktop's slot occupant
+
+Status: implemented
+
+English | [中文](2026-09-01-papermachine-brand.zh.md)
+
+## Problem
+
+PaperMachine's Electron shell (`apps/desktop`) rendered the DeepSeek Harness brand — the fish mark plus the "deepseek-official … HARNESS" wordmark — in the sidebar and the conversation Hero, because it boots the generic `dsh-web-app` bundle unchanged apart from a Runtime overlay. The product owner wants the sidebar and Hero wordmark to read "PaperMachine" without touching the Web product's own branding, and without a mark redesign yet — the fish mark stays until a PaperMachine mark exists.
+
+## Decision
+
+The rename is a second slot occupant, not an edit to the existing one. `packages/client/ui-brand-official` already fills three `single`-kind UI slots (`sidebar.brand.mark`, `sidebar.brand.name`, `conversation.hero.brand.mark`, declared in `packages/client/ui-sidebar` and `packages/client/ui-conversation`) as one declaration-aware `slots.inject()` registration set, gated by `DSH_CLIENT_BUILD_PROFILE === 'official'`. `packages/client/ui-brand-papermachine` is a new package built file-for-file against that template — same `dsh.client` metadata, same nested-`inject()` registration shape, same invariant companion — filling the identical three slots with `PaperMachineBrandMark` and `PaperMachineBrandName`. It carries no build-profile guard; instead the `dsh-web-app` bundle row that mounts it (`packages/bundle/web-app/cordis.patch.yml`) ships `disabled: true`, so the Web product's composition is unchanged by the row's mere presence. `apps/desktop/src/runtime-overlay.ts` is the only layer that flips it: the rendered overlay disables `ui-brand-official` and enables `ui-brand-papermachine` in the same string, alongside the overlay's existing Science-forcing and `hmr`-disabling rows.
+
+Both rows enabled together is not a valid state: `sidebar.brand.mark`, `sidebar.brand.name`, and `conversation.hero.brand.mark` are `single`-kind slots, and `SlotCore.register` throws `single slot "…" already has a registration at priority 0` when two registrants target the same slot at the same priority (`packages/client/ui-slots/src/index.ts`). Disabling `ui-brand-official` in the same overlay is therefore required, not a style choice — the desktop overlay test (`apps/desktop/tests/runtime-overlay.spec.ts`) pins both rows' `disabled` values, and the base-bundle-declares-every-patched-id test forced the new row to exist in `cordis.patch.yml` before the overlay could reference it.
+
+`PaperMachineBrandMark` reuses `FishLogo` from `@deepseek-ai/dsh-client-ui-primitives` verbatim, documented as a placeholder pending a PaperMachine-specific mark. `PaperMachineBrandName` is new: a text wordmark, not artwork — "PaperMachine" as one word, "Paper" at font-weight 500 and "Machine" at 700 in one `var(--dsw-alias-label-primary)` ink color, letter-spacing `-0.01em`, rendered through the host OS font stack (the desktop app runs offline, so no bundled or fetched font). Its `BrandName.module.css` box is 24px tall at its default 18px font size — the same box `BrandWordmark` occupies in the sidebar slot at its own default size (`includeMark={false}` renders at `size=24`, native height 24) — so swapping the two brand plugins moves nothing else in the sidebar brand row; width is left unconstrained, matching how the shell already treats mark and name as independently sized occupants (`SidebarRoot.module.css`'s `.brand` is `flex: 1; min-width: 0`).
+
+## Alternatives considered
+
+- **Edit `BrandWordmark` in `ui-primitives` to render "PaperMachine".** Rejected: that component is the *official* DeepSeek Harness brand asset, consumed by `ui-brand-official` and, through it, every non-desktop Host. Changing it would rename the Web product's brand as a side effect of a desktop-only decision, and would leave no path back to the official wordmark without another edit.
+- **Interpolate a string into the Runtime overlay's rendered YAML (a `brandName` config field on some row).** Rejected: the sidebar and Hero brand holes are UI slots that render React components (`SidebarBrandNameOwnerProps`, `HeroBrandMarkOwnerProps`), not text props a generic row consumes — there is no slot occupant that takes a string and lays out a wordmark. A config string would need a new UI package to interpret it, which is the plugin this decision already builds; skipping straight to the plugin is more direct and keeps brand presentation inside the capability-seam pattern the codebase already uses for this exact swap point.
+
+## Consequences
+
+The desktop product renders "PaperMachine" in the sidebar wordmark, PaperMachine-mark-shaped mark slots still filled by the shared fish artwork until that art exists, and the Web product's `ui-brand-official` composition is byte-for-byte unchanged (its own row, its own build-profile guard, no shared state with the new package). Adding a PaperMachine mark later is a `Brand.tsx` edit inside `ui-brand-papermachine` alone; no bundle, overlay, or slot-contract change is implied. The `ui-brand-papermachine` row's presence in every Web/headless composition (disabled) is a permanent, harmless fact of the shared bundle — inert whenever the desktop overlay does not run.
+
+## Verification
+
+`packages/client/ui-brand-papermachine/tests/browser-plugin.client.spec.tsx` covers registration-before/after-declaration ordering and full teardown on fiber dispose (mirroring `ui-brand-official`'s own suite) plus the wordmark's rendered text (`"PaperMachine"`, split as `"Paper"`/`"Machine"` across the two CSS-module weight classes) and both mark-slot sizes. `packages/client/ui-brand-papermachine/tests/invariant.client.spec.ts` covers the invariant companion and the inert node-half `apply()`. `apps/desktop/tests/runtime-overlay.spec.ts` asserts the rendered overlay disables `ui-brand-official` and enables `ui-brand-papermachine`, and that every id the overlay patches (including both brand rows) exists in the base `dsh-web-app` `cordis.patch.yml`.

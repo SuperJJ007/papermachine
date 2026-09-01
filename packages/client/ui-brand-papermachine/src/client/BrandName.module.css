@@ -1,0 +1,23 @@
+/* PaperMachine wordmark box: 24px tall at the font-size/line-height below,
+ * matching the box the official BrandWordmark svg occupies at its default
+ * size (24), so swapping occupants moves nothing else in the brand row.
+ * Width is intentionally unconstrained — the host row is flexible
+ * (SidebarRoot.module.css `.brand` is `flex: 1; min-width: 0`). */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  line-height: 24px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+.paper {
+  font-weight: 500;
+}
+
+.machine {
+  font-weight: 700;
+}

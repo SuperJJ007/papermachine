@@ -65,6 +65,7 @@
     { "path": "./packages/client/ui-layout" },
     { "path": "./packages/client/ui-sidebar" },
     { "path": "./packages/client/ui-brand-official" },
+    { "path": "./packages/client/ui-brand-papermachine" },
     { "path": "./packages/client/ui-conversation" },
     { "path": "./packages/client/ui-tool" },
     { "path": "./packages/client/ui-science" },

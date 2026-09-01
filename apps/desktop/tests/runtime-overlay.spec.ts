@@ -67,6 +67,8 @@ describe('desktop Runtime overlay', () => {
     expect(byId.get('ui-agent-preset')?.disabled).toBe(true)
     expect(byId.get('ui-science')?.config).toEqual({ toggleScope: 'global' })
     expect(byId.get('hmr')?.disabled).toBe(true)
+    expect(byId.get('ui-brand-official')?.disabled).toBe(true)
+    expect(byId.get('ui-brand-papermachine')?.disabled).toBe(false)
   })
 
   it('renders only the fields present when the prefixes come from different environments', () => {

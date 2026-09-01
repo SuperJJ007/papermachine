@@ -260,6 +260,16 @@
     - id: ui-brand-official
       name: '@deepseek-ai/dsh-client-ui-brand-official'
 
+    # PaperMachine desktop occupants for the same brand slots. Off by default —
+    # the sidebar/hero slots are 'single', so a Host that enables this row
+    # must also disable ui-brand-official above or slot registration throws
+    # (two same-priority registrations on one 'single' slot). The desktop
+    # Runtime overlay (apps/desktop/src/runtime-overlay.ts) is the only layer
+    # that flips both.
+    - id: ui-brand-papermachine
+      name: '@deepseek-ai/dsh-client-ui-brand-papermachine'
+      disabled: true
+
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'
 

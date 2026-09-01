@@ -35,7 +35,10 @@ export interface RuntimeOverlayInput {
  * Files toggle render app-wide (`packages/client/ui-science/src/toggle-scope.ts`)
  * — appropriate because this same overlay already forces Science as the
  * product default (`agent-presets`), so there is no other-preset session for
- * the generic Web session-gated placement to distinguish.
+ * the generic Web session-gated placement to distinguish. The overlay also
+ * swaps the brand-slot occupant: it disables `ui-brand-official` and enables
+ * `ui-brand-papermachine`, since the sidebar and hero brand slots are
+ * `single` and reject two same-priority registrations.
  * @param input - the prefix(es) to bind, the micromamba executable, and the
  *   ordered install channels.
  * @throws when neither prefix is present or `installChannels` is empty.
@@ -52,5 +55,5 @@ export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string 
     ...(input.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(input.rPrefix)}`]),
   ].join('\n')
   const channels = input.installChannels.map(url => `      - ${JSON.stringify(url)}`).join('\n')
-  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n`
+  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n`
 }

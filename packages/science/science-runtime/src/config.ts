@@ -93,6 +93,13 @@ export const MIN_CHART_LIVE_RUNS_RETAINED = 1
 /** Highest accepted live-figure run retention count. */
 export const MAX_CHART_LIVE_RUNS_RETAINED = 100
 
+/** Default maximum session logs read to build one project's store ↔ session reconciliation event set. */
+export const DEFAULT_RECONCILE_MAX_SESSIONS = 500
+/** Lowest accepted configured reconciliation session-scan bound. */
+export const MIN_RECONCILE_MAX_SESSIONS = 1
+/** Highest accepted configured reconciliation session-scan bound. */
+export const MAX_RECONCILE_MAX_SESSIONS = 100_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -190,6 +197,14 @@ export interface Config {
   readonly chartExtractTimeoutMs?: number
   /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
   readonly chartLiveRunsRetained?: number
+  /**
+   * Maximum session logs read, per project, when building the event set for
+   * one store ↔ session reconciliation pass. A project with more matching
+   * sessions than this reports its walk truncated rather than reading them
+   * all in one call — bounded so a large multi-session project's first
+   * Science operation is never blocked scanning every session it has ever had.
+   */
+  readonly reconcileMaxSessions?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -288,6 +303,9 @@ export const configSchema: z<Config> = z.object({
   chartLiveRunsRetained: z.number().step(1)
     .min(MIN_CHART_LIVE_RUNS_RETAINED).max(MAX_CHART_LIVE_RUNS_RETAINED)
     .default(DEFAULT_CHART_LIVE_RUNS_RETAINED),
+  reconcileMaxSessions: z.number().step(1)
+    .min(MIN_RECONCILE_MAX_SESSIONS).max(MAX_RECONCILE_MAX_SESSIONS)
+    .default(DEFAULT_RECONCILE_MAX_SESSIONS),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -326,6 +344,8 @@ export interface ResolvedConfig {
   readonly chartExtractTimeoutMs: number
   /** Explicitly resolved strong-reference retention count. */
   readonly chartLiveRunsRetained: number
+  /** Explicitly resolved reconciliation session-scan bound. */
+  readonly reconcileMaxSessions: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -404,6 +424,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
       'chartExtractTimeoutMs', 'chartLiveRunsRetained',
+      'reconcileMaxSessions',
     ],
     'config',
   )
@@ -498,6 +519,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || chartLiveRunsRetained > MAX_CHART_LIVE_RUNS_RETAINED) {
     throw new Error(`science-runtime: chartLiveRunsRetained must be a safe integer from ${String(MIN_CHART_LIVE_RUNS_RETAINED)} through ${String(MAX_CHART_LIVE_RUNS_RETAINED)}`)
   }
+  const reconcileMaxSessions = config.reconcileMaxSessions ?? DEFAULT_RECONCILE_MAX_SESSIONS
+  if (!Number.isSafeInteger(reconcileMaxSessions)
+    || reconcileMaxSessions < MIN_RECONCILE_MAX_SESSIONS
+    || reconcileMaxSessions > MAX_RECONCILE_MAX_SESSIONS) {
+    throw new Error(`science-runtime: reconcileMaxSessions must be a safe integer from ${String(MIN_RECONCILE_MAX_SESSIONS)} through ${String(MAX_RECONCILE_MAX_SESSIONS)}`)
+  }
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
@@ -516,5 +543,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     kernelStartTimeoutMs,
     chartExtractTimeoutMs,
     chartLiveRunsRetained,
+    reconcileMaxSessions,
   }
 }

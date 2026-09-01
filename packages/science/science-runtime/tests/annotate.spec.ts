@@ -26,6 +26,7 @@ import {
   createKernelRuntimeHarness,
   createScienceSession,
   kernelAction,
+  rejectSessionAppend,
 } from './harness.ts'
 
 // Cases here spawn a real kernel subprocess; under full-suite concurrency the
@@ -149,6 +150,57 @@ describe('ScienceRuntime.annotateArtifact', () => {
     const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv')
     expect(artifacts?.map(a => a.version)).toEqual([1])
     expect(artifacts?.at(0)?.title).toBe('Result summary')
+  })
+
+  it('marks the version orphan when the artifact-saved append is vetoed after the store annotation already committed (W3)', async () => {
+    const root = tmp('.science-annotate-append-veto-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-append-veto')
+    await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    if (captured === undefined) throw new Error('expected a captured summary.csv version')
+
+    const appendVeto = new Error('forced append veto')
+    rejectSessionAppend(session, 'science/artifact-saved', appendVeto)
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'summary.csv', title: 'Curated Title',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE', cause: appendVeto })
+
+    // The store's own annotation already committed before the vetoed
+    // append; the version is marked orphan rather than left silent for a
+    // later reconciliation pass to discover.
+    const health = await harness.ctx.scienceArtifactStore.getReconciliationSummary(captured.projectId)
+    expect(health.items.find(item => item.versionId === captured.versionId)?.orphan).toBe(true)
+    const stored = await harness.ctx.scienceArtifactStore.getVersion(captured.projectId, captured.versionId)
+    expect(stored?.title).toBe('Curated Title')
+  })
+
+  it('logs (and does not throw) when the orphan health-mark itself fails after a vetoed append', async () => {
+    const root = tmp('.science-annotate-append-veto-health-fail-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-append-veto-health-fail')
+    await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    if (captured === undefined) throw new Error('expected a captured summary.csv version')
+
+    const warnSpy = vi.spyOn(harness.ctx.logger, 'warn').mockImplementation(() => {})
+    vi.spyOn(harness.ctx.scienceArtifactStore, 'setVersionHealth').mockRejectedValueOnce(new Error('forced health write failure'))
+    rejectSessionAppend(session, 'science/artifact-saved', new Error('forced append veto'))
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'summary.csv', title: 'Curated Title',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+
+    await vi.waitFor(() => {
+      const messages = warnSpy.mock.calls.map(call => String(call[0]))
+      expect(messages.some(message => message.includes('failed to mark version') && message.includes('orphan'))).toBe(true)
+    })
   })
 
   it('clears a caption the request omits, rather than leaving a stale value (D8)', async () => {

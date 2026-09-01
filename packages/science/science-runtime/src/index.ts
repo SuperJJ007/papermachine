@@ -27,8 +27,9 @@ import type {
   ScienceProjectId,
   ScienceProjection,
   ScienceRunTerminal,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
@@ -38,6 +39,8 @@ import { capturablePngPaths, captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
+import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
@@ -353,10 +356,20 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly chartExtractTimeoutMs: number
   /** Configured recent-run live-figure retention count. */
   private readonly chartLiveRunsRetained: number
+  /** Configured store ↔ session reconciliation session-scan bound. */
+  private readonly reconcileMaxSessions: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
   private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
+  /**
+   * Project ids this Runtime has already triggered a reconciliation pass
+   * for, in this Host's lifetime. A plain `Set`, not a `WeakMap` keyed on
+   * anything session-scoped: reconciliation runs once per PROJECT (which
+   * may span many sessions across this process's lifetime), not once per
+   * session.
+   */
+  private readonly reconciledProjects = new Set<string>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -396,6 +409,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.kernelStartTimeoutMs = resolved.kernelStartTimeoutMs
     this.chartExtractTimeoutMs = resolved.chartExtractTimeoutMs
     this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
+    this.reconcileMaxSessions = resolved.reconcileMaxSessions
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -502,10 +516,87 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         'Science project store requires the session\'s workspace directory (session header cwd)',
       ))
     }
-    const resolved = this.ctx.scienceArtifactStore.openProject(cwd).then(opened => opened.projectId)
+    const resolved = this.ctx.scienceArtifactStore.openProject(cwd).then((opened) => {
+      this.triggerReconciliation(opened.projectId, opened.workspacePath)
+      return opened.projectId
+    })
     this.projects.set(session, resolved)
     resolved.catch(() => { this.projects.delete(session) })
     return resolved
+  }
+
+  /**
+   * Fire-and-forget: run one full-project store ↔ session reconciliation
+   * pass the first time this Runtime resolves a given project id in this
+   * Host's lifetime — never again for that project id, and never awaited by
+   * the caller. Reconciliation failure never blocks or fails the Science
+   * operation that triggered it: every failure this reaches is logged
+   * through `ctx.logger.warn` and otherwise swallowed. A deployment with no
+   * `sessionPersistence` service mounted (this Runtime's test harness, and
+   * some minimal compositions) skips reconciliation entirely rather than
+   * treating the missing service as an error — reconciliation is a
+   * self-healing pass over data this Runtime does not itself require to
+   * function.
+   * @param projectId - the project this Runtime just resolved.
+   * @param workspacePath - the project's canonical workspace path, from `OpenedProject.workspacePath`.
+   */
+  private triggerReconciliation(projectId: ScienceProjectId, workspacePath: string): void {
+    const key = String(projectId)
+    if (this.reconciledProjects.has(key)) return
+    this.reconciledProjects.add(key)
+    const sessionPersistence = this.ctx.get('sessionPersistence')
+    if (sessionPersistence === undefined) return
+    collectProjectArtifactEvents({
+      sessionPersistence,
+      workspacePath,
+      maxSessions: this.reconcileMaxSessions,
+      onWarning: (message) => { this.ctx.logger.warn(message) },
+    }).then(async ({ events, truncated: sessionsTruncated }) => {
+      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events)
+      for (const message of result.errors) this.ctx.logger.warn(`science-runtime: reconciliation: ${message}`)
+      if (sessionsTruncated || result.truncated) {
+        this.ctx.logger.warn(
+          `science-runtime: reconciliation for project "${key}" was truncated (more sessions or versions remain than this `
+          + 'call\'s configured bound admits); it runs once per project per Host lifetime and does not automatically resume',
+        )
+      }
+    }).catch((error: unknown) => {
+      this.ctx.logger.warn(`science-runtime: project reconciliation failed and was skipped: ${String(error)}`)
+    })
+  }
+
+  /**
+   * Append a `science/artifact-saved` store-reference event, marking the
+   * just-committed version's `version_health.orphan` immediately when the
+   * append is vetoed (the Session detached, or otherwise refused it) —
+   * narrowing the W2/W3 crash window the same way `capture.ts`'s auto-
+   * capture walk already does for its own append site, extended here to
+   * every OTHER call site that commits a store version and then appends its
+   * reference event (`annotateArtifact`, `performChartEdit`'s human-edit
+   * commit, `saveArtifactAs`). A health-marking failure on top of an
+   * already-failed append is logged and swallowed, not thrown — the
+   * append's own error is what the caller needs to see, and an unmarked row
+   * is still recoverable by a later reconciliation pass either way.
+   * @param session - the exact Session to append onto.
+   * @param projectId - the owning project, for the health write.
+   * @param versionId - the just-committed version this event references.
+   * @param artifact - the event payload.
+   * @returns the appended event.
+   * @throws whatever `session.append` itself throws, after a best-effort orphan mark.
+   */
+  private appendArtifactSavedOrMarkOrphan(
+    session: Session, projectId: ScienceProjectId, versionId: ScienceVersionId, artifact: ScienceArtifactVersion,
+  ): SessionEvent<'science/artifact-saved'> {
+    try {
+      return session.append('science/artifact-saved', { version: 1, artifact })
+    } catch (error) {
+      this.ctx.scienceArtifactStore.setVersionHealth(projectId, versionId, { orphan: true }).catch((healthError: unknown) => {
+        this.ctx.logger.warn(
+          `science-runtime: failed to mark version "${String(versionId)}" orphan after a vetoed artifact-saved append: ${String(healthError)}`,
+        )
+      })
+      throw error
+    }
   }
 
   /**
@@ -1095,7 +1186,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/artifact-saved', { version: 1, artifact })
+      this.appendArtifactSavedOrMarkOrphan(request.session, projectId, stored.versionId, artifact)
       return { artifact, failedOps }
     } catch (error) {
       if (!usingReplay && (error instanceof KernelProtocolError || error instanceof KernelExitedError)) {
@@ -1227,7 +1318,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/artifact-saved', { version: 1, artifact })
+      this.appendArtifactSavedOrMarkOrphan(request.session, target.projectId, target.versionId, artifact)
       return artifact
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
@@ -1322,7 +1413,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/artifact-saved', { version: 1, artifact })
+      this.appendArtifactSavedOrMarkOrphan(request.session, projectId, created.version.versionId, artifact)
       return artifact
     } catch (error) {
       throw this.prepublicationError(lease.control, error)

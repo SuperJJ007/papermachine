@@ -1508,6 +1508,19 @@ describe('Science Runtime configuration', () => {
     })).toMatchObject({ chartExtractTimeoutMs: 1, chartLiveRunsRetained: 100 })
   })
 
+  it('validates the reconciliation session-scan bound', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 0,
+    })).toThrow(/reconcileMaxSessions/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 100_001,
+    })).toThrow(/reconcileMaxSessions/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })).toMatchObject({ reconcileMaxSessions: 500 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 1,
+    })).toMatchObject({ reconcileMaxSessions: 1 })
+  })
+
   it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {
     expect(() => resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 1_048_575,

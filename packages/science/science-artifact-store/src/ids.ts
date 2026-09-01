@@ -11,6 +11,12 @@ export type ArtifactId = Branded<'ScienceStoreArtifactId'>
 /** Identifies one immutable artifact version. */
 export type VersionId = Branded<'ScienceStoreVersionId'>
 
+/** Identifies one row in `version_annotations`: one metadata edit, appended never updated. */
+export type AnnotationId = Branded<'ScienceStoreAnnotationId'>
+
+/** Identifies one row in `artifact_notes`: one user-authored note on an artifact. */
+export type NoteId = Branded<'ScienceStoreNoteId'>
+
 /**
  * Brand a generated project identifier.
  * @param value - generated identifier.
@@ -36,4 +42,22 @@ export function ArtifactId(value: string): ArtifactId {
  */
 export function VersionId(value: string): VersionId {
   return value as VersionId
+}
+
+/**
+ * Brand a generated annotation identifier.
+ * @param value - generated identifier.
+ * @returns the same string with its annotation brand.
+ */
+export function AnnotationId(value: string): AnnotationId {
+  return value as AnnotationId
+}
+
+/**
+ * Brand a generated note identifier.
+ * @param value - generated identifier.
+ * @returns the same string with its note brand.
+ */
+export function NoteId(value: string): NoteId {
+  return value as NoteId
 }

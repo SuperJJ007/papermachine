@@ -2,10 +2,13 @@
 
 /** Discriminant for {@link ProjectArtifactStoreError}. */
 export type ProjectArtifactStoreErrorCode =
-  | 'SCHEMA_VERSION_MISMATCH'
+  | 'SCHEMA_UPGRADE_UNAVAILABLE'
+  | 'SCHEMA_VERSION_NEWER'
   | 'INVALID_MARKER'
   | 'ARTIFACT_NOT_FOUND'
   | 'VERSION_NOT_FOUND'
+  | 'NOTE_NOT_FOUND'
+  | 'LOGICAL_NAME_CONFLICT'
   | 'BLOB_NOT_FOUND'
   | 'BLOB_CORRUPT'
 

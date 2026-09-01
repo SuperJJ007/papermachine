@@ -5,6 +5,7 @@ import importlib.abc
 import importlib.machinery
 import math
 import os
+import re
 import struct
 import sys
 
@@ -99,6 +100,44 @@ def install_savefig_hook(register):
 
 def _axid(index, count, name):
     return "axes[%d].%s" % (index, name) if count > 1 else name
+
+
+# Element ids embed sanitized, truncated snippets of user-authored figure
+# text (annotation content, series labels). The host codec
+# (packages/science/science-session/src/codec.ts: chartElementIdSchema)
+# rejects control characters outright and caps ids at
+# MAX_CHART_ELEMENT_ID_LENGTH (200); an oversized or control-character id
+# fails validation and the entire chart's editing state is discarded. The
+# widest wrapper around a snippet is "axes[NN]." (up to 10 chars) +
+# "annotation[text:" (17 chars) + snippet + "]" (1 char) + a "#NN" dedupe
+# suffix from _dedupe_element_ids (up to 5 chars) — 33 chars of fixed
+# overhead, well under the 140-char margin this snippet length leaves.
+_ID_TEXT_MAX_LENGTH = 60
+
+
+def _sanitize_id_text(text, max_length=_ID_TEXT_MAX_LENGTH):
+    """Strip control characters and collapse whitespace from figure text
+    before it is embedded in a chart element id; unlike ``label`` (which
+    keeps the original text for display), the id grammar rejects control
+    characters — including newlines in multi-line annotations or legend
+    labels — outright."""
+    cleaned = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:max_length]
+
+
+def _series_core(series_index, label):
+    """Id fragment for a series, falling back to a positional placeholder
+    when the label sanitizes to nothing."""
+    snippet = _sanitize_id_text(label)
+    return "series[%s]" % snippet if snippet else "series[%d]" % series_index
+
+
+def _annotation_core(text_index, text_value):
+    """Id fragment for an annotation, falling back to a positional
+    placeholder when the text sanitizes to nothing."""
+    snippet = _sanitize_id_text(text_value)
+    return "annotation[text:%s]" % snippet if snippet else "annotation[%d]" % text_index
 
 
 def _safe_add(elements, factory):
@@ -206,9 +245,9 @@ def extract_elements(fig):
                 "current": {"loc": getattr(legend, "_loc", None),
                             "title": legend.get_title().get_text() or None,
                             "visible": bool(legend.get_visible())}})
-        for label, artist in _labeled_artists(axis):
-            _safe_add(elements, lambda label=label, artist=artist: {
-                "id": _axid(index, count, "series[%s]" % label), "kind": "series", "axes": index,
+        for series_index, (label, artist) in enumerate(_labeled_artists(axis)):
+            _safe_add(elements, lambda label=label, artist=artist, series_index=series_index: {
+                "id": _axid(index, count, _series_core(series_index, label)), "kind": "series", "axes": index,
                 "label": label, "current": {"color": _series_color(matplotlib, artist)}})
         gridlines = axis.get_xgridlines() + axis.get_ygridlines()
         _safe_add(elements, lambda: {
@@ -221,9 +260,9 @@ def extract_elements(fig):
         _safe_add(elements, lambda: {
             "id": _axid(index, count, "axis_scale"), "kind": "axis_scale", "axes": index, "label": None,
             "current": {"x": axis.get_xscale(), "y": axis.get_yscale()}})
-        for text in axis.texts:
-            _safe_add(elements, lambda text=text: {
-                "id": _axid(index, count, "annotation[text:%s]" % text.get_text()[:20]),
+        for text_index, text in enumerate(axis.texts):
+            _safe_add(elements, lambda text=text, text_index=text_index: {
+                "id": _axid(index, count, _annotation_core(text_index, text.get_text())),
                 "kind": "annotation", "axes": index, "label": text.get_text(),
                 "current": {"type": "text", "text": text.get_text(), "color": matplotlib.colors.to_hex(text.get_color())}})
     return _dedupe_element_ids(elements)
@@ -231,6 +270,7 @@ def extract_elements(fig):
 
 def _artist_for(fig, element):
     axes = fig.get_axes()
+    count = len(axes)
     index = element["axes"]
     axis = axes[index] if index is not None else None
     kind = element["kind"]
@@ -253,7 +293,9 @@ def _artist_for(fig, element):
     if kind == "grid":
         return axis.patch
     if kind == "annotation":
-        matches = [text for text in axis.texts if "text:%s]" % text.get_text()[:20] in element["id"]]
+        base = element["id"].rsplit("#", 1)[0] if "]#" in element["id"] else element["id"]
+        matches = [text for text_index, text in enumerate(axis.texts)
+                   if _axid(index, count, _annotation_core(text_index, text.get_text())) == base]
         occurrence = int(element["id"].rsplit("#", 1)[1]) - 1 if "]#" in element["id"] else 0
         return matches[occurrence] if occurrence < len(matches) else None
     return None

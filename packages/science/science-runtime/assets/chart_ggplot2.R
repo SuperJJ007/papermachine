@@ -158,6 +158,37 @@ install_ggsave_hook <- function(register, register_device) {
   elements
 }
 
+# Element ids embed sanitized, truncated snippets of user-authored figure
+# text (series labels). The host codec
+# (packages/science/science-session/src/codec.ts: chartElementIdSchema)
+# rejects control characters outright and caps ids at
+# MAX_CHART_ELEMENT_ID_LENGTH (200); an oversized or control-character id
+# fails validation and the entire chart's editing state is discarded. The
+# widest wrapper around a snippet is "series[" (7 chars) + snippet + "]"
+# (1 char) + a "#NN" dedupe suffix from .dsh_dedupe_element_ids (up to 5
+# chars) — 13 chars of fixed overhead, well under the 140-char margin this
+# snippet length leaves. (Annotation ids use only the layer index and geom
+# class name, both safe deterministic strings, so they need no sanitizing.)
+.dsh_id_text_max_length <- 60L
+
+.dsh_sanitize_id_text <- function(text, max_length = .dsh_id_text_max_length) {
+  # Strip control characters and collapse whitespace from figure text before
+  # it is embedded in a chart element id; unlike the element's `label` (which
+  # keeps the original text for display), the id grammar rejects control
+  # characters — including newlines in multi-line legend labels — outright.
+  cleaned <- gsub("[[:cntrl:]]", " ", text, perl = TRUE)
+  cleaned <- gsub("\\s+", " ", cleaned, perl = TRUE)
+  cleaned <- trimws(cleaned)
+  substr(cleaned, 1L, max_length)
+}
+
+.dsh_series_core <- function(series_index, label) {
+  # Id fragment for a series, falling back to a positional placeholder when
+  # the label sanitizes to nothing.
+  snippet <- .dsh_sanitize_id_text(label)
+  if (nzchar(snippet)) paste0("series[", snippet, "]") else paste0("series[", series_index, "]")
+}
+
 extract_elements <- function(plot) {
   elements <- list()
   add <- function(id, kind, axes, label, current) {
@@ -193,7 +224,7 @@ extract_elements <- function(plot) {
     breaks <- scale$get_breaks()
     colours <- tryCatch(scale$map(breaks), error = function(e) rep(NA_character_, length(labels)))
     for (index in seq_along(labels)) {
-      add(paste0("series[", labels[index], "]"), "series", NULL, labels[index],
+      add(.dsh_series_core(index - 1L, labels[index]), "series", NULL, labels[index],
           list(color = unname(colours[index])))
     }
   }

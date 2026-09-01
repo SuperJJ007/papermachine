@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, decodeScienceChartState, replayScience } from '@deepseek-ai/dsh-science-session'
 import { KERNEL_ASSETS_ROOT } from '../src/kernel-assets.ts'
 import { authorizeRun, createKernelRuntimeHarness, createScienceSession, installTestKernelSet } from './harness.ts'
 
@@ -38,6 +38,29 @@ ggsave(overwritten, p, width=4, height=3, dpi=120)
 png(overwritten); plot(1:3); dev.off()
 p <- p + labs(title='Mutated after export')
 `
+
+/**
+ * Multi-line series label and annotation text as figure authors legitimately
+ * write them (embedded newlines). The catalog id grammar rejects control
+ * characters and the runtime discards a whole chart's editing state on any
+ * decode failure, so these must survive extraction as sanitized ids while
+ * ``label`` keeps the original text unaltered.
+ */
+const pythonMultilineSource = `import os
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(4, 3))
+ax.plot([0, 1], [0, 1], label='line one\\nline two')
+ax.text(.1, .2, 'first\\nannotation')
+ax.text(.7, .8, 'second\\nannotation')
+fig.savefig(os.path.join(os.environ['SCIENCE_ARTIFACT_DIR'], 'multiline.png'), dpi=120)
+`
+const rMultilineSource = `library(ggplot2)
+df <- data.frame(x = 1:4, y = 1:4, g = factor(rep(c("group one\\nline two", "group three\\nline four"), 2)))
+p <- ggplot(df, aes(x, y, colour = g)) + geom_point()
+out <- file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'multiline.png')
+ggsave(out, p, width=4, height=3, dpi=120)
+`
+const CONTROL_CHARACTER = /[\x00-\x1f\x7f-\x9f]/
 
 for (const language of ['python', 'r'] as const) {
   const prefix = process.env[language === 'python' ? 'DSH_SCIENCE_RUNTIME_PYTHON_PREFIX' : 'DSH_SCIENCE_RUNTIME_R_PREFIX']
@@ -98,5 +121,38 @@ for (const language of ['python', 'r'] as const) {
         ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Regenerated x' }] })
       expect(regeneratedSave.artifact.chart!.elements.find(value => value.id === 'title')?.current).toBe('Regenerated')
     }, 120_000)
+
+    it('sanitizes multi-line series labels and annotation text into control-character-free ids', async () => {
+      const root = mkdtempSync(join(process.cwd(), '.science-real-chart-multiline-'))
+      roots.push(root)
+      const { ctx, runtime } = await createKernelRuntimeHarness(root,
+        { real: language === 'python' ? { pythonPrefix: prefix! } : { rPrefix: prefix! } }, 60_000)
+      contexts.push(ctx)
+      installTestKernelSet(ctx, runtime, { assetsRoot: KERNEL_ASSETS_ROOT, kernelStartTimeoutMs: 30_000 })
+      const session = createScienceSession(ctx, `real-chart-multiline-${language}`)
+      await runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('real'), signal: new AbortController().signal })
+      const run = await runtime.startRun({ session, language, code: language === 'python' ? pythonMultilineSource : rMultilineSource,
+        rasterArtifacts: ['multiline.png'], ...authorizeRun(session, language, `multiline-${language}`), signal: new AbortController().signal })
+      const result = await run.done
+      expect(result.terminal.status, JSON.stringify(result)).toBe('success')
+      const artifact = replayScience(session.events)?.artifacts.find(value => value.logicalName === 'multiline.png')
+      expect(artifact?.chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
+      const chart = artifact!.chart!
+      expect(() => decodeScienceChartState(chart)).not.toThrow()
+      const seriesElements = chart.elements.filter(value => value.kind === 'series')
+      expect(seriesElements.length).toBeGreaterThan(0)
+      for (const element of seriesElements) {
+        expect(element.id).not.toMatch(CONTROL_CHARACTER)
+        expect(element.label).toMatch(/\n/)
+      }
+      if (language === 'python') {
+        const annotationElements = chart.elements.filter(value => value.kind === 'annotation')
+        expect(annotationElements).toHaveLength(2)
+        for (const element of annotationElements) {
+          expect(element.id).not.toMatch(CONTROL_CHARACTER)
+          expect(element.label).toMatch(/\n/)
+        }
+      }
+    }, 60_000)
   })
 }

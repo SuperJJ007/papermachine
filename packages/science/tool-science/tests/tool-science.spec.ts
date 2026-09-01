@@ -6,6 +6,7 @@
  * required REAL-composition coverage).
  */
 
+import { chmodSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,6 +38,8 @@ import { closedKernelFacts, isScienceSession, renderScienceProjection } from '..
 import { scienceArtifactPresentation } from '../src/presentation.ts'
 import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annotate-artifact.ts'
 import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
+import { formatInstallResult, installValueFromResult } from '../src/install.ts'
+import type { ScienceInstallValue } from '../src/install.ts'
 import { formatRunResult, kernelRestartReason, latestRequestHeaderSeq, requireScienceSession, runValueFromResult } from '../src/run.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
@@ -237,7 +240,19 @@ interface SetupOptions {
   readonly profileId?: string
   readonly modeRevision?: string
   readonly stateHistoryLimit?: number
+  /** When set, mounts the Science Runtime with a configured installer (see {@link makeMicromamba}). */
+  readonly installer?: boolean
 }
+
+/** Write one always-succeeding executable standing in for micromamba; a real subprocess/sandbox spawns it. */
+function makeMicromamba(root: string): string {
+  const executable = join(root, 'fake-micromamba')
+  writeFileSync(executable, '#!/bin/sh\nexit 0\n')
+  chmodSync(executable, 0o755)
+  return executable
+}
+
+const FAKE_INSTALL_CHANNELS = ['https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge', 'https://conda.anaconda.org/conda-forge']
 
 async function setup(options: SetupOptions = {}) {
   const ctx = new Context()
@@ -258,6 +273,9 @@ async function setup(options: SetupOptions = {}) {
     await ctx.plugin(ScienceRuntime, {
       dshHome: join(root, 'dsh-home'),
       profiles: { fake: { pythonPrefix: createFakePythonPrefix(root) } },
+      ...options.installer === true
+        ? { micromambaPath: makeMicromamba(root), installChannels: FAKE_INSTALL_CHANNELS }
+        : {},
     })
     // Real subprocess/sandbox providers can spawn a real persistent kernel;
     // redirect driver-asset resolution to the fake kernel-wire-protocol fixture so
@@ -326,6 +344,7 @@ describe('registration and disposal', () => {
     expect(names).toContain('run_python')
     expect(names).toContain('run_r')
     expect(names).toContain('annotate_artifact')
+    expect(names).toContain('install_science_packages')
     expect(names).not.toContain('publish_outcome')
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.contexts.some(entry => entry.name === 'science:environment')).toBe(true)
@@ -1801,6 +1820,114 @@ describe('annotate_artifact', () => {
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no artifact named'))).toBe(true)
+  })
+})
+
+describe('installValueFromResult / formatInstallResult', () => {
+  const stream = (text: string, truncated = false): ScienceInstallValue['stdout'] => ({ text, bytes: Buffer.byteLength(text), truncated })
+
+  it('carries environmentRevision only when the Runtime result names a fresh environment', () => {
+    expect(installValueFromResult({
+      status: 'success',
+      environment: { revision: 4 } as never,
+      stdout: stream(''), stderr: stream(''),
+    })).toMatchObject({ status: 'success', environmentRevision: 4 })
+    expect(installValueFromResult({
+      status: 'failed', stdout: stream(''), stderr: stream(''),
+    })).toEqual({ status: 'failed', stdout: stream(''), stderr: stream('') })
+  })
+
+  it('states plainly that a successful install takes effect on the next run and loses in-memory kernel state then', () => {
+    const text = formatInstallResult({
+      status: 'success', environmentRevision: 3, stdout: stream(''), stderr: stream(''),
+    })
+    expect(text).toContain('takes effect on the next run_python/run_r call')
+    expect(text).toContain('not now')
+    expect(text).toContain('lost then')
+  })
+
+  it('omits the environment-revision line on a non-success status', () => {
+    const text = formatInstallResult({ status: 'failed', stdout: stream(''), stderr: stream('') })
+    expect(text).not.toContain('takes effect')
+  })
+
+  it('renders "(empty)" for empty streams and appends truncation markers when set', () => {
+    const text = formatInstallResult({
+      status: 'success', environmentRevision: 1,
+      stdout: stream('', false), stderr: stream('boom\n', true),
+    })
+    expect(text).toContain('--- stdout ---\n(empty)')
+    expect(text).toContain('--- stderr ---\nboom\n')
+    expect(text).toContain('(stderr truncated)')
+    expect(text).not.toContain('(stdout truncated)')
+  })
+
+  it('renders captured non-empty stdout and a stdout truncation marker', () => {
+    const text = formatInstallResult({
+      status: 'success', environmentRevision: 1,
+      stdout: stream('installed numpy-1.26.4\n', true), stderr: stream(''),
+    })
+    expect(text).toContain('installed numpy-1.26.4')
+    expect(text).toContain('(stdout truncated)')
+    expect(text).not.toContain('(stderr truncated)')
+  })
+})
+
+describe('install_science_packages', () => {
+  it('rejects when no Science Runtime is mounted', async () => {
+    const { ctx } = await setup({ withRuntime: false })
+    const session = scienceSession(ctx, 'science-install-no-runtime')
+    session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' } })
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('install-no-runtime'), name: 'install_science_packages',
+      arguments: { language: 'python', packages: ['numpy'] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('no Science Runtime is mounted'))).toBe(true)
+  })
+
+  it('rejects a nested Code Mode sub-dispatch before Runtime lookup or side effects', async () => {
+    const { ctx } = await setup({ installer: true })
+    const session = await boundSession(ctx, 'science-install-nested')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('install-nested'), name: 'install_science_packages',
+      arguments: { language: 'python', packages: ['numpy'] },
+      agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('nested Code Mode sub-dispatch'))).toBe(true)
+    expect(session.events.some(event => event.type === 'science/environment-bound' && event.data.environment.revision > 1)).toBe(false)
+  })
+
+  it('surfaces the Runtime rejection for a deployment with no configured installer', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-install-not-configured')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('install-not-configured'), name: 'install_science_packages',
+      arguments: { language: 'python', packages: ['numpy'] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content.some(block => block.type === 'text' && block.text.includes('configured micromamba executable path'))).toBe(true)
+  })
+
+  it('installs successfully, appends a fresh environment revision, and tells the model plainly that it takes effect next run', async () => {
+    const { ctx } = await setup({ installer: true })
+    const session = await boundSession(ctx, 'science-install-success')
+    const before = replayScience(session.events)?.environment
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('install-success'), name: 'install_science_packages',
+      arguments: { language: 'python', packages: ['numpy'] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
+    expect(text).toContain('status: success')
+    expect(text).toContain('takes effect on the next run_python/run_r call')
+    expect(text).toContain('lost then')
+    const after = replayScience(session.events)?.environment
+    expect(after?.revision).toBe((before?.revision ?? 0) + 1)
   })
 })
 

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "general",
+  "revision": "2026.09.1",
+  "name": "通用科学环境 · General science",
+  "supportedPlatforms": ["darwin-arm64", "darwin-x64"],
+  "channels": ["conda-forge"],
+  "packages": [
+    "python=3.13", "numpy=2.3", "scipy=1.16", "pandas=2.3", "matplotlib=3.10", "seaborn=0.13",
+    "statsmodels=0.14", "scikit-learn=1.7", "pyarrow=21", "openpyxl=3.1", "pyreadstat=1.3", "pillow=11",
+    "r-base=4.5", "r-tidyverse=2.0", "r-haven=2.5", "r-broom=1.0", "r-modelr=0.1", "r-lme4",
+    "r-survey=4.5", "r-srvyr=1.3", "r-data.table=1.18", "r-jsonlite=2.0"
+  ],
+  "estimatedDownloadBytes": 520000000,
+  "requiredFreeBytes": 6000000000,
+  "timeoutMs": 3600000,
+  "healthChecks": [
+    {
+      "language": "python",
+      "executable": "python",
+      "args": ["-c", "import numpy,scipy,pandas,matplotlib,seaborn,statsmodels,sklearn,pyarrow,openpyxl,pyreadstat,PIL"]
+    },
+    {
+      "language": "r",
+      "executable": "Rscript",
+      "args": ["-e", "library(tidyverse);library(haven);library(lme4);library(survey);library(data.table)"]
+    }
+  ]
+}

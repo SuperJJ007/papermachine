@@ -9,11 +9,21 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CondaCandidate } from '../src/detection.ts'
-import type { DesktopOnboardingBridge } from '../src/preload.ts'
+import type { DesktopOnboardingBridge, OfferedEnvironment } from '../src/preload.ts'
+import type { ProvisioningProgress } from '../src/provisioning.ts'
 
-const NOTHING_DETECTED_MESSAGE = '未检测到可用环境 · No usable environment was detected.'
-const DETECTION_FAILED_MESSAGE = '检测失败 · Detection failed.'
+const NOTHING_DETECTED_MESSAGE = '未检测到本机环境，可以直接安装下面的标准环境。 · No environment was found on this machine; install the standard one below.'
+const DETECTION_FAILED_MESSAGE = '检测失败，仍可安装下面的标准环境。 · Detection failed; the standard environment below can still be installed.'
 const VERSION_UNAVAILABLE = '解释器版本未知 · interpreter version unavailable'
+
+const STANDARD: OfferedEnvironment = {
+  id: 'general',
+  name: 'General science',
+  revision: '2026.09.1',
+  packages: ['python=3.13', 'numpy=2.3', 'r-base=4.5'],
+  estimatedDownloadBytes: 520_000_000,
+  requiredFreeBytes: 6_000_000_000,
+}
 
 function pythonOnly(prefix: string, pythonVersion?: string): CondaCandidate {
   return { prefix, presence: { python: true, r: false }, ...(pythonVersion === undefined ? {} : { pythonVersion }) }
@@ -34,13 +44,32 @@ function both(prefix: string, pythonVersion?: string, rVersion?: string): CondaC
 
 function setDom(): void {
   document.body.innerHTML = `
-    <section id="python-section" hidden><div id="python-choices"></div></section>
-    <section id="r-section" hidden><div id="r-choices"></div></section>
+    <section id="detected" hidden>
+      <section id="python-section" hidden><div id="python-choices"></div></section>
+      <section id="r-section" hidden><div id="r-choices"></div></section>
+      <div class="actions"><button id="bind" disabled></button><button id="redetect"></button></div>
+    </section>
     <div id="guidance" hidden>
       <p id="guidance-message"></p>
-      <p>install guidance</p>
     </div>
-    <div class="actions"><button id="bind" disabled></button><button id="redetect"></button></div>
+    <section id="install">
+      <p id="install-summary"></p>
+      <ul id="packages"></ul>
+      <details id="advanced"><summary>advanced</summary><textarea id="custom-packages"></textarea></details>
+      <div class="actions">
+        <button id="provision"></button>
+        <button id="provision-custom" hidden></button>
+      </div>
+    </section>
+    <section id="confirm" hidden>
+      <p id="confirm-detail"></p>
+      <div class="actions"><button id="confirm-start"></button><button id="confirm-cancel"></button></div>
+    </section>
+    <section id="progress" hidden>
+      <p id="progress-phase"></p>
+      <p id="progress-message"></p>
+      <div class="actions"><button id="cancel"></button></div>
+    </section>
     <p id="status"></p>
   `
 }
@@ -74,11 +103,23 @@ function choose(containerSelector: string, value: string): void {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
-function makeBridge(detect: DesktopOnboardingBridge['detect']): DesktopOnboardingBridge {
+/** The provisioning-progress listener the loaded module subscribed with, for tests that drive progress. */
+let progressListener: ((progress: ProvisioningProgress) => void) | undefined
+
+function makeBridge(
+  detect: DesktopOnboardingBridge['detect'],
+  overrides: Partial<DesktopOnboardingBridge> = {},
+): DesktopOnboardingBridge {
   return {
     onboardingStatus: vi.fn(async () => undefined),
     detect,
     bind: vi.fn(async () => {}),
+    environments: vi.fn(async () => [STANDARD]),
+    provision: vi.fn(async () => {}),
+    provisionCustom: vi.fn(async () => {}),
+    cancelProvisioning: vi.fn(async () => {}),
+    onProvisioningProgress: (listener) => { progressListener = listener },
+    ...overrides,
   }
 }
 
@@ -95,6 +136,7 @@ async function loadOnboarding(bridge: DesktopOnboardingBridge): Promise<void> {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+  progressListener = undefined
 })
 
 describe('onboarding renderGroup', () => {
@@ -183,5 +225,174 @@ describe('onboarding renderGroup', () => {
     expect((requireElement('#bind') as HTMLButtonElement).disabled).toBe(true)
     expect((requireElement('#python-section') as HTMLElement).hidden).toBe(true)
     expect((requireElement('#python-choices') as HTMLDivElement).childElementCount).toBe(0)
+  })
+})
+
+
+/** A bridge whose install-route calls are held as locals, so assertions never reference a bridge method unbound. */
+function installBridge(overrides: Partial<DesktopOnboardingBridge> = {}) {
+  const provision = vi.fn(async (_id: string) => {})
+  const provisionCustom = vi.fn(async (_packages: readonly string[]) => {})
+  const cancelProvisioning = vi.fn(async () => {})
+  const bridge = makeBridge(vi.fn(async () => []), {
+    provision, provisionCustom, cancelProvisioning, ...overrides,
+  })
+  return { bridge, provision, provisionCustom, cancelProvisioning }
+}
+
+function click(selector: string): void {
+  (requireElement(selector) as HTMLButtonElement).click()
+}
+
+function textOf(selector: string): string {
+  return requireElement(selector).textContent ?? ''
+}
+
+/** `HTMLElement.hidden` also models the `until-found` string value, which none of this page's controls use. */
+function hiddenState(selector: string): boolean {
+  return (requireElement(selector) as HTMLElement).hidden === true
+}
+
+describe('onboarding install route', () => {
+  it('states the download size, disk requirement, and package count before any download starts', async () => {
+    const { bridge, provision } = installBridge()
+    await loadOnboarding(bridge)
+
+    expect(textOf('#install-summary')).toContain('520 MB')
+    expect(textOf('#install-summary')).toContain('6.0 GB')
+    expect(provision).not.toHaveBeenCalled()
+  })
+
+  it('lists the shipped packages and prefills the custom editor with exactly that list', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+
+    expect([...document.querySelectorAll('#packages li')].map(item => item.textContent)).toEqual(STANDARD.packages)
+    expect((requireElement('#custom-packages') as HTMLTextAreaElement).value).toBe(STANDARD.packages.join('\n'))
+  })
+
+  it('asks for confirmation naming the size instead of downloading on the first click', async () => {
+    const { bridge, provision } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+
+    expect(hiddenState('#confirm')).toBe(false)
+    expect(textOf('#confirm-detail')).toContain('520 MB')
+    expect(provision).not.toHaveBeenCalled()
+  })
+
+  it('downloads the shipped environment only after the confirmation is accepted', async () => {
+    const { bridge, provision } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(provision).toHaveBeenCalledWith('general') })
+    expect(hiddenState('#confirm')).toBe(true)
+    expect(hiddenState('#progress')).toBe(false)
+  })
+
+  it('starts nothing when the confirmation is dismissed', async () => {
+    const { bridge, provision } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-cancel')
+    click('#confirm-start')
+
+    expect(hiddenState('#confirm')).toBe(true)
+    expect(provision).not.toHaveBeenCalled()
+  })
+
+  it('sends the edited list, trimmed and without blank lines, through the custom route', async () => {
+    const { bridge, provision, provisionCustom } = installBridge()
+    await loadOnboarding(bridge)
+
+    ;(requireElement('#custom-packages') as HTMLTextAreaElement).value = '  python=3.13 \n\n scipy\n'
+    click('#provision-custom')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(provisionCustom).toHaveBeenCalledWith(['python=3.13', 'scipy']) })
+    expect(provision).not.toHaveBeenCalled()
+  })
+
+  it('refuses an empty custom list without asking for confirmation', async () => {
+    const { bridge, provisionCustom } = installBridge()
+    await loadOnboarding(bridge)
+
+    ;(requireElement('#custom-packages') as HTMLTextAreaElement).value = '   \n\n'
+    click('#provision-custom')
+
+    expect(hiddenState('#confirm')).toBe(true)
+    expect(textOf('#status')).toBe('自定义清单不能为空 · The custom list cannot be empty.')
+    expect(provisionCustom).not.toHaveBeenCalled()
+  })
+
+  it('reveals the custom install button only while the advanced editor is open', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+    const advanced = requireElement('#advanced') as HTMLDetailsElement
+    expect(hiddenState('#provision-custom')).toBe(true)
+
+    advanced.open = true
+    advanced.dispatchEvent(new Event('toggle'))
+    expect(hiddenState('#provision-custom')).toBe(false)
+
+    advanced.open = false
+    advanced.dispatchEvent(new Event('toggle'))
+    expect(hiddenState('#provision-custom')).toBe(true)
+  })
+
+  it('renders each provisioning progress update', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+
+    progressListener?.({ phase: 'installing', message: 'downloading scipy' })
+
+    expect(hiddenState('#progress')).toBe(false)
+    expect(textOf('#progress-phase')).toBe('installing')
+    expect(textOf('#progress-message')).toBe('downloading scipy')
+  })
+
+  it('surfaces a failed download and returns the page to a usable state', async () => {
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error('solve failed') }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toBe('solve failed') })
+    expect(hiddenState('#progress')).toBe(true)
+    expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('disables Install when the environment list cannot be read, and says why', async () => {
+    const { bridge } = installBridge({ environments: vi.fn(async () => { throw new Error('no declarations') }) })
+    await loadOnboarding(bridge)
+
+    expect(textOf('#install-summary')).toBe('no declarations')
+    expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('cancels an in-flight download through the bridge', async () => {
+    const { bridge, cancelProvisioning } = installBridge()
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-start')
+    click('#cancel')
+
+    expect(cancelProvisioning).toHaveBeenCalled()
+  })
+
+  it('hides the detected section entirely when nothing was found, leaving install as the only route', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+
+    expect(hiddenState('#detected')).toBe(true)
+    expect(textOf('#guidance-message')).toBe(NOTHING_DETECTED_MESSAGE)
+    expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(false)
   })
 })

@@ -14,6 +14,7 @@ import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { detectCondaEnvironments, qualifyingInterpreters } from './detection.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
+import { buildCustomDeclaration, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -71,29 +72,74 @@ function desktopPlatform(): DesktopPlatform {
   return `darwin-${process.arch}`
 }
 
-// declarations() and provisioner() below back the `desktop:environments`,
-// `desktop:provision`, and `desktop:cancel-provisioning` IPC handlers in
-// `boot`, which stay registered but are unreachable from the onboarding UI:
-// v1 onboarding detects and binds an existing conda-family environment
-// (detection.ts, environment-binding.ts) instead of downloading one through
-// micromamba. The declaration/provisioning code and its tests are retained
-// so this path can return as a fallback in a later version.
-// discipline-status.ts's resolveDisciplineStatus, which compares the
-// applied revision against the shipped declarations, is retained the same
-// way: implemented and tested but with no caller in this version.
-async function declarations(): Promise<readonly EnvironmentDeclaration[]> {
-  return Promise.all(['social-science', 'biology'].map(async id => parseEnvironmentDeclaration(
-    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${id}.json`), 'utf8')),
-  )))
+/** The one environment this build ships; disciplines are added as further declarations. */
+const SHIPPED_ENVIRONMENT_ID = 'general'
+
+function environmentsRoot(dshHome: string): string {
+  return join(dshHome, 'desktop-environments')
+}
+
+/** Read the shipped declaration; the standard package set onboarding offers and the custom editor starts from. */
+async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
+  return parseEnvironmentDeclaration(
+    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${SHIPPED_ENVIRONMENT_ID}.json`), 'utf8')),
+  )
+}
+
+/**
+ * Every declaration this launch can resolve an applied environment against:
+ * the shipped one, plus the user's own package set once they have authored
+ * one. The custom declaration must be included for `resolveDisciplineStatus`
+ * to report `current` for a working custom install rather than
+ * `unknown-discipline`.
+ */
+async function declarations(dshHome: string): Promise<readonly EnvironmentDeclaration[]> {
+  const custom = await readCustomDeclaration(environmentsRoot(dshHome))
+  return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
 }
 
 function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
   const platform = desktopPlatform()
   return new DesktopEnvironmentProvisioner({
-    root: join(dshHome, 'desktop-environments'),
+    root: environmentsRoot(dshHome),
     micromambaPath: join(resourceRoot(), 'bin', platform, 'micromamba'),
     platform,
   })
+}
+
+/**
+ * Bind the prefix a provisioning run just published, so the workspace it
+ * opens finds a bound environment. One provisioned prefix carries both
+ * interpreters, and routing through `resolveBindRequest` re-checks each of
+ * them at the same seam the detect-and-bind path uses instead of trusting
+ * the run's own health checks a second time.
+ * @param dshHome - the Harness home the binding is scoped to.
+ * @param prefix - the published environment prefix.
+ */
+async function bindProvisionedPrefix(dshHome: string, prefix: string): Promise<void> {
+  const binding = await resolveBindRequest({ pythonPrefix: prefix, rPrefix: prefix }, qualifyingInterpreters)
+  await writeEnvironmentBinding(dshHome, binding)
+}
+
+/**
+ * Start one provisioning run and open the workspace on the environment it
+ * publishes. The in-flight check and its `provisioning` assignment run
+ * before this function's first await, so two invocations racing from the
+ * renderer cannot both claim the slot.
+ * @param dshHome - the Harness home the run binds into.
+ * @param declaration - the environment to provision.
+ * @throws when another provisioning run is already in flight.
+ */
+async function startProvisioning(dshHome: string, declaration: EnvironmentDeclaration): Promise<void> {
+  if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
+  const control = new AbortController()
+  provisioning = control
+  const run = (async () => {
+    const published = await provisioner(dshHome).provision(declaration, control.signal, reportProvisioningProgress)
+    await bindProvisionedPrefix(dshHome, published.prefix)
+    await openWorkspace()
+  })().finally(() => { provisioning = undefined })
+  await coordinator.trackRun(run)
 }
 
 async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
@@ -434,10 +480,11 @@ app.setName('PaperMachine')
  */
 async function boot(): Promise<void> {
   Menu.setApplicationMenu(buildApplicationMenu())
-  ipcMain.handle('desktop:environments', async () => (await declarations()).map(item => ({
+  ipcMain.handle('desktop:environments', async () => (await declarations(await harnessHome())).map(item => ({
     id: item.id,
     name: item.name,
     revision: item.revision,
+    packages: item.packages,
     estimatedDownloadBytes: item.estimatedDownloadBytes,
     requiredFreeBytes: item.requiredFreeBytes,
   })))
@@ -473,22 +520,22 @@ async function boot(): Promise<void> {
   ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
   ipcMain.handle('desktop:provision', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
-    if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
-    const declaration = (await declarations()).find(item => item.id === id)
-    // Re-checked after the `declarations()` await: two concurrent
-    // `desktop:provision` invocations can both pass the check above before
-    // either has set `provisioning`, and a concurrent invocation's own
-    // assignment below can land during this one's await.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a concurrent invocation can set `provisioning` while this one awaits.
-    if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
+    const dshHome = await harnessHome()
+    const declaration = (await declarations(dshHome)).find(item => item.id === id)
     if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
-    const control = new AbortController()
-    provisioning = control
-    const run = (async () => {
-      await provisioner(await harnessHome()).provision(declaration, control.signal, reportProvisioningProgress)
-      await openWorkspace()
-    })().finally(() => { provisioning = undefined })
-    await coordinator.trackRun(run)
+    await startProvisioning(dshHome, declaration)
+  })
+  ipcMain.handle('desktop:provision-custom', async (_event, packages: unknown) => {
+    if (!Array.isArray(packages) || packages.some(item => typeof item !== 'string')) {
+      throw new Error('desktop provisioning: custom packages must be a string array')
+    }
+    const dshHome = await harnessHome()
+    // buildCustomDeclaration validates every token before it can reach the
+    // solver's argv; persisting only after that keeps an unusable set out of
+    // the file the next launch resolves the applied environment against.
+    const declaration = buildCustomDeclaration(packages as string[], [desktopPlatform()], (await shippedDeclaration()).channels)
+    await writeCustomDeclaration(environmentsRoot(dshHome), declaration)
+    await startProvisioning(dshHome, declaration)
   })
   await openInitialSurface().catch(async (error: unknown) => {
     window ??= createWindow()

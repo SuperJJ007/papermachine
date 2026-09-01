@@ -4,24 +4,65 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Set up DeepSeek Science</title>
 <style>
-  :root{font:16px system-ui;color:#17212b;background:#f4f7fa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(680px,calc(100vw - 40px));background:white;border:1px solid #dce3ea;border-radius:18px;padding:36px;box-shadow:0 18px 60px #1d344515}h1{margin:0 0 8px;font-size:28px}p{color:#596875;line-height:1.5}.group{margin:24px 0}.group h2{margin:0 0 10px;font-size:15px;font-weight:600;color:#33424e}.choices{display:grid;gap:12px;overflow-y:auto;max-height:min(220px,30vh)}.choice{display:flex;gap:14px;padding:18px;border:1px solid #d8e0e8;border-radius:12px;cursor:pointer}.choice:has(input:checked){border-color:#1769aa;background:#f2f8fd}.choice input{margin-top:4px}.choice span{display:grid;gap:5px}.choice small{color:#687783}#guidance{margin:28px 0;padding:18px;border:1px dashed #c7d2db;border-radius:12px;background:#f8fafc}#guidance p{margin:0 0 8px}#guidance p:last-child{margin-bottom:0}.actions{display:flex;gap:10px;align-items:center;margin-top:28px}button{border:0;border-radius:9px;padding:11px 18px;font:inherit;cursor:pointer}#bind{background:#1769aa;color:white}#bind:disabled{opacity:.45;cursor:default}#redetect{background:#e8edf2;color:#273542}
+  :root{font:16px system-ui;color:#17212b;background:#f4f7fa}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 0}main{width:min(680px,calc(100vw - 40px));background:white;border:1px solid #dce3ea;border-radius:18px;padding:36px;box-shadow:0 18px 60px #1d344515}h1{margin:0 0 8px;font-size:28px}p{color:#596875;line-height:1.5}.group{margin:24px 0;padding-top:20px;border-top:1px solid #eef2f6}.group>h2{margin:0 0 10px;font-size:15px;font-weight:600;color:#33424e}.subgroup{margin:16px 0}.subgroup h3{margin:0 0 8px;font-size:13px;font-weight:600;color:#5b6975}.choices{display:grid;gap:12px;overflow-y:auto;max-height:min(200px,26vh)}.choice{display:flex;gap:14px;padding:14px 18px;border:1px solid #d8e0e8;border-radius:12px;cursor:pointer}.choice:has(input:checked){border-color:#1769aa;background:#f2f8fd}.choice input{margin-top:4px}.choice span{display:grid;gap:5px}.choice small{color:#687783}#guidance{margin:20px 0;padding:18px;border:1px dashed #c7d2db;border-radius:12px;background:#f8fafc}#guidance p{margin:0}.actions{display:flex;gap:10px;align-items:center;margin-top:20px;flex-wrap:wrap}button{border:0;border-radius:9px;padding:11px 18px;font:inherit;cursor:pointer}.primary{background:#1769aa;color:white}.primary:disabled{opacity:.45;cursor:default}.secondary{background:#e8edf2;color:#273542}.secondary:disabled{opacity:.45;cursor:default}details{margin-top:14px}summary{cursor:pointer;color:#33424e;font-size:14px}#packages{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}#packages li{font:13px ui-monospace,monospace;background:#f1f5f9;border-radius:6px;padding:3px 8px;color:#3b4a57}#custom-packages{width:100%;margin-top:10px;font:13px ui-monospace,monospace;border:1px solid #d8e0e8;border-radius:10px;padding:12px;color:#26333f;resize:vertical}#confirm{margin-top:18px;padding:18px;border:1px solid #f0c67a;border-radius:12px;background:#fffaf0}#confirm p{margin:0 0 6px;color:#6b5426}#confirm p:last-of-type{margin-bottom:0}#progress{margin-top:24px;padding:18px;border:1px solid #d8e0e8;border-radius:12px;background:#f8fafc}#progress-phase{margin:0 0 6px;font-size:14px;font-weight:600;color:#33424e}#progress-message{margin:0;font:13px ui-monospace,monospace;color:#5b6975;word-break:break-all}#status{margin-top:18px}
 </style>
 <main>
   <h1>Set up your Science workspace</h1>
-  <p>检测到的环境 · DeepSeek Science binds an existing Python/R environment on this machine — no download required.</p>
-  <section id="python-section" class="group" hidden>
-    <h2>Python 环境 · Python environment</h2>
-    <div id="python-choices" class="choices"></div>
+  <p>DeepSeek Science 需要一个带 Python 和 R 的环境。可以绑定本机已有的，也可以让我们装一个。<br>Science needs a Python and R environment: bind one already on this machine, or install ours.</p>
+
+  <section id="detected" class="group" hidden>
+    <h2>本机已有环境 · Environments found on this machine</h2>
+    <section id="python-section" class="subgroup" hidden>
+      <h3>Python 环境 · Python environment</h3>
+      <div id="python-choices" class="choices"></div>
+    </section>
+    <section id="r-section" class="subgroup" hidden>
+      <h3>R 环境 · R environment</h3>
+      <div id="r-choices" class="choices"></div>
+    </section>
+    <div class="actions">
+      <button id="bind" class="primary" disabled>绑定并继续 · Bind and continue</button>
+      <button id="redetect" class="secondary">重新检测 · Re-detect</button>
+    </div>
   </section>
-  <section id="r-section" class="group" hidden>
-    <h2>R 环境 · R environment</h2>
-    <div id="r-choices" class="choices"></div>
-  </section>
+
   <div id="guidance" hidden>
     <p id="guidance-message">未检测到可用环境 · No usable environment was detected.</p>
-    <p>请先安装 Anaconda (anaconda.com)，然后点击“重新检测”。<br>Install Anaconda from anaconda.com, then click Re-detect.</p>
   </div>
-  <div class="actions"><button id="bind" disabled>绑定并继续 · Bind and continue</button><button id="redetect">重新检测 · Re-detect</button></div>
+
+  <section id="install" class="group">
+    <h2>安装标准环境 · Install the standard environment</h2>
+    <p id="install-summary">读取中… Loading…</p>
+    <details>
+      <summary>查看完整包清单 · View the full package list</summary>
+      <ul id="packages"></ul>
+    </details>
+    <details id="advanced">
+      <summary>高级：自定义包清单 · Advanced: edit the package list</summary>
+      <p>每行一个 conda 包（支持 <code>名称=版本</code>）。删掉 python 或 r-base 会导致安装后校验失败。<br>One conda package per line (<code>name=version</code> is supported). Removing python or r-base will fail the post-install check.</p>
+      <textarea id="custom-packages" rows="10" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+    </details>
+    <div class="actions">
+      <button id="provision" class="primary">下载并安装 · Download and install</button>
+      <button id="provision-custom" class="secondary" hidden>按自定义清单安装 · Install the edited list</button>
+    </div>
+  </section>
+
+  <section id="confirm" hidden>
+    <p id="confirm-detail"></p>
+    <p>这是一次性下载，之后离线可用。<br>A one-time download; the environment works offline afterwards.</p>
+    <div class="actions">
+      <button id="confirm-start" class="primary">确认下载 · Confirm and download</button>
+      <button id="confirm-cancel" class="secondary">取消 · Cancel</button>
+    </div>
+  </section>
+
+  <section id="progress" hidden>
+    <p id="progress-phase"></p>
+    <p id="progress-message"></p>
+    <div class="actions"><button id="cancel" class="secondary">取消安装 · Cancel install</button></div>
+  </section>
+
   <p id="status" role="status" aria-live="polite"></p>
 </main>
 <script type="module">{{ONBOARDING_SCRIPT}}</script>

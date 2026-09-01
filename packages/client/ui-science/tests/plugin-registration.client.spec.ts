@@ -244,6 +244,41 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
+  it('the sidebar destination returns an already-mounted Science Details entry to the artifact library', async () => {
+    const { ctx, slots, conversationOpenDetailsView } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const details = slots.entries('conversation.details.view')[0]
+    if (details?.inject === undefined) throw new Error('expected the injected Details entry')
+    const showLibrary = vi.fn()
+    const setLibraryPage = vi.fn()
+    // Simulate the Details entry already mounted (its own store instance
+    // bound) showing some other page — an open artifact tab, or the files
+    // page — when the sidebar destination is clicked.
+    ;(details.inject as (sessionId: SessionId, actions: unknown) => unknown)(SID, { showLibrary, setLibraryPage })
+
+    const sidebar = slots.entries('sidebar.destinations')[0]
+    if (sidebar?.inject === undefined) throw new Error('expected an injected sidebar destination')
+    ;(sidebar.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
+
+    expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(showLibrary).toHaveBeenCalledOnce()
+    expect(setLibraryPage).toHaveBeenCalledExactlyOnceWith('artifacts')
+    await fiber.dispose()
+  })
+
+  it('the sidebar destination only opens the Details entry when it has never mounted for the session', async () => {
+    const { ctx, slots, conversationOpenDetailsView } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    // No prior `conversation.details.view` inject: nothing bound for SID yet.
+    const sidebar = slots.entries('sidebar.destinations')[0]
+    if (sidebar?.inject === undefined) throw new Error('expected an injected sidebar destination')
+    ;(sidebar.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
+    expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    await fiber.dispose()
+  })
+
   it('the settings card injects its section face', async () => {
     const { ctx, slots } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })

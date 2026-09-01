@@ -10,7 +10,7 @@
  * visual state enters the Session log or model requests.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BoundActions, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { createElement } from 'react'
 // Type-only: resolves ctx.locale and ctx.slots on ClientContext.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -162,6 +162,15 @@ export function apply(ctx: ClientContext): void {
   // reference across every registration below that declares it as `store:`
   // — the framework resolves one live instance per (this handle, session) pair.
   const scienceSelectionStore = createScienceSelectionStore()
+  // "Return to the artifact library" per mounted session, bound by the
+  // `conversation.details.view` registration below while its entry is
+  // rendered (see its `inject`) — the sidebar destination reaches the exact
+  // live per-session store instance the Details entry renders from this way,
+  // since `sidebar.destinations` is root-scoped and cannot declare a
+  // session-scoped `store:` of its own. Absent for a session whose Details
+  // entry has never rendered (nothing to reset yet — opening it fresh
+  // already lands on the library, the store's own init state).
+  const libraryReturners = new Map<SessionId, () => void>()
   const composerSelections = new ScienceComposerSelections()
   const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) => {
     const science = props.useProjection('science')
@@ -177,8 +186,13 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar.destinations', () => ctx.slots.register({
     name: 'sidebar.destinations', id: 'science', order: 0, locale: NS,
     inject: () => ({
+      // Sidebar "Artifacts" always lands on the artifact library: reveal
+      // (or keep revealed) the Science Details entry, then force it back to
+      // the library's artifacts page regardless of what it was showing —
+      // an open artifact tab, the files page, or the library already.
       openScience: (sessionId: SessionId) => {
         ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID)
+        libraryReturners.get(sessionId)?.()
       },
     }),
   }, ScienceDestinations))
@@ -324,9 +338,22 @@ export function apply(ctx: ClientContext): void {
     primary: true,
     locale: NS,
     store: scienceSelectionStore,
-    inject: (sessionId: SessionId): ScienceDetailsInjected => {
+    inject: (sessionId: SessionId, actions: BoundActions<typeof scienceSelectionStore>): ScienceDetailsInjected => {
       const binding = ctx.sessions.binding(sessionId)
       if (binding === undefined) throw new Error(`science details: session ${sessionId} is unavailable`)
+      // Bind this session's "return to library" action for the sidebar
+      // destination (see `libraryReturners` above) while this entry — this
+      // exact live store instance — is resolved.
+      ctx.effect(() => {
+        const returnToLibrary = (): void => {
+          actions.showLibrary()
+          actions.setLibraryPage('artifacts')
+        }
+        libraryReturners.set(sessionId, returnToLibrary)
+        return () => {
+          if (libraryReturners.get(sessionId) === returnToLibrary) libraryReturners.delete(sessionId)
+        }
+      }, `ui-science: library-return binding for ${sessionId}`)
       return {
         loadImage: createScienceImageLoader(ctx.sessions, sessionId),
         loadText: createScienceTextLoader(ctx.sessions, sessionId),

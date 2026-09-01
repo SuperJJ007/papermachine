@@ -7,8 +7,8 @@ import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
-import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactVersion, ScienceChartOp, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
+import { decodeScienceChartState, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartOp, ScienceChartState, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -54,6 +54,12 @@ p <- p + labs(title="Mutation after saving")
 `
 }
 
+/** Read one version's decoded live-figure-object state from the store, or `undefined` when it carries none. */
+async function chartOf(ctx: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState | undefined> {
+  const state = await ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  return state === undefined ? undefined : decodeScienceChartState(JSON.parse(state.stateJson))
+}
+
 async function chartHarness(language: ScienceLanguage, prefix: string) {
   const root = await mkdtemp(join(process.cwd(), '.science-chart-fidelity-'))
   roots.push(root)
@@ -79,8 +85,9 @@ async function chartHarness(language: ScienceLanguage, prefix: string) {
     const result = await handle.done
     expect(result.terminal.status, result.stderr.text).toBe('success')
     const artifact = replayScience(session.events)!.artifacts.findLast(a => a.logicalName === filename)!
-    if (addressable) expect(artifact.chart, JSON.stringify(result.capture)).toBeDefined()
-    else expect(artifact.chart).toBeUndefined()
+    const chart = await chartOf(ctx, artifact)
+    if (addressable) expect(chart, JSON.stringify(result.capture)).toBeDefined()
+    else expect(chart).toBeUndefined()
     return artifact
   }
   const preview = (artifact: ScienceArtifactVersion, ops: readonly ScienceChartOp[]) =>
@@ -98,20 +105,22 @@ for (const language of ['python', 'r'] as const) {
       await run(source(language, 6, 'First title'))
       const latest = await run(source(language, 10, 'Original title'))
       expect(latest.version).toBe(2)
-      expect(latest.chart!.png.dpi).toBe(language === 'python' ? 125 : 100)
-      expect(latest.chart!.elements.find(e => e.kind === 'title')?.current).toBe('Original title')
+      const latestChart = await chartOf(ctx, latest)
+      expect(latestChart!.png.dpi).toBe(language === 'python' ? 125 : 100)
+      expect(latestChart!.elements.find(e => e.kind === 'title')?.current).toBe('Original title')
       const eventsBefore = session.events.length
       await preview(latest, [labelOp])
       const edited = await preview(latest, [titleOp])
       expect(session.events).toHaveLength(eventsBefore)
       expect(edited.failedOps).toEqual([])
-      expect(edited.chart.png).toEqual(latest.chart!.png)
+      expect(edited.chart.png).toEqual(latestChart!.png)
       expect(edited.chart.elements.find(e => e.kind === 'x_label')?.current).toBe('Original X')
       const control = await run(source(language, 10, 'Edited title', 'control.png'), 'control.png')
       const expectedPng = await ctx.scienceArtifactStore.readBlob(control.projectId, control.sha256)
       expect(Buffer.from(edited.png).equals(Buffer.from(expectedPng)), 'edited PNG matches a direct source render').toBe(true)
       const saved = await ctx.scienceRuntime.applyChartEdit({ session, artifactId: latest.artifactId, version: 2, ops: [titleOp], signal })
-      expect(saved.artifact.chart!.ops).toEqual([titleOp])
+      const savedChart = await chartOf(ctx, saved.artifact)
+      expect(savedChart!.ops).toEqual([titleOp])
       expect(saved.artifact.sha256).toBe(control.sha256)
       const secondOps = [{ ...labelOp, text: 'Saved X' }]
       const warm = await preview(saved.artifact, secondOps)
@@ -125,7 +134,8 @@ for (const language of ['python', 'r'] as const) {
       expect(Buffer.from(cold.png).equals(Buffer.from(warm.png)), 'cold and warm preview PNGs match').toBe(true)
       const savedAgain = await ctx.scienceRuntime.applyChartEdit({ session, artifactId: latest.artifactId,
         version: saved.artifact.version, ops: secondOps, signal })
-      expect(savedAgain.artifact.chart!.ops).toEqual([titleOp, ...secondOps])
+      const savedAgainChart = await chartOf(ctx, savedAgain.artifact)
+      expect(savedAgainChart!.ops).toEqual([titleOp, ...secondOps])
       expect(replayScience(session.events)!.runs).toHaveLength(runCount)
       const bytes = await ctx.scienceArtifactStore.readBlob(savedAgain.artifact.projectId, savedAgain.artifact.sha256)
       expect(Buffer.from(bytes).equals(Buffer.from(warm.png)), 'saved and preview PNGs match').toBe(true)
@@ -137,7 +147,8 @@ class Uncopyable:
 fig.custom_state = Uncopyable()
 fig.savefig(`)
         const png = await run(uncopyable, 'custom.png', false)
-        expect(png.mediaType).toBe('image/png')
+        const pngRecord = await ctx.scienceArtifactStore.getVersion(png.projectId, png.versionId)
+        expect(pngRecord?.mediaType).toBe('image/png')
       }
     }, 120_000)
 
@@ -183,7 +194,8 @@ fig.savefig(os.path.join(os.environ["SCIENCE_ARTIFACT_DIR"], ${JSON.stringify(fi
       const edited = await preview(original, ops)
       expect(edited.failedOps).toEqual([])
       const control = await run(code(true, 'control.png'), 'control.png')
-      expect(edited.chart.png).toEqual(control.chart!.png)
+      const controlChart = await chartOf(ctx, control)
+      expect(edited.chart.png).toEqual(controlChart!.png)
       const expected = await ctx.scienceArtifactStore.readBlob(control.projectId, control.sha256)
       expect(Buffer.from(edited.png).equals(Buffer.from(expected)), 'preview matches a direct source render').toBe(true)
       const unchanged = await preview(original, [{ op: 'set_title', axes: null, text: 'Main title' }])

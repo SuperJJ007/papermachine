@@ -10,14 +10,14 @@ import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import { decodeScienceChartState, replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type {
+  ScienceArtifactVersion,
   ScienceChartState,
   ScienceEnvironmentBinding,
   ScienceKernelState,
   ScienceLanguage,
   ScienceOutcomePublication,
-  ScienceRunArtifactVersion,
 } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -342,21 +342,44 @@ function pngDimensions(bytes: Uint8Array): { readonly width: number; readonly he
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
 }
 
-/** Require one captured PNG to carry a live chart for the expected runtime. */
-function expectLiveChart(
+/**
+ * Require one captured PNG to carry a live chart for the expected runtime.
+ * Figure state lives only in the store now (T1's authority rule), so this
+ * reads `getFigureState` rather than an `artifact.chart` field.
+ */
+async function expectLiveChart(
+  context: Context,
   result: ScienceRunResult,
   logicalName: string,
   runtime: ScienceChartState['runtime'],
-): { readonly artifact: ScienceRunArtifactVersion; readonly chart: ScienceChartState } {
+): Promise<{ readonly artifact: ScienceArtifactVersion; readonly chart: ScienceChartState }> {
   const artifact = result.capture?.captured.find(candidate => candidate.logicalName === logicalName)
-  if (artifact === undefined || artifact.origin === 'human-edit') {
+  if (artifact === undefined) {
     throw new Error(`run did not capture ${JSON.stringify(logicalName)}`)
   }
-  const chart = artifact.chart
-  if (chart === undefined || chart.runtime !== runtime) {
+  const state = await context.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  if (state === undefined) {
+    throw new Error(`${JSON.stringify(logicalName)} did not carry a figure_state row`)
+  }
+  const chart = decodeScienceChartState(JSON.parse(state.stateJson))
+  if (chart.runtime !== runtime) {
     throw new Error(`${JSON.stringify(logicalName)} did not carry a ${runtime} chart`)
   }
   return { artifact, chart }
+}
+
+/** Read one version's decoded live-figure-object state from the store. */
+async function chartOf(context: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState> {
+  const state = await context.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  if (state === undefined) throw new Error(`version ${String(artifact.versionId)} carries no figure_state row`)
+  return decodeScienceChartState(JSON.parse(state.stateJson))
+}
+
+/** Read one version's immutable content origin from the store. */
+async function contentOriginOf(context: Context, artifact: ScienceArtifactVersion): Promise<string> {
+  const record = await context.scienceArtifactStore.getVersion(artifact.projectId, artifact.versionId)
+  if (record === undefined) throw new Error(`version ${String(artifact.versionId)} was not found in the store`)
+  return record.contentOrigin
 }
 
 /** Require an exact set of catalog kinds and internally valid hit references. */
@@ -727,7 +750,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     if (language === 'python') {
       await namespaceProbe('begin')
       const basic = await runChartSource(matplotlibChartSource('basic'), ['mpl-basic.png'])
-      const basicLive = expectLiveChart(basic, 'mpl-basic.png', 'matplotlib')
+      const basicLive = await expectLiveChart(context, basic, 'mpl-basic.png', 'matplotlib')
       expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series', 'grid', 'axis_range', 'font'])
       if (basicLive.chart.hitmapStatus !== 'ok' || basicLive.chart.hitmap.length === 0) {
         throw new Error('ordinary matplotlib save did not produce a usable hitmap')
@@ -757,9 +780,11 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         signal: new AbortController().signal,
       })
       const editedBytes = await context.scienceArtifactStore.readBlob(edited.artifact.projectId, edited.artifact.sha256)
-      const editedElements = edited.artifact.chart?.elements ?? []
-      if (edited.artifact.version !== 2 || edited.artifact.origin !== 'human-edit'
-        || edited.artifact.chart?.ops.length !== 4 || edited.failedOps.length !== 0
+      const editedChart = await chartOf(context, edited.artifact)
+      const editedOrigin = await contentOriginOf(context, edited.artifact)
+      const editedElements = editedChart.elements
+      if (edited.artifact.version !== 2 || editedOrigin !== 'human-edit'
+        || editedChart.ops.length !== 4 || edited.failedOps.length !== 0
         || Buffer.from(editedBytes).equals(Buffer.from(basicParentBytes))
         || !editedElements.some(element => element.kind === 'title' && element.current === 'Directly edited trial')
         || !editedElements.some(element => element.kind === 'x_label' && element.current === 'Edited group')
@@ -776,7 +801,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         signal: new AbortController().signal,
       })
       const fontEditedBytes = await context.scienceArtifactStore.readBlob(fontEdited.artifact.projectId, fontEdited.artifact.sha256)
-      const editedFont = fontEdited.artifact.chart?.elements.find(element => element.kind === 'font')?.current
+      const editedFont = (await chartOf(context, fontEdited.artifact)).elements.find(element => element.kind === 'font')?.current
       const editedFontRecord = typeof editedFont === 'object' && editedFont !== null && !Array.isArray(editedFont)
         ? editedFont as Record<string, unknown> : undefined
       if (fontEdited.failedOps.length !== 0 || Buffer.from(fontEditedBytes).equals(Buffer.from(editedBytes))
@@ -810,7 +835,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         if (legendResult.failedOps.length !== 0) {
           throw new Error(`matplotlib legend position ${position} failed to apply: ${JSON.stringify(legendResult.failedOps)}`)
         }
-        if (legendResult.artifact.chart?.elements.every(element => element.kind !== 'legend') !== false) {
+        if ((await chartOf(context, legendResult.artifact)).elements.every(element => element.kind !== 'legend')) {
           throw new Error(`matplotlib legend position ${position} dropped the legend element`)
         }
         if (legendShas.includes(legendResult.artifact.sha256)) {
@@ -837,7 +862,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
       await namespaceProbe('begin')
       const replayTargetResult = await runChartSource(matplotlibReplaySource('mpl-replay-target.png'), ['mpl-replay-target.png'])
-      const replayTarget = expectLiveChart(replayTargetResult, 'mpl-replay-target.png', 'matplotlib').artifact
+      const replayTarget = (await expectLiveChart(context, replayTargetResult, 'mpl-replay-target.png', 'matplotlib')).artifact
       for (const suffix of ['one', 'two']) {
         const filename = `mpl-replay-filler-${suffix}.png`
         await runChartSource(matplotlibReplaySource(filename), [filename])
@@ -848,8 +873,10 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         ops: [{ op: 'set_title', axes: null, text: 'Recovered by replay' }],
         signal: new AbortController().signal,
       })
-      if (replayed.artifact.version !== 2 || replayed.artifact.origin !== 'human-edit'
-        || replayed.artifact.chart?.ops.length !== 1 || replayed.failedOps.length !== 0) {
+      const replayedOrigin = await contentOriginOf(context, replayed.artifact)
+      const replayedChart = await chartOf(context, replayed.artifact)
+      if (replayed.artifact.version !== 2 || replayedOrigin !== 'human-edit'
+        || replayedChart.ops.length !== 1 || replayed.failedOps.length !== 0) {
         throw new Error('matplotlib replay apply did not commit the recovered chart edit')
       }
       const replayEvents = session.events.slice(eventsBeforeReplay)
@@ -864,7 +891,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       // any chart whose decodeScienceChartState call rejects it, so the
       // artifact would carry no chart field at all on a duplicate-id chart.
       const tight = await runChartSource(matplotlibChartSource('tight'), ['mpl-tight.png'])
-      const tightChart = expectLiveChart(tight, 'mpl-tight.png', 'matplotlib').chart
+      const tightChart = (await expectLiveChart(context, tight, 'mpl-tight.png', 'matplotlib')).chart
       if (tightChart.runtime !== 'matplotlib' || tightChart.elements.length === 0
         || tightChart.hitmapStatus !== 'ok' || tightChart.hitmap.length === 0) {
         throw new Error('tight matplotlib save did not preserve its exported hitmap')
@@ -888,16 +915,16 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       checks.push('chart matplotlib single-axes ax.set_title with no suptitle: extracted as title, not subtitle')
 
       const closed = await runChartSource(matplotlibChartSource('closed'), ['mpl-closed.png'])
-      expectLiveChart(closed, 'mpl-closed.png', 'matplotlib')
+      await expectLiveChart(context, closed, 'mpl-closed.png', 'matplotlib')
       checks.push('chart matplotlib strong registration survives pyplot close')
 
       const direct = await runChartSource(matplotlibChartSource('figure'), ['mpl-figure.png'])
-      expectLiveChart(direct, 'mpl-figure.png', 'matplotlib')
+      await expectLiveChart(context, direct, 'mpl-figure.png', 'matplotlib')
       checks.push('chart matplotlib Figure.savefig works without pyplot')
 
       const two = await runChartSource(matplotlibChartSource('two'), ['mpl-one.png', 'mpl-two.png'])
-      expectLiveChart(two, 'mpl-one.png', 'matplotlib')
-      expectLiveChart(two, 'mpl-two.png', 'matplotlib')
+      await expectLiveChart(context, two, 'mpl-one.png', 'matplotlib')
+      await expectLiveChart(context, two, 'mpl-two.png', 'matplotlib')
       if (two.capture?.chartUnavailablePaths.length !== 0) throw new Error('two registered matplotlib figures lost chart state')
       checks.push('chart matplotlib extracts two saved figures independently')
 
@@ -920,7 +947,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     } else {
       await namespaceProbe('begin')
       const basic = await runChartSource(ggplotChartSource('basic'), ['r-basic.png'])
-      const basicLive = expectLiveChart(basic, 'r-basic.png', 'ggplot2')
+      const basicLive = await expectLiveChart(context, basic, 'r-basic.png', 'ggplot2')
       expectChartCatalog(basicLive.chart, ['title', 'x_label', 'y_label', 'legend', 'series'])
       const basicPng = pngDimensions(await context.scienceArtifactStore.readBlob(basicLive.artifact.projectId, basicLive.artifact.sha256))
       if (basicLive.chart.png.width !== basicPng.width || basicLive.chart.png.height !== basicPng.height
@@ -937,8 +964,10 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         ],
         signal: new AbortController().signal,
       })
-      if (edited.artifact.version !== 2 || edited.artifact.origin !== 'human-edit'
-        || edited.artifact.chart?.ops.length !== 4 || edited.failedOps.length !== 0) {
+      const editedOrigin = await contentOriginOf(context, edited.artifact)
+      const editedChart = await chartOf(context, edited.artifact)
+      if (edited.artifact.version !== 2 || editedOrigin !== 'human-edit'
+        || editedChart.ops.length !== 4 || edited.failedOps.length !== 0) {
         throw new Error('ggplot2 four-operation apply did not commit human-edit v2 with cumulative operations')
       }
       await namespaceProbe('end')
@@ -951,7 +980,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         signal: new AbortController().signal,
       })
       const fontEditedBytes = await context.scienceArtifactStore.readBlob(fontEdited.artifact.projectId, fontEdited.artifact.sha256)
-      const editedFont = fontEdited.artifact.chart?.elements.find(element => element.kind === 'font')?.current
+      const editedFont = (await chartOf(context, fontEdited.artifact)).elements.find(element => element.kind === 'font')?.current
       const editedFontRecord = typeof editedFont === 'object' && editedFont !== null && !Array.isArray(editedFont)
         ? editedFont as Record<string, unknown> : undefined
       if (fontEdited.failedOps.length !== 0 || Buffer.from(fontEditedBytes).equals(Buffer.from(editedBytes))
@@ -992,7 +1021,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         if (legendResult.failedOps.length !== 0) {
           throw new Error(`ggplot2 legend position ${position} failed to apply: ${JSON.stringify(legendResult.failedOps)}`)
         }
-        const legendElement = legendResult.artifact.chart?.elements.find(element => element.kind === 'legend')
+        const legendElement = (await chartOf(context, legendResult.artifact)).elements.find(element => element.kind === 'legend')
         const current = legendElement?.current
         const record = typeof current === 'object' && current !== null && !Array.isArray(current)
           ? current as Record<string, unknown> : undefined
@@ -1011,7 +1040,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       checks.push('chart apply ggplot2 legend upper left/lower right/center in sequence: legend retained, inside coordinates read back, distinct PNGs')
 
       const device = await runChartSource(ggplotChartSource('device'), ['r-device.png'])
-      expectLiveChart(device, 'r-device.png', 'ggplot2')
+      await expectLiveChart(context, device, 'r-device.png', 'ggplot2')
       for (const caseName of ['base'] as const) {
         const filename = `r-${caseName}.png`
         const result = await runChartSource(ggplotChartSource(caseName), [filename])
@@ -1025,7 +1054,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
       await namespaceProbe('begin')
       const facet = await runChartSource(ggplotChartSource('facet'), ['r-facet.png'])
-      const facetLive = expectLiveChart(facet, 'r-facet.png', 'ggplot2')
+      const facetLive = await expectLiveChart(context, facet, 'r-facet.png', 'ggplot2')
       const facetChart = facetLive.chart
       if (!facetChart.elements.some(element => element.id.startsWith('axes['))
         || facetChart.elements.filter(element => element.kind === 'x_label').length !== 1) {
@@ -1037,8 +1066,10 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         ops: [{ op: 'set_axis_label', axes: 0, axis: 'x', text: 'Panel weight' }],
         signal: new AbortController().signal,
       })
-      if (facetEdited.artifact.version !== 2 || facetEdited.artifact.origin !== 'human-edit'
-        || facetEdited.artifact.chart?.ops.length !== 1 || facetEdited.failedOps.length !== 0) {
+      const facetEditedOrigin = await contentOriginOf(context, facetEdited.artifact)
+      const facetEditedChart = await chartOf(context, facetEdited.artifact)
+      if (facetEdited.artifact.version !== 2 || facetEditedOrigin !== 'human-edit'
+        || facetEditedChart.ops.length !== 1 || facetEdited.failedOps.length !== 0) {
         throw new Error('ggplot2 facet axes[0] label apply did not commit human-edit v2')
       }
       await namespaceProbe('end')
@@ -1086,7 +1117,8 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
 
     const capturedChart = successResult.capture?.captured.find(candidate => candidate.logicalName === 'real-chart.png')
     if (capturedChart === undefined) throw new Error('auto-capture did not produce the real PNG artifact')
-    if (capturedChart.mediaType !== 'image/png') throw new Error('auto-capture returned a non-image artifact for a PNG file')
+    const capturedRecord = await context.scienceArtifactStore.getVersion(capturedChart.projectId, capturedChart.versionId)
+    if (capturedRecord?.mediaType !== 'image/png') throw new Error('auto-capture returned a non-image artifact for a PNG file')
     checks.push('real PNG artifact auto-capture')
 
     const annotateAuthorization = authorizeNext('annotate_artifact')
@@ -1097,7 +1129,8 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       ...annotateAuthorization,
       signal: new AbortController().signal,
     })
-    if (chart.mediaType !== 'image/png') throw new Error('annotateArtifact returned a non-image artifact')
+    const chartRecord = await context.scienceArtifactStore.getVersion(chart.projectId, chart.versionId)
+    if (chartRecord?.mediaType !== 'image/png') throw new Error('annotateArtifact returned a non-image artifact')
     const stored = await context.scienceArtifactStore.readBlob(chart.projectId, chart.sha256)
     if (!Buffer.from(stored).equals(Buffer.from(PNG))) {
       throw new Error('curated chart artifact did not read back with the exact generated PNG bytes')
@@ -1123,13 +1156,17 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       ],
       publishedAt: Date.now(),
       ...outcomeAuthorization,
-      environmentRevisions: [chart.environmentRevision],
+      // Chart evidence never contributes an environment revision (T1/T2a's
+      // authority-rule redesign: an artifact version's environment
+      // provenance now lives only in the store, not in this event); only
+      // cited run evidence does.
+      environmentRevisions: [successResult.terminal.environmentRevision],
     }
     session.append('science/outcome-published', { version: 1, outcome })
     const outcomeProjection = replayScience(session.events)
     if (outcomeProjection?.outcome?.revision !== 1
       || outcomeProjection.outcome.evidence.length !== 2
-      || outcomeProjection.outcome.environmentRevisions[0] !== chart.environmentRevision) {
+      || outcomeProjection.outcome.environmentRevisions[0] !== successResult.terminal.environmentRevision) {
       throw new Error('Outcome publication did not replay with its run and chart evidence')
     }
     checks.push('Outcome publication and replay')

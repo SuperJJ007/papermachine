@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId, decodeScienceChartState, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import { KERNEL_ASSETS_ROOT } from '../src/kernel-assets.ts'
 import { authorizeRun, createKernelRuntimeHarness, createScienceSession, installTestKernelSet } from './harness.ts'
 
@@ -13,6 +14,12 @@ afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+
+/** Read one version's decoded live-figure-object state from the store, or `undefined` when it carries none. */
+async function chartOf(ctx: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState | undefined> {
+  const state = await ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  return state === undefined ? undefined : decodeScienceChartState(JSON.parse(state.stateJson))
+}
 
 const pythonSource = `import os
 import matplotlib.pyplot as plt
@@ -79,21 +86,25 @@ for (const language of ['python', 'r'] as const) {
       const result = await run.done
       expect(result.terminal.status, JSON.stringify(result)).toBe('success')
       const artifact = replayScience(session.events)?.artifacts.find(value => value.logicalName === 'plot.png')
-      expect(artifact?.chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
-      const chart = artifact!.chart!
-      expect(chart.elements.find(value => value.id === 'title')?.current).toBe('Original')
-      expect(chart.hitmapStatus).toBe('ok')
+      expect(artifact).toBeDefined()
+      const chart = await chartOf(ctx, artifact!)
+      expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
+      expect(chart!.elements.find(value => value.id === 'title')?.current).toBe('Original')
+      expect(chart!.hitmapStatus).toBe('ok')
       if (language === 'python') {
-        const hits = chart.hitmap.filter(hit => hit.id.startsWith('annotation['))
+        const hits = chart!.hitmap.filter(hit => hit.id.startsWith('annotation['))
         expect(hits).toHaveLength(2)
         expect(hits[0]!.bbox).not.toEqual(hits[1]!.bbox)
       } else {
-        expect(chart.png).toMatchObject({ width: 480, height: 360, dpi: 120 })
+        expect(chart!.png).toMatchObject({ width: 480, height: 360, dpi: 120 })
         const artifacts = replayScience(session.events)!.artifacts
-        expect(artifacts.find(value => value.logicalName === 'ggsave.png')?.chart).toBeDefined()
+        const ggsaveArtifact = artifacts.find(value => value.logicalName === 'ggsave.png')
+        expect(ggsaveArtifact).toBeDefined()
+        expect(await chartOf(ctx, ggsaveArtifact!)).toBeDefined()
         for (const name of ['base.png', 'multiple.png', 'overwritten.png']) {
-          expect(artifacts.find(value => value.logicalName === name)).toBeDefined()
-          expect(artifacts.find(value => value.logicalName === name)?.chart).toBeUndefined()
+          const plain = artifacts.find(value => value.logicalName === name)
+          expect(plain).toBeDefined()
+          expect(await chartOf(ctx, plain!)).toBeUndefined()
         }
       }
       const target = { session, artifactId: artifact!.artifactId, version: artifact!.version, signal: new AbortController().signal }
@@ -101,17 +112,19 @@ for (const language of ['python', 'r'] as const) {
       expect(preview.failedOps).toEqual([])
       const saved = await runtime.applyChartEdit({ ...target, ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Edited x' }] })
       expect(saved.failedOps).toEqual([])
-      expect(saved.artifact.chart!.elements.find(value => value.id === 'title')?.current).toBe('Original')
-      expect(saved.artifact.chart!.hitmapStatus).toBe('ok')
-      if (language === 'r') expect(saved.artifact.chart!.png).toEqual(chart.png)
+      const savedChart = await chartOf(ctx, saved.artifact)
+      expect(savedChart!.elements.find(value => value.id === 'title')?.current).toBe('Original')
+      expect(savedChart!.hitmapStatus).toBe('ok')
+      if (language === 'r') expect(savedChart!.png).toEqual(chart!.png)
       const nextTarget = { ...target, version: saved.artifact.version }
       const nextPreview = await runtime.previewChartEdit({ ...nextTarget,
         ops: [{ op: 'set_title', axes: language === 'python' ? 0 : null, text: 'Another preview' }] })
       expect(nextPreview.chart.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
       const nextSave = await runtime.applyChartEdit({ ...nextTarget,
         ops: [{ op: 'set_title', axes: language === 'python' ? 0 : null, text: 'Final title' }] })
-      expect(nextSave.artifact.chart!.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
-      expect(nextSave.artifact.chart!.elements.find(value => value.id === 'title')?.current).toBe('Final title')
+      const nextSaveChart = await chartOf(ctx, nextSave.artifact)
+      expect(nextSaveChart!.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
+      expect(nextSaveChart!.elements.find(value => value.id === 'title')?.current).toBe('Final title')
       const regenerated = await runtime.startRun({ session, language,
         code: (language === 'python' ? pythonSource : rSource).replaceAll("'Original'", "'Regenerated'"),
         rasterArtifacts: ['plot.png'], ...authorizeRun(session, language, `regenerate-${language}`), signal: new AbortController().signal })
@@ -119,7 +132,8 @@ for (const language of ['python', 'r'] as const) {
       const regeneratedArtifact = replayScience(session.events)!.artifacts.findLast(value => value.artifactId === artifact!.artifactId)!
       const regeneratedSave = await runtime.applyChartEdit({ ...target, version: regeneratedArtifact.version,
         ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Regenerated x' }] })
-      expect(regeneratedSave.artifact.chart!.elements.find(value => value.id === 'title')?.current).toBe('Regenerated')
+      const regeneratedChart = await chartOf(ctx, regeneratedSave.artifact)
+      expect(regeneratedChart!.elements.find(value => value.id === 'title')?.current).toBe('Regenerated')
     }, 120_000)
 
     it('sanitizes multi-line series labels and annotation text into control-character-free ids', async () => {
@@ -136,17 +150,18 @@ for (const language of ['python', 'r'] as const) {
       const result = await run.done
       expect(result.terminal.status, JSON.stringify(result)).toBe('success')
       const artifact = replayScience(session.events)?.artifacts.find(value => value.logicalName === 'multiline.png')
-      expect(artifact?.chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
-      const chart = artifact!.chart!
+      expect(artifact).toBeDefined()
+      const chart = await chartOf(ctx, artifact!)
+      expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
       expect(() => decodeScienceChartState(chart)).not.toThrow()
-      const seriesElements = chart.elements.filter(value => value.kind === 'series')
+      const seriesElements = chart!.elements.filter(value => value.kind === 'series')
       expect(seriesElements.length).toBeGreaterThan(0)
       for (const element of seriesElements) {
         expect(element.id).not.toMatch(CONTROL_CHARACTER)
         expect(element.label).toMatch(/\n/)
       }
       if (language === 'python') {
-        const annotationElements = chart.elements.filter(value => value.kind === 'annotation')
+        const annotationElements = chart!.elements.filter(value => value.kind === 'annotation')
         expect(annotationElements).toHaveLength(2)
         for (const element of annotationElements) {
           expect(element.id).not.toMatch(CONTROL_CHARACTER)

@@ -54,6 +54,12 @@ A user-authored package set (`src/custom-environment.ts`) is published as one fu
 
 `pnpm --filter @deepseek-ai/dsh-desktop package:mac` builds the repository, downloads both pinned micromamba architectures, stages a symlink-free production Host closure, and asks Electron Builder for arm64 and x64 DMGs. The generated app owns its Host, environment declarations, and micromamba executable; the Harness home and applied environments stay under `~/.papermachine`, outside the application payload and outside Electron `userData`.
 
+## Usage telemetry
+
+PaperMachine reports three metadata-only events, never content: `app.launch` (once per process start), `environment.installed`, and `environment.install-failed` (a provisioning run's package source, duration or last phase, and whether it was cancelled). Every event carries a fresh `eventId`, the anonymous id shared with the Host's identity plugin (`<dshHome>/.anonymous-user-id`; `src/anonymous-id.ts` creates it in that plugin's exact format when desktop's own first `app.launch` runs before any Host has), a timestamp, `appVersion`, `platform`, `arch`, and `schemaVersion: 1` — no hostnames, paths, package lists, or error text.
+
+Receivers are configured at build time in `resources/telemetry.json` (`schemaVersion: 1`, `endpoints: string[]` of `https://` URLs; parsed by `src/telemetry-config.ts`, which rejects a missing or malformed file loudly rather than silently disabling). Every configured endpoint receives every event independently — no failover, no retry queue, no offline buffer. This build ships `endpoints: []` (telemetry off) until the owner configures receivers. Setting `DSH_TELEMETRY_DISABLED` to any non-empty value — the same switch and interpretation the Host's own session telemetry uses (`resolveTelemetryPatch`, `apps/cli/src/profile-boot.ts`) — sends nothing.
+
 ## Limitations
 
 The UI still uses the Web HTTP carrier on private loopback. The packaged `file://` plus Electron IPC carrier, automatic update application, and Windows support remain outside this implementation. See the [desktop product decision](../../.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.md).

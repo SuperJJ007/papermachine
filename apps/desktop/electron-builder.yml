@@ -21,6 +21,8 @@ extraResources:
     to: bin
   - from: resources/onboarding.html
     to: onboarding.html
+  - from: resources/telemetry.json
+    to: telemetry.json
   # `node_modules` is copied by scripts/after-pack.mjs: electron-builder drops
   # it from this entry no matter the filter.
   - from: .stage/host

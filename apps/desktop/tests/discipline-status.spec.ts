@@ -23,7 +23,7 @@ function declaration(id: string, revision: string): ReturnType<typeof parseEnvir
 }
 
 function applied(id: string, revision: string): AppliedEnvironment {
-  return { id, revision, prefix: `/prefix/${id}/${revision}`, appliedAt: 1 }
+  return { id, revision, prefix: `/prefix/${id}/${revision}`, appliedAt: 1, sourceId: 'official' }
 }
 
 describe('resolveDisciplineStatus', () => {

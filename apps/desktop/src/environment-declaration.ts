@@ -1,5 +1,7 @@
 /** Versioned, data-only scientific environment declarations. */
 
+import { HTTPS_URL } from './https-url.ts'
+
 export type DesktopPlatform = 'darwin-arm64' | 'darwin-x64'
 type EnvironmentLanguage = 'python' | 'r'
 
@@ -52,13 +54,8 @@ export interface EnvironmentDeclaration {
 const ID = /^[a-z][a-z0-9-]*$/u
 const REVISION = /^[0-9]{4}\.[0-9]{2}\.[0-9]+$/u
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:+<>=!*~-]*$/u
-// A conda channel URL that reaches micromamba's argv unescaped: https only,
-// and every character after the scheme is drawn from a fixed allowlist
-// (letters, digits, and `._~/-`) that admits no whitespace, control
-// character, or shell metacharacter (`;&|$()<>\`'"\\`) — this is a parser
-// boundary the value crosses on the way to a child process argv, so it is
-// validated by allowlist rather than by excluding known-bad characters.
-const CHANNEL_URL = /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9._~/-]*[A-Za-z0-9])?$/u
+// A conda channel URL that reaches micromamba's argv unescaped; see {@link HTTPS_URL}.
+const CHANNEL_URL = HTTPS_URL
 const SOURCE_FIELDS = ['id', 'name', 'channels'] as const
 const FIELDS = [
   'schemaVersion', 'id', 'revision', 'name', 'supportedPlatforms', 'sources', 'packages',

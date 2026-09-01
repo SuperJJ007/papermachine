@@ -15,8 +15,11 @@ import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
-import { buildCustomDeclaration, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
+import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
+import { getOrCreateAnonymousId } from './anonymous-id.ts'
+import { parseTelemetryConfig } from './telemetry-config.ts'
+import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -36,6 +39,13 @@ let provisioning: AbortController | undefined
 // document can display it. `undefined` for an ordinary first-run or
 // user-requested ("Change Environment…") open.
 let onboardingStatus: string | undefined
+
+// Constructed once, early in `boot()`, once the Harness home and its
+// anonymous id exist; `undefined` only during that brief startup window
+// (nothing before it reports an event). `startProvisioning` reads this
+// rather than constructing its own reporter, so `environment.installed`/
+// `environment.install-failed` share the exact context `app.launch` reported.
+let telemetry: TelemetryReporter | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
@@ -72,6 +82,28 @@ function desktopPlatform(): DesktopPlatform {
     throw new Error(`desktop: unsupported platform ${process.platform}-${process.arch}`)
   }
   return `darwin-${process.arch}`
+}
+
+/**
+ * Build this process's telemetry reporter: read and parse the build-time
+ * `resources/telemetry.json` (a missing or unparseable file throws, per
+ * that parser's contract — a loud launch error, never a silent disable),
+ * resolve which of its endpoints `DSH_TELEMETRY_DISABLED` allows, and read
+ * or create the shared anonymous id file. Called once, early in `boot()`.
+ * @param dshHome - the Harness home the anonymous id file lives under.
+ */
+async function createTelemetryReporter(dshHome: string): Promise<TelemetryReporter> {
+  const config = parseTelemetryConfig(JSON.parse(await readFile(join(resourceRoot(), 'telemetry.json'), 'utf8')))
+  const anonymousId = await getOrCreateAnonymousId(dshHome)
+  return new TelemetryReporter({
+    endpoints: resolveTelemetryEndpoints(process.env.DSH_TELEMETRY_DISABLED, config.endpoints),
+    context: {
+      anonymousId,
+      appVersion: app.getVersion(),
+      platform: 'darwin',
+      arch: desktopPlatform() === 'darwin-arm64' ? 'arm64' : 'x64',
+    },
+  })
 }
 
 /** The one environment this build ships; disciplines are added as further declarations. */
@@ -146,10 +178,38 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const control = new AbortController()
   provisioning = control
+  const startedAt = Date.now()
+  // Tracks the most recent progress update's phase/sourceId across the whole
+  // run, so a caught failure below can report which source was last being
+  // attempted and how far the run got — see ProvisioningProgress.sourceId's
+  // JSDoc (provisioning.ts) for why this is always populated once the first
+  // 'solving' update fires.
+  let lastPhase: ProvisioningProgress['phase'] = 'checking'
+  let lastSourceId = sourceId
   const run = (async () => {
-    const published = await provisioner(dshHome).provision(declaration, control.signal, reportProvisioningProgress, sourceId)
-    await bindProvisionedPrefix(dshHome, published.prefix)
-    await openWorkspace()
+    try {
+      const published = await provisioner(dshHome).provision(declaration, control.signal, (update) => {
+        lastPhase = update.phase
+        if (update.sourceId !== undefined) lastSourceId = update.sourceId
+        reportProvisioningProgress(update)
+      }, sourceId)
+      await bindProvisionedPrefix(dshHome, published.prefix)
+      void telemetry?.report({
+        event: 'environment.installed',
+        sourceId: published.sourceId,
+        durationMs: Date.now() - startedAt,
+        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : 'general',
+      })
+      await openWorkspace()
+    } catch (error) {
+      void telemetry?.report({
+        event: 'environment.install-failed',
+        sourceId: lastSourceId ?? declaration.sources[0]?.id ?? 'unknown',
+        phase: lastPhase,
+        cancelled: control.signal.aborted,
+      })
+      throw error
+    }
   })().finally(() => { provisioning = undefined })
   await coordinator.trackRun(run)
 }
@@ -483,16 +543,22 @@ function buildApplicationMenu(): Menu {
 app.setName('PaperMachine')
 
 /**
- * Everything that depends on Electron's app-ready signal: the application
- * menu, IPC handlers, the initial window, and the lifecycle listeners that
- * react to later activation and quit. Run from `app.whenReady().then`
- * rather than a top-level `await app.whenReady()`: on Electron 43.4.1 /
- * macOS 26.5.2 arm64, a top-level await whose continuation is driven by an
- * Electron native signal never resumes (see the "Electron main-process boot
- * order" section of the "Science desktop product composition and
- * provisioning" Agent Note, 2026-08-23).
+ * Everything that depends on Electron's app-ready signal: telemetry setup
+ * and the `app.launch` report, the application menu, IPC handlers, the
+ * initial window, and the lifecycle listeners that react to later
+ * activation and quit. Run from `app.whenReady().then` rather than a
+ * top-level `await app.whenReady()`: on Electron 43.4.1 / macOS 26.5.2
+ * arm64, a top-level await whose continuation is driven by an Electron
+ * native signal never resumes (see the "Electron main-process boot order"
+ * section of the "Science desktop product composition and provisioning"
+ * Agent Note, 2026-08-23). A `telemetry.json` that fails to parse throws
+ * here and propagates to this function's own caller, which logs and exits —
+ * a loud build/launch error rather than a silently disabled feature.
  */
 async function boot(): Promise<void> {
+  const dshHome = await harnessHome()
+  telemetry = await createTelemetryReporter(dshHome)
+  void telemetry.report({ event: 'app.launch' })
   Menu.setApplicationMenu(buildApplicationMenu())
   ipcMain.handle('desktop:environments', async () => {
     const signals = localeSignals()

@@ -60,12 +60,18 @@ describe('DesktopEnvironmentProvisioner', () => {
       },
     })
     const phases: string[] = []
+    const sourceIds: (string | undefined)[] = []
     const applied = await provisioner.provision(declaration, new AbortController().signal, (update) => {
       phases.push(update.phase)
+      sourceIds.push(update.sourceId)
     })
 
     const publishedPrefix = join(root, 'environments/test-science/2026.08.1')
     expect(applied.prefix).toBe(publishedPrefix)
+    expect(applied.sourceId).toBe(SOURCE_A.id)
+    // 'checking' precedes any source attempt; every later phase names the
+    // one source this declaration ships.
+    expect(sourceIds).toEqual([undefined, SOURCE_A.id, SOURCE_A.id, SOURCE_A.id, SOURCE_A.id, SOURCE_A.id])
     // Health checks (and create) all run against the exact path applied.json
     // ends up pointing at — there is no separate partial or renamed path.
     expect(calls.map(call => call.executable)).toEqual([
@@ -272,6 +278,10 @@ describe('DesktopEnvironmentProvisioner', () => {
       expect(attemptedChannels).toEqual([[SOURCE_A.channels[0]], [SOURCE_B.channels[0]]])
       expect(applied.id).toBe(multiSource.id)
       expect(phases.some(entry => entry.includes(SOURCE_B.name))).toBe(true)
+      // The published sourceId names the source that actually succeeded
+      // (source-b), not the one first tried (source-a) — telemetry's
+      // `environment.installed.sourceId` depends on this.
+      expect(applied.sourceId).toBe(SOURCE_B.id)
     })
 
     it('tries every source and surfaces the last error when all sources fail', async () => {

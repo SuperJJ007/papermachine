@@ -12,6 +12,16 @@ type ProvisioningPhase = 'checking' | 'solving' | 'installing' | 'verifying' | '
 export interface ProvisioningProgress {
   readonly phase: ProvisioningPhase
   readonly message: string
+  /**
+   * The package source this update concerns: the source about to be, or
+   * being, attempted during `solving`/`installing`, and the source that
+   * ultimately succeeded during `verifying`/`publishing`/`ready`. Absent
+   * only for `checking`, which precedes any source attempt. Telemetry
+   * (`main.ts`'s `startProvisioning`) tracks the most recent value across
+   * a run to report which source a failed or cancelled run was last
+   * attempting.
+   */
+  readonly sourceId?: string
 }
 
 /** Published pointer to the only prefix desktop Runtime configuration may consume. */
@@ -20,6 +30,8 @@ export interface AppliedEnvironment {
   readonly revision: string
   readonly prefix: string
   readonly appliedAt: number
+  /** The package source whose `create` attempt actually succeeded, for telemetry (`environment.installed`'s `sourceId`). */
+  readonly sourceId: string
 }
 
 export interface ProcessRequest {
@@ -340,7 +352,7 @@ export class DesktopEnvironmentProvisioner {
     if (alreadyPublished) await rm(join(this.options.root, 'applied.json'), { force: true })
     const attempts = orderSourcesFrom(declaration.sources, preferredSourceId)
     let lastError: unknown
-    let created = false
+    let succeededSourceId: string | undefined
     for (const [index, source] of attempts.entries()) {
       await rm(prefix, { recursive: true, force: true })
       onProgress({
@@ -348,6 +360,7 @@ export class DesktopEnvironmentProvisioner {
         message: index === 0
           ? `Resolving ${declaration.name} packages via ${source.name}`
           : `Retrying via ${source.name} (source ${String(index + 1)} of ${String(attempts.length)})`,
+        sourceId: source.id,
       })
       try {
         await this.#run({
@@ -360,17 +373,17 @@ export class DesktopEnvironmentProvisioner {
           env: { ...buildProvisioningEnv(), MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba') },
           signal,
           timeoutMs: declaration.timeoutMs,
-          onLine: (line) => { onProgress({ phase: 'installing', message: line }) },
+          onLine: (line) => { onProgress({ phase: 'installing', message: line, sourceId: source.id }) },
         })
-        created = true
+        succeededSourceId = source.id
         break
       } catch (error) {
         lastError = error
         if (signal.aborted) throw error
       }
     }
-    if (!created) throw lastError instanceof Error ? lastError : new Error(String(lastError))
-    onProgress({ phase: 'verifying', message: 'Verifying Python and R' })
+    if (succeededSourceId === undefined) throw lastError instanceof Error ? lastError : new Error(String(lastError))
+    onProgress({ phase: 'verifying', message: 'Verifying Python and R', sourceId: succeededSourceId })
     for (const check of declaration.healthChecks) {
       await this.#run({
         executable: join(prefix, 'bin', check.executable),
@@ -380,15 +393,16 @@ export class DesktopEnvironmentProvisioner {
         timeoutMs: Math.min(declaration.timeoutMs, 120_000),
       })
     }
-    onProgress({ phase: 'publishing', message: 'Publishing verified environment' })
+    onProgress({ phase: 'publishing', message: 'Publishing verified environment', sourceId: succeededSourceId })
     const published: AppliedEnvironment = {
       id: declaration.id,
       revision: declaration.revision,
       prefix,
       appliedAt: this.#now(),
+      sourceId: succeededSourceId,
     }
     await writeFileAtomic(join(this.options.root, 'applied.json'), `${JSON.stringify(published)}\n`, { mode: 0o600 })
-    onProgress({ phase: 'ready', message: `${declaration.name} is ready` })
+    onProgress({ phase: 'ready', message: `${declaration.name} is ready`, sourceId: succeededSourceId })
     return published
   }
 }

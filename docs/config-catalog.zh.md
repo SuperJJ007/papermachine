@@ -1797,6 +1797,35 @@ export interface Config {
   /** Explicit Harness home; omitted follows the shared resolver. */
   readonly dshHome?: string
   /**
+   * Absolute path to the deployment's micromamba executable. Required for
+   * `ScienceRuntime.installPackages`; omitted means this deployment cannot
+   * install packages, and `installPackages` rejects with
+   * `INSTALLER_NOT_CONFIGURED` rather than silently degrading to an
+   * in-kernel `pip install`/`install.packages()`. Never used for anything
+   * else — binding and running an environment need no installer. Must be
+   * configured together with {@link Config.installChannels}: setting one
+   * without the other fails config resolution.
+   */
+  readonly micromambaPath?: string
+  /**
+   * Ordered, non-empty list of `https://` conda channel URLs `installPackages`
+   * tries in turn, each as one complete, independent `micromamba install`
+   * attempt (never merged into one `--channel` list, which would let a
+   * single solve pull packages from different mirrors into one inconsistent
+   * install) — the same whole-attempt-fallback shape
+   * `apps/desktop/src/environment-declaration.ts`'s `EnvironmentSource.channels`
+   * uses for provisioning, so a deployment that provisioned through a
+   * mirror can also install through it. Only a `'failed'` attempt tries the
+   * next URL; `'cancelled'`/`'timed-out'` stop immediately, since every
+   * attempt shares the same operation deadline and cancellation signal.
+   * Validated identically to the desktop's own channel URLs: `https://`
+   * only, every later character drawn from a fixed allowlist (letters,
+   * digits, and `._~/-`) that admits no whitespace, control character, or
+   * shell metacharacter, since the value reaches `micromamba` argv
+   * unescaped. Must be configured together with {@link Config.micromambaPath}.
+   */
+  readonly installChannels?: string[]
+  /**
    * Map of profile identifiers to existing language prefixes. An empty map
    * is a valid explicit unconfigured state — for example a deployment that
    * defers every profile to the restart-scoped `science-runtime` settings
@@ -3445,6 +3474,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-agent-preset`（[`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-attachment`（[`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-brand-official`（[`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-brand-papermachine`（[`packages/client/ui-brand-papermachine/src/index.ts`](../packages/client/ui-brand-papermachine/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-commands`（[`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-conversation`（[`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-cordis`（[`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts)）

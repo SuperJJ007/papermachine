@@ -60,6 +60,9 @@ export function formatInstallResult(value: ScienceInstallValue): string {
   if (value.environmentRevision !== undefined) {
     lines.push(`environment revision ${String(value.environmentRevision)} applied — this takes effect on the next run_python/run_r call for this language, not now: that call restarts the kernel (an environment re-bind) and every variable, import, and definition it currently holds in memory is lost then`)
   }
+  if (value.status === 'failed') {
+    lines.push('the environment is unchanged; try a different package name or version spec — do not fall back to pip/install.packages(), which is lost on the next kernel restart')
+  }
   lines.push('--- stdout ---', value.stdout.text.length > 0 ? value.stdout.text : '(empty)')
   if (value.stdout.truncated) lines.push('(stdout truncated)')
   lines.push('--- stderr ---', value.stderr.text.length > 0 ? value.stderr.text : '(empty)')

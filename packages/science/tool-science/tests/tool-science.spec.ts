@@ -1851,6 +1851,16 @@ describe('installValueFromResult / formatInstallResult', () => {
     expect(text).not.toContain('takes effect')
   })
 
+  it('steers the model away from pip/install.packages() only on a failed status', () => {
+    const steering = 'the environment is unchanged; try a different package name or version spec — do not fall back to pip/install.packages(), which is lost on the next kernel restart'
+    expect(formatInstallResult({ status: 'failed', stdout: stream(''), stderr: stream('') })).toContain(steering)
+    expect(formatInstallResult({ status: 'cancelled', stdout: stream(''), stderr: stream('') })).not.toContain(steering)
+    expect(formatInstallResult({ status: 'timed-out', stdout: stream(''), stderr: stream('') })).not.toContain(steering)
+    expect(formatInstallResult({
+      status: 'success', environmentRevision: 1, stdout: stream(''), stderr: stream(''),
+    })).not.toContain(steering)
+  })
+
   it('renders "(empty)" for empty streams and appends truncation markers when set', () => {
     const text = formatInstallResult({
       status: 'success', environmentRevision: 1,

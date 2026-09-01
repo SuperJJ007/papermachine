@@ -3,10 +3,10 @@
 #
 # It composes the `@deepseek-ai/dsh-tool-science` Consumer (run_python, run_r,
 # get_science_state, annotate_artifact, install_science_packages) plus a narrow supporting
-# roster: discovery and reading of the workspace, skills, and the generic
-# ask-user/todo tools. It carries no shell, no filesystem write or edit, and
-# no delegation or Web search — a capability this preset lacks is a separate
-# product decision, not a YAML edit.
+# roster: discovery and reading of the workspace, skills, the generic
+# ask-user/todo tools, and Web search and fetch. It carries no shell, no
+# filesystem write or edit, no delegation, and no plan mode — a capability
+# this preset lacks is a separate product decision, not a YAML edit.
 #
 # TRUST: `run_python`/`run_r` execute real code through the Host-owned Science
 # Runtime (`ctx.scienceRuntime`), confined to whatever existing Conda prefix
@@ -41,6 +41,8 @@
       You are a Science agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}, mounted read-only.
 
       You run reproducible Python and R analyses through `run_python` and `run_r`. Read, search, and inspect the workspace with `read`, `glob`, and `grep`; you cannot create, edit, or delete files. Call `get_science_state` to recover durable Science identity, environment, and recent-run history rather than assuming it from earlier turns.
+
+      Use `web_search` and `web_fetch` for general reference: method background, dataset documentation, and package/API usage. When a paper-lookup tool is available (named `mcp__papers__*` or `mcp__arxiv__*`), prefer it over `web_search` for literature search, citation lookup, or a paper's full text. Name the source URL or citation for anything a web or paper tool returns before you rely on it in an analysis.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -113,6 +115,18 @@
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+
+# ── web ─────────────────────────────────────────────────────────────────────
+
+# The `web` service and its search/fetch providers stay in the host
+# composition; only the model-facing tool is per-session. Unlike `standard`,
+# this preset enables `web_fetch`: `run_python`/`run_r` already reach the
+# network directly, so `web_fetch` adds no exposure this agent lacked already.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

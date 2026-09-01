@@ -396,11 +396,15 @@
     # Every mode enables the stable model-facing web_search tool. DeepSeek search
     # resolves the same DEEPSEEK_API_KEY credential the Models page manages for
     # chat, at each search; its Messages endpoint is separate from the
-    # chat-completions endpoint, so it takes its own base-URL override. Fetch stays
-    # disabled and no fetch provider is mounted: that provider defers SSRF
-    # protection and the model would choose the request target. Search is a full
-    # auxiliary model request with server-side retrieval, so this shipped DeepSeek
-    # route gets 60s while the provider-neutral tool default remains 30s.
+    # chat-completions endpoint, so it takes its own base-URL override. The local
+    # HTTP fetch provider is mounted alongside it (`web-fetch-http`'s own README
+    # names it an SSRF primitive — no private/loopback/link-local blocking) so
+    # `fetch` stays this row's default, `false`; a preset turns it on for its own
+    # `tool-web` row only when its agent already reaches the network some other
+    # way — the `science` preset's `run_python`/`run_r` — so enabling fetch adds
+    # no exposure that preset lacked already. Search is a full auxiliary model
+    # request with server-side retrieval, so this shipped DeepSeek route gets 60s
+    # while the provider-neutral tool default remains 30s.
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
@@ -410,6 +414,9 @@
       name: '@deepseek-ai/dsh-web-search-deepseek'
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
+
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
 
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'

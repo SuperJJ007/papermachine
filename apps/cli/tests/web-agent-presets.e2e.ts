@@ -590,8 +590,8 @@ describe('the science preset', () => {
       // `glob`/`grep` excluded for the same ripgrep-availability reason the
       // `standard` roster assertion above excludes them.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-        'annotate_artifact', 'ask_user_question', 'get_science_state', 'install_science_packages', 'read', 'read_image',
-        'run_python', 'run_r', 'skill', 'todo_write',
+        'annotate_artifact', 'ask_user_question', 'get_science_state', 'install_science_packages',
+        'read', 'read_image', 'run_python', 'run_r', 'skill', 'todo_write', 'web_fetch', 'web_search',
       ])
     } finally {
       await handle.dispose()
@@ -614,11 +614,15 @@ describe('the science preset', () => {
       expect(standardTools).not.toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
       // No shell, no filesystem mutation, no delegation, no chart/Outcome
       // publication: this preset gives up every capability `standard` has
-      // that Science does not name.
-      for (const forbidden of ['bash', 'write', 'edit', 'subagent', 'web_search']) {
+      // that Science does not name. It shares `standard`'s `web_search`, and
+      // additionally enables `web_fetch`, which `standard` leaves disabled.
+      for (const forbidden of ['bash', 'write', 'edit', 'subagent']) {
         expect(scienceTools).not.toContain(forbidden)
         expect(standardTools).toContain(forbidden)
       }
+      expect(scienceTools).toEqual(expect.arrayContaining(['web_search', 'web_fetch']))
+      expect(standardTools).toEqual(expect.arrayContaining(['web_search']))
+      expect(standardTools).not.toContain('web_fetch')
     } finally {
       await standard.dispose()
       await science.dispose()

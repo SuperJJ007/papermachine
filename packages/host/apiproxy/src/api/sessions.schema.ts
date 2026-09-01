@@ -391,6 +391,12 @@ export const sessionScienceArtifactValueSchema = z.object({
 /** Project Science library request payload. */
 export const sessionsScienceLibraryRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceLibrary'>>>
 
+/** Per-version reconciliation flags — see `ScienceVersionHealthFlags`. */
+const scienceVersionHealthFlagsSchema = z.object({
+  reconstructed: z.literal(true).optional(),
+  missingContent: z.literal(true).optional(),
+})
+
 /** Project Science library response value. */
 export const sessionsScienceLibraryValueSchema = z.object({
   projectId: z.string().min(1),
@@ -400,8 +406,14 @@ export const sessionsScienceLibraryValueSchema = z.object({
     latest: z.object({
       versionId: scienceVersionIdSchema, ordinal: z.number().int().positive(), mediaType: z.string().min(1),
       byteCount: z.number().int().nonnegative(), createdAt: z.number(),
+      health: scienceVersionHealthFlagsSchema.optional(),
     }),
   })),
+  health: z.object({
+    orphan: z.number().int().nonnegative(),
+    reconstructed: z.number().int().nonnegative(),
+    missingContent: z.number().int().nonnegative(),
+  }),
 }) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceLibrary'>>>
 
 /** Bounded workspace directory request payload. */

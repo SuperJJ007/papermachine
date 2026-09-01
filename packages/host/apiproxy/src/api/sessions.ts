@@ -62,6 +62,21 @@ export interface SessionListMetadata {
   lastPromptAt: number | null
 }
 
+/**
+ * Reconciliation flags for one project artifact's `latest` version, present
+ * only when that exact version is currently unhealthy — see
+ * {@link ScienceLibraryHealth} for the project-wide counts this is drawn
+ * from. Each flag is `true` (never `false`); an absent flag means that
+ * condition does not hold for this version. `orphan` is deliberately never
+ * included here: an orphan version is an accepted, silent crash-window
+ * outcome (`dsh-science-artifact-store`'s Reconciliation section), not a
+ * fact the Files panel marks per item.
+ */
+export interface ScienceVersionHealthFlags {
+  reconstructed?: true
+  missingContent?: true
+}
+
 /** Latest project artifact metadata shown by the project file library. */
 export interface ScienceLibraryArtifact {
   artifactId: ArtifactId
@@ -70,7 +85,28 @@ export interface ScienceLibraryArtifact {
   caption?: string
   originSessionId: SessionId
   originSessionTitle?: string
-  latest: { versionId: VersionId; ordinal: number; mediaType: ScienceArtifactMediaType; byteCount: number; createdAt: number }
+  latest: {
+    versionId: VersionId
+    ordinal: number
+    mediaType: ScienceArtifactMediaType
+    byteCount: number
+    createdAt: number
+    health?: ScienceVersionHealthFlags
+  }
+}
+
+/**
+ * Project-wide store↔session reconciliation counts, read from
+ * `ScienceArtifactStore.getReconciliationSummary` on every `scienceLibrary`
+ * call — a pure read of whatever the last reconciliation pass recorded,
+ * never itself comparing the store against a session log. `orphan` is a
+ * count only: the Files panel's non-modal banner never surfaces it, and no
+ * per-item flag names it either (see {@link ScienceVersionHealthFlags}).
+ */
+export interface ScienceLibraryHealth {
+  orphan: number
+  reconstructed: number
+  missingContent: number
 }
 
 /** One direct child of a session workspace directory. */
@@ -414,9 +450,13 @@ export interface SessionsApi {
   scienceArtifact(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
   Promise<RpcResponse<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>>
 
-  /** Lists one latest row per artifact in the project selected by the named session's workspace. */
+  /**
+   * Lists one latest row per artifact in the project selected by the named
+   * session's workspace, plus the project's store↔session reconciliation
+   * health (see {@link ScienceLibraryHealth}).
+   */
   scienceLibrary(request: RpcRequest<{ sessionId: SessionId }>):
-  Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>>
+  Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>>
 
   /** Lists one workspace directory without following paths outside the named session's workspace. */
   workspaceFiles(request: RpcRequest<{ sessionId: SessionId; path?: string }>):

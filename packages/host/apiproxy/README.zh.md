@@ -22,7 +22,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 `session.textAttachment` 返回通过鉴权的文本引用及其 UTF-8 明文数据；响应 schema 接受附件包固定的 `TextMediaType` 集合，因此浏览器客户端收到的媒体类型与附件存储准入的类型一致。
 
-`session.scienceArtifact({ sessionId, versionId })` 只有在具名 Session 通过本地 fold、经确认的跨 Session input ordinal，或其持久 header `cwd` 推导出的 project 中的精确成员关系证明版本后，才返回 base64 编码字节和 store 元数据。`sessions.scienceLibrary` 使用同一个推导出的 project，为每个 artifact 返回一条最新记录。`sessions.workspaceFiles` 与 `sessions.workspaceFile` 提供经过规范路径 containment check 的 workspace 只读视图：单层目录最多 2,000 个条目，单个 base64 文件最多 2 MiB。这些请求都不接受浏览器提供的 `projectId` 或绝对文件系统路径。
+`session.scienceArtifact({ sessionId, versionId })` 只有在具名 Session 通过本地 fold、经确认的跨 Session input ordinal，或其持久 header `cwd` 推导出的 project 中的精确成员关系证明版本后，才返回 base64 编码字节和 store 元数据。本地 fold 路径的 `mediaType`/`byteCount` 一律取 store 的 `getVersion`，不取会话事件——`science/artifact-saved` 事件瘦身后，事件本身只保留 `sha256` 这一项内容事实。`sessions.scienceLibrary` 使用同一个推导出的 project，为每个 artifact 返回一条最新记录，并附带一个 `health: { orphan, reconstructed, missingContent }` 字段，读自 `ScienceArtifactStore.getReconciliationSummary`——项目级计数取自 store 自己的 `version_health` 表（见 `dsh-science-artifact-store` 的对账一节），本包从不自行计算。每条 artifact 的 `latest` 在该确切版本当前不健康时，还会带一个可选的 `health` 标记（`reconstructed`/`missingContent`，从不含 `orphan`）。`sessions.workspaceFiles` 与 `sessions.workspaceFile` 提供经过规范路径 containment check 的 workspace 只读视图：单层目录最多 2,000 个条目，单个 base64 文件最多 2 MiB。这些请求都不接受浏览器提供的 `projectId` 或绝对文件系统路径。
 
 分层与协议决策记录在 [GUI 分层与 RPC 协议 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md) 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md) 中。
 

@@ -115,7 +115,10 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         }
       },
       async scienceLibrary(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { projectId: 'project-1' as never, artifacts: [] } } }
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { projectId: 'project-1' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } } },
+        }
       },
       async workspaceFiles(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { root: '', entries: [] } } }

@@ -341,9 +341,11 @@ describe('Web session model selection', () => {
     appendFixtureEvents(agent.session)
     const readBlob = vi.fn(() => Promise.resolve(Uint8Array.of(1, 2, 3)))
     const openProject = vi.fn()
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
     ctx.provide('scienceArtifactStore', {
       readBlob,
       openProject,
+      getVersion,
       listVersions: vi.fn(),
     } as never)
     const api = createApiProxy(ctx, {
@@ -433,12 +435,14 @@ describe('Web session model selection', () => {
       getVersion: vi.fn((projectId: typeof PROJECT_ID) => Promise.resolve(projectId === PROJECT_ID ? version : undefined)),
       listVersions: vi.fn(() => Promise.resolve([])),
       readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })),
     } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
 
     expect(expectValue(await api.sessions.scienceLibrary(request({ sessionId })))).toMatchObject({
       projectId: PROJECT_ID,
       artifacts: [{ logicalName: 'results.csv', title: 'Results', latest: { versionId: 'project-version-1', ordinal: 1 } }],
+      health: { orphan: 0, reconstructed: 0, missingContent: 0 },
     })
     expect(expectValue(await api.sessions.scienceArtifact(request({ sessionId, versionId: version.versionId as never })))).toMatchObject({
       mediaType: 'text/csv', data: 'YQox',
@@ -474,6 +478,7 @@ describe('Web session model selection', () => {
       getVersion: vi.fn(() => Promise.resolve(png)),
       listVersions: vi.fn(() => Promise.resolve([])),
       readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })),
     } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
 
@@ -482,6 +487,61 @@ describe('Web session model selection', () => {
     expect(library.artifacts).toMatchObject([
       { logicalName: 'chart.png', latest: { mediaType: 'image/png' } },
     ])
+    await ctx.fiber.dispose()
+  })
+
+  it('carries project-wide reconciliation health counts and marks only reconstructed/missing-content latest versions, never orphan', async () => {
+    const cwd = '/tmp/science-library-health'
+    const { ctx, sessionId } = await harness(undefined, cwd)
+    const reconstructedArtifactId = 'artifact-reconstructed' as typeof ARTIFACT_ID
+    const missingContentArtifactId = 'artifact-missing-content' as typeof ARTIFACT_ID
+    const orphanArtifactId = 'artifact-orphan' as typeof ARTIFACT_ID
+    const reconstructedVersion = {
+      versionId: 'reconstructed-version-1', artifactId: reconstructedArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 10, origin: 'auto', title: 'Reconstructed',
+    }
+    const missingContentVersion = {
+      versionId: 'missing-content-version-1', artifactId: missingContentArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 11, origin: 'auto', title: 'Missing content',
+    }
+    const orphanVersion = {
+      versionId: 'orphan-version-1', artifactId: orphanArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 12, origin: 'auto', title: 'Orphan',
+    }
+    ctx.provide('scienceArtifactStore', {
+      openProject: vi.fn(() => Promise.resolve({ projectId: PROJECT_ID })),
+      listArtifacts: vi.fn(() => Promise.resolve([
+        { artifactId: reconstructedArtifactId, owningProjectId: PROJECT_ID, logicalName: 'reconstructed.csv', originSessionId: sessionId, latestVersionId: reconstructedVersion.versionId, createdAt: 9 },
+        { artifactId: missingContentArtifactId, owningProjectId: PROJECT_ID, logicalName: 'missing.csv', originSessionId: sessionId, latestVersionId: missingContentVersion.versionId, createdAt: 9 },
+        { artifactId: orphanArtifactId, owningProjectId: PROJECT_ID, logicalName: 'orphan.csv', originSessionId: sessionId, latestVersionId: orphanVersion.versionId, createdAt: 9 },
+      ])),
+      getLatestVersion: vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+        artifactId === reconstructedArtifactId ? reconstructedVersion
+          : artifactId === missingContentArtifactId ? missingContentVersion
+            : orphanVersion,
+      )),
+      listVersions: vi.fn(() => Promise.resolve([])),
+      readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({
+        orphanCount: 1, reconstructedCount: 1, missingContentCount: 1,
+        items: [
+          { versionId: reconstructedVersion.versionId, orphan: false, reconstructed: true, missingContent: false, checkedAt: 1 },
+          { versionId: missingContentVersion.versionId, orphan: false, reconstructed: false, missingContent: true, checkedAt: 2 },
+          { versionId: orphanVersion.versionId, orphan: true, reconstructed: false, missingContent: false, checkedAt: 3 },
+        ],
+      })),
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    const library = expectValue(await api.sessions.scienceLibrary(request({ sessionId })))
+    expect(library.health).toEqual({ orphan: 1, reconstructed: 1, missingContent: 1 })
+    const byArtifactId = new Map(library.artifacts.map(item => [item.artifactId, item]))
+    expect(byArtifactId.get(reconstructedArtifactId)?.latest.health).toEqual({ reconstructed: true })
+    expect(byArtifactId.get(missingContentArtifactId)?.latest.health).toEqual({ missingContent: true })
+    // Orphan is a project-wide count only — never a per-item flag on the
+    // affected artifact's `latest`, matching the Files-panel rule that never
+    // surfaces it.
+    expect(byArtifactId.get(orphanArtifactId)?.latest.health).toBeUndefined()
     await ctx.fiber.dispose()
   })
 

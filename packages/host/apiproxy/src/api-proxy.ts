@@ -41,7 +41,8 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, ScienceVersionHealthFlags,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
@@ -87,7 +88,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
-import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
@@ -152,6 +153,25 @@ function scienceArtifactMediaType(value: string): ScienceArtifactMediaType | und
   switch (value) {
     case 'image/png': case 'text/csv': case 'application/json': case 'text/markdown': case 'text/plain': return value
     default: return undefined
+  }
+}
+
+/**
+ * Narrow a store health record (when this exact version has one) to the
+ * wire's `{ health?: ScienceVersionHealthFlags }` spread — `orphan` is never
+ * included (see `ScienceVersionHealthFlags`'s own JSDoc), and an absent or
+ * fully-healthy record spreads to nothing.
+ * @param record - this version's `version_health` row, when the last
+ * reconciliation pass recorded one.
+ * @returns a spreadable `{ health }` field, or `{}` when nothing to report.
+ */
+function versionHealthFlags(record: VersionHealthRecord | undefined): { health?: ScienceVersionHealthFlags } {
+  if (record === undefined || (!record.reconstructed && !record.missingContent)) return {}
+  return {
+    health: {
+      ...record.reconstructed ? { reconstructed: true as const } : {},
+      ...record.missingContent ? { missingContent: true as const } : {},
+    },
   }
 }
 
@@ -1586,12 +1606,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const fold = foldScience(state.events)
     const local = fold.artifacts.find(artifact => artifact.versionId === requestedVersionId)
     if (local !== undefined) {
+      // The session event only pins `sha256` (its own presentation-time
+      // fields, per T2a's event slimming); `mediaType`/`byteCount` are
+      // content facts owned solely by the store, read fresh rather than
+      // trusted from the event.
+      const version = await store.getVersion(local.projectId, local.versionId)
+      if (version === undefined) return undefined
       return {
         projectId: local.projectId,
         versionId: local.versionId,
         sha256: local.sha256,
-        mediaType: local.mediaType,
-        byteCount: local.byteCount,
+        mediaType: version.mediaType,
+        byteCount: version.byteCount,
       }
     }
 
@@ -2681,7 +2707,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (store === undefined) return err(request, { code: 'internal', message: 'Science library is unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store', details: {} })
         try {
           const projectId = (await store.openProject(state.header.cwd)).projectId
-          const records = await store.listArtifacts(projectId)
+          const [records, reconciliation] = await Promise.all([
+            store.listArtifacts(projectId),
+            store.getReconciliationSummary(projectId),
+          ])
+          const healthByVersionId = new Map(reconciliation.items.map(item => [item.versionId, item]))
           const artifacts = (await Promise.all(records.map(async (record) => {
             const latest = await store.getLatestVersion(projectId, record.artifactId)
             if (latest === undefined) return undefined
@@ -2704,10 +2734,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               latest: {
                 versionId: latest.versionId, ordinal: latest.ordinal, mediaType: latestMediaType,
                 byteCount: latest.byteCount, createdAt: latest.createdAt,
+                ...versionHealthFlags(healthByVersionId.get(latest.versionId)),
               },
             }
           }))).filter(item => item !== undefined)
-          return ok(request, { projectId, artifacts })
+          return ok(request, {
+            projectId,
+            artifacts,
+            health: {
+              orphan: reconciliation.orphanCount,
+              reconstructed: reconciliation.reconstructedCount,
+              missingContent: reconciliation.missingContentCount,
+            },
+          })
         } catch (error: unknown) {
           if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
           return err(request, { code: 'internal', message: `Science library unavailable for session "${sessionId}": ${String(error)}`, details: {} })

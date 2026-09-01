@@ -66,7 +66,7 @@ function scriptedApi(overrides: {
       scienceArtifact: r => ok(r, {
         versionId: r.payload.versionId, mediaType: 'image/png', byteCount: 1, data: 'AA==',
       }),
-      scienceLibrary: r => ok(r, { projectId: 'project-1' as never, artifacts: [] }),
+      scienceLibrary: r => ok(r, { projectId: 'project-1' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } }),
       workspaceFiles: r => ok(r, { root: '', entries: [] }),
       workspaceFile: r => ok(r, { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' }),
       updateQueue: r => ok(r, { accepted: true as const }),
@@ -233,7 +233,7 @@ describe('unary round trip', () => {
     const c = client(scriptedApi())
 
     expect((await c.sessions.scienceLibrary({ sessionId: sid('s1') })).result)
-      .toEqual({ ok: true, value: { projectId: 'project-1', artifacts: [] } })
+      .toEqual({ ok: true, value: { projectId: 'project-1', artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } } })
     expect((await c.sessions.workspaceFiles({ sessionId: sid('s1') })).result)
       .toEqual({ ok: true, value: { root: '', entries: [] } })
     expect((await c.sessions.workspaceFile({ sessionId: sid('s1'), path: 'notes.txt' })).result)

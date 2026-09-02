@@ -43,6 +43,11 @@ let provisioning: AbortController | undefined
 // document can display it. `undefined` for an ordinary first-run or
 // user-requested ("Change Environment…") open.
 let onboardingStatus: string | undefined
+// True exactly while the onboarding window is the active `window`. Restart
+// Host is disabled while this holds — see ApplicationMenuOptions.onboarding
+// — and every transition refreshes the application menu so the disabled
+// state is never stale.
+let onboardingOpen = false
 
 // Constructed once, early in `boot()`, once the Harness home and its
 // anonymous id exist; `undefined` only during that brief startup window
@@ -459,8 +464,12 @@ async function openOnboarding(): Promise<void> {
   const previous = window
   const created = createOnboardingWindow()
   window = created
+  onboardingOpen = true
+  refreshApplicationMenu()
   created.once('closed', () => {
     if (window === created) window = undefined
+    onboardingOpen = false
+    refreshApplicationMenu()
     provisioning?.abort()
   })
   previous?.destroy()
@@ -537,6 +546,7 @@ function buildApplicationMenu(): Menu {
   return Menu.buildFromTemplate(applicationMenuTemplate({
     appName: app.name,
     provisioning: provisioning !== undefined,
+    onboarding: onboardingOpen,
     restartHost: () => { runDetached(restartHost, 'restart host') },
     // ProvisioningCoordinator aborts and awaits an in-flight run before it
     // opens onboarding, and coalesces repeated requests while that happens.

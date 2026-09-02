@@ -6,6 +6,13 @@ export interface ApplicationMenuOptions {
   readonly appName: string
   /** Whether environment provisioning currently owns the desktop workflow. */
   readonly provisioning: boolean
+  /**
+   * Whether the onboarding window is the active window. The desktop shell
+   * has a single `window` reference: restarting the Host while onboarding
+   * is open would navigate the onboarding window itself into the workspace,
+   * losing the provisioning flow and its own preload/navigation guards.
+   */
+  readonly onboarding: boolean
   /** Restart the active Host process. */
   readonly restartHost: () => void
   /** Open the environment onboarding surface. */
@@ -26,7 +33,7 @@ export function applicationMenuTemplate(options: ApplicationMenuOptions): MenuIt
           id: 'restart-host',
           label: 'Restart Host',
           accelerator: 'CommandOrControl+Shift+R',
-          enabled: !options.provisioning,
+          enabled: !options.provisioning && !options.onboarding,
           click: options.restartHost,
         },
         {

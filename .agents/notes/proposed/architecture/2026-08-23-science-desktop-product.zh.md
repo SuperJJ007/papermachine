@@ -56,7 +56,7 @@ macOS 应用使用 plain Node 语义下的 built `lib/` 与 Web artifacts 构建
 
 ## Electron 主进程启动顺序
 
-macOS 应用子菜单在 `Change Environment…` 上方提供 `Restart Host`。重启复用崩溃页使用的 Host 生命周期；环境配置流程占用工作流时该菜单项禁用，避免在 prefix 安装期间替换 Host。
+macOS 应用子菜单在 `Change Environment…` 上方提供 `Restart Host`。重启复用崩溃页使用的 Host 生命周期；环境配置流程占用工作流时该菜单项禁用，避免在 prefix 安装期间替换 Host。onboarding 窗口打开期间该菜单项同样全程禁用(`ApplicationMenuOptions.onboarding`,在每次打开/关闭时刷新),与 `provisioning` 相互独立:桌面壳只维护一个 `window` 引用,而 onboarding 窗口挂着自己的 preload 且无条件拦截 `will-navigate`,如果 Restart Host 像平常那样把工作台 URL 加载进这个窗口,结果会是 onboarding 自己的导航和装环境入口都够不着,而不是打开第二个可用窗口。
 
 在 Electron 43.4.1 / macOS 26.5.2 arm64 上，ESM 主进程入口里若有一个 top-level `await`，其恢复依赖 Electron native signal——`await app.whenReady()`，或是等待由 `app.once('ready', …)` listener resolve 的 promise——就永远不会恢复；该进程不会 spawn 任何 renderer，也永远不会打开 window。同一个 promise 上非 top-level 的 `.then()` continuation 可以正常恢复，由 Node timer 或 microtask 驱动的 top-level await 也能正常恢复。`main.ts` post-ready 的启动逻辑（application menu、IPC handlers、初始 window，以及 `activate`/`before-quit`/`window-all-closed` listeners）运行在一个 `boot()` function 里，由 `app.whenReady().then(boot)` 调用，并附带一个 `.catch`，在启动失败时记录日志并调用 `app.exit(1)`，让启动失败大声退出而不是悄无声息地挂起。该入口的防御规则：绝不在依赖 Electron native signal 的 promise 上放置 top-level `await`；改用 `.then()` 驱动该 continuation。
 

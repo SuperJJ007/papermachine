@@ -24,6 +24,8 @@ Electron carrier 会通过串行轮转 writer 把 Host stderr 写到 `<dshHome>/
 
 日志始终是运维诊断信息，不是应用协议，也不会进入 renderer。启动与端口 fallback 仍只依赖 readiness line 和退出状态；自由格式 stderr 从不改变启动决策。
 
+启动失败或异常退出结果不再依赖 stderr drain 先行结束才能被报告：该 drain 只在管道写完（EOF）时才算完成，而继承了 Host stderr 文件描述符的孙进程(以 `stderr: 'inherit'` 派生的 subagent 进程)可能在 Host 自身已退出后仍长期占住该管道。`HostProcessSupervisor` 的退出处理让 drain 与一个有界等待(`EXIT_LOG_DRAIN_TIMEOUT_MS`,`apps/desktop/src/host-process.ts`)赛跑,无论哪方先完成都会继续,因此即使有孙进程存活,启动失败也仍会及时 reject,而不是让 Electron 停在一个没有错误页的空白窗口上。错误页本身(`apps/desktop/src/error-page.ts`)现在会在每次渲染失败时,在消息旁给出已解析的 `<dshHome>/logs/host.log` 路径,使遇到不透明退出码的设备测试者无需了解 Harness home 目录结构也能找到日志。
+
 ## 考虑过的替代方案
 
 **通过后续一次空 run 捕获上次 run 的 PNG。** 否决，因为按 run 隔离的 artifact 目录有意明确输出所有权。复用旧目录会削弱该所有权，并把登记 run 未生产的字节归给它。

@@ -201,9 +201,6 @@ def extract_elements(fig):
     def font_current():
         from matplotlib.text import Text
 
-        override = getattr(fig, "_dsh_science_font", None)
-        if override is not None:
-            return {"family": list(override["family"]), "size": float(override["size"])}
         if axes:
             text = axes[0].title
         else:
@@ -485,7 +482,6 @@ def apply_ops(fig, ops):
                 for text in fig.findobj(match=Text):
                     text.set_fontfamily(family)
                     text.set_fontsize(operation["size"])
-                fig._dsh_science_font = {"family": [family], "size": float(operation["size"])}
                 applied = True
             else:
                 raise ValueError("unknown_op")

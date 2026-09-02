@@ -91,6 +91,50 @@ describe('ScienceDetailsView: chart-edit Save (applyChartOps)', () => {
     })
   })
 
+  it('reflects the newly committed version\'s real font state after Save, not the pre-edit value (rc.3 5.3)', async () => {
+    // Per-version chart state, exactly as the real `scienceChartState` RPC
+    // resolves it: v2's font is 12 (the pre-edit baseline the panel loads
+    // on mount); v3 (the direct-edit commit's own new version) is 15 — the
+    // "current" value a real `apply_chart` replay produces for the font the
+    // user actually staged and saved. The session's raw artifact list
+    // already carries both versions, matching a session projection that has
+    // caught up with the commit by the time this component re-renders (the
+    // ordinary case: the commit RPC and the session-log update travel the
+    // same connection).
+    const store = testScienceSelectionStore()
+    openTab(store, 'chart-1', 2)
+    const science = baseProjection({ artifacts: [
+      rawArtifact({ version: 2, versionId: 'version:2' }),
+      rawArtifact({ version: 3, versionId: 'version:3' }),
+    ] })
+    const summaries = [
+      versionSummary({ ordinal: 2, versionId: 'version:2' }),
+      versionSummary({ ordinal: 3, versionId: 'version:3' }),
+    ]
+    const chartStates: Record<string, ScienceChartState> = {
+      'version:2': chartState({ elements: [
+        { id: 'font', kind: 'font', axes: null, label: null, current: { family: ['sans-serif'], size: 12 } },
+      ] }),
+      'version:3': chartState({ elements: [
+        { id: 'font', kind: 'font', axes: null, label: null, current: { family: ['sans-serif'], size: 15 } },
+      ] }),
+    }
+    const loadChartState = vi.fn((content: { versionId: string }) => Promise.resolve(chartStates[content.versionId] ?? null))
+    const applyChartOps = vi.fn().mockResolvedValue({ ok: true, value: { artifactId: 'chart-1', version: 3, origin: 'human-edit', failedOps: [] } })
+    render(<ScienceDetailsView {...props(science, { store, summaries, loadChartState, applyChartOps })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(await screen.findByLabelText('Font size')).toHaveProperty('valueAsNumber', 12)
+
+    fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+
+    await waitFor(() => {
+      expect(store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')).toMatchObject({ version: 3 })
+    })
+    await waitFor(() => { expect(loadChartState).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'version:3' })) })
+    await waitFor(() => { expect(screen.getByLabelText('Font size')).toHaveProperty('valueAsNumber', 15) })
+  })
+
   it('leaves the tab on its current version and surfaces the rejection when applyChartOps rejects', async () => {
     const { store, science, summaries } = withOpenTab()
     const loadChartState = vi.fn().mockResolvedValue(chartState())

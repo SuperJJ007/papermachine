@@ -45,6 +45,31 @@ describe('desktop Host supervision', () => {
     await expect(host.start()).rejects.toThrow(/exited before readiness \(7\)$/)
   })
 
+  it.runIf(process.platform !== 'win32')('rejects promptly when the Host exits before readiness but a grandchild keeps its stderr pipe open', async () => {
+    // Mirrors a real subagent process (spawn(..., { stderr: 'inherit' })):
+    // the grandchild duplicates the "Host" fixture's own stderr file
+    // descriptor, so the pipe this supervisor reads from never sees EOF even
+    // after the fixture process itself has exited. The grandchild is
+    // detached/unref'd from this test and self-exits after 3s as a backstop.
+    const source = `
+      const { spawn } = require('node:child_process')
+      spawn(process.execPath, ['--eval', 'setTimeout(() => {}, 3000)'], { stdio: ['ignore', 'ignore', 'inherit'], detached: true }).unref()
+      process.exit(3)
+    `
+    const host = new HostProcessSupervisor({
+      executable: process.execPath,
+      args: ['--eval', source],
+      cwd: process.cwd(),
+      env: { ...process.env },
+      stderrLog: stderrLog(),
+    }, { graceMs: 1000 })
+    const startedAt = Date.now()
+
+    await expect(host.start()).rejects.toThrow(/exited before readiness \(3\)$/)
+
+    expect(Date.now() - startedAt).toBeLessThan(2000)
+  })
+
   it('rotates Host stderr within the configured byte and retention bounds', async () => {
     const log = stderrLog(1024, 2)
     await mkdir(dirname(log.path), { recursive: true })

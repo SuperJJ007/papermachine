@@ -20,6 +20,15 @@ export interface IndexedToolCall {
   readonly name: string
 }
 
+/** Indexed Session turn lifetime needed by the client trajectory. */
+export interface IndexedTurn {
+  readonly turn: number
+  readonly startSeq: number
+  readonly startTime: number
+  readonly endSeq?: number
+  readonly endTime?: number
+}
+
 /** Indexed Session fact needed by provenance validation. */
 export interface IndexedSessionFact {
   readonly seq: number
@@ -39,6 +48,8 @@ export interface IndexedRunFact {
 export interface IndexedArtifactFact extends IndexedSessionFact {
   readonly artifactId: string
   readonly version: number
+  readonly turn?: number
+  readonly step?: number
 }
 
 /** Mutable deterministic replay accumulator used by fold and invariant. */
@@ -61,6 +72,7 @@ export interface ScienceFoldState {
   artifacts: ScienceArtifactVersion[]
   outcomes: ScienceOutcomePublication[]
   requestHeaders: IndexedSessionFact[]
+  turns: IndexedTurn[]
   toolCalls: IndexedToolCall[]
   settledToolCallSeqs: number[]
   consumedToolCallSeqs: number[]
@@ -88,6 +100,7 @@ export function emptyScienceFoldState(): ScienceFoldState {
     artifacts: [],
     outcomes: [],
     requestHeaders: [],
+    turns: [],
     toolCalls: [],
     settledToolCallSeqs: [],
     consumedToolCallSeqs: [],
@@ -119,6 +132,7 @@ export function cloneScienceFoldState(
     artifacts: [...state.artifacts],
     outcomes: [...state.outcomes],
     requestHeaders: [...state.requestHeaders],
+    turns: [...state.turns],
     toolCalls: [...state.toolCalls],
     settledToolCallSeqs: [...state.settledToolCallSeqs],
     consumedToolCallSeqs: [...state.consumedToolCallSeqs],

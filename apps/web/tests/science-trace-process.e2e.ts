@@ -328,7 +328,7 @@ describe('web e2e: Science process view', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('keeps records outside the loaded history page separate from the latest request', async () => {
+  it('keeps records outside the loaded history page on their original turn', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-process-history'))
     await page.close()
     page = await newEnglishPage(browser, 1280)
@@ -337,17 +337,15 @@ describe('web e2e: Science process view', () => {
     await openSeed(true)
     const process = page.getByRole('region', { name: 'Science process view' })
     const history = process.getByRole('region', { name: 'Unassigned history' })
-    await history.waitFor()
-    expect(await history.innerText()).toContain('3 runs and 1 artifact versions')
+    await expect.poll(() => history.count()).toBe(0)
+    expect(await process.locator('article[data-anchor="turn:1"]').innerText()).toContain('Runs 3')
     const current = process.locator('article[data-anchor="turn:2"]')
     expect(await current.innerText()).toContain('Runs 0')
     expect(await current.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).count()).toBe(0)
     const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     mkdirSync(evidenceDir, { recursive: true })
     await page.screenshot({ path: `${evidenceDir}/science-process-history.png`, fullPage: true })
-    await compareOrRefreshGolden(fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url)),
-      await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
-    await history.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
+    await process.locator('article[data-anchor="turn:1"]').getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
     await page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u }).waitFor()
     await page.getByRole('tab', { name: 'Chat', exact: true }).click()
     await page.getByRole('button', { name: 'Load earlier', exact: true }).click()

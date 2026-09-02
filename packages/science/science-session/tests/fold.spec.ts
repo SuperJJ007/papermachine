@@ -289,7 +289,9 @@ describe('strict Science fold', () => {
     expect(state.artifacts.at(0)?.versionId).toBe('version-1')
     // The retained fact follows the superseding event, so evidence cited
     // against this version is dated by the save that produced what it holds.
-    expect(state.artifactFacts).toEqual([{ artifactId: ARTIFACT_ID, version: 1, seq: 9, time: 190 }])
+    expect(state.artifactFacts).toEqual([{
+      artifactId: ARTIFACT_ID, version: 1, seq: 9, time: 190, turn: 1, step: 1,
+    }])
   })
 
   it('opens the next version for changed content, and accepts a same-content re-record at its own version', () => {

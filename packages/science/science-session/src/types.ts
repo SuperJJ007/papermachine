@@ -523,6 +523,8 @@ export interface ScienceProjection {
   readonly kernels: readonly ScienceKernel[]
   /** Every immutable artifact version in commit order. */
   readonly artifacts: readonly ScienceArtifactVersion[]
+  /** Session trajectory facts retained independently of conversation pagination. */
+  readonly trace: ScienceProjectionTrace
   /** Latest published outcome revision, or `null` before publication. */
   readonly outcome: ScienceOutcomePublication | null
   /** Derived counters; never written independently to the session log. */
@@ -573,6 +575,10 @@ export interface ScienceClientRunIdentity {
   readonly runId: ScienceRunId
   readonly language: ScienceLanguage
   readonly toolCallId: CallId
+  /** Authoritative turn of the authorizing call when projected from the strict Session fold. */
+  readonly turn?: number
+  /** Authoritative step of the authorizing call; present exactly when {@link turn} is present. */
+  readonly step?: number
   readonly requestHeaderSeq: number
   readonly environmentRevision: number
   readonly environmentFingerprintPreview: string
@@ -647,10 +653,10 @@ export type ScienceClientKernel = ScienceClientKernelState | ScienceClientKernel
  * for authorized reads (the read endpoint is session-addressed; the Host
  * resolves the owning project itself) and the title/caption presentation
  * snapshot the model or user saw when this event committed. Carries no
- * `projectId` (session-addressed reads never need it) and no provenance
+ * `projectId` (session-addressed reads never need it) and no store provenance
  * fields — content origin, producer, base version, and creation time live
- * only in the project artifact store, not in this client-safe mirror of the
- * durable {@link ScienceArtifactVersion}.
+ * only in the project artifact store. Optional turn and step fields are
+ * Session-log coordinates derived by the projection, not artifact provenance.
  */
 export interface ScienceClientArtifactVersion {
   readonly artifactId: ScienceArtifactId
@@ -661,6 +667,48 @@ export interface ScienceClientArtifactVersion {
   readonly versionId: ScienceVersionId
   readonly sha256: string
   readonly seenAt: number
+  /** Turn of the active run or annotation call when the presentation snapshot committed. */
+  readonly turn?: number
+  /** Step of the active run or annotation call; present exactly when {@link turn} is present. */
+  readonly step?: number
+}
+
+/** Browser-safe coordinates for one model-issued tool call. */
+export interface ScienceClientTraceCall {
+  readonly seq: number
+  readonly time: number
+  readonly callId: CallId
+  readonly turn: number
+  readonly step: number
+  readonly name: string
+}
+
+/** Browser-safe lifetime of one Session turn. */
+export interface ScienceClientTraceTurn {
+  readonly turn: number
+  readonly startSeq: number
+  readonly startTime: number
+  readonly endSeq?: number
+  readonly endTime?: number
+}
+
+/** Projection-only owner coordinates for one artifact presentation snapshot. */
+export interface ScienceProjectionArtifactTrace {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly turn?: number
+  readonly step?: number
+}
+
+/** Host projection trajectory, including artifact owner coordinates used during client redaction. */
+export interface ScienceProjectionTrace extends ScienceClientTrace {
+  readonly artifacts: readonly ScienceProjectionArtifactTrace[]
+}
+
+/** Complete trajectory coordinates retained independently of paged conversation messages. */
+export interface ScienceClientTrace {
+  readonly turns: readonly ScienceClientTraceTurn[]
+  readonly calls: readonly ScienceClientTraceCall[]
 }
 
 /** Browser-safe Outcome publication without authorizing request facts. */
@@ -680,6 +728,8 @@ export interface ScienceClientProjection {
   readonly runs: readonly ScienceClientRun[]
   readonly kernels: readonly ScienceClientKernel[]
   readonly artifacts: readonly ScienceClientArtifactVersion[]
+  /** Authoritative turn and tool-call index for cold and live trajectory rendering. */
+  readonly trace: ScienceClientTrace
   readonly outcome: ScienceClientOutcomePublication | null
   readonly metrics: ScienceProjectionMetrics
   readonly lastScienceEventSeq: number

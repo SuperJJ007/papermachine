@@ -149,10 +149,8 @@ export function ScienceTraceView({
   const highlightedRow = useRef<HTMLLIElement>(null)
   const id = useId()
   useEffect(() => { highlightedRow.current?.scrollIntoView({ block: 'nearest' }) }, [highlight])
-  // D9/turn-attribution: current content origin and creation time for every
-  // artifact this session's projection carries, fetched once per distinct
-  // artifact set — a Hook, so it is called unconditionally even before
-  // `science` itself has resolved.
+  // Current store metadata distinguishes direct edits and imports, whose
+  // timeline placement has no authorizing model call.
   const summaries = useScienceVersionSummaries(loadVersions, science?.artifacts.map(artifact => artifact.versionId) ?? [])
   const model = useMemo(
     () => science === null || science === undefined ? undefined : buildScienceTraceModel(nodes, science, turnTimes, summaries),
@@ -167,11 +165,6 @@ export function ScienceTraceView({
   const toggleTurn = (turn: number): void => {
     setExpandedTurns(previous => toggleSet(previous, turn))
   }
-  const duration = model.turns.reduce((sum, turn) => {
-    const timing = turnTimes.get(turn)
-    return sum + (timing?.endTime === undefined
-      ? model.groups.find(group => group.turn === turn)?.durationMs ?? 0 : Math.max(0, timing.endTime - timing.startTime))
-  }, 0)
   return (
     <section className={css.root} data-conversation-composer-overlay="" aria-label={t('trace.label')}>
       <header className={css.header}>
@@ -179,7 +172,7 @@ export function ScienceTraceView({
           turns: model.turns.length, steps: model.groups.reduce((sum, group) => sum + group.stepCount, 0),
           runs: model.groups.reduce((sum, group) => sum + group.runs.length, model.unassigned.runs.length),
           artifacts: new Set(science?.artifacts.map(artifact => artifact.artifactId)).size,
-          duration: formatScienceTraceDuration(duration, t),
+          duration: formatScienceTraceDuration(model.durationMs, t),
         })}{science?.outcome != null && <> · {t('trace.published')}</>}</span>
       </header>
       {hasUnassigned && <section className={css.unassigned} aria-label={t('trace.unassigned')}>

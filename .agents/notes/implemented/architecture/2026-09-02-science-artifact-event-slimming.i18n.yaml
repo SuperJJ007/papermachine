@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-science-artifact-event-slimming.md
-2026-09-02-science-artifact-event-slimming.md: 1b1fc3b5920809119c654fc5bf0b20d887f9da2c
-2026-09-02-science-artifact-event-slimming.zh.md: 0394682b0263fd74e837c5c5968a701614fab450
+2026-09-02-science-artifact-event-slimming.md: 67752ef7cd354e49b6a8fbbc7f31132680da31ef
+2026-09-02-science-artifact-event-slimming.zh.md: d57a5af4e2a27b695620c8d7b1eeaae9bbf802b2

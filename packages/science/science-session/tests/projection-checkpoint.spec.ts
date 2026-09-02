@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   applyScienceProjectionState,
   emptyScienceProjectionState,
@@ -26,6 +26,7 @@ import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
   artifact,
+  appendFixtureEvents,
   event,
   kernelExited,
   kernelStarted,
@@ -77,13 +78,33 @@ function outcomeEvent(
 }
 
 describe('Science private projection checkpoint', () => {
+  it('keeps full turn and tool-call coordinates in the cold client projection', () => {
+    const session = Session.create(SessionId('science-cold-trace'))
+    session.append('turn/start', { turn: 1 })
+    appendFixtureEvents(session)
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const client = viewScienceProjectionState(projectState(session.events))
+    expect(client).toMatchObject({
+      trace: {
+        turns: [{ turn: 1 }],
+        calls: [
+          { callId: 'call-run', turn: 1, step: 1, name: 'run_python' },
+          { callId: 'call-chart', turn: 1, step: 1, name: 'annotate_artifact' },
+          { callId: 'call-outcome', turn: 1, step: 1, name: 'publish_outcome' },
+        ],
+      },
+      runs: [{ turn: 1, step: 1 }],
+      artifacts: [{ turn: 1, step: 1 }],
+    })
+  })
+
   it('retains only pre-mode facts that can constrain later Science replay', () => {
     const unrelated = event('turn/start', 0, 90, { turn: 1 })
     const empty = emptyScienceProjectionState()
     const observed = applyScienceProjectionState(empty, unrelated)
-    expect(observed).toEqual({ ...empty, observedSeq: 0 })
-    expect(observed.fold).toBe(empty.fold)
-    expect(observed.witness).toBe(empty.witness)
+    expect(observed.fold.turns).toEqual([{ turn: 1, startSeq: 0, startTime: 90 }])
+    expect(observed.witness).toEqual([{ seq: 0, time: 90, type: 'turn/start', data: { turn: 1 } }])
     expect(scienceProjectionChanged(empty, observed)).toBe(false)
 
     for (const type of ['step/start', 'request/header', 'tool/call'] as const) {
@@ -145,7 +166,7 @@ describe('Science private projection checkpoint', () => {
 
   it('advances the private watermark without publishing an unchanged Science value', () => {
     const complete = projectState(legalEvents())
-    const irrelevant = event('turn/start', 11, 190, { turn: 2 })
+    const irrelevant = event('session/title', 11, 190, {})
     const observed = applyScienceProjectionState(complete, irrelevant)
 
     expect(observed.observedSeq).toBe(11)
@@ -334,7 +355,7 @@ describe('Science private projection checkpoint', () => {
       completeState,
       event('session/end-seed', 12, 190, {}),
     )
-    const unrelatedTurn = applyScienceProjectionState(
+    const nextTurn = applyScienceProjectionState(
       completeState,
       event('turn/start', 12, 190, { turn: 2 }),
     )
@@ -346,10 +367,12 @@ describe('Science private projection checkpoint', () => {
       ...event('science/mode-bound', 12, 190, events[0]!.data),
       ignorable: true,
     })
-    for (const observed of [ignoredSeed, unrelatedTurn, duplicateMode, ignorableMode]) {
+    for (const observed of [ignoredSeed, duplicateMode, ignorableMode]) {
       expect(observed).toEqual({ ...completeState, observedSeq: 12 })
       expect(scienceProjectionChanged(completeState, observed)).toBe(false)
     }
+    expect(nextTurn.fold.turns).toEqual([{ turn: 2, startSeq: 12, startTime: 190 }])
+    expect(scienceProjectionChanged(completeState, nextTurn)).toBe(true)
 
     const headerTampered: ScienceProjectionState = {
       ...terminalState,

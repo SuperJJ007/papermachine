@@ -4,6 +4,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -91,6 +92,7 @@ function fixture() {
       python: { language: 'python', capability: 'supported' },
     }, kernels: [{ kernelEpoch: 1, language: 'python', state: 'started', environmentRevision: 1,
       environmentFingerprintPreview: 'abc', at: 1 }], outcome: null, lastScienceEventSeq: 50,
+    trace: { turns: [], calls: [] },
     runs: [...calls.map((callId, index) => run(callId, index + 1)), run('repair-1', 9, 'failed'), run('repair-2', 10)],
     artifacts: [
       { artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 1, title: 'Chart',
@@ -178,6 +180,34 @@ const tools = [
 ] as const
 
 describe('Science process model', () => {
+  it('uses projection trace coordinates when the loaded conversation is only a cold tail', () => {
+    const early = { ...run('early', 1), turn: 1, step: 1 }
+    const current = { ...run('current', 2), turn: 2, step: 1 }
+    const science: ScienceClientProjection = { ...projection({ runs: [early, current] }), trace: {
+      turns: [
+        { turn: 1, startSeq: 1, startTime: 1_000, endSeq: 9, endTime: 9_000 },
+        { turn: 2, startSeq: 10, startTime: 10_000, endSeq: 19, endTime: 19_000 },
+      ],
+      calls: [
+        { seq: 3, time: 3_000, callId: CallId('early'), turn: 1, step: 1, name: 'run_python' },
+        { seq: 12, time: 12_000, callId: CallId('current'), turn: 2, step: 1, name: 'run_python' },
+      ],
+    } }
+
+    const model = buildScienceTraceModel(
+      [step(12, 1, [{ name: 'run_python', callId: 'current' }], 2)],
+      science,
+      new Map([[2, { startTime: 10_000, endTime: 19_000 }]]),
+      new Map(),
+    )
+
+    expect(model.groups.map(group => ({ turn: group.turn, steps: group.stepCount, runs: group.runs.length }))).toEqual([
+      { turn: 1, steps: 1, runs: 1 },
+      { turn: 2, steps: 1, runs: 1 },
+    ])
+    expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
+  })
+
   it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {
     expect(build([step(1, 1, [{ name, argsRaw }])]).groups[0]?.steps[0]).toMatchObject({ kind, title })
   })
@@ -252,7 +282,7 @@ describe('Science process model', () => {
     expect(model.dialogues.find(item => item.seq === 21)?.turn).toBe(2)
     expect(model.environment?.languages).toEqual(['Python'])
   })
-  it('keeps an unseen run outside request groups; an artifact outside every turn window still lands on lastTurn', () => {
+  it('keeps legacy records without projection coordinates on the timestamp fallback', () => {
     const human = fixture().science.artifacts[3]!
     // Neither artifact's createdAt (9_000, 19_500) falls inside turn 2's
     // declared window ([30_000, +Inf)); both fall back to the same lastTurn
@@ -280,11 +310,10 @@ describe('Science process model', () => {
     expect(build(nodes, { runs: [run('r', 1)] }).groups[0]?.durationMs).toBe(500)
     expect(build(nodes, { runs: [run('r', 1, 'running')] }).groups[0]?.durationMs).toBeUndefined()
   })
-  it('places an artifact by its own createdAt window regardless of which calls the turn loaded', () => {
-    // The removed `runId`/`toolCallId` fields meant a version's producing
-    // call had to be loaded before it appeared at all; createdAt-window
-    // placement has no such precondition — the artifact shows up in the
-    // very first render, before any call/run history streams in.
+  it('uses createdAt as the fallback for a projection without trajectory coordinates', () => {
+    // Directly constructed legacy projections have an empty trace. The
+    // timestamp fallback keeps these values renderable without weakening
+    // attribution for normal projections, whose trace is authoritative.
     const artifact = fixture().science.artifacts[0]!
     const turnTimes = new Map([[1, { startTime: 0, endTime: 10_000 }], [2, { startTime: 10_001, endTime: 20_000 }]])
     const noNodes = build([], { artifacts: [artifact] }, turnTimes)

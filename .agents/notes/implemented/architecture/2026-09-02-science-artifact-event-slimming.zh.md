@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-**事件只保留 `artifactId`、`versionId`、`version`、`logicalName`、`sha256`、`title`、`caption?`、`projectId`,以及新增的 `seenAt`。** `sha256` 作为内容 pin 保留——证明模型或用户当时看到的正是这些字节,不依赖信任 store;`title`/`caption` 是提交那一刻的呈现快照,不是 store 的当前值(后续一次元数据编辑可以改动 store 的 `version_annotations` 而不改变这条事件)。`seenAt` 取代 `createdAt`:这条事件自身的提交时刻,是模型/用户*看到*这份呈现的时刻,不是 store 提交内容的时刻,旧名字把两者混为一谈。`logicalName` 保留是因为它出现在模型请求里(工具收据、`get_science_state`);别的字段都不会。`ScienceArtifactVersion` 与 `ScienceClientArtifactVersion` 从按(现已删除的)`origin` 字段区分的 `{run, human-edit}` 判别联合类型收拢为一个扁平接口——已经没有什么可判别的了,因为内容来源现在只活在 store 的 `content_origin` 列里。`ScienceClientArtifactVersion` 还额外删掉了 `projectId`(内容读取按 session 寻址;Host 自己解析所属 project)和过去靠 `toolCallId` 关联查出的 `turn` 字段——事件上已经没有 `toolCallId`,也就没有查找可做,于是 `toClientScienceProjection` 与 `projectScienceClientFold` 删掉了它们的 `toolCallTurns` 参数,`toolCallTurnsOf` 导出也被删除(仓库里没有第二个调用方)。
+**事件只保留 `artifactId`、`versionId`、`version`、`logicalName`、`sha256`、`title`、`caption?`、`projectId`,以及新增的 `seenAt`。** `sha256` 作为内容 pin 保留——证明模型或用户当时看到的正是这些字节,不依赖信任 store;`title`/`caption` 是提交那一刻的呈现快照,不是 store 的当前值(后续一次元数据编辑可以改动 store 的 `version_annotations` 而不改变这条事件)。`seenAt` 取代 `createdAt`:这条事件自身的提交时刻,是模型/用户*看到*这份呈现的时刻,不是 store 提交内容的时刻,旧名字把两者混为一谈。`logicalName` 保留是因为它出现在模型请求里(工具收据、`get_science_state`);别的字段都不会。`ScienceArtifactVersion` 与 `ScienceClientArtifactVersion` 从按(现已删除的)`origin` 字段区分的 `{run, human-edit}` 判别联合类型收拢为一个扁平接口——已经没有什么可判别的了,因为内容来源现在只活在 store 的 `content_origin` 列里。`ScienceClientArtifactVersion` 还额外删掉了 `projectId`(内容读取按 session 寻址;Host 自己解析所属 project),以及通过 `toolCallId` 连接得到的事件派生 `turn`。[冷启动分页后仍保留 Science trajectory 归属](../bug-fix/2026-09-02-science-cold-trajectory-ownership.zh.md)随后从私有 Science fold 的活动 eligible call 恢复可选的客户端 `turn` 与 `step` 坐标；持久 artifact 事件仍不包含 tool-call 来源。
 
 **`applyArtifactSaved` 只保留四条校验;其余全部搬去了这条事件提交之前先提交的 store 写事务。**
 
@@ -36,7 +36,7 @@ Status: implemented
 
 `science/outcome-published` 的 chart-evidence 分支作为直接后果丢掉了一项附带能力:它不再能给 `citedEnvironmentRevisions` 贡献一个 `environmentRevision`,因为 artifact 版本的环境来源已经不在事件上了。`ScienceOutcomePublication.environmentRevisions` 现在的自述是"由所引用的 run 证据使用;chart 证据从不贡献",而不是"run 或 chart 证据"——一个只有 chart 证据的 outcome 发布时 `environmentRevisions` 是空数组。
 
-**`SCIENCE_PROJECTION_STATE_VERSION` 从 16 升到 17**(fold 语义变了:保留的校验清单、元数据快照的分派方式,以及 `ScienceArtifactVersion`/`ScienceClientArtifactVersion` 上被删掉的 `chart`/环境来源字段,都改变了一份持久化投影 checkpoint 的含义)。
+**本次变更把 `SCIENCE_PROJECTION_STATE_VERSION` 从 16 升到 17**(fold 语义变了:保留的校验清单、元数据快照的分派方式,以及 `ScienceArtifactVersion`/`ScienceClientArtifactVersion` 上被删掉的 `chart`/环境来源字段,都改变了一份持久化投影 checkpoint 的含义)。上述冷启动分页修复随后因 turn/call trace 与派生 artifact 坐标把它升到 18。
 
 **不 bump `SESSION_FORMAT_VERSION`;codec 容忍并忽略被退役的字段(T2 任务书里的决定 (i))。** `science/artifact-saved` 是一个领域事件,不是 [`SESSION_FORMAT_VERSION` 管辖](2026-08-10-session-log-version-mechanism.zh.md)的 header/envelope/surface 机制——按那篇笔记自己的规则,一个事件 payload 内部普通的字段集合/形状变化,只要旧 runtime 不会因此误读一份新日志,就不需要 bump 版本号。这里真正要紧的是反方向:一个*新* runtime 读一份*旧*日志,不能仅仅因为旧事件仍带着这个 build 已经不再写的字段就拒绝它。`codec.ts` 里的 `artifactSchema` 特意不用 `.strict()`:`z.object` 的默认(非 strict)解析行为会静默剥掉 schema 未声明的任意 key,这正是一个"pre-release 立场失效之后"的读者所需要的那种容忍度。`seenAt` 是 `.optional()` 的;一条完全没有 `seenAt` 的老事件会转而读取旧的 `createdAt` 字段,靠一个 `.transform()` 兜底,只有在*两者都不存在*时才会响亮失败。这只是一次读取兼容性兜底——这个 build 从不写 `createdAt`,而且这两个名字语义上并不等价(`createdAt` 是内容提交时刻,`seenAt` 是呈现快照时刻)——但对一条不是这个 build 自己产生的日志来说,这是能拿到的最接近的事实;而一条这个 build 自己产生却缺 `seenAt` 的事件,不是这个 codec 需要接受的情形。
 

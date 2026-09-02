@@ -253,6 +253,15 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   }
   const known = state.artifacts.filter(candidate => candidate.artifactId === artifact.artifactId)
   const target = known.find(candidate => candidate.version === artifact.version)
+  const owner = state.toolCalls.findLast(call => !state.settledToolCallSeqs.includes(call.seq)
+    && (call.name === 'run_python' || call.name === 'run_r' || call.name === 'annotate_artifact'))
+  const fact = {
+    artifactId: artifact.artifactId,
+    version: artifact.version,
+    seq: event.seq,
+    time: event.time,
+    ...owner === undefined ? {} : { turn: owner.turn, step: owner.step },
+  }
   if (target === undefined) {
     // A version beyond this session's own last locally-known one for this
     // artifactId is trusted the same way a wholly new artifactId is: the
@@ -272,7 +281,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       throw new Error('a Science artifact versionId cannot back two committed versions')
     }
     state.artifacts.push(artifact)
-    state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
+    state.artifactFacts.push(fact)
   } else {
     // A re-record of an already-known ordinal is the metadata-curation
     // snapshot the store's `version_annotations` table now authors: content
@@ -290,7 +299,7 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
       candidate.artifactId === artifact.artifactId && candidate.version === artifact.version)
     /* v8 ignore next -- every accepted version appended its matching fact */
     if (factIndex < 0) throw new Error('Science artifact event facts disappeared during synchronous replay')
-    state.artifactFacts[factIndex] = { artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time }
+    state.artifactFacts[factIndex] = fact
   }
 }
 
@@ -514,6 +523,17 @@ export function applyScienceEvent(state: ScienceFoldState, event: SessionEvent):
   if (domainEvent !== undefined) applyDomainEvent(state, domainEvent)
   else {
     switch (event.type) {
+      case 'turn/start':
+        if (state.turns.some(turn => turn.turn === event.data.turn)) throw new Error('turn/start cannot repeat a turn')
+        state.turns.push({ turn: event.data.turn, startSeq: event.seq, startTime: event.time })
+        break
+      case 'turn/end': {
+        const index = state.turns.findIndex(turn => turn.turn === event.data.turn)
+        const turn = state.turns[index]
+        if (turn === undefined || turn.endSeq !== undefined) throw new Error('turn/end requires one open turn')
+        state.turns[index] = { ...turn, endSeq: event.seq, endTime: event.time }
+        break
+      }
       case 'step/start':
         if (state.mode === undefined) state.preModeStepStarted = true
         break

@@ -4,7 +4,7 @@
  * source.
  */
 
-import type { DesktopOnboardingBridge, OfferedEnvironment, OfferedSource } from './preload.ts'
+import type { CurrentEnvironment, DesktopOnboardingBridge, OfferedEnvironment, OfferedSource } from './preload.ts'
 
 declare global {
   interface Window {
@@ -13,6 +13,13 @@ declare global {
 }
 
 const installSummaryElement = document.querySelector('#install-summary')
+const currentEnvironmentElement = document.querySelector('#current-environment')
+const currentIdElement = document.querySelector('#current-id')
+const currentRevisionElement = document.querySelector('#current-revision')
+const currentStatusElement = document.querySelector('#current-status')
+const currentPrefixElement = document.querySelector('#current-prefix')
+const reinstallNoticeElement = document.querySelector('#reinstall-notice')
+const keepCurrentElement = document.querySelector('#keep-current')
 const packagesElement = document.querySelector('#packages')
 const advancedElement = document.querySelector('#advanced')
 const customPackagesElement = document.querySelector('#custom-packages')
@@ -29,6 +36,13 @@ const progressMessageElement = document.querySelector('#progress-message')
 const cancelElement = document.querySelector('#cancel')
 const statusElement = document.querySelector('#status')
 if (!(installSummaryElement instanceof HTMLParagraphElement)
+  || !(currentEnvironmentElement instanceof HTMLElement)
+  || !(currentIdElement instanceof HTMLElement)
+  || !(currentRevisionElement instanceof HTMLElement)
+  || !(currentStatusElement instanceof HTMLElement)
+  || !(currentPrefixElement instanceof HTMLElement)
+  || !(reinstallNoticeElement instanceof HTMLParagraphElement)
+  || !(keepCurrentElement instanceof HTMLButtonElement)
   || !(packagesElement instanceof HTMLUListElement)
   || !(advancedElement instanceof HTMLDetailsElement)
   || !(customPackagesElement instanceof HTMLTextAreaElement)
@@ -47,6 +61,13 @@ if (!(installSummaryElement instanceof HTMLParagraphElement)
   throw new Error('desktop onboarding: required controls are missing')
 }
 const installSummary = installSummaryElement
+const currentEnvironment = currentEnvironmentElement
+const currentId = currentIdElement
+const currentRevision = currentRevisionElement
+const currentStatus = currentStatusElement
+const currentPrefix = currentPrefixElement
+const reinstallNotice = reinstallNoticeElement
+const keepCurrent = keepCurrentElement
 const packages = packagesElement
 const advanced = advancedElement
 const customPackages = customPackagesElement
@@ -69,6 +90,9 @@ const EMPTY_CUSTOM_MESSAGE = '自定义清单不能为空 · The custom list can
 // The shipped environment, once `desktop:environments` has answered. Absent
 // until then and after a failed read, which is what disables Install.
 let standard: OfferedEnvironment | undefined
+// The machine's applied pointer, independently of whether its revision still
+// matches the declaration this build offers.
+let current: CurrentEnvironment | undefined
 // What the confirm panel is currently asking the user to approve, cleared
 // when they confirm or dismiss it.
 let pending: { readonly packages?: readonly string[]; readonly detail: string } | undefined
@@ -126,6 +150,12 @@ function renderSources(sources: readonly OfferedSource[], selected: string | und
  */
 function renderStandard(environment: OfferedEnvironment): void {
   standard = environment
+  const reinstalling = current?.id === environment.id && current.revision === environment.revision
+  provision.textContent = reinstalling
+    ? '重新安装 · Reinstall'
+    : '下载并安装 · Download and install'
+  reinstallNotice.textContent = `重新安装会再次下载 ${formatBytes(environment.estimatedDownloadBytes)}。 · Reinstalling will download ${formatBytes(environment.estimatedDownloadBytes)} again.`
+  reinstallNotice.hidden = !reinstalling
   installSummary.textContent = `${environment.name}：${String(environment.packages.length)} 个包，约 ${formatBytes(environment.estimatedDownloadBytes)} 下载，需要 ${formatBytes(environment.requiredFreeBytes)} 可用磁盘空间。 · ${String(environment.packages.length)} packages, about ${formatBytes(environment.estimatedDownloadBytes)} to download, ${formatBytes(environment.requiredFreeBytes)} of free disk required.`
   packages.replaceChildren(...environment.packages.map((name) => {
     const item = document.createElement('li')
@@ -135,10 +165,21 @@ function renderStandard(environment: OfferedEnvironment): void {
   customPackages.value = environment.packages.join('\n')
 }
 
+/** Render the applied environment summary which remains actionable while onboarding is open. */
+function renderCurrent(environment: CurrentEnvironment): void {
+  current = environment
+  currentId.textContent = environment.id
+  currentRevision.textContent = environment.revision
+  currentStatus.textContent = environment.status
+  currentPrefix.textContent = environment.prefix
+  currentEnvironment.hidden = false
+}
+
 /** Enable or disable every control that starts new work, for the lifetime of one provisioning run. */
 function setBusy(busy: boolean): void {
   provision.disabled = busy || standard === undefined
   provisionCustom.disabled = busy
+  keepCurrent.disabled = busy
 }
 
 /** Show the confirm panel for a download the user has not yet approved. */
@@ -158,9 +199,13 @@ function dismissConfirm(): void {
 async function loadEnvironments(): Promise<void> {
   provision.disabled = true
   try {
-    const offered = await window.desktopOnboarding.environments()
+    const [offered, applied] = await Promise.all([
+      window.desktopOnboarding.environments(),
+      window.desktopOnboarding.currentEnvironment(),
+    ])
     const shipped = offered[0]
     if (shipped === undefined) throw new Error(ENVIRONMENTS_UNAVAILABLE_MESSAGE)
+    if (applied !== undefined) renderCurrent(applied)
     renderStandard(shipped)
     provision.disabled = false
   } catch (error) {
@@ -214,6 +259,14 @@ cancel.addEventListener('click', () => {
   cancel.disabled = true
   progressPhase.textContent = '正在取消… Cancelling…'
   void window.desktopOnboarding.cancelProvisioning()
+})
+keepCurrent.addEventListener('click', () => {
+  keepCurrent.disabled = true
+  statusNode.textContent = ''
+  void window.desktopOnboarding.keepCurrentEnvironment().catch((error: unknown) => {
+    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    keepCurrent.disabled = false
+  })
 })
 window.desktopOnboarding.onProvisioningProgress((update) => {
   progress.hidden = false

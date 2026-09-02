@@ -22,6 +22,7 @@ import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
 import { windowBackgroundColor } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
+import { resolveDisciplineStatus } from './discipline-status.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -177,7 +178,8 @@ async function bindProvisionedPrefix(dshHome: string, prefix: string, sourceId: 
 }
 
 /**
- * Start one provisioning run and open the workspace on the environment it
+ * Start one provisioning run, stopping the current Host only after this
+ * explicit install request, and open the workspace on the environment it
  * publishes. The in-flight check and its `provisioning` assignment run
  * before this function's first await, so two invocations racing from the
  * renderer cannot both claim the slot.
@@ -202,6 +204,8 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   let lastSourceId = sourceId
   const run = (async () => {
     try {
+      activeOrigin = undefined
+      await coordinator.prepareProvisioning()
       const published = await provisioner(dshHome).provision(declaration, control.signal, (update) => {
         lastPhase = update.phase
         if (update.sourceId !== undefined) lastSourceId = update.sourceId
@@ -603,6 +607,19 @@ async function boot(): Promise<void> {
       defaultSourceId: resolveDefaultSourceId(item.sources, signals),
     }))
   })
+  ipcMain.handle('desktop:current-environment', async () => {
+    const dshHome = await harnessHome()
+    const applied = await provisioner(dshHome).applied()
+    if (applied === undefined) return undefined
+    const status = resolveDisciplineStatus(applied, await declarations(dshHome))
+    return {
+      id: applied.id,
+      revision: applied.revision,
+      prefix: applied.prefix,
+      status: status.kind === 'current' ? 'applied' : 'stale',
+    }
+  })
+  ipcMain.handle('desktop:keep-current-environment', async () => { await openWorkspace() })
   ipcMain.handle('desktop:onboarding-status', () => {
     const value = onboardingStatus
     onboardingStatus = undefined

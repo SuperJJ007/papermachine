@@ -30,6 +30,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
       'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal',
       'get_science_state', 'glob', 'grep',
+      'install_science_packages',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
       'list_agents', 'list_agents', 'lsp', 'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'run_python', 'run_r', 'schedule_create', 'schedule_delete',

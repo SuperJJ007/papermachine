@@ -1295,9 +1295,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the verified bytes.',
       },
       {
-        signature: 'reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult>',
-        description: 'Reconcile one project\'s store against session-log events a caller has already read and folded — see the package README\'s Reconciliation section for the six-case table this decides. This package never reads session logs itself; `dsh-science-runtime` reads them (bounded by its own `reconcileMaxSessions` Config) and folds duplicate events per `versionId` (last write wins) before calling this. Never throws for one bad item — see `ReconcileResult.errors` — and never writes a session log; the store is the sole write target.',
-        parameters: [{ name: 'projectId', description: 'the project to reconcile.' }, { name: 'events', description: 'every `science/artifact-saved` event the caller read from this project\'s session logs, folded per `versionId`.' }],
+        signature: 'reconcileProject( projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>, eventSetComplete: boolean, cursor?: ReconcileCursor, ): Promise<ReconcileResult>',
+        description: 'Reconcile one project\'s store against session-log events a caller has already read and folded — see the package README\'s Reconciliation section for the seven-case table this decides. This package never reads session logs itself; `dsh-science-runtime` reads them (bounded by its own `reconcileMaxSessions` Config) and folds duplicate events per `versionId` (last write wins) before calling this. Never throws for one bad item — see `ReconcileResult.errors` — and never writes a session log; the store is the sole write target.',
+        parameters: [{ name: 'projectId', description: 'the project to reconcile.' }, { name: 'events', description: 'every `science/artifact-saved` event the caller read from this project\'s session logs, folded per `versionId`.' }, { name: 'eventSetComplete', description: 'whether the caller read every relevant session log and event; when false, an absent event cannot mark or clear orphan health.' }, { name: 'cursor', description: 'prior bounded-walk progress over this stable event set.' }],
         returns: 'what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.',
       },
       {
@@ -4285,16 +4285,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReconcileArtifactSavedEvent {\n    readonly artifactId: ArtifactId;\n    readonly versionId: VersionId;\n    readonly ordinal: number;\n    readonly logicalName: string;\n    readonly sha256: string;\n    readonly title: string | null;\n    readonly caption: string | null;\n    readonly seenAt: number;\n    readonly producerSessionId: SessionId;\n}',
   },
   {
+    name: 'ReconcileCursor',
+    declaration: 'export interface ReconcileCursor {\n    readonly pending: readonly ReconcileWorkItem[];\n    readonly completedVersionIds: readonly VersionId[];\n    readonly completedDanglingEventIds: readonly VersionId[];\n}',
+  },
+  {
     name: 'ReconcileOutcome',
     declaration: 'export interface ReconcileOutcome {\n    readonly versionId: VersionId;\n    readonly kind: ReconcileVersionKind;\n}',
   },
   {
     name: 'ReconcileResult',
-    declaration: 'export interface ReconcileResult {\n    readonly checkedVersions: number;\n    readonly outcomes: readonly ReconcileOutcome[];\n    readonly reconstructed: readonly VersionId[];\n    readonly truncated: boolean;\n    readonly errors: readonly string[];\n}',
+    declaration: 'export interface ReconcileResult {\n    readonly checkedVersions: number;\n    readonly outcomes: readonly ReconcileOutcome[];\n    readonly reconstructed: readonly VersionId[];\n    readonly truncated: boolean;\n    readonly errors: readonly string[];\n    readonly cursor?: ReconcileCursor;\n}',
   },
   {
     name: 'ReconcileVersionKind',
-    declaration: 'export type ReconcileVersionKind = \'consistent\' | \'orphan\' | \'content-conflict\' | \'metadata-diverged\';',
+    declaration: 'export type ReconcileVersionKind = \'consistent\' | \'unverified\' | \'orphan\' | \'content-conflict\' | \'metadata-diverged\';',
+  },
+  {
+    name: 'ReconcileWorkItem',
+    declaration: 'export type ReconcileWorkItem = {\n    readonly kind: \'version\';\n    readonly versionId: VersionId;\n} | {\n    readonly kind: \'dangling\';\n    readonly versionId: VersionId;\n};',
   },
   {
     name: 'ReconciliationSummary',

@@ -186,7 +186,13 @@ describe('web e2e: project Science file library', () => {
     })
     await writeFile(`${scaffold.workspaceCwd}/other.csv`, 'label,score\nsecond-file,73\n')
     await page.reload({ waitUntil: 'load' })
-    await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+    // The Details column's open/selected-entry state persists across reload
+    // (dsh.conversation.chat), and `beforeAll` already opened the Science
+    // library once for this session — so it reopens showing the library on
+    // its own. Clicking the sidebar "Artifacts" destination again here would
+    // hit its toggle-closed branch instead (it closes the column when the
+    // library is already the selected entry), collapsing it before the next
+    // assertion ever runs.
     const details = page.locator('[class*="detailsCol"]')
     await details.getByRole('button', { name: 'Open Shared chart, version 1', exact: true }).click()
     await details.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()

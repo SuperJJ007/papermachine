@@ -26,7 +26,7 @@ describe('applicationMenuTemplate', () => {
     const items = application?.submenu as readonly MenuItemConstructorOptions[]
 
     expect(items.slice(0, 2).map(item => item.label)).toEqual(['Restart Host', 'Change Environment…'])
-    items[0]?.click?.({} as never, {} as never, {} as never)
+    items[0]?.click?.({} as never, {} as never, {})
     expect(restartHost).toHaveBeenCalledOnce()
   })
 

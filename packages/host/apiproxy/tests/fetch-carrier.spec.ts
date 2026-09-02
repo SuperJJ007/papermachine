@@ -135,6 +135,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           },
         }
       },
+      async scienceChartState(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { chart: null } } }
+      },
       async workspaceFiles(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { root: '', entries: [] } } }
       },
@@ -330,6 +333,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     },
     downloads: {
       async sessionLog() {
+        return new Response('stub', { status: 404 })
+      },
+      async scienceArtifact() {
         return new Response('stub', { status: 404 })
       },
     },

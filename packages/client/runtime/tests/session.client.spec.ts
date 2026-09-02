@@ -598,8 +598,8 @@ describe('prompt and cancel errors', () => {
     const { api, session } = makeSession()
     api.onScienceVersions = () => Promise.resolve(ok({
       versions: [{
-        versionId: 'version-2', artifactId: 'artifact-a', logicalName: 'chart.png', ordinal: 2,
-        title: 'Chart', contentOrigin: 'run-auto', createdAt: 10, mediaType: 'image/png', byteCount: 5,
+        versionId: 'version-2' as never, artifactId: 'artifact-a' as never, logicalName: 'chart.png', ordinal: 2,
+        title: 'Chart', contentOrigin: 'run-auto' as const, createdAt: 10, mediaType: 'image/png', byteCount: 5,
       }],
     }))
     const result = await session.readScienceVersions(['version-1', 'version-2'] as never[])
@@ -632,8 +632,8 @@ describe('prompt and cancel errors', () => {
   it('reads one fold-authorized PNG version\'s chart state and keeps the version id on the wire', async () => {
     const { api, session } = makeSession()
     const chart = {
-      runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
-      elements: [], ops: [], hitmap: [], hitmapStatus: 'unavailable',
+      runtime: 'matplotlib' as const, figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+      elements: [], ops: [], hitmap: [], hitmapStatus: 'unavailable' as const,
     }
     api.onScienceChartState = () => Promise.resolve(ok({ chart }))
     const result = await session.readScienceChartState('version-1' as never)

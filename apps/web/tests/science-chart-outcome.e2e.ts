@@ -230,7 +230,6 @@ function scienceFixture(
   const appendCapturedChart = (
     version: number,
     content: ChartContent,
-    sourceRunId: ReturnType<typeof ScienceRunId>,
     sourceCallId: ReturnType<typeof CallId>,
     sourceCallSeq: number,
     resultText: string,
@@ -241,23 +240,13 @@ function scienceFixture(
       version: 1,
       artifact: {
         artifactId: CHART_ID,
-        producerSessionId: session.id,
         logicalName: 'observed-series',
         version,
         title,
-        origin: 'auto',
         projectId: PROJECT_ID,
         versionId: content.versionId,
         sha256: content.sha256,
-        mediaType: content.mediaType,
-        byteCount: content.byteCount,
-        chart: CHART,
-        runId: sourceRunId,
-        toolCallId: sourceCallId,
-        requestHeaderSeq: request.seq,
-        environmentRevision: 1,
-        environmentFingerprint: FINGERPRINT,
-        createdAt: eventTime(sourceCallSeq + 3),
+        seenAt: eventTime(sourceCallSeq + 3),
       },
     })
     appendToolResult(session, sourceCallId, sourceCallSeq, resultText, artifactPresentation(version, content, title), turn)
@@ -267,36 +256,25 @@ function scienceFixture(
     version: number,
     callId: ReturnType<typeof CallId>,
     content: ChartContent,
-    sourceRunId: ReturnType<typeof ScienceRunId>,
     turn: number,
   ): void => {
     const call = session.append('tool/call', {
       turn, step: 1, callId, name: 'annotate_artifact', arguments: '{}',
     })
-    const createdAt = eventTime(call.seq + 1)
+    const seenAt = eventTime(call.seq + 1)
     const title = version === 1 ? 'Observed series' : 'Missing revision'
     session.append('science/artifact-saved', {
       version: 1,
       artifact: {
         artifactId: CHART_ID,
-        producerSessionId: session.id,
         logicalName: 'observed-series',
         version,
         title,
         caption: version === 1 ? 'Durable browser fixture' : 'Missing object fixture',
-        origin: 'model',
         projectId: PROJECT_ID,
         versionId: content.versionId,
         sha256: content.sha256,
-        mediaType: content.mediaType,
-        byteCount: content.byteCount,
-        chart: CHART,
-        runId: sourceRunId,
-        toolCallId: callId,
-        requestHeaderSeq: request.seq,
-        environmentRevision: 1,
-        environmentFingerprint: FINGERPRINT,
-        createdAt,
+        seenAt,
       },
     })
     appendToolResult(session, callId, call.seq, `artifact "observed-series" v${String(version)} curated`, artifactPresentation(version, content, title), turn)
@@ -336,8 +314,8 @@ function scienceFixture(
     }, turn)
   }
 
-  appendCapturedChart(1, stored, RUN_ID, RUN_CALL_ID, runCall.seq, 'run complete', 1)
-  appendChart(1, FIRST_CHART_CALL_ID, stored, RUN_ID, 1)
+  appendCapturedChart(1, stored, RUN_CALL_ID, runCall.seq, 'run complete', 1)
+  appendChart(1, FIRST_CHART_CALL_ID, stored, 1)
   appendOutcome(1, FIRST_OUTCOME_CALL_ID, 1, 1)
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -391,8 +369,8 @@ function scienceFixture(
       stderrTruncated: false,
     },
   })
-  appendCapturedChart(2, missing, SECOND_RUN_ID, SECOND_RUN_CALL_ID, secondRunCall.seq, 'revised run complete', 2)
-  appendChart(2, SECOND_CHART_CALL_ID, missing, SECOND_RUN_ID, 2)
+  appendCapturedChart(2, missing, SECOND_RUN_CALL_ID, secondRunCall.seq, 'revised run complete', 2)
+  appendChart(2, SECOND_CHART_CALL_ID, missing, 2)
   appendOutcome(2, SECOND_OUTCOME_CALL_ID, 2, 2)
   const cancelledRunCall = session.append('tool/call', {
     turn: 2, step: 1, callId: CANCELLED_RUN_CALL_ID, name: 'run_python', arguments: '{}',
@@ -457,12 +435,19 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const store = scaffold.ctx.scienceArtifactStore
     const project = await store.openProject(scaffold.workspaceCwd)
     const first = await store.createArtifact(project.projectId, {
-      logicalName: 'observed-series', originSessionId: SessionId(SEED_ID), data: PNG,
-      mediaType: 'image/png', origin: 'auto', title: 'Observed series', caption: 'Durable browser fixture',
+      logicalName: 'observed-series', kind: 'figure', originSessionId: SessionId(SEED_ID), data: PNG,
+      mediaType: 'image/png', contentOrigin: 'run-auto',
+      figureState: { figureKey: CHART.figureKey, dpi: CHART.png.dpi, stateJson: JSON.stringify(CHART) },
+    })
+    await store.annotateVersion(project.projectId, first.version.versionId, {
+      actor: 'model', sessionId: SessionId(SEED_ID), title: 'Observed series', caption: 'Durable browser fixture',
     })
     const second = await store.appendVersion(project.projectId, first.artifact.artifactId, {
       producerSessionId: SessionId(SEED_ID), data: Uint8Array.from([...PNG, 0]),
-      mediaType: 'image/png', origin: 'model', title: 'Missing revision', caption: 'Missing object fixture',
+      mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    await store.annotateVersion(project.projectId, second.versionId, {
+      actor: 'model', sessionId: SessionId(SEED_ID), title: 'Missing revision', caption: 'Missing object fixture',
     })
     // Keep its durable index row but remove only this test-owned blob to exercise load failure.
     await unlink(join(project.storeRoot, 'blobs', 'sha256', second.sha256.slice(0, 2), second.sha256))

@@ -85,12 +85,8 @@ function projectionWithChart(): ScienceClientProjection {
     runs: [],
     kernels: [],
     artifacts: [{
-      artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve', origin: 'model',
-      producerSessionId: 'session-1' as never,
-      versionId: 'version-abc' as never, sha256: 'abc', mediaType: 'image/png', byteCount: 100,
-      runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 4, turn: 1,
-      environmentRevision: 1,
-      environmentFingerprintPreview: 'f'.repeat(12), createdAt: 500,
+      artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 1, title: 'Loss curve',
+      versionId: 'version-abc' as never, sha256: 'abc', seenAt: 500,
     }],
     outcome: null,
     metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 1, kernelCount: 0 },
@@ -400,7 +396,7 @@ describe('Science Outcome cell', () => {
   it('renders a file-type tile (not the missing-visual report) when the cited artifact is not an image', async () => {
     const projection = projectionWithChart()
     const source = projection.artifacts[0]
-    if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
+    if (source === undefined) throw new Error('expected run-produced chart fixture')
     const textArtifact = {
       ...source, versionId: 'version-def' as never, sha256: 'def', mediaType: 'text/csv' as const, byteCount: 40,
     }
@@ -503,7 +499,7 @@ describe('Science Outcome cell', () => {
   it('loads a chart thumbnail from the exact immutable version reference', async () => {
     const projection = projectionWithChart()
     const source = projection.artifacts[0]
-    if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
+    if (source === undefined) throw new Error('expected run-produced chart fixture')
     const load = vi.fn().mockResolvedValue('blob:fake-url')
     const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
       versionId: 'version-abc', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',

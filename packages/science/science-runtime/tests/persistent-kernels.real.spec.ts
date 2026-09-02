@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
-import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import { decodeScienceChartState, ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -22,6 +23,12 @@ const enabled = process.env.DSH_SCIENCE_RUNTIME_TEST_OWNED === '1' && pythonPref
 const roots: string[] = []
 const contexts: Context[] = []
 const prefixManifests = new Map<string, Awaited<ReturnType<typeof capturePrefixManifest>>>()
+
+/** Read one version's decoded live-figure-object state from the store, or `undefined` when it carries none. */
+async function chartOf(ctx: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState | undefined> {
+  const state = await ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  return state === undefined ? undefined : decodeScienceChartState(JSON.parse(state.stateJson))
+}
 
 beforeAll(async () => {
   if (!enabled) return
@@ -140,7 +147,7 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
         ? "import builtins, os\nfrom pathlib import Path\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nloss_value = 1\nstate = globals().get('state', {'values': []})\nstate['values'].append(1)\nbuiltins.science_probe = 1\nos.environ['SCIENCE_PROBE'] = '1'\nPath(os.environ['SCIENCE_STATE_DIR'], 'value.txt').write_text('1')\n"
         : "library(ggplot2)\nloss_value <- 1\nif (!exists('state', inherits=FALSE)) state <- new.env()\nstate$value <- 1\noptions(science.probe=1)\nSys.setenv(SCIENCE_PROBE='1')\nwriteLines('1', file.path(Sys.getenv('SCIENCE_STATE_DIR'), 'value.txt'))\n") + plot, ['first.png'])
       const artifact = replayScience(session.events)!.artifacts.find(value => value.logicalName === 'first.png')!
-      expect(artifact.chart).toBeDefined()
+      expect(await chartOf(ctx, artifact)).toBeDefined()
       await run((language === 'python'
         ? "loss_value = 99\nstate['values'][:] = [99]\nbuiltins.science_probe = 99\nos.environ['SCIENCE_PROBE'] = '99'\nPath(os.environ['SCIENCE_STATE_DIR'], 'value.txt').write_text('99')\n"
         : "loss_value <- 99\nstate$value <- 99\noptions(science.probe=99)\nSys.setenv(SCIENCE_PROBE='99')\nwriteLines('99', file.path(Sys.getenv('SCIENCE_STATE_DIR'), 'value.txt'))\n") + plot.replaceAll('first.png', 'second.png'), ['second.png'])

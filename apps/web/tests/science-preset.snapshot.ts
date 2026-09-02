@@ -292,7 +292,8 @@ describe('science agent preset', () => {
     const artifactEvent = r5Events.find(event => event.type === 'science/artifact-saved')
     if (artifactEvent?.type !== 'science/artifact-saved') throw new Error('R5 snapshot artifact event is missing')
     const savedArtifact = artifactEvent.data.artifact
-    if (savedArtifact.mediaType !== 'image/png') throw new Error('R5 snapshot artifact is not a PNG')
+    const savedVersion = await scaffold.ctx.scienceArtifactStore.getVersion(savedArtifact.projectId, savedArtifact.versionId)
+    if (savedVersion?.mediaType !== 'image/png') throw new Error('R5 snapshot artifact is not a PNG')
     const stored = await scaffold.ctx.scienceArtifactStore.readBlob(savedArtifact.projectId, savedArtifact.sha256)
     expect(Buffer.from(stored)).toEqual(Buffer.from(PNG))
 

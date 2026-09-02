@@ -326,7 +326,7 @@ describe('sessions domain schemas', () => {
           contentOrigin: 'human-edit', createdAt: 2, mediaType: 'text/csv', byteCount: 5,
         },
       ],
-    }).versions
+    }).versions!
     expect(versions[0]).toMatchObject({ title: 'Chart', health: { reconstructed: true } })
     expect(versions[1]).toMatchObject({ contentOrigin: 'human-edit' })
     expect(versions[1]?.title).toBeUndefined()

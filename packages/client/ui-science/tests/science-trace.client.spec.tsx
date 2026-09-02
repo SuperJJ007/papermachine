@@ -290,7 +290,7 @@ describe('Science process model', () => {
     const noNodes = build([], { artifacts: [artifact] }, turnTimes)
     expect(noNodes.groups).toMatchObject([{ turn: 1, artifacts: [{ logicalName: 'chart.png', version: 1 }] }])
     expect(noNodes).toMatchObject({ unassigned: { artifacts: [] } })
-    const laterArtifact = { ...artifact, versionId: 'version-later', createdAt: 15_000 }
+    const laterArtifact = { ...artifact, versionId: 'version-later' as never, createdAt: 15_000 }
     const later = build([], { artifacts: [laterArtifact] }, turnTimes)
     expect(later.groups).toMatchObject([{ turn: 2, artifacts: [{ version: 1 }] }])
   })
@@ -589,7 +589,7 @@ describe('Science process presentation', () => {
     const environment = { ...fixture().science.environment!, python: undefined, r: { language: 'r' } } as unknown as ScienceClientProjection['environment']
     const science = projection({ environment, kernels: [{ kernelEpoch: 2, language: 'r', state: 'interrupted',
       startedAt: 0, finishedAt: 10, interruptedAtSeq: 5, environmentRevision: 1, environmentFingerprintPreview: 'abc' }] })
-    expect(buildScienceTraceModel([], science, new Map()).environment?.languages).toEqual(['R'])
+    expect(buildScienceTraceModel([], science, new Map(), new Map()).environment?.languages).toEqual(['R'])
     mount([], science)
     expect(screen.getByText('R kernel #2 started · environment science')).toBeTruthy()
     expect(screen.getByText('R kernel #2 interrupted · variables cleared')).toBeTruthy()

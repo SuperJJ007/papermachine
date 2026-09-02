@@ -1045,7 +1045,10 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         const filename = `r-${caseName}.png`
         const result = await runChartSource(ggplotChartSource(caseName), [filename])
         const artifact = result.capture?.captured.find(candidate => candidate.logicalName === filename)
-        if (artifact === undefined || artifact.chart !== undefined
+        const figureState = artifact === undefined
+          ? undefined
+          : await context.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+        if (artifact === undefined || figureState !== undefined
           || !result.capture?.chartUnavailablePaths.includes(filename)) {
           throw new Error(`${caseName} R graphics unexpectedly became addressable`)
         }

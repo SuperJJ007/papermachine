@@ -157,7 +157,11 @@ async function bench() {
       // in ui-science's registration), so ProjectLibrary's loadLibrary effect
       // fires on first mount, before any transcript-row click.
       readScienceLibrary: vi.fn<ISession['readScienceLibrary']>(async () => ({
-        ok: true, value: { projectId: 'project-1' as never, artifacts: [] },
+        ok: true,
+        value: {
+          projectId: 'project-1' as never, artifacts: [],
+          health: { orphan: 0, reconstructed: 0, missingContent: 0 },
+        },
       })),
       // D9: the detail panel's own current-facts read (title/caption/
       // content origin/media type/byte count), independent of the session

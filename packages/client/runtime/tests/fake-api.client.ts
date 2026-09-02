@@ -7,6 +7,7 @@ import type {
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { ScienceChartState, ScienceVersionSummary } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 
 /** Programmable-default workspace row (branded id, ISO-ish times). */
@@ -105,9 +106,9 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'text/plain', bytes: 1 }, data: 'a' }))
   onScienceArtifact: (payload: unknown) => Promise<RpcResponse<{ versionId: never; mediaType: string; byteCount: number; data: string }>> =
     () => Promise.resolve(ok({ versionId: 'version-a' as never, mediaType: 'image/png', byteCount: 1, data: 'AA==' }))
-  onScienceVersions: (payload: unknown) => Promise<RpcResponse<{ versions: never[] }>> =
+  onScienceVersions: (payload: unknown) => Promise<RpcResponse<{ versions: ScienceVersionSummary[] }>> =
     () => Promise.resolve(ok({ versions: [] }))
-  onScienceChartState: (payload: unknown) => Promise<RpcResponse<{ chart: null }>> =
+  onScienceChartState: (payload: unknown) => Promise<RpcResponse<{ chart: ScienceChartState | null }>> =
     () => Promise.resolve(ok({ chart: null }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))

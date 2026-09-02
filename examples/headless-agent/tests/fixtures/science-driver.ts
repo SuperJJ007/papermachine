@@ -7,7 +7,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { foldScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import {
+  decodeScienceChartState, foldScience, ScienceEnvironmentProfileId,
+  type ScienceProjectId, type ScienceVersionId,
+} from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-tool-science'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 
@@ -66,7 +69,14 @@ try {
   if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
   const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'plot.png')
   if (chart === undefined) throw new Error(`${NAME}: first turn produced no plot.png artifact`)
-  if (chart.chart === undefined || chart.chart.ops.length !== 0) {
+  const readChartState = async (
+    projectId: ScienceProjectId, versionId: ScienceVersionId,
+  ) => {
+    const figureState = await ctx!.scienceArtifactStore.getFigureState(projectId, versionId)
+    return figureState === undefined ? undefined : decodeScienceChartState(JSON.parse(figureState.stateJson))
+  }
+  const chartState = await readChartState(chart.projectId, chart.versionId)
+  if (chartState === undefined || chartState.ops.length !== 0) {
     throw new Error(`${NAME}: first-turn plot.png did not preserve its initial chart state`)
   }
   const directReceipt = await ctx.scienceEdits.applyChartOps(agent, {
@@ -81,7 +91,10 @@ try {
   }, new AbortController().signal)
   const directChart = foldScience(agent.session.events).artifacts.find(artifact =>
     artifact.artifactId === directReceipt.artifactId && artifact.version === directReceipt.version)
-  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 4) {
+  if (directChart === undefined) throw new Error(`${NAME}: direct chart edit committed no artifact`)
+  const directVersion = await ctx.scienceArtifactStore.getVersion(directChart.projectId, directChart.versionId)
+  const directChartState = await readChartState(directChart.projectId, directChart.versionId)
+  if (directVersion?.contentOrigin !== 'human-edit' || directChartState?.ops.length !== 4) {
     throw new Error(`${NAME}: direct chart edit did not preserve its four cumulative operations`)
   }
   const directEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'

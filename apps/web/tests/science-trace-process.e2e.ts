@@ -47,11 +47,9 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
     source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('session/title', { title: historyTail ? 'Science process history' : 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
   const artifact = {
-    artifactId: stored.artifact.artifactId, producerSessionId: session.id, logicalName: 'scatter_plot.png', version: 1,
-    title: 'Scatter plot', origin: 'auto' as const, projectId, versionId: stored.version.versionId,
-    sha256: stored.version.sha256, mediaType: 'image/png' as const, byteCount: stored.version.byteCount,
-    runId: ScienceRunId('process-run-2'), toolCallId: CallId('process-call-2'), requestHeaderSeq: 0,
-    environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt: 0,
+    artifactId: stored.artifact.artifactId, logicalName: 'scatter_plot.png', version: 1,
+    title: 'Scatter plot', projectId, versionId: stored.version.versionId,
+    sha256: stored.version.sha256, seenAt: 0,
   }
   const calls = [
     ['get_science_state', {}],
@@ -90,11 +88,11 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
         finishedAt: eventTime(call.seq + 2), stdoutBytes: Buffer.byteLength(stdout), stderrBytes: Buffer.byteLength(stderr),
         stdoutTruncated: false, stderrTruncated: false } })
       if (index === 5) session.append('science/artifact-saved', { version: 1, artifact: {
-        ...artifact, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 3),
+        ...artifact, seenAt: eventTime(call.seq + 3),
       } })
     }
     if (name === 'annotate_artifact') session.append('science/artifact-saved', { version: 1, artifact: {
-      ...artifact, origin: 'model', toolCallId: callId, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 1),
+      ...artifact, seenAt: eventTime(call.seq + 1),
     } })
     const output = name === 'run_python' || name === 'run_r'
       ? `status: ${index === 1 ? 'failed' : 'success'}\n--- stdout ---\n${stdout || '(empty)'}\n--- stderr ---\n${stderr || '(empty)'}`
@@ -165,13 +163,15 @@ describe('web e2e: Science process view', () => {
     scaffold = await launchWebScaffold({})
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
     const stored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto', originSessionId: SessionId(SEED_ID),
+      logicalName: 'scatter_plot.png', kind: 'figure', data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', originSessionId: SessionId(SEED_ID),
     })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, stored.version.versionId, { actor: 'capture', title: 'Scatter plot' })
     await seedSession(scaffold, processFixture(projectId, stored), SEED_ID, 'science')
     const historyStored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto',
+      logicalName: 'scatter_plot.png', kind: 'figure', data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto',
       originSessionId: SessionId(`${SEED_ID}-history`),
     })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, historyStored.version.versionId, { actor: 'capture', title: 'Scatter plot' })
     await seedSession(scaffold, processFixture(projectId, historyStored, true), `${SEED_ID}-history`, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 960)

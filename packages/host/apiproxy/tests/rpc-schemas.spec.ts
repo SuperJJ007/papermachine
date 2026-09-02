@@ -319,15 +319,23 @@ describe('sessions domain schemas', () => {
         {
           versionId: 'v1', artifactId: 'a1', logicalName: 'chart.png', ordinal: 1,
           title: 'Chart', caption: 'A caption', contentOrigin: 'run-auto', createdAt: 1,
-          mediaType: 'image/png', byteCount: 10, health: { reconstructed: true },
+          mediaType: 'image/png', byteCount: 10,
+          producer: {
+            sessionId: 's1', sessionTitle: 'Analysis', runId: 'run-1', toolCallId: 'call-1',
+            requestHeaderSeq: 4, turn: 2,
+          },
+          health: { reconstructed: true },
         },
         {
           versionId: 'v2', artifactId: 'a2', logicalName: 'table.csv', ordinal: 2,
           contentOrigin: 'human-edit', createdAt: 2, mediaType: 'text/csv', byteCount: 5,
+          producer: { sessionId: 's1' },
         },
       ],
     }).versions!
-    expect(versions[0]).toMatchObject({ title: 'Chart', health: { reconstructed: true } })
+    expect(versions[0]).toMatchObject({
+      title: 'Chart', producer: { sessionTitle: 'Analysis', toolCallId: 'call-1' }, health: { reconstructed: true },
+    })
     expect(versions[1]).toMatchObject({ contentOrigin: 'human-edit' })
     expect(versions[1]?.title).toBeUndefined()
     expect(() => sessionsScienceVersionsValueSchema.parse({

@@ -71,6 +71,7 @@ function scriptedApi(overrides: {
         versions: r.payload.versionIds.map(versionId => ({
           versionId, artifactId: 'artifact-1' as never, logicalName: 'chart.png', ordinal: 1,
           contentOrigin: 'run-auto' as const, createdAt: 1, mediaType: 'image/png', byteCount: 1,
+          producer: { sessionId: r.payload.sessionId },
         })),
       }),
       scienceChartState: r => ok(r, { chart: null }),

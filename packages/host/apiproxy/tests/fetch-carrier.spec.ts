@@ -130,6 +130,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
                 versionId, artifactId: 'artifact-1' as never, logicalName: 'chart.png', ordinal: 1,
                 title: 'Chart', caption: 'Caption', contentOrigin: 'run-auto' as const, createdAt: 1,
                 mediaType: 'image/png', byteCount: 1,
+                producer: { sessionId: 's' as never },
               })),
             },
           },

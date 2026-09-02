@@ -371,6 +371,7 @@ describe('Science Outcome cell', () => {
     const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
       versionId: 'version-abc', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
       contentOrigin: 'run-auto', createdAt: 500, mediaType: 'image/png', byteCount: 100,
+      producer: { sessionId: 'session-1' },
     }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
@@ -405,6 +406,7 @@ describe('Science Outcome cell', () => {
     const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
       versionId: 'version-def', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
       contentOrigin: 'run-auto', createdAt: 500, mediaType: 'text/csv', byteCount: 40,
+      producer: { sessionId: 'session-1' },
     }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
@@ -506,6 +508,7 @@ describe('Science Outcome cell', () => {
     const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
       versionId: 'version-abc', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
       contentOrigin: 'run-auto', createdAt: 500, mediaType: 'image/png', byteCount: 100,
+      producer: { sessionId: 'session-1' },
     }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',

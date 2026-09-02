@@ -86,6 +86,20 @@ export interface ScienceVersionHealthFlags {
  */
 export type ScienceContentOrigin = 'run-auto' | 'human-edit' | 'import'
 
+/**
+ * Store-owned producer identity for one Science artifact version. Optional
+ * call fields distinguish run capture from direct human or import commits;
+ * `sessionTitle` is best-effort display text and does not affect identity.
+ */
+export interface ScienceVersionProducer {
+  sessionId: SessionId
+  sessionTitle?: string
+  runId?: string
+  toolCallId?: string
+  requestHeaderSeq?: number
+  turn?: number
+}
+
 /** Latest project artifact metadata shown by the project file library. */
 export interface ScienceLibraryArtifact {
   artifactId: ArtifactId
@@ -138,6 +152,7 @@ export interface ScienceVersionSummary {
   createdAt: number
   mediaType: string
   byteCount: number
+  producer: ScienceVersionProducer
   health?: ScienceVersionHealthFlags
 }
 

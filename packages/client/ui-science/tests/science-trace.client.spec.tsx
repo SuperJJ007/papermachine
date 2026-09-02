@@ -31,6 +31,7 @@ function summariesFor(artifacts: readonly Record<string, unknown>[]): ScienceVer
       versionId, artifactId: artifact.artifactId, logicalName: artifact.logicalName, ordinal: artifact.version,
       title: artifact.title, contentOrigin: artifact.origin === 'human-edit' ? 'human-edit' : 'run-auto',
       createdAt: artifact.createdAt, mediaType: 'image/png', byteCount: 0,
+      producer: { sessionId: 'session-1' },
     })
   }
   return map

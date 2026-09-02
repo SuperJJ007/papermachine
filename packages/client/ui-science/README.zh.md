@@ -64,7 +64,7 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 选择状态存储
 
-artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在成果库主页处为 null；`libraryPage` 记住该主页显示成果还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 是共享 viewer 字段：激活文档总是回到 content。`provenanceSubTab` 仍声明在 store 的持久化状态里以保持形状稳定，但当前没有任何组件读写它——溯源下钻已经没有子标签页了(见[溯源下钻](#provenance-drill-in))。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括已打开的标签页、成果库页与折叠分组，因此刷新浏览器后仍会恢复；`view` 与 `lightboxOpen` 被声明为瞬态字段（`defineStore` 的 `transient` 列表），始终来自 `init()`——标签页关闭时仍处于打开状态的灯箱或溯源下钻，不得在下次加载时重新盖在内容之上。
+artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在成果库主页处为 null；`libraryPage` 记住该主页显示成果还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 是共享 viewer 字段：激活文档总是回到 content。`provenanceSubTab` 选择并持久化溯源下钻的「代码」「执行日志」「消息」或「环境」页面。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括已打开的标签页、成果库页、溯源页与折叠分组，因此刷新浏览器后仍会恢复；`view` 与 `lightboxOpen` 被声明为瞬态字段（`defineStore` 的 `transient` 列表），始终来自 `init()`——标签页关闭时仍处于打开状态的灯箱或溯源下钻，不得在下次加载时重新盖在内容之上。
 
 产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；网格卡片是一张有边框的整体——上半是通栏 1:1 缩略图（图片裁到左上角，非图片则居中显示文件类型磁贴），下半是脚注，显示标题与 `vN · 相对时间`，不再显示媒体类型文字。列表布局仍是 76px 缩略行，脚注文案与网格一致。`ProjectLibrary` 每次渲染只取一次 `Date.now()`，组头与每张卡片的脚注共用同一个值。
 
@@ -102,9 +102,9 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 ## 溯源下钻 <a id="provenance-drill-in"></a>
 
-从 artifact viewer 的工具栏进入（不是一个独立的 `conversation.view` 标签页，也不是一个按键分派的 `conversation.details.header.actions` 条目）：一条面包屑（`<图表标题> › 溯源`），其根节点点击后返回内容视图，下方是活跃标签页所解析版本当前的内容来源（`run-auto`/`human-edit`/`import`，本地化）与生成时间。
+从 artifact viewer 的工具栏进入（不是一个独立的 `conversation.view` 标签页，也不是一个按键分派的 `conversation.details.header.actions` 条目）：一条面包屑（`<图表标题> › 溯源`），其根节点点击后返回内容视图，下方有四个可记忆选择的子标签页。「代码」显示确切生产运行的源码；「执行日志」显示该运行的 stdout/stderr；「消息」只显示生产调用的 Question 与 Result 两行，并提供检查确切工具调用和返回其对话位置的动作；「环境」显示该运行当前可用的环境绑定。缺少事实时，受影响的页面会明确显示不可用状态。
 
-此前的代码/执行日志/消息/环境这四个子标签页——它们分别解析出确切生产运行的源代码、stdout/stderr、生成轮次与环境绑定——已经没有了：T1/T2 产物权威性迁移从客户端安全的产物投影里移走了 `runId`/`toolCallId`/`producerSessionId`，没有任何读路径能替代这四个子标签页需要的那次精确运行查找。`ScienceArtifactProvenance.tsx` 总是针对一个已经解析好的版本渲染，它自己不带"不可用"分支（artifact viewer 在到达这个组件之前，就已经渲染过不可用/加载中状态）。
+版本的 `sessions.scienceVersions` 摘要携带 store 持有的生产者 `sessionId` 以及可选的确切 run/call/request 坐标。生产者属于当前 Session 时，viewer 把这些 id 连接到已经加载的 `science.runs` 与对话工具调用投影；它从不根据相邻 turn 或 step 猜测。生产者属于另一个 Session 时，四个页面都显示来源 Session 标题或 id，并且不尝试连接本地 run/call。通过 library 打开的 artifact 标签也会先请求同一份已获授权的版本摘要再渲染溯源，因此即使不在生产者的实时投影中，四页下钻仍保持一致，同时不会拓宽项目库鉴权。
 
 ## 工作台外壳
 

@@ -14,7 +14,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ScienceDetailsView } from '../src/client/ScienceDetailsView.tsx'
 import { zh } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
-import { baseProjection, libraryArtifact, props, SESSION, statusText } from './science-details-view-fixtures.client.ts'
+import { baseProjection, libraryArtifact, props, SESSION, statusText, versionSummary } from './science-details-view-fixtures.client.ts'
 
 afterEach(() => {
   cleanup()
@@ -144,7 +144,15 @@ describe('ScienceDetailsView: landing gallery', () => {
       ? { root: '', entries: [{ name: 'data', kind: 'dir', modifiedAt: 1 }, { name: 'root.bin', kind: 'file', byteCount: 2_048, modifiedAt: 1 }] }
       : { root: path, entries: [{ name: 'leaf.bin', kind: 'file', byteCount: 1, modifiedAt: 1 }] } }))
     const store = testScienceSelectionStore()
-    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary, loadWorkspaceFiles, store })} />)
+    render(<ScienceDetailsView {...props(baseProjection(), {
+      loadLibrary,
+      loadWorkspaceFiles,
+      store,
+      summaries: [versionSummary({
+        versionId: 'z1', artifactId: 'z',
+        producer: { sessionId: 'unknown-session' },
+      })],
+    })} />)
     expect(await screen.findAllByText(/^v1 · /)).toHaveLength(4)
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'oldest' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
@@ -158,7 +166,7 @@ describe('ScienceDetailsView: landing gallery', () => {
     fireEvent.keyDown(z, { key: ' ' })
     expect(screen.queryByText('z.png')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
-    expect(screen.getByText('unknown-session')).toBeTruthy()
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('unknown-session') })
     fireEvent.click(screen.getByRole('button', { name: 'z.png' }))
     fireEvent.click(screen.getByRole('button', { name: 'Artifact library' }))
     act(() => { store.actions.setLibraryPage('files') })

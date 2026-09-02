@@ -600,6 +600,7 @@ describe('prompt and cancel errors', () => {
       versions: [{
         versionId: 'version-2' as never, artifactId: 'artifact-a' as never, logicalName: 'chart.png', ordinal: 2,
         title: 'Chart', contentOrigin: 'run-auto' as const, createdAt: 10, mediaType: 'image/png', byteCount: 5,
+        producer: { sessionId: SID },
       }],
     }))
     const result = await session.readScienceVersions(['version-1', 'version-2'] as never[])
@@ -609,6 +610,7 @@ describe('prompt and cancel errors', () => {
         versions: [{
           versionId: 'version-2', artifactId: 'artifact-a', logicalName: 'chart.png', ordinal: 2,
           title: 'Chart', contentOrigin: 'run-auto', createdAt: 10, mediaType: 'image/png', byteCount: 5,
+          producer: { sessionId: SID },
         }],
       },
     })

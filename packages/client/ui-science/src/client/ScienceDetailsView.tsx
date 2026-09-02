@@ -31,7 +31,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { scienceArtifactUrl } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ISession, SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, ISession, SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { RpcError, RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
@@ -40,7 +40,7 @@ import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ScienceArtifactId, ScienceArtifactMediaType, ScienceArtifactNote, ScienceArtifactNotesProjection,
-  ScienceChartOp, ScienceClientArtifactVersion, ScienceClientProjection,
+  ScienceChartOp, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun,
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
   ScienceArtifactNoteReceipt, ScienceChartEditReceipt, ScienceChartPreviewReceipt, ScienceEditSelection, ScienceEditTarget,
@@ -52,7 +52,7 @@ import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import type { ScienceLibraryArtifact, ScienceLibraryHealth } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
-import type { ScienceArtifactView, ScienceSelectionStore } from './selection-store.ts'
+import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import type { ScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
@@ -134,6 +134,35 @@ export type ScienceDetailsViewProps =
 /** Every durable version of one logical artifact, ascending — the version stepper's walk order. */
 function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly T[], artifactId: ScienceArtifactId): T[] {
   return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
+}
+
+/** Resolve store-owned producer identity against the current session projection. */
+function resolveProducingCall(
+  chart: ScienceRenderableVersion,
+  science: ScienceClientProjection,
+  currentSessionId: SessionId,
+): {
+  run: ScienceClientRun | undefined
+  producingCallId: string | undefined
+  sourceSessionTitle: string | undefined
+} {
+  const producer = chart.producer
+  if (producer === undefined) return { run: undefined, producingCallId: undefined, sourceSessionTitle: undefined }
+  if (producer.sessionId !== currentSessionId) {
+    return {
+      run: undefined,
+      producingCallId: undefined,
+      sourceSessionTitle: producer.sessionTitle ?? producer.sessionId,
+    }
+  }
+  const run = science.runs.find(candidate => producer.runId !== undefined
+    ? String(candidate.runId) === producer.runId
+    : producer.toolCallId !== undefined && String(candidate.toolCallId) === producer.toolCallId)
+  return {
+    run,
+    producingCallId: producer.toolCallId ?? run?.toolCallId,
+    sourceSessionTitle: undefined,
+  }
 }
 
 function workspaceFileName(path: string): string {
@@ -825,6 +854,7 @@ type ArtifactControls = Pick<ScienceDetailsViewProps,
   | 'loadImage' | 'loadText' | 'loadChartState' | 'addToConversation' | 'removeFromConversation'
   | 'composerSelections'
   | 'addArtifactNote' | 'removeArtifactNote' | 'saveArtifactAs' | 'applyChartOps' | 'previewChartOps'
+  | 'returnToConversation' | 'selectDetailed' | 'inspectCall'
   | 'actions' | 't'>
 
 /**
@@ -867,9 +897,10 @@ function createSaveAsHandler(
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  currentSessionId, rawArtifacts, chart, notes, view, loadImage, loadText, loadChartState,
+  currentSessionId, rawArtifacts, chart, notes, view, science, snapshot, provenanceSubTab, loadImage, loadText, loadChartState,
   addToConversation, removeFromConversation, composerSelections,
-  addArtifactNote, removeArtifactNote, saveArtifactAs, applyChartOps, previewChartOps, actions, t,
+  addArtifactNote, removeArtifactNote, saveArtifactAs, applyChartOps, previewChartOps,
+  returnToConversation, selectDetailed, inspectCall, actions, t,
 }: {
   currentSessionId: SessionId
   /** The session-log identity list, used only to derive the stepper's sibling version numbers. */
@@ -877,6 +908,10 @@ function ArtifactTab({
   chart: ScienceRenderableVersion
   notes: readonly ScienceArtifactNote[]
   view: ScienceArtifactView
+  /** The current session's Science projection — the provenance drill-in's run/call read path. */
+  science: ScienceClientProjection
+  snapshot: ConversationSnapshot
+  provenanceSubTab: ScienceProvenanceSubTab
 } & ArtifactControls) {
   const versions = versionsOf(rawArtifacts, chart.artifactId)
   const saveAs = createSaveAsHandler(saveArtifactAs, actions, t)
@@ -946,7 +981,24 @@ function ArtifactTab({
     : { ok: false as const, error: result.error.message }), [previewChartOps, chart.artifactId, chart.version])
 
   if (view === 'provenance') {
-    return <ScienceArtifactProvenance chart={chart} onBack={() => { actions.setView('content') }} t={t} />
+    const { run, producingCallId, sourceSessionTitle } = resolveProducingCall(chart, science, currentSessionId)
+    return (
+      <ScienceArtifactProvenance
+        chart={chart}
+        run={run}
+        producingCallId={producingCallId}
+        environment={science.environment}
+        snapshot={snapshot}
+        subTab={provenanceSubTab}
+        onSubTabChange={(subTab) => { actions.setProvenanceSubTab(subTab) }}
+        onBack={() => { actions.setView('content') }}
+        inspectCall={inspectCall}
+        selectDetailed={selectDetailed}
+        returnToConversation={returnToConversation}
+        {...sourceSessionTitle === undefined ? {} : { sourceSessionTitle }}
+        t={t}
+      />
+    )
   }
 
   return (
@@ -1003,12 +1055,13 @@ function ArtifactTab({
 }
 
 function ArtifactViewer({
-  science, notes, currentSessionId, loadVersions,
+  science, notes, currentSessionId, snapshot, loadVersions,
   loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, useStore, ...controls
 }: {
   science: ScienceClientProjection
   notes: ScienceArtifactNotesProjection
   currentSessionId: SessionId
+  snapshot: ConversationSnapshot
 } & ArtifactControls & Pick<ScienceDetailsViewProps, 'loadLibrary' | 'loadWorkspaceFiles' | 'loadWorkspaceFile' | 'loadVersions' | 'useStore'>) {
   const { loadImage, loadText, actions, t } = controls
   const openArtifacts = useStore(s => s.openArtifacts)
@@ -1017,13 +1070,9 @@ function ArtifactViewer({
   const libraryPage = useStore(s => s.libraryPage)
   const libraryCollapsed = useStore(s => s.libraryCollapsed)
   const view = useStore(s => s.view)
+  const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
   const libraryTabs = useStore(state => state.libraryTabs)
-  const libraryCharts = Object.values(libraryTabs).map(item => previewChart({
-    artifactId: item.artifactId, logicalName: item.logicalName, title: item.title ?? item.logicalName,
-    ...(item.caption === undefined ? {} : { caption: item.caption }), versionId: item.latest.versionId,
-    version: item.latest.ordinal, mediaType: item.latest.mediaType, byteCount: item.latest.byteCount, createdAt: item.latest.createdAt,
-  }))
 
   // `showLibrary` deliberately leaves open tabs intact while clearing the
   // active id; every non-null active id still names one open tab.
@@ -1033,15 +1082,39 @@ function ArtifactViewer({
   // library preview (matches the previous single-array `.find` order).
   const activeRawArtifact = artifacts.find(candidate =>
     candidate.artifactId === activeArtifactTab?.artifactId && candidate.version === activeArtifactTab.version)
-  const activeLibraryChart = activeRawArtifact === undefined ? libraryCharts.find(candidate =>
-    candidate.artifactId === activeArtifactTab?.artifactId && candidate.version === activeArtifactTab.version) : undefined
+  const activeLibraryItem = activeRawArtifact === undefined && activeArtifactTab !== undefined
+    ? libraryTabs[activeArtifactTab.artifactId]
+    : undefined
+  const activeLibraryChart = activeLibraryItem !== undefined
+    && activeLibraryItem.latest.ordinal === activeArtifactTab?.version
+    ? previewChart({
+      artifactId: activeLibraryItem.artifactId,
+      logicalName: activeLibraryItem.logicalName,
+      title: activeLibraryItem.title ?? activeLibraryItem.logicalName,
+      ...(activeLibraryItem.caption === undefined ? {} : { caption: activeLibraryItem.caption }),
+      versionId: activeLibraryItem.latest.versionId,
+      version: activeLibraryItem.latest.ordinal,
+      mediaType: activeLibraryItem.latest.mediaType,
+      byteCount: activeLibraryItem.latest.byteCount,
+      createdAt: activeLibraryItem.latest.createdAt,
+    })
+    : undefined
   // D9: current library facts for every version of the active live artifact,
   // batched once per artifact — a Hook, so it runs on every render
   // (including the two early-return branches below) with an empty request
   // while nothing is active.
-  const liveVersionIds = activeRawArtifact === undefined ? [] : versionsOf(artifacts, activeRawArtifact.artifactId).map(v => v.versionId)
-  const summaries = useScienceVersionSummaries(loadVersions, liveVersionIds)
+  const visibleVersionIds = activeRawArtifact === undefined
+    ? activeLibraryChart === undefined ? [] : [activeLibraryChart.versionId]
+    : versionsOf(artifacts, activeRawArtifact.artifactId).map(version => version.versionId)
+  const summaries = useScienceVersionSummaries(loadVersions, visibleVersionIds)
   const renderChart = activeRawArtifact === undefined ? undefined : toRenderableVersion(activeRawArtifact, summaries)
+  const activeLibrarySummary = activeLibraryChart === undefined ? undefined : summaries.get(activeLibraryChart.versionId)
+  const libraryProvenanceChart = activeLibraryChart === undefined || activeLibrarySummary === undefined
+    ? undefined
+    : { ...activeLibraryChart, producer: activeLibrarySummary.producer }
+  const libraryProvenance = libraryProvenanceChart === undefined
+    ? undefined
+    : resolveProducingCall(libraryProvenanceChart, science, currentSessionId)
   const saveAs = createSaveAsHandler(controls.saveArtifactAs, actions, t)
 
   if (activeTab === undefined) {
@@ -1078,23 +1151,25 @@ function ArtifactViewer({
         ? <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
         : activeLibraryChart !== undefined ? (
           view === 'provenance'
-            ? <div className={css.body}>
-              <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
-                <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
-                  {activeLibraryChart.title}
-                </button>
-                <span className={css.breadcrumbSep} aria-hidden="true">›</span>
-                <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
-              </nav>
-              <section className={css.editPanel}>
-                <strong>{t('provenance.messages.sourceSession')}</strong>
-                <span>{libraryTabs[activeLibraryChart.artifactId]?.originSessionTitle
-                  ?? libraryTabs[activeLibraryChart.artifactId]?.originSessionId}</span>
-                <button type="button" disabled title={t('library.sourceNavigationUnavailable')}>
-                  {t('provenance.messages.conversation')}
-                </button>
-              </section>
-            </div>
+            ? libraryProvenanceChart === undefined || libraryProvenance === undefined
+              ? <p className={css.notice} role="status">{t('artifact.loading')}</p>
+              : <ScienceArtifactProvenance
+                chart={libraryProvenanceChart}
+                run={libraryProvenance.run}
+                producingCallId={libraryProvenance.producingCallId}
+                environment={science.environment}
+                snapshot={snapshot}
+                subTab={provenanceSubTab}
+                onSubTabChange={actions.setProvenanceSubTab}
+                onBack={() => { actions.setView('content') }}
+                inspectCall={controls.inspectCall}
+                selectDetailed={controls.selectDetailed}
+                returnToConversation={controls.returnToConversation}
+                {...libraryProvenance.sourceSessionTitle === undefined
+                  ? {}
+                  : { sourceSessionTitle: libraryProvenance.sourceSessionTitle }}
+                t={t}
+              />
             : <><ArtifactToolbar chart={activeLibraryChart} versions={[activeLibraryChart]} onBack={() => { actions.showLibrary() }}
               /* v8 ignore next -- the library RPC supplies only the latest version, so both step controls are disabled */
               onStepVersion={() => {}} onOpenProvenance={() => { actions.setView('provenance') }}
@@ -1114,6 +1189,9 @@ function ArtifactViewer({
             chart={renderChart}
             notes={notes.filter(note => note.artifactId === renderChart.artifactId)}
             view={view}
+            science={science}
+            snapshot={snapshot}
+            provenanceSubTab={provenanceSubTab}
             {...controls}
           />
         )}
@@ -1156,13 +1234,19 @@ const EMPTY_SCIENCE_PROJECTION: ScienceClientProjection = {
  * @returns the current-state Science surface for this session.
  */
 export function ScienceDetailsView({
-  sessionId, useProjection, useStore, actions,
+  sessionId, useProjection, useStore, useSession, actions,
   ...controls
 }: ScienceDetailsViewProps) {
   const science = useProjection('science')
   const notes = useProjection('scienceArtifactNotes') ?? []
   const activeTabId = useStore(state => state.activeTabId)
   const libraryPage = useStore(state => state.libraryPage)
+  // The provenance drill-in's Messages sub-tab reads conversation nodes
+  // (the generating user/assistant text) and the internal Chat Node index
+  // (the producing call's arguments/result) — comparing just `nodes`/`chat`
+  // keeps the returned snapshot reference stable across unrelated streaming
+  // events (composer, queue, running-call byte updates) instead of on every one.
+  const snapshot = useSession(s => s, (a, b) => a.nodes === b.nodes && a.chat === b.chat)
   useEffect(() => controls.bindArtifactLibraryView(
     () => activeTabId === null && libraryPage === 'artifacts',
   ), [controls.bindArtifactLibraryView, activeTabId, libraryPage])
@@ -1176,7 +1260,7 @@ export function ScienceDetailsView({
   }
 
   return (
-    <ArtifactViewer
+    <ArtifactViewer snapshot={snapshot}
       science={science ?? EMPTY_SCIENCE_PROJECTION} notes={notes} currentSessionId={sessionId}
       useStore={useStore} actions={actions} {...controls}
     />

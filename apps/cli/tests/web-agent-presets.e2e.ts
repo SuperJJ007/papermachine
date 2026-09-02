@@ -591,7 +591,8 @@ describe('the science preset', () => {
       // `standard` roster assertion above excludes them.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
         'annotate_artifact', 'ask_user_question', 'exit_plan_mode', 'get_science_state', 'install_science_packages',
-        'read', 'read_image', 'run_python', 'run_r', 'skill', 'todo_write', 'web_fetch', 'web_search',
+        'interrupt_agent', 'list_agents', 'read', 'read_image', 'run_python', 'run_r', 'send_message', 'skill',
+        'subagent', 'todo_write', 'web_fetch', 'web_search',
       ])
     } finally {
       await handle.dispose()
@@ -612,16 +613,19 @@ describe('the science preset', () => {
       const standardTools = toolNames(ctx, standard.agent)
       expect(scienceTools).toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
       expect(standardTools).not.toEqual(expect.arrayContaining(['run_python', 'run_r', 'get_science_state']))
-      // No shell, no filesystem mutation, no delegation, no chart/Outcome
-      // publication: this preset gives up every capability `standard` has
-      // that Science does not name. It shares `standard`'s `web_search`, and
+      // No shell, no filesystem mutation, no chart/Outcome publication: this
+      // preset gives up every capability `standard` has that Science does
+      // not name. It shares `standard`'s `web_search` and `subagent`, and
       // additionally enables `web_fetch`, which `standard` leaves disabled.
-      for (const forbidden of ['bash', 'write', 'edit', 'subagent']) {
+      // Its `subagent` child is restricted through `toolFilter`/`maxDepth`,
+      // not by omitting the parent tool — see
+      // `.agents/notes/implemented/feature/2026-09-02-science-restricted-subagent.md`.
+      for (const forbidden of ['bash', 'write', 'edit']) {
         expect(scienceTools).not.toContain(forbidden)
         expect(standardTools).toContain(forbidden)
       }
-      expect(scienceTools).toEqual(expect.arrayContaining(['web_search', 'web_fetch']))
-      expect(standardTools).toEqual(expect.arrayContaining(['web_search']))
+      expect(scienceTools).toEqual(expect.arrayContaining(['web_search', 'web_fetch', 'subagent']))
+      expect(standardTools).toEqual(expect.arrayContaining(['web_search', 'subagent']))
       expect(standardTools).not.toContain('web_fetch')
     } finally {
       await standard.dispose()

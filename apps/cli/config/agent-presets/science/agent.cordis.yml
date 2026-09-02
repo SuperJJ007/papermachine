@@ -4,9 +4,12 @@
 # It composes the `@deepseek-ai/dsh-tool-science` Consumer (run_python, run_r,
 # get_science_state, annotate_artifact, install_science_packages) plus a narrow supporting
 # roster: discovery and reading of the workspace, skills, the generic
-# ask-user/todo tools, Web search and fetch, and plan mode. It carries no
-# shell, no filesystem write or edit, and no delegation — a capability this
-# preset lacks is a separate product decision, not a YAML edit.
+# ask-user/todo tools, Web search and fetch, plan mode, and a restricted
+# subagent. It carries no shell and no filesystem write or edit — a
+# capability this preset lacks is a separate product decision, not a YAML
+# edit. The subagent it does compose is deliberately narrower than its own:
+# see the `delegation` group below and
+# `.agents/notes/implemented/feature/2026-09-02-science-restricted-subagent.md`.
 #
 # TRUST: `run_python`/`run_r` execute real code through the Host-owned Science
 # Runtime (`ctx.scienceRuntime`), confined to whatever existing Conda prefix
@@ -43,6 +46,8 @@
       You run reproducible Python and R analyses through `run_python` and `run_r`. Read, search, and inspect the workspace with `read`, `glob`, and `grep`; you cannot create, edit, or delete files. Call `get_science_state` to recover durable Science identity, environment, and recent-run history rather than assuming it from earlier turns.
 
       Use `web_search` and `web_fetch` for general reference: method background, dataset documentation, and package/API usage. When a paper-lookup tool is available (named `mcp__papers__*` or `mcp__arxiv__*`), prefer it over `web_search` for literature search, citation lookup, or a paper's full text. Name the source URL or citation for anything a web or paper tool returns before you rely on it in an analysis.
+
+      Delegate to `subagent` for a genuinely independent sub-task: parallel work that does not depend on your own in-progress state (for example, literature search running alongside data exploration) or a single exploratory analysis long enough to run on its own while you continue elsewhere. The child starts its own kernel with none of your variables loaded — do not delegate a step that depends on data or results already sitting in your kernel unless the sub-task first reproduces them itself. Treat what a subagent reports back as a claim to verify, not a settled fact: recheck the key numbers before you act on them or repeat them to the user.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
@@ -155,6 +160,64 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+# ── delegation ──────────────────────────────────────────────────────────────
+
+# A deliberately RESTRICTED subagent — a first cut, not Science's Specialists
+# design. `composeFrom()` joins a spawned child to this same standing
+# composition (`packages/preset/agent-presets/README.md#composing-a-child-agent`),
+# so left alone the child would see every tool this preset registers,
+# including its own `subagent` row. `toolFilter.deny` below is what actually
+# draws Science's boundary around the child: no shell (never composed by this
+# preset in the first place), no write/edit (same), no package installs, and
+# no further delegation or child-messaging/listing tools. `maxDepth: 1` caps
+# the child's own delegation depth at 1, so an attempted grandchild is
+# rejected by the depth check even before `toolFilter` removes its tool.
+# `persona` shadows this preset's persona for the child alone, stating its own
+# narrower rules (own kernel, read-only workspace, no installs, report back)
+# because the parent's persona above describes THIS agent, not the child's.
+#
+# The `subagents` registry and its `spawn` backend live in the HOST
+# composition (`packages/bundle/base/cordis.patch.yml`), same as `standard`;
+# this preset contributes only the delegation TOOLS below, which resolve that
+# host registry. Unlike `standard`'s `delegation` group, this one carries no
+# `isolate: workflowEngine` — that realm exists only for the
+# workflow-worker-thread/tool-workflow/tool-ralph rows this preset does not
+# compose, and none of the rows below publish a service of their own.
+- id: delegation
+  name: cordis:group
+  group: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+        maxDepth: 1
+        persona: |-
+          You are a PaperMachine Science subagent, spawned by a parent Science agent to do exactly the one task named in your prompt. Do only that task; when it is done, call `report` and stop — do not keep exploring past what you were asked.
+
+          You run in your own kernel, independent of the parent's: no variables, imports, or loaded data carry over. Do not assume anything the parent mentioned is already available to you — read or recompute any data you need yourself with `run_python`/`run_r`.
+
+          Your workspace is read-only: you cannot create, edit, or delete files. You cannot install or persist packages — there is no `install_science_packages` here, and an in-kernel `pip install`/`install.packages()` lasts only until this kernel restarts.
+
+          When you call `report`, state your conclusion, the key numbers, and the `logical_name` of every artifact you produced. If something is uncertain, say so in the report instead of guessing.
+        toolFilter:
+          deny:
+            - install_science_packages
+            - subagent
+            - send_message
+            - interrupt_agent
+            - list_agents
+            - exit_plan_mode
+            - ask_user_question
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

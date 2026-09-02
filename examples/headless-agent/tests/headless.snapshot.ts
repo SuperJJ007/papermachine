@@ -289,7 +289,7 @@ function normalizeScienceValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeScienceValue)
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => {
-      if (['configuredAt', 'validatedAt', 'startedAt', 'finishedAt', 'createdAt', 'publishedAt', 'at'].includes(key)
+      if (['configuredAt', 'validatedAt', 'startedAt', 'finishedAt', 'createdAt', 'publishedAt', 'seenAt', 'at'].includes(key)
         && typeof item === 'number') return [key, 0]
       if (key === 'executableIdentity' && typeof item === 'string') return [key, '<host-file-id>']
       if (key === 'runId' && typeof item === 'string') return [key, '{{scienceRunId}}']
@@ -306,7 +306,7 @@ function normalizeScienceValue(value: unknown): unknown {
     .replace(/\b[0-9a-f]{64}\b/g, '<sha256>')
     .replace(/fingerprint [0-9a-f]{12}\b/g, 'fingerprint <preview>')
     .replace(/"(environmentFingerprintPreview|fingerprint)": "[0-9a-f]{12}"/g, '"$1": "<preview>"')
-    .replace(/"(?:configured|validated|started|finished|created|published)At":\s*\d+/g, match => match.replace(/\d+$/, '0'))
+    .replace(/"(?:configured|validated|started|finished|created|published|seen)At":\s*\d+/g, match => match.replace(/\d+$/, '0'))
     .replace(/"runId":\s*"[^"]+"/g, '"runId": "{{scienceRunId}}"')
     .replace(/"scratchKey":\s*"[^"]+"/g, '"scratchKey": "<scratch-key>"')
 }
@@ -413,11 +413,13 @@ describe('headless stream-json snapshots', () => {
       // no image bytes; the Client reads those from the durable event instead.
       expect(modelView).not.toContain('attachmentId')
       expect(modelView).not.toContain(PNG_BASE64)
-      expect(modelView).toContain('\\"editCount\\": 4')
-      expect(modelView).toContain('\\"target\\": \\"title\\"')
-      expect(modelView).toContain('\\"target\\": \\"axes[0].subtitle\\"')
-      expect(modelView).toContain('\\"target\\": \\"axes[0].x_label\\"')
-      expect(modelView).toContain('\\"target\\": \\"font\\"')
+      // The direct chart edit reaches a later model turn only as
+      // `contentOrigin`/`curated` on the sanitized artifact entry —
+      // `scienceArtifactSchemaProperties` (`tool-science`) names these the
+      // only two store-owned provenance facts the model face exposes; an
+      // operation name, element target, or edited text never appears.
+      expect(modelView).toContain('\\"contentOrigin\\": \\"human-edit\\"')
+      expect(modelView).toContain('\\"curated\\": true')
       expect(modelView).not.toContain('Directly edited chart')
       expect(modelView).not.toContain('Directly edited subtitle')
       expect(modelView).not.toContain('Edited input')
@@ -437,80 +439,78 @@ describe('headless stream-json snapshots', () => {
       if (refreshing) await writeFile(streamExpected, stream)
       expect(stream).toBe(await readFile(streamExpected, 'utf8'))
       expect(stream).not.toContain(PNG_BASE64)
-      // Four initial auto-captures, one curated re-save and one direct edit
+      // Auto-capture's idempotent commit is project-wide, not session-local
+      // (the store's current head for a logical name is the sole authority,
+      // never this session's own history — see the Auto-capture section of
+      // `science-runtime`'s README): this scenario's three idle warmup
+      // sessions each run first and share this driver's project, and the
+      // fixture's fake kernel driver writes byte-identical
+      // `summary.csv`/`meta.json`/`notes.md` content on every run
+      // regardless of the requested code, so those three logical names
+      // already carry a v1 store row before the main session's own first
+      // run writes the identical bytes again — a byte-identical rerun of an
+      // existing logical name commits no new version. Only `plot.png`,
+      // which no idle run declares in `raster_artifacts`, is new to the
+      // project, so the main run's own receipt captures just that one
+      // artifact. What follows: one curated re-save and one direct edit
       // reusing the PNG id, one ordinary edited branch, one single-target
       // edit, and two outputs from the multi-target edit.
-      expect(ids.chartIds).toHaveLength(10)
-      expect(new Set(ids.chartIds).size).toBe(8)
-      // Both the plot's own id and the edited branch's own id normalize to the
-      // same {{scienceChartId}} placeholder, so a renderer that echoed its own
-      // id as its parent would still pass the normalized stream comparison
-      // above. Check the raw (pre-normalization) event instead: the edited
-      // chart's parent must name the plot's own id, not its own.
-      const editedSaved = parseJsonl(result.stdout).find((record) => {
-        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
-        const event = record.event as JsonObject
-        const data = event.data as JsonObject | undefined
-        const artifact = data?.artifact as JsonObject | undefined
-        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'edited.png'
-      })
-      if (editedSaved === undefined) throw new Error(`science snapshot stream carries no edited.png artifact-saved event; stdout:\n${result.stdout}`)
-      const editedArtifact = ((editedSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
-      const parent = editedArtifact.parent as JsonObject | undefined
-      if (parent === undefined) throw new Error('edited.png artifact-saved event carries no parent reference')
-      expect(parent.artifactId).toBe(ids.chartIds[2])
-      expect(parent.artifactId).not.toBe(editedArtifact.artifactId)
-      const selectedRun = parseJsonl(result.stdout).find((record) => {
-        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
-        const event = record.event as JsonObject
-        const data = event.data as JsonObject | undefined
-        const run = data?.run as JsonObject | undefined
-        return event.type === 'science/run-started' && run?.toolCallId === 'science-selected-edit-call'
-      })
-      if (selectedRun === undefined) throw new Error(`science snapshot stream carries no selected-edit run; stdout:\n${result.stdout}`)
-      const selectedRunValue = ((selectedRun.event as JsonObject).data as JsonObject).run as JsonObject
-      expect(selectedRunValue.inputs).toEqual([{
-        artifactId: ids.chartIds[2], version: 2, path: 'region-source.png',
-      }])
-      const selectedSaved = parseJsonl(result.stdout).find((record) => {
-        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
-        const event = record.event as JsonObject
-        const data = event.data as JsonObject | undefined
-        const artifact = data?.artifact as JsonObject | undefined
-        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'region-edit.png'
-      })
-      if (selectedSaved === undefined) throw new Error(`science snapshot stream carries no region-edit.png event; stdout:\n${result.stdout}`)
-      const selectedArtifact = ((selectedSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
-      const selectedParent = selectedArtifact.parent as JsonObject | undefined
-      if (selectedParent === undefined) throw new Error('region-edit.png carries no parent reference')
-      expect(selectedParent.artifactId).toBe(ids.chartIds[2])
-      expect(selectedParent.version).toBe(2)
-      const regionSaved = parseJsonl(result.stdout).find((record) => {
-        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
-        const event = record.event as JsonObject
-        const data = event.data as JsonObject | undefined
-        const artifact = data?.artifact as JsonObject | undefined
-        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'region-edit-1.png'
-      })
-      if (regionSaved === undefined) throw new Error(`science snapshot stream carries no region-edit-1.png event; stdout:\n${result.stdout}`)
-      const regionArtifact = ((regionSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
-      const regionParent = regionArtifact.parent as JsonObject | undefined
-      if (regionParent === undefined) throw new Error('region-edit.png carries no parent reference')
-      expect(regionParent.artifactId).toBe(ids.chartIds[2])
-      expect(regionParent.version).toBe(2)
-      expect(regionParent.artifactId).not.toBe(regionArtifact.artifactId)
-      const secondRegionSaved = parseJsonl(result.stdout).find((record) => {
-        if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
-        const event = record.event as JsonObject
-        const data = event.data as JsonObject | undefined
-        const artifact = data?.artifact as JsonObject | undefined
-        return event.type === 'science/artifact-saved' && artifact?.logicalName === 'region-edit-2.png'
-      })
-      if (secondRegionSaved === undefined) {
-        throw new Error(`science snapshot stream carries no region-edit-2.png event; stdout:\n${result.stdout}`)
+      expect(ids.chartIds).toHaveLength(7)
+      expect(new Set(ids.chartIds).size).toBe(5)
+      // The project artifact store is now the sole authority for a
+      // version's provenance (see `science-session`'s module doc):
+      // `science/artifact-saved` itself carries no parent reference any
+      // more. A run's own `science/run-started.inputs` is the model-visible
+      // substitute for the edit chain a `.parent` field used to name; check
+      // the raw (pre-normalization) event, since the plot's own id and
+      // every edited branch's id all normalize to the same
+      // {{scienceChartId}} placeholder.
+      // `plot.png`'s auto-captured v1, its metadata-curation re-save (still
+      // v1), and the direct edit's new v2 all share this same artifactId
+      // (`chartIds[0]`, `[1]`, and `[3]`) — index 0 names it plainly.
+      const chartArtifactId = ids.chartIds[0]
+      const runInputsFor = (toolCallId: string): unknown => {
+        const started = parseJsonl(result.stdout).find((record) => {
+          if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
+          const event = record.event as JsonObject
+          const data = event.data as JsonObject | undefined
+          const run = data?.run as JsonObject | undefined
+          return event.type === 'science/run-started' && run?.toolCallId === toolCallId
+        })
+        if (started === undefined) throw new Error(`science snapshot stream carries no run-started event for ${toolCallId}; stdout:\n${result.stdout}`)
+        return (((started.event as JsonObject).data as JsonObject).run as JsonObject).inputs
       }
-      const secondRegionArtifact = ((secondRegionSaved.event as JsonObject).data as JsonObject).artifact as JsonObject
-      expect(secondRegionArtifact.parent).toEqual({ artifactId: selectedArtifact.artifactId, version: 1 })
+      const findSavedArtifact = (logicalName: string): JsonObject => {
+        const saved = parseJsonl(result.stdout).find((record) => {
+          if (record.type !== 'session_event' || record.event === null || typeof record.event !== 'object') return false
+          const event = record.event as JsonObject
+          const data = event.data as JsonObject | undefined
+          const artifact = data?.artifact as JsonObject | undefined
+          return event.type === 'science/artifact-saved' && artifact?.logicalName === logicalName
+        })
+        if (saved === undefined) throw new Error(`science snapshot stream carries no ${logicalName} artifact-saved event; stdout:\n${result.stdout}`)
+        return ((saved.event as JsonObject).data as JsonObject).artifact as JsonObject
+      }
+      // `edited.png` is sourced from the plot's own baseline version (v1,
+      // captured before curation or the direct edit touched it).
+      expect(runInputsFor('science-run-call-2')).toEqual([
+        { artifactId: chartArtifactId, version: 1, path: 'source.png' },
+      ])
+      // The single-target edit's `region-edit.png` is sourced from the
+      // directly edited chart (v2, the direct edit's own new version).
+      expect(runInputsFor('science-selected-edit-call')).toEqual([
+        { artifactId: chartArtifactId, version: 2, path: 'region-source.png' },
+      ])
+      const selectedArtifact = findSavedArtifact('region-edit.png')
+      // The multi-target edit's two outputs come from one run: the first
+      // target is the same directly edited chart (v2) again, and the
+      // second chains off the first edit's own output, `region-edit.png`
+      // (v1) — proving an edit can source from another edit's result, not
+      // only from an original run-captured artifact.
+      expect(runInputsFor('science-region-edit-call')).toEqual([
+        { artifactId: chartArtifactId, version: 2, path: 'region-source-1.png' },
+        { artifactId: selectedArtifact.artifactId, version: 1, path: 'region-source-2.png' },
+      ])
       expect(result.stdout).toContain('SCIENCE_TOOLS_SNAPSHOT_OK')
 
       // install_science_packages: two whole-value environment-bound

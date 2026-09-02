@@ -298,7 +298,7 @@ describe('reconcileProject', () => {
     expect(v1.versionId).toBeDefined()
   })
 
-  it('caps work at maxVersions and reports truncated, without processing the remainder', async () => {
+  it('continues version health work beyond maxVersions on the next bounded call', async () => {
     const engine = await makeEngine()
     const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-reconcile-ws-'))
     dirs.push(workspace)
@@ -309,9 +309,79 @@ describe('reconcileProject', () => {
         data: new TextEncoder().encode(`bytes-${String(i)}`), mediaType: 'image/png', contentOrigin: 'run-auto',
       })
     }
-    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 2 })
-    expect(result.checkedVersions).toBe(2)
-    expect(result.truncated).toBe(true)
+    const first = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 2 })
+    expect(first.checkedVersions).toBe(2)
+    expect(first.truncated).toBe(true)
+    expect(first.cursor).toBeDefined()
+    const second = await reconcileProject(engine, projectId, new Map(), {
+      eventSetComplete: true,
+      maxVersions: 2,
+      cursor: first.cursor!,
+    })
+    expect(second.checkedVersions).toBe(1)
+    expect(second.truncated).toBe(false)
+    expect((await engine.getReconciliationSummary(projectId)).orphanCount).toBe(3)
+  })
+
+  it('continues dangling reconstruction beyond maxVersions without reprocessing reconstructed rows', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-reconcile-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const firstVersionId = VersionId('dangling-page-1')
+    const secondVersionId = VersionId('dangling-page-2')
+    const events = new Map<VersionId, ReconcileArtifactSavedEvent>([
+      [firstVersionId, event({
+        artifactId: ArtifactId('dangling-page-artifact-1'), versionId: firstVersionId,
+        logicalName: 'first.csv', sha256: 'a'.repeat(64),
+      })],
+      [secondVersionId, event({
+        artifactId: ArtifactId('dangling-page-artifact-2'), versionId: secondVersionId,
+        logicalName: 'second.csv', sha256: 'b'.repeat(64),
+      })],
+    ])
+
+    const first = await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 1 })
+    expect(first.reconstructed).toEqual([firstVersionId])
+    expect(first.cursor).toBeDefined()
+    const second = await reconcileProject(engine, projectId, events, {
+      eventSetComplete: true,
+      maxVersions: 1,
+      cursor: first.cursor!,
+    })
+    expect(second.reconstructed).toEqual([secondVersionId])
+    expect(second.truncated).toBe(false)
+    expect((await engine.getReconciliationSummary(projectId)).reconstructedCount).toBe(2)
+  })
+
+  it('rotates a failed dangling item behind untouched dangling work', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-reconcile-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    vi.spyOn(engine, 'reconstructVersion').mockRejectedValueOnce(new Error('forced first dangling failure'))
+    const failedVersionId = VersionId('dangling-failed-first')
+    const tailVersionId = VersionId('dangling-tail')
+    const events = new Map<VersionId, ReconcileArtifactSavedEvent>([
+      [failedVersionId, event({
+        artifactId: ArtifactId('different-artifact'), versionId: failedVersionId,
+        logicalName: 'failed.csv', sha256: 'c'.repeat(64),
+      })],
+      [tailVersionId, event({
+        artifactId: ArtifactId('tail-artifact'), versionId: tailVersionId,
+        logicalName: 'tail.csv', sha256: 'd'.repeat(64),
+      })],
+    ])
+
+    const first = await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 1 })
+    expect(first.cursor).toBeDefined()
+    const second = await reconcileProject(engine, projectId, events, {
+      eventSetComplete: true,
+      maxVersions: 1,
+      cursor: first.cursor!,
+    })
+    expect(second.reconstructed).toEqual([tailVersionId])
+    expect(second.cursor?.pending).toEqual([{ kind: 'dangling', versionId: failedVersionId }])
   })
 
   it('does not truncate when outstanding work is exactly at the bound', async () => {

@@ -30,6 +30,8 @@ export interface CollectProjectArtifactEventsRequest {
   readonly workspacePath: string
   /** Validated `reconcileMaxSessions` Config bound: at most this many matching session logs are read in one call. */
   readonly maxSessions: number
+  /** Prior bounded-walk progress for this project, when a later attempt continues it. */
+  readonly cursor?: CollectProjectArtifactEventsCursor
   /** Diagnostic sink for a skipped unreadable session log or malformed event — never fails the walk. */
   readonly onWarning?: (message: string) => void
 }
@@ -44,8 +46,22 @@ export interface CollectProjectArtifactEventsResult {
   readonly events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>
   /** `true` only when listing, every admitted session read, and every relevant event parse succeeded without truncation. */
   readonly complete: boolean
-  /** `true` when more sessions matched this project's workspace than `maxSessions` admitted; only a bounded prefix was read. */
+  /** `true` when more unvisited sessions remain after this call's bounded batch. */
   readonly truncated: boolean
+  /** Updated progress, retained by the Runtime until reconciliation settles. */
+  readonly cursor?: CollectProjectArtifactEventsCursor
+  /** Whether the accumulated event set changed during this call. */
+  readonly changed: boolean
+}
+
+/** Restart-local progress for one project's bounded session-log walk. */
+export interface CollectProjectArtifactEventsCursor {
+  /** Current matching-session order from `SessionPersistence.list()`. */
+  readonly sessionOrder: readonly SessionId[]
+  /** Unread or previously unreadable sessions, in next-attempt order. */
+  readonly pendingSessionIds: readonly SessionId[]
+  /** Fully parsed events retained per session so retries preserve list order. */
+  readonly eventsBySession: ReadonlyMap<SessionId, readonly ReconcileArtifactSavedEvent[]>
 }
 
 /** The subset of a raw, undecoded `science/artifact-saved` event's `artifact` value this extractor needs. */
@@ -101,6 +117,41 @@ function headerNamesWorkspace(header: SessionHeader, workspacePath: string): boo
   return header.cwd !== undefined && resolve(header.cwd) === workspacePath
 }
 
+/** Fold fully parsed per-session events in the persistence listing order. */
+function foldSessionEvents(cursor: CollectProjectArtifactEventsCursor | undefined): ReadonlyMap<VersionId, ReconcileArtifactSavedEvent> {
+  const events = new Map<VersionId, ReconcileArtifactSavedEvent>()
+  if (cursor === undefined) return events
+  for (const sessionId of cursor.sessionOrder) {
+    for (const event of cursor.eventsBySession.get(sessionId) ?? []) events.set(event.versionId, event)
+  }
+  return events
+}
+
+/** Compare two ordered Session-id lists without hiding a persistence reorder. */
+function sameSessionOrder(left: readonly SessionId[], right: readonly SessionId[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+/** Compare retained event values so an unchanged malformed retry does not reset store progress. */
+function sameSessionEvents(
+  left: readonly ReconcileArtifactSavedEvent[] | undefined,
+  right: readonly ReconcileArtifactSavedEvent[],
+): boolean {
+  return left !== undefined && left.length === right.length && left.every((event, index) => {
+    const candidate = right[index]
+    return candidate !== undefined
+      && event.artifactId === candidate.artifactId
+      && event.versionId === candidate.versionId
+      && event.ordinal === candidate.ordinal
+      && event.logicalName === candidate.logicalName
+      && event.sha256 === candidate.sha256
+      && event.title === candidate.title
+      && event.caption === candidate.caption
+      && event.seenAt === candidate.seenAt
+      && event.producerSessionId === candidate.producerSessionId
+  })
+}
+
 /**
  * Collect every `science/artifact-saved` event from this project's own
  * session logs (every session whose header `cwd` resolves to the project's
@@ -119,37 +170,64 @@ export async function collectProjectArtifactEvents(
     headers = await request.sessionPersistence.list()
   } catch (error) {
     request.onWarning?.(`science-runtime: reconciliation could not list session logs: ${String(error)}`)
-    return { events: new Map(), complete: false, truncated: false }
+    return {
+      events: foldSessionEvents(request.cursor), complete: false, truncated: false,
+      ...(request.cursor === undefined ? {} : { cursor: request.cursor }), changed: false,
+    }
   }
 
   const matching = headers.filter(header => headerNamesWorkspace(header, request.workspacePath))
-  const truncated = matching.length > request.maxSessions
-  const batch = matching.slice(0, request.maxSessions)
-  let complete = !truncated
+  const sessionOrder = matching.map(header => header.id)
+  const matchingIds = new Set(sessionOrder)
+  const eventsBySession = new Map(
+    [...(request.cursor?.eventsBySession ?? [])].filter(([sessionId]) => matchingIds.has(sessionId)),
+  )
+  const retainedPending = (request.cursor?.pendingSessionIds ?? []).filter(sessionId => matchingIds.has(sessionId))
+  const queued = new Set([...eventsBySession.keys(), ...retainedPending])
+  const pending = [...retainedPending]
+  for (const sessionId of sessionOrder) {
+    if (!queued.has(sessionId)) pending.push(sessionId)
+  }
+  const batchIds = pending.slice(0, request.maxSessions)
+  const remaining = pending.slice(request.maxSessions)
+  const failed: SessionId[] = []
+  let changed = !sameSessionOrder(request.cursor?.sessionOrder ?? [], sessionOrder)
+    || eventsBySession.size !== (request.cursor?.eventsBySession.size ?? 0)
 
-  const events = new Map<VersionId, ReconcileArtifactSavedEvent>()
-  for (const header of batch) {
+  for (const sessionId of batchIds) {
     let inspection: Awaited<ReturnType<SessionPersistence['inspect']>>
     try {
-      inspection = await request.sessionPersistence.inspect(header.id)
+      inspection = await request.sessionPersistence.inspect(sessionId)
     } catch (error) {
-      request.onWarning?.(`science-runtime: reconciliation skipped an unreadable session log "${header.id}": ${String(error)}`)
-      complete = false
+      request.onWarning?.(`science-runtime: reconciliation skipped an unreadable session log "${sessionId}": ${String(error)}`)
+      failed.push(sessionId)
       continue
     }
+    const sessionEvents: ReconcileArtifactSavedEvent[] = []
+    let valid = true
     for (const event of inspection.events) {
       if (event.type !== 'science/artifact-saved') continue
-      const extracted = extractReconcileEvent(event.data, header.id)
+      const extracted = extractReconcileEvent(event.data, sessionId)
       if (extracted === undefined) {
-        request.onWarning?.(`science-runtime: reconciliation skipped a malformed science/artifact-saved event in session "${header.id}"`)
-        complete = false
+        request.onWarning?.(`science-runtime: reconciliation skipped a malformed science/artifact-saved event in session "${sessionId}"`)
+        valid = false
         continue
       }
-      // Folded per versionId, last write wins: a curated re-record (same
-      // versionId/sha256, updated title/caption) legitimately advances
-      // over an earlier capture event for the same version.
-      events.set(extracted.versionId, extracted)
+      sessionEvents.push(extracted)
     }
+    if (!valid) {
+      changed ||= !sameSessionEvents(eventsBySession.get(sessionId), sessionEvents)
+      eventsBySession.set(sessionId, sessionEvents)
+      failed.push(sessionId)
+      continue
+    }
+    changed ||= !sameSessionEvents(eventsBySession.get(sessionId), sessionEvents)
+    eventsBySession.set(sessionId, sessionEvents)
   }
-  return { events, complete, truncated }
+  const pendingSessionIds = [...remaining, ...failed]
+  const cursor: CollectProjectArtifactEventsCursor = { sessionOrder, pendingSessionIds, eventsBySession }
+  return {
+    events: foldSessionEvents(cursor), complete: pendingSessionIds.length === 0,
+    truncated: remaining.length > 0, cursor, changed,
+  }
 }

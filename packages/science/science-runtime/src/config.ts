@@ -214,7 +214,7 @@ export interface Config {
   readonly reconcileMaxSessions?: number
   /**
    * Minimum interval between reconciliation attempts for one project until
-   * a complete, untruncated, error-free pass succeeds. A later project
+   * a complete, cursor-free, error-free pass succeeds. A later project
    * resolution triggers the retry; this value does not schedule background work.
    */
   readonly reconcileRetryDelayMs?: number

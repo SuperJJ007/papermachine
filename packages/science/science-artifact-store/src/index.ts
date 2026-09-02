@@ -9,7 +9,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { ReconcileArtifactSavedEvent, ReconcileResult } from './reconcile.ts'
+import type { ReconcileArtifactSavedEvent, ReconcileCursor, ReconcileResult } from './reconcile.ts'
 import { ProjectArtifactStoreEngine } from './store.ts'
 import type { BackfillProvenanceHook, JournalMode } from './schema.ts'
 import type {
@@ -43,10 +43,12 @@ export {
 export {
   classifyVersion,
   type ReconcileArtifactSavedEvent,
+  type ReconcileCursor,
   type ReconcileOptions,
   type ReconcileOutcome,
   type ReconcileResult,
   type ReconcileVersionKind,
+  type ReconcileWorkItem,
 } from './reconcile.ts'
 export type {
   AnnotateVersionInput,
@@ -323,7 +325,7 @@ export class ScienceArtifactStore extends Service {
   /**
    * Reconcile one project's store against session-log events a caller has
    * already read and folded — see the package README's Reconciliation
-   * section for the six-case table this decides. This package never reads
+   * section for the seven-case table this decides. This package never reads
    * session logs itself; `dsh-science-runtime` reads them (bounded by its
    * own `reconcileMaxSessions` Config) and folds duplicate events per
    * `versionId` (last write wins) before calling this. Never throws for one
@@ -334,14 +336,16 @@ export class ScienceArtifactStore extends Service {
    * this project's session logs, folded per `versionId`.
    * @param eventSetComplete - whether the caller read every relevant session
    * log and event; when false, an absent event cannot mark or clear orphan health.
+   * @param cursor - prior bounded-walk progress over this stable event set.
    * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
    */
   reconcileProject(
     projectId: ProjectId,
     events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>,
     eventSetComplete: boolean,
+    cursor?: ReconcileCursor,
   ): Promise<ReconcileResult> {
-    return this.engine.reconcileProject(projectId, events, eventSetComplete)
+    return this.engine.reconcileProject(projectId, events, eventSetComplete, cursor)
   }
 
   /**

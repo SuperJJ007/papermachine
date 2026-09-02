@@ -32,6 +32,7 @@ import type {
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
 import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ReconcileCursor } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -40,6 +41,7 @@ import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.t
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
+import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
 import type { ObservedProfile } from './environment.ts'
@@ -118,6 +120,14 @@ function environmentBinding(
     ...(observed.r === undefined ? {} : { r: observed.r.binding }),
     ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
   }
+}
+
+/** Restart-local progress across bounded reconciliation attempts for one project. */
+interface ProjectReconciliationProgress {
+  readonly collectorCursor: CollectProjectArtifactEventsCursor | undefined
+  readonly storeCursor: ReconcileCursor | undefined
+  readonly eventSetComplete: boolean
+  readonly hadErrors: boolean
 }
 
 export type {
@@ -386,7 +396,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   /** Resolved owning project per exact live Session, cached for its lifetime. */
   private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
   /**
-   * Project ids with one complete, untruncated, error-free reconciliation
+   * Project ids with one complete, cursor-free, error-free reconciliation
    * pass in this Host lifetime. Project identity spans many sessions, so a
    * plain `Set` owns this suppression rather than a Session-keyed `WeakMap`.
    */
@@ -395,6 +405,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly reconcilingProjects = new Set<string>()
   /** Wall-clock start of each project's latest attempt, used only for retry throttling. */
   private readonly reconciliationAttemptedAt = new Map<string, number>()
+  /** Bounded session/store walk progress for projects not yet fully reconciled. */
+  private readonly reconciliationProgress = new Map<string, ProjectReconciliationProgress>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -554,7 +566,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   /**
    * Fire-and-forget: run a bounded full-project store ↔ session
    * reconciliation attempt when this Runtime resolves a project. A
-   * complete, untruncated, error-free pass suppresses every later attempt
+   * complete, cursor-free, error-free pass suppresses every later attempt
    * for that project during this Host lifetime; any other settlement remains
    * eligible on a later project resolution after `reconcileRetryDelayMs`.
    * Reconciliation never blocks or fails the Science operation that
@@ -575,28 +587,56 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     if (attemptedAt !== undefined && now - attemptedAt < this.reconcileRetryDelayMs) return
     this.reconciliationAttemptedAt.set(key, now)
     this.reconcilingProjects.add(key)
+    const previous = this.reconciliationProgress.get(key) ?? {
+      collectorCursor: undefined,
+      storeCursor: undefined,
+      eventSetComplete: false,
+      hadErrors: false,
+    }
     collectProjectArtifactEvents({
       sessionPersistence,
       workspacePath,
       maxSessions: this.reconcileMaxSessions,
+      ...(previous.collectorCursor === undefined ? {} : { cursor: previous.collectorCursor }),
       onWarning: (message) => { this.ctx.logger.warn(message) },
-    }).then(async ({ events, complete: eventSetComplete, truncated: sessionsTruncated }) => {
-      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events, eventSetComplete)
+    }).then(async (collection) => {
+      const resetStoreCycle = collection.changed || (collection.complete && !previous.eventSetComplete)
+      const storeCursor = resetStoreCycle ? undefined : previous.storeCursor
+      const priorErrors = resetStoreCycle ? false : previous.hadErrors
+      const result = await this.ctx.scienceArtifactStore.reconcileProject(
+        projectId,
+        collection.events,
+        collection.complete,
+        storeCursor,
+      )
       for (const message of result.errors) this.ctx.logger.warn(`science-runtime: reconciliation: ${message}`)
-      if (!eventSetComplete) {
+      if (!collection.complete) {
         this.ctx.logger.warn(
           `science-runtime: reconciliation for project "${key}" used an incomplete session event set; `
           + 'orphan classification was skipped for versions with no event',
         )
       }
-      if (sessionsTruncated || result.truncated) {
+      if (collection.truncated || result.truncated) {
         this.ctx.logger.warn(
           `science-runtime: reconciliation for project "${key}" was truncated (more sessions or versions remain than this `
           + 'call\'s configured bound admits); a later project resolution may retry after the configured delay',
         )
       }
-      if (eventSetComplete && !result.truncated && result.errors.length === 0) {
+      const hadErrors = priorErrors || result.errors.length !== 0
+      if (collection.complete && !result.truncated && !hadErrors) {
         this.reconciledProjects.add(key)
+        this.reconciliationProgress.delete(key)
+      } else if (collection.complete && !result.truncated) {
+        // A finished cycle with item errors retries from a fresh collection
+        // and store cursor on the next eligible project resolution.
+        this.reconciliationProgress.delete(key)
+      } else {
+        this.reconciliationProgress.set(key, {
+          collectorCursor: collection.cursor ?? previous.collectorCursor,
+          storeCursor: result.cursor,
+          eventSetComplete: collection.complete,
+          hadErrors,
+        })
       }
     }).catch((error: unknown) => {
       this.ctx.logger.warn(`science-runtime: project reconciliation failed and was skipped: ${String(error)}`)

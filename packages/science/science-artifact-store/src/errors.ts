@@ -12,6 +12,8 @@ export type ProjectArtifactStoreErrorCode =
   | 'BLOB_NOT_FOUND'
   | 'BLOB_CORRUPT'
   | 'RECONCILE_ORDINAL_CONFLICT'
+  | 'ANNOTATION_TOOL_CALL_REUSED'
+  | 'ANNOTATION_ACTOR_NOT_ALLOWED'
 
 /** Thrown for every failure this package owns: a stable `code` names the failure kind. */
 export class ProjectArtifactStoreError extends Error {

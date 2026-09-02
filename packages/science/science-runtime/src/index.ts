@@ -10,7 +10,6 @@ import { randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import type { CallId } from '@deepseek-ai/dsh-llm'
 import {
   decodeScienceChartState,
   MAX_CHART_OPS,
@@ -1339,16 +1338,26 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
             + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
         )
       }
-      await this.assertAnnotateToolCallUnused(target.projectId, projection, request.toolCallId)
       this.assertPrepublication(request.session, lease.control)
-      await store.annotateVersion(target.projectId, target.versionId, {
-        actor: 'model',
-        sessionId: request.session.id,
-        toolCallId: request.toolCallId,
-        requestHeaderSeq: request.requestHeaderSeq,
-        title: request.title,
-        caption: request.caption ?? null,
-      })
+      try {
+        await store.annotateVersion(target.projectId, target.versionId, {
+          actor: 'model',
+          sessionId: request.session.id,
+          toolCallId: request.toolCallId,
+          requestHeaderSeq: request.requestHeaderSeq,
+          title: request.title,
+          caption: request.caption ?? null,
+        })
+      } catch (error) {
+        if (error instanceof ProjectArtifactStoreError && error.code === 'ANNOTATION_TOOL_CALL_REUSED') {
+          throw new ScienceRuntimeError(
+            'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED',
+            `toolCallId ${JSON.stringify(request.toolCallId)} already authorized a prior artifact annotation and cannot authorize another`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
       const artifact: ScienceArtifactVersion = {
         artifactId: target.artifactId,
         logicalName: request.logicalName,
@@ -1578,43 +1587,6 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     // scratch root itself, never one already inside either reserved directory.
     const rootPaths = await capturablePngPaths(runScratchDirectory(scratch, runId), 'always', EMPTY_RASTER_DECLARATION)
     return rootPaths.includes(logicalName) ? 'run-root' : 'not-found'
-  }
-
-  /**
-   * Reject an `annotate_artifact` call whose `toolCallId` already authorized
-   * a prior curation. `science/artifact-saved` no longer carries a
-   * `toolCallId` a session-log replay could cross-check for reuse (the fold
-   * check this replaces is documented in
-   * `2026-09-02-science-artifact-event-slimming.md`'s residual-gap table),
-   * so this checks the store's own `version_annotations` rows instead — a
-   * durable, restart-safe record, unlike an in-memory Runtime set. Scoped to
-   * the logical artifacts this SESSION's own projection already knows
-   * (`annotate_artifact` can only ever target one of those) and checked
-   * against each version's CURRENT `latestAnnotation` only: a toolCallId
-   * superseded by a later annotation is no longer visible through the
-   * store's public API, which exposes no per-version annotation history.
-   * Both narrowings are accepted incompleteness, not silently dropped
-   * coverage — see the Agent Note.
-   * @param projectId - the owning project.
-   * @param projection - this session's own live Science projection.
-   * @param toolCallId - the authorizing call to check for reuse.
-   * @throws {@link ScienceRuntimeError} (`ARTIFACT_ANNOTATE_TOOL_CALL_REUSED`) when reused.
-   */
-  private async assertAnnotateToolCallUnused(
-    projectId: ScienceProjectId,
-    projection: ScienceProjection,
-    toolCallId: CallId,
-  ): Promise<void> {
-    const artifactIds = new Set(projection.artifacts.map(candidate => candidate.artifactId))
-    for (const artifactId of artifactIds) {
-      const versions = await this.ctx.scienceArtifactStore.listVersions(projectId, artifactId)
-      if (versions.some(candidate => candidate.latestAnnotation?.toolCallId === toolCallId)) {
-        throw new ScienceRuntimeError(
-          'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED',
-          `toolCallId ${JSON.stringify(toolCallId)} already authorized a prior artifact annotation and cannot authorize another`,
-        )
-      }
-    }
   }
 
   /** Reserve a non-queuing exact Session lease without leaking a rejected timer. */

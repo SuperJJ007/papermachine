@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-science-tool-receipts-slimming.md
-2026-09-02-science-tool-receipts-slimming.md: 2be0ede95eb873c543614c3237e685394cf301b8
-2026-09-02-science-tool-receipts-slimming.zh.md: 55767ee6187f243d73bc8097f37c2881ffbb2d99
+2026-09-02-science-tool-receipts-slimming.md: e8ab2f765918dd0b264983340ca87764d3c9d41c
+2026-09-02-science-tool-receipts-slimming.zh.md: 3e5ce533b0f03d129809c757731cf375b58ae33d

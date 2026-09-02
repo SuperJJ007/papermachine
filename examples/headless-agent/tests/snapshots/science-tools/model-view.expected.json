@@ -34,7 +34,7 @@
     },
     {
       "name": "get_science_state",
-      "description": "Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.",
+      "description": "Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -338,7 +338,7 @@
       "content": [
         {
           "type": "text",
-          "text": "artifact \"plot.png\" v1 ({{scienceChartId}}), run-auto, curated\ntitle: Main plot\ncaption: Deterministic snapshot chart\nimage/png, 68 bytes"
+          "text": "artifact \"plot.png\" v1 ({{scienceChartId}}), run-auto, curated\ntitle: Main plot\ncaption: Deterministic snapshot chart\nproduced by run_python (turn 1)\nimage/png, 68 bytes"
         }
       ]
     },
@@ -356,7 +356,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 2)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `edited.png` v1 ({{scienceChartId}}; image/png, 68 B).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
+          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 2)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `edited.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from plot.png v1).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
         }
       ]
     },
@@ -374,7 +374,7 @@
       "content": [
         {
           "type": "text",
-          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 42,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    },\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call-2\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"inputs\": [\n        {\n          \"artifactId\": \"{{scienceChartId}}\",\n          \"version\": 1,\n          \"path\": \"source.png\"\n        }\n      ],\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 42,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"edited.png\",\n      \"version\": 1,\n      \"title\": \"edited.png\",\n      \"contentOrigin\": \"run-auto\",\n      \"curated\": false,\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"seenAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 2,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"contentOrigin\": \"human-edit\",\n      \"curated\": true,\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"seenAt\": 0\n    }\n  ],\n  \"metrics\": {\n    \"runCount\": 2,\n    \"successfulRunCount\": 2,\n    \"artifactCount\": 2,\n    \"artifactVersionCount\": 3\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 1\n  },\n  \"lastScienceEventSeq\": 82\n}"
+          "text": "{\n  \"mode\": {\n    \"modeId\": \"science\",\n    \"presetId\": \"science\",\n    \"modeRevision\": \"snapshot-r3\"\n  },\n  \"environment\": {\n    \"revision\": 1,\n    \"profileId\": \"fake\",\n    \"validatedAt\": 0,\n    \"status\": \"applied\",\n    \"python\": {\n      \"language\": \"python\",\n      \"capability\": \"available\",\n      \"languageVersion\": \"Python 3.13.5\",\n      \"fingerprint\": \"<preview>\"\n    }\n  },\n  \"runs\": [\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 42,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    },\n    {\n      \"runId\": \"{{scienceRunId}}\",\n      \"language\": \"python\",\n      \"toolCallId\": \"science-run-call-2\",\n      \"requestHeaderSeq\": 9,\n      \"environmentRevision\": 1,\n      \"environmentFingerprint\": \"<sha256>\",\n      \"startedAt\": 0,\n      \"codeSha256\": \"<sha256>\",\n      \"scratchKey\": \"<scratch-key>\",\n      \"runDirectoryRef\": \"runs/{{scienceRunId}}/\",\n      \"inputs\": [\n        {\n          \"artifactId\": \"{{scienceChartId}}\",\n          \"version\": 1,\n          \"path\": \"source.png\"\n        }\n      ],\n      \"kernelEpoch\": 1,\n      \"status\": \"success\",\n      \"finishedAt\": 0,\n      \"stdoutBytes\": 42,\n      \"stderrBytes\": 0,\n      \"stdoutTruncated\": false,\n      \"stderrTruncated\": false\n    }\n  ],\n  \"kernels\": [\n    {\n      \"language\": \"python\",\n      \"kernelEpoch\": 1,\n      \"state\": \"running\",\n      \"startedAt\": 0\n    }\n  ],\n  \"artifacts\": [\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"edited.png\",\n      \"version\": 1,\n      \"title\": \"edited.png\",\n      \"contentOrigin\": \"run-auto\",\n      \"curated\": false,\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"seenAt\": 0\n    },\n    {\n      \"artifactId\": \"{{scienceChartId}}\",\n      \"logicalName\": \"plot.png\",\n      \"version\": 2,\n      \"title\": \"Main plot\",\n      \"caption\": \"Deterministic snapshot chart\",\n      \"contentOrigin\": \"human-edit\",\n      \"curated\": true,\n      \"mediaType\": \"image/png\",\n      \"bytes\": 68,\n      \"seenAt\": 0,\n      \"edits\": [\n        {\n          \"op\": \"set_axis_label\",\n          \"target\": \"axes[0].x_label\"\n        },\n        {\n          \"op\": \"set_font\",\n          \"target\": \"font\"\n        }\n      ],\n      \"editCount\": 4\n    }\n  ],\n  \"metrics\": {\n    \"runCount\": 2,\n    \"successfulRunCount\": 2,\n    \"artifactCount\": 2,\n    \"artifactVersionCount\": 3\n  },\n  \"history\": {\n    \"runsOmitted\": 0,\n    \"kernelsOmitted\": 0,\n    \"artifactVersionsOmitted\": 1\n  },\n  \"lastScienceEventSeq\": 82\n}"
         }
       ]
     },
@@ -392,7 +392,7 @@
       "content": [
         {
           "type": "text",
-          "text": "kernel restarted (environment re-bind): variables from earlier runs are gone\nstatus: success\n--- stdout ---\nscience snapshot run output (execution 1)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `region-edit.png` v1 ({{scienceChartId}}; image/png, 68 B).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
+          "text": "kernel restarted (environment re-bind): variables from earlier runs are gone\nstatus: success\n--- stdout ---\nscience snapshot run output (execution 1)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `region-edit.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from plot.png v2).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
         }
       ]
     },
@@ -401,7 +401,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 2)\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B), `region-edit-2.png` v1 ({{scienceChartId}}; image/png, 68 B).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
+          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 2)\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from plot.png v2), `region-edit-2.png` v1 ({{scienceChartId}}; image/png, 68 B, edited from region-edit.png v1).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
         }
       ]
     },
@@ -410,7 +410,7 @@
       "content": [
         {
           "type": "text",
-          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 3)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `plot.png` v3 ({{scienceChartId}}; image/png, 68 B)."
+          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 3)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `plot.png` v3 ({{scienceChartId}}; image/png, 68 B, continues v2)."
         }
       ]
     }

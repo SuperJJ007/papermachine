@@ -3166,7 +3166,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AnnotateVersionInput',
-    declaration: 'export interface AnnotateVersionInput {\n    readonly actor: AnnotationActor;\n    readonly sessionId?: SessionId;\n    readonly toolCallId?: string;\n    readonly requestHeaderSeq?: number;\n    readonly title?: string | null;\n    readonly caption?: string | null;\n}',
+    declaration: 'export type AnnotateVersionInput = {\n    readonly actor: \'capture\';\n    readonly sessionId?: SessionId;\n    readonly title?: string | null;\n    readonly caption?: string | null;\n} | {\n    readonly actor: \'model\';\n    readonly sessionId: SessionId;\n    readonly toolCallId: string;\n    readonly requestHeaderSeq: number;\n    readonly title?: string | null;\n    readonly caption?: string | null;\n} | {\n    readonly actor: \'human\';\n    readonly sessionId?: SessionId;\n    readonly title?: string | null;\n    readonly caption?: string | null;\n};',
   },
   {
     name: 'AnnotationActor',

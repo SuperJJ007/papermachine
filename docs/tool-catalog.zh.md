@@ -2269,7 +2269,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `get_science_state`
 
-返回当前 Science session 状态：mode、sanitized bound environment、每种语言 kernel 的 state（running/exited/interrupted，附带其 epoch、结束原因与启动时间）、带遗漏计数的最近 run 与 artifact-version 历史。不接受任何参数。
+返回当前 Science session 状态：mode、sanitized bound environment、每种语言 kernel 的 state（running/exited/interrupted，附带其 epoch、结束原因与启动时间），以及带遗漏计数的最近 run、artifact-version 与直接编辑历史。不接受任何参数。
 
 ```json
 {

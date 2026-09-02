@@ -439,6 +439,28 @@ export class ProjectArtifactStoreEngine {
     return this.getVersionRow(db, versionId)
   }
 
+  /** Reject auto-capture metadata after a version's first annotation. */
+  private assertAnnotationActorAllowed(versionId: VersionId, alreadyAnnotated: boolean, actor: AnnotationActor): void {
+    if (actor !== 'capture' || !alreadyAnnotated) return
+    throw new ProjectArtifactStoreError(
+      `version "${versionId}" already carries an annotation; a capture-actor call may only supply a version's first annotation, `
+        + 'never re-record over an existing one — that requires a model curation or a human edit',
+      'ANNOTATION_ACTOR_NOT_ALLOWED',
+    )
+  }
+
+  /** Reject a model curation after its authorizing call has been consumed anywhere in this project. */
+  private assertAnnotationCallUnused(db: DatabaseSync, patch: AnnotateVersionInput): void {
+    if (patch.actor !== 'model') return
+    const reused = db.prepare('SELECT 1 FROM version_annotations WHERE session_id IS ? AND tool_call_id = ? AND request_header_seq IS ?')
+      .get(patch.sessionId, patch.toolCallId, patch.requestHeaderSeq)
+    if (reused === undefined) return
+    throw new ProjectArtifactStoreError(
+      `tool call ${JSON.stringify(patch.toolCallId)} already authorized a prior artifact annotation and cannot authorize another`,
+      'ANNOTATION_TOOL_CALL_REUSED',
+    )
+  }
+
   /**
    * Append one metadata edit onto a version and advance its
    * `latestAnnotationId` to it. Bytes, `sha256`, `ordinal`, and every
@@ -450,6 +472,8 @@ export class ProjectArtifactStoreEngine {
    * @param patch - the edit's author and the fields to change.
    * @returns the version, reflecting the newly appended annotation.
    * @throws {@link ProjectArtifactStoreError} with code `VERSION_NOT_FOUND` when no such version exists in this project.
+   * @throws {@link ProjectArtifactStoreError} with code `ANNOTATION_ACTOR_NOT_ALLOWED` when a capture annotation is not first.
+   * @throws {@link ProjectArtifactStoreError} with code `ANNOTATION_TOOL_CALL_REUSED` when a model curation reuses its authorizing call.
    */
   async annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord> {
     const db = await this.connectionFor(projectId)
@@ -459,14 +483,15 @@ export class ProjectArtifactStoreEngine {
         | { latest_annotation_id: string | null }
         | undefined
       if (versionRow === undefined) throw new ProjectArtifactStoreError(`version "${versionId}" was not found`, 'VERSION_NOT_FOUND')
+      this.assertAnnotationActorAllowed(versionId, versionRow.latest_annotation_id !== null, patch.actor)
+      this.assertAnnotationCallUnused(db, patch)
       const existing = versionRow.latest_annotation_id === null ? undefined : this.getAnnotationRow(db, versionRow.latest_annotation_id)
       const title = patch.title !== undefined ? patch.title : existing?.title ?? null
       const caption = patch.caption !== undefined ? patch.caption : existing?.caption ?? null
       this.insertAnnotation(db, versionId, {
         title, caption, actor: patch.actor,
         ...patch.sessionId === undefined ? {} : { sessionId: patch.sessionId },
-        ...patch.toolCallId === undefined ? {} : { toolCallId: patch.toolCallId },
-        ...patch.requestHeaderSeq === undefined ? {} : { requestHeaderSeq: patch.requestHeaderSeq },
+        ...patch.actor === 'model' ? { toolCallId: patch.toolCallId, requestHeaderSeq: patch.requestHeaderSeq } : {},
         derived: false,
         createdAt: now,
       })

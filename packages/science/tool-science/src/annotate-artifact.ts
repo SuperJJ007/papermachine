@@ -10,17 +10,26 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
-import type { ScienceArtifactMediaType, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
-import { latestRequestHeaderSeq, requireScienceSession, resolveArtifactStoreVersion } from './run.ts'
+import { replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceLanguage, ScienceProjection } from '@deepseek-ai/dsh-science-session'
+import { latestRequestHeaderSeq, requireScienceSession, resolveArtifactStoreFacts } from './run.ts'
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
-import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import { formatScienceArtifactEdits, scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import type { ScienceArtifactStoreFacts } from './artifact-schema.ts'
 
 const artifactReceiptSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     ...scienceArtifactSchemaProperties,
+    producer: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        tool: { type: 'string', enum: ['run_python', 'run_r'], required: true },
+        turn: { type: 'integer', required: true },
+      },
+    },
     // Store version reference for the canonical result; `render` deliberately
     // omits versionId from the model-visible text (it is an internal
     // storage coordinate, not a fact the model reasons about), while it
@@ -35,24 +44,37 @@ export type ScienceArtifactReceiptValue = InferValue<typeof artifactReceiptSchem
 /**
  * Flatten a durable artifact version into the tool's canonical value.
  * @param artifact - the durable artifact version `ctx.scienceRuntime.annotateArtifact(...)` appended.
- * @param store - the store's current version row for `artifact.versionId`.
+ * @param store - the resolved store facts for `artifact.versionId`.
+ * @param producerLanguage - language of the producing run, when it is present in this session.
  * @returns the canonical structured value the tool returns.
  */
 export function artifactReceiptFromArtifact(
   artifact: ScienceArtifactVersion,
-  store: Parameters<typeof scienceArtifactValueFields>[1],
+  store: ScienceArtifactStoreFacts,
+  producerLanguage: ScienceLanguage | undefined,
 ): ScienceArtifactReceiptValue {
   return {
     ...scienceArtifactValueFields(artifact, store),
+    ...producerLanguage === undefined || store.version.producerTurn === undefined ? {} : {
+      producer: {
+        tool: producerLanguage === 'python' ? 'run_python' : 'run_r',
+        turn: store.version.producerTurn,
+      },
+    },
     versionId: String(artifact.versionId),
   }
 }
 
+/** Resolve the producer language from the current session's run projection. */
+function artifactProducerLanguage(store: ScienceArtifactStoreFacts, projection: ScienceProjection): ScienceLanguage | undefined {
+  const runId = store.version.producerRunId
+  return runId === undefined ? undefined : projection.runs.find(run => String(run.runId) === runId)?.language
+}
+
 /**
  * Render one artifact receipt as plain text. The model-safe receipt names
- * identity, version, content origin, curation status, title/caption, and
- * media type/byte count — never the internal store version id and never
- * file bytes.
+ * identity, producer tool and turn, direct edits, and media facts without
+ * exposing the internal run or store version ids.
  * @param value - the canonical artifact receipt to render.
  * @returns the rendered Native text.
  */
@@ -63,7 +85,10 @@ export function formatArtifactReceipt(value: ScienceArtifactReceiptValue): strin
     `title: ${value.title}`,
   ]
   if (value.caption !== undefined) lines.push(`caption: ${value.caption}`)
+  if (value.producer !== undefined) lines.push(`produced by ${value.producer.tool} (turn ${String(value.producer.turn)})`)
   lines.push(`${value.mediaType}, ${String(value.bytes)} bytes`)
+  const edits = formatScienceArtifactEdits(value.edits ?? [], value.editCount ?? 0)
+  if (edits !== undefined) lines.push(edits)
   return lines.join('\n')
 }
 
@@ -76,8 +101,9 @@ function nonEmpty(value: string, field: string): string {
 /**
  * Register `annotate_artifact`.
  * @param ctx - plugin context; reads the optional `ctx.scienceRuntime` at call time.
+ * @param directEditLimit - maximum recent direct-edit summaries in the receipt.
  */
-export function applyAnnotateArtifactTool(ctx: Context): void {
+export function applyAnnotateArtifactTool(ctx: Context, directEditLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'annotate_artifact',
     description: 'Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. Returns a text receipt; never file bytes.',
@@ -123,8 +149,11 @@ export function applyAnnotateArtifactTool(ctx: Context): void {
         requestHeaderSeq,
         signal: exec.signal,
       })
-      const store = await resolveArtifactStoreVersion(ctx, artifact)
-      return artifactReceiptFromArtifact(artifact, store)
+      const store = await resolveArtifactStoreFacts(ctx, directEditLimit, artifact)
+      const projection = replayScience(session.events)
+      /* v8 ignore next -- annotateArtifact just appended into an already-bound Science session. */
+      if (projection === null) throw new Error('tool-science: Science mode became unbound during artifact annotation')
+      return artifactReceiptFromArtifact(artifact, store, artifactProducerLanguage(store, projection))
     },
   }))
 }

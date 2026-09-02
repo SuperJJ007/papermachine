@@ -52,7 +52,7 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 
 ### 写入与 curation
 
-`createArtifact`/`appendVersion` 不携带 `title`/`caption`——事后用 `annotateVersion` 来 curate 一个 version 的元数据,其 `actor`/`sessionId`/`toolCallId`/`requestHeaderSeq` 指明这次修改自己的来源。每次调用都会**追加**一条新的 `version_annotations` 行并前移 `latestAnnotationId`;从不原地更新一行,因此一个 version 的元数据修改历史完全可重建。`title`/`caption` 各自独立三态:省略即原样带到新行、传 `null` 显式清空、传字符串即设置。
+`createArtifact`/`appendVersion` 不携带 `title`/`caption`，事后用 `annotateVersion` 修改 version 元数据。模型策展必须携带完整的 `(sessionId, toolCallId, requestHeaderSeq)` 身份；一旦该三元组在项目内为一条 annotation 授权，写事务会拒绝再次使用，即使之后的编辑已取代该 annotation。捕获 annotation 只在 version 尚无 annotation 时被接受；后续元数据写入必须来自模型策展或人工编辑。每次被接受的调用都会**追加**一条新的 `version_annotations` 行并前移 `latestAnnotationId`；从不原地更新一行，因此一个 version 的元数据修改历史完全可重建。`title`/`caption` 各自独立三态：省略即原样带到新行、传 `null` 显式清空、传字符串即设置。
 
 `listNotes`/`putNote`/`removeNote` 管理 `artifact_notes`;`getFigureState` 读取 `figure_state`(通过 `createArtifact`/`appendVersion` 的 `figureState` 参数写入);`setVersionHealth` 是本包对 `version_health` 唯一的写方法——构建调用它的对账算法是消费方的工作。
 

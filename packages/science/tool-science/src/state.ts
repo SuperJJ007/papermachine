@@ -14,9 +14,9 @@ import type {
 } from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { closedKernelFacts, modelKernelEndReason, scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
-import { requireScienceSession, resolveArtifactStoreVersion } from './run.ts'
+import { requireScienceSession, resolveArtifactStoreFacts } from './run.ts'
 import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
-import type { ResolveArtifactStoreVersion } from './artifact-schema.ts'
+import type { ResolveArtifactStoreFacts } from './artifact-schema.ts'
 
 const stateInterpreterSchema = {
   type: 'object',
@@ -202,13 +202,13 @@ function stateMetrics(metrics: ScienceProjectionMetrics): InferValue<typeof stat
  * artifact-authority migration — through `resolveStore`.
  * @param projection - exact replayed Science projection.
  * @param historyItemLimit - maximum recent entries retained per history collection.
- * @param resolveStore - resolves each listed artifact's current store version row.
+ * @param resolveStore - resolves each listed artifact's store facts and bounded direct edits.
  * @returns sanitized, bounded tool value.
  */
 export async function stateValueFromProjection(
   projection: ScienceProjection,
   historyItemLimit: number,
-  resolveStore: ResolveArtifactStoreVersion,
+  resolveStore: ResolveArtifactStoreFacts,
 ): Promise<ScienceStateValue> {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
   const kernelsOmitted = Math.max(0, projection.kernels.length - historyItemLimit)
@@ -230,14 +230,14 @@ export async function stateValueFromProjection(
 
 /**
  * Register `get_science_state`, a no-argument read of the exact Session's
- * sanitized Science projection with bounded run and artifact-version history.
+ * sanitized Science projection with bounded run, artifact-version, and per-artifact direct-edit history.
  * @param ctx - plugin context.
  * @param historyItemLimit - maximum recent entries returned per history collection.
  */
 export function applyScienceStateTool(ctx: Context, historyItemLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'get_science_state',
-    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.',
+    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.',
     parameters: {},
     output: {
       schema: stateOutputSchema,
@@ -248,7 +248,7 @@ export function applyScienceStateTool(ctx: Context, historyItemLimit: number): v
       const session = requireScienceSession(exec)
       const projection = replayScience(session.events)
       if (projection === null) throw new Error('tool-science: Science mode is not bound for this session')
-      return stateValueFromProjection(projection, historyItemLimit, resolveArtifactStoreVersion.bind(undefined, ctx))
+      return stateValueFromProjection(projection, historyItemLimit, resolveArtifactStoreFacts.bind(undefined, ctx, historyItemLimit))
     },
   }))
 }

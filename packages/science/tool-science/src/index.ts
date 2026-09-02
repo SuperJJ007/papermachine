@@ -55,8 +55,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.systemPrompt.section({ name: 'tool:science', order: 110, text: STATIC_GUIDANCE })
   applyScienceContext(ctx, resolved)
   applyScienceStateTool(ctx, resolved.stateHistoryLimit)
-  applyRunTool(ctx, 'python')
-  applyRunTool(ctx, 'r')
-  applyAnnotateArtifactTool(ctx)
+  applyRunTool(ctx, 'python', resolved.stateHistoryLimit)
+  applyRunTool(ctx, 'r', resolved.stateHistoryLimit)
+  applyAnnotateArtifactTool(ctx, resolved.stateHistoryLimit)
   applyInstallPackagesTool(ctx)
 }

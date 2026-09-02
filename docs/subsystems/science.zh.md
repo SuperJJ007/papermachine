@@ -6,6 +6,8 @@ Science 家族拥有七种 required-on-read Session 事件、产生 environment/
 
 来源：[`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)、[`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts) 与 [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
 
+桌面产品(PaperMachine)的产品文档放在 `docs/product/` 和 `docs/releases/` 下：[papermachine.md](../product/papermachine.zh.md) 按方向描述当前面向研究者的行为，[device-checklist.md](../product/device-checklist.zh.md) 是主实机验收清单，[releases/](../releases/README.zh.md) 保存每个已发布 DMG 版本各自的一份记录。
+
 产物身份属于产生它的对话：会话首次捕获逻辑名时创建 v1，后续捕获延续本会话的链。项目中的同名产物通过 artifactId 区分。跨对话输入通过 `artifact_inputs` 指定精确版本，`edit_of` 仍限于本会话。已有日志保留已记录的版本号。产物库按产生它的对话分组，分组可折叠，折叠状态随选择存储持久化。
 
 ## 操作

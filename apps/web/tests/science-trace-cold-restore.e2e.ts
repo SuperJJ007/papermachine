@@ -8,6 +8,7 @@ import type { ArtifactRecord, ProjectId, VersionRecord } from '@deepseek-ai/dsh-
 import {
   foldScience, ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
 } from '@deepseek-ai/dsh-science-session'
+import type {} from '@deepseek-ai/dsh-session-title'
 import {
   launchWebScaffold, seedSession, watchConsole, type WebScaffold,
 } from './scaffold.ts'
@@ -172,6 +173,7 @@ describe('web e2e: cold Science trajectory restore', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.getByRole('treeitem').first().click()
+    await page.locator('[role="treeitem"][aria-selected]').first().click()
     await page.getByText('Redacted request 12.', { exact: true }).waitFor()
     await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
   }, 120_000)

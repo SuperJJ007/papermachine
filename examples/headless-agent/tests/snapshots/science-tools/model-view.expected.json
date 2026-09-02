@@ -220,6 +220,7 @@
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 1, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 2, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 2, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 2, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR.",
     "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nScience mode: revision snapshot-r3.\nEnvironment: profile \"fake\", revision 2, status applied.\nPython: available, version Python 3.13.5, fingerprint <preview>.\nLatest run {{scienceRunId}} (python): success.\nVariables persist in each language's kernel across run_python/run_r calls until it restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). State that must survive a restart belongs under SCIENCE_STATE_DIR; final output belongs under SCIENCE_ARTIFACT_DIR; materialized artifact_inputs are read from SCIENCE_INPUT_DIR."
   ],
   "editMessages": [
@@ -401,6 +402,15 @@
         {
           "type": "text",
           "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 2)\n\n--- stderr ---\n(empty)\nCaptured 2 artifacts: `region-edit-1.png` v1 ({{scienceChartId}}; image/png, 68 B), `region-edit-2.png` v1 ({{scienceChartId}}; image/png, 68 B).\n(1 PNG file not captured, not declared in raster_artifacts: plot.png; to capture, call run_python again with raster_artifacts: [\"plot.png\"] and code that writes it)"
+        }
+      ]
+    },
+    {
+      "toolCallId": "science-continue-call",
+      "content": [
+        {
+          "type": "text",
+          "text": "status: success\n--- stdout ---\nscience snapshot run output (execution 3)\n\n--- stderr ---\n(empty)\nCaptured 1 artifact: `plot.png` v3 ({{scienceChartId}}; image/png, 68 B)."
         }
       ]
     }

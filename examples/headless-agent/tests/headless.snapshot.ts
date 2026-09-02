@@ -359,6 +359,7 @@ describe('headless stream-json snapshots', () => {
     let runCwd = ''
     let rawModelView: string | undefined
     let rawChartPreview: string | undefined
+    let rawSourceAgreement: string | undefined
     const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
     try {
       const result = await runLoaderSmoke({
@@ -381,6 +382,7 @@ describe('headless stream-json snapshots', () => {
         inspect: async (cwd) => {
           rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
           rawChartPreview = await readFile(join(cwd, 'science-chart-preview.json'), 'utf8').catch(() => undefined)
+          rawSourceAgreement = await readFile(join(cwd, 'science-source-agreement.json'), 'utf8').catch(() => undefined)
         },
       })
 
@@ -398,6 +400,35 @@ describe('headless stream-json snapshots', () => {
       expect(chartPreview).toContain('Edited input')
       expect(chartPreview).not.toContain('Discarded draft')
       expect(JSON.parse(chartPreview)).toMatchObject({ liveKernelCount: 4 })
+
+      // T5 six-path acceptance, fourth expected file: the project artifact
+      // store's own version records (`(a)` authority rule — see
+      // `science-session`'s module doc) for every version this scenario
+      // committed, dumped after the driver disposes and reboots its Context
+      // and resumes the persisted session — proving the Session log and the
+      // store still agree on every version's provenance after a cold
+      // restart. The driver itself throws loudly (failing this whole test)
+      // if a resumed version's sha256 diverges from its pre-restart value or
+      // from the store's own row for that versionId, so this golden pins
+      // structure (ordinal sequence, `contentOrigin`, `baseExplicit`,
+      // `mediaType`, `byteCount`) rather than re-deriving that check.
+      if (rawSourceAgreement === undefined) throw new Error('science driver did not capture the source-agreement dump')
+      const sourceAgreement = normalizeScienceJson(rawSourceAgreement, ids)
+      const sourceAgreementExpected = join(scienceToolsScenarioDir, 'source-agreement.expected.json')
+      if (refreshing) await writeFile(sourceAgreementExpected, sourceAgreement)
+      expect(sourceAgreement).toBe(await readFile(sourceAgreementExpected, 'utf8'))
+      // `plot.png`'s three committed versions: auto-captured (v1), a
+      // viewer-style direct chart edit citing v1 explicitly (v2,
+      // `baseExplicit: true`), then a plain second run continuing the same
+      // logical name with no baseline (v3, `baseExplicit: false`).
+      expect(sourceAgreement).toContain('"logicalName": "plot.png"')
+      expect(JSON.parse(sourceAgreement)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ logicalName: 'plot.png', ordinal: 1, contentOrigin: 'run-auto', baseExplicit: false }),
+        expect.objectContaining({ logicalName: 'plot.png', ordinal: 2, contentOrigin: 'human-edit', baseExplicit: true }),
+        expect.objectContaining({ logicalName: 'plot.png', ordinal: 3, contentOrigin: 'run-auto', baseExplicit: false }),
+        expect.objectContaining({ logicalName: 'plot-review-copy.png', ordinal: 1, contentOrigin: 'human-edit', baseExplicit: true }),
+      ]))
+
       const modelView = normalizeScienceJson(rawModelView, ids)
       const modelViewExpected = join(scienceToolsScenarioDir, 'model-view.expected.json')
       if (refreshing) await writeFile(modelViewExpected, modelView)
@@ -454,9 +485,11 @@ describe('headless stream-json snapshots', () => {
       // project, so the main run's own receipt captures just that one
       // artifact. What follows: one curated re-save and one direct edit
       // reusing the PNG id, one ordinary edited branch, one single-target
-      // edit, and two outputs from the multi-target edit.
-      expect(ids.chartIds).toHaveLength(7)
-      expect(new Set(ids.chartIds).size).toBe(5)
+      // edit, two outputs from the multi-target edit, one plain-continuation
+      // run reusing the PNG id again (T5 path 3), and one `saveArtifactAs`
+      // copy minting a fresh id (T5 path 5) — nine events, six unique ids.
+      expect(ids.chartIds).toHaveLength(9)
+      expect(new Set(ids.chartIds).size).toBe(6)
       // The project artifact store is now the sole authority for a
       // version's provenance (see `science-session`'s module doc):
       // `science/artifact-saved` itself carries no parent reference any

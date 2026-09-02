@@ -90,8 +90,8 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
 import type { ArtifactId, ContentOrigin, ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
-import { foldScience } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
+import { decodeScienceChartState, foldScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -2885,6 +2885,52 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
           return err(request, { code: 'internal', message: `Science version batch unavailable for session "${sessionId}": ${String(error)}`, details: {} })
+        }
+      },
+
+      async scienceChartState(request) {
+        const { sessionId } = request.payload
+        const versionId = VersionId(String(request.payload.versionId))
+        const loaded = await contentSession(sessionId, error => `Science chart state authorization unavailable for session "${sessionId}": ${String(error)}`)
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
+        const store = ctx.get('scienceArtifactStore')
+        if (store === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'Science chart state reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
+            details: {},
+          })
+        }
+        let artifact: AuthorizedScienceArtifact | undefined
+        try {
+          artifact = await authorizedScienceArtifact(state, versionId, store)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `Science chart state authorization unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        if (artifact === undefined) {
+          return err(request, {
+            code: 'science-artifact-error',
+            message: 'Science artifact version is not referenced by this session.',
+            details: { reason: 'VERSION_NOT_REFERENCED' },
+          })
+        }
+        // Not an error: most versions (every non-PNG artifact, and a PNG
+        // never captured with a live figure object) simply have no chart
+        // state to edit — see this RPC's own JSDoc.
+        if (artifact.mediaType !== 'image/png') return ok(request, { chart: null })
+        try {
+          const figureState = await store.getFigureState(artifact.projectId, artifact.versionId)
+          if (figureState === undefined) return ok(request, { chart: null })
+          const chart: ScienceChartState = decodeScienceChartState(JSON.parse(figureState.stateJson) as unknown)
+          return ok(request, { chart })
+        } catch (error: unknown) {
+          if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
+          return err(request, { code: 'internal', message: 'Unable to read Science chart state.', details: {} })
         }
       },
 

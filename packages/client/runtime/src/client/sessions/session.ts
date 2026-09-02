@@ -20,7 +20,7 @@ import { Notifier } from '../notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type {
-  ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
+  ScienceChartState, ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
@@ -347,6 +347,15 @@ export class Session implements SessionFace {
   ): Promise<RpcResult<{ versions: ScienceVersionSummary[] }>> {
     try {
       return (await this.api.sessions.scienceVersions({ sessionId: this.sessionId, versionIds: [...versionIds] })).result
+    } catch (error) { return transportError(error) }
+  }
+
+  /** Read one fold-authorized PNG artifact version's live chart-object state, or `null` when it has none. */
+  async readScienceChartState(
+    versionId: VersionId,
+  ): Promise<RpcResult<{ chart: ScienceChartState | null }>> {
+    try {
+      return (await this.api.sessions.scienceChartState({ sessionId: this.sessionId, versionId })).result
     } catch (error) { return transportError(error) }
   }
 

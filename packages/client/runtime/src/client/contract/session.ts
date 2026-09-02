@@ -14,7 +14,7 @@ import type {
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type {
-  ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
+  ScienceChartState, ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ConversationSnapshot } from './session-state.ts'
 import type { ObservableSnapshot } from './store.ts'
@@ -96,6 +96,22 @@ export interface ISession {
   readScienceVersions(
     versionIds: readonly VersionId[],
   ): Promise<RpcResult<{ versions: ScienceVersionSummary[] }>>
+  /**
+   * Read one PNG artifact version's live chart-object state (addressable
+   * elements, the direct-edit operation log, hit regions) — the seat the
+   * chart edit panel mounts from. `chart` is `null` for a non-PNG version or
+   * a PNG version with no stored figure state (imported or legacy content);
+   * a caller cannot distinguish the two and shows no edit affordance either
+   * way. Unlike {@link readScienceVersions}, a `versionId` this session's
+   * fold cannot prove is a business error, not a silent omission — this
+   * method always names exactly one version an already-open artifact tab is
+   * rendering.
+   * @param versionId - opaque store version id carried by the Science projection.
+   * @returns the version's chart state, or `null`.
+   */
+  readScienceChartState(
+    versionId: VersionId,
+  ): Promise<RpcResult<{ chart: ScienceChartState | null }>>
   /** List one relative directory inside this session's workspace. */
   readWorkspaceFiles(path?: string): Promise<RpcResult<{ root: string; entries: WorkspaceFileEntry[]; truncated?: true }>>
   /** Read one bounded relative workspace file as preview bytes. */

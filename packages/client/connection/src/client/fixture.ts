@@ -2598,6 +2598,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         projectId: 'fixture-project' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 },
       }),
       scienceVersions: request => ok(request, { versions: [] }),
+      scienceChartState: request => ok(request, { chart: null }),
       workspaceFiles: request => ok(request, { root: request.payload.path ?? '', entries: [] }),
       workspaceFile: request => err(request, {
         code: 'science-artifact-error', message: 'fixture workspace file missing', details: { reason: 'VERSION_NOT_FOUND' },
@@ -3237,6 +3238,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.scienceArtifact': return this.api.sessions.scienceArtifact(request)
       case 'sessions.scienceLibrary': return this.api.sessions.scienceLibrary(request)
       case 'sessions.scienceVersions': return this.api.sessions.scienceVersions(request)
+      case 'sessions.scienceChartState': return this.api.sessions.scienceChartState(request)
       case 'sessions.workspaceFiles': return this.api.sessions.workspaceFiles(request)
       case 'sessions.workspaceFile': return this.api.sessions.workspaceFile(request)
       case 'session.textAttachment': return this.api.sessions.textAttachment(request)

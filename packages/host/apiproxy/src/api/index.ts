@@ -50,6 +50,10 @@ export type {
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
   WorkspaceFileEntry,
 } from './sessions.ts'
+// Zero-Node type-only subpath (mirrors this file's own browser-bundle-purity
+// rule); named separately because `ScienceChartState` is not itself declared
+// in sessions.ts, only imported there for the SessionsApi shape.
+export type { ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
 export type {
   SubagentAddress, SubagentCatalog, SubagentInterruptReceipt, SubagentListEntry,

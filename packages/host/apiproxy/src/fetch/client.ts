@@ -29,6 +29,7 @@ import {
   sessionRenameValueSchema,
   sessionSearchValueSchema,
   sessionScienceArtifactValueSchema,
+  sessionsScienceChartStateValueSchema,
   sessionsScienceLibraryValueSchema,
   sessionsScienceVersionsValueSchema,
   sessionsWorkspaceFileValueSchema,
@@ -106,6 +107,7 @@ export interface IApiClient {
     scienceArtifact(payload: RequestPayload<'session.scienceArtifact'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.scienceArtifact'>>>
     scienceLibrary(payload: RequestPayload<'sessions.scienceLibrary'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceLibrary'>>>
     scienceVersions(payload: RequestPayload<'sessions.scienceVersions'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceVersions'>>>
+    scienceChartState(payload: RequestPayload<'sessions.scienceChartState'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceChartState'>>>
     workspaceFiles(payload: RequestPayload<'sessions.workspaceFiles'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFiles'>>>
     workspaceFile(payload: RequestPayload<'sessions.workspaceFile'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFile'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
@@ -196,6 +198,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'session.scienceArtifact': sessionScienceArtifactValueSchema,
   'sessions.scienceLibrary': sessionsScienceLibraryValueSchema,
   'sessions.scienceVersions': sessionsScienceVersionsValueSchema,
+  'sessions.scienceChartState': sessionsScienceChartStateValueSchema,
   'sessions.workspaceFiles': sessionsWorkspaceFilesValueSchema,
   'sessions.workspaceFile': sessionsWorkspaceFileValueSchema,
   'session.updateQueue': sessionUpdateQueueValueSchema,
@@ -460,6 +463,7 @@ export abstract class AbstractApiClient implements IApiClient {
     scienceArtifact: (payload, signal) => this.callUnary('session.scienceArtifact', payload, signal),
     scienceLibrary: (payload, signal) => this.callUnary('sessions.scienceLibrary', payload, signal),
     scienceVersions: (payload, signal) => this.callUnary('sessions.scienceVersions', payload, signal),
+    scienceChartState: (payload, signal) => this.callUnary('sessions.scienceChartState', payload, signal),
     workspaceFiles: (payload, signal) => this.callUnary('sessions.workspaceFiles', payload, signal),
     workspaceFile: (payload, signal) => this.callUnary('sessions.workspaceFile', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),

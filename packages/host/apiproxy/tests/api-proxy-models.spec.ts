@@ -658,6 +658,113 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('reads a PNG version\'s stored chart state only for a version proven by the named session fold', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const chart = {
+      runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+      elements: [{ id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' }],
+      ops: [], hitmap: [], hitmapStatus: 'unavailable',
+    }
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve({
+      versionId: VERSION_ID, figureKey: 'loss.png', dpi: 100, stateJson: JSON.stringify(chart),
+    }))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const allowed = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(allowed.result).toEqual({ ok: true, value: { chart } })
+    expect(getFigureState).toHaveBeenCalledWith(PROJECT_ID, VERSION_ID)
+
+    const denied = await api.sessions.scienceChartState(request({ sessionId, versionId: 'unreferenced' as never }))
+    expect(denied.result).toMatchObject({
+      ok: false,
+      error: { code: 'science-artifact-error', details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    expect(getFigureState).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('answers null chart state for a non-PNG version without reading figure state', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'text/csv', byteCount: 3 }))
+    const getFigureState = vi.fn()
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toEqual({ ok: true, value: { chart: null } })
+    expect(getFigureState).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('answers null chart state for a PNG version with no stored figure state', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve(undefined))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toEqual({ ok: true, value: { chart: null } })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a chart-state store failure to a business error', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.reject(new ProjectArtifactStoreError('store wedged', 'ARTIFACT_NOT_FOUND')))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toMatchObject({
+      ok: false, error: { code: 'science-artifact-error', details: { reason: 'ARTIFACT_NOT_FOUND' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a malformed stored figure state to a generic internal error', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve({
+      versionId: VERSION_ID, figureKey: 'loss.png', dpi: 100, stateJson: '{"not":"a chart"}',
+    }))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toMatchObject({ ok: false, error: { code: 'internal' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('fails chart-state reads explicitly when the artifact store is not mounted', async () => {
+    const { ctx, sessionId } = await harness(undefined, '/tmp/science-chart-state-no-store')
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))).result).toMatchObject({
+      ok: false, error: { code: 'internal' },
+    })
+    await ctx.fiber.dispose()
+  })
+
   it('contains workspace listing and preview reads within the session cwd', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-workspace-library-'))
     try {

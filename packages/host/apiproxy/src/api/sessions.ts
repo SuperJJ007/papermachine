@@ -16,7 +16,7 @@ import type {
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ArtifactId, ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
-import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactMediaType, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
@@ -506,6 +506,27 @@ export interface SessionsApi {
    */
   scienceVersions(request: RpcRequest<{ sessionId: SessionId; versionIds: VersionId[] }>):
   Promise<RpcResponse<{ versions: ScienceVersionSummary[] }>>
+
+  /**
+   * Reads one PNG artifact version's live-figure chart state (addressable
+   * elements, the direct-edit operation log, pixel-space hit regions), from
+   * the store's `figure_state` table — the client-facing read path the chart
+   * edit panel needs (see `ArtifactContent.tsx`'s Note). Authorization
+   * reuses the same three proof paths `scienceArtifact`/`scienceVersions`
+   * use.
+   *
+   * `null` covers two distinct cases a caller cannot and need not
+   * distinguish: a non-PNG version, and a PNG version with no `figure_state`
+   * row (imported or legacy content, or a v1→v2 migration row the optional
+   * backfill hook never recovered) — a client shows no edit affordance
+   * either way. Unlike the batch `scienceVersions` read, an unauthorized or
+   * nonexistent `versionId` here fails loud with `science-artifact-error`
+   * (`VERSION_NOT_REFERENCED`): this RPC always names exactly one version an
+   * already-open artifact tab is rendering, not a batch where partial
+   * visibility is the expected outcome.
+   */
+  scienceChartState(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
+  Promise<RpcResponse<{ chart: ScienceChartState | null }>>
 
   /** Lists one workspace directory without following paths outside the named session's workspace. */
   workspaceFiles(request: RpcRequest<{ sessionId: SessionId; path?: string }>):

@@ -73,6 +73,7 @@ function scriptedApi(overrides: {
           contentOrigin: 'run-auto' as const, createdAt: 1, mediaType: 'image/png', byteCount: 1,
         })),
       }),
+      scienceChartState: r => ok(r, { chart: null }),
       workspaceFiles: r => ok(r, { root: '', entries: [] }),
       workspaceFile: r => ok(r, { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' }),
       updateQueue: r => ok(r, { accepted: true as const }),

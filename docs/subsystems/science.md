@@ -161,17 +161,21 @@ readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>
 /**
  * Reconcile one project's store against session-log events a caller has
  * already read and folded — see the package README's Reconciliation
- * section for the six-case table this decides. This package never reads
+ * section for the seven-case table this decides. This package never reads
  * session logs itself; `dsh-science-runtime` reads them (bounded by its
  * own `reconcileMaxSessions` Config) and folds duplicate events per
  * `versionId` (last write wins) before calling this. Never throws for one
  * bad item — see `ReconcileResult.errors` — and never writes a session
  * log; the store is the sole write target.
  * @param projectId - the project to reconcile.
- * @param events - every `science/artifact-saved` event the caller read from this project's session logs, folded per `versionId`.
+ * @param events - every `science/artifact-saved` event the caller read from
+ * this project's session logs, folded per `versionId`.
+ * @param eventSetComplete - whether the caller read every relevant session
+ * log and event; when false, an absent event cannot mark or clear orphan health.
+ * @param cursor - prior bounded-walk progress over this stable event set.
  * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
  */
-reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult>
+reconcileProject( projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>, eventSetComplete: boolean, cursor?: ReconcileCursor, ): Promise<ReconcileResult>
 
 /**
  * Read project-wide reconciliation health — the read interface a Host

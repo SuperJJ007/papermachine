@@ -673,6 +673,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   VersionHealthPatch: 'reconciliation-status input is owned by packages/science/science-artifact-store/README.md',
   VersionHealthRecord: 'reconciliation-status row shape is owned by packages/science/science-artifact-store/README.md',
   ReconcileArtifactSavedEvent: 'reconciliation input event shape is owned by packages/science/science-artifact-store/README.md',
+  ReconcileCursor: 'bounded-walk restart cursor is owned by packages/science/science-artifact-store/README.md',
   ReconcileResult: 'reconciliation call result is owned by packages/science/science-artifact-store/README.md',
   ReconciliationSummary: 'reconciliation health summary is owned by packages/science/science-artifact-store/README.md',
   SessionForkSource: 'service-local fork input is owned by packages/core/session/src/index.ts',

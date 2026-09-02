@@ -49,6 +49,7 @@ class TestPersistence extends SessionPersistence {
   readonly inspectFailureFor = new Set<SessionId>()
   listFailure: Error | undefined
   listCalls = 0
+  listSnapshotCalls = 0
   inspectCalls = 0
 
   locate(_meta: SessionHeader): SessionLocation | undefined { return undefined }
@@ -81,11 +82,13 @@ class TestPersistence extends SessionPersistence {
     return Promise.resolve([...this.durable.values()].map(value => value.meta))
   }
 
-  async listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
-    return [...this.durable.values()].map((value, index) => ({
+  listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
+    this.listSnapshotCalls += 1
+    if (this.listFailure !== undefined) return Promise.reject(this.listFailure)
+    return Promise.resolve([...this.durable.values()].map((value, index) => ({
       header: value.meta,
       revision: SessionPersistenceRevision(`test:${index}:${value.events.length}`),
-    }))
+    })))
   }
 
   setDurable(inspection: SessionInspection): void {
@@ -148,6 +151,36 @@ describe('collectProjectArtifactEvents', () => {
     })
     const result = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: '/workspace/project-a', maxSessions: 100 })
     expect(result.events.size).toBe(0)
+  })
+
+  it('drops a cached session\'s retained events once it no longer matches the workspace', async () => {
+    const persistence = new TestPersistence(new Context())
+    const cwd = '/workspace/project-a'
+    persistence.setDurable({
+      meta: header('s1', cwd),
+      events: [artifactSavedEvent(1, { artifactId: 'a1', versionId: 'v1', version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), title: 'x', seenAt: 1 })],
+    })
+    persistence.setDurable({
+      meta: header('s2', cwd),
+      events: [artifactSavedEvent(1, { artifactId: 'a2', versionId: 'v2', version: 1, logicalName: 'y.png', sha256: 'b'.repeat(64), title: 'y', seenAt: 1 })],
+    })
+    const first = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100 })
+    expect(first.events.size).toBe(2)
+    expect(first.cursor?.eventsBySession.has(SessionId('s2'))).toBe(true)
+
+    // Removed from persistence entirely (a session log a retention sweep or
+    // GC dropped) — the same case as a session whose header `cwd` moved off
+    // this project's workspace: either way, "s2" no longer appears among
+    // `listSnapshots()`'s matching sessions on the next call.
+    persistence.durable.delete(SessionId('s2'))
+    const second = await collectProjectArtifactEvents({
+      sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100, cursor: first.cursor!,
+    })
+    expect(second.events.size).toBe(1)
+    expect(second.events.has(VersionId('v1'))).toBe(true)
+    expect(second.events.has(VersionId('v2'))).toBe(false)
+    expect(second.cursor?.eventsBySession.has(SessionId('s2'))).toBe(false)
+    expect(second.changed).toBe(true)
   })
 
   it('skips a session with no cwd at all', async () => {
@@ -374,13 +407,13 @@ describe('ScienceRuntime reconciliation trigger', () => {
     roots.push(cwd)
     const sessionA = createScienceSession(harness.ctx, 'reconcile-trigger-a', cwd)
     await bindFakePython(harness.runtime, sessionA)
-    await vi.waitFor(() => { expect(persistence.listCalls).toBe(1) })
+    await vi.waitFor(() => { expect(persistence.listSnapshotCalls).toBe(1) })
 
     const sessionB = createScienceSession(harness.ctx, 'reconcile-trigger-b', cwd)
     await bindFakePython(harness.runtime, sessionB)
     // Give any (incorrect) second trigger a chance to run before asserting it did not.
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(persistence.listCalls).toBe(1)
+    expect(persistence.listSnapshotCalls).toBe(1)
   })
 
   it('retries an incomplete event collection only after the configured delay on a later project resolution', async () => {
@@ -398,17 +431,17 @@ describe('ScienceRuntime reconciliation trigger', () => {
     const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
     roots.push(cwd)
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-first', cwd))
-    await vi.waitFor(() => { expect(persistence.listCalls).toBe(1) })
+    await vi.waitFor(() => { expect(persistence.listSnapshotCalls).toBe(1) })
     await vi.waitFor(() => {
       expect(warnSpy.mock.calls.some(call => String(call[0]).includes('orphan classification was skipped'))).toBe(true)
     })
 
     persistence.listFailure = undefined
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-too-soon', cwd))
-    expect(persistence.listCalls).toBe(1)
+    expect(persistence.listSnapshotCalls).toBe(1)
     await new Promise(resolve => setTimeout(resolve, 60))
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-later', cwd))
-    await vi.waitFor(() => { expect(persistence.listCalls).toBe(2) })
+    await vi.waitFor(() => { expect(persistence.listSnapshotCalls).toBe(2) })
   })
 
   it('advances a truncated session walk and memoizes only after the accumulated set is reconciled', async () => {
@@ -447,7 +480,77 @@ describe('ScienceRuntime reconciliation trigger', () => {
     await new Promise(resolve => setTimeout(resolve, 5))
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-page-memoized', cwd))
     await new Promise(resolve => setTimeout(resolve, 20))
-    expect(persistence.listCalls).toBe(2)
+    expect(persistence.listSnapshotCalls).toBe(2)
+  })
+
+  it('re-reads a session whose log grew after it was cached, instead of classifying its new version orphan once the pass completes', async () => {
+    const root = tmp('.science-runtime-reconcile-trigger-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { reconcileRetryDelayMs: 1 },
+    )
+    contexts.push(harness.ctx)
+    await harness.ctx.plugin(TestPersistence)
+    const persistence = harness.ctx.sessionPersistence as unknown as TestPersistence
+    const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
+    roots.push(cwd)
+    const opened = await harness.ctx.scienceArtifactStore.openProject(cwd)
+
+    // "grow" already committed one real store row before the first attempt;
+    // "other" starts unreadable, forcing the first collection incomplete.
+    const { version: firstVersion } = await harness.ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'first.png', kind: 'figure', originSessionId: SessionId('grow'),
+      data: new TextEncoder().encode('bytes-first'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    persistence.setDurable({
+      meta: header('grow', cwd),
+      events: [artifactSavedEvent(1, {
+        artifactId: firstVersion.artifactId, versionId: firstVersion.versionId, version: firstVersion.ordinal,
+        logicalName: 'first.png', sha256: firstVersion.sha256, title: 'first.png', seenAt: 1,
+      })],
+    })
+    persistence.setDurable({ meta: header('other', cwd), events: [] })
+    persistence.inspectFailureFor.add(SessionId('other'))
+
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-grow-page-1', cwd))
+    await vi.waitFor(() => { expect(persistence.inspectCalls).toBe(2) })
+    await vi.waitFor(async () => {
+      const summary = await harness.ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+      expect(summary.orphanCount).toBe(0)
+    })
+
+    // A run committed a second artifact into "grow"'s session log between
+    // attempts, and "other" becomes readable — both must be reflected in
+    // the next complete pass, not just "other".
+    const { version: secondVersion } = await harness.ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'second.png', kind: 'figure', originSessionId: SessionId('grow'),
+      data: new TextEncoder().encode('bytes-second'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    persistence.setDurable({
+      meta: header('grow', cwd),
+      events: [
+        artifactSavedEvent(1, {
+          artifactId: firstVersion.artifactId, versionId: firstVersion.versionId, version: firstVersion.ordinal,
+          logicalName: 'first.png', sha256: firstVersion.sha256, title: 'first.png', seenAt: 1,
+        }),
+        artifactSavedEvent(2, {
+          artifactId: secondVersion.artifactId, versionId: secondVersion.versionId, version: secondVersion.ordinal,
+          logicalName: 'second.png', sha256: secondVersion.sha256, title: 'second.png', seenAt: 2,
+        }),
+      ],
+    })
+    persistence.inspectFailureFor.delete(SessionId('other'))
+
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-grow-page-2', cwd))
+    // Without re-reading "grow", the pass would complete on "other" alone
+    // and never observe secondVersion's own matching event.
+    await vi.waitFor(() => { expect(persistence.inspectCalls).toBe(4) })
+    await vi.waitFor(async () => {
+      const summary = await harness.ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+      expect(summary.orphanCount).toBe(0)
+    })
+    await expect(harness.ctx.scienceArtifactStore.getVersion(opened.projectId, secondVersion.versionId)).resolves.toBeDefined()
   })
 
   it('carries the store cursor to a later resolution and memoizes after it empties', async () => {

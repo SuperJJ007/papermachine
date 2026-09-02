@@ -12,7 +12,7 @@
 import { resolve } from 'node:path'
 import { ArtifactId, VersionId, type ReconcileArtifactSavedEvent } from '@deepseek-ai/dsh-science-artifact-store'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionHeader, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionHeader, SessionPersistence, SessionPersistenceRevision, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-science-session'
 
 /** Inputs for one project's `collectProjectArtifactEvents` walk. */
@@ -41,7 +41,7 @@ export interface CollectProjectArtifactEventsResult {
   /**
    * Every `science/artifact-saved` event found, folded per `versionId`
    * (last write wins across every scanned session, in the order
-   * `SessionPersistence.list()` returned them).
+   * `SessionPersistence.listSnapshots()` returned them).
    */
   readonly events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>
   /** `true` only when listing, every admitted session read, and every relevant event parse succeeded without truncation. */
@@ -56,12 +56,20 @@ export interface CollectProjectArtifactEventsResult {
 
 /** Restart-local progress for one project's bounded session-log walk. */
 export interface CollectProjectArtifactEventsCursor {
-  /** Current matching-session order from `SessionPersistence.list()`. */
+  /** Current matching-session order from `SessionPersistence.listSnapshots()`. */
   readonly sessionOrder: readonly SessionId[]
-  /** Unread or previously unreadable sessions, in next-attempt order. */
+  /** Unread, previously unreadable, or grown-since-cached sessions, in next-attempt order. */
   readonly pendingSessionIds: readonly SessionId[]
   /** Fully parsed events retained per session so retries preserve list order. */
   readonly eventsBySession: ReadonlyMap<SessionId, readonly ReconcileArtifactSavedEvent[]>
+  /**
+   * Per-session `SessionPersistenceSnapshot.revision` recorded when that
+   * session's `eventsBySession` entry was read. A session whose live
+   * revision no longer matches is dropped from the cache and re-queued
+   * instead of trusted stale, so an append to an already-inspected session
+   * between attempts is not missed by a later complete pass.
+   */
+  readonly revisionsBySession: ReadonlyMap<SessionId, SessionPersistenceRevision>
 }
 
 /** The subset of a raw, undecoded `science/artifact-saved` event's `artifact` value this extractor needs. */
@@ -158,16 +166,21 @@ function sameSessionEvents(
  * canonical workspace path), folded per `versionId` (last write wins).
  * Never throws: a session log that fails to list or read is skipped with a
  * warning, and a malformed event within an otherwise-readable log is
- * skipped the same way — one bad log or event never stops the walk.
+ * skipped the same way — one bad log or event never stops the walk. A
+ * session already cached from an earlier attempt is trusted only while its
+ * `SessionPersistence.listSnapshots()` revision is unchanged; a session
+ * whose log grew or was rewritten since it was cached is re-queued instead,
+ * so `complete: true` always reflects the live state of every matching
+ * session, not a stale earlier read of one still-active session.
  * @param request - the persistence backend, project workspace, and validated work bound.
  * @returns the folded events, their completeness, and whether more matching sessions existed than `maxSessions` admitted.
  */
 export async function collectProjectArtifactEvents(
   request: CollectProjectArtifactEventsRequest,
 ): Promise<CollectProjectArtifactEventsResult> {
-  let headers: readonly SessionHeader[]
+  let snapshots: readonly SessionPersistenceSnapshot[]
   try {
-    headers = await request.sessionPersistence.list()
+    snapshots = await request.sessionPersistence.listSnapshots()
   } catch (error) {
     request.onWarning?.(`science-runtime: reconciliation could not list session logs: ${String(error)}`)
     return {
@@ -176,17 +189,30 @@ export async function collectProjectArtifactEvents(
     }
   }
 
-  const matching = headers.filter(header => headerNamesWorkspace(header, request.workspacePath))
-  const sessionOrder = matching.map(header => header.id)
+  const matching = snapshots.filter(snapshot => headerNamesWorkspace(snapshot.header, request.workspacePath))
+  const sessionOrder = matching.map(snapshot => snapshot.header.id)
   const matchingIds = new Set(sessionOrder)
-  const eventsBySession = new Map(
-    [...(request.cursor?.eventsBySession ?? [])].filter(([sessionId]) => matchingIds.has(sessionId)),
+  const liveRevisionBySessionId = new Map(matching.map(snapshot => [snapshot.header.id, snapshot.revision]))
+
+  const eventsBySession = new Map<SessionId, readonly ReconcileArtifactSavedEvent[]>()
+  for (const [sessionId, cachedEvents] of request.cursor?.eventsBySession ?? []) {
+    if (!matchingIds.has(sessionId)) continue
+    const cachedRevision = request.cursor?.revisionsBySession.get(sessionId)
+    const liveRevision = liveRevisionBySessionId.get(sessionId)
+    if (cachedRevision !== undefined && liveRevision !== undefined && cachedRevision === liveRevision) {
+      eventsBySession.set(sessionId, cachedEvents)
+    }
+  }
+  const revisionsBySession = new Map(
+    [...(request.cursor?.revisionsBySession ?? [])].filter(([sessionId]) => eventsBySession.has(sessionId)),
   )
   const retainedPending = (request.cursor?.pendingSessionIds ?? []).filter(sessionId => matchingIds.has(sessionId))
-  const queued = new Set([...eventsBySession.keys(), ...retainedPending])
+  const queued = new Set(retainedPending)
   const pending = [...retainedPending]
   for (const sessionId of sessionOrder) {
-    if (!queued.has(sessionId)) pending.push(sessionId)
+    if (queued.has(sessionId)) continue
+    queued.add(sessionId)
+    if (!eventsBySession.has(sessionId)) pending.push(sessionId)
   }
   const batchIds = pending.slice(0, request.maxSessions)
   const remaining = pending.slice(request.maxSessions)
@@ -215,17 +241,17 @@ export async function collectProjectArtifactEvents(
       }
       sessionEvents.push(extracted)
     }
-    if (!valid) {
-      changed ||= !sameSessionEvents(eventsBySession.get(sessionId), sessionEvents)
-      eventsBySession.set(sessionId, sessionEvents)
-      failed.push(sessionId)
-      continue
-    }
+    // batchIds is drawn from pending, itself a subset of sessionOrder / matchingIds, so a
+    // revision snapshot for this session was always collected into liveRevisionBySessionId above.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- see the invariant above
+    const liveRevision = liveRevisionBySessionId.get(sessionId)!
     changed ||= !sameSessionEvents(eventsBySession.get(sessionId), sessionEvents)
     eventsBySession.set(sessionId, sessionEvents)
+    revisionsBySession.set(sessionId, liveRevision)
+    if (!valid) failed.push(sessionId)
   }
   const pendingSessionIds = [...remaining, ...failed]
-  const cursor: CollectProjectArtifactEventsCursor = { sessionOrder, pendingSessionIds, eventsBySession }
+  const cursor: CollectProjectArtifactEventsCursor = { sessionOrder, pendingSessionIds, eventsBySession, revisionsBySession }
   return {
     events: foldSessionEvents(cursor), complete: pendingSessionIds.length === 0,
     truncated: remaining.length > 0, cursor, changed,

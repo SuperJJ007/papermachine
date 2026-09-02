@@ -45,7 +45,8 @@ export interface ApiProxy {
 export type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   ModelReasoningEffort, ModelSelection, PromptContentPart, QueueAction, SessionModels,
-  ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionHealthFlags,
+  ScienceContentOrigin, ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionHealthFlags,
+  ScienceVersionSummary,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
   WorkspaceFileEntry,
 } from './sessions.ts'

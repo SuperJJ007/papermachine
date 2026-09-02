@@ -77,6 +77,15 @@ export interface ScienceVersionHealthFlags {
   missingContent?: true
 }
 
+/**
+ * How one version's bytes came to exist. Mirrors
+ * `@deepseek-ai/dsh-science-artifact-store`'s `ContentOrigin` field-for-field
+ * (redeclared here, not imported, because that package exposes no
+ * browser-safe subpath beyond `.`, `./ids`, and `./invariant`, and `api/`
+ * must stay importable by browser bundles).
+ */
+export type ScienceContentOrigin = 'run-auto' | 'human-edit' | 'import'
+
 /** Latest project artifact metadata shown by the project file library. */
 export interface ScienceLibraryArtifact {
   artifactId: ArtifactId
@@ -107,6 +116,29 @@ export interface ScienceLibraryHealth {
   orphan: number
   reconstructed: number
   missingContent: number
+}
+
+/**
+ * One project-store artifact version's current library facts: the exact
+ * metadata a Files-panel row or a version-stepper entry renders, read fresh
+ * from the store rather than echoed from a session-log snapshot taken when
+ * the version was captured. Fixes the drift where the Files panel (reading
+ * the store's current value) and a session's detail view (reading its own
+ * projected snapshot) showed two different names for the same version after
+ * a later curation call — see `scienceVersions`'s own JSDoc.
+ */
+export interface ScienceVersionSummary {
+  versionId: VersionId
+  artifactId: ArtifactId
+  logicalName: string
+  ordinal: number
+  title?: string
+  caption?: string
+  contentOrigin: ScienceContentOrigin
+  createdAt: number
+  mediaType: string
+  byteCount: number
+  health?: ScienceVersionHealthFlags
 }
 
 /** One direct child of a session workspace directory. */
@@ -457,6 +489,23 @@ export interface SessionsApi {
    */
   scienceLibrary(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>>
+
+  /**
+   * Batch-reads the current library facts (see {@link ScienceVersionSummary})
+   * for a caller-chosen set of versions, each independently authorized by
+   * the named session's own fold through the same three proof paths
+   * `scienceArtifact` uses. A `versionId` the fold cannot prove is silently
+   * dropped from the result rather than failing the whole call: this RPC
+   * serves a batch render (a Files-panel page, a version stepper) where
+   * partial visibility is the ordinary case, exactly as one hidden row
+   * already is in `scienceLibrary`'s per-artifact listing — a client cannot
+   * distinguish "not authorized" from "no longer exists" from the omission,
+   * matching `scienceArtifact`'s own no-reason-leaked 404 stance. At most
+   * 200 ids per call; a longer array is rejected (`bad-request`) before any
+   * lookup runs.
+   */
+  scienceVersions(request: RpcRequest<{ sessionId: SessionId; versionIds: VersionId[] }>):
+  Promise<RpcResponse<{ versions: ScienceVersionSummary[] }>>
 
   /** Lists one workspace directory without following paths outside the named session's workspace. */
   workspaceFiles(request: RpcRequest<{ sessionId: SessionId; path?: string }>):

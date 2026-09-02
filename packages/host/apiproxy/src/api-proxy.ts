@@ -42,6 +42,7 @@ import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, ScienceVersionHealthFlags,
+  ScienceVersionSummary,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
@@ -88,7 +89,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { ProjectArtifactStoreError, VersionId } from '@deepseek-ai/dsh-science-artifact-store'
-import type { ArtifactId, ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ArtifactId, ContentOrigin, ScienceArtifactStore, VersionHealthRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import { foldScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
@@ -1633,6 +1634,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     readonly sha256: string
     readonly mediaType: string
     readonly byteCount: number
+    /**
+     * This version's current title/caption, when curated — read fresh from
+     * the store, never a session-log snapshot; `scienceVersions`'s source.
+     */
+    readonly title: string | undefined
+    readonly caption: string | undefined
+    readonly contentOrigin: ContentOrigin
+    /** Content-commit time (never changes after creation — see `VersionRecord.createdAt`). */
+    readonly createdAt: number
   }
 
   /**
@@ -1664,6 +1674,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         sha256: local.sha256,
         mediaType: version.mediaType,
         byteCount: version.byteCount,
+        title: version.title,
+        caption: version.caption,
+        contentOrigin: version.contentOrigin,
+        createdAt: version.createdAt,
       }
     }
 
@@ -1688,6 +1702,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         sha256: matched.sha256,
         mediaType: matched.mediaType,
         byteCount: matched.byteCount,
+        title: matched.title,
+        caption: matched.caption,
+        contentOrigin: matched.contentOrigin,
+        createdAt: matched.createdAt,
       }
     }
     const projectVersion = await store.getVersion(projectId, requestedVersionId)
@@ -1699,6 +1717,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       sha256: projectVersion.sha256,
       mediaType: projectVersion.mediaType,
       byteCount: projectVersion.byteCount,
+      title: projectVersion.title,
+      caption: projectVersion.caption,
+      contentOrigin: projectVersion.contentOrigin,
+      createdAt: projectVersion.createdAt,
     }
   }
 
@@ -2800,6 +2822,69 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
           return err(request, { code: 'internal', message: `Science library unavailable for session "${sessionId}": ${String(error)}`, details: {} })
+        }
+      },
+
+      async scienceVersions(request) {
+        const { sessionId, versionIds } = request.payload
+        const loaded = await contentSession(sessionId, error => `Science version batch unavailable for session "${sessionId}": ${String(error)}`)
+        if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
+        const state = loaded.value
+        const store = ctx.get('scienceArtifactStore')
+        if (store === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'Science version reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
+            details: {},
+          })
+        }
+        try {
+          // logicalName has no home on AuthorizedScienceArtifact (only the
+          // download endpoint needs it, fetched there post-blob-read), and
+          // health is a per-project reconciliation read — both cached per
+          // request since a version stepper's batch is dominated by repeats
+          // of the same artifact/project.
+          const logicalNameByArtifact = new Map<string, string>()
+          const healthByProject = new Map<string, Map<VersionId, VersionHealthRecord>>()
+          const versions: ScienceVersionSummary[] = []
+          for (const versionId of versionIds) {
+            // Unauthorized/nonexistent versions are dropped from the result,
+            // not failed — see this RPC's own JSDoc for why partial
+            // visibility is the expected outcome of a batch read.
+            const authorized = await authorizedScienceArtifact(state, versionId, store)
+            if (authorized === undefined) continue
+            const artifactKey = `${authorized.projectId}:${authorized.artifactId}`
+            let logicalName = logicalNameByArtifact.get(artifactKey)
+            if (logicalName === undefined) {
+              const owner = await store.getArtifact(authorized.projectId, authorized.artifactId)
+              if (owner === undefined) continue
+              logicalName = owner.logicalName
+              logicalNameByArtifact.set(artifactKey, logicalName)
+            }
+            let healthByVersionId = healthByProject.get(String(authorized.projectId))
+            if (healthByVersionId === undefined) {
+              const reconciliation = await store.getReconciliationSummary(authorized.projectId)
+              healthByVersionId = new Map(reconciliation.items.map(item => [item.versionId, item]))
+              healthByProject.set(String(authorized.projectId), healthByVersionId)
+            }
+            versions.push({
+              versionId: authorized.versionId,
+              artifactId: authorized.artifactId,
+              logicalName,
+              ordinal: authorized.ordinal,
+              ...(authorized.title === undefined ? {} : { title: authorized.title }),
+              ...(authorized.caption === undefined ? {} : { caption: authorized.caption }),
+              contentOrigin: authorized.contentOrigin,
+              createdAt: authorized.createdAt,
+              mediaType: authorized.mediaType,
+              byteCount: authorized.byteCount,
+              ...versionHealthFlags(healthByVersionId.get(versionId)),
+            })
+          }
+          return ok(request, { versions })
+        } catch (error: unknown) {
+          if (error instanceof ProjectArtifactStoreError) return err(request, { code: 'science-artifact-error', message: error.message, details: { reason: error.code } })
+          return err(request, { code: 'internal', message: `Science version batch unavailable for session "${sessionId}": ${String(error)}`, details: {} })
         }
       },
 

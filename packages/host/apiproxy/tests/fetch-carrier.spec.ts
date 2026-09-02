@@ -120,6 +120,21 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           result: { ok: true, value: { projectId: 'project-1' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } } },
         }
       },
+      async scienceVersions(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              versions: request.payload.versionIds.map(versionId => ({
+                versionId, artifactId: 'artifact-1' as never, logicalName: 'chart.png', ordinal: 1,
+                title: 'Chart', caption: 'Caption', contentOrigin: 'run-auto' as const, createdAt: 1,
+                mediaType: 'image/png', byteCount: 1,
+              })),
+            },
+          },
+        }
+      },
       async workspaceFiles(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { root: '', entries: [] } } }
       },
@@ -385,6 +400,11 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.sessions.textAttachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.scienceArtifact({ sessionId: 's' as never, versionId: 'version-1' as never })).result.ok).toBe(true)
     expect((await c.sessions.scienceLibrary({ sessionId: 's' as never })).result.ok).toBe(true)
+    const versions = await c.sessions.scienceVersions({ sessionId: 's' as never, versionIds: ['version-1' as never] })
+    expect(versions.result).toMatchObject({
+      ok: true,
+      value: { versions: [{ versionId: 'version-1', logicalName: 'chart.png', title: 'Chart', caption: 'Caption' }] },
+    })
     expect((await c.sessions.workspaceFiles({ sessionId: 's' as never })).result.ok).toBe(true)
     expect((await c.sessions.workspaceFile({ sessionId: 's' as never, path: 'notes.txt' })).result.ok).toBe(true)
     expect((await c.sessions.updateQueue({

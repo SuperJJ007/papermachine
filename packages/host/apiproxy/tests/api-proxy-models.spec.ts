@@ -28,6 +28,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
+import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import {
   appendFixtureEvents,
   ARTIFACT_ID,
@@ -451,6 +452,107 @@ describe('Web session model selection', () => {
       sessionId: otherSession.id, versionId: version.versionId as never,
     }))).result).toMatchObject({
       ok: false, error: { details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('batch-reads current library facts for fold-authorized versions, dropping unauthorized ids and versions whose owning artifact is gone', async () => {
+    const cwd = '/tmp/science-versions-batch'
+    const { ctx, sessionId, agent } = await harness(undefined, cwd)
+    appendFixtureEvents(agent.session, legalEvents().slice(0, 4))
+    const orphanArtifactId = 'artifact-orphan-owner' as typeof ARTIFACT_ID
+    const runCall = agent.session.append('tool/call', {
+      turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_python', arguments: '{}',
+    })
+    agent.session.append('science/run-started', {
+      version: 1,
+      run: runStarted({
+        requestHeaderSeq: 3,
+        startedAt: runCall.time,
+        inputs: [
+          { artifactId: ARTIFACT_ID, version: 2, path: 'a.png' },
+          { artifactId: ARTIFACT_ID, version: 3, path: 'b.png' },
+          { artifactId: orphanArtifactId, version: 5, path: 'c.csv' },
+        ],
+      }),
+    })
+    const versionWithTitle = {
+      versionId: 'batch-version-2', artifactId: ARTIFACT_ID, ordinal: 2, sha256: '2'.repeat(64),
+      mediaType: 'image/png', byteCount: 10, title: 'Chart v2', caption: undefined, contentOrigin: 'run-auto', createdAt: 100,
+    }
+    const versionWithCaption = {
+      versionId: 'batch-version-3', artifactId: ARTIFACT_ID, ordinal: 3, sha256: '3'.repeat(64),
+      mediaType: 'image/png', byteCount: 12, title: undefined, caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200,
+    }
+    const orphanOwnerVersion = {
+      versionId: 'no-owner-version', artifactId: orphanArtifactId, ordinal: 5, sha256: '5'.repeat(64),
+      mediaType: 'text/csv', byteCount: 1, title: undefined, caption: undefined, contentOrigin: 'import', createdAt: 50,
+    }
+    const openProject = vi.fn(() => Promise.resolve({ projectId: PROJECT_ID }))
+    const listVersions = vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+      artifactId === ARTIFACT_ID ? [versionWithTitle, versionWithCaption]
+        : artifactId === orphanArtifactId ? [orphanOwnerVersion]
+          : [],
+    ))
+    const getVersion = vi.fn(() => Promise.resolve(undefined))
+    const getArtifact = vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+      artifactId === ARTIFACT_ID
+        ? { artifactId: ARTIFACT_ID, owningProjectId: PROJECT_ID, logicalName: 'chart.png', originSessionId: sessionId, latestVersionId: versionWithCaption.versionId, createdAt: 1 }
+        : undefined,
+    ))
+    const getReconciliationSummary = vi.fn(() => Promise.resolve({
+      orphanCount: 0, reconstructedCount: 1, missingContentCount: 0,
+      items: [{ versionId: versionWithCaption.versionId, orphan: false, reconstructed: true, missingContent: false, checkedAt: 1 }],
+    }))
+    ctx.provide('scienceArtifactStore', { openProject, listVersions, getVersion, getArtifact, getReconciliationSummary } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    const result = expectValue(await api.sessions.scienceVersions(request({
+      sessionId,
+      versionIds: ['batch-version-2', 'batch-version-3', 'no-owner-version', 'totally-unreferenced'] as never,
+    })))
+    expect(result.versions).toEqual([
+      {
+        versionId: 'batch-version-2', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 2,
+        title: 'Chart v2', contentOrigin: 'run-auto', createdAt: 100, mediaType: 'image/png', byteCount: 10,
+      },
+      {
+        versionId: 'batch-version-3', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 3,
+        caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200, mediaType: 'image/png', byteCount: 12,
+        health: { reconstructed: true },
+      },
+    ])
+    // batch-version-3 reuses batch-version-2's cached owner lookup (same
+    // artifact); the dropped no-owner-version's distinct artifactId is a
+    // cache miss, so getArtifact is called once per distinct artifact (2),
+    // never once per requested version (4). The reconciliation summary is
+    // cached per project and every authorized version shares one project,
+    // so it is fetched exactly once despite three authorized lookups.
+    expect(getArtifact).toHaveBeenCalledTimes(2)
+    expect(getReconciliationSummary).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('fails the version batch explicitly when the artifact store is not mounted', async () => {
+    const { ctx, sessionId } = await harness(undefined, '/tmp/science-versions-no-store')
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.scienceVersions(request({ sessionId, versionIds: [] as never }))).result).toMatchObject({
+      ok: false, error: { code: 'internal' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a version-batch store failure to a business error instead of losing partial results silently', async () => {
+    const cwd = '/tmp/science-versions-store-error'
+    const { ctx, sessionId, agent } = await harness(undefined, cwd)
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.reject(new ProjectArtifactStoreError('store wedged', 'ARTIFACT_NOT_FOUND')))
+    ctx.provide('scienceArtifactStore', { getVersion, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    expect((await api.sessions.scienceVersions(request({ sessionId, versionIds: [VERSION_ID] as never }))).result).toMatchObject({
+      ok: false, error: { code: 'science-artifact-error', details: { reason: 'ARTIFACT_NOT_FOUND' } },
     })
     await ctx.fiber.dispose()
   })

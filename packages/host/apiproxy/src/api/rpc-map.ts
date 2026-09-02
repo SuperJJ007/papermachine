@@ -35,6 +35,7 @@ export interface RpcMethodMap {
   'session.textAttachment': SessionsApi['textAttachment']
   'session.scienceArtifact': SessionsApi['scienceArtifact']
   'sessions.scienceLibrary': SessionsApi['scienceLibrary']
+  'sessions.scienceVersions': SessionsApi['scienceVersions']
   'sessions.workspaceFiles': SessionsApi['workspaceFiles']
   'sessions.workspaceFile': SessionsApi['workspaceFile']
   'session.updateQueue': SessionsApi['updateQueue']

@@ -416,6 +416,29 @@ export const sessionsScienceLibraryValueSchema = z.object({
   }),
 }) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceLibrary'>>>
 
+/** Protocol constant: `scienceVersions` request array cap — see its JSDoc on `SessionsApi`. */
+export const SCIENCE_VERSIONS_BATCH_LIMIT = 200
+
+/** `ScienceContentOrigin` field-shape mirror — see `sessions.ts`'s own JSDoc for why it is redeclared rather than imported. */
+const scienceContentOriginSchema = z.union([z.literal('run-auto'), z.literal('human-edit'), z.literal('import')])
+
+/** Batch Science version-summary request payload. */
+export const sessionsScienceVersionsRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  versionIds: z.array(scienceVersionIdSchema).max(SCIENCE_VERSIONS_BATCH_LIMIT),
+}) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceVersions'>>>
+
+/** Batch Science version-summary response value. */
+export const sessionsScienceVersionsValueSchema = z.object({
+  versions: z.array(z.object({
+    versionId: scienceVersionIdSchema, artifactId: z.string().min(1), logicalName: z.string(),
+    ordinal: z.number().int().positive(), title: z.string().optional(), caption: z.string().optional(),
+    contentOrigin: scienceContentOriginSchema, createdAt: z.number(),
+    mediaType: z.string().min(1), byteCount: z.number().int().nonnegative(),
+    health: scienceVersionHealthFlagsSchema.optional(),
+  })),
+}) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceVersions'>>>
+
 /** Bounded workspace directory request payload. */
 export const sessionsWorkspaceFilesRequestSchema = z.object({ sessionId: sessionIdSchema, path: z.string().optional() }) satisfies z.ZodType<Wire<RequestPayload<'sessions.workspaceFiles'>>>
 

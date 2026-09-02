@@ -13,6 +13,7 @@ import {
   sessionSearchRequestSchema, sessionSearchValueSchema, sessionSelectModelRequestSchema,
   sessionSelectModelValueSchema, sessionSummarySchema, sessionTextAttachmentValueSchema,
   sessionUpdateQueueRequestSchema, sessionUpdateQueueValueSchema,
+  SCIENCE_VERSIONS_BATCH_LIMIT, sessionsScienceVersionsRequestSchema, sessionsScienceVersionsValueSchema,
 } from '../src/api/sessions.schema.ts'
 import {
   hostCreateDirectoryRequestSchema, hostCreateDirectoryValueSchema,
@@ -303,6 +304,38 @@ describe('sessions domain schemas', () => {
     expect(sessionCancelValueSchema.parse({ accepted: true }).accepted).toBe(true)
     expect(sessionUpdateQueueValueSchema.parse({ accepted: true }).accepted).toBe(true)
     expect(contentBlockSchema.parse({ type: 'text', text: 'x', extra: 1 })).toMatchObject({ extra: 1 })
+  })
+
+  it('caps scienceVersions at 200 requested ids and passes the batch response fields through', () => {
+    expect(sessionsScienceVersionsRequestSchema.parse({
+      sessionId: 's1', versionIds: Array.from({ length: SCIENCE_VERSIONS_BATCH_LIMIT }, (_, i) => `v${i}`),
+    }).versionIds).toHaveLength(SCIENCE_VERSIONS_BATCH_LIMIT)
+    expect(() => sessionsScienceVersionsRequestSchema.parse({
+      sessionId: 's1', versionIds: Array.from({ length: SCIENCE_VERSIONS_BATCH_LIMIT + 1 }, (_, i) => `v${i}`),
+    })).toThrow()
+    expect(sessionsScienceVersionsRequestSchema.parse({ sessionId: 's1', versionIds: [] }).versionIds).toEqual([])
+    const versions = sessionsScienceVersionsValueSchema.parse({
+      versions: [
+        {
+          versionId: 'v1', artifactId: 'a1', logicalName: 'chart.png', ordinal: 1,
+          title: 'Chart', caption: 'A caption', contentOrigin: 'run-auto', createdAt: 1,
+          mediaType: 'image/png', byteCount: 10, health: { reconstructed: true },
+        },
+        {
+          versionId: 'v2', artifactId: 'a2', logicalName: 'table.csv', ordinal: 2,
+          contentOrigin: 'human-edit', createdAt: 2, mediaType: 'text/csv', byteCount: 5,
+        },
+      ],
+    }).versions
+    expect(versions[0]).toMatchObject({ title: 'Chart', health: { reconstructed: true } })
+    expect(versions[1]).toMatchObject({ contentOrigin: 'human-edit' })
+    expect(versions[1]?.title).toBeUndefined()
+    expect(() => sessionsScienceVersionsValueSchema.parse({
+      versions: [{
+        versionId: 'v1', artifactId: 'a1', logicalName: 'chart.png', ordinal: 1,
+        contentOrigin: 'not-a-real-origin', createdAt: 1, mediaType: 'image/png', byteCount: 10,
+      }],
+    })).toThrow()
   })
 })
 

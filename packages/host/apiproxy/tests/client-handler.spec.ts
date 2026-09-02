@@ -67,6 +67,12 @@ function scriptedApi(overrides: {
         versionId: r.payload.versionId, mediaType: 'image/png', byteCount: 1, data: 'AA==',
       }),
       scienceLibrary: r => ok(r, { projectId: 'project-1' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } }),
+      scienceVersions: r => ok(r, {
+        versions: r.payload.versionIds.map(versionId => ({
+          versionId, artifactId: 'artifact-1' as never, logicalName: 'chart.png', ordinal: 1,
+          contentOrigin: 'run-auto' as const, createdAt: 1, mediaType: 'image/png', byteCount: 1,
+        })),
+      }),
       workspaceFiles: r => ok(r, { root: '', entries: [] }),
       workspaceFile: r => ok(r, { mediaType: 'text/plain', byteCount: 1, data: 'YQ==' }),
       updateQueue: r => ok(r, { accepted: true as const }),

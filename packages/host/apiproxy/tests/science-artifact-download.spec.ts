@@ -80,6 +80,10 @@ async function get(ctx: Context, sessionId: SessionId, versionId: string): Promi
   return toFetchHandler(api(ctx)).fetch(new Request(downloadUrl(sessionId, versionId)))
 }
 
+async function head(ctx: Context, sessionId: SessionId, versionId: string): Promise<Response> {
+  return toFetchHandler(api(ctx)).fetch(new Request(downloadUrl(sessionId, versionId), { method: 'HEAD' }))
+}
+
 describe('GET /api/science/artifact/:sessionId/:versionId', () => {
   it('streams the exact blob bytes with a matching Content-Length and no charset on a text/* Content-Type', async () => {
     const { ctx, sessionId } = await harness({
@@ -205,5 +209,44 @@ describe('GET /api/science/artifact/:sessionId/:versionId', () => {
     })
     const response = await get(ctx, sessionId, VERSION_ID)
     expect(response.status).toBe(500)
+  })
+})
+
+describe('HEAD /api/science/artifact/:sessionId/:versionId', () => {
+  // The client's download flow (ScienceDetailsView.tsx's downloadArtifact)
+  // HEAD-checks this exact URL before ever creating a save anchor, to
+  // classify a 410/409/other failure without triggering a browser download
+  // dialog for a request that would fail. A route that only ever matched
+  // GET (the regression this file's own HEAD coverage guards against) left
+  // every real download broken: the preflight itself always failed.
+  it('answers the same status and headers as GET, with no streamed body', async () => {
+    const { ctx, sessionId } = await harness({
+      store: scienceStore({ readBlob: vi.fn(() => Promise.resolve(GBK_CSV_BYTES)) }),
+    })
+    const response = await head(ctx, sessionId, VERSION_ID)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/csv')
+    expect(response.headers.get('content-length')).toBe(String(GBK_CSV_BYTES.byteLength))
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.body).toBeNull()
+  })
+
+  it('returns a bodyless 410 missing_content error from HEAD', async () => {
+    const { ctx, sessionId } = await harness({
+      store: scienceStore({
+        readBlob: vi.fn(() => Promise.reject(new ProjectArtifactStoreError('blob missing', 'BLOB_NOT_FOUND'))),
+      }),
+    })
+    const response = await head(ctx, sessionId, VERSION_ID)
+    expect(response.status).toBe(410)
+    expect(response.headers.get('x-science-artifact-error')).toBe('missing_content')
+    expect(response.body).toBeNull()
+  })
+
+  it('returns a bodyless 404 for a version the session cannot prove', async () => {
+    const { ctx, sessionId } = await harness()
+    const response = await head(ctx, sessionId, 'unreferenced-version')
+    expect(response.status).toBe(404)
+    expect(response.body).toBeNull()
   })
 })

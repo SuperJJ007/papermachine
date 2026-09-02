@@ -290,7 +290,10 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       // both segments are non-empty; `.parse()` (not `.safeParse()`) reflects
       // that this domain schema's `.min(1)` brand cast cannot actually reject
       // a matched segment, so there is no separate 400 branch to answer.
-      const scienceArtifactMatch = req.method === 'GET'
+      // HEAD is routed the same as GET (mirroring session.export just above):
+      // the client's download flow HEAD-checks this exact URL to classify a
+      // 410/409/other failure before ever creating a save anchor.
+      const scienceArtifactMatch = req.method === 'GET' || req.method === 'HEAD'
         ? /^\/api\/science\/artifact\/([^/]+)\/([^/]+)$/u.exec(path)
         : null
       if (scienceArtifactMatch !== null) {
@@ -298,7 +301,10 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
           sessionId: decodeURIComponent(scienceArtifactMatch[1] as string),
           versionId: decodeURIComponent(scienceArtifactMatch[2] as string),
         })
-        return api.downloads.scienceArtifact(parsed, req.signal)
+        const response = await api.downloads.scienceArtifact(parsed, req.signal)
+        if (req.method === 'GET') return response
+        await response.body?.cancel()
+        return new Response(null, { status: response.status, headers: response.headers })
       }
 
       if (req.method !== 'POST' || !path.startsWith('/api/')) {

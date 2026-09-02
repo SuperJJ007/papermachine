@@ -27,9 +27,12 @@ export interface DownloadsApi {
   /**
    * Stream one Science project-store artifact version's raw content-addressed
    * bytes as an attachment response, verbatim and unencoded — the raw-bytes
-   * counterpart to the base64 `session.scienceArtifact` RPC. The carrier's GET
-   * route answers this directly; the browser never calls it through
-   * `IApiClient`. Authorization reuses `authorizedScienceArtifact`'s three
+   * counterpart to the base64 `session.scienceArtifact` RPC. The carrier
+   * routes both GET and HEAD here directly (HEAD answers headers-only, body
+   * cancelled — the client's download flow HEAD-checks this exact URL to
+   * classify a failure before ever creating a save anchor); the browser
+   * never calls it through `IApiClient`. Authorization reuses
+   * `authorizedScienceArtifact`'s three
    * proof paths (the same fold `session.scienceArtifact` uses) against the
    * named session's own log — the request never carries a `projectId`, so a
    * caller cannot select an authorization domain of its own choosing.

@@ -19,7 +19,9 @@ import { PendingWait } from './pending.ts'
 import { Notifier } from '../notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
-import type { ScienceLibraryArtifact, WorkspaceFileEntry } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type {
+  ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
+} from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
@@ -331,9 +333,20 @@ export class Session implements SessionFace {
     }
   }
 
-  async readScienceLibrary(): Promise<RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>> {
+  async readScienceLibrary(): Promise<
+    RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>
+  > {
     try {
       return (await this.api.sessions.scienceLibrary({ sessionId: this.sessionId })).result
+    } catch (error) { return transportError(error) }
+  }
+
+  /** Batch-read the current library facts for a caller-chosen set of fold-authorized versions. */
+  async readScienceVersions(
+    versionIds: readonly VersionId[],
+  ): Promise<RpcResult<{ versions: ScienceVersionSummary[] }>> {
+    try {
+      return (await this.api.sessions.scienceVersions({ sessionId: this.sessionId, versionIds: [...versionIds] })).result
     } catch (error) { return transportError(error) }
   }
 

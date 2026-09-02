@@ -593,6 +593,41 @@ describe('prompt and cancel errors', () => {
       sessionId: SID, versionId: 'version-1',
     }])
   })
+
+  it('batch-reads fold-authorized Science version summaries and keeps the requested id array on the wire', async () => {
+    const { api, session } = makeSession()
+    api.onScienceVersions = () => Promise.resolve(ok({
+      versions: [{
+        versionId: 'version-2', artifactId: 'artifact-a', logicalName: 'chart.png', ordinal: 2,
+        title: 'Chart', contentOrigin: 'run-auto', createdAt: 10, mediaType: 'image/png', byteCount: 5,
+      }],
+    }))
+    const result = await session.readScienceVersions(['version-1', 'version-2'] as never[])
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        versions: [{
+          versionId: 'version-2', artifactId: 'artifact-a', logicalName: 'chart.png', ordinal: 2,
+          title: 'Chart', contentOrigin: 'run-auto', createdAt: 10, mediaType: 'image/png', byteCount: 5,
+        }],
+      },
+    })
+    expect(api.callsOf('sessions.scienceVersions')).toEqual([{
+      sessionId: SID, versionIds: ['version-1', 'version-2'],
+    }])
+  })
+
+  it('returns the business error untouched and folds a scienceVersions transport throw to internal', async () => {
+    const { api, session } = makeSession()
+    api.onScienceVersions = () => Promise.resolve(err({
+      code: 'science-artifact-error', message: 'nope', details: { reason: 'VERSION_NOT_REFERENCED' },
+    }))
+    const denied = await session.readScienceVersions(['version-1'] as never[])
+    expect(denied).toMatchObject({ ok: false, error: { code: 'science-artifact-error' } })
+    api.onScienceVersions = () => Promise.reject(new Error('science versions transport down'))
+    const folded = await session.readScienceVersions(['version-1'] as never[])
+    expect(folded).toMatchObject({ ok: false, error: { code: 'internal' } })
+  })
 })
 
 describe('rename', () => {

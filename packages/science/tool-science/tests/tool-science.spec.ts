@@ -68,6 +68,7 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
     runs: [],
     kernels: [],
     artifacts: [],
+    trace: { turns: [], calls: [], artifacts: [] },
     outcome: null,
     metrics: {
       runCount: 0,

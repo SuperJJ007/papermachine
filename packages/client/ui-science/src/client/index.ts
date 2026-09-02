@@ -33,6 +33,7 @@ import type {} from '@deepseek-ai/dsh-science-session/types'
 // Type-only: pulls the generated Science Remote namespace into ClientContext.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createScienceImageUrlLoader, createScienceTextUrlLoader } from './science-artifact-url-loader.ts'
+import { createScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { createLoadScienceVersions } from './version-summaries.ts'
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow, type ScienceExecutionRowInjected } from './ScienceExecutionRow.tsx'
@@ -360,6 +361,7 @@ export function apply(ctx: ClientContext): void {
       return {
         loadImage: createScienceImageUrlLoader(sessionId),
         loadText: createScienceTextUrlLoader(sessionId),
+        loadChartState: createScienceChartStateLoader(ctx.sessions, sessionId),
         loadVersions: createLoadScienceVersions(ctx.sessions, sessionId),
         loadLibrary: () => binding.session.readScienceLibrary(),
         loadWorkspaceFiles: path => binding.session.readWorkspaceFiles(path),

@@ -23,7 +23,7 @@
 // any other current Session (`EMPTY_SCIENCE_PROJECTION` above) instead of a
 // second notice.
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   formatRelativeTime, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
@@ -47,12 +47,14 @@ import type {
   ScienceSaveArtifactAsReceipt, ScienceSaveArtifactAsRequest,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
+import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import type { ScienceLibraryArtifact, ScienceLibraryHealth } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
 import type { ScienceArtifactView, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import type { ScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
 import type { LoadScienceVersions, ScienceRenderableVersion } from './version-summaries.ts'
 import { toRenderableVersion, useScienceVersionSummaries } from './version-summaries.ts'
@@ -64,6 +66,8 @@ export interface ScienceDetailsInjected {
   loadImage: ScienceImageLoader
   /** Session-scoped raw-bytes text artifact loader (science-artifact-url-loader.ts). */
   loadText: TextLoader
+  /** Session-scoped live chart-object state reader for one open PNG version (science-chart-state-loader.ts). */
+  loadChartState: ScienceChartStateLoader
   /**
    * Batch-read current library facts (title, caption, content origin,
    * media type, byte count, health) for a caller-chosen set of versions
@@ -633,6 +637,15 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
     onAddTarget={() => {}}
     /* v8 ignore next -- read-only previews cannot remove targets */
     onRemoveTarget={() => {}}
+    // A preview's `chart.versionId` is never a genuinely addressable store
+    // version (a workspace file's path, or a library row shown outside its
+    // own open-tab flow), so the edit panel never mounts here — resolving
+    // `null` locally skips a request this build already knows would find
+    // nothing to edit.
+    /* v8 ignore next -- read-only previews never carry an addressable chart, so this loader is never awaited by a test assertion */
+    loadChartState={() => Promise.resolve(null)}
+    /* v8 ignore next -- read-only previews never carry an addressable chart, so Save is never invoked */
+    onSaveChartOps={() => Promise.resolve({ ok: false, error: '' })}
     t={t}
   />
 }
@@ -807,9 +820,9 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
 
 /** Loaders, mutations, and presentation supplied to every artifact tab. */
 type ArtifactControls = Pick<ScienceDetailsViewProps,
-  | 'loadImage' | 'loadText' | 'addToConversation' | 'removeFromConversation'
+  | 'loadImage' | 'loadText' | 'loadChartState' | 'addToConversation' | 'removeFromConversation'
   | 'composerSelections'
-  | 'addArtifactNote' | 'removeArtifactNote' | 'saveArtifactAs'
+  | 'addArtifactNote' | 'removeArtifactNote' | 'saveArtifactAs' | 'applyChartOps' | 'previewChartOps'
   | 'actions' | 't'>
 
 /**
@@ -852,9 +865,9 @@ function createSaveAsHandler(
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  currentSessionId, rawArtifacts, chart, notes, view, loadImage, loadText,
+  currentSessionId, rawArtifacts, chart, notes, view, loadImage, loadText, loadChartState,
   addToConversation, removeFromConversation, composerSelections,
-  addArtifactNote, removeArtifactNote, saveArtifactAs, actions, t,
+  addArtifactNote, removeArtifactNote, saveArtifactAs, applyChartOps, previewChartOps, actions, t,
 }: {
   currentSessionId: SessionId
   /** The session-log identity list, used only to derive the stepper's sibling version numbers. */
@@ -866,6 +879,7 @@ function ArtifactTab({
   const versions = versionsOf(rawArtifacts, chart.artifactId)
   const saveAs = createSaveAsHandler(saveArtifactAs, actions, t)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
+  const [previewSrc, setPreviewSrc] = useState<string>()
   const staged = useSyncExternalStore(
     notify => composerSelections.subscribe(notify),
     () => composerSelections.getSnapshot(),
@@ -874,6 +888,7 @@ function ArtifactTab({
   )
   useEffect(() => {
     setTarget(undefined)
+    setPreviewSrc(undefined)
   }, [chart.artifactId, chart.version])
 
   // B4: when the model (or another client) commits a newer version of this
@@ -882,7 +897,13 @@ function ArtifactTab({
   // artifactId (not against chart.version, the tab's currently shown
   // version) so opening a tab deliberately at an older version, or the
   // toolbar's own manual stepper walking back through history, never gets
-  // yanked forward — only a genuine increase in the known latest triggers this.
+  // yanked forward — only a genuine increase in the known latest triggers
+  // this. A chart panel with a pending (unsaved) direct edit reports it
+  // through onPendingChartEditsChange below and suppresses this: stepping
+  // out from under an in-progress edit would either discard it silently or
+  // surface a confusing CHART_STALE_VERSION on Save, and the existing
+  // stale-version notice already covers that case once the user does Save.
+  const [hasPendingChartEdits, setHasPendingChartEdits] = useState(false)
   // `versions` always includes `chart` itself, so `versions.at(-1)` is never
   // empty in practice; `Math.max` over both stays correct even if that ever
   // stopped holding, with no separate empty-versions fallback to maintain.
@@ -893,11 +914,12 @@ function ArtifactTab({
       knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
       return
     }
+    if (hasPendingChartEdits) return
     if (latestVersion > knownLatest.current.version) {
       actions.setTabVersion({ artifactId: chart.artifactId, version: latestVersion })
     }
     knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
-  }, [latestVersion, chart.artifactId, actions])
+  }, [latestVersion, hasPendingChartEdits, chart.artifactId, actions])
 
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
@@ -905,6 +927,21 @@ function ArtifactTab({
   const selectionFor = (next: ScienceEditTarget): ScienceEditSelection | undefined => staged.find(selection =>
     selection.artifactId === chart.artifactId && selection.version === chart.version
     && JSON.stringify(selection.target) === JSON.stringify(next))
+
+  // Scoped to this exact open tab's artifact/version: a successful apply
+  // steps the tab to the committed human-edit version so the viewer renders
+  // the kernel's real output, matching the toolbar's own version stepper.
+  const saveChartOps = (ops: readonly ScienceChartOp[]): Promise<ScienceChartSaveOutcome> =>
+    applyChartOps({ artifactId: chart.artifactId, version: chart.version, ops }).then((result) => {
+      if (!result.ok) return { ok: false, error: result.error.message }
+      actions.setTabVersion({ artifactId: chart.artifactId, version: result.value.version })
+      return { ok: true, failedOps: result.value.failedOps }
+    })
+  const previewOps = useCallback((ops: readonly ScienceChartOp[]) => previewChartOps({
+    artifactId: chart.artifactId, version: chart.version, ops,
+  }).then(result => result.ok
+    ? { ok: true as const, pngBase64: result.value.pngBase64, failedOps: result.value.failedOps }
+    : { ok: false as const, error: result.error.message }), [previewChartOps, chart.artifactId, chart.version])
 
   if (view === 'provenance') {
     return <ScienceArtifactProvenance chart={chart} onBack={() => { actions.setView('content') }} t={t} />
@@ -934,6 +971,8 @@ function ArtifactTab({
         chart={chart}
         loadImage={loadImage}
         loadText={loadText}
+        loadChartState={loadChartState}
+        {...previewSrc === undefined ? {} : { previewSrc }}
         selectionTarget={target}
         onSelectTarget={selectTarget}
         isTargetAdded={next => selectionFor(next) !== undefined}
@@ -950,6 +989,10 @@ function ArtifactTab({
           /* v8 ignore next -- ArtifactContent only offers Remove for a target that is already staged. */
           if (selection !== undefined) removeFromConversation(selection)
         }}
+        onSaveChartOps={saveChartOps}
+        onPreviewChartOps={previewOps}
+        onPreviewSrc={setPreviewSrc}
+        onPendingChartEditsChange={setHasPendingChartEdits}
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />

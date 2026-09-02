@@ -374,6 +374,13 @@ export function buildScienceTraceModel(
     // contiguous-ordinal invariant), and every later version's immediate
     // predecessor is exactly `version - 1` — the same fact `parentVersion`
     // named through the removed `parent` reference, without needing it.
+    // A version's producing step is its own trace-anchor `step` coordinate
+    // (see `ScienceClientArtifactVersion.step`) — the projection carries it
+    // directly now, replacing the removed `artifactCallId` producing-call
+    // link. A version without a step coordinate (store-time fallback: direct
+    // human edit, import, or a run-auto save with no owning call) attaches
+    // to no step and shows only in this turn's summary chip row.
+    const artifactsByStep = new Map<number, ScienceTraceArtifactDelta[]>()
     const artifacts = (artifactsByTurn.get(turn) ?? []).map((artifact): ScienceTraceArtifactDelta => {
       const key = `${artifact.artifactId}@${artifact.version}`
       const curated = seenVersions.has(key)
@@ -383,9 +390,15 @@ export function buildScienceTraceModel(
         version: artifact.version,
         anchor: `artifact:${artifact.artifactId}@${artifact.version}` as const,
       } satisfies ScienceTraceArtifactDeltaBase
-      return curated ? { ...base, action: 'curated' }
-        : artifact.version === 1 ? { ...base, action: 'created' }
-          : { ...base, action: 'advanced', parentVersion: artifact.version - 1 }
+      const delta = curated ? { ...base, action: 'curated' as const }
+        : artifact.version === 1 ? { ...base, action: 'created' as const }
+          : { ...base, action: 'advanced' as const, parentVersion: artifact.version - 1 }
+      if (artifact.step !== undefined) {
+        const list = artifactsByStep.get(artifact.step) ?? []
+        list.push(delta)
+        artifactsByStep.set(artifact.step, list)
+      }
+      return delta
     })
     const turnCalls = orderedCalls.filter(call => call.turn === turn)
     const steps = turnCalls.map((call): ScienceTraceStep => {
@@ -394,13 +407,10 @@ export function buildScienceTraceModel(
       const failed = run === undefined ? result?.isError ?? false : run.status !== 'running' && run.status !== 'success'
       const anchor = `call:${call.callId}` as const
       const title = stepTitle(call, run)
-      // Per-step artifact attribution is gone with the removed producing-call
-      // link (`artifactCallId`, above): a step never lists artifact chips of
-      // its own now, only the turn-level `artifacts` this group carries.
       return { step: call.step, kind: stepKind(call.name), failed, title,
         members: [{ callId: call.callId, argsRaw: call.argsRaw, result, run, title, failed, anchor }],
         durationMs: run === undefined ? undefined : runDuration(run), runStatus: run?.status,
-        artifacts: [], anchor }
+        artifacts: artifactsByStep.get(call.step) ?? [], anchor }
     })
     const durations = runRows.flatMap(row => row.durationMs === undefined ? [] : [row.durationMs])
     const timing = effectiveTurnTimes.get(turn)

@@ -21,6 +21,7 @@
 - text: Export will be available in C4
 - button "Expand":
   - img
+- button "Save as"
 - button "Close tab":
   - img
 - 'button "View original: Observed series"':

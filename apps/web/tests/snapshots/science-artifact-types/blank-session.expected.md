@@ -16,16 +16,16 @@
       - text: Recent experiment 4 · now
   - list:
     - listitem:
-      - button "Open metrics.json, version 1": metrics.json v1 · now
+      - button "Open metrics-newest.json, version 1": metrics-newest.json v1 · now
     - listitem:
-      - button "Open plot.png, version 1":
-        - 'button "View original: plot.png"':
-          - img "plot.png"
-        - text: plot.png v1 · now
+      - button "Open plot-newest.png, version 1":
+        - 'button "View original: plot-newest.png"':
+          - img "plot-newest.png"
+        - text: plot-newest.png v1 · now
     - listitem:
-      - button "Open report.md, version 1": report.md v1 · now
+      - button "Open report-newest.md, version 1": report-newest.md v1 · now
     - listitem:
-      - button "Open summary.csv, version 1": summary.csv v1 · now
+      - button "Open summary-newest.csv, version 1": summary-newest.csv v1 · now
 - region "Earlier experiment":
   - heading "Earlier experiment 4 · now" [level=3]:
     - button "Earlier experiment 4 · now" [expanded]:
@@ -33,16 +33,16 @@
       - text: Earlier experiment 4 · now
   - list:
     - listitem:
-      - button "Open metrics.json, version 1": metrics.json v1 · now
+      - button "Open metrics-other.json, version 1": metrics-other.json v1 · now
     - listitem:
-      - button "Open plot.png, version 1":
-        - 'button "View original: plot.png"':
-          - img "plot.png"
-        - text: plot.png v1 · now
+      - button "Open plot-other.png, version 1":
+        - 'button "View original: plot-other.png"':
+          - img "plot-other.png"
+        - text: plot-other.png v1 · now
     - listitem:
-      - button "Open report.md, version 1": report.md v1 · now
+      - button "Open report-other.md, version 1": report-other.md v1 · now
     - listitem:
-      - button "Open summary.csv, version 1": summary.csv v1 · now
+      - button "Open summary-other.csv, version 1": summary-other.csv v1 · now
 - region "Science artifact types":
   - heading "Science artifact types 4 · now" [level=3]:
     - button "Science artifact types 4 · now" [expanded]:

@@ -667,9 +667,15 @@ export interface ScienceClientArtifactVersion {
   readonly versionId: ScienceVersionId
   readonly sha256: string
   readonly seenAt: number
-  /** Turn of the active run or annotation call when the presentation snapshot committed. */
+  /**
+   * Turn of this version's producing call: the run or annotation call open
+   * when this content was first committed. A later metadata-only re-record
+   * of the same version (`annotate_artifact` curating title or caption)
+   * retains this coordinate; it never moves to the call open when the
+   * re-record happens.
+   */
   readonly turn?: number
-  /** Step of the active run or annotation call; present exactly when {@link turn} is present. */
+  /** Step of this version's producing call; present exactly when {@link turn} is present. */
   readonly step?: number
 }
 

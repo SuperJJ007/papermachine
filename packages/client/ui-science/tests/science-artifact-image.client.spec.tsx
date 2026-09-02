@@ -48,6 +48,25 @@ describe('ScienceArtifactImage', () => {
     expect(load).toHaveBeenCalledTimes(2)
   })
 
+  it('surfaces a resolved-but-unloadable image (a raw-bytes URL for a missing blob) as a terminal failure', async () => {
+    // `createScienceImageUrlLoader` always resolves a URL without fetching
+    // it — the browser's own `<img>` fetch is the only place a missing or
+    // unreadable blob (a 409/410 raw-bytes response) can be observed, so
+    // this component must translate the image element's own error event
+    // into the same terminal `failed` state a rejected `load` produces.
+    const load = vi.fn()
+      .mockResolvedValueOnce('https://example.test/missing.png')
+      .mockResolvedValueOnce('data:image/png;base64,AQID')
+    render(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} />)
+
+    const image = await screen.findByRole('img', { name: 'Chart' })
+    fireEvent.error(image)
+    const retryButton = await screen.findByRole('button', { name: 'Load failed' })
+    fireEvent.click(retryButton)
+    await screen.findByRole('img', { name: 'Chart' })
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
   it('discards both late resolution and late rejection after unmount', async () => {
     let resolveLoad: ((url: string) => void) | undefined
     let rejectLoad: ((error: Error) => void) | undefined

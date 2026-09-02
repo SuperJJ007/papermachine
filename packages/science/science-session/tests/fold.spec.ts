@@ -294,6 +294,31 @@ describe('strict Science fold', () => {
     }])
   })
 
+  it('keeps a re-record\'s trace anchor at the producing call once that call has settled', () => {
+    // run_python (turn 1) produces version 1 and settles before an
+    // annotate_artifact call opens in a later turn and re-records only its
+    // title. The re-record must not move the version's owner coordinates to
+    // the still-open annotate_artifact call: the chip stays "Python run".
+    const events = [
+      ...legalEvents().slice(0, 7), // mode, environment, kernel, header, run_python call, run-started, run-finished
+      event('science/artifact-saved', 7, 165, { version: 1, artifact: artifact({ seenAt: 165 }) }),
+      event('step/end', 8, 166, { turn: 1, step: 1 }), // settles the run_python call (seq 4)
+      toolCall(9, 170, ARTIFACT_CALL_ID, 'annotate_artifact', { turn: 2, step: 1 }),
+      event('science/artifact-saved', 10, 175, {
+        version: 1,
+        artifact: artifact({ title: 'Curated trend', seenAt: 175 }),
+      }),
+    ]
+
+    const state = foldScience(events)
+
+    expect(state.artifacts).toHaveLength(1)
+    expect(state.artifacts.at(0)).toMatchObject({ version: 1, title: 'Curated trend' })
+    expect(state.artifactFacts).toEqual([{
+      artifactId: ARTIFACT_ID, version: 1, seq: 10, time: 175, turn: 1, step: 1,
+    }])
+  })
+
   it('opens the next version for changed content, and accepts a same-content re-record at its own version', () => {
     const first = autoArtifact({ seenAt: 160 })
     const resave = autoArtifact({ seenAt: 170 })

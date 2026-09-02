@@ -168,11 +168,20 @@ describe('web e2e: Science process view', () => {
     })
     await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, stored.version.versionId, { actor: 'capture', title: 'Scatter plot' })
     await seedSession(scaffold, processFixture(projectId, stored), SEED_ID, 'science')
-    const historyStored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'scatter_plot.png', kind: 'figure', data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto',
-      originSessionId: SessionId(`${SEED_ID}-history`),
+    // A second conversation plotting the same logical name in one project is
+    // real product behavior (`capture.ts`'s `projectArtifactIdFor` finds the
+    // existing artifact and appends), not a fresh artifact — the store's
+    // `UNIQUE(owningProjectId, logicalName)` constraint rejects the latter.
+    // The session-local `science/artifact-saved` payload keeps `version: 1`
+    // regardless (`processFixture`'s decorative per-session counter; the
+    // fold validates it only against this session's own prior versions, see
+    // `transition.ts`'s `applyArtifactSaved`), so this history session's own
+    // Process view still reads "scatter_plot.png v1".
+    const historyVersion = await scaffold.ctx.scienceArtifactStore.appendVersion(projectId, stored.artifact.artifactId, {
+      data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', producerSessionId: SessionId(`${SEED_ID}-history`),
     })
-    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, historyStored.version.versionId, { actor: 'capture', title: 'Scatter plot' })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, historyVersion.versionId, { actor: 'capture', title: 'Scatter plot' })
+    const historyStored: Stored = { artifact: stored.artifact, version: historyVersion }
     await seedSession(scaffold, processFixture(projectId, historyStored, true), `${SEED_ID}-history`, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 960)

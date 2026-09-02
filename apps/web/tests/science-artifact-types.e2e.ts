@@ -309,11 +309,22 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
   it('groups project artifacts by conversation and restores collapsed groups after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-library-groups'))
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
-    for (const [sessionId, title] of [['science-library-other', 'Earlier experiment'], ['science-library-newest', 'Recent experiment']] as const) {
+    // Distinct per-session logical names: the store's real capture path
+    // (`capture.ts`'s `projectArtifactIdFor`) finds an existing artifact by
+    // logical name within a project and appends a version to it rather than
+    // creating a second one, so two sessions cannot each independently own
+    // an artifact of the same name in one project (`UNIQUE(owningProjectId,
+    // logicalName)`) the way this scenario's separate-groups premise needs.
+    // A shared "metrics" substring keeps the cross-group search assertion
+    // below meaningful.
+    for (const [sessionId, title, tag] of [
+      ['science-library-other', 'Earlier experiment', 'other'],
+      ['science-library-newest', 'Recent experiment', 'newest'],
+    ] as const) {
       const stored: StoredArtifact[] = []
       for (const [logicalName, data, mediaType, kind] of [
-        ['summary.csv', Buffer.from(CSV_TEXT), 'text/csv', 'dataset'], ['metrics.json', Buffer.from(JSON_TEXT), 'application/json', 'document'],
-        ['report.md', Buffer.from(MARKDOWN_TEXT), 'text/markdown', 'document'], ['plot.png', PNG, 'image/png', 'figure'],
+        [`summary-${tag}.csv`, Buffer.from(CSV_TEXT), 'text/csv', 'dataset'], [`metrics-${tag}.json`, Buffer.from(JSON_TEXT), 'application/json', 'document'],
+        [`report-${tag}.md`, Buffer.from(MARKDOWN_TEXT), 'text/markdown', 'document'], [`plot-${tag}.png`, PNG, 'image/png', 'figure'],
       ] as const) {
         stored.push(await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
           logicalName, data, mediaType, kind, originSessionId: SessionId(sessionId), contentOrigin: 'run-auto',
@@ -333,7 +344,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(await details.getByRole('listitem').count()).toBe(8)
     await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption('name')
     await compareOrRefreshGolden(LIBRARY_EXPECTED, await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE)
-    await details.getByRole('textbox', { name: 'Search', exact: true }).fill('metrics.json')
+    await details.getByRole('textbox', { name: 'Search', exact: true }).fill('metrics')
     await details.getByText('3 artifacts', { exact: true }).waitFor()
     expect(await details.getByRole('region').count()).toBe(3)
     await details.getByRole('textbox', { name: 'Search', exact: true }).fill('unmatched artifact')

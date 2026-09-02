@@ -300,7 +300,14 @@ function scienceFixture(
       publishedAt,
       toolCallId: callId,
       requestHeaderSeq: request.seq,
-      environmentRevisions: [1],
+      // Chart evidence contributes no environmentRevision under the
+      // store-is-authority rule (`transition.ts`'s `applyOutcomePublished`:
+      // an artifact version's environment provenance lives only in the
+      // project artifact store, not the fold) — only `run` evidence does.
+      // This outcome cites chart evidence exclusively, so its
+      // `environmentRevisions` must be empty or the fold's "must exactly
+      // match cited run and chart evidence" invariant rejects it.
+      environmentRevisions: [],
     }
     session.append('science/outcome-published', { version: 1, outcome: publication })
     appendToolResult(session, callId, call.seq, `Outcome revision ${String(revision)}`, {

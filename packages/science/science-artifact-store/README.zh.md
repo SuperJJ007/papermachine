@@ -104,6 +104,19 @@ v1→v2 migration(`STORE_MIGRATIONS` 目前唯一的一步)在一个事务里做
 ## 配置(schemastery)
 
 ```ts
+// BackfillProvenanceHook's own row/value shapes are exported from this
+// package's `.` entry point; see "Schema migration" above for their fields.
+type BackfillProvenanceHook = (
+  projectId: string,
+  rows: readonly { versionId: string; artifactId: string; producerSessionId: string }[],
+) => Promise<ReadonlyMap<string, {
+  environmentFingerprint?: string
+  producerTurn?: number
+  figureState?: { figureKey: string; dpi: number; stateJson: string }
+  annotationToolCallId?: string
+  annotationCreatedAt?: number
+}>>
+
 interface Config {
   dshHome?: string           // explicit harness-home override; omitted follows DSH_HOME, then ~/.dsh
   journalMode?: 'wal' | 'delete' | 'truncate' | 'persist'   // journal_mode pragma; default 'wal'

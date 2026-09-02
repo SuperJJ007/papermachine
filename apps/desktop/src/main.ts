@@ -14,7 +14,7 @@ import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
-import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
+import { resolveHarnessHome } from './harness-home.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
@@ -24,9 +24,9 @@ import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts
 import { windowBackgroundColor } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
+import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const RESTART_URL = 'dsh-desktop://restart'
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
 // (SIGTERM) before escalating to SIGKILL.
 const HOST_STOP_GRACE_MS = 5000
@@ -50,6 +50,13 @@ let onboardingStatus: string | undefined
 // rather than constructing its own reporter, so `environment.installed`/
 // `environment.install-failed` share the exact context `app.launch` reported.
 let telemetry: TelemetryReporter | undefined
+
+// Resolved once, early in `boot()`, alongside `telemetry`; `undefined` only
+// during that same brief startup window. Every rendered error page names
+// this exact path (see `hostCommand`'s `stderrLog.path`) so a device tester
+// can find the Host's persisted, redacted stderr without knowing the
+// Harness home layout.
+let hostLogPath: string | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
@@ -306,61 +313,6 @@ function hostCommand(dshHome: string, overlay: string, port: number, config: Des
 }
 
 /**
- * Render one of the app's data-URL error pages.
- * @param heading - the page's `<h1>`.
- * @param detail - the page's `<p>` body.
- * @param restart - whether to show the "Restart Host" action; omitted for a
- *   startup configuration failure a Host restart cannot fix.
- */
-function errorSurface(heading: string, detail: string, restart: boolean): string {
-  const action = restart ? `<a href="${RESTART_URL}">Restart Host</a>` : ''
-  const html = `<!doctype html><html><meta charset="utf-8"><title>PaperMachine</title>
-    <style>body{font:16px system-ui;margin:0;display:grid;place-items:center;min-height:100vh;background:#f5f7fa;color:#16202a}main{max-width:34rem;padding:2rem;text-align:center}a{display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:.5rem;background:#1769aa;color:white;text-decoration:none}</style>
-    <main><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(detail)}</p>${action}</main></html>`
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
-}
-
-function errorPage(exit?: HostExit, reason?: string): string {
-  const detail = reason ?? (exit === undefined
-    ? 'Host unavailable'
-    : `Host stopped (${String(exit.code ?? exit.signal)})`)
-  return errorSurface('Science Host needs attention', detail, true)
-}
-
-/**
- * The dedicated error page for a space-containing Harness home: a startup
- * configuration failure, not a Host crash, so the ordinary Restart Host
- * action — which would relaunch the Host against the same unusable path —
- * is omitted.
- * @param error - the resolved space-containing path this launch could not use.
- */
-function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError): string {
-  return errorSurface(
-    'PaperMachine cannot start',
-    `Your user home directory's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory, so PaperMachine cannot run science kernels from this location.`,
-    false,
-  )
-}
-
-/**
- * The error page to show for a caught startup/launch failure: the dedicated
- * space-in-home page for {@link HarnessHomeSpaceError}, otherwise the
- * general Host error page.
- * @param error - the caught error.
- */
-function launchErrorPage(error: unknown): string {
-  return error instanceof HarnessHomeSpaceError
-    ? harnessHomeSpaceErrorPage(error)
-    : errorPage(undefined, error instanceof Error ? error.message : String(error))
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, character => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character] as string)
-}
-
-/**
  * Shared guard for the workspace window's `will-navigate` and `will-redirect`
  * events: both fire for a navigation the workspace document did not stay
  * within its own origin for, and both accept the restart link.
@@ -438,7 +390,7 @@ async function onboardingDocument(): Promise<string> {
 
 function onUnexpectedHostExit(exit: HostExit): void {
   activeOrigin = undefined
-  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(exit))
+  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(hostLogPath, exit))
 }
 
 async function launchHost(): Promise<void> {
@@ -477,7 +429,7 @@ async function openWorkspace(): Promise<void> {
       await launchHost()
     } catch (error) {
       if (created.isDestroyed()) return
-      await created.loadURL(launchErrorPage(error))
+      await created.loadURL(launchErrorPage(hostLogPath, error))
       created.show()
     }
   })
@@ -536,7 +488,7 @@ async function restartHost(): Promise<void> {
     // watchdog before starting the replacement.
     await launchHost()
   } catch (error) {
-    await window?.loadURL(launchErrorPage(error))
+    await window?.loadURL(launchErrorPage(hostLogPath, error))
   }
 }
 
@@ -603,6 +555,7 @@ app.setName('PaperMachine')
  */
 async function boot(): Promise<void> {
   const dshHome = await harnessHome()
+  hostLogPath = join(dshHome, 'logs', 'host.log')
   telemetry = await createTelemetryReporter(dshHome)
   void telemetry.report({ event: 'app.launch' })
   refreshApplicationMenu()
@@ -661,7 +614,7 @@ async function boot(): Promise<void> {
   })
   await openInitialSurface().catch(async (error: unknown) => {
     window ??= createWindow()
-    await window.loadURL(launchErrorPage(error))
+    await window.loadURL(launchErrorPage(hostLogPath, error))
   })
 
   app.on('activate', () => { void handleActivate() })

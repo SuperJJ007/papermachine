@@ -24,6 +24,8 @@ The Electron carrier writes Host stderr to `<dshHome>/logs/host.log` through a s
 
 The log remains an operator diagnostic, not an application protocol or renderer input. Startup and port fallback still use the readiness line and exit state; free-form stderr never changes launch decisions.
 
+A launch-failure or unexpected-exit outcome no longer depends on the stderr drain settling before it can be reported: the drain completes only at end-of-pipe, and a grandchild that inherited the Host's stderr file descriptor (a subagent process spawned with `stderr: 'inherit'`) can keep that pipe open long after the Host itself has exited. `HostProcessSupervisor`'s exit handling races the drain against a bounded wait (`EXIT_LOG_DRAIN_TIMEOUT_MS`, `apps/desktop/src/host-process.ts`) and proceeds either way, so a launch failure with a surviving grandchild still rejects promptly instead of leaving Electron on a blank window with no error page. The error page itself (`apps/desktop/src/error-page.ts`) now names the resolved `<dshHome>/logs/host.log` path beside its message, on every rendered failure, so a device tester who hits an opaque exit code can find the log without knowing the Harness home layout.
+
 ## Alternatives considered
 
 **Capture an earlier run's PNG from an empty follow-up run.** Rejected because per-run artifact directories intentionally isolate output ownership. Reusing an older directory would weaken that ownership and attribute bytes the registering run did not produce.

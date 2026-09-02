@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-02-raster-capture-recovery-and-host-diagnostics.md
-2026-09-02-raster-capture-recovery-and-host-diagnostics.md: f85c368f0eef24e5483c34bc045085138a9b0223
-2026-09-02-raster-capture-recovery-and-host-diagnostics.zh.md: f9b34852ca98f8fa861722a3a64676113e408e99
+2026-09-02-raster-capture-recovery-and-host-diagnostics.md: 068cfd0c2b414ae90fb7cf5b83e948556b2f94fb
+2026-09-02-raster-capture-recovery-and-host-diagnostics.zh.md: 291af86df668d5897b658f97889b7f2e9659b09b

@@ -51,6 +51,13 @@ const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?:\s|$)/
 const SENSITIVE_ENV_NAME = /(credential|key|password|secret|token)/i
 const REDACTED = '[REDACTED]'
 const OVERSIZED_LINE = '[host stderr line omitted: exceeded configured logMaxBytes]\n'
+// Milliseconds `HostProcessSupervisor`'s exit handling waits for the stderr
+// drain to settle before deciding the launch/exit outcome without it. The
+// drain only resolves at end-of-pipe; a grandchild that inherited the
+// Host's stderr file descriptor (subagent processes spawn with
+// `stderr: 'inherit'`) can keep that pipe open long after the Host itself
+// has exited, and a launch failure or crash must still be reported.
+const EXIT_LOG_DRAIN_TIMEOUT_MS = 500
 
 /** Return an errno match without weakening unknown caught values. */
 function hasCode(error: unknown, code: string): boolean {
@@ -70,6 +77,25 @@ function redactHostStderr(text: string, env: NodeJS.ProcessEnv): string {
     .replace(/\bBearer\s+[^\s,;]+/gi, `Bearer ${REDACTED}`)
     .replace(/(\b(?:api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, `$1${REDACTED}`)
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, REDACTED)
+}
+
+/**
+ * Resolve when `drain` settles or after {@link EXIT_LOG_DRAIN_TIMEOUT_MS},
+ * whichever comes first. `drain` (`HostProcessSupervisor.logDrain`) already
+ * catches its own rejection internally, so this never rejects either way.
+ */
+function withBoundedDrain(drain: Promise<void>): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(finish, EXIT_LOG_DRAIN_TIMEOUT_MS)
+    void drain.then(finish)
+  })
 }
 
 /** Require a regular non-symlink log file, returning its byte size when present. */
@@ -316,7 +342,8 @@ export class HostProcessSupervisor {
         const wasReady = this.ready
         if (this.child === child) this.child = undefined
         this.ready = false
-        void this.logDrain.then(() => {
+        // Bounded, not `this.logDrain` directly: see EXIT_LOG_DRAIN_TIMEOUT_MS.
+        void withBoundedDrain(this.logDrain).then(() => {
           if (!wasReady) {
             rejectStartup(new Error(
               `desktop host: exited before readiness (${String(code ?? signal)})`,

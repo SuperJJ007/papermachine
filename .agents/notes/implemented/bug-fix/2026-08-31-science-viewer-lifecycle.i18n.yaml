@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-31-science-viewer-lifecycle.md
-2026-08-31-science-viewer-lifecycle.md: 87fb76570773e84a571de96e68f02701ce8d8284
-2026-08-31-science-viewer-lifecycle.zh.md: 222bc3ce4cca4d060a5424d8a40c7de71a1596fc
+2026-08-31-science-viewer-lifecycle.md: 63a14b851234b441d699860e50b28072877fef88
+2026-08-31-science-viewer-lifecycle.zh.md: 53ba77d2feda4b160308800c189c89e9811857ba

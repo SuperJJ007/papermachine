@@ -29,3 +29,5 @@ Returning to a file starts a fresh read. The library and editable viewer use the
 ## Verification
 
 Component tests cover direct file switches after success and failure, late responses, cross-session maximize/close, one request after a title edit settles, and the sidebar destination's three states. Assembled browser fixtures exercise file-tab navigation, the shared lightbox, and the preview RPC through the mounted Science service.
+
+The Details column's open/selected-entry state persists across a page reload (`dsh.conversation.chat`). A browser fixture that reloads with the Science library already open must not click the sidebar Artifacts destination again to "ensure" it stays open — that click now hits the toggle-closed branch above and collapses the column instead.

@@ -26,7 +26,7 @@ import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 
 export const SESSION = 'session-1' as SessionId
-export const t: ScienceDetailsViewProps['t'] = makeTranslate(en)
+const t: ScienceDetailsViewProps['t'] = makeTranslate(en)
 
 export function baseProjection(over: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
   return {
@@ -124,7 +124,7 @@ export function note(over: Omit<Partial<ScienceArtifactNote>, 'artifactId'> & { 
   }
 }
 
-export function emptySnapshot(): ConversationSnapshot {
+function emptySnapshot(): ConversationSnapshot {
   return { nodes: [], chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
 }
 

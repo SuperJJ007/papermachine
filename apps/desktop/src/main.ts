@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
@@ -20,6 +20,7 @@ import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.t
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
+import { windowBackgroundColor } from './window-theme.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -363,13 +364,18 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: windowBackgroundColor(nativeTheme.shouldUseDarkColors),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
+  const updateBackground = (): void => {
+    created.setBackgroundColor(windowBackgroundColor(nativeTheme.shouldUseDarkColors))
+  }
+  nativeTheme.on('updated', updateBackground)
+  created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
   created.once('ready-to-show', () => { created.show() })
   created.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)

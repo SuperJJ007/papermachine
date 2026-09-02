@@ -1643,6 +1643,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     readonly contentOrigin: ContentOrigin
     /** Content-commit time (never changes after creation — see `VersionRecord.createdAt`). */
     readonly createdAt: number
+    readonly producerSessionId: SessionId
+    readonly producerRunId: string | undefined
+    readonly producerToolCallId: string | undefined
+    readonly producerRequestHeaderSeq: number | undefined
+    readonly producerTurn: number | undefined
   }
 
   /**
@@ -1678,6 +1683,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         caption: version.caption,
         contentOrigin: version.contentOrigin,
         createdAt: version.createdAt,
+        producerSessionId: version.producerSessionId,
+        producerRunId: version.producerRunId,
+        producerToolCallId: version.producerToolCallId,
+        producerRequestHeaderSeq: version.producerRequestHeaderSeq,
+        producerTurn: version.producerTurn,
       }
     }
 
@@ -1706,6 +1716,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         caption: matched.caption,
         contentOrigin: matched.contentOrigin,
         createdAt: matched.createdAt,
+        producerSessionId: matched.producerSessionId,
+        producerRunId: matched.producerRunId,
+        producerToolCallId: matched.producerToolCallId,
+        producerRequestHeaderSeq: matched.producerRequestHeaderSeq,
+        producerTurn: matched.producerTurn,
       }
     }
     const projectVersion = await store.getVersion(projectId, requestedVersionId)
@@ -1721,6 +1736,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       caption: projectVersion.caption,
       contentOrigin: projectVersion.contentOrigin,
       createdAt: projectVersion.createdAt,
+      producerSessionId: projectVersion.producerSessionId,
+      producerRunId: projectVersion.producerRunId,
+      producerToolCallId: projectVersion.producerToolCallId,
+      producerRequestHeaderSeq: projectVersion.producerRequestHeaderSeq,
+      producerTurn: projectVersion.producerTurn,
     }
   }
 
@@ -2846,6 +2866,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // of the same artifact/project.
           const logicalNameByArtifact = new Map<string, string>()
           const healthByProject = new Map<string, Map<VersionId, VersionHealthRecord>>()
+          const titleByProducerSession = new Map<SessionId, string | undefined>()
           const versions: ScienceVersionSummary[] = []
           for (const versionId of versionIds) {
             // Unauthorized/nonexistent versions are dropped from the result,
@@ -2867,6 +2888,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               healthByVersionId = new Map(reconciliation.items.map(item => [item.versionId, item]))
               healthByProject.set(String(authorized.projectId), healthByVersionId)
             }
+            let producerSessionTitle = titleByProducerSession.get(authorized.producerSessionId)
+            if (!titleByProducerSession.has(authorized.producerSessionId)) {
+              try {
+                producerSessionTitle = foldSessionTitle((await readSessionState(authorized.producerSessionId)).events)?.title
+              } catch { /* A removed producer session does not invalidate its project artifact. */ }
+              titleByProducerSession.set(authorized.producerSessionId, producerSessionTitle)
+            }
             versions.push({
               versionId: authorized.versionId,
               artifactId: authorized.artifactId,
@@ -2878,6 +2906,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               createdAt: authorized.createdAt,
               mediaType: authorized.mediaType,
               byteCount: authorized.byteCount,
+              producer: {
+                sessionId: authorized.producerSessionId,
+                ...(producerSessionTitle === undefined ? {} : { sessionTitle: producerSessionTitle }),
+                ...(authorized.producerRunId === undefined ? {} : { runId: authorized.producerRunId }),
+                ...(authorized.producerToolCallId === undefined ? {} : { toolCallId: authorized.producerToolCallId }),
+                ...(authorized.producerRequestHeaderSeq === undefined
+                  ? {}
+                  : { requestHeaderSeq: authorized.producerRequestHeaderSeq }),
+                ...(authorized.producerTurn === undefined ? {} : { turn: authorized.producerTurn }),
+              },
               ...versionHealthFlags(healthByVersionId.get(versionId)),
             })
           }

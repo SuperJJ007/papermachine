@@ -70,5 +70,13 @@ export interface ScienceVersionSummary {
   createdAt: number
   mediaType: string
   byteCount: number
+  producer: {
+    sessionId: string
+    sessionTitle?: string
+    runId?: string
+    toolCallId?: string
+    requestHeaderSeq?: number
+    turn?: number
+  }
   health?: ScienceVersionHealthFlags
 }

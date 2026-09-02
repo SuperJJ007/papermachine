@@ -456,7 +456,7 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
-  it('batch-reads current library facts for fold-authorized versions, dropping unauthorized ids and versions whose owning artifact is gone', async () => {
+  it('batch-reads current library and producer facts without leaking rows the session cannot authorize', async () => {
     const cwd = '/tmp/science-versions-batch'
     const { ctx, sessionId, agent } = await harness(undefined, cwd)
     appendFixtureEvents(agent.session, legalEvents().slice(0, 4))
@@ -476,17 +476,26 @@ describe('Web session model selection', () => {
         ],
       }),
     })
+    agent.session.append('session/title', {
+      title: 'Source analysis', messageSeqs: [], source: { kind: 'user' },
+    })
     const versionWithTitle = {
       versionId: 'batch-version-2', artifactId: ARTIFACT_ID, ordinal: 2, sha256: '2'.repeat(64),
       mediaType: 'image/png', byteCount: 10, title: 'Chart v2', caption: undefined, contentOrigin: 'run-auto', createdAt: 100,
+      producerSessionId: sessionId, producerRunId: 'run-1', producerToolCallId: RUN_CALL_ID,
+      producerRequestHeaderSeq: 3, producerTurn: 1,
     }
     const versionWithCaption = {
       versionId: 'batch-version-3', artifactId: ARTIFACT_ID, ordinal: 3, sha256: '3'.repeat(64),
       mediaType: 'image/png', byteCount: 12, title: undefined, caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200,
+      producerSessionId: sessionId, producerRunId: undefined, producerToolCallId: undefined,
+      producerRequestHeaderSeq: undefined, producerTurn: undefined,
     }
     const orphanOwnerVersion = {
       versionId: 'no-owner-version', artifactId: orphanArtifactId, ordinal: 5, sha256: '5'.repeat(64),
       mediaType: 'text/csv', byteCount: 1, title: undefined, caption: undefined, contentOrigin: 'import', createdAt: 50,
+      producerSessionId: 'unavailable-producer' as SessionId, producerRunId: undefined, producerToolCallId: undefined,
+      producerRequestHeaderSeq: undefined, producerTurn: undefined,
     }
     const openProject = vi.fn(() => Promise.resolve({ projectId: PROJECT_ID }))
     const listVersions = vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
@@ -515,10 +524,15 @@ describe('Web session model selection', () => {
       {
         versionId: 'batch-version-2', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 2,
         title: 'Chart v2', contentOrigin: 'run-auto', createdAt: 100, mediaType: 'image/png', byteCount: 10,
+        producer: {
+          sessionId, sessionTitle: 'Source analysis', runId: 'run-1', toolCallId: RUN_CALL_ID,
+          requestHeaderSeq: 3, turn: 1,
+        },
       },
       {
         versionId: 'batch-version-3', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 3,
         caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200, mediaType: 'image/png', byteCount: 12,
+        producer: { sessionId, sessionTitle: 'Source analysis' },
         health: { reconstructed: true },
       },
     ])

@@ -10,11 +10,8 @@
  * `science.artifacts` tab: a single disabled stepper, no chart-edit panel, no
  * private notes).
  *
- * The provenance drill-in's former Code/Execution-log/Messages/Environment
- * sub-tabs are gone with the T1/T2 artifact-authority migration (see
- * `ScienceArtifactProvenance.tsx`'s own module JSDoc); this file only proves
- * the toolbar opens/closes the drill-in, not sub-tab content — that removal
- * is a regression pending its own product decision, not re-asserted here.
+ * The provenance component suite covers the four sub-tabs; this file covers
+ * the toolbar and store-backed producer-summary wiring into the drill-in.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -341,12 +338,21 @@ describe('ScienceDetailsView: read-only tab opened from a cross-session library 
     ] } })
     // No live `science.artifacts` entry for this artifactId/version: the
     // read-only library path is the only one that can resolve it.
-    render(<ScienceDetailsView {...props(baseProjection(), { loadLibrary })} />)
+    render(<ScienceDetailsView {...props(baseProjection(), {
+      loadLibrary,
+      summaries: [versionSummary({
+        versionId: 'cross-version', artifactId: 'cross-chart', ordinal: 3,
+        producer: { sessionId: 'session-a', sessionTitle: 'Source experiment' },
+      })],
+    })} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open Cross-session chart, version 3' }))
     expect(screen.queryByText('Cross-session chart')).toBeNull()
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect((await screen.findAllByRole('tab')).map(tab => tab.textContent))
+      .toEqual(['Code', 'Execution log', 'Messages', 'Environment'])
+    fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
     expect(screen.getByText('Source experiment')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back to original conversation' }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Cross-session chart' }))

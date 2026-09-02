@@ -96,6 +96,8 @@ export interface ScienceRenderableVersion {
   readonly byteCount: number
   readonly contentOrigin: ScienceVersionSummary['contentOrigin']
   readonly createdAt: number
+  /** Store-owned producer identity used by the provenance drill-in. */
+  readonly producer?: ScienceVersionSummary['producer']
 }
 
 /**
@@ -124,5 +126,6 @@ export function toRenderableVersion(
     byteCount: summary.byteCount,
     contentOrigin: summary.contentOrigin,
     createdAt: summary.createdAt,
+    producer: summary.producer,
   }
 }

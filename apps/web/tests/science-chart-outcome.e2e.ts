@@ -444,6 +444,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const first = await store.createArtifact(project.projectId, {
       logicalName: 'observed-series', kind: 'figure', originSessionId: SessionId(SEED_ID), data: PNG,
       mediaType: 'image/png', contentOrigin: 'run-auto',
+      producerRunId: RUN_ID, producerToolCallId: RUN_CALL_ID, producerTurn: 1,
+      environmentRevision: 1, environmentFingerprint: FINGERPRINT,
       figureState: { figureKey: CHART.figureKey, dpi: CHART.png.dpi, stateJson: JSON.stringify(CHART) },
     })
     await store.annotateVersion(project.projectId, first.version.versionId, {
@@ -453,6 +455,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     const second = await store.appendVersion(project.projectId, first.artifact.artifactId, {
       producerSessionId: SessionId(SEED_ID), data: Uint8Array.from([...PNG, 0]),
       mediaType: 'image/png', contentOrigin: 'run-auto',
+      producerRunId: SECOND_RUN_ID, producerToolCallId: SECOND_RUN_CALL_ID, producerTurn: 2,
+      environmentRevision: 1, environmentFingerprint: FINGERPRINT,
     })
     await store.annotateVersion(project.projectId, second.versionId, {
       actor: 'model', sessionId: SessionId(SEED_ID), toolCallId: 'seed-curation-missing', requestHeaderSeq: 2,

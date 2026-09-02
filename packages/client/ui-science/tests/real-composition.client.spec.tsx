@@ -10,15 +10,8 @@
 // toolbar's provenance control switching to the drill-in, and full disposal
 // removing every registration this package adds.
 //
-// The provenance drill-in's former Messages sub-tab (and its
-// DetailsPanel.inspectCall/selectDetailed handoff into Detailed trajectory)
-// is gone with the T1/T2 artifact-authority migration: it resolved the
-// exact generating run via the now-removed runId/toolCallId fields on the
-// client-safe artifact projection, which no client-facing read replaces
-// (see ScienceArtifactProvenance.tsx's own module JSDoc). DetailsPanel's
-// inspectCall/selectDetailed owner callbacks remain part of the
-// 'conversation.details.view' slot's framework contract (ui-conversation's
-// territory, unchanged); ui-science simply has no current consumer for them.
+// The provenance drill-in resolves the store-owned producer summary returned
+// by `readScienceVersions` against the current run and transcript projections.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent } from '@testing-library/react'
@@ -172,6 +165,7 @@ async function bench() {
           logicalName: ARTIFACT_ITEM.logicalName, ordinal: ARTIFACT_ITEM.version, title: ARTIFACT_ITEM.title,
           contentOrigin: 'run-auto', createdAt: 1_000,
           mediaType: ARTIFACT_ITEM.content.mediaType, byteCount: ARTIFACT_ITEM.content.byteCount,
+          producer: { sessionId: SID, runId: 'run-1', toolCallId: CALL_ID, requestHeaderSeq: 3, turn: 1 },
         }] },
       })),
     },
@@ -264,13 +258,14 @@ describe('ui-science on the real machinery stack', () => {
     await b.runtime.dispose()
   })
 
-  it('the toolbar Provenance control switches to the drill-in and shows the resolved version\'s current facts', async () => {
+  it('the toolbar Provenance control switches to the four-subpage drill-in', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
     fireEvent.click(await view.findByRole('listitem', { name: /^Loss curve/u }))
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
-    expect(await view.findByText('Produced by an automatic run')).toBeTruthy()
+    expect((await view.findAllByRole('tab')).map(tab => tab.textContent))
+      .toEqual(expect.arrayContaining(['Code', 'Execution log', 'Messages', 'Environment']))
     fireEvent.click(view.getByRole('button', { name: 'Loss curve' }))
     expect(await view.findByRole('button', { name: 'Provenance' })).toBeTruthy()
     await b.runtime.dispose()

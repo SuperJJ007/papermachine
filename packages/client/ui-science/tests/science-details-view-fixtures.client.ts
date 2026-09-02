@@ -81,6 +81,13 @@ export function versionSummary(over: Partial<ScienceVersionSummary> = {}): Scien
     createdAt: 500,
     mediaType: 'image/png',
     byteCount: 100,
+    producer: {
+      sessionId: SESSION,
+      runId: 'run-1',
+      toolCallId: 'call-run-1',
+      requestHeaderSeq: 7,
+      turn: 1,
+    },
     ...over,
   }
 }

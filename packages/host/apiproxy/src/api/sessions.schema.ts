@@ -436,6 +436,11 @@ export const sessionsScienceVersionsValueSchema = z.object({
     ordinal: z.number().int().positive(), title: z.string().optional(), caption: z.string().optional(),
     contentOrigin: scienceContentOriginSchema, createdAt: z.number(),
     mediaType: z.string().min(1), byteCount: z.number().int().nonnegative(),
+    producer: z.object({
+      sessionId: sessionIdSchema, sessionTitle: z.string().optional(),
+      runId: z.string().optional(), toolCallId: z.string().optional(),
+      requestHeaderSeq: z.number().int().nonnegative().optional(), turn: z.number().int().positive().optional(),
+    }),
     health: scienceVersionHealthFlagsSchema.optional(),
   })),
 }) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceVersions'>>>

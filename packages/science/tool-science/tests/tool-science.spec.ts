@@ -47,10 +47,12 @@ import {
   latestRequestHeaderSeq,
   requireArtifactStore,
   requireScienceSession,
-  resolveArtifactStoreVersion,
+  resolveArtifactStoreFacts,
+  resolveCapturedArtifactStoreFacts,
   runValueFromResult,
 } from '../src/run.ts'
-import type { ResolveArtifactStoreVersion } from '../src/artifact-schema.ts'
+import { scienceArtifactEdits } from '../src/artifact-schema.ts'
+import type { ResolveArtifactStoreFacts, ScienceArtifactStoreFacts } from '../src/artifact-schema.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
@@ -148,21 +150,26 @@ function annotationFixture(overrides: Partial<VersionAnnotationRecord> = {}): Ve
 }
 
 /**
- * Build a {@link ResolveArtifactStoreVersion} resolver over fixed store rows,
+ * Build a {@link ResolveArtifactStoreFacts} resolver over fixed store rows,
  * keyed by `versionId` — the same key `runValueFromResult`/
  * `stateValueFromProjection` resolve each listed artifact by.
  */
-function resolverFor(records: readonly VersionRecord[]): ResolveArtifactStoreVersion {
+function resolverFor(records: readonly VersionRecord[]): ResolveArtifactStoreFacts {
   const byVersionId = new Map(records.map(record => [String(record.versionId), record]))
   return async (artifact) => {
     const record = byVersionId.get(String(artifact.versionId))
     if (record === undefined) throw new Error(`test fixture: no VersionRecord for versionId ${String(artifact.versionId)}`)
-    return record
+    return { version: record, edits: [], editCount: 0 }
   }
 }
 
+/** Wrap one version row with model-safe store facts for pure receipt tests. */
+function storeFacts(version: VersionRecord, overrides: Partial<ScienceArtifactStoreFacts> = {}): ScienceArtifactStoreFacts {
+  return { version, edits: [], editCount: 0, ...overrides }
+}
+
 /** Resolver for a call site that names no captured/listed artifact and must never be invoked. */
-const unusedResolver: ResolveArtifactStoreVersion = () => {
+const unusedResolver: ResolveArtifactStoreFacts = () => {
   throw new Error('test fixture: resolveStore should not be called')
 }
 
@@ -207,9 +214,9 @@ function artifactKindFor(mediaType: ScienceArtifactMediaType): 'figure' | 'datas
 }
 
 /**
- * Directly append one `content_origin: 'run-auto'` artifact version citing
- * `run`'s own authorizing facts — the durable write `dsh-science-runtime`'s
- * real capture walk performs, for a file the fake kernel driver never writes
+ * Directly append one `content_origin: 'run-auto'` artifact version, citing
+ * `run`'s authorizing facts when supplied. This is the durable write
+ * `dsh-science-runtime`'s real capture walk performs for a file the fake kernel driver never writes
  * (it only replies over the kernel wire protocol's FIFO, never touching
  * `SCIENCE_ARTIFACT_DIR`). Persists the bytes through the mounted project
  * artifact store first (a `createArtifact` write plus a `capture`-actor
@@ -217,7 +224,7 @@ function artifactKindFor(mediaType: ScienceArtifactMediaType): 'figure' | 'datas
  * event exactly as capture would.
  */
 async function seedAutoArtifact(
-  ctx: Context, session: Session, run: RunProvenance, logicalName: string,
+  ctx: Context, session: Session, run: RunProvenance | undefined, logicalName: string,
   data: Uint8Array, mediaType: ScienceArtifactMediaType, chart?: ScienceChartState,
 ): Promise<ScienceArtifactVersion> {
   const cwd = session.header.cwd
@@ -230,11 +237,14 @@ async function seedAutoArtifact(
     data,
     mediaType,
     contentOrigin: 'run-auto',
-    producerRunId: String(run.runId),
-    producerToolCallId: String(run.toolCallId),
-    producerRequestHeaderSeq: run.requestHeaderSeq,
-    environmentRevision: run.environmentRevision,
-    environmentFingerprint: run.environmentFingerprint,
+    ...run === undefined ? {} : {
+      producerRunId: String(run.runId),
+      producerToolCallId: String(run.toolCallId),
+      producerRequestHeaderSeq: run.requestHeaderSeq,
+      producerTurn: 1,
+      environmentRevision: run.environmentRevision,
+      environmentFingerprint: run.environmentFingerprint,
+    },
     ...chart === undefined ? {} : {
       figureState: { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) },
     },
@@ -765,6 +775,35 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
   })
 
+  it('renders explicit edit ancestry, ordinary continuation, and bounded direct-edit history in model vocabulary', async () => {
+    const edited = artifactVersionFixture({ logicalName: 'plot.png', version: 2 })
+    const continued = artifactVersionFixture({ logicalName: 'plot.png', version: 3 })
+    const base = versionRecordFixture({ ordinal: 2 })
+    const edits = [
+      { op: 'set_title' as const, target: 'title' },
+      { op: 'toggle_grid' as const, target: 'axes[0].grid' },
+    ]
+    const values = await Promise.all([
+      runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+        capture: {
+          captured: [edited], skippedRasterPaths: [], skippedOversizedCount: 0,
+          truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
+        },
+      }, async () => storeFacts(base, { lineage: { kind: 'edited-from', logicalName: 'plot.png', version: 1 }, edits, editCount: 4 })),
+      runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+        capture: {
+          captured: [continued], skippedRasterPaths: [], skippedOversizedCount: 0,
+          truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
+        },
+      }, async () => storeFacts(versionRecordFixture({ ordinal: 3 }), { lineage: { kind: 'continues', version: 2 } })),
+    ])
+    expect(formatRunResult(values[0], 'python')).toContain('edited from plot.png v1')
+    expect(formatRunResult(values[0], 'python')).toContain('4 direct edits: set_title (title), toggle_grid (axes[0].grid); latest 2 shown.')
+    expect(formatRunResult(values[1], 'python')).toContain('continues v2')
+  })
+
   it('appends a plural undeclared-raster receipt line, omitting it entirely when the list is empty', async () => {
     const csv = artifactVersionFixture({
       logicalName: 'summary.csv', version: 1, versionId: ScienceVersionId('store-version-csv-2'), sha256: 'e'.repeat(64),
@@ -852,7 +891,7 @@ describe('runValueFromResult / formatRunResult', () => {
   })
 })
 
-describe('requireArtifactStore / resolveArtifactStoreVersion', () => {
+describe('requireArtifactStore / resolveArtifactStoreFacts', () => {
   it('fails loud when no Science Artifact Store is mounted', () => {
     const ctx = new Context()
     expect(() => requireArtifactStore(ctx)).toThrow(/no Science Artifact Store is mounted/)
@@ -863,12 +902,106 @@ describe('requireArtifactStore / resolveArtifactStoreVersion', () => {
     const session = scienceSession(ctx, 'science-resolve-store-version')
     const run = await runSuccessfully(ctx, session, 'science-resolve-store-version-run')
     const seeded = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
-    const store = await resolveArtifactStoreVersion(ctx, seeded)
-    expect(store.versionId).toBe(seeded.versionId)
-    expect(store.mediaType).toBe('image/png')
+    const store = await resolveArtifactStoreFacts(ctx, 4, seeded)
+    expect(store.version.versionId).toBe(seeded.versionId)
+    expect(store.version.mediaType).toBe('image/png')
 
     const dangling = artifactVersionFixture({ projectId: seeded.projectId, versionId: ScienceVersionId('never-committed') })
-    await expect(resolveArtifactStoreVersion(ctx, dangling)).rejects.toThrow(/no longer identifies a committed store version/)
+    await expect(resolveArtifactStoreFacts(ctx, 4, dangling)).rejects.toThrow(/no longer identifies a committed store version/)
+  })
+
+  it('reads PNG edit history only, bounds recent operations, and resolves explicit and implicit lineage', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-resolve-store-facts')
+    const run = await runSuccessfully(ctx, session, 'science-resolve-store-facts-run')
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'First' },
+        { op: 'toggle_grid', axes: 0, visible: true },
+      ],
+    }
+    const first = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', chart)
+    const explicit = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', baseVersionId: first.versionId,
+    })
+    const continued = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: Uint8Array.from([...PNG, 0]), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    const firstFacts = await resolveArtifactStoreFacts(ctx, 1, first)
+    expect(firstFacts).toMatchObject({ editCount: 2, edits: [{ op: 'toggle_grid', target: 'axes[0].grid' }] })
+    const initialFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, first)
+    expect(initialFacts.lineage).toBeUndefined()
+    const explicitFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 2, versionId: explicit.versionId,
+    }))
+    expect(explicitFacts.lineage).toEqual({ kind: 'edited-from', logicalName: 'plot.png', version: 1 })
+    const continuedFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 3, versionId: continued.versionId,
+    }))
+    expect(continuedFacts.lineage).toEqual({ kind: 'continues', version: 2 })
+  })
+
+  it('preserves migrated implicit-baseline lineage and fails loud for dangling baseline references', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-resolve-baseline-invariants')
+    const run = await runSuccessfully(ctx, session, 'science-resolve-baseline-invariants-run')
+    const first = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const base = await ctx.scienceArtifactStore.getVersion(first.projectId, first.versionId)
+    if (base === undefined) throw new Error('expected seeded base version')
+    const explicit = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: Uint8Array.from([...PNG, 0]), mediaType: 'image/png', contentOrigin: 'run-auto', baseVersionId: first.versionId,
+    })
+    const artifact = artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 2, versionId: explicit.versionId,
+    })
+    const getVersion = vi.spyOn(ctx.scienceArtifactStore, 'getVersion')
+    getVersion.mockResolvedValueOnce({ ...explicit, baseExplicit: false }).mockResolvedValueOnce(base)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).resolves.toMatchObject({
+      lineage: { kind: 'continues', version: 1 },
+    })
+    getVersion.mockRestore()
+
+    const readVersion = ctx.scienceArtifactStore.getVersion.bind(ctx.scienceArtifactStore)
+    const missingBase = vi.spyOn(ctx.scienceArtifactStore, 'getVersion')
+    missingBase.mockImplementationOnce(readVersion).mockResolvedValueOnce(undefined)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).rejects.toThrow(
+      /baseline no longer identifies a committed store version/,
+    )
+    missingBase.mockRestore()
+
+    vi.spyOn(ctx.scienceArtifactStore, 'getArtifact').mockResolvedValueOnce(undefined)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).rejects.toThrow(/baseline no longer identifies a committed artifact/)
+  })
+})
+
+describe('scienceArtifactEdits', () => {
+  it('maps every chart operation to its model-safe target and keeps the complete count when bounded', () => {
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'Title' },
+        { op: 'set_subtitle', axes: 0, text: 'Subtitle' },
+        { op: 'set_axis_label', axes: null, axis: 'x', text: 'X' },
+        { op: 'set_legend_position', axes: 1, position: 'upper right' },
+        { op: 'toggle_grid', axes: null, visible: true },
+        { op: 'set_font', axes: null, family: 'Inter', size: 12 },
+      ],
+    }
+    expect(scienceArtifactEdits(chart, 6)).toEqual({
+      editCount: 6,
+      edits: [
+        { op: 'set_title', target: 'title' },
+        { op: 'set_subtitle', target: 'axes[0].subtitle' },
+        { op: 'set_axis_label', target: 'x_label' },
+        { op: 'set_legend_position', target: 'axes[1].legend' },
+        { op: 'toggle_grid', target: 'grid' },
+        { op: 'set_font', target: 'font' },
+      ],
+    })
+    expect(scienceArtifactEdits(undefined, 2)).toEqual({ edits: [], editCount: 0 })
   })
 })
 
@@ -1605,26 +1738,57 @@ describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
   it('omits caption when absent from the durable artifact', () => {
     const value = artifactReceiptFromArtifact(
       artifactVersionFixture({ logicalName: 'main.png', title: 'Main plot' }),
-      versionRecordFixture({ latestAnnotation: annotationFixture({ title: 'Main plot' }) }),
+      storeFacts(versionRecordFixture({ latestAnnotation: annotationFixture({ title: 'Main plot' }) })),
+      undefined,
     )
     expect(value).not.toHaveProperty('caption')
     expect(formatArtifactReceipt(value)).not.toContain('caption:')
   })
 
+  it('names the producing run tool and turn without exposing its internal run id, and lists direct edits', () => {
+    const value = artifactReceiptFromArtifact(
+      artifactVersionFixture({ logicalName: 'plot.png', title: 'Plot' }),
+      storeFacts(versionRecordFixture({ producerRunId: 'internal-run-id', producerTurn: 3 }), {
+        edits: [{ op: 'set_title', target: 'title' }], editCount: 1,
+      }),
+      'python',
+    )
+    const text = formatArtifactReceipt(value)
+    expect(text).toContain('produced by run_python (turn 3)')
+    expect(text).toContain('1 direct edits: set_title (title).')
+    expect(text).not.toContain('internal-run-id')
+  })
+
+  it('names an R producer and omits producer detail when either the language or turn is unknown', () => {
+    const artifact = artifactVersionFixture({ logicalName: 'plot.png', title: 'Plot' })
+    const rValue = artifactReceiptFromArtifact(
+      artifact,
+      storeFacts(versionRecordFixture({ producerRunId: 'r-run', producerTurn: 4 })),
+      'r',
+    )
+    expect(formatArtifactReceipt(rValue)).toContain('produced by run_r (turn 4)')
+    expect(artifactReceiptFromArtifact(
+      artifact,
+      storeFacts(versionRecordFixture({ producerRunId: 'python-run', producerTurn: undefined })),
+      'python',
+    )).not.toHaveProperty('producer')
+  })
+
   it('curates a non-image artifact identically', () => {
     const value = artifactReceiptFromArtifact(
       artifactVersionFixture({ logicalName: 'summary.csv', title: 'Summary', versionId: ScienceVersionId('store-version-csv') }),
-      versionRecordFixture({
+      storeFacts(versionRecordFixture({
         versionId: ScienceVersionId('store-version-csv'), mediaType: 'text/csv', byteCount: 10,
         latestAnnotation: annotationFixture({ versionId: ScienceVersionId('store-version-csv'), title: 'Summary' }),
-      }),
+      })),
+      undefined,
     )
     expect(value.versionId).toBe('store-version-csv')
     expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1), run-auto, curated\ntitle: Summary\ntext/csv, 10 bytes')
   })
 
   it('names an artifact still on its auto-capture title as auto-captured, not curated', () => {
-    const value = artifactReceiptFromArtifact(artifactVersionFixture({ title: 'file' }), versionRecordFixture())
+    const value = artifactReceiptFromArtifact(artifactVersionFixture({ title: 'file' }), storeFacts(versionRecordFixture()), undefined)
     expect(value.curated).toBe(false)
     expect(formatArtifactReceipt(value)).toContain('run-auto, auto-captured')
   })
@@ -1684,7 +1848,9 @@ describe('annotate_artifact', () => {
     expect(text).toContain('artifact "plot.png" v1')
     expect(text).toContain('title: Main plot')
     expect(text).toContain('caption: A caption')
+    expect(text).toContain('produced by run_python (turn 1)')
     expect(text).not.toMatch(/sha256:/)
+    expect(text).not.toContain(String(run.runId))
     // Two durable saves (the capture and its curation), one version.
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
     expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1])
@@ -1696,6 +1862,56 @@ describe('annotate_artifact', () => {
       kind: 'science/artifact', version: 2,
       artifacts: [{ version: 1, title: 'Main plot', content: { mediaType: 'image/png' } }],
     })
+  })
+
+  it('returns a model-visible error when one authorizing call is reused', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-reused-call')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-reused-call-run')
+    await seedAutoArtifact(ctx, session, run, 'a.csv', Buffer.from('a'), 'text/csv')
+    await seedAutoArtifact(ctx, session, run, 'b.csv', Buffer.from('b'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-reused-call-id')
+    const first = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'a.csv', title: 'A' }, agent: fakeAgent(session),
+    })
+    expect(first.isError).toBe(false)
+    const second = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'b.csv', title: 'B' }, agent: fakeAgent(session),
+    })
+    expect(second.isError).toBe(true)
+    expect(second.content.some(block => block.type === 'text' && block.text.includes('already authorized a prior artifact annotation'))).toBe(true)
+  })
+
+  it('omits producer wording when the stored producer run is not present in the current session', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-unknown-producer')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-known-run')
+    await seedAutoArtifact(ctx, session, { ...run, runId: ScienceRunId('science-annotate-missing-run') }, 'summary.csv', Buffer.from('a'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-unknown-producer-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'summary.csv', title: 'Summary' }, agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).not.toContain('produced by')
+  })
+
+  it('omits producer wording when the artifact has no producer run', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-no-producer')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    await seedAutoArtifact(ctx, session, undefined, 'imported.csv', Buffer.from('a'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 1, 'annotate_artifact', 'science-annotate-no-producer-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'imported.csv', title: 'Imported' }, agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).not.toContain('produced by')
   })
 
   it('curates a captured non-image artifact into a clickable reference too, now that the presentation generalizes past image-only', async () => {
@@ -2275,6 +2491,29 @@ describe('get_science_state artifact sanitization', () => {
     expect(value.artifacts).toEqual([expect.objectContaining({ contentOrigin: 'human-edit' })])
     expect(value.artifacts[0]).not.toHaveProperty('runId')
     expect(value.artifacts[0]).not.toHaveProperty('parent')
+  })
+
+  it('returns the complete direct-edit count with only the configured number of recent operations', async () => {
+    const { ctx } = await setup({ stateHistoryLimit: 1 })
+    const session = scienceSession(ctx, 'science-state-direct-edits')
+    const run = await runSuccessfully(ctx, session, 'science-state-direct-edits-run')
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'First' },
+        { op: 'toggle_grid', axes: 0, visible: true },
+      ],
+    }
+    await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', chart)
+    const state = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-state-direct-edits-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+    })
+    expect(state.isError).toBe(false)
+    if (state.isError) throw new Error('unreachable')
+    expect(state.value).toMatchObject({
+      artifacts: [{ editCount: 2, edits: [{ op: 'toggle_grid', target: 'axes[0].grid' }] }],
+    })
   })
 
   it('omits the internal store version id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {

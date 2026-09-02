@@ -254,6 +254,44 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED' })
   })
 
+  it('rejects a toolCallId reused after its own prior annotation was superseded, closing the pre-check\'s current-annotation-only gap', async () => {
+    const root = tmp('.science-annotate-tool-call-reused-superseded-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-tool-call-reused-superseded')
+    await captureFiles(harness, root, session, { 'a.csv': 'a', 'b.csv': 'b' })
+    const first = authorizeAnnotateArtifact(session, 'science-annotate-tool-call-reused-superseded-first')
+    await harness.runtime.annotateArtifact({
+      session, logicalName: 'a.csv', title: 'first', ...first, signal: new AbortController().signal,
+    })
+    const second = authorizeAnnotateArtifact(session, 'science-annotate-tool-call-reused-superseded-second')
+    await harness.runtime.annotateArtifact({
+      session, logicalName: 'a.csv', title: 'second', ...second, signal: new AbortController().signal,
+    })
+    // The first call remains consumed in store history after the second
+    // annotation becomes current.
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'b.csv', title: 'third', ...first, signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED' })
+  })
+
+  it('classifies an unrelated artifact-store annotation failure as infrastructure failure', async () => {
+    const root = tmp('.science-annotate-store-failure-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-store-failure')
+    await captureFiles(harness, root, session, { 'a.csv': 'a' })
+    const failure = new Error('forced annotation write failure')
+    vi.spyOn(harness.ctx.scienceArtifactStore, 'annotateVersion').mockRejectedValueOnce(failure)
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'a.csv', title: 'A',
+      ...authorizeAnnotateArtifact(session, 'science-annotate-store-failure-call'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE', cause: failure })
+  })
+
   it('rejects curation of a direct human-edit version', async () => {
     const root = tmp('.science-annotate-human-edit-')
     const prefix = createFakePythonPrefix(root)

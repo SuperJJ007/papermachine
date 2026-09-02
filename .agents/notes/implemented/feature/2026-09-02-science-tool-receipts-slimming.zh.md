@@ -8,6 +8,10 @@
 
 [T1](../architecture/2026-09-01-project-artifact-store-schema-v2.zh.md) 把项目 artifact store 的写事务定为一个 version 全部来源事实的唯一权威，[T2a](../architecture/2026-09-02-science-artifact-event-slimming.zh.md) 把 `science/artifact-saved` 与 `ScienceArtifactVersion` 瘦身成一个扁平的呈现快照（`artifactId`、`logicalName`、`version`、`title`、`caption?`、`projectId`、`versionId`、`sha256`、`seenAt`），不再保留 `origin`、`mediaType`、`byteCount`、`parent`、`runId`、`createdAt`、`chart` 字段。`dsh-tool-science` 里每一个面向模型的 artifact 值（`get_science_state`、`run_python`/`run_r` 的捕获产物清单、`annotate_artifact` 的收据）都直接读这些被删掉的字段，因而无法编译：`artifact-schema.ts`、`state.ts`、`run.ts`、`annotate-artifact.ts`，以及校验 viewer 编辑目标媒体类型与活图状态的 `edit-message.ts`，全都在读已经搬进 store 的事实。
 
+## 取代关系
+
+2026-09-02 的[收据恢复决定](../bug-fix/2026-09-02-science-artifact-receipts-restoration.zh.md)取代了本笔记关于删除血缘、producer 文案与直接编辑摘要的决定。这些模型可见事实现在从 artifact store 重建，但不会恢复到 session 事件。本笔记的共用 store resolver 与其余隐藏字段决定仍然有效。
+
 ## 决定
 
 **两个新的 store 归属事实到达模型面：`contentOrigin` 与 `curated`；本包之前暴露的其余来源字段全部不再暴露。** `packages/AGENTS.md` 的"从模型视角编写面向模型的约定"规则，以及 T1 设计本身写明的原则（`get_science_state` 只暴露 `content_origin` 与一个布尔化的 curated，绝不暴露 `actor`），定死了哪两个事实值得暴露。`scienceArtifactSchemaProperties`/`scienceArtifactValueFields`（`artifact-schema.ts`）成为每个工具共用的一个构建函数：`artifactId`、`logicalName`、`version`、`title`、`caption?`、`contentOrigin`（`'run-auto' | 'human-edit' | 'import'`，读自 store 的 `VersionRecord.contentOrigin`）、`curated`（`store.latestAnnotation !== undefined && store.latestAnnotation.actor !== 'capture'`——一旦有模型或人工的 annotation 替换过自动捕获时的标题就为 true，绝不暴露具体是哪个 actor）、`mediaType`、`bytes`（这两项现在也归 store 所有）与 `seenAt`（session event 自身的呈现时刻字段，替代被删掉的 `createdAt`）。`versionId`/`sha256`/`projectId`/annotation `actor` 不会被加进任何 schema。

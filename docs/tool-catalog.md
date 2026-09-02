@@ -2261,7 +2261,7 @@ Source: [`packages/science/tool-science/src/annotate-artifact.ts`](../packages/s
 
 ### `get_science_state`
 
-Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.
+Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.
 
 ```json
 {

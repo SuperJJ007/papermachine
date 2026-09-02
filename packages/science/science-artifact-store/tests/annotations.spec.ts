@@ -34,7 +34,7 @@ describe('annotateVersion', () => {
     expect(version.latestAnnotation).toBeUndefined()
 
     const first = await engine.annotateVersion(projectId, version.versionId, { actor: 'capture', title: 'plot.png' })
-    const second = await engine.annotateVersion(projectId, version.versionId, { actor: 'model', sessionId: SESSION_A, toolCallId: 'call-1', title: 'Curated Title', caption: 'A caption' })
+    const second = await engine.annotateVersion(projectId, version.versionId, { actor: 'model', sessionId: SESSION_A, toolCallId: 'call-1', requestHeaderSeq: 1, title: 'Curated Title', caption: 'A caption' })
 
     expect(first.latestAnnotation?.annotationId).not.toBe(second.latestAnnotation?.annotationId)
     expect(second.latestAnnotation).toMatchObject({ actor: 'model', title: 'Curated Title', caption: 'A caption', toolCallId: 'call-1' })
@@ -50,7 +50,7 @@ describe('annotateVersion', () => {
       producerToolCallId: 'call-run-1', producerRequestHeaderSeq: 3,
     })
 
-    const annotated = await engine.annotateVersion(projectId, version.versionId, { actor: 'model', sessionId: SESSION_A, toolCallId: 'call-annotate-1', title: 'x' })
+    const annotated = await engine.annotateVersion(projectId, version.versionId, { actor: 'model', sessionId: SESSION_A, toolCallId: 'call-annotate-1', requestHeaderSeq: 1, title: 'x' })
 
     expect(annotated.createdAt).toBe(version.createdAt)
     expect(annotated.producerToolCallId).toBe('call-run-1')
@@ -123,5 +123,101 @@ describe('annotateVersion', () => {
     expect(version.latestAnnotation).toBeUndefined()
     expect(version.title).toBeUndefined()
     expect(version.caption).toBeUndefined()
+  })
+
+  it('rejects a second capture-actor annotation once a version already carries one', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const { version } = await engine.createArtifact(projectId, {
+      logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A, data: new TextEncoder().encode('v1'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    await engine.annotateVersion(projectId, version.versionId, { actor: 'capture', title: 'plot.png' })
+    await expect(engine.annotateVersion(projectId, version.versionId, { actor: 'capture', title: 'plot.png' })).rejects.toMatchObject({
+      code: 'ANNOTATION_ACTOR_NOT_ALLOWED',
+    })
+  })
+
+  it('lets a model curation or a human edit re-record over an existing capture-actor annotation', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const { version } = await engine.createArtifact(projectId, {
+      logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A, data: new TextEncoder().encode('v1'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    await engine.annotateVersion(projectId, version.versionId, { actor: 'capture', title: 'plot.png' })
+    const curated = await engine.annotateVersion(projectId, version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-model-1', requestHeaderSeq: 1, title: 'Curated',
+    })
+    expect(curated.title).toBe('Curated')
+    const edited = await engine.annotateVersion(projectId, version.versionId, { actor: 'human', sessionId: SESSION_A, title: 'Edited' })
+    expect(edited.title).toBe('Edited')
+  })
+
+  it('rejects a second annotateVersion call citing the same (sessionId, toolCallId, requestHeaderSeq), across different versions', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const first = await engine.createArtifact(projectId, {
+      logicalName: 'a.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('a'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    const second = await engine.createArtifact(projectId, {
+      logicalName: 'b.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('b'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    await engine.annotateVersion(projectId, first.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-shared', requestHeaderSeq: 9, title: 'first',
+    })
+    await expect(engine.annotateVersion(projectId, second.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-shared', requestHeaderSeq: 9, title: 'second',
+    })).rejects.toMatchObject({ code: 'ANNOTATION_TOOL_CALL_REUSED' })
+  })
+
+  it('rejects a reused call even after it stopped being any version\'s CURRENT annotation', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const first = await engine.createArtifact(projectId, {
+      logicalName: 'a.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('a'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    const second = await engine.createArtifact(projectId, {
+      logicalName: 'b.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('b'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    await engine.annotateVersion(projectId, first.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-superseded', requestHeaderSeq: 4, title: 'first',
+    })
+    await engine.annotateVersion(projectId, first.version.versionId, { actor: 'human', sessionId: SESSION_A, title: 'superseding edit' })
+    await expect(engine.annotateVersion(projectId, second.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-superseded', requestHeaderSeq: 4, title: 'reused',
+    })).rejects.toMatchObject({ code: 'ANNOTATION_TOOL_CALL_REUSED' })
+  })
+
+  it('does not reject the same toolCallId under a different session or a different requestHeaderSeq', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-annotations-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const first = await engine.createArtifact(projectId, {
+      logicalName: 'a.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('a'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    const second = await engine.createArtifact(projectId, {
+      logicalName: 'b.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('b'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    const third = await engine.createArtifact(projectId, {
+      logicalName: 'c.csv', kind: 'dataset', originSessionId: SESSION_A, data: new TextEncoder().encode('c'), mediaType: 'text/csv', contentOrigin: 'run-auto',
+    })
+    const SESSION_B = 'session-b' as SessionId
+    await engine.annotateVersion(projectId, first.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-distinct', requestHeaderSeq: 1, title: 'first',
+    })
+    await expect(engine.annotateVersion(projectId, second.version.versionId, {
+      actor: 'model', sessionId: SESSION_B, toolCallId: 'call-distinct', requestHeaderSeq: 1, title: 'other session',
+    })).resolves.toMatchObject({ title: 'other session' })
+    await expect(engine.annotateVersion(projectId, third.version.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'call-distinct', requestHeaderSeq: 2, title: 'other header',
+    })).resolves.toMatchObject({ title: 'other header' })
   })
 })

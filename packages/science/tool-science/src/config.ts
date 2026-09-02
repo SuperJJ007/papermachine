@@ -16,7 +16,7 @@ export interface Config {
   readonly profileId: string
   /** Deployment-owned Science mode contract revision. */
   readonly modeRevision: string
-  /** Maximum recent runs and chart versions returned by `get_science_state`, per collection. */
+  /** Maximum recent runs, artifact versions, and direct edits returned per applicable collection. */
   readonly stateHistoryLimit: number
 }
 
@@ -33,7 +33,7 @@ export interface ResolvedConfig {
   readonly profileId: ScienceEnvironmentProfileIdType
   /** Trimmed, non-empty, bounded mode-contract revision. */
   readonly modeRevision: string
-  /** Positive safe-integer bound applied independently to run and chart-version history. */
+  /** Positive safe-integer bound applied independently to run, artifact-version, and direct-edit history. */
   readonly stateHistoryLimit: number
 }
 

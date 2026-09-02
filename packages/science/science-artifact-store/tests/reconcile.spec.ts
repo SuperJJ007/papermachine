@@ -235,7 +235,9 @@ describe('reconcileProject', () => {
       logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A,
       data: new TextEncoder().encode('bytes-v1'), mediaType: 'image/png', contentOrigin: 'run-auto',
     })
-    await engine.annotateVersion(projectId, v1.versionId, { actor: 'model', sessionId: SESSION_A, title: 'Curated Title' })
+    await engine.annotateVersion(projectId, v1.versionId, {
+      actor: 'model', sessionId: SESSION_A, toolCallId: 'reconcile-curation', requestHeaderSeq: 1, title: 'Curated Title',
+    })
     const stale = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: v1.sha256, title: 'plot.png' })]])
 
     const result = await reconcileProject(engine, projectId, stale, { eventSetComplete: true, maxVersions: 100 })

@@ -225,13 +225,24 @@ export interface AppendVersionInput extends VersionProducerInput {
  * row and advances the version's `latestAnnotationId` to it. `title` and
  * `caption` are independently tri-state: omit to carry the current value
  * forward unchanged, pass `null` to explicitly clear it, pass a string to
- * set it.
+ * set it. A model edit requires its complete authorizing call identity;
+ * capture and human edits cannot claim one.
  */
-export interface AnnotateVersionInput {
-  readonly actor: AnnotationActor
+export type AnnotateVersionInput = {
+  readonly actor: 'capture'
   readonly sessionId?: SessionId
-  readonly toolCallId?: string
-  readonly requestHeaderSeq?: number
+  readonly title?: string | null
+  readonly caption?: string | null
+} | {
+  readonly actor: 'model'
+  readonly sessionId: SessionId
+  readonly toolCallId: string
+  readonly requestHeaderSeq: number
+  readonly title?: string | null
+  readonly caption?: string | null
+} | {
+  readonly actor: 'human'
+  readonly sessionId?: SessionId
   readonly title?: string | null
   readonly caption?: string | null
 }

@@ -447,14 +447,16 @@ describe('web e2e: Science chart and Outcome replay', () => {
       figureState: { figureKey: CHART.figureKey, dpi: CHART.png.dpi, stateJson: JSON.stringify(CHART) },
     })
     await store.annotateVersion(project.projectId, first.version.versionId, {
-      actor: 'model', sessionId: SessionId(SEED_ID), title: 'Observed series', caption: 'Durable browser fixture',
+      actor: 'model', sessionId: SessionId(SEED_ID), toolCallId: 'seed-curation-observed', requestHeaderSeq: 1,
+      title: 'Observed series', caption: 'Durable browser fixture',
     })
     const second = await store.appendVersion(project.projectId, first.artifact.artifactId, {
       producerSessionId: SessionId(SEED_ID), data: Uint8Array.from([...PNG, 0]),
       mediaType: 'image/png', contentOrigin: 'run-auto',
     })
     await store.annotateVersion(project.projectId, second.versionId, {
-      actor: 'model', sessionId: SessionId(SEED_ID), title: 'Missing revision', caption: 'Missing object fixture',
+      actor: 'model', sessionId: SessionId(SEED_ID), toolCallId: 'seed-curation-missing', requestHeaderSeq: 2,
+      title: 'Missing revision', caption: 'Missing object fixture',
     })
     // Keep its durable index row but remove only this test-owned blob to exercise load failure.
     await unlink(join(project.storeRoot, 'blobs', 'sha256', second.sha256.slice(0, 2), second.sha256))

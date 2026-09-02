@@ -100,6 +100,11 @@ export interface ScienceRenderableVersion {
   readonly producer?: ScienceVersionSummary['producer']
 }
 
+/** Store-backed renderable version whose producer identity is always present. */
+export interface ScienceStoredRenderableVersion extends ScienceRenderableVersion {
+  readonly producer: ScienceVersionSummary['producer']
+}
+
 /**
  * Combine one session-log artifact identity with its current store facts.
  * @param artifact - the session-log identity (`science.artifacts` entry).
@@ -111,7 +116,7 @@ export interface ScienceRenderableVersion {
 export function toRenderableVersion(
   artifact: ScienceClientArtifactVersion,
   summaries: ScienceVersionSummaryMap,
-): ScienceRenderableVersion | undefined {
+): ScienceStoredRenderableVersion | undefined {
   const summary = summaries.get(artifact.versionId)
   if (summary === undefined) return undefined
   return {

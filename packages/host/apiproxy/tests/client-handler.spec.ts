@@ -245,6 +245,8 @@ describe('unary round trip', () => {
 
     expect((await c.sessions.scienceLibrary({ sessionId: sid('s1') })).result)
       .toEqual({ ok: true, value: { projectId: 'project-1', artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 } } })
+    expect((await c.sessions.scienceChartState({ sessionId: sid('s1'), versionId: 'version-1' as never })).result)
+      .toEqual({ ok: true, value: { chart: null } })
     expect((await c.sessions.workspaceFiles({ sessionId: sid('s1') })).result)
       .toEqual({ ok: true, value: { root: '', entries: [] } })
     expect((await c.sessions.workspaceFile({ sessionId: sid('s1'), path: 'notes.txt' })).result)

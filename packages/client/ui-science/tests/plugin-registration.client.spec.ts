@@ -105,6 +105,7 @@ function setup(sessionsOverride?: unknown) {
     removeArtifactNote: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
     applyChartOps: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
     previewChartOps: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
+    saveArtifactAs: vi.fn(() => Promise.resolve({ ok: false, error: { message: 'unused' } })),
   }
   ctx.provide('remote', { scienceEdits } as never)
   ctx.provide('remote.scienceEdits', scienceEdits)
@@ -360,7 +361,7 @@ describe('ui-science apply', () => {
   })
 
   it('the Science Details entry forwards project reads, Chat navigation, and review Remotes', async () => {
-    const { ctx, slots, conversation, readScienceLibrary, readWorkspaceFiles, readWorkspaceFile } = setup()
+    const { ctx, slots, conversation, trajectorySelect, readScienceLibrary, readWorkspaceFiles, readWorkspaceFile } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('conversation.details.view')[0]
@@ -374,6 +375,8 @@ describe('ui-science apply', () => {
       removeArtifactNote: (request: unknown) => Promise<unknown>
       applyChartOps: (request: unknown) => Promise<unknown>
       previewChartOps: (request: unknown) => Promise<unknown>
+      saveArtifactAs: (request: unknown) => Promise<unknown>
+      selectDetailed: () => void
     })(SID)
     injected.returnToConversation('assistant-anchor')
     expect(conversation.openChatAt).toHaveBeenCalledWith(SID, 'assistant-anchor')
@@ -389,6 +392,27 @@ describe('ui-science apply', () => {
     await expect(injected.removeArtifactNote({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.applyChartOps({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
     await expect(injected.previewChartOps({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
+    await expect(injected.saveArtifactAs({})).resolves.toEqual({ ok: false, error: { message: 'unused' } })
+    injected.selectDetailed()
+    expect(trajectorySelect).toHaveBeenCalledWith(SID, 'detailed')
+    await fiber.dispose()
+  })
+
+  it('cleans up only the current Details bindings when repeated injections replace them', async () => {
+    const { ctx, slots } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = slots.entries('conversation.details.view')[0]
+    if (entry?.inject === undefined) throw new Error('expected the injected Details entry')
+    const injectDetails = entry.inject as (sessionId: SessionId, actions: unknown) => {
+      bindArtifactLibraryView: (read: () => boolean) => () => void
+    }
+    const first = injectDetails(SID, { showLibrary: vi.fn(), setLibraryPage: vi.fn() })
+    const second = injectDetails(SID, { showLibrary: vi.fn(), setLibraryPage: vi.fn() })
+    const disposeFirstView = first.bindArtifactLibraryView(() => false)
+    const disposeSecondView = second.bindArtifactLibraryView(() => true)
+    disposeFirstView()
+    disposeSecondView()
     await fiber.dispose()
   })
 

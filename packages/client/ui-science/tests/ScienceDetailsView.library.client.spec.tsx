@@ -27,6 +27,19 @@ describe('ScienceDetailsView: missing projection support', () => {
     render(<ScienceDetailsView {...props(undefined)} />)
     expect(statusText()).toBe('This deployment does not report Science session state.')
   })
+
+  it('publishes whether the mounted view is the artifact-library landing page', () => {
+    const reads: Array<() => boolean> = []
+    const bindArtifactLibraryView = vi.fn((read: () => boolean) => {
+      reads.push(read)
+      return vi.fn()
+    })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(baseProjection(), { store, bindArtifactLibraryView })} />)
+    expect(reads.at(-1)?.()).toBe(true)
+    act(() => { store.actions.setLibraryPage('files') })
+    expect(reads.at(-1)?.()).toBe(false)
+  })
 })
 
 describe('ScienceDetailsView: projection not yet bound (science === null)', () => {
@@ -174,6 +187,53 @@ describe('ScienceDetailsView: landing gallery', () => {
     expect((await screen.findByRole('button', { name: /leaf\.bin/ })).textContent).toContain('1 B')
     fireEvent.click(screen.getByRole('button', { name: 'Project' }))
     expect((await screen.findByRole('button', { name: /root\.bin/ })).textContent).toContain('2.0 KB')
+  })
+
+  it('navigates nested breadcrumbs and treats a file without a byte count as empty', async () => {
+    const loadWorkspaceFiles = vi.fn((path: string = '') => Promise.resolve({ ok: true as const, value: {
+      root: path,
+      entries: path === ''
+        ? [{ name: 'data', kind: 'dir' as const, modifiedAt: 1 }]
+        : path === 'data'
+          ? [{ name: 'nested', kind: 'dir' as const, modifiedAt: 1 }, { name: 'empty.bin', kind: 'file' as const, modifiedAt: 1 }]
+          : [{ name: 'leaf.txt', kind: 'file' as const, byteCount: 1, modifiedAt: 1 }],
+    } }))
+    const store = testScienceSelectionStore()
+    store.actions.setLibraryPage('files')
+    render(<ScienceDetailsView {...props(baseProjection(), { store, loadWorkspaceFiles })} />)
+    fireEvent.click(await screen.findByRole('button', { name: /data/u }))
+    expect((await screen.findByRole('button', { name: /empty\.bin/u })).textContent).toContain('0 B')
+    fireEvent.click(screen.getByRole('button', { name: /nested/u }))
+    await screen.findByRole('button', { name: /leaf\.txt/u })
+    fireEvent.click(screen.getByRole('button', { name: 'data' }))
+    expect(await screen.findByRole('button', { name: /empty\.bin/u })).toBeTruthy()
+  })
+
+  it('ignores directory and file reads that resolve after their views unmount', async () => {
+    let resolveDirectory!: (value: { ok: true; value: { root: string; entries: [] } }) => void
+    const loadWorkspaceFiles = vi.fn(() => new Promise<{ ok: true; value: { root: string; entries: [] } }>((resolve) => {
+      resolveDirectory = resolve
+    }))
+    const directoryStore = testScienceSelectionStore()
+    directoryStore.actions.setLibraryPage('files')
+    const directory = render(<ScienceDetailsView {...props(baseProjection(), {
+      store: directoryStore, loadWorkspaceFiles,
+    })} />)
+    directory.unmount()
+    resolveDirectory({ ok: true, value: { root: '', entries: [] } })
+    await act(async () => {})
+
+    type FileResult = { ok: true; value: { mediaType: string; byteCount: number; data: Uint8Array } }
+    let resolveFile!: (value: FileResult) => void
+    const loadWorkspaceFile = vi.fn(() => new Promise<FileResult>((resolve) => {
+      resolveFile = resolve
+    }))
+    const fileStore = testScienceSelectionStore()
+    fileStore.actions.openFileTab('late.txt')
+    const file = render(<ScienceDetailsView {...props(baseProjection(), { store: fileStore, loadWorkspaceFile })} />)
+    file.unmount()
+    resolveFile({ ok: true, value: { mediaType: 'text/plain', byteCount: 4, data: new TextEncoder().encode('late') } })
+    await act(async () => {})
   })
 
   it('reports library and workspace RPC failures without leaking the host\'s raw message', async () => {

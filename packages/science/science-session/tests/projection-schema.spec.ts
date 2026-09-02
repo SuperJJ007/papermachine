@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { scienceProjectionSchema } from '../src/projection.ts'
+import { scienceProjectionWitnessEvent } from '../src/projection-witness.ts'
 import {
   event,
   kernelExited,
@@ -30,6 +31,8 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     if (currentRun.status !== 'success') throw new Error('fixture run is not successful')
     const currentChart = state.artifacts[0]!
+    const { turn: _runningTurn, step: _runningStep, ...runningWithoutCoordinates } = runningState.runs[0]!
+    const { turn: _artifactTurn, step: _artifactStep, ...artifactWithoutCoordinates } = currentChart
     const rRunningState = {
       ...runningState,
       environment: {
@@ -116,6 +119,15 @@ describe('Science projection wire schema', () => {
           environmentRevisions: [currentRun.environmentRevision],
         },
       },
+      { ...runningState, runs: [runningWithoutCoordinates] },
+      { ...state, artifacts: [artifactWithoutCoordinates] },
+      {
+        ...state,
+        trace: {
+          ...state.trace,
+          turns: [{ turn: 1, startSeq: 3, startTime: 120, endSeq: 10, endTime: 180 }],
+        },
+      },
     ]
 
     for (const [index, value] of [
@@ -150,7 +162,9 @@ describe('Science projection wire schema', () => {
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
     const { step: _runStep, ...runWithoutStep } = currentRun
+    const { turn: _runTurn, ...runWithoutTurn } = currentRun
     const { step: _chartStep, ...chartWithoutStep } = currentChart
+    const { turn: _chartTurn, ...chartWithoutTurn } = currentChart
     const { seenAt: _artifactSeenAt, ...artifactWithoutSeenAt } = currentChart
     const interruptedRun = interruptedState.runs[0]!
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
@@ -215,6 +229,7 @@ describe('Science projection wire schema', () => {
       { ...state, runs: [{}] },
       { ...state, runs: [{ ...runningState.runs[0], unexpected: true }] },
       { ...state, runs: [runWithoutStep] },
+      { ...state, runs: [runWithoutTurn] },
       { ...state, runs: [{ ...state.runs[0], status: 'unknown' }] },
       // A kernel run has no per-run exit code or signal: neither field
       // exists on the wire schema any more, so either one is an unrecognized key.
@@ -233,6 +248,7 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [null] },
       { ...state, artifacts: [{ ...currentChart, unexpected: true }] },
       { ...state, artifacts: [chartWithoutStep] },
+      { ...state, artifacts: [chartWithoutTurn] },
       { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
       { ...state, artifacts: [{ ...currentChart, versionId: 1 }] },
       { ...state, artifacts: [{ ...currentChart, sha256: 'short' }] },
@@ -240,7 +256,10 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: [{ ...currentChart, seenAt: -1 }] },
       { ...state, artifacts: [artifactWithoutSeenAt] },
       { ...state, trace: null },
+      { ...state, trace: { ...state.trace, turns: [null] } },
       { ...state, trace: { ...state.trace, turns: [{}] } },
+      { ...state, trace: { ...state.trace, turns: [{ turn: 1, startSeq: 5, startTime: 100, endSeq: 4, endTime: 110 }] } },
+      { ...state, trace: { ...state.trace, turns: [{ turn: 1, startSeq: 5, startTime: 100, endSeq: 6, endTime: 99 }] } },
       { ...state, trace: { ...state.trace, calls: [{ ...state.trace.calls[0], step: 0 }] } },
       { ...state, trace: { ...state.trace, calls: [...state.trace.calls].reverse() } },
       {
@@ -248,6 +267,20 @@ describe('Science projection wire schema', () => {
         trace: {
           ...state.trace,
           turns: [{ turn: 1, startSeq: 5, startTime: 100 }, { turn: 2, startSeq: 5, startTime: 100 }],
+        },
+      },
+      {
+        ...state,
+        trace: {
+          ...state.trace,
+          turns: [{ turn: 1, startSeq: 1, startTime: 1 }, { turn: 1, startSeq: 2, startTime: 2 }],
+        },
+      },
+      {
+        ...state,
+        trace: {
+          ...state.trace,
+          calls: state.trace.calls.map((call, index) => index === 1 ? { ...call, callId: state.trace.calls[0]!.callId } : call),
         },
       },
       { ...state, runs: [{ ...currentRun, turn: 2 }] },
@@ -303,5 +336,9 @@ describe('Science projection wire schema', () => {
       expect(scienceProjectionSchema.safeParse(value).success, `invalid projection ${String(index)}`)
         .toBe(false)
     }
+  })
+
+  it('omits event kinds that cannot affect the Science projection witness', () => {
+    expect(scienceProjectionWitnessEvent(event('session/title', 0, 0, {}))).toBeUndefined()
   })
 })

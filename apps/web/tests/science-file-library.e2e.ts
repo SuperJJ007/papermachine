@@ -141,7 +141,12 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('table', { name: 'alpha.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('alpha', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Provenance', exact: true }).click()
-    expect(await details.getByText('Source session A', { exact: true }).count()).toBe(1)
+    expect(await details.getByText(
+      'This version was produced in a different session (Source session A) — nothing to show here.',
+      { exact: true },
+    ).count()).toBe(1)
+    await details.getByRole('tab', { name: 'Messages', exact: true }).click()
+    expect(await details.getByText('Source session A').count()).toBe(1)
     expect(await details.getByRole('button', { name: 'Back to original conversation', exact: true }).isDisabled()).toBe(true)
     await page.screenshot({ path: SHOT_CROSS_SESSION, fullPage: true })
     await details.getByRole('button', { name: 'Alpha results', exact: true }).click()

@@ -36,15 +36,18 @@ function withDefaultOpenTab() {
 }
 
 describe('ScienceDetailsView: opening a live tab', () => {
-  it('switches the active artifact body without advancing a sibling tab\'s own version', () => {
+  it('switches the active artifact body without advancing a sibling tab\'s own version', async () => {
     const store = testScienceSelectionStore()
     const science = baseProjection({ artifacts: [
       rawArtifact(), rawArtifact({ artifactId: 'chart-2', title: 'Second chart', versionId: 'v-chart-2' }),
     ] })
     const summaries = [versionSummary(), versionSummary({ artifactId: 'chart-2', versionId: 'v-chart-2', title: 'Second chart' })]
+    const loadVersions = vi.fn().mockResolvedValue({ ok: true, value: { versions: summaries } })
     openTab(store, 'chart-1', 1)
-    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    render(<ScienceDetailsView {...props(science, { store, loadVersions })} />)
+    await screen.findByRole('img', { name: 'Loss curve' })
     act(() => { openTab(store, 'chart-2', 1) })
+    await screen.findByRole('img', { name: 'Second chart' })
     expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-2')
     expect(store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact' && tab.artifactId === 'chart-1')).toMatchObject({ version: 1 })
   })
@@ -258,6 +261,30 @@ describe('ScienceDetailsView: save-as', () => {
     expect(await screen.findByText('That name is already used. Choose another name.')).toBeTruthy()
     expect(store.instance.getSnapshot().activeTabId).toBe('artifact:chart-1')
   })
+
+  it('ignores an empty submit, cancels the form, and localizes the remaining rejection classes', async () => {
+    const cases = [
+      ['SAVE_AS_SOURCE_NOT_FOUND', 'The source version is no longer available to save as.'],
+      ['SOME_FUTURE_ERROR', 'Save as failed. Try again.'],
+    ] as const
+    for (const [code, message] of cases) {
+      const { store, science, summaries } = withDefaultOpenTab()
+      const saveArtifactAs = vi.fn().mockResolvedValue({ ok: false, error: { code, message: 'raw', details: {} } })
+      const view = render(<ScienceDetailsView {...props(science, { store, summaries, saveArtifactAs })} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Save as' }))
+      const form = screen.getByRole('textbox', { name: 'New artifact name' }).closest('form')!
+      fireEvent.submit(form)
+      expect(saveArtifactAs).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByRole('textbox', { name: 'New artifact name' })).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save as' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'New artifact name' }), { target: { value: 'copy.png' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+      expect(await screen.findByText(message)).toBeTruthy()
+      view.unmount()
+    }
+  })
 })
 
 describe('ScienceDetailsView: download (raw-bytes endpoint, HEAD pre-flight)', () => {
@@ -350,6 +377,31 @@ describe('ScienceDetailsView: maximize (toolbar-triggered lightbox)', () => {
     await screen.findByRole('button', { name: 'Download' })
     expect(screen.queryByRole('button', { name: 'Expand' })).toBeNull()
   })
+
+  it('discards a lightbox URL that resolves after the store closes it', async () => {
+    const { store, science, summaries } = withDefaultOpenTab()
+    let resolveLightbox!: (url: string) => void
+    const loadImage = vi.fn()
+      .mockResolvedValueOnce('data:image/png;base64,content')
+      .mockImplementationOnce(() => new Promise<string>((resolve) => { resolveLightbox = resolve }))
+    render(<ScienceDetailsView {...props(science, { store, summaries, loadImage })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand' }))
+    await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(2) })
+    act(() => { store.actions.setLightboxOpen(false) })
+    resolveLightbox('data:image/png;base64,late')
+    await act(async () => {})
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('falls back to the generic artifact label when an image has no title or logical name', async () => {
+    const store = testScienceSelectionStore()
+    openTab(store, 'chart-1', 1)
+    const science = baseProjection({ artifacts: [rawArtifact({ logicalName: '', title: '' })] })
+    const summaries = [versionSummary({ logicalName: '', title: '' })]
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand' }))
+    expect(await screen.findByRole('img', { name: 'Artifact' })).toBeTruthy()
+  })
 })
 
 describe('ScienceDetailsView: provenance navigation', () => {
@@ -366,8 +418,47 @@ describe('ScienceDetailsView: provenance navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
     expect(screen.getByRole('navigation', { name: 'Provenance' })).toBeTruthy()
     expect(store.instance.getSnapshot().view).toBe('provenance')
+    fireEvent.click(screen.getByRole('tab', { name: 'Environment' }))
+    expect(store.instance.getSnapshot().provenanceSubTab).toBe('environment')
     fireEvent.click(screen.getByRole('button', { name: 'Loss curve' }))
     expect(store.instance.getSnapshot().view).toBe('content')
+  })
+
+  it('resolves producer call fallbacks and a cross-session source from store facts', async () => {
+    const run = {
+      runId: 'run-1', toolCallId: 'call-from-run', requestHeaderSeq: 1, language: 'python',
+      environmentRevision: 1, environmentFingerprintPreview: 'abc', codeSha256: 'a'.repeat(64), kernelEpoch: 1,
+      status: 'success', startedAt: 1, finishedAt: 2, stdoutBytes: 0, stderrBytes: 0,
+      stdoutTruncated: false, stderrTruncated: false,
+    } as never
+    const producers = [
+      { sessionId: SESSION, runId: 'run-1' },
+      { sessionId: SESSION, toolCallId: 'call-from-run' },
+      { sessionId: SESSION },
+      { sessionId: 'source-session', sessionTitle: 'Source session' },
+    ]
+    for (const producer of producers) {
+      const store = testScienceSelectionStore()
+      openTab(store, 'chart-1', 1)
+      store.actions.setView('provenance')
+      const science = baseProjection({ artifacts: [rawArtifact()], runs: [run] })
+      const view = render(<ScienceDetailsView {...props(science, {
+        store, summaries: [versionSummary({ producer })],
+      })} />)
+      await screen.findByRole('navigation', { name: 'Provenance' })
+      if (producer.sessionId === 'source-session') expect(screen.getByRole('status').textContent).toContain('Source session')
+      view.unmount()
+    }
+  })
+
+  it('returns to the library and closes a live artifact tab from its toolbar', async () => {
+    const { store, science, summaries } = withOneTab()
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Artifact library' }))
+    expect(store.instance.getSnapshot().activeTabId).toBeNull()
+    act(() => { openTab(store, 'chart-1', 1) })
+    fireEvent.click(await screen.findByRole('button', { name: 'Close tab' }))
+    expect(store.instance.getSnapshot().openArtifacts).toEqual([])
   })
 
   it('reports the artifact as unavailable when its session-log identity no longer resolves', () => {
@@ -410,5 +501,26 @@ describe('ScienceDetailsView: read-only tab opened from a cross-session library 
     fireEvent.click(screen.getByRole('button', { name: 'Cross-session chart' }))
     fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
     expect(screen.getByRole('textbox', { name: 'Search' })).toBeTruthy()
+  })
+
+  it('opens a current-session library provenance view and its toolbar lightbox', async () => {
+    const artifact = libraryArtifact({
+      artifactId: 'library-chart', logicalName: 'library.png', title: 'Library chart',
+      latest: { versionId: 'library-version', ordinal: 1, mediaType: 'image/png', byteCount: 1, createdAt: 10 },
+    })
+    const store = testScienceSelectionStore()
+    render(<ScienceDetailsView {...props(baseProjection(), {
+      store,
+      loadLibrary: vi.fn().mockResolvedValue({ ok: true, value: { projectId: 'project-1', artifacts: [artifact] } }),
+      summaries: [versionSummary({
+        versionId: 'library-version', artifactId: 'library-chart', producer: { sessionId: SESSION },
+      })],
+    })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Library chart, version 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance' }))
+    expect(await screen.findByRole('navigation', { name: 'Provenance' })).toBeTruthy()
   })
 })

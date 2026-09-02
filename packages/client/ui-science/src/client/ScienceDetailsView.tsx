@@ -58,7 +58,9 @@ import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStor
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import type { ScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
-import type { LoadScienceVersions, ScienceRenderableVersion, ScienceVersionSummaryMap } from './version-summaries.ts'
+import type {
+  LoadScienceVersions, ScienceRenderableVersion, ScienceStoredRenderableVersion, ScienceVersionSummaryMap,
+} from './version-summaries.ts'
 import { toRenderableVersion, useScienceVersionSummaries } from './version-summaries.ts'
 import css from './ScienceDetailsView.module.css'
 
@@ -143,7 +145,7 @@ const NO_INTERMEDIATE_VERSIONS: ReadonlySet<number> = new Set()
 
 /** Resolve store-owned producer identity against the current session projection. */
 function resolveProducingCall(
-  chart: ScienceRenderableVersion,
+  chart: ScienceStoredRenderableVersion,
   science: ScienceClientProjection,
   currentSessionId: SessionId,
 ): {
@@ -152,7 +154,6 @@ function resolveProducingCall(
   sourceSessionTitle: string | undefined
 } {
   const producer = chart.producer
-  if (producer === undefined) return { run: undefined, producingCallId: undefined, sourceSessionTitle: undefined }
   if (producer.sessionId !== currentSessionId) {
     return {
       run: undefined,
@@ -950,7 +951,7 @@ function ArtifactTab({
   rawArtifacts: readonly ScienceClientArtifactVersion[]
   /** Current store facts for every version of `chart`'s artifact, keyed by `versionId` — this tab's own C2 fold input. */
   summaries: ScienceVersionSummaryMap
-  chart: ScienceRenderableVersion
+  chart: ScienceStoredRenderableVersion
   notes: readonly ScienceArtifactNote[]
   view: ScienceArtifactView
   /** The current session's Science projection — the provenance drill-in's run/call read path. */

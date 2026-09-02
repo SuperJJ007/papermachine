@@ -69,6 +69,14 @@ describe('selection-store: library page', () => {
     s.actions.showLibrary()
     expect(s.getSnapshot()).toMatchObject({ activeTabId: null, libraryPage: 'files' })
   })
+
+  it('toggles an origin-session group closed and open', () => {
+    const s = store()
+    s.actions.toggleLibraryGroup('session-a')
+    expect(s.getSnapshot().libraryCollapsed).toEqual({ 'session-a': true })
+    s.actions.toggleLibraryGroup('session-a')
+    expect(s.getSnapshot().libraryCollapsed).toEqual({})
+  })
 })
 
 describe('selection-store: file tabs', () => {

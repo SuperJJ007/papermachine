@@ -16,6 +16,12 @@ describe('scienceArtifactDisplayTitleOrSelf', () => {
     expect(scienceArtifactDisplayTitleOrSelf([later], self)).toBe('Later title')
   })
 
+  it('keeps self when a matching fact is not later', () => {
+    const self = { artifactId: 'a', version: 2, title: 'Self title', logicalName: 'self.png' }
+    const earlier = { artifactId: 'a', version: 1, title: 'Earlier title', logicalName: 'earlier.png' }
+    expect(scienceArtifactDisplayTitleOrSelf([earlier], self)).toBe('Self title')
+  })
+
   it('falls back to self when facts has no entry for the artifact at all', () => {
     const self = { artifactId: 'a', version: 1, title: 'Self title', logicalName: 'self.png' }
     expect(scienceArtifactDisplayTitleOrSelf([], self)).toBe('Self title')

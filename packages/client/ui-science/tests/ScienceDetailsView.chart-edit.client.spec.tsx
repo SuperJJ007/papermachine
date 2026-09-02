@@ -13,6 +13,7 @@
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import { ScienceDetailsView } from '../src/client/ScienceDetailsView.tsx'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
@@ -71,6 +72,55 @@ describe('ScienceDetailsView: chart-edit panel mount (via loadChartState)', () =
       artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2,
       target: { kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: 'Loss' },
     }])
+  })
+
+  it('selects, updates, and removes an exact staged region among nonmatching selections', async () => {
+    const { store, science, summaries } = withOpenTab()
+    const target = { kind: 'normalized-region' as const, x: 0, y: 0, width: 0.25, height: 0.25 }
+    const selection = { artifactId: 'chart-1' as never, logicalName: 'loss-curve.png', version: 2, target, comment: 'existing' }
+    const composerSelections = createSnapshotStore([
+      { ...selection, artifactId: 'other' as never },
+      { ...selection, version: 1 },
+      { ...selection, target: { ...target, x: 0.2 } },
+      selection,
+    ])
+    const addToConversation = vi.fn()
+    const removeFromConversation = vi.fn()
+    render(<ScienceDetailsView {...props(science, {
+      store, summaries, composerSelections, addToConversation, removeFromConversation,
+    })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    const gesture = screen.getByLabelText('Drag to select an edit region')
+    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 200, right: 100, bottom: 200,
+      x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.mouseDown(gesture, { clientX: 0, clientY: 0 })
+    fireEvent.mouseUp(gesture, { clientX: 25, clientY: 50 })
+    const input = screen.getByRole('textbox', { name: 'Edit note for region 0%,0%' })
+    expect(input).toHaveProperty('value', 'existing')
+    fireEvent.change(input, { target: { value: ' updated ' } })
+    expect(addToConversation).toHaveBeenCalledWith([{
+      artifactId: 'chart-1', logicalName: 'loss-curve.png', version: 2, target, comment: 'updated',
+    }])
+    fireEvent.click(screen.getByRole('button', { name: 'Remove region 0%,0%' }))
+    expect(removeFromConversation).toHaveBeenCalledWith(selection)
+  })
+
+  it('starts a selected region with an empty comment when no staged target matches', async () => {
+    const { store, science, summaries } = withOpenTab()
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
+    const gesture = screen.getByLabelText('Drag to select an edit region')
+    vi.spyOn(gesture, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100,
+      x: 0, y: 0, toJSON: () => ({}),
+    })
+    fireEvent.mouseDown(gesture, { clientX: 0, clientY: 0 })
+    fireEvent.mouseUp(gesture, { clientX: 25, clientY: 25 })
+    expect(screen.getByRole('textbox', { name: 'Edit note for region 0%,0%' })).toHaveProperty('value', '')
   })
 })
 

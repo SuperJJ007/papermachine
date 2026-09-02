@@ -177,9 +177,6 @@ export function ScienceTraceView({
       </header>
       {hasUnassigned && <section className={css.unassigned} aria-label={t('trace.unassigned')}>
         <p>{t('trace.unassignedSummary', { runs: model.unassigned.runs.length, artifacts: model.unassigned.artifacts.length })}</p>
-        <div className={css.chips}>
-          {model.unassigned.artifacts.map(artifact => <ArtifactChip key={`${artifact.artifactId}@${String(artifact.version)}`} artifact={artifact} open={open} />)}
-        </div>
       </section>}
       {model.groups.length === 0 && model.humanEdits.length === 0 && !hasUnassigned && <p className={css.empty}>{t('trace.empty')}</p>}
       <div className={css.flow}>

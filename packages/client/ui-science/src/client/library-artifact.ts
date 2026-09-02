@@ -2,6 +2,15 @@
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
 /**
+ * How one version's bytes came to exist, mirrors `dsh-host-apiproxy`'s
+ * `ScienceContentOrigin` field-for-field. Redeclared here rather than
+ * imported for the same browser-bundle-purity reason as the other types in
+ * this file: `ui-science` depends on `dsh-client-runtime` for the RPC
+ * surface, never directly on `dsh-host-apiproxy`.
+ */
+export type ScienceContentOrigin = 'run-auto' | 'human-edit' | 'import'
+
+/**
  * Reconciliation flags for one project artifact's `latest` version, mirrors
  * `dsh-host-apiproxy`'s `ScienceVersionHealthFlags`. Each flag is `true`
  * (never `false`); an absent flag means that condition does not hold.
@@ -40,4 +49,26 @@ export interface ScienceLibraryArtifact {
     createdAt: number
     health?: ScienceVersionHealthFlags
   }
+}
+
+/**
+ * One project-store artifact version's current library facts, mirrors
+ * `dsh-host-apiproxy`'s `ScienceVersionSummary` field-for-field: the exact
+ * metadata a Files-panel row, a detail-panel toolbar, or a version stepper
+ * entry renders, read fresh from the store through `sessions.scienceVersions`
+ * rather than echoed from a session-log snapshot taken when the version was
+ * captured (D9 — see `version-summaries.ts`).
+ */
+export interface ScienceVersionSummary {
+  versionId: string
+  artifactId: string
+  logicalName: string
+  ordinal: number
+  title?: string
+  caption?: string
+  contentOrigin: ScienceContentOrigin
+  createdAt: number
+  mediaType: string
+  byteCount: number
+  health?: ScienceVersionHealthFlags
 }

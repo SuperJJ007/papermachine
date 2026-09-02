@@ -13,18 +13,17 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ScienceChartOp, ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
-import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
 import {
   capTextForDisplay,
   MAX_ARTIFACT_TEXT_CHARACTERS,
 } from './format.ts'
+import type { ScienceRenderableVersion } from './version-summaries.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Closed-union exhaustiveness fence. */
@@ -161,7 +160,7 @@ function RasterArtifact({
   chart, loadImage, previewSrc, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget,
   t,
 }: {
-  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  chart: ScienceRenderableVersion & { mediaType: 'image/png' }
   loadImage: ScienceImageLoader
   previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
@@ -302,14 +301,24 @@ function BoundedPreText({ text, truncated, total, t }: {
 /**
  * Render one artifact version's content: an image preview, or text fetched
  * through `loadText` and dispatched by media type.
+ *
+ * The live chart-edit panel (direct title/legend/grid/font operations and
+ * element-level annotation targeting) previously mounted here whenever the
+ * session projection's own artifact carried a decoded `ScienceChartState`.
+ * The T1/T2 artifact-authority migration moved that state store-side only
+ * (`figure_state`, keyed by `versionId`) with no client-facing read path to
+ * seed it from — see the package README's Known Limitation. The panel does
+ * not render until a follow-up task adds that read path; the region-select
+ * (`RasterArtifact`) targeting flow below is unaffected, since it reads the
+ * raster directly rather than any addressable element list.
  * @param props - the artifact version to render and both durable-byte loaders.
  * @returns the dispatched content and optional human-edit ancestry.
  */
 export function ArtifactContent({
   chart, loadImage, loadText, previewSrc, selectionTarget, onSelectTarget, isTargetAdded,
-  targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, onPreviewChartOps, onPreviewSrc, onPendingChartEditsChange, t,
+  targetComment, onAddTarget, onRemoveTarget, t,
 }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceRenderableVersion
   loadImage: ScienceImageLoader
   loadText: TextLoader
   previewSrc?: string
@@ -319,16 +328,6 @@ export function ArtifactContent({
   targetComment: (target: ScienceEditTarget) => string
   onAddTarget: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget: (target: ScienceEditTarget) => void
-  /** Apply pending chart operations through the caller's `applyChartOps` Remote, already scoped to this artifact/version. */
-  onSaveChartOps: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
-  onPreviewChartOps?: import('./ScienceChartEditPanel.tsx').ScienceChartPreview
-  onPreviewSrc?: (src: string | undefined) => void
-  /**
-   * Reported whenever the chart edit panel's unsaved direct-edit count
-   * crosses zero, so the caller can suppress auto-stepping the tab to a
-   * newer version mid-edit (B4).
-   */
-  onPendingChartEditsChange?: (hasPending: boolean) => void
   t: TranslateNS<'science'>
 }) {
   const isImage = chart.mediaType === 'image/png'
@@ -336,26 +335,13 @@ export function ArtifactContent({
     <div className={css.content}>
       {isImage
         ? (
-          <>
-            <RasterArtifact
-              chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
-              loadImage={loadImage} {...previewSrc === undefined ? {} : { previewSrc }}
-              selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
-              isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
-              t={t}
-            />
-            {chart.chart !== undefined && (
-              <ScienceChartEditPanel
-                version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
-                referencesDisabled={previewSrc !== undefined}
-                {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
-                {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
-                {...onPendingChartEditsChange === undefined ? {} : { onPendingChange: onPendingChartEditsChange }}
-                isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
-                t={t}
-              />
-            )}
-          </>
+          <RasterArtifact
+            chart={chart as ScienceRenderableVersion & { mediaType: 'image/png' }}
+            loadImage={loadImage} {...previewSrc === undefined ? {} : { previewSrc }}
+            selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
+            isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+            t={t}
+          />
         )
         : (
           <TextArtifactBody
@@ -364,7 +350,7 @@ export function ArtifactContent({
           />
         )}
       {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
-      {chart.origin === 'human-edit' && <div className={css.contentFacts}><span>{t('artifact.humanEdit', { version: chart.parent.version })}</span></div>}
+      {chart.contentOrigin === 'human-edit' && <div className={css.contentFacts}><span>{t('artifact.humanEdit', { version: chart.version - 1 })}</span></div>}
     </div>
   )
 }

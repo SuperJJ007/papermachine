@@ -23,16 +23,18 @@
 // any other current Session (`EMPTY_SCIENCE_PROJECTION` above) instead of a
 // second notice.
 
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import {
   formatRelativeTime, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconDownloadOutline16, IconFullscreenOutline16, IconInspectOutline12, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { shallowEqual } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConversationSnapshot, ISession, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { scienceArtifactUrl } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISession, SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { RpcError, RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -42,26 +44,32 @@ import type {
 } from '@deepseek-ai/dsh-science-session/types'
 import type {
   ScienceArtifactNoteReceipt, ScienceChartEditReceipt, ScienceChartPreviewReceipt, ScienceEditSelection, ScienceEditTarget,
+  ScienceSaveArtifactAsReceipt, ScienceSaveArtifactAsRequest,
 } from '@deepseek-ai/dsh-tool-science/types'
 import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
-import { scienceArtifactDisplayTitleOrSelf } from './artifact-display-title.ts'
-import { foldIntermediateVersions } from './intermediate-versions.ts'
-import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
 import type { ScienceLibraryArtifact, ScienceLibraryHealth } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
-import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
+import type { ScienceArtifactView, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
+import type { LoadScienceVersions, ScienceRenderableVersion } from './version-summaries.ts'
+import { toRenderableVersion, useScienceVersionSummaries } from './version-summaries.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
 export interface ScienceDetailsInjected {
-  /** Session-scoped image artifact loader (science-attachment-loader.ts). */
+  /** Session-scoped raw-bytes image artifact loader (science-artifact-url-loader.ts). */
   loadImage: ScienceImageLoader
-  /** Session-scoped text artifact loader (science-attachment-loader.ts). */
+  /** Session-scoped raw-bytes text artifact loader (science-artifact-url-loader.ts). */
   loadText: TextLoader
+  /**
+   * Batch-read current library facts (title, caption, content origin,
+   * media type, byte count, health) for a caller-chosen set of versions
+   * (D9 — see `version-summaries.ts`).
+   */
+  loadVersions: LoadScienceVersions
   /**
    * Read the project-level latest-artifact library, plus store↔session
    * reconciliation health. `health` is declared optional here rather than
@@ -108,6 +116,8 @@ export interface ScienceDetailsInjected {
     | { readonly ok: true; readonly value: ScienceChartPreviewReceipt }
     | { readonly ok: false; readonly error: { readonly message: string } }
   >
+  /** Duplicate one committed artifact version into a brand-new logical artifact, through the `saveArtifactAs` Remote. */
+  saveArtifactAs: (request: ScienceSaveArtifactAsRequest) => Promise<RemoteResult<ScienceSaveArtifactAsReceipt>>
 }
 
 /** Full props for the Science Details entry. */
@@ -126,31 +136,54 @@ function workspaceFileName(path: string): string {
 }
 
 /**
- * Filename base without its extension, plus the extension (including the dot).
+ * Localize a download pre-flight failure by the raw-bytes endpoint's
+ * `x-science-artifact-error` header (see the endpoint's Agent Note):
+ * `missing_content` reuses the T3 reconciliation vocabulary the Files-panel
+ * banner already shows for the same store fact, `content_corrupt` is
+ * specific to a SHA-256 verification failure, and every other non-2xx
+ * status (a 404 authorization failure, a 500) falls back to a generic
+ * notice — `response.status`/`.statusText` are never shown, matching the
+ * endpoint's documented no-reason-leaked 404 contract.
+ * @param reason - the response's `x-science-artifact-error` header value, or `null`.
+ * @param t - the Science namespace translator.
+ * @returns localized notice text for the toolbar's inline download error.
  */
-function splitExtension(name: string): { stem: string; ext: string } {
-  const dot = name.lastIndexOf('.')
-  return dot === -1 ? { stem: name, ext: '' } : { stem: name.slice(0, dot), ext: name.slice(dot) }
+function downloadErrorText(reason: string | null, t: TranslateNS<'science'>): string {
+  switch (reason) {
+    case 'missing_content': return t('library.reconcile.downloadUnavailable')
+    case 'content_corrupt': return t('toolbar.downloadCorrupt')
+    default: return t('toolbar.downloadFailed')
+  }
 }
 
 /**
- * The durable browser save name for one artifact version: its logical path
- * with the version inserted before the extension.
+ * Trigger a browser save of one artifact version's raw bytes directly from
+ * the raw-bytes endpoint through a throwaway anchor — no base64 JS pass, no
+ * `data:` URI, no decode/re-encode (T4 §2). A HEAD pre-flight classifies a
+ * failure before ever creating the anchor (410/409/other), so a broken
+ * download reports visible text instead of silently doing nothing; the
+ * anchor omits `download` and relies on the endpoint's own
+ * `Content-Disposition` filename.
+ * @param sessionId - the viewing session (the endpoint derives authorization from this alone).
+ * @param chart - the version to download.
+ * @param t - the Science namespace translator.
+ * @returns acceptance, or a localized failure message.
  */
-function downloadFilename(chart: ScienceClientArtifactVersion): string {
-  const { stem, ext } = splitExtension(chart.logicalName)
-  return `${stem}-v${String(chart.version)}${ext}`
-}
-
-/** Trigger a browser save of the durable bytes behind one artifact version through a throwaway URI anchor. */
-async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: ScienceImageLoader, loadText: TextLoader): Promise<void> {
-  const url = chart.mediaType === 'image/png'
-    ? await loadImage(chart)
-    : `data:${chart.mediaType};charset=utf-8,${encodeURIComponent(await loadText(chart))}`
+async function downloadArtifact(
+  sessionId: SessionId, chart: ScienceRenderableVersion, t: TranslateNS<'science'>,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const url = scienceArtifactUrl(sessionId, chart.versionId as VersionId)
+  let response: Response
+  try {
+    response = await fetch(url, { method: 'HEAD' })
+  } catch {
+    return { ok: false, message: t('toolbar.downloadFailed') }
+  }
+  if (!response.ok) return { ok: false, message: downloadErrorText(response.headers.get('x-science-artifact-error'), t) }
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = downloadFilename(chart)
   anchor.click()
+  return { ok: true }
 }
 
 /**
@@ -165,7 +198,7 @@ async function downloadArtifact(chart: ScienceClientArtifactVersion, loadImage: 
  * thumbnail's own retry control covers for the ordinary click-to-open path.
  */
 function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
-  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  chart: ScienceRenderableVersion & { mediaType: 'image/png' }
   loadImage: ScienceImageLoader
   open: boolean
   onClose: () => void
@@ -191,115 +224,158 @@ function ArtifactLightbox({ chart, loadImage, open, onClose, t }: {
   )
 }
 
+/** Inline "save as" naming form the toolbar shows once its button is clicked. */
+function SaveAsForm({ onSubmit, onCancel, t }: {
+  onSubmit: (newLogicalName: string) => Promise<{ ok: true } | { ok: false; message: string }>
+  onCancel: () => void
+  t: TranslateNS<'science'>
+}) {
+  const [name, setName] = useState('')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
+  return (
+    <form
+      className={css.saveAsForm}
+      onSubmit={(event) => {
+        event.preventDefault()
+        const value = name.trim()
+        if (value === '') return
+        setPending(true); setError(undefined)
+        void onSubmit(value).then((result) => { if (!result.ok) setError(result.message) }).finally(() => { setPending(false) })
+      }}
+    >
+      <input
+        autoFocus value={name} aria-label={t('toolbar.saveAsName')} placeholder={t('toolbar.saveAsPlaceholder')} disabled={pending}
+        onChange={(event) => { setName(event.target.value) }}
+      />
+      <button type="submit" disabled={pending || name.trim() === ''}>{t('toolbar.saveAsConfirm')}</button>
+      <button type="button" disabled={pending} onClick={onCancel}>{t('toolbar.saveAsCancel')}</button>
+      {error !== undefined && <p role="alert" className={css.notice}>{error}</p>}
+    </form>
+  )
+}
+
 function ArtifactToolbar({
-  chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, loadImage, loadText, t,
+  chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, sessionId, onSaveAs, t,
   contentUnavailable = false,
 }: {
-  chart: ScienceClientArtifactVersion
-  versions: readonly ScienceClientArtifactVersion[]
+  chart: ScienceRenderableVersion
+  versions: readonly { version: number }[]
   onBack: () => void
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
   onMaximize: () => void
   onCloseTab: () => void
-  loadImage: ScienceImageLoader
-  loadText: TextLoader
+  sessionId: SessionId
+  /** Duplicate this exact version into a new logical artifact. */
+  onSaveAs: (newLogicalName: string) => Promise<{ ok: true } | { ok: false; message: string }>
   t: TranslateNS<'science'>
   /** T3 reconciliation: this version's blob is missing from the store — download and maximize are unavailable, not silently broken. */
   contentUnavailable?: boolean
 }) {
-  // C2: same-turn intermediate drafts (a self-check re-render the model made
-  // within one turn before curating a title) collapse out of the stepper's
-  // default walk order; the currently open version is always kept walkable
-  // even if it is itself one of them (a provenance drill-in or a direct link
-  // can still open one directly).
-  const intermediateVersions = foldIntermediateVersions(versions)
-  const walkable = versions.filter(candidate => candidate.version === chart.version || !intermediateVersions.has(candidate.version))
-  // `chart` is always one of `walkable` (either it is not collapsed, or the
-  // filter above keeps the open version in regardless), so `index` is never
-  // -1 — no defensive branch for it.
+  const walkable = versions
+  // `chart` is always one of `walkable`, so `index` is never -1 — no
+  // defensive branch for it.
   const index = walkable.findIndex(candidate => candidate.version === chart.version)
   const prev = index > 0 ? walkable[index - 1] : undefined
   const next = index < walkable.length - 1 ? walkable[index + 1] : undefined
   const isImage = chart.mediaType === 'image/png'
   const exportUnavailableId = useId()
   const downloadUnavailableId = useId()
+  const [downloadError, setDownloadError] = useState<string>()
+  const [savingAs, setSavingAs] = useState(false)
 
   return (
     <div className={css.toolbar}>
-      <div className={css.toolbarTitle}>
-        <button type="button" className={css.libraryBack} onClick={onBack}>
-          <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
-        </button>
-      </div>
-      <div className={css.toolbarControls}>
-        <div className={css.stepper}>
-          <button
-            type="button" className={css.stepperButton} disabled={prev === undefined}
-            aria-label={t('toolbar.versionPrev')}
-            // `disabled` already blocks activation at the boundary; omitting
-            // the handler entirely (rather than a no-op runtime guard) keeps
-            // every branch here reachable by a real click.
-            onClick={prev === undefined ? undefined : () => { onStepVersion(prev.version) }}
-          >
-            <IconChevronLeftOutline14 size={12} />
-          </button>
-          <span className={css.stepperLabel}>{t('artifact.version', { version: chart.version })}</span>
-          <button
-            type="button" className={css.stepperButton} disabled={next === undefined}
-            aria-label={t('toolbar.versionNext')}
-            onClick={next === undefined ? undefined : () => { onStepVersion(next.version) }}
-          >
-            <IconChevronRightOutline14 size={12} />
+      <div className={css.toolbarRow}>
+        <div className={css.toolbarTitle}>
+          <button type="button" className={css.libraryBack} onClick={onBack}>
+            <IconChevronLeftOutline14 size={12} />{t('details.artifact.back')}
           </button>
         </div>
-        <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
-          <IconInspectOutline12 size={12} />
-        </button>
-        {contentUnavailable ? (
-          <Tooltip label={t('library.reconcile.downloadUnavailable')} side="bottom" delayMs={300}>
-            {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+        <div className={css.toolbarControls}>
+          <div className={css.stepper}>
+            <button
+              type="button" className={css.stepperButton} disabled={prev === undefined}
+              aria-label={t('toolbar.versionPrev')}
+              // `disabled` already blocks activation at the boundary; omitting
+              // the handler entirely (rather than a no-op runtime guard) keeps
+              // every branch here reachable by a real click.
+              onClick={prev === undefined ? undefined : () => { onStepVersion(prev.version) }}
+            >
+              <IconChevronLeftOutline14 size={12} />
+            </button>
+            <span className={css.stepperLabel}>{t('artifact.version', { version: chart.version })}</span>
+            <button
+              type="button" className={css.stepperButton} disabled={next === undefined}
+              aria-label={t('toolbar.versionNext')}
+              onClick={next === undefined ? undefined : () => { onStepVersion(next.version) }}
+            >
+              <IconChevronRightOutline14 size={12} />
+            </button>
+          </div>
+          <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.provenance')} onClick={onOpenProvenance}>
+            <IconInspectOutline12 size={12} />
+          </button>
+          {contentUnavailable ? (
+            <Tooltip label={t('library.reconcile.downloadUnavailable')} side="bottom" delayMs={300}>
+              {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+              <button
+                type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
+                aria-disabled aria-describedby={downloadUnavailableId} data-unavailable
+              >
+                <IconDownloadOutline16 size={14} />
+              </button>
+            </Tooltip>
+          ) : (
             <button
               type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
-              aria-disabled aria-describedby={downloadUnavailableId} data-unavailable
+              onClick={() => {
+                setDownloadError(undefined)
+                void downloadArtifact(sessionId, chart, t).then((result) => { if (!result.ok) setDownloadError(result.message) })
+              }}
             >
               <IconDownloadOutline16 size={14} />
             </button>
+          )}
+          {contentUnavailable && <span id={downloadUnavailableId} className={css.visuallyHidden}>{t('library.reconcile.downloadUnavailable')}</span>}
+          <Tooltip label={t('toolbar.exportUnavailable')} side="bottom" delayMs={300}>
+            {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+            <button
+              type="button"
+              className={css.toolbarAction}
+              aria-label={t('toolbar.export')}
+              aria-disabled
+              aria-describedby={exportUnavailableId}
+              data-unavailable
+            >
+              {t('toolbar.export')}
+            </button>
           </Tooltip>
-        ) : (
-          <button
-            type="button" className={css.toolbarAction} aria-label={t('toolbar.download')}
-            onClick={() => { void downloadArtifact(chart, loadImage, loadText).catch(() => {}) }}
-          >
-            <IconDownloadOutline16 size={14} />
+          <span id={exportUnavailableId} className={css.visuallyHidden}>{t('toolbar.exportUnavailable')}</span>
+          {/* Maximize opens the shared image lightbox; a text attachment has no
+              raster to maximize, so this control is image-only. */}
+          {isImage && !contentUnavailable && (
+            <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
+              <IconFullscreenOutline16 size={14} />
+            </button>
+          )}
+          <button type="button" className={css.toolbarAction} aria-pressed={savingAs} onClick={() => { setSavingAs(value => !value) }}>
+            {t('toolbar.saveAs')}
           </button>
-        )}
-        {contentUnavailable && <span id={downloadUnavailableId} className={css.visuallyHidden}>{t('library.reconcile.downloadUnavailable')}</span>}
-        <Tooltip label={t('toolbar.exportUnavailable')} side="bottom" delayMs={300}>
-          {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
-          <button
-            type="button"
-            className={css.toolbarAction}
-            aria-label={t('toolbar.export')}
-            aria-disabled
-            aria-describedby={exportUnavailableId}
-            data-unavailable
-          >
-            {t('toolbar.export')}
+          <button type="button" className={css.toolbarAction} aria-label={t('toolbar.closeTab')} onClick={onCloseTab}>
+            <IconCloseOutline16 size={14} />
           </button>
-        </Tooltip>
-        <span id={exportUnavailableId} className={css.visuallyHidden}>{t('toolbar.exportUnavailable')}</span>
-        {/* Maximize opens the shared image lightbox; a text attachment has no
-            raster to maximize, so this control is image-only. */}
-        {isImage && !contentUnavailable && (
-          <button type="button" className={css.toolbarAction} aria-label={t('details.artifact.expand')} onClick={onMaximize}>
-            <IconFullscreenOutline16 size={14} />
-          </button>
-        )}
-        <button type="button" className={css.toolbarAction} aria-label={t('toolbar.closeTab')} onClick={onCloseTab}>
-          <IconCloseOutline16 size={14} />
-        </button>
+        </div>
       </div>
+      {downloadError !== undefined && <p role="alert" className={css.notice}>{downloadError}</p>}
+      {savingAs && (
+        <SaveAsForm
+          onSubmit={name => onSaveAs(name).then((result) => { if (result.ok) setSavingAs(false); return result })}
+          onCancel={() => { setSavingAs(false) }}
+          t={t}
+        />
+      )}
     </div>
   )
 }
@@ -515,6 +591,12 @@ function isPreviewMediaType(value: string): value is ScienceArtifactMediaType {
   return PREVIEW_MEDIA.has(value as ScienceArtifactMediaType)
 }
 
+/**
+ * Build a read-only renderable version from facts already at hand — the
+ * library RPC's own `latest` row, or a workspace-file preview — with no
+ * `sessions.scienceVersions` round trip: both call sites already hold every
+ * field {@link ScienceRenderableVersion} needs.
+ */
 function previewChart(ref: {
   artifactId: string
   logicalName: string
@@ -525,15 +607,16 @@ function previewChart(ref: {
   mediaType: ScienceArtifactMediaType
   byteCount: number
   createdAt: number
-}): ScienceClientArtifactVersion {
+}): ScienceRenderableVersion {
   return {
-    ...ref, producerSessionId: '' as never, sha256: '', environmentRevision: 0, environmentFingerprintPreview: '',
-    origin: 'auto', runId: '' as never, toolCallId: '' as never, requestHeaderSeq: 0,
-  } as unknown as ScienceClientArtifactVersion
+    artifactId: ref.artifactId as ScienceArtifactId, logicalName: ref.logicalName, version: ref.version,
+    versionId: ref.versionId, sha256: '', title: ref.title, ...ref.caption === undefined ? {} : { caption: ref.caption },
+    mediaType: ref.mediaType, byteCount: ref.byteCount, contentOrigin: 'run-auto', createdAt: ref.createdAt,
+  }
 }
 
 function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceRenderableVersion
   loadImage: ScienceImageLoader
   loadText: TextLoader
   t: TranslateNS<'science'>
@@ -550,8 +633,6 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
     onAddTarget={() => {}}
     /* v8 ignore next -- read-only previews cannot remove targets */
     onRemoveTarget={() => {}}
-    /* v8 ignore next -- read-only previews never carry an addressable chart, so Save is never invoked */
-    onSaveChartOps={() => Promise.resolve({ ok: false, error: '' })}
     t={t}
   />
 }
@@ -682,7 +763,7 @@ function WorkspaceFilePreview({ path, loadWorkspaceFile, t }: {
 
 /** User-only review notes attached to the logical artifact across versions. */
 function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceRenderableVersion
   notes: readonly ScienceArtifactNote[]
   addArtifactNote: ScienceDetailsInjected['addArtifactNote']
   removeArtifactNote: ScienceDetailsInjected['removeArtifactNote']
@@ -727,29 +808,64 @@ function ArtifactNotes({ chart, notes, addArtifactNote, removeArtifactNote, t }:
 /** Loaders, mutations, and presentation supplied to every artifact tab. */
 type ArtifactControls = Pick<ScienceDetailsViewProps,
   | 'loadImage' | 'loadText' | 'addToConversation' | 'removeFromConversation'
-  | 'composerSelections' | 'returnToConversation' | 'selectDetailed'
-  | 'addArtifactNote' | 'removeArtifactNote' | 'applyChartOps' | 'previewChartOps'
-  | 'actions' | 'inspectCall' | 't'>
+  | 'composerSelections'
+  | 'addArtifactNote' | 'removeArtifactNote' | 'saveArtifactAs'
+  | 'actions' | 't'>
+
+/**
+ * Localize a `saveArtifactAs` RPC failure for the toolbar's inline form.
+ * @param code - the Remote failure's stable rejection class.
+ * @param t - the Science namespace translator.
+ * @returns localized notice text for the save-as form.
+ */
+function saveAsErrorText(code: string, t: TranslateNS<'science'>): string {
+  switch (code) {
+    case 'SAVE_AS_SOURCE_NOT_FOUND': return t('toolbar.saveAsSourceNotFound')
+    case 'SAVE_AS_NAME_CONFLICT': return t('toolbar.saveAsNameConflict')
+    default: return t('toolbar.saveAsFailed')
+  }
+}
+
+/**
+ * Build one `onSaveAs` closure for a toolbar: duplicates the named source
+ * version and, on success, switches the active tab to the new artifact's
+ * first version — the Files panel picks up the new artifact on its own next
+ * mount (it always re-reads `loadLibrary` fresh), so no explicit
+ * invalidation signal is needed here.
+ * @param saveArtifactAs - the injected `saveArtifactAs` Remote call.
+ * @param actions - the selection store's action bag (for `openTab`).
+ * @param t - the Science namespace translator.
+ * @returns a `(sourceVersionId) => (newLogicalName) => outcome` curried handler.
+ */
+function createSaveAsHandler(
+  saveArtifactAs: ScienceDetailsInjected['saveArtifactAs'],
+  actions: ScienceDetailsViewProps['actions'],
+  t: TranslateNS<'science'>,
+) {
+  return (sourceVersionId: string) => (newLogicalName: string): Promise<{ ok: true } | { ok: false; message: string }> =>
+    saveArtifactAs({ sourceVersionId, newLogicalName }).then((result) => {
+      if (!result.ok) return { ok: false, message: saveAsErrorText(result.error.code, t) }
+      actions.openTab({ artifactId: result.value.artifactId, version: result.value.version })
+      return { ok: true }
+    })
+}
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  science, artifacts, chart, notes, currentSessionId, sourceSessionTitle, view, provenanceSubTab, snapshot, loadImage, loadText,
-  addToConversation, removeFromConversation, composerSelections, returnToConversation, selectDetailed,
-  addArtifactNote, removeArtifactNote, applyChartOps, previewChartOps, actions, inspectCall, t,
+  currentSessionId, rawArtifacts, chart, notes, view, loadImage, loadText,
+  addToConversation, removeFromConversation, composerSelections,
+  addArtifactNote, removeArtifactNote, saveArtifactAs, actions, t,
 }: {
-  science: ScienceClientProjection
-  artifacts: readonly ScienceClientArtifactVersion[]
-  chart: ScienceClientArtifactVersion
+  currentSessionId: SessionId
+  /** The session-log identity list, used only to derive the stepper's sibling version numbers. */
+  rawArtifacts: readonly ScienceClientArtifactVersion[]
+  chart: ScienceRenderableVersion
   notes: readonly ScienceArtifactNote[]
-  currentSessionId: ScienceDetailsViewProps['sessionId']
-  sourceSessionTitle: string | undefined
   view: ScienceArtifactView
-  provenanceSubTab: ScienceProvenanceSubTab
-  snapshot: ConversationSnapshot
 } & ArtifactControls) {
-  const versions = versionsOf(artifacts, chart.artifactId)
+  const versions = versionsOf(rawArtifacts, chart.artifactId)
+  const saveAs = createSaveAsHandler(saveArtifactAs, actions, t)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
-  const [previewSrc, setPreviewSrc] = useState<string>()
   const staged = useSyncExternalStore(
     notify => composerSelections.subscribe(notify),
     () => composerSelections.getSnapshot(),
@@ -758,23 +874,15 @@ function ArtifactTab({
   )
   useEffect(() => {
     setTarget(undefined)
-    setPreviewSrc(undefined)
   }, [chart.artifactId, chart.version])
 
   // B4: when the model (or another client) commits a newer version of this
   // exact open tab's artifact WHILE the tab is open, step the tab to it
-  // automatically — matching Save's existing step-to-committed-version
-  // behavior above. Tracked against the latest version last observed for
-  // this artifactId (not against chart.version, the tab's currently shown
+  // automatically. Tracked against the latest version last observed for this
+  // artifactId (not against chart.version, the tab's currently shown
   // version) so opening a tab deliberately at an older version, or the
   // toolbar's own manual stepper walking back through history, never gets
-  // yanked forward — only a genuine increase in the known latest triggers
-  // this. A chart panel with a pending (unsaved) direct edit reports it
-  // through onPendingChartEditsChange below and suppresses this: stepping
-  // out from under an in-progress edit would either discard it silently or
-  // surface a confusing CHART_STALE_VERSION on Save, and the existing
-  // stale-version notice already covers that case once the user does Save.
-  const [hasPendingChartEdits, setHasPendingChartEdits] = useState(false)
+  // yanked forward — only a genuine increase in the known latest triggers this.
   // `versions` always includes `chart` itself, so `versions.at(-1)` is never
   // empty in practice; `Math.max` over both stays correct even if that ever
   // stopped holding, with no separate empty-versions fallback to maintain.
@@ -785,12 +893,11 @@ function ArtifactTab({
       knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
       return
     }
-    if (hasPendingChartEdits) return
     if (latestVersion > knownLatest.current.version) {
       actions.setTabVersion({ artifactId: chart.artifactId, version: latestVersion })
     }
     knownLatest.current = { artifactId: chart.artifactId, version: latestVersion }
-  }, [latestVersion, hasPendingChartEdits, chart.artifactId, actions])
+  }, [latestVersion, chart.artifactId, actions])
 
   const selectTarget = (next: ScienceEditTarget): void => {
     setTarget(next)
@@ -799,58 +906,8 @@ function ArtifactTab({
     selection.artifactId === chart.artifactId && selection.version === chart.version
     && JSON.stringify(selection.target) === JSON.stringify(next))
 
-  // Scoped to this exact open tab's artifact/version: a successful apply
-  // steps the tab to the committed human-edit version so the viewer renders
-  // the kernel's real output, matching the toolbar's own version stepper.
-  const saveChartOps = (ops: readonly ScienceChartOp[]): Promise<ScienceChartSaveOutcome> =>
-    applyChartOps({ artifactId: chart.artifactId, version: chart.version, ops }).then((result) => {
-      if (!result.ok) return { ok: false, error: result.error.message }
-      actions.setTabVersion({ artifactId: chart.artifactId, version: result.value.version })
-      return { ok: true, failedOps: result.value.failedOps }
-    })
-  const previewOps = useCallback((ops: readonly ScienceChartOp[]) => previewChartOps({
-    artifactId: chart.artifactId, version: chart.version, ops,
-  }).then(result => result.ok
-    ? { ok: true as const, pngBase64: result.value.pngBase64, failedOps: result.value.failedOps }
-    : { ok: false as const, error: result.error.message }), [previewChartOps, chart.artifactId, chart.version])
-
   if (view === 'provenance') {
-    if (chart.origin === 'human-edit') {
-      return (
-        <div className={css.body}>
-          <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
-            <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
-              {scienceArtifactDisplayTitleOrSelf(versions, chart)}
-            </button>
-            <span className={css.breadcrumbSep} aria-hidden="true">›</span>
-            <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
-          </nav>
-          <section className={css.editPanel}>
-            <strong>{t('artifact.humanEdit', { version: chart.parent.version })}</strong>
-            <span>{chart.artifactId} v{String(chart.version)}</span>
-          </section>
-        </div>
-      )
-    }
-    const run = science.runs.find(candidate => candidate.runId === chart.runId)
-    if (run === undefined) return <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
-    return (
-      <ScienceArtifactProvenance
-        chart={chart}
-        run={run}
-        environment={science.environment}
-        snapshot={snapshot}
-        subTab={provenanceSubTab}
-        onSubTabChange={(subTab) => { actions.setProvenanceSubTab(subTab) }}
-        onBack={() => { actions.setView('content') }}
-        inspectCall={inspectCall}
-        selectDetailed={selectDetailed}
-        currentSessionId={currentSessionId}
-        sourceSessionTitle={sourceSessionTitle}
-        returnToConversation={returnToConversation}
-        t={t}
-      />
-    )
+    return <ScienceArtifactProvenance chart={chart} onBack={() => { actions.setView('content') }} t={t} />
   }
 
   return (
@@ -863,8 +920,8 @@ function ArtifactTab({
         onOpenProvenance={() => { actions.setView('provenance') }}
         onMaximize={() => { actions.setLightboxOpen(true) }}
         onCloseTab={() => { actions.closeTab(`artifact:${chart.artifactId}`) }}
-        loadImage={loadImage}
-        loadText={loadText}
+        sessionId={currentSessionId}
+        onSaveAs={saveAs(chart.versionId)}
         t={t}
       />
       <ArtifactContent
@@ -875,7 +932,6 @@ function ArtifactTab({
         // that happens to share the same spec path or region coordinates.
         key={`${chart.artifactId}:${String(chart.version)}`}
         chart={chart}
-        {...previewSrc === undefined ? {} : { previewSrc }}
         loadImage={loadImage}
         loadText={loadText}
         selectionTarget={target}
@@ -894,10 +950,6 @@ function ArtifactTab({
           /* v8 ignore next -- ArtifactContent only offers Remove for a target that is already staged. */
           if (selection !== undefined) removeFromConversation(selection)
         }}
-        onSaveChartOps={saveChartOps}
-        onPreviewChartOps={previewOps}
-        onPreviewSrc={setPreviewSrc}
-        onPendingChartEditsChange={setHasPendingChartEdits}
         t={t}
       />
       <ArtifactNotes chart={chart} notes={notes} addArtifactNote={addArtifactNote} removeArtifactNote={removeArtifactNote} t={t} />
@@ -906,15 +958,13 @@ function ArtifactTab({
 }
 
 function ArtifactViewer({
-  science, notes, currentSessionId, sessionTitles, snapshot,
+  science, notes, currentSessionId, loadVersions,
   loadLibrary, loadWorkspaceFiles, loadWorkspaceFile, useStore, ...controls
 }: {
   science: ScienceClientProjection
   notes: ScienceArtifactNotesProjection
-  currentSessionId: ScienceDetailsViewProps['sessionId']
-  sessionTitles: Readonly<Record<string, string>>
-  snapshot: ConversationSnapshot
-} & ArtifactControls & Pick<ScienceDetailsViewProps, 'loadLibrary' | 'loadWorkspaceFiles' | 'loadWorkspaceFile' | 'useStore'>) {
+  currentSessionId: SessionId
+} & ArtifactControls & Pick<ScienceDetailsViewProps, 'loadLibrary' | 'loadWorkspaceFiles' | 'loadWorkspaceFile' | 'loadVersions' | 'useStore'>) {
   const { loadImage, loadText, actions, t } = controls
   const openArtifacts = useStore(s => s.openArtifacts)
   const lightboxOpen = useStore(s => s.lightboxOpen)
@@ -922,7 +972,6 @@ function ArtifactViewer({
   const libraryPage = useStore(s => s.libraryPage)
   const libraryCollapsed = useStore(s => s.libraryCollapsed)
   const view = useStore(s => s.view)
-  const provenanceSubTab = useStore(s => s.provenanceSubTab)
   const artifacts = science.artifacts
   const libraryTabs = useStore(state => state.libraryTabs)
   const libraryCharts = Object.values(libraryTabs).map(item => previewChart({
@@ -930,11 +979,26 @@ function ArtifactViewer({
     ...(item.caption === undefined ? {} : { caption: item.caption }), versionId: item.latest.versionId,
     version: item.latest.ordinal, mediaType: item.latest.mediaType, byteCount: item.latest.byteCount, createdAt: item.latest.createdAt,
   }))
-  const tabArtifacts = [...artifacts, ...libraryCharts]
 
   // `showLibrary` deliberately leaves open tabs intact while clearing the
   // active id; every non-null active id still names one open tab.
   const activeTab = openArtifacts.find(tab => scienceTabId(tab) === activeTabId)
+  const activeArtifactTab = activeTab?.kind === 'artifact' ? activeTab : undefined
+  // A live in-session artifact takes precedence over a same-id/version
+  // library preview (matches the previous single-array `.find` order).
+  const activeRawArtifact = artifacts.find(candidate =>
+    candidate.artifactId === activeArtifactTab?.artifactId && candidate.version === activeArtifactTab.version)
+  const activeLibraryChart = activeRawArtifact === undefined ? libraryCharts.find(candidate =>
+    candidate.artifactId === activeArtifactTab?.artifactId && candidate.version === activeArtifactTab.version) : undefined
+  // D9: current library facts for every version of the active live artifact,
+  // batched once per artifact — a Hook, so it runs on every render
+  // (including the two early-return branches below) with an empty request
+  // while nothing is active.
+  const liveVersionIds = activeRawArtifact === undefined ? [] : versionsOf(artifacts, activeRawArtifact.artifactId).map(v => v.versionId)
+  const summaries = useScienceVersionSummaries(loadVersions, liveVersionIds)
+  const renderChart = activeRawArtifact === undefined ? undefined : toRenderableVersion(activeRawArtifact, summaries)
+  const saveAs = createSaveAsHandler(controls.saveArtifactAs, actions, t)
+
   if (activeTab === undefined) {
     return (
       <div className={css.body}>
@@ -956,66 +1020,61 @@ function ArtifactViewer({
     return <div className={css.body}><div className={css.fileHead}><button type="button" onClick={() => { actions.showLibrary() }}>‹ {t('details.artifact.back')}</button><strong>{activeTab.path.split('/').at(-1)}</strong></div><WorkspaceFilePreview key={activeTab.path} path={activeTab.path} loadWorkspaceFile={loadWorkspaceFile} t={t} /></div>
   }
 
-  // The one remaining way `activeChart` resolves to undefined is the
-  // durable projection not having this exact (artifactId, version) pair — a
-  // stale tab, handled below as "artifact unavailable".
-  const activeChart = tabArtifacts.find(candidate =>
-    candidate.artifactId === activeTab.artifactId && candidate.version === activeTab.version)
   // T3 reconciliation: only a library-opened tab (never a live in-session
   // one) carries a `latest.health` mark at all — see `scienceLibrary`'s
   // response shape (`dsh-host-apiproxy`).
-  const libraryContentUnavailable = activeChart !== undefined
-    && libraryTabs[activeChart.artifactId]?.latest.health?.missingContent === true
+  const libraryContentUnavailable = activeLibraryChart !== undefined
+    && libraryTabs[activeLibraryChart.artifactId]?.latest.health?.missingContent === true
+  const resolvedChart = activeLibraryChart ?? renderChart
 
   return (
     <div className={css.body}>
-      {activeChart === undefined
+      {activeRawArtifact === undefined && activeLibraryChart === undefined
         ? <p className={css.notice} role="status">{t('provenance.artifactUnavailable')}</p>
-        : libraryTabs[activeChart.artifactId] !== undefined && !artifacts.includes(activeChart) ? (
+        : activeLibraryChart !== undefined ? (
           view === 'provenance'
             ? <div className={css.body}>
               <nav className={css.breadcrumb} aria-label={t('provenance.label')}>
                 <button type="button" className={css.breadcrumbRoot} onClick={() => { actions.setView('content') }}>
-                  {activeChart.title}
+                  {activeLibraryChart.title}
                 </button>
                 <span className={css.breadcrumbSep} aria-hidden="true">›</span>
                 <span className={css.breadcrumbCurrent}>{t('provenance.label')}</span>
               </nav>
               <section className={css.editPanel}>
                 <strong>{t('provenance.messages.sourceSession')}</strong>
-                <span>{libraryTabs[activeChart.artifactId]?.originSessionTitle
-                  ?? libraryTabs[activeChart.artifactId]?.originSessionId}</span>
+                <span>{libraryTabs[activeLibraryChart.artifactId]?.originSessionTitle
+                  ?? libraryTabs[activeLibraryChart.artifactId]?.originSessionId}</span>
                 <button type="button" disabled title={t('library.sourceNavigationUnavailable')}>
                   {t('provenance.messages.conversation')}
                 </button>
               </section>
             </div>
-            : <><ArtifactToolbar chart={activeChart} versions={[activeChart]} onBack={() => { actions.showLibrary() }}
+            : <><ArtifactToolbar chart={activeLibraryChart} versions={[activeLibraryChart]} onBack={() => { actions.showLibrary() }}
               /* v8 ignore next -- the library RPC supplies only the latest version, so both step controls are disabled */
               onStepVersion={() => {}} onOpenProvenance={() => { actions.setView('provenance') }}
               onMaximize={() => { actions.setLightboxOpen(true) }}
-              onCloseTab={() => { actions.closeTab(`artifact:${activeChart.artifactId}`) }}
-              loadImage={loadImage} loadText={loadText} t={t} contentUnavailable={libraryContentUnavailable} />
+              onCloseTab={() => { actions.closeTab(`artifact:${activeLibraryChart.artifactId}`) }}
+              sessionId={currentSessionId} onSaveAs={saveAs(activeLibraryChart.versionId)}
+              t={t} contentUnavailable={libraryContentUnavailable} />
             {libraryContentUnavailable
               ? <p className={css.notice} role="status">{t('library.reconcile.detailMissingContent')}</p>
-              : <ReadOnlyPreview chart={activeChart} loadImage={loadImage} loadText={loadText} t={t} />}</>
+              : <ReadOnlyPreview chart={activeLibraryChart} loadImage={loadImage} loadText={loadText} t={t} />}</>
+        ) : renderChart === undefined ? (
+          <p className={css.notice} role="status">{t('artifact.loading')}</p>
         ) : (
           <ArtifactTab
-            science={science}
-            artifacts={artifacts}
-            chart={activeChart}
-            notes={notes.filter(note => note.artifactId === activeChart.artifactId)}
             currentSessionId={currentSessionId}
-            sourceSessionTitle={sessionTitles[activeChart.producerSessionId]}
+            rawArtifacts={artifacts}
+            chart={renderChart}
+            notes={notes.filter(note => note.artifactId === renderChart.artifactId)}
             view={view}
-            provenanceSubTab={provenanceSubTab}
-            snapshot={snapshot}
             {...controls}
           />
         )}
-      {activeChart?.mediaType === 'image/png' && <ArtifactLightbox
-        key={activeChart.versionId}
-        chart={activeChart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
+      {resolvedChart?.mediaType === 'image/png' && <ArtifactLightbox
+        key={resolvedChart.versionId}
+        chart={resolvedChart as ScienceRenderableVersion & { mediaType: 'image/png' }}
         loadImage={loadImage} open={lightboxOpen} onClose={() => { actions.setLightboxOpen(false) }} t={t} />}
     </div>
   )
@@ -1051,24 +1110,11 @@ const EMPTY_SCIENCE_PROJECTION: ScienceClientProjection = {
  * @returns the current-state Science surface for this session.
  */
 export function ScienceDetailsView({
-  sessionId, useSessions, useSession, useProjection, useStore, actions,
+  sessionId, useProjection, useStore, actions,
   ...controls
 }: ScienceDetailsViewProps) {
-  // Session display titles change only when a title or the session list
-  // itself changes, not on every streamed event — shallowEqual over the
-  // derived record keeps the returned reference stable across unrelated frames.
-  const sessionTitles = useSessions(
-    state => Object.fromEntries(state.ids.map(id => [id, state.byId[id]?.displayTitle ?? id])),
-    shallowEqual,
-  )
   const science = useProjection('science')
   const notes = useProjection('scienceArtifactNotes') ?? []
-  // ArtifactViewer's subtree reads only `nodes` (artifactTurn, here and in
-  // ScienceArtifactProvenance.tsx) and `chat.nodes` (ScienceArtifactProvenance.tsx's
-  // resolveRunCall) off the session snapshot; comparing just those two fields
-  // keeps the returned snapshot reference stable across unrelated streaming
-  // events (composer, queue, running-call byte updates) instead of on every one.
-  const snapshot = useSession(s => s, (a, b) => a.nodes === b.nodes && a.chat === b.chat)
 
   if (science === undefined) {
     return (
@@ -1080,8 +1126,8 @@ export function ScienceDetailsView({
 
   return (
     <ArtifactViewer
-      science={science ?? EMPTY_SCIENCE_PROJECTION} notes={notes} currentSessionId={sessionId} sessionTitles={sessionTitles}
-      snapshot={snapshot} useStore={useStore} actions={actions} {...controls}
+      science={science ?? EMPTY_SCIENCE_PROJECTION} notes={notes} currentSessionId={sessionId}
+      useStore={useStore} actions={actions} {...controls}
     />
   )
 }

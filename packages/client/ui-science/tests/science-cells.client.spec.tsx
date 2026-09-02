@@ -37,6 +37,7 @@ function props(
 ) {
   return {
     block, toolName, callId: block.callId, inspect: vi.fn(), openFile: vi.fn(), loadImage: vi.fn(), loadScienceImage: vi.fn(),
+    loadVersions: vi.fn(async () => ({ ok: true, value: { versions: [] } })),
     openDetailsView: vi.fn(), useProjection: vi.fn(), sessionId: 'session-1', cancel: vi.fn(), t, ...overrides,
   } as unknown as ToolCallViewProps & PropsLocale<'science'> & ScienceOutcomeInjected & { cancel: () => void }
 }
@@ -369,9 +370,13 @@ describe('Science Outcome cell', () => {
 
   it('renders every evidence kind, resolving a cited chart thumbnail from the live science projection', async () => {
     const load = vi.fn().mockResolvedValue('blob:fake-url')
+    const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
+      versionId: 'version-abc', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
+      contentOrigin: 'run-auto', createdAt: 500, mediaType: 'image/png', byteCount: 100,
+    }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => projectionWithChart()), loadScienceImage: load },
+      { useProjection: vi.fn(() => projectionWithChart()), loadScienceImage: load, loadVersions },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
     expect(screen.getByText('运行 run-1')).toBeTruthy()
@@ -392,19 +397,23 @@ describe('Science Outcome cell', () => {
     expect(document.querySelector('img')).toBeNull()
   })
 
-  it('renders a file-type tile (not the missing-visual report) when the cited artifact is not an image', () => {
+  it('renders a file-type tile (not the missing-visual report) when the cited artifact is not an image', async () => {
     const projection = projectionWithChart()
     const source = projection.artifacts[0]
     if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
     const textArtifact = {
       ...source, versionId: 'version-def' as never, sha256: 'def', mediaType: 'text/csv' as const, byteCount: 40,
     }
+    const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
+      versionId: 'version-def', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
+      contentOrigin: 'run-auto', createdAt: 500, mediaType: 'text/csv', byteCount: 40,
+    }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => ({ ...projection, artifacts: [textArtifact] })) },
+      { useProjection: vi.fn(() => ({ ...projection, artifacts: [textArtifact] })), loadVersions },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
-    expect(screen.getByText('CSV')).toBeTruthy()
+    await waitFor(() => { expect(screen.getByText('CSV')).toBeTruthy() })
     expect(screen.queryByText('引用的成果不可用')).toBeNull()
     expect(document.querySelector('img')).toBeNull()
   })
@@ -496,9 +505,13 @@ describe('Science Outcome cell', () => {
     const source = projection.artifacts[0]
     if (source === undefined || source.origin === 'human-edit') throw new Error('expected run-produced chart fixture')
     const load = vi.fn().mockResolvedValue('blob:fake-url')
+    const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [{
+      versionId: 'version-abc', artifactId: 'chart-1', logicalName: 'loss-curve', ordinal: 1, title: 'Loss curve',
+      contentOrigin: 'run-auto', createdAt: 500, mediaType: 'image/png', byteCount: 100,
+    }] } } as never))
     render(<ScienceOutcomeRow {...props(
       settled('publish_outcome', { meta: validMeta }), 'publish_outcome',
-      { useProjection: vi.fn(() => projection), loadScienceImage: load },
+      { useProjection: vi.fn(() => projection), loadScienceImage: load, loadVersions },
     )} />)
     fireEvent.click(screen.getByRole('button', { name: /结论/u }))
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })

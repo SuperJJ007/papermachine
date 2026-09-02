@@ -3,8 +3,8 @@
 import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceKernelEndReason,
-  ScienceRunId,
 } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceVersionSummaryMap } from './version-summaries.ts'
 
 /** Stable cross-view anchor vocabulary shared by the trace, trajectory, and artifact viewer. */
 export type ScienceTraceAnchor =
@@ -107,7 +107,7 @@ export interface ScienceTraceDialogue {
 export interface ScienceTraceHumanEdit {
   readonly actor: 'user'
   readonly turn: number
-  readonly artifact: ScienceClientArtifactVersion & { readonly origin: 'human-edit' }
+  readonly artifact: ScienceClientArtifactVersion
   readonly anchor: ScienceTraceAnchor
 }
 
@@ -154,26 +154,28 @@ function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>):
   return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
 }
 
-function humanEditTurn(
-  artifact: ScienceClientArtifactVersion & { readonly origin: 'human-edit' },
+/**
+ * Place one artifact version into the turn whose timing window contains its
+ * `createdAt`. Used for every artifact regardless of content origin: the
+ * T1/T2 artifact-authority migration removed `runId`/`toolCallId` from the
+ * client-safe artifact projection, so a specific producing call can no
+ * longer be resolved — every artifact falls back to this same
+ * timestamp-window placement a human edit already used, rather than only
+ * human edits using it and run-produced artifacts using a call lookup.
+ */
+function artifactTurn(
+  createdAt: number,
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
   lastTurn: number,
 ): number {
   for (const [turn, timing] of turnTimes) {
-    if (artifact.createdAt >= timing.startTime && artifact.createdAt <= (timing.endTime ?? Number.POSITIVE_INFINITY)) return turn
+    if (createdAt >= timing.startTime && createdAt <= (timing.endTime ?? Number.POSITIVE_INFINITY)) return turn
   }
   return lastTurn
 }
 
 function runDuration(run: ScienceClientRun): number | undefined {
   return run.status === 'running' ? undefined : Math.max(0, run.finishedAt - run.startedAt)
-}
-
-function artifactCallId(
-  artifact: { readonly runId?: ScienceRunId; readonly toolCallId: string },
-  runs: ReadonlyMap<ScienceRunId, ScienceClientRun>,
-): string | undefined {
-  return artifact.runId === undefined ? artifact.toolCallId : runs.get(artifact.runId)?.toolCallId
 }
 
 interface TraceCall {
@@ -269,12 +271,19 @@ export function scienceTracePips(group: ScienceTraceGroup): readonly {
  * @param nodes - Assembled conversation nodes.
  * @param science - Current browser-safe Science projection.
  * @param turnTimes - Authoritative turn timing map.
+ * @param summaries - current library facts (content origin, creation time)
+ * for every version named in `science.artifacts`, from
+ * `useScienceVersionSummaries` — an artifact whose summary has not yet
+ * loaded is silently omitted from the built model rather than shown
+ * unassigned; it appears once its summary resolves and this function is
+ * called again with the enlarged map.
  * @returns Process steps and artifact changes grouped by turn.
  */
 export function buildScienceTraceModel(
   nodes: readonly ConversationNode[],
   science: ScienceClientProjection,
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
+  summaries: ScienceVersionSummaryMap,
 ): ScienceTraceModel {
   const callTurns = new Map<string, number>()
   const calls = new Map<string, TraceCall>()
@@ -308,28 +317,26 @@ export function buildScienceTraceModel(
   }
 
   const lastTurn = Math.max(1, inferredTurn)
-  const runsById = new Map(science.runs.map(run => [run.runId, run]))
-  const artifactsByTurn = new Map<number, {
-    artifact: Exclude<ScienceClientArtifactVersion, { origin: 'human-edit' }>
-    callId: string
-  }[]>()
+  const artifactsByTurn = new Map<number, ScienceClientArtifactVersion[]>()
   const humanEdits: ScienceTraceHumanEdit[] = []
+  // `runs` stays the only real unassigned case now (a run whose toolCallId
+  // is absent from the loaded conversation); `artifacts` is kept only for
+  // this type's existing shape — every artifact with a loaded summary always
+  // resolves to some turn (artifactTurn falls back to `lastTurn`), and one
+  // without a loaded summary is silently omitted above rather than counted
+  // unassigned (see this function's own JSDoc).
   const unassigned: { runs: ScienceClientRun[]; artifacts: ScienceClientArtifactVersion[] } = { runs: [], artifacts: [] }
   const seenVersions = new Set<string>()
   for (const artifact of science.artifacts) {
-    if (artifact.origin === 'human-edit') {
-      const turn = humanEditTurn(artifact, turnTimes, lastTurn)
+    const summary = summaries.get(artifact.versionId)
+    if (summary === undefined) continue
+    const turn = artifactTurn(summary.createdAt, turnTimes, lastTurn)
+    if (summary.contentOrigin === 'human-edit') {
       humanEdits.push({ actor: 'user', turn, artifact, anchor: `artifact:${artifact.artifactId}@${artifact.version}` })
       continue
     }
-    const callId = artifactCallId(artifact, runsById)
-    const turn = callId === undefined ? undefined : callTurns.get(callId)
-    if (callId === undefined || turn === undefined) {
-      unassigned.artifacts.push(artifact)
-      continue
-    }
     const list = artifactsByTurn.get(turn) ?? []
-    list.push({ artifact, callId })
+    list.push(artifact)
     artifactsByTurn.set(turn, list)
   }
 
@@ -356,8 +363,11 @@ export function buildScienceTraceModel(
       run, callId: run.toolCallId, durationMs: runDuration(run), failed: run.status !== 'running' && run.status !== 'success',
       anchor: `run:${run.runId}`,
     }))
-    const artifactsByCall = new Map<string, ScienceTraceArtifactDelta[]>()
-    const artifacts = (artifactsByTurn.get(turn) ?? []).map(({ artifact, callId }): ScienceTraceArtifactDelta => {
+    // `version === 1` is always the logical artifact's first version (T1's
+    // contiguous-ordinal invariant), and every later version's immediate
+    // predecessor is exactly `version - 1` — the same fact `parentVersion`
+    // named through the removed `parent` reference, without needing it.
+    const artifacts = (artifactsByTurn.get(turn) ?? []).map((artifact): ScienceTraceArtifactDelta => {
       const key = `${artifact.artifactId}@${artifact.version}`
       const curated = seenVersions.has(key)
       seenVersions.add(key)
@@ -366,13 +376,9 @@ export function buildScienceTraceModel(
         version: artifact.version,
         anchor: `artifact:${artifact.artifactId}@${artifact.version}` as const,
       } satisfies ScienceTraceArtifactDeltaBase
-      const delta: ScienceTraceArtifactDelta = curated ? { ...base, action: 'curated' }
-        : artifact.parent === undefined ? { ...base, action: 'created' }
-          : { ...base, action: 'advanced', parentVersion: artifact.parent.version }
-      const list = artifactsByCall.get(callId) ?? []
-      list.push(delta)
-      artifactsByCall.set(callId, list)
-      return delta
+      return curated ? { ...base, action: 'curated' }
+        : artifact.version === 1 ? { ...base, action: 'created' }
+          : { ...base, action: 'advanced', parentVersion: artifact.version - 1 }
     })
     const turnCalls = orderedCalls.filter(call => call.turn === turn)
     const steps = turnCalls.map((call): ScienceTraceStep => {
@@ -381,10 +387,13 @@ export function buildScienceTraceModel(
       const failed = run === undefined ? result?.isError ?? false : run.status !== 'running' && run.status !== 'success'
       const anchor = `call:${call.callId}` as const
       const title = stepTitle(call, run)
+      // Per-step artifact attribution is gone with the removed producing-call
+      // link (`artifactCallId`, above): a step never lists artifact chips of
+      // its own now, only the turn-level `artifacts` this group carries.
       return { step: call.step, kind: stepKind(call.name), failed, title,
         members: [{ callId: call.callId, argsRaw: call.argsRaw, result, run, title, failed, anchor }],
         durationMs: run === undefined ? undefined : runDuration(run), runStatus: run?.status,
-        artifacts: artifactsByCall.get(call.callId) ?? [], anchor }
+        artifacts: [], anchor }
     })
     const durations = runRows.flatMap(row => row.durationMs === undefined ? [] : [row.durationMs])
     const timing = turnTimes.get(turn)

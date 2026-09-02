@@ -80,9 +80,42 @@
 
 .toolbar {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.toolbarRow {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.saveAsForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saveAsForm input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.saveAsForm button {
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
 }
 
 .toolbarTitle {

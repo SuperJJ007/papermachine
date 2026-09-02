@@ -11,12 +11,16 @@ import {
   type ScienceTraceStep, type ScienceTraceStepTitle,
 } from './science-trace-model.ts'
 import { ScienceTraceStepDetails, scienceTraceCodePreview } from './ScienceTraceStepDetails.tsx'
+import type { LoadScienceVersions } from './version-summaries.ts'
+import { useScienceVersionSummaries } from './version-summaries.ts'
 import css from './ScienceTraceView.module.css'
 
 /** Cross-view writes supplied by the Science trace registration. */
 export interface ScienceTraceInjected {
   /** Open one exact artifact version in the Science Details stage. */
   openArtifact: (selection: { readonly artifactId: ScienceArtifactId; readonly version: number }) => void
+  /** Batch-read current content origin/creation time for this session's artifacts (D9/turn attribution). */
+  loadVersions: LoadScienceVersions
 }
 
 /** Full props for the Science process view. */
@@ -134,7 +138,7 @@ function toggleSet<T>(previous: ReadonlySet<T>, value: T): ReadonlySet<T> {
 
 /** Render process groups; turn and call expansion stay local to this mounted view. */
 export function ScienceTraceView({
-  useSession, useProjection, actions, openArtifact, t,
+  useSession, useProjection, actions, openArtifact, loadVersions, t,
 }: ScienceTraceViewProps) {
   const nodes = useSession(snapshot => snapshot.nodes)
   const turnTimes = useSession(snapshot => snapshot.turnTimings)
@@ -145,9 +149,14 @@ export function ScienceTraceView({
   const highlightedRow = useRef<HTMLLIElement>(null)
   const id = useId()
   useEffect(() => { highlightedRow.current?.scrollIntoView({ block: 'nearest' }) }, [highlight])
+  // D9/turn-attribution: current content origin and creation time for every
+  // artifact this session's projection carries, fetched once per distinct
+  // artifact set — a Hook, so it is called unconditionally even before
+  // `science` itself has resolved.
+  const summaries = useScienceVersionSummaries(loadVersions, science?.artifacts.map(artifact => artifact.versionId) ?? [])
   const model = useMemo(
-    () => science === null || science === undefined ? undefined : buildScienceTraceModel(nodes, science, turnTimes),
-    [nodes, science, turnTimes],
+    () => science === null || science === undefined ? undefined : buildScienceTraceModel(nodes, science, turnTimes, summaries),
+    [nodes, science, turnTimes, summaries],
   )
   if (model === undefined) return <p className={css.empty}>{t('trace.empty')}</p>
   const hasUnassigned = model.unassigned.runs.length > 0 || model.unassigned.artifacts.length > 0
@@ -279,7 +288,7 @@ export function ScienceTraceView({
                   <article className={css.node} data-actor="user" data-kind="human-edit" data-anchor={item.anchor} key={item.anchor}>
                     <span className={css.icon}><IconUserOutline16 /></span>
                     <div><b>{t('trace.humanEdit', { name: item.artifact.logicalName, version: item.artifact.version,
-                      parent: item.artifact.parent.version })}</b>
+                      parent: item.artifact.version - 1 })}</b>
                     <button type="button" onClick={() => {
                       open({ artifactId: item.artifact.artifactId, version: item.artifact.version })
                     }}>{t('trace.openArtifact')}</button></div>

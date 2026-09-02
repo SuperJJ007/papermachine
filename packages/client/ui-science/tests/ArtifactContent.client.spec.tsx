@@ -1,35 +1,31 @@
 // @vitest-environment jsdom
 /**
  * `ArtifactContent` in isolation: the top-level `previewSrc` override that
- * replaces the raster's displayed source, and the three optional chart-edit
- * callbacks a caller may omit (a read-only viewer over a version with no
- * preview/pending-edit support, distinct from `ScienceDetailsView.tsx`'s own
- * always-supplying `ArtifactTab` caller).
+ * replaces the raster's displayed source, and the region-select targeting
+ * flow. The live chart-edit panel (element-level annotation targeting,
+ * direct title/legend/grid/font operations) is not covered here: it never
+ * mounts, since no client-facing read path supplies its `ScienceChartState`
+ * — see `ArtifactContent.tsx`'s own JSDoc and the package README's Known
+ * Limitation.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import { ArtifactContent } from '../src/client/ArtifactContent.tsx'
+import type { ScienceRenderableVersion } from '../src/client/version-summaries.ts'
 import { en } from '../src/client/locales.ts'
 
 const t = makeTranslate(en)
 
 afterEach(cleanup)
 
-function chart(over: Partial<ScienceClientArtifactVersion> = {}): ScienceClientArtifactVersion {
+function chart(over: Partial<ScienceRenderableVersion> = {}): ScienceRenderableVersion {
   return {
-    artifactId: 'chart-1' as never, producerSessionId: 'session-1' as never, logicalName: 'loss.png',
-    version: 1, title: 'Loss', origin: 'auto', versionId: 'version-1' as never, sha256: 'a'.repeat(64),
-    mediaType: 'image/png', byteCount: 100, runId: 'run-1' as never, toolCallId: 'call-1' as never,
-    requestHeaderSeq: 1, turn: 1, environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1,
-    chart: {
-      runtime: 'matplotlib', figureKey: 'fig', png: { width: 200, height: 100, dpi: 150 },
-      hitmapStatus: 'unavailable', hitmap: [], ops: [],
-      elements: [{ id: 'title', kind: 'title', axes: null, label: null, current: 'Loss' }],
-    },
+    artifactId: 'chart-1' as never, logicalName: 'loss.png',
+    version: 1, title: 'Loss', versionId: 'version-1', sha256: 'a'.repeat(64),
+    mediaType: 'image/png', byteCount: 100, contentOrigin: 'run-auto', createdAt: 1,
     ...over,
-  } as ScienceClientArtifactVersion
+  }
 }
 
 function baseProps() {
@@ -43,7 +39,6 @@ function baseProps() {
     targetComment: vi.fn().mockReturnValue(''),
     onAddTarget: vi.fn(),
     onRemoveTarget: vi.fn(),
-    onSaveChartOps: vi.fn().mockResolvedValue({ ok: true, failedOps: [] }),
     t,
   }
 }
@@ -61,24 +56,9 @@ describe('ArtifactContent: previewSrc override', () => {
   })
 })
 
-describe('ArtifactContent: optional chart-edit callbacks', () => {
-  it('renders the chart edit panel when onPreviewChartOps, onPreviewSrc, and onPendingChartEditsChange are all omitted', () => {
-    // A caller with no preview/pending-edit support (unlike ScienceDetailsView.tsx's
-    // ArtifactTab, which always supplies all three) still gets a working panel:
-    // Save stays reachable, it only degrades preview and pending-edit reporting.
-    render(<ArtifactContent {...baseProps()} />)
-    expect(screen.getByLabelText('Enter text')).toBeTruthy()
-  })
-})
-
-
 describe('ArtifactContent: region references', () => {
-  it.each([true, false])('offers region selection with chart metadata: %s', async (addressable) => {
+  it('offers region selection over the raster regardless of chart-edit-panel availability', async () => {
     const props = baseProps()
-    if (!addressable) {
-      const { chart: _chart, ...raster } = props.chart
-      props.chart = raster
-    }
     render(<ArtifactContent {...props} />)
     await screen.findByRole('img')
     fireEvent.click(screen.getByRole('button', { name: 'Select region to edit' }))
@@ -96,21 +76,21 @@ describe('ArtifactContent: region references', () => {
   })
 })
 
-
-describe('ArtifactContent: element references', () => {
-  it('keeps the image unobscured when an element with saved bounds is focused, hovered, or referenced', async () => {
+describe('ArtifactContent: text content and human-edit ancestry', () => {
+  it('dispatches text content by media type and shows the caption when present', async () => {
     const props = baseProps()
-    props.chart = chart({ chart: { ...props.chart.chart!, hitmapStatus: 'ok', hitmap: [{ id: 'title', bbox: [20, 10, 180, 30], z: 3 }] } })
+    props.chart = chart({ mediaType: 'text/plain', caption: 'A caption' })
+    props.loadText = vi.fn().mockResolvedValue('plain text body')
     render(<ArtifactContent {...props} />)
-    const image = await screen.findByRole('img')
-    const reference = screen.getByRole('button', { name: 'Add Title to the conversation' })
-    fireEvent.focus(reference)
-    fireEvent.mouseEnter(reference.closest('li')!)
-    expect(screen.queryByLabelText('Title', { selector: 'span' })).toBeNull()
-    expect(props.onAddTarget).not.toHaveBeenCalled()
-    fireEvent.click(reference)
-    expect(props.onAddTarget).toHaveBeenCalledWith(expect.objectContaining({ kind: 'element', elementId: 'title' }), '')
-    expect(image.getAttribute('src')).toBe('data:image/png;base64,loaded')
-    expect(screen.queryByRole('status')).toBeNull()
+    await screen.findByText('plain text body')
+    expect(screen.getByText('A caption')).toBeTruthy()
+  })
+
+  it('names the immediately preceding version for a human-edit version, without a parent reference', async () => {
+    const props = baseProps()
+    props.chart = chart({ version: 3, contentOrigin: 'human-edit' })
+    render(<ArtifactContent {...props} />)
+    await screen.findByRole('img')
+    expect(screen.getByText('Human style edit based on v2')).toBeTruthy()
   })
 })

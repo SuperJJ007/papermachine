@@ -30,5 +30,11 @@ export function scienceProjectionChanged(
   previous: ScienceProjectionState,
   next: ScienceProjectionState,
 ): boolean {
-  return previous.fold.lastScienceEventSeq !== next.fold.lastScienceEventSeq
+  if (previous.fold.lastScienceEventSeq === null && next.fold.lastScienceEventSeq === null) return false
+  if (previous.fold.lastScienceEventSeq !== next.fold.lastScienceEventSeq
+    || previous.fold.toolCalls.length !== next.fold.toolCalls.length
+    || previous.fold.turns.length !== next.fold.turns.length) return true
+  const previousTurn = previous.fold.turns.at(-1)
+  const nextTurn = next.fold.turns.at(-1)
+  return previousTurn?.endSeq !== nextTurn?.endSeq || previousTurn?.endTime !== nextTurn?.endTime
 }

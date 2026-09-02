@@ -20,7 +20,7 @@ Kernel lifecycle markers replace the environment card because starts and exits h
 
 This decision partially supersedes the card summary and subview name in [Science trajectory and transcript information architecture](2026-08-25-science-trajectory-and-transcript-ia.md). Its nested Trajectory placement, preserved visited panels, transcript ownership and Turn-tail artifact reasoning remain useful. [Science transcript chrome suppression](2026-08-25-science-transcript-chrome-suppression.md) continues to own conversation chrome; both records remain active for those independent decisions.
 
-Retained runs and artifacts require a loaded producing call before joining a request. Missing calls leave these records in a separate unassigned-history section with counts and exact-version artifact links; earlier-page loading recomputes their assignment. Falling back to the latest turn invents provenance and inflates its duration and artifact totals. An annotation call cannot establish the producing turn of a run-owned version.
+Retained runs and artifacts originally required a loaded producing call before joining a request. [Preserve Science trajectory ownership across cold pagination](../bug-fix/2026-09-02-science-cold-trajectory-ownership.md) partially supersedes that rule: the Science projection now owns turn, step, and tool-call identity for the complete trajectory, while loaded conversation nodes only enrich calls with arguments, results, and request text. A genuinely missing projection coordinate remains unassigned; falling back to the latest turn would invent provenance and inflate its duration and artifact totals. An annotation call cannot establish the producing turn of a run-owned version.
 
 ## Alternatives considered
 
@@ -57,6 +57,6 @@ Markers use two status colors plus neutral shapes: muted green runs and red fail
 
 ## Consequences
 
-The projection may contain runs or artifacts whose call heads lie outside the loaded conversation window. Process can show retained artifact facts but cannot reconstruct missing step titles. Kernel markers are positioned between turns, not between individual calls. The environment label uses the projection's current profile rather than an environment-history reconstruction. Long strips and artifact rows can wrap beyond one physical text line while preserving four structured rows without free-form explanations.
+The projection contains the complete turn and call index even when conversation pagination omits the corresponding nodes. Process can therefore retain step numbers and tool-name-derived titles, but request text, arguments, and results remain unavailable until their nodes load. Kernel markers are positioned between turns, not between individual calls. The environment label uses the projection's current profile rather than an environment-history reconstruction. Long strips and artifact rows can wrap beyond one physical text line while preserving four structured rows without free-form explanations.
 
 Nested subagent lanes, package-installation and manual-operation entries, and durable expansion state remain deferred. Delegation shows one call row with local logged input/output inspection; installation and manual-operation rows require authoritative persistent events. Expansion and highlighting remain local to the mounted view, outside the artifact selection store and session log.

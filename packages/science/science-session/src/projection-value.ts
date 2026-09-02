@@ -20,6 +20,11 @@ import type {
   ScienceRun,
 } from './types.ts'
 
+interface ClientTraceCoordinate {
+  readonly turn: number
+  readonly step: number
+}
+
 /** Stable client-visible prefix of a full environment fingerprint. */
 const fingerprintPreview = (fingerprint: string): string => fingerprint.slice(0, 12)
 
@@ -110,11 +115,12 @@ function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
  * it carries no Host-infrastructure fact, and provenance needs the durable
  * anchor to be exact.
  */
-function clientRun(run: ScienceRun): ScienceClientRun {
+function clientRun(run: ScienceRun, coordinate?: ClientTraceCoordinate): ScienceClientRun {
   const common = {
     runId: run.runId,
     language: run.language,
     toolCallId: run.toolCallId,
+    ...coordinate,
     requestHeaderSeq: run.requestHeaderSeq,
     environmentRevision: run.environmentRevision,
     environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
@@ -157,14 +163,21 @@ function clientRun(run: ScienceRun): ScienceClientRun {
  * one every emission — the client's per-version load effects key on this
  * returned identity.
  */
-const clientArtifactCache = new WeakMap<ScienceArtifactVersion, ScienceClientArtifactVersion>()
+const clientArtifactCache = new WeakMap<ScienceArtifactVersion, {
+  readonly coordinate: ClientTraceCoordinate | undefined
+  readonly value: ScienceClientArtifactVersion
+}>()
 
 /** Memoized `buildClientArtifact`, stable per source artifact version object. */
-function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+function clientArtifact(
+  artifact: ScienceArtifactVersion,
+  coordinate?: ClientTraceCoordinate,
+): ScienceClientArtifactVersion {
   const cached = clientArtifactCache.get(artifact)
-  if (cached !== undefined) return cached
-  const result = buildClientArtifact(artifact)
-  clientArtifactCache.set(artifact, result)
+  if (cached !== undefined && cached.coordinate?.turn === coordinate?.turn
+    && cached.coordinate?.step === coordinate?.step) return cached.value
+  const result = buildClientArtifact(artifact, coordinate)
+  clientArtifactCache.set(artifact, { coordinate, value: result })
   return result
 }
 
@@ -176,7 +189,10 @@ function clientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifact
  * session-addressed, so the client never needs the store's project
  * coordinate.
  */
-function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArtifactVersion {
+function buildClientArtifact(
+  artifact: ScienceArtifactVersion,
+  coordinate?: ClientTraceCoordinate,
+): ScienceClientArtifactVersion {
   return {
     artifactId: artifact.artifactId,
     logicalName: artifact.logicalName,
@@ -186,6 +202,7 @@ function buildClientArtifact(artifact: ScienceArtifactVersion): ScienceClientArt
     versionId: artifact.versionId,
     sha256: artifact.sha256,
     seenAt: artifact.seenAt,
+    ...coordinate,
   }
 }
 
@@ -239,6 +256,15 @@ export function projectScienceFold(state: ScienceFoldState): ScienceProjection |
     runs: state.runs,
     kernels: state.kernels,
     artifacts: state.artifacts,
+    trace: {
+      turns: state.turns,
+      calls: state.toolCalls,
+      artifacts: state.artifactFacts.map(fact => ({
+        artifactId: fact.artifactId as ScienceArtifactVersion['artifactId'],
+        version: fact.version,
+        ...fact.turn === undefined || fact.step === undefined ? {} : { turn: fact.turn, step: fact.step },
+      })),
+    },
     outcome,
     metrics: scienceProjectionMetrics(state.runs, state.kernels, state.artifacts, outcome?.revision ?? 0),
     lastScienceEventSeq: state.lastScienceEventSeq,
@@ -252,12 +278,21 @@ export function projectScienceFold(state: ScienceFoldState): ScienceProjection |
  */
 export function toClientScienceProjection(projection: ScienceProjection | null): ScienceClientProjection | null {
   if (projection === null) return null
+  const runCoordinates = new Map(projection.trace.calls.map(call => [call.callId, { turn: call.turn, step: call.step }]))
+  const artifactCoordinates = new Map(projection.trace.artifacts.map(fact => [
+    `${fact.artifactId}@${String(fact.version)}`,
+    fact.turn === undefined || fact.step === undefined ? undefined : { turn: fact.turn, step: fact.step },
+  ]))
   return {
     mode: projection.mode,
     environment: projection.environment === null ? null : clientEnvironment(projection.environment),
-    runs: projection.runs.map(clientRun),
+    runs: projection.runs.map(run => clientRun(run, runCoordinates.get(run.toolCallId))),
     kernels: projection.kernels.map(clientKernel),
-    artifacts: projection.artifacts.map(clientArtifact),
+    artifacts: projection.artifacts.map(artifact => clientArtifact(
+      artifact,
+      artifactCoordinates.get(`${artifact.artifactId}@${String(artifact.version)}`),
+    )),
+    trace: { turns: projection.trace.turns, calls: projection.trace.calls },
     outcome: projection.outcome === null ? null : clientOutcome(projection.outcome),
     metrics: projection.metrics,
     lastScienceEventSeq: projection.lastScienceEventSeq,

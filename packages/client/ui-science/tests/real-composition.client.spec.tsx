@@ -198,6 +198,7 @@ async function bench() {
       toolCallId: CALL_ID, requestHeaderSeq: 1, environmentRevision: 1,
       environmentFingerprintPreview: 'f'.repeat(12), createdAt: 1_000,
     }],
+    trace: { turns: [], calls: [] },
     outcome: null,
     metrics: { runCount: 1, successfulRunCount: 1, artifactCount: 1, artifactVersionCount: 1, outcomeRevision: 0, kernelCount: 0 },
     lastScienceEventSeq: 5,

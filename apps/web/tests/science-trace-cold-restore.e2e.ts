@@ -124,6 +124,34 @@ function coldRestoreFixture(projectId: ProjectId, stored: readonly Stored[]): st
   }), ...events.map(event => JSON.stringify(event)), ''].join('\n')
 }
 
+describe('cold Science trajectory fixture', () => {
+  it('contains the redacted incident cardinalities and passes strict replay', () => {
+    const stored = Array.from({ length: 4 }, (_, index) => ({
+      artifact: { artifactId: `artifact-${String(index + 1)}`, logicalName: `result-${String(index + 1)}.png` },
+      version: { versionId: `version-${String(index + 1)}`, sha256: String(index + 1).repeat(64) },
+    })) as unknown as Stored[]
+    const lines = coldRestoreFixture('project' as ProjectId, stored).trim().split('\n').slice(1)
+    const events = lines.map(line => JSON.parse(line) as {
+      readonly seq: number
+      readonly type: string
+      readonly surfaceOp?: string
+      readonly data: { readonly turn?: number }
+    })
+    expect(events.filter(event => event.type === 'turn/start')).toHaveLength(12)
+    expect(events.filter(event => event.type === 'tool/call')).toHaveLength(29)
+    expect(events.filter(event => event.type === 'science/run-started')).toHaveLength(19)
+    expect(events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(4)
+    const appendedMessages = events.filter(event => event.surfaceOp === 'append'
+      && (event.type === 'user/message' || event.type === 'assistant/message'))
+    const cutoff = appendedMessages.at(-50)?.seq
+    if (cutoff === undefined) throw new Error('fixture did not produce one complete cold history page')
+    const coldTail = events.filter(event => event.seq >= cutoff)
+    expect(coldTail.filter(event => event.type === 'tool/call')).toHaveLength(21)
+    expect(coldTail.filter(event => event.type === 'science/run-started')).toHaveLength(12)
+    expect(coldTail.find(event => event.type === 'assistant/message')?.data.turn).toBe(4)
+  })
+})
+
 describe('web e2e: cold Science trajectory restore', () => {
   let scaffold: WebScaffold, browser: Browser, page: Page
   let tripwire: ReturnType<typeof watchConsole>
@@ -155,7 +183,9 @@ describe('web e2e: cold Science trajectory restore', () => {
     const process = page.getByRole('region', { name: 'Science process view' })
     await expect.poll(() => process.innerText()).toContain('Turns 12 · Steps 29 · Runs 19 · Artifacts 4')
     expect(await process.getByRole('region', { name: 'Unassigned history' }).count()).toBe(0)
-    expect(await process.locator('article[data-anchor="turn:1"]').innerText()).toContain('Runs 3')
+    const firstTurn = process.locator('article[data-anchor="turn:1"]')
+    expect(await firstTurn.innerText()).toContain('Request unavailable for this turn')
+    expect(await firstTurn.innerText()).toContain('Runs 3')
     expect(await process.locator('article[data-anchor="turn:4"]').innerText()).toContain('Runs 2')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

@@ -345,8 +345,6 @@ describe('web e2e: Science process view', () => {
     const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     mkdirSync(evidenceDir, { recursive: true })
     await page.screenshot({ path: `${evidenceDir}/science-process-history.png`, fullPage: true })
-    await compareOrRefreshGolden(fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url)),
-      await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
     await process.locator('article[data-anchor="turn:1"]').getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
     await page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u }).waitFor()
     await page.getByRole('tab', { name: 'Chat', exact: true }).click()

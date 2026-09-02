@@ -1140,6 +1140,7 @@ const EMPTY_SCIENCE_PROJECTION: ScienceClientProjection = {
   runs: [],
   kernels: [],
   artifacts: [],
+  trace: { turns: [], calls: [] },
   outcome: null,
   metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
   lastScienceEventSeq: -1,

@@ -149,6 +149,8 @@ describe('Science projection wire schema', () => {
     const { python: _python, ...environmentWithoutPython } = currentEnvironment
     const currentRun = state.runs[0]!
     const currentChart = state.artifacts[0]!
+    const { step: _runStep, ...runWithoutStep } = currentRun
+    const { step: _chartStep, ...chartWithoutStep } = currentChart
     const { seenAt: _artifactSeenAt, ...artifactWithoutSeenAt } = currentChart
     const interruptedRun = interruptedState.runs[0]!
     // legalEvents() already seeds the epoch-1 python kernel's `started` half
@@ -212,6 +214,7 @@ describe('Science projection wire schema', () => {
       { ...state, runs: [null] },
       { ...state, runs: [{}] },
       { ...state, runs: [{ ...runningState.runs[0], unexpected: true }] },
+      { ...state, runs: [runWithoutStep] },
       { ...state, runs: [{ ...state.runs[0], status: 'unknown' }] },
       // A kernel run has no per-run exit code or signal: neither field
       // exists on the wire schema any more, so either one is an unrecognized key.
@@ -229,12 +232,19 @@ describe('Science projection wire schema', () => {
       { ...state, artifacts: {} },
       { ...state, artifacts: [null] },
       { ...state, artifacts: [{ ...currentChart, unexpected: true }] },
+      { ...state, artifacts: [chartWithoutStep] },
       { ...state, artifacts: [{ ...currentChart, caption: 1 }] },
       { ...state, artifacts: [{ ...currentChart, versionId: 1 }] },
       { ...state, artifacts: [{ ...currentChart, sha256: 'short' }] },
       { ...state, artifacts: [{ ...currentChart, seenAt: '150' }] },
       { ...state, artifacts: [{ ...currentChart, seenAt: -1 }] },
       { ...state, artifacts: [artifactWithoutSeenAt] },
+      { ...state, trace: null },
+      { ...state, trace: { ...state.trace, turns: [{}] } },
+      { ...state, trace: { ...state.trace, calls: [{ ...state.trace.calls[0], step: 0 }] } },
+      { ...state, trace: { ...state.trace, calls: [...state.trace.calls].reverse() } },
+      { ...state, runs: [{ ...currentRun, turn: 2 }] },
+      { ...state, artifacts: [{ ...currentChart, turn: 2 }] },
       { ...kernelState, kernels: {} },
       { ...kernelState, kernels: [null] },
       { ...kernelState, kernels: [{}] },

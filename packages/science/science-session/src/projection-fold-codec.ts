@@ -20,6 +20,7 @@ export function encodeScienceProjectionFold(state: ScienceFoldState): SciencePro
     artifacts: state.artifacts,
     outcomes: state.outcomes,
     requestHeaders: state.requestHeaders,
+    turns: state.turns,
     toolCalls: state.toolCalls,
     settledToolCallSeqs: state.settledToolCallSeqs,
     consumedToolCallSeqs: state.consumedToolCallSeqs,

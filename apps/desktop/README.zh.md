@@ -28,6 +28,10 @@ carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，�
 
 Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTERM`，使 Host 得以 dispose（资源释放）Cordis 及其子进程树，随后在限定宽限期后升级为 `SIGKILL`。一个同级的纯 Node 看门狗进程观察 Electron，并在 Electron 被强制终止时停止该 Host 进程组。
 
+## Host 诊断日志
+
+Electron 会把 Host 的 stderr 持久化到 `<dshHome>/logs/host.log`；Host 输出绝不会进入 renderer。随应用发布的 `resources/host.json` 使用 schema version 1，把 active file 限定为 5 MiB（`logMaxBytes`），并保留 2 个轮转文件（`logMaxRotatedFiles: 2`）。两个上限都是严格的 safe integer（`logMaxBytes` 为 1 KiB 至 50 MiB，保留轮转数为 1 至 20）；配置缺失、不可读、格式错误或带有多余字段都会使启动失败。任何一行写入磁盘前，writer 会替换 Host environment 中凭据类名称对应的精确值，以及常见的 bearer、API key、authorization、credential、password、secret、token 与 `sk-…` 形式。日志目录与文件会强制设为 `0700` 与 `0600` mode；非普通文件与 symlink 会被拒绝；按发布配置，轮转最多保留 `host.log`、`host.log.1` 与 `host.log.2`。单行若大于 active-file 上限，会替换成固定的省略标记，而不会保留无界 buffer 或写出凭据的一部分。
+
 ## Host 端口
 
 Host 会在它上一次成功绑定的端口上启动——该端口记录在 `<dshHome>/host-port.json`（`src/host-port.ts`）——而不是每次都请求一个全新的 OS 分配端口。浏览器端状态以 origin 为 key，而 OS 分配端口每次启动都会改变 origin，因而会悄悄丢弃客户端此前写入 `localStorage` 的所有内容。目前受影响的包括:侧边栏 details panel 的宽度、当前 session 选中项、trajectory-duration 偏好、workspace browser 的分组/排序/展开状态、per-session 的 chat draft 与 view 选择,以及 Science artifact viewer 的已打开标签页与 library 状态(`packages/client/*/src/**/stores.ts` 中任何通过 `defineStore`/`createSnapshotStore` 选择 `persist` 的 store);sidebar 自身宽度在上游被特意排除在持久化之外,不受此影响。跨普通启动保持 origin 稳定,就能保住上述全部状态。把这部分状态从 `localStorage` 迁移到 settings service 才是真正的长期方案——那样连 fallback 也能保住状态——但它跨越多个 client package,不在本次范围内。

@@ -1,11 +1,28 @@
 import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostLifecycle, type SupervisorFactory } from '../src/host-lifecycle.ts'
 import type { HostCommand, HostProcessSupervisor } from '../src/host-process.ts'
 
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
 function fakeCommand(): HostCommand {
-  return { executable: 'node', args: [], cwd: '.', env: {} }
+  const dshHome = mkdtempSync(join(tmpdir(), 'dsh-desktop-lifecycle-log-'))
+  roots.push(dshHome)
+  return {
+    executable: 'node',
+    args: [],
+    cwd: '.',
+    env: {},
+    stderrLog: { path: join(dshHome, 'logs', 'host.log'), maxBytes: 1024, maxRotatedFiles: 1 },
+  }
 }
 
 /** A minimal `HostProcessSupervisor` fake with spyable `start`/`stop`. */
@@ -123,6 +140,7 @@ describe('HostLifecycle', () => {
       args: ['--eval', "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 50)); console.log('dsh web: http://127.0.0.1:43123'); setInterval(() => {}, 1000)"],
       cwd: process.cwd(),
       env: { ...process.env },
+      stderrLog: fakeCommand().stderrLog,
     }, () => {})
     const pid = lifecycle.supervisor?.pid
     if (pid === undefined) throw new Error('fixture host missing pid')

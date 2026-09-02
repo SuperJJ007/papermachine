@@ -152,7 +152,7 @@ describe('collectProjectArtifactEvents', () => {
   it('skips a session with no cwd at all', async () => {
     const persistence = new TestPersistence(new Context())
     const { cwd: _cwd, ...noCwdHeader } = header('no-cwd', '')
-    persistence.setDurable({ meta: noCwdHeader as SessionHeader, events: [] })
+    persistence.setDurable({ meta: noCwdHeader, events: [] })
     const result = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: '/workspace/project-a', maxSessions: 100 })
     expect(result.events.size).toBe(0)
   })

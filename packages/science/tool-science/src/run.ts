@@ -21,7 +21,7 @@ import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './con
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
 import type { ScienceArtifactPresentationItem } from './presentation.ts'
-import { scienceArtifactValueFields } from './artifact-schema.ts'
+import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
 import type { ResolveArtifactStoreVersion } from './artifact-schema.ts'
 
 const outputStreamSchema = {
@@ -56,13 +56,6 @@ const capturedArtifactSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    artifactId: { type: 'string', required: true },
-    logicalName: { type: 'string', required: true },
-    version: { type: 'integer', required: true },
-    contentOrigin: { type: 'string', enum: ['run-auto', 'human-edit', 'import'], required: true },
-    curated: { type: 'boolean', required: true },
-    mediaType: { type: 'string', required: true },
-    bytes: { type: 'integer', required: true },
     // `title` and the store version id are carried for `presentationMeta`
     // (below) to build a clickable Client reference per file; `render()`
     // deliberately omits both from the model-visible receipt text — `title`
@@ -70,7 +63,7 @@ const capturedArtifactSchema = {
     // `basename` default), and versionId is an internal storage coordinate,
     // not a fact the model reasons about — the same split
     // `annotate_artifact`'s own receipt schema uses.
-    title: { type: 'string', required: true },
+    ...scienceArtifactSchemaProperties,
     versionId: { type: 'string', required: true },
   },
 } as const

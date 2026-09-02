@@ -21,6 +21,7 @@ import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
 import { windowBackgroundColor } from './window-theme.ts'
+import { applicationMenuTemplate } from './application-menu.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -190,6 +191,7 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const control = new AbortController()
   provisioning = control
+  refreshApplicationMenu()
   const startedAt = Date.now()
   // Tracks the most recent progress update's phase/sourceId across the whole
   // run, so a caught failure below can report which source was last being
@@ -222,7 +224,10 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
       })
       throw error
     }
-  })().finally(() => { provisioning = undefined })
+  })().finally(() => {
+    provisioning = undefined
+    refreshApplicationMenu()
+  })
   await coordinator.trackRun(run)
 }
 
@@ -550,32 +555,19 @@ function runDetached(action: () => Promise<void>, context: string): void {
 }
 
 function buildApplicationMenu(): Menu {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        {
-          label: 'Change Environment…',
-          // Opens onboarding so the user can install a different
-          // environment, or reinstall the current one after a repair. A
-          // live Host would otherwise keep running against the prefix
-          // onboarding is about to replace, so ProvisioningCoordinator stops
-          // the Host before onboarding opens. It also aborts and awaits any
-          // in-flight run first, so clicking mid-run opens onboarding once
-          // that run has actually unwound instead of hitting "another
-          // operation is running" until it does, and a second click while
-          // the first is still unwinding coalesces rather than queuing
-          // another open.
-          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
-        },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    { role: 'editMenu' },
-    { role: 'windowMenu' },
-  ]
-  return Menu.buildFromTemplate(template)
+  return Menu.buildFromTemplate(applicationMenuTemplate({
+    appName: app.name,
+    provisioning: provisioning !== undefined,
+    restartHost: () => { runDetached(restartHost, 'restart host') },
+    // ProvisioningCoordinator aborts and awaits an in-flight run before it
+    // opens onboarding, and coalesces repeated requests while that happens.
+    changeEnvironment: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
+  }))
+}
+
+function refreshApplicationMenu(): void {
+  if (!app.isReady()) return
+  Menu.setApplicationMenu(buildApplicationMenu())
 }
 
 app.setName('PaperMachine')
@@ -597,7 +589,7 @@ async function boot(): Promise<void> {
   const dshHome = await harnessHome()
   telemetry = await createTelemetryReporter(dshHome)
   void telemetry.report({ event: 'app.launch' })
-  Menu.setApplicationMenu(buildApplicationMenu())
+  refreshApplicationMenu()
   ipcMain.handle('desktop:environments', async () => {
     const signals = localeSignals()
     return (await declarations(await harnessHome())).map(item => ({

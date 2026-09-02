@@ -56,6 +56,8 @@ Update metadata is published to a static feed with artifact checksums. An update
 
 ## Electron main-process boot order
 
+The macOS application submenu exposes `Restart Host` above `Change Environment…`. Restart delegates to the same Host lifecycle as the crash page and is disabled while environment provisioning owns the workflow, so it cannot replace a Host during a prefix install.
+
 On Electron 43.4.1 / macOS 26.5.2 arm64, a top-level `await` in the ESM main-process entry whose continuation depends on an Electron native signal — `await app.whenReady()`, or awaiting a promise resolved by an `app.once('ready', …)` listener — never resumes; the process spawns no renderer and never opens a window. A non-top-level `.then()` continuation on the identical promise resumes correctly, and a top-level await driven by a Node timer or microtask resumes normally. `main.ts`'s post-ready boot (the application menu, IPC handlers, the initial window, and the `activate`/`before-quit`/`window-all-closed` listeners) runs from a `boot()` function invoked from `app.whenReady().then(boot)`, with a `.catch` that logs and calls `app.exit(1)` so a boot failure exits loudly instead of hanging silently. Defensive rule for this entry point: never place a top-level `await` on a promise whose resolution depends on an Electron native signal; drive that continuation from `.then()` instead.
 
 ## Delivery slices

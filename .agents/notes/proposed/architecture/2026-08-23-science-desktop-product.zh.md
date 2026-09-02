@@ -38,7 +38,7 @@ onboarding 现在会经过本节，作为其第二条路径——安装——与
 
 provisioning 在声明的 environment revision 上可恢复且具备事务性。每个 revision 发布到自己的 prefix 路径（`environments/<discipline>/<revision>`），每个 health check 都针对这一确切路径运行——Conda/micromamba 安装会把 install-time 的 prefix 写死进 shebang 与 interpreter home 变量，因此在一个路径上通过的 check 无法证明另一个发布路径的任何事情。失败或取消的 solve，在全新配备或不同 revision 的配备下继续以此前 applied revision 为权威；下文所述的同一 revision 原地修复路径会在触碰 prefix 之前先清空该 pointer，因此那里发生的失败会导致完全没有 applied revision。重试会复用 micromamba package cache，并在重新创建前清空未 ready 的 prefix 目录，因为没有匹配 `applied.json` 条目的 prefix 目录永远不算 ready。网络 channels 与可选 mirrors 属于已校验配置，因为不同 deployment 的可达性不同。
 
-学科一旦应用并非永久固定：启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对，不一致就路由回 onboarding 重新配备更新的 revision。为与当前 applied revision 不同的 revision 配备时，在新 revision 本身被应用之前绝不会触碰当前 applied 的 prefix。重新配备当前已 applied 的那个确切 revision 则是原地修复：会先清空 pointer，再删除并重建 prefix，因此中途失败会留下如实的 not-ready 状态，而不是一个仍被标记为 current 的已损坏环境。应用菜单提供一个操作，可按需重新打开 onboarding，让用户配备另一个学科包或修复当前这个；以这种方式进入 onboarding 会先停止活跃的 Host，否则存活的 Host（及其 persistent kernel）会继续运行在修复动作即将删除的 prefix 上。
+学科一旦应用并非永久固定：启动时会将 applied revision 与同一学科 id 的 shipped declaration 比对，不一致就路由回 onboarding 重新配备更新的 revision。为与当前 applied revision 不同的 revision 配备时，在新 revision 本身被应用之前绝不会触碰当前 applied 的 prefix。重新配备当前已 applied 的那个确切 revision 则是原地修复：会先清空 pointer，再删除并重建 prefix，因此中途失败会留下如实的 not-ready 状态，而不是一个仍被标记为 current 的已损坏环境。应用菜单操作会在活跃 Host 继续服务当前 environment 时重新打开 onboarding。顶部显示 applied id、revision、`applied` 或 `stale` 状态及 prefix。当标准 revision 一致时，主要操作显示为 "Reinstall"，并说明会再次下载标示的 520 MB；"Keep current environment" 会通过重新启动 Host 返回 workspace。只有用户明确确认安装后，应用才会在 provisioning 可以修改 prefix 之前停止 Host。
 
 Runtime 继续持有 interpreter execution 与 revision rebinding。Provisioning 只创建并验证 prefixes；rebinding 通过写入的 `science-runtime` Cordis patch overlay（`apps/desktop/src/runtime-overlay.ts`）完成，该 overlay 命名新 applied 的 prefix，并在随后的 Host 重启时生效。[persistent-kernel 决定](../../implemented/architecture/2026-08-20-science-persistent-kernel.zh.md)继续负责在新的 applied environment revision 出现后结束 stale kernel。
 
@@ -55,6 +55,8 @@ macOS 应用使用 plain Node 语义下的 built `lib/` 与 Web artifacts 构建
 更新 metadata 发布到带 artifact checksums 的 static feed。更新可以替换 application code 与内嵌 micromamba executable，但绝不替换 Harness home 或 applied environments。Windows 不属于首发范围，并需要独立的 distribution 与 process-tree acceptance 决定。
 
 ## Electron 主进程启动顺序
+
+macOS 应用子菜单在 `Change Environment…` 上方提供 `Restart Host`。重启复用崩溃页使用的 Host 生命周期；环境配置流程占用工作流时该菜单项禁用，避免在 prefix 安装期间替换 Host。
 
 在 Electron 43.4.1 / macOS 26.5.2 arm64 上，ESM 主进程入口里若有一个 top-level `await`，其恢复依赖 Electron native signal——`await app.whenReady()`，或是等待由 `app.once('ready', …)` listener resolve 的 promise——就永远不会恢复；该进程不会 spawn 任何 renderer，也永远不会打开 window。同一个 promise 上非 top-level 的 `.then()` continuation 可以正常恢复，由 Node timer 或 microtask 驱动的 top-level await 也能正常恢复。`main.ts` post-ready 的启动逻辑（application menu、IPC handlers、初始 window，以及 `activate`/`before-quit`/`window-all-closed` listeners）运行在一个 `boot()` function 里，由 `app.whenReady().then(boot)` 调用，并附带一个 `.catch`，在启动失败时记录日志并调用 `app.exit(1)`，让启动失败大声退出而不是悄无声息地挂起。该入口的防御规则：绝不在依赖 Electron native signal 的 promise 上放置 top-level `await`；改用 `.then()` 驱动该 continuation。
 

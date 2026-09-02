@@ -62,6 +62,8 @@ import css from './ScienceDetailsView.module.css'
 
 /** Business face this entry's registration injects. */
 export interface ScienceDetailsInjected {
+  /** Publish whether this mounted Details entry currently shows its artifact-library landing page. */
+  bindArtifactLibraryView: (read: () => boolean) => () => void
   /** Session-scoped raw-bytes image artifact loader (science-artifact-url-loader.ts). */
   loadImage: ScienceImageLoader
   /** Session-scoped raw-bytes text artifact loader (science-artifact-url-loader.ts). */
@@ -1159,6 +1161,11 @@ export function ScienceDetailsView({
 }: ScienceDetailsViewProps) {
   const science = useProjection('science')
   const notes = useProjection('scienceArtifactNotes') ?? []
+  const activeTabId = useStore(state => state.activeTabId)
+  const libraryPage = useStore(state => state.libraryPage)
+  useEffect(() => controls.bindArtifactLibraryView(
+    () => activeTabId === null && libraryPage === 'artifacts',
+  ), [controls.bindArtifactLibraryView, activeTabId, libraryPage])
 
   if (science === undefined) {
     return (

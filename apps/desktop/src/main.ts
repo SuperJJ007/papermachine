@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
@@ -21,6 +21,9 @@ import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
 import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
+import { windowBackgroundColor } from './window-theme.ts'
+import { applicationMenuTemplate } from './application-menu.ts'
+import { resolveDisciplineStatus } from './discipline-status.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -181,7 +184,8 @@ async function bindProvisionedPrefix(dshHome: string, prefix: string, sourceId: 
 }
 
 /**
- * Start one provisioning run and open the workspace on the environment it
+ * Start one provisioning run, stopping the current Host only after this
+ * explicit install request, and open the workspace on the environment it
  * publishes. The in-flight check and its `provisioning` assignment run
  * before this function's first await, so two invocations racing from the
  * renderer cannot both claim the slot.
@@ -195,6 +199,7 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const control = new AbortController()
   provisioning = control
+  refreshApplicationMenu()
   const startedAt = Date.now()
   // Tracks the most recent progress update's phase/sourceId across the whole
   // run, so a caught failure below can report which source was last being
@@ -205,6 +210,8 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   let lastSourceId = sourceId
   const run = (async () => {
     try {
+      activeOrigin = undefined
+      await coordinator.prepareProvisioning()
       const published = await provisioner(dshHome).provision(declaration, control.signal, (update) => {
         lastPhase = update.phase
         if (update.sourceId !== undefined) lastSourceId = update.sourceId
@@ -227,7 +234,10 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
       })
       throw error
     }
-  })().finally(() => { provisioning = undefined })
+  })().finally(() => {
+    provisioning = undefined
+    refreshApplicationMenu()
+  })
   await coordinator.trackRun(run)
 }
 
@@ -374,13 +384,18 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: windowBackgroundColor(nativeTheme.shouldUseDarkColors),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
+  const updateBackground = (): void => {
+    created.setBackgroundColor(windowBackgroundColor(nativeTheme.shouldUseDarkColors))
+  }
+  nativeTheme.on('updated', updateBackground)
+  created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
   created.once('ready-to-show', () => { created.show() })
   created.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
@@ -556,32 +571,19 @@ function runDetached(action: () => Promise<void>, context: string): void {
 }
 
 function buildApplicationMenu(): Menu {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        {
-          label: 'Change Environment…',
-          // Opens onboarding so the user can install a different
-          // environment, or reinstall the current one after a repair. A
-          // live Host would otherwise keep running against the prefix
-          // onboarding is about to replace, so ProvisioningCoordinator stops
-          // the Host before onboarding opens. It also aborts and awaits any
-          // in-flight run first, so clicking mid-run opens onboarding once
-          // that run has actually unwound instead of hitting "another
-          // operation is running" until it does, and a second click while
-          // the first is still unwinding coalesces rather than queuing
-          // another open.
-          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
-        },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    { role: 'editMenu' },
-    { role: 'windowMenu' },
-  ]
-  return Menu.buildFromTemplate(template)
+  return Menu.buildFromTemplate(applicationMenuTemplate({
+    appName: app.name,
+    provisioning: provisioning !== undefined,
+    restartHost: () => { runDetached(restartHost, 'restart host') },
+    // ProvisioningCoordinator aborts and awaits an in-flight run before it
+    // opens onboarding, and coalesces repeated requests while that happens.
+    changeEnvironment: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
+  }))
+}
+
+function refreshApplicationMenu(): void {
+  if (!app.isReady()) return
+  Menu.setApplicationMenu(buildApplicationMenu())
 }
 
 app.setName('PaperMachine')
@@ -603,7 +605,7 @@ async function boot(): Promise<void> {
   const dshHome = await harnessHome()
   telemetry = await createTelemetryReporter(dshHome)
   void telemetry.report({ event: 'app.launch' })
-  Menu.setApplicationMenu(buildApplicationMenu())
+  refreshApplicationMenu()
   ipcMain.handle('desktop:environments', async () => {
     const signals = localeSignals()
     return (await declarations(await harnessHome())).map(item => ({
@@ -617,6 +619,19 @@ async function boot(): Promise<void> {
       defaultSourceId: resolveDefaultSourceId(item.sources, signals),
     }))
   })
+  ipcMain.handle('desktop:current-environment', async () => {
+    const dshHome = await harnessHome()
+    const applied = await provisioner(dshHome).applied()
+    if (applied === undefined) return undefined
+    const status = resolveDisciplineStatus(applied, await declarations(dshHome))
+    return {
+      id: applied.id,
+      revision: applied.revision,
+      prefix: applied.prefix,
+      status: status.kind === 'current' ? 'applied' : 'stale',
+    }
+  })
+  ipcMain.handle('desktop:keep-current-environment', async () => { await openWorkspace() })
   ipcMain.handle('desktop:onboarding-status', () => {
     const value = onboardingStatus
     onboardingStatus = undefined

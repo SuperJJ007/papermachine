@@ -18,6 +18,8 @@ settings provider 存在时，主机侧会注册 [`ui-theme.preference` settings
 
 引导逻辑只认识内建的 `light`、`dark`、`system` 语义，不注册监听器，也不解析第三方主题或 token 覆盖。浏览器侧插件树激活后，ThemeRuntime 仍是主题状态的权威来源，ThemePresenter 会把完整解析结果重新写入同一组 DOM 状态并负责后续更新与释放。
 
+Electron 工作台窗口另行依据 `nativeTheme.shouldUseDarkColors` 解析不透明的文档加载前背景，并在 `nativeTheme` 变化时更新。浏览器仍负责解析用户的 `ui-theme.preference`；原生背景只用于避免 Chromium 绘制 Web 壳前出现浅色闪烁。
+
 ## 验证
 
 ui-theme 的单元测试覆盖不含任一可选 Host 服务时的激活、脚本位置、Host 设置优先级、系统偏好、缺少 `matchMedia`、不含 body 的输入、实时读取 settings，以及 Host 注册随插件 fiber 一同释放。真实 Web 组合的 Chromium 场景会选择持久化深色偏好并拦住插件 bundle 请求，使加载页保持可观察，再断言 index 响应产生了深色背景、body 属性和根元素 `color-scheme`。该变化不改变可访问性树，因此不产生新的页面 golden。
@@ -34,4 +36,4 @@ ui-theme 的单元测试覆盖不含任一可选 Host 服务时的激活、脚�
 
 ## 后果
 
-加载页首帧与持久化内建偏好一致；未组合 settings provider 时则默认采用系统偏好。index 转换会为每份响应读取 Host settings，而内联脚本只包含选定的内建值与 `system` 解析逻辑。内建偏好语义或 ThemePresenter DOM 字段变化时，必须同时更新脚本与 ThemeRuntime。自定义主题仍会在浏览器插件激活后才完整应用；加载期间，页面使用自己的浅色或深色回退配色。
+加载页首帧与持久化内建偏好一致；未组合 settings provider 时则默认采用系统偏好。Electron 窗口背景在文档绘制前及操作系统主题变化期间跟随原生系统主题。index 转换会为每份响应读取 Host settings，而内联脚本只包含选定的内建值与 `system` 解析逻辑。内建偏好语义或 ThemePresenter DOM 字段变化时，必须同时更新脚本与 ThemeRuntime。自定义主题仍会在浏览器插件激活后才完整应用；加载期间，页面使用自己的浅色或深色回退配色。

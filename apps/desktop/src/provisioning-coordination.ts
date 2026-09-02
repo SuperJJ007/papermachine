@@ -9,20 +9,7 @@
 export interface ProvisioningCoordinatorEffects {
   /** Abort the in-flight provisioning run, if any; a no-op when none is running. */
   readonly abort: () => void
-  /**
-   * Stop the active Host. Called before onboarding opens for a "Change
-   * Environment…" request: a live Host (with its persistent kernel) runs
-   * against the environment the current binding names, and it must not go
-   * on serving that prefix once the user is installing a new one. The run
-   * this precedes typically has one of three outcomes, and no Host is
-   * expected to be running for any of them: `startProvisioning` publishes
-   * the new environment, binds it (`bindProvisionedPrefix`), and relaunches
-   * the Host through `openWorkspace`; the user closes onboarding without
-   * starting an install, leaving no Host and no window open at all
-   * (recovered later by `activate`, e.g. a dock click); or a provisioning
-   * run fails and leaves onboarding showing the error. Always stopping
-   * keeps this one shape rather than branching on which outcome is expected.
-   */
+  /** Stop the active Host before an install can modify its bound prefix, or during app shutdown. */
   readonly stopHost: () => Promise<void>
   /** Open the onboarding window. */
   readonly openOnboarding: () => Promise<void>
@@ -69,14 +56,14 @@ export class ProvisioningCoordinator {
 
   /**
    * Handle a "Change Environment…" request: abort any in-flight run, wait
-   * for it to actually unwind, stop the Host, then open onboarding. A second
+   * for it to actually unwind, then open onboarding while the Host continues
+   * serving the current environment. A second
    * call while the first is still unwinding is a no-op — onboarding opens
    * once, driven by the first call's own completion, rather than queuing a
    * second `openOnboarding`. Quit can begin at any of the two awaits below
    * (`awaitRun`'s wait is the same up-to-several-second unwind `beforeQuit`
    * itself awaits); this method re-checks {@link quitting} after each one
-   * and bails silently rather than stopping an already-stopped Host or
-   * opening a window during or after teardown.
+   * and bails silently rather than opening a window during or after teardown.
    */
   async changeDiscipline(): Promise<void> {
     if (this.#changingDiscipline) return
@@ -85,11 +72,21 @@ export class ProvisioningCoordinator {
       this.effects.abort()
       await this.awaitRun()
       if (this.#quitting) return
-      await this.effects.stopHost()
       await this.openOnboardingUnlessQuitting(this.effects.openOnboarding)
     } finally {
       this.#changingDiscipline = false
     }
+  }
+
+  /**
+   * Stop the Host only after onboarding has received explicit install
+   * confirmation. The Host may still own kernels and files below the prefix
+   * provisioning is about to replace, so the install cannot begin until
+   * teardown completes.
+   */
+  async prepareProvisioning(): Promise<void> {
+    if (this.#quitting) throw new Error('desktop provisioning: application is quitting')
+    await this.effects.stopHost()
   }
 
   /**

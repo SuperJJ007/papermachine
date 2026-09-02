@@ -92,6 +92,8 @@ export interface IConversation {
   registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
   /** Select and reveal one Details entry for an already-mounted Session. */
   openDetailsView(sessionId: SessionId, id: string): void
+  /** Toggle the selected Details entry, or select and reveal a different one. */
+  toggleDetailsView(sessionId: SessionId, id: string): void
   /** Select one main conversation view for an already-mounted Session. */
   openView(sessionId: SessionId, id: string): void
   /** Select Chat and center one rendered semantic anchor in its scrollport. */
@@ -171,6 +173,7 @@ export class ConversationController extends Service implements IConversation {
   private readonly createdImageUrls = new Set<string>()
   private readonly submissionHandlers: ComposerSubmissionHandler[] = []
   private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
+  private readonly detailsTogglers = new Map<SessionId, (id: string) => void>()
   private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
   private readonly chatAnchorOpeners = new Map<SessionId, (anchorKey: string) => void>()
   private readonly pendingChatAnchors = new Map<SessionId, string>()
@@ -203,6 +206,7 @@ export class ConversationController extends Service implements IConversation {
       this.imageUrls.clear()
       this.imageGenerations.clear()
       this.detailsOpeners.clear()
+      this.detailsTogglers.clear()
       this.viewOpeners.clear()
       this.chatAnchorOpeners.clear()
       this.pendingChatAnchors.clear()
@@ -290,6 +294,24 @@ export class ConversationController extends Service implements IConversation {
   openDetailsView(sessionId: SessionId, id: string): void {
     const open = this.detailsOpeners.get(sessionId)
     open?.(id)
+  }
+
+  /** Toggle one Details route through its mounted Session header. */
+  toggleDetailsView(sessionId: SessionId, id: string): void {
+    this.detailsTogglers.get(sessionId)?.(id)
+  }
+
+  /**
+   * Bind the current Details toggle semantics for one mounted Session.
+   * @param sessionId - mounted Session.
+   * @param toggle - current Details route toggle action.
+   * @returns disposer that removes this exact binding.
+   */
+  bindDetailsToggler(sessionId: SessionId, toggle: (id: string) => void): () => void {
+    this.detailsTogglers.set(sessionId, toggle)
+    return () => {
+      if (this.detailsTogglers.get(sessionId) === toggle) this.detailsTogglers.delete(sessionId)
+    }
   }
 
   /**

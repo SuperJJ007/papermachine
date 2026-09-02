@@ -18,6 +18,8 @@ The host half registers the [`ui-theme.preference` settings section](2026-08-06-
 
 The bootstrap logic recognizes only the built-in `light`, `dark`, and `system` semantics. It registers no listeners and does not resolve third-party themes or token overrides. After the browser-side plugin tree activates, ThemeRuntime remains authoritative for theme state, and ThemePresenter writes the complete resolved result back to the same DOM state and owns subsequent updates and disposal.
 
+The Electron workspace window separately resolves its opaque pre-document background from `nativeTheme.shouldUseDarkColors` and updates it on `nativeTheme` changes. The browser still resolves the user's `ui-theme.preference`; the native background only prevents a light flash before Chromium paints the Web shell.
+
 ## Verification
 
 ui-theme's unit tests cover activation without either optional Host service, the script position, Host-setting precedence, the OS preference, missing `matchMedia`, input without a body, live settings reads, and disposal of the Host registrations with the plugin fiber. A Chromium scenario for the real web composition selects the durable dark preference, holds the plugin bundle request open to keep the loading page observable, then asserts that the index response produces a dark background, the body attribute, and the root element's `color-scheme`. The change does not alter the accessibility tree, so it produces no new page golden.
@@ -34,4 +36,4 @@ ui-theme's unit tests cover activation without either optional Host service, the
 
 ## Consequences
 
-The loading page's first frame matches the durable built-in preference and defaults to the OS preference when no settings provider is composed. The index transform reads Host settings for every response, while the inline script contains only the selected built-in value and `system` resolution. Changes to the built-in preference semantics or ThemePresenter DOM fields must update both the script and ThemeRuntime. A custom theme still applies fully only after the browser plugins activate; during the loading interval, the page uses its private light or dark fallback palette.
+The loading page's first frame matches the durable built-in preference and defaults to the OS preference when no settings provider is composed. The Electron window background follows the native system theme before the document paints and while the operating-system theme changes. The index transform reads Host settings for every response, while the inline script contains only the selected built-in value and `system` resolution. Changes to the built-in preference semantics or ThemePresenter DOM fields must update both the script and ThemeRuntime. A custom theme still applies fully only after the browser plugins activate; during the loading interval, the page uses its private light or dark fallback palette.

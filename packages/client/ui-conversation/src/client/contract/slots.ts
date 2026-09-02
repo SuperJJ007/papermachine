@@ -637,6 +637,8 @@ export interface ConversationSessionHeaderInjected {
    * own `detailsView`, which only the header component reads.
    */
   toggleDetails: () => void
+  /** Bind the header's current selection-aware Details toggle for cross-plugin actions, when the owner supports it. */
+  bindDetailsToggler?: (toggle: (id: string) => void) => () => void
 }
 
 /**

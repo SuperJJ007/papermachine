@@ -173,6 +173,7 @@ export function apply(ctx: ClientContext): void {
   // entry has never rendered (nothing to reset yet — opening it fresh
   // already lands on the library, the store's own init state).
   const libraryReturners = new Map<SessionId, () => void>()
+  const artifactLibraryViews = new Map<SessionId, () => boolean>()
   const composerSelections = new ScienceComposerSelections()
   const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) => {
     const science = props.useProjection('science')
@@ -193,6 +194,10 @@ export function apply(ctx: ClientContext): void {
       // the library's artifacts page regardless of what it was showing —
       // an open artifact tab, the files page, or the library already.
       openScience: (sessionId: SessionId) => {
+        if (artifactLibraryViews.get(sessionId)?.() === true) {
+          ctx.conversation.toggleDetailsView(sessionId, SCIENCE_DETAILS_ID)
+          return
+        }
         ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID)
         libraryReturners.get(sessionId)?.()
       },
@@ -359,6 +364,12 @@ export function apply(ctx: ClientContext): void {
         }
       }, `ui-science: library-return binding for ${sessionId}`)
       return {
+        bindArtifactLibraryView: (read) => {
+          artifactLibraryViews.set(sessionId, read)
+          return () => {
+            if (artifactLibraryViews.get(sessionId) === read) artifactLibraryViews.delete(sessionId)
+          }
+        },
         loadImage: createScienceImageUrlLoader(sessionId),
         loadText: createScienceTextUrlLoader(sessionId),
         loadChartState: createScienceChartStateLoader(ctx.sessions, sessionId),

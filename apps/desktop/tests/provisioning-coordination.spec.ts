@@ -17,7 +17,7 @@ function fakeEffects(overrides: Partial<ProvisioningCoordinatorEffects> = {}): P
 }
 
 describe('ProvisioningCoordinator', () => {
-  it('change-discipline aborts an in-flight run, waits for it to unwind, stops the Host, then opens onboarding exactly once', async () => {
+  it('change-discipline aborts an in-flight run, waits for it to unwind, and opens onboarding without stopping the Host', async () => {
     const run = deferred()
     const effects = fakeEffects()
     const coordinator = new ProvisioningCoordinator(effects)
@@ -30,7 +30,7 @@ describe('ProvisioningCoordinator', () => {
 
     run.resolve()
     await changeDiscipline
-    expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.stopHost).not.toHaveBeenCalled()
     expect(effects.openOnboarding).toHaveBeenCalledTimes(1)
   })
 
@@ -110,15 +110,15 @@ describe('ProvisioningCoordinator', () => {
     const coordinator = new ProvisioningCoordinator(effects)
 
     await coordinator.changeDiscipline()
-    expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.stopHost).not.toHaveBeenCalled()
     expect(effects.openOnboarding).toHaveBeenCalledTimes(1)
 
     await coordinator.changeDiscipline()
-    expect(effects.stopHost).toHaveBeenCalledTimes(2)
+    expect(effects.stopHost).not.toHaveBeenCalled()
     expect(effects.openOnboarding).toHaveBeenCalledTimes(2)
   })
 
-  it('orders effects abort, then stopHost, then openOnboarding — abort observably precedes the run unwinding, and invocationCallOrder pins the rest', async () => {
+  it('opens onboarding only after the aborted run unwinds, without stopping the Host', async () => {
     const run = deferred()
     const abort = vi.fn()
     const stopHost = vi.fn(async () => {})
@@ -137,10 +137,28 @@ describe('ProvisioningCoordinator', () => {
     await changeDiscipline
 
     const abortOrder = abort.mock.invocationCallOrder[0]!
-    const stopHostOrder = stopHost.mock.invocationCallOrder[0]!
     const openOnboardingOrder = openOnboarding.mock.invocationCallOrder[0]!
-    expect(abortOrder).toBeLessThan(stopHostOrder)
-    expect(stopHostOrder).toBeLessThan(openOnboardingOrder)
+    expect(abortOrder).toBeLessThan(openOnboardingOrder)
+    expect(stopHost).not.toHaveBeenCalled()
+  })
+
+  it('stops the Host only when provisioning is about to begin', async () => {
+    const effects = fakeEffects()
+    const coordinator = new ProvisioningCoordinator(effects)
+
+    await coordinator.prepareProvisioning()
+
+    expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.openOnboarding).not.toHaveBeenCalled()
+  })
+
+  it('rejects provisioning preparation after quit begins', async () => {
+    const effects = fakeEffects()
+    const coordinator = new ProvisioningCoordinator(effects)
+    await coordinator.beforeQuit()
+
+    await expect(coordinator.prepareProvisioning()).rejects.toThrow('application is quitting')
+    expect(effects.stopHost).toHaveBeenCalledTimes(1)
   })
 
   it('onboarding open is blocked once quitting has begun', async () => {
@@ -175,9 +193,7 @@ describe('ProvisioningCoordinator', () => {
     run.resolve()
     await Promise.all([changeDiscipline, beforeQuit])
 
-    // beforeQuit's own effects.stopHost() call is the only one: once
-    // changeDiscipline resumes past awaitRun and observes #quitting, it
-    // bails before calling stopHost itself and before opening onboarding.
+    // beforeQuit's own effects.stopHost() call is the only one.
     expect(effects.stopHost).toHaveBeenCalledTimes(1)
     expect(effects.openOnboarding).not.toHaveBeenCalled()
   })

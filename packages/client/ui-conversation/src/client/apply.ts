@@ -338,6 +338,7 @@ export function apply(ctx: Context): void {
         open: (id) => { sessions.open(id) },
         openDetailsView,
         toggleDetails: () => { layout.toggleDetails() },
+        bindDetailsToggler: toggle => concreteConversation(ctx).bindDetailsToggler(sessionId, toggle),
       }
     },
   }, ConversationSessionHeader)

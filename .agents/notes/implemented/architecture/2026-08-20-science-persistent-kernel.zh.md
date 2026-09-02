@@ -26,7 +26,7 @@ Python 在文件描述符层级重定向一次 run 的输出(`os.dup2`)，因此
 
 两个 driver 都针对只有当 kernel 存活超过单次 run 才会显现的崩溃路径做了加固。Python 在每次重定向与恢复前后，把 `sys.stdout`/`sys.stderr` 重新绑定为 `closefd=False` 的包装对象，因此用户代码调用 `sys.stdout.close()` 不会杀死 kernel 自身的 I/O。R 在每次 push 之前记录 `sink.number()`，并把每次 pop 都包在 `tryCatch` 中展开，因此用户调用 `close(stdout())` 或不成对的 `sink()` 都不会打乱下一次 run 的输出路由。R 的中断处理与 Python 存在一处硬性的不对称：`tryCatch(interrupt = ...)` 能可靠捕获 `Sys.sleep()` 期间与 CPU 密集循环中送达的 `SIGINT`，因此 run 进行中的中断是安全的；但一次 idle 状态下的 `SIGINT` 要么直接杀死 R process，要么被闩锁并使紧接着的下一次 run 被误判为 interrupted——R 没有像 Python 那种"默认忽略、仅在 `exec` 期间生效"的 idle-safe handler。下文的中断规则正是为了让这个 idle 时段的隐患变得不可触达而存在。
 
-每个 kernel 都在与一次性 process 所需相同的 `workspace-write` sandbox 策略下 spawn——full enforcement、prefix 只读、空的 subprocess environment base、owned `HOME`/`SCIENCE_STATE_DIR`——并在 kernel 的整个生命周期内保持，而不是每次 run 都重新套用；只有 `TMPDIR`/`SCIENCE_ARTIFACT_DIR` 是 driver 自己针对每个请求设置的 per-run 值，因为一个 process 要服务 kernel 整个生命周期内的每一次 run。
+每个 kernel 都在与一次性 process 所需相同的 `workspace-write` sandbox 策略下 spawn——full enforcement、prefix 只读、空的 subprocess environment base、owned `HOME`/`SCIENCE_STATE_DIR`——并在 kernel 的整个生命周期内保持，而不是每次 run 都重新套用。kernel 的当前目录始终是其 owned scratch，每个请求通过 `TMPDIR`/`SCIENCE_ARTIFACT_DIR` 使用自己的输出目录；不可变的 Session 工作区则单独通过 `SCIENCE_WORKSPACE_DIR` 暴露，并作为 sandbox 内可读的绝对路径 root。区分这些路径可避免相对写入落入用户工作区，同时仍允许分析代码读取工作区文件。
 
 ### 生命周期、epoch 与 kernel 终止
 

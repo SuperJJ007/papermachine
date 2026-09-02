@@ -65,7 +65,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, openDetailsView, toggleDetails, t,
+  renderSlot, views, open, openDetailsView, toggleDetails, bindDetailsToggler, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list(sessionId)
@@ -80,6 +80,7 @@ export function ConversationSessionHeader({
     if (id === detailsView) toggleDetails()
     else openDetailsView(id)
   }
+  useEffect(() => bindDetailsToggler?.(toggleDetailsView), [bindDetailsToggler, detailsView, openDetailsView, toggleDetails])
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)

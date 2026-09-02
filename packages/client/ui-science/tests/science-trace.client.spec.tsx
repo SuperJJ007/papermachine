@@ -186,7 +186,8 @@ describe('Science process model', () => {
     const science: ScienceClientProjection = { ...projection({ runs: [early, current] }), trace: {
       turns: [
         { turn: 1, startSeq: 1, startTime: 1_000, endSeq: 9, endTime: 9_000 },
-        { turn: 2, startSeq: 10, startTime: 10_000, endSeq: 19, endTime: 19_000 },
+        // Turn 2 is still open (no endSeq/endTime): the still-running current turn.
+        { turn: 2, startSeq: 10, startTime: 10_000 },
       ],
       calls: [
         { seq: 3, time: 3_000, callId: CallId('early'), turn: 1, step: 1, name: 'run_python' },
@@ -206,6 +207,33 @@ describe('Science process model', () => {
       { turn: 2, steps: 1, runs: 1 },
     ])
     expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
+  })
+
+  it('places a run-auto artifact version without an owning call by its store time instead of leaving it unassigned', () => {
+    // `saveArtifactAs` ("Save a copy") commits a run-auto version between
+    // turns, when no run_python/run_r/annotate_artifact call is open: the
+    // projection trace carries no owner coordinate for it, but this version
+    // is not coordinate-free — it still resolves against known turn windows.
+    const artifact = {
+      artifactId: ScienceArtifactId('chart-1'), logicalName: 'chart.png', version: 4, title: 'Saved copy',
+      versionId: 'version-4' as never, sha256: 'd'.repeat(64), seenAt: 25_000,
+      attachment: { kind: 'image', attachmentId: 'a4', mediaType: 'image/png' },
+      createdAt: 25_000, origin: 'model',
+    } as unknown as Record<string, unknown>
+    const science: ScienceClientProjection = { ...projection({ artifacts: [artifact as never], runs: [] }), trace: {
+      turns: [{ turn: 2, startSeq: 10, startTime: 10_001, endSeq: 19, endTime: 30_000 }],
+      calls: [{ seq: 12, time: 12_000, callId: CallId('unrelated'), turn: 2, step: 1, name: 'run_python' }],
+    } }
+
+    const model = buildScienceTraceModel(
+      [],
+      science,
+      new Map([[2, { startTime: 10_001, endTime: 30_000 }]]),
+      summariesFor([artifact]),
+    )
+
+    expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
+    expect(model.groups.find(group => group.turn === 2)?.artifacts).toMatchObject([{ version: 4 }])
   })
 
   it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {

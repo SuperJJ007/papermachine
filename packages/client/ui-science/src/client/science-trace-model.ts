@@ -143,9 +143,14 @@ export interface ScienceTraceModel {
    */
   readonly dialogues: readonly ScienceTraceDialogue[]
   readonly groups: readonly ScienceTraceGroup[]
-  /** Retained records whose producing calls are absent from the loaded conversation. */
   readonly unassigned: {
+    /** Runs whose owning call has no turn in the loaded conversation or the projection trace. */
     readonly runs: readonly ScienceClientRun[]
+    /**
+     * Always empty: an artifact version resolves a turn from its projection
+     * owner coordinate, or otherwise from its store time against known turn
+     * windows, so no version is ever coordinate-free.
+     */
     readonly artifacts: readonly ScienceClientArtifactVersion[]
   }
   readonly humanEdits: readonly ScienceTraceHumanEdit[]
@@ -331,13 +336,7 @@ export function buildScienceTraceModel(
   for (const artifact of science.artifacts) {
     const summary = summaries.get(artifact.versionId)
     if (summary === undefined) continue
-    const turn = summary.contentOrigin === 'run-auto' && science.trace.calls.length > 0
-      ? artifact.turn
-      : artifact.turn ?? artifactTurn(summary.createdAt, effectiveTurnTimes, lastTurn)
-    if (turn === undefined) {
-      unassigned.artifacts.push(artifact)
-      continue
-    }
+    const turn = artifact.turn ?? artifactTurn(summary.createdAt, effectiveTurnTimes, lastTurn)
     if (summary.contentOrigin === 'human-edit') {
       humanEdits.push({ actor: 'user', turn, artifact, anchor: `artifact:${artifact.artifactId}@${artifact.version}` })
       continue

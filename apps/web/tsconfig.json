@@ -34,6 +34,7 @@
     "tests/science-file-library.e2e.ts",
     "tests/science-transcript-chrome.e2e.ts",
     "tests/science-trace-process.e2e.ts",
+    "tests/science-trace-cold-restore.e2e.ts",
     "tests/message-feedback-protocol.snapshot.ts",
     "tests/live-interactions.e2e.ts",
     "tests/question-composer.e2e.ts",

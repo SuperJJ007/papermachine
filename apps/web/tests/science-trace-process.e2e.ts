@@ -15,6 +15,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/process.expected.md', import.meta.url))
+const HISTORY_EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-process-web-e2e'
 const FINGERPRINT = 'e'.repeat(64)
@@ -345,6 +346,8 @@ describe('web e2e: Science process view', () => {
     const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     mkdirSync(evidenceDir, { recursive: true })
     await page.screenshot({ path: `${evidenceDir}/science-process-history.png`, fullPage: true })
+    await compareOrRefreshGolden(HISTORY_EXPECTED,
+      await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
     await process.locator('article[data-anchor="turn:1"]').getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
     await page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u }).waitFor()
     await page.getByRole('tab', { name: 'Chat', exact: true }).click()

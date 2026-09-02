@@ -100,7 +100,6 @@ class BrokenProbeSubprocess extends ControlledSubprocess {
     if (this.broken || (!spec.argv.includes('--version') && !spec.argv.includes('-c'))) return handle
     this.broken = true
     if (this.mode === 'error-rejection') return { ...handle, done: Promise.reject(new Error('Error subprocess rejection')) }
-    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- scripts a non-Error spawn rejection.
     if (this.mode === 'non-error-rejection') return { ...handle, done: Promise.reject('non-Error subprocess rejection') }
     if (this.mode === 'no-outcome') return { ...handle, done: Promise.resolve(undefined as never) }
     if (this.mode === 'unquiescent') return { ...handle, waitForExit: async () => false }
@@ -1519,6 +1518,17 @@ describe('Science Runtime configuration', () => {
     expect(resolveConfig({
       profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 1,
     })).toMatchObject({ reconcileMaxSessions: 1 })
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 0,
+    })).toThrow(/reconcileRetryDelayMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 600_001,
+    })).toThrow(/reconcileRetryDelayMs/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }))
+      .toMatchObject({ reconcileRetryDelayMs: 1_000 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 1,
+    })).toMatchObject({ reconcileRetryDelayMs: 1 })
   })
 
   it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {

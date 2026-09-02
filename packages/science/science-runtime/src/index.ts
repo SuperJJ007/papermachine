@@ -42,6 +42,7 @@ import type { Config, ConfiguredProfile } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
+import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
 import {
@@ -98,6 +99,26 @@ import type {
   ScienceRuntimeService,
   StartScienceRunRequest,
 } from './types.ts'
+
+function environmentBinding(
+  revision: number,
+  profileId: ScienceEnvironmentBinding['profileId'],
+  observed: ObservedProfile,
+): ScienceEnvironmentBinding {
+  const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
+  const failures = bindings.filter(binding => binding.capability !== 'available')
+  const now = Date.now()
+  return {
+    revision,
+    profileId,
+    configuredAt: now,
+    validatedAt: now,
+    status: failures.length === 0 ? 'applied' : 'invalid',
+    ...(observed.python === undefined ? {} : { python: observed.python.binding }),
+    ...(observed.r === undefined ? {} : { r: observed.r.binding }),
+    ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
+  }
+}
 
 export type {
   AnnotateScienceArtifactRequest,
@@ -358,18 +379,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly chartLiveRunsRetained: number
   /** Configured store ↔ session reconciliation session-scan bound. */
   private readonly reconcileMaxSessions: number
+  /** Configured minimum interval between reconciliation attempts for one project. */
+  private readonly reconcileRetryDelayMs: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
   private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
   /**
-   * Project ids this Runtime has already triggered a reconciliation pass
-   * for, in this Host's lifetime. A plain `Set`, not a `WeakMap` keyed on
-   * anything session-scoped: reconciliation runs once per PROJECT (which
-   * may span many sessions across this process's lifetime), not once per
-   * session.
+   * Project ids with one complete, untruncated, error-free reconciliation
+   * pass in this Host lifetime. Project identity spans many sessions, so a
+   * plain `Set` owns this suppression rather than a Session-keyed `WeakMap`.
    */
   private readonly reconciledProjects = new Set<string>()
+  /** Project ids whose reconciliation promise has not settled. */
+  private readonly reconcilingProjects = new Set<string>()
+  /** Wall-clock start of each project's latest attempt, used only for retry throttling. */
+  private readonly reconciliationAttemptedAt = new Map<string, number>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -410,6 +435,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.chartExtractTimeoutMs = resolved.chartExtractTimeoutMs
     this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
     this.reconcileMaxSessions = resolved.reconcileMaxSessions
+    this.reconcileRetryDelayMs = resolved.reconcileRetryDelayMs
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -526,42 +552,56 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Fire-and-forget: run one full-project store ↔ session reconciliation
-   * pass the first time this Runtime resolves a given project id in this
-   * Host's lifetime — never again for that project id, and never awaited by
-   * the caller. Reconciliation failure never blocks or fails the Science
-   * operation that triggered it: every failure this reaches is logged
-   * through `ctx.logger.warn` and otherwise swallowed. A deployment with no
-   * `sessionPersistence` service mounted (this Runtime's test harness, and
-   * some minimal compositions) skips reconciliation entirely rather than
-   * treating the missing service as an error — reconciliation is a
-   * self-healing pass over data this Runtime does not itself require to
-   * function.
+   * Fire-and-forget: run a bounded full-project store ↔ session
+   * reconciliation attempt when this Runtime resolves a project. A
+   * complete, untruncated, error-free pass suppresses every later attempt
+   * for that project during this Host lifetime; any other settlement remains
+   * eligible on a later project resolution after `reconcileRetryDelayMs`.
+   * Reconciliation never blocks or fails the Science operation that
+   * triggered it: every failure this reaches is logged through
+   * `ctx.logger.warn` and otherwise swallowed. A deployment with no
+   * `sessionPersistence` service mounted skips reconciliation entirely
+   * rather than treating the missing service as an error.
    * @param projectId - the project this Runtime just resolved.
    * @param workspacePath - the project's canonical workspace path, from `OpenedProject.workspacePath`.
    */
   private triggerReconciliation(projectId: ScienceProjectId, workspacePath: string): void {
     const key = String(projectId)
-    if (this.reconciledProjects.has(key)) return
-    this.reconciledProjects.add(key)
+    if (this.reconciledProjects.has(key) || this.reconcilingProjects.has(key)) return
     const sessionPersistence = this.ctx.get('sessionPersistence')
     if (sessionPersistence === undefined) return
+    const attemptedAt = this.reconciliationAttemptedAt.get(key)
+    const now = Date.now()
+    if (attemptedAt !== undefined && now - attemptedAt < this.reconcileRetryDelayMs) return
+    this.reconciliationAttemptedAt.set(key, now)
+    this.reconcilingProjects.add(key)
     collectProjectArtifactEvents({
       sessionPersistence,
       workspacePath,
       maxSessions: this.reconcileMaxSessions,
       onWarning: (message) => { this.ctx.logger.warn(message) },
-    }).then(async ({ events, truncated: sessionsTruncated }) => {
-      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events)
+    }).then(async ({ events, complete: eventSetComplete, truncated: sessionsTruncated }) => {
+      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events, eventSetComplete)
       for (const message of result.errors) this.ctx.logger.warn(`science-runtime: reconciliation: ${message}`)
+      if (!eventSetComplete) {
+        this.ctx.logger.warn(
+          `science-runtime: reconciliation for project "${key}" used an incomplete session event set; `
+          + 'orphan classification was skipped for versions with no event',
+        )
+      }
       if (sessionsTruncated || result.truncated) {
         this.ctx.logger.warn(
           `science-runtime: reconciliation for project "${key}" was truncated (more sessions or versions remain than this `
-          + 'call\'s configured bound admits); it runs once per project per Host lifetime and does not automatically resume',
+          + 'call\'s configured bound admits); a later project resolution may retry after the configured delay',
         )
+      }
+      if (eventSetComplete && !result.truncated && result.errors.length === 0) {
+        this.reconciledProjects.add(key)
       }
     }).catch((error: unknown) => {
       this.ctx.logger.warn(`science-runtime: project reconciliation failed and was skipped: ${String(error)}`)
+    }).finally(() => {
+      this.reconcilingProjects.delete(key)
     })
   }
 
@@ -653,19 +693,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session)
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
-      const failures = bindings.filter(binding => binding.capability !== 'available')
-      const now = Date.now()
-      const environment: ScienceEnvironmentBinding = {
-        revision: (current.environment?.revision ?? 0) + 1,
-        profileId: ScienceEnvironmentProfileId(String(request.profileId)),
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
-      }
+      const environment = environmentBinding(
+        (current.environment?.revision ?? 0) + 1,
+        ScienceEnvironmentProfileId(String(request.profileId)),
+        observed,
+      )
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment })
       return environment
@@ -706,18 +738,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     assertValidPackageSpecs(request.packages)
     const lease = await this.reserveQueued(request.session, request.signal)
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Mirrors startRun's own orphan check: the lease itself is free, but an
-      // orphaned durable 'running' run (a crash before its own terminal
-      // committed) must still block a whole-value environment rebind.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const binding = selectBinding(environment, request.language)
       const profile = this.profile(String(environment.profileId))
       const executable = await staticMicromamba(installer.micromambaPath)
@@ -777,19 +798,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (current === null) {
         throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
       }
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
-      const failures = bindings.filter(candidate => candidate.capability !== 'available')
-      const now = Date.now()
-      const fresh: ScienceEnvironmentBinding = {
-        revision: current.revision + 1,
-        profileId: current.profileId,
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
-      }
+      const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment: fresh })
       return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
@@ -824,21 +833,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Reaching this with an open run means the lease itself is free (the
-      // holder released it) while the durable log still shows a run
-      // 'running' — an orphan left by a run whose settlement fired without
-      // its own `run-finished` ever committing (e.g. a crash before a Host
-      // restart re-attached this Session), not the in-process race
-      // `reserveQueued` already resolved by queueing.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
       const projectId = await this.sessionProject(request.session)
@@ -1589,6 +1584,25 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science mode must be bound before Runtime operations')
     }
     return projection
+  }
+
+  /** Require an applied environment with no orphaned durable running run. */
+  private assertIdleAppliedEnvironment(
+    session: BindScienceEnvironmentRequest['session'],
+    control: OperationControl,
+  ): { projection: ScienceProjection; environment: ScienceEnvironmentBinding } {
+    this.assertPrepublication(session, control)
+    const projection = this.assertSession(session)
+    const environment = projection.environment
+    if (environment === null || environment.status !== 'applied') {
+      throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
+    }
+    // The lease can be free while the durable log retains a run whose
+    // terminal event never committed before a crash or detach.
+    if (projection.runs.some(run => run.status === 'running')) {
+      throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
+    }
+    return { projection, environment }
   }
 
   /** Recheck exact liveness and caller-controlled pre-publication cancellation. */

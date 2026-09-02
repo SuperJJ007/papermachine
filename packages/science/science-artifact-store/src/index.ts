@@ -330,11 +330,18 @@ export class ScienceArtifactStore extends Service {
    * bad item — see `ReconcileResult.errors` — and never writes a session
    * log; the store is the sole write target.
    * @param projectId - the project to reconcile.
-   * @param events - every `science/artifact-saved` event the caller read from this project's session logs, folded per `versionId`.
+   * @param events - every `science/artifact-saved` event the caller read from
+   * this project's session logs, folded per `versionId`.
+   * @param eventSetComplete - whether the caller read every relevant session
+   * log and event; when false, an absent event cannot mark or clear orphan health.
    * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
    */
-  reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult> {
-    return this.engine.reconcileProject(projectId, events)
+  reconcileProject(
+    projectId: ProjectId,
+    events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>,
+    eventSetComplete: boolean,
+  ): Promise<ReconcileResult> {
+    return this.engine.reconcileProject(projectId, events, eventSetComplete)
   }
 
   /**

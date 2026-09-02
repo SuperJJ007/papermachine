@@ -131,6 +131,7 @@ describe('collectProjectArtifactEvents', () => {
     })
 
     const result = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100 })
+    expect(result.complete).toBe(true)
     expect(result.truncated).toBe(false)
     expect(result.events.size).toBe(2)
     expect(result.events.get(VersionId('v1'))?.title).toBe('Curated')
@@ -171,6 +172,7 @@ describe('collectProjectArtifactEvents', () => {
       sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100, onWarning: message => warnings.push(message),
     })
     expect(result.events.size).toBe(1)
+    expect(result.complete).toBe(false)
     expect(warnings.some(message => message.includes('unreadable session log'))).toBe(true)
   })
 
@@ -189,6 +191,7 @@ describe('collectProjectArtifactEvents', () => {
       sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100, onWarning: message => warnings.push(message),
     })
     expect(result.events.size).toBe(1)
+    expect(result.complete).toBe(false)
     expect(result.events.has(VersionId('v2'))).toBe(true)
     expect(warnings.some(message => message.includes('malformed'))).toBe(true)
   })
@@ -275,6 +278,7 @@ describe('collectProjectArtifactEvents', () => {
       })
     }
     const result = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 2 })
+    expect(result.complete).toBe(false)
     expect(result.truncated).toBe(true)
     expect(result.events.size).toBe(2)
   })
@@ -286,7 +290,7 @@ describe('collectProjectArtifactEvents', () => {
     const result = await collectProjectArtifactEvents({
       sessionPersistence: persistence, workspacePath: '/workspace/project-a', maxSessions: 100, onWarning: message => warnings.push(message),
     })
-    expect(result).toEqual({ events: new Map(), truncated: false })
+    expect(result).toEqual({ events: new Map(), complete: false, truncated: false })
     expect(warnings.some(message => message.includes('could not list session logs'))).toBe(true)
   })
 })
@@ -315,6 +319,34 @@ describe('ScienceRuntime reconciliation trigger', () => {
     // Give any (incorrect) second trigger a chance to run before asserting it did not.
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(persistence.listCalls).toBe(1)
+  })
+
+  it('retries an incomplete event collection only after the configured delay on a later project resolution', async () => {
+    const root = tmp('.science-runtime-reconcile-trigger-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { reconcileRetryDelayMs: 50 },
+    )
+    contexts.push(harness.ctx)
+    await harness.ctx.plugin(TestPersistence)
+    const persistence = harness.ctx.sessionPersistence as unknown as TestPersistence
+    const warnSpy = vi.spyOn(harness.ctx.logger, 'warn').mockImplementation(() => {})
+    persistence.listFailure = new Error('forced list failure')
+
+    const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
+    roots.push(cwd)
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-first', cwd))
+    await vi.waitFor(() => { expect(persistence.listCalls).toBe(1) })
+    await vi.waitFor(() => {
+      expect(warnSpy.mock.calls.some(call => String(call[0]).includes('orphan classification was skipped'))).toBe(true)
+    })
+
+    persistence.listFailure = undefined
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-too-soon', cwd))
+    expect(persistence.listCalls).toBe(1)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-later', cwd))
+    await vi.waitFor(() => { expect(persistence.listCalls).toBe(2) })
   })
 
   it('reconciliation failure never blocks or fails the Science operation that triggered it', async () => {

@@ -100,6 +100,13 @@ export const MIN_RECONCILE_MAX_SESSIONS = 1
 /** Highest accepted configured reconciliation session-scan bound. */
 export const MAX_RECONCILE_MAX_SESSIONS = 100_000
 
+/** Default minimum interval between reconciliation attempts for one project. */
+export const DEFAULT_RECONCILE_RETRY_DELAY_MS = 1_000
+/** Lowest accepted configured reconciliation retry interval. */
+export const MIN_RECONCILE_RETRY_DELAY_MS = 1
+/** Highest accepted configured reconciliation retry interval. */
+export const MAX_RECONCILE_RETRY_DELAY_MS = 600_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -205,6 +212,12 @@ export interface Config {
    * Science operation is never blocked scanning every session it has ever had.
    */
   readonly reconcileMaxSessions?: number
+  /**
+   * Minimum interval between reconciliation attempts for one project until
+   * a complete, untruncated, error-free pass succeeds. A later project
+   * resolution triggers the retry; this value does not schedule background work.
+   */
+  readonly reconcileRetryDelayMs?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -306,6 +319,9 @@ export const configSchema: z<Config> = z.object({
   reconcileMaxSessions: z.number().step(1)
     .min(MIN_RECONCILE_MAX_SESSIONS).max(MAX_RECONCILE_MAX_SESSIONS)
     .default(DEFAULT_RECONCILE_MAX_SESSIONS),
+  reconcileRetryDelayMs: z.number().step(1)
+    .min(MIN_RECONCILE_RETRY_DELAY_MS).max(MAX_RECONCILE_RETRY_DELAY_MS)
+    .default(DEFAULT_RECONCILE_RETRY_DELAY_MS),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -346,6 +362,8 @@ export interface ResolvedConfig {
   readonly chartLiveRunsRetained: number
   /** Explicitly resolved reconciliation session-scan bound. */
   readonly reconcileMaxSessions: number
+  /** Explicitly resolved reconciliation retry interval. */
+  readonly reconcileRetryDelayMs: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -424,7 +442,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
       'chartExtractTimeoutMs', 'chartLiveRunsRetained',
-      'reconcileMaxSessions',
+      'reconcileMaxSessions', 'reconcileRetryDelayMs',
     ],
     'config',
   )
@@ -525,6 +543,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || reconcileMaxSessions > MAX_RECONCILE_MAX_SESSIONS) {
     throw new Error(`science-runtime: reconcileMaxSessions must be a safe integer from ${String(MIN_RECONCILE_MAX_SESSIONS)} through ${String(MAX_RECONCILE_MAX_SESSIONS)}`)
   }
+  const reconcileRetryDelayMs = config.reconcileRetryDelayMs ?? DEFAULT_RECONCILE_RETRY_DELAY_MS
+  if (!Number.isSafeInteger(reconcileRetryDelayMs)
+    || reconcileRetryDelayMs < MIN_RECONCILE_RETRY_DELAY_MS
+    || reconcileRetryDelayMs > MAX_RECONCILE_RETRY_DELAY_MS) {
+    throw new Error(`science-runtime: reconcileRetryDelayMs must be a safe integer from ${String(MIN_RECONCILE_RETRY_DELAY_MS)} through ${String(MAX_RECONCILE_RETRY_DELAY_MS)}`)
+  }
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
@@ -544,5 +568,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     chartExtractTimeoutMs,
     chartLiveRunsRetained,
     reconcileMaxSessions,
+    reconcileRetryDelayMs,
   }
 }

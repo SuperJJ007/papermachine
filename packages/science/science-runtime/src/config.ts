@@ -107,6 +107,13 @@ export const MIN_RECONCILE_RETRY_DELAY_MS = 1
 /** Highest accepted configured reconciliation retry interval. */
 export const MAX_RECONCILE_RETRY_DELAY_MS = 600_000
 
+/** Default most-recent runs `annotate_artifact`'s not-found diagnostic inspects for a retained, uncaptured PNG. */
+export const DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 20
+/** Lowest accepted configured bound on runs inspected by that diagnostic. */
+export const MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 1
+/** Highest accepted configured bound on runs inspected by that diagnostic. */
+export const MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 1_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -218,6 +225,13 @@ export interface Config {
    * resolution triggers the retry; this value does not schedule background work.
    */
   readonly reconcileRetryDelayMs?: number
+  /**
+   * Most-recent runs `annotate_artifact`'s not-found diagnostic inspects
+   * for a retained, uncaptured PNG before degrading to the generic
+   * not-found error. Bounds a per-run directory walk that otherwise runs
+   * once per retained run in the session, inside the runtime lease.
+   */
+  readonly annotateDiagnosticMaxRuns?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -322,6 +336,9 @@ export const configSchema: z<Config> = z.object({
   reconcileRetryDelayMs: z.number().step(1)
     .min(MIN_RECONCILE_RETRY_DELAY_MS).max(MAX_RECONCILE_RETRY_DELAY_MS)
     .default(DEFAULT_RECONCILE_RETRY_DELAY_MS),
+  annotateDiagnosticMaxRuns: z.number().step(1)
+    .min(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS).max(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)
+    .default(DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -364,6 +381,8 @@ export interface ResolvedConfig {
   readonly reconcileMaxSessions: number
   /** Explicitly resolved reconciliation retry interval. */
   readonly reconcileRetryDelayMs: number
+  /** Explicitly resolved bound on runs inspected by the `annotate_artifact` not-found diagnostic. */
+  readonly annotateDiagnosticMaxRuns: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -442,7 +461,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
       'chartExtractTimeoutMs', 'chartLiveRunsRetained',
-      'reconcileMaxSessions', 'reconcileRetryDelayMs',
+      'reconcileMaxSessions', 'reconcileRetryDelayMs', 'annotateDiagnosticMaxRuns',
     ],
     'config',
   )
@@ -549,6 +568,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || reconcileRetryDelayMs > MAX_RECONCILE_RETRY_DELAY_MS) {
     throw new Error(`science-runtime: reconcileRetryDelayMs must be a safe integer from ${String(MIN_RECONCILE_RETRY_DELAY_MS)} through ${String(MAX_RECONCILE_RETRY_DELAY_MS)}`)
   }
+  const annotateDiagnosticMaxRuns = config.annotateDiagnosticMaxRuns ?? DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS
+  if (!Number.isSafeInteger(annotateDiagnosticMaxRuns)
+    || annotateDiagnosticMaxRuns < MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS
+    || annotateDiagnosticMaxRuns > MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS) {
+    throw new Error(`science-runtime: annotateDiagnosticMaxRuns must be a safe integer from ${String(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS)} through ${String(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)}`)
+  }
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
@@ -569,5 +594,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     chartLiveRunsRetained,
     reconcileMaxSessions,
     reconcileRetryDelayMs,
+    annotateDiagnosticMaxRuns,
   }
 }

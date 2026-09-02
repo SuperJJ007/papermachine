@@ -16,7 +16,7 @@ Desktop 在启动 Host 后会丢弃其 stderr。因此捕获、图表抽取、pr
 
 本方案扩展 [`rasterCapture: 'declared'` 策略](../feature/2026-08-27-artifact-identity-stability-and-raster-capture-policy.zh.md)，但不改变其默认值。每次 `run_python` 或 `run_r` 都会获得一个新的私有 artifact 目录，因此后续一次空 run 看不到也无法捕获上次 run 的 PNG。跳过栅格图的结果现在会给出对应语言的工具、精确的 `raster_artifacts` 数组，以及必须重新运行写出该文件的代码这一要求。
 
-当 `annotateArtifact` 无法从 session projection 解析逻辑名时，它会使用捕获遍历既有的安全路径规则，从新到旧检查各个保留 run 的 artifact 目录。找到同名合格 PNG 时，只有 `ARTIFACT_NOT_FOUND` 消息会改变：它会指示调用方重新运行写出代码、声明该路径，然后再次 annotation。这项诊断只读取路径元数据，从不读取或导入文件字节、改变 project artifact store，或改变 annotation 只操作元数据的含义。诊断遍历失败或不可用时，会退回普通的未知 artifact 错误。
+当 `annotateArtifact` 无法从 session projection 解析逻辑名时，它会使用捕获遍历既有的安全路径规则，从新到旧检查最近 `annotateDiagnosticMaxRuns`（一个已校验的 `Config` 字段，默认 20，取值范围 1 至 1,000）个保留 run，每个 run 依次检查两个位置：先看该 run 自己的 `SCIENCE_ARTIFACT_DIR`（`'declared'` 策略下未声明的 PNG），只有那里一无所获时，才检查该 run 自己的 scratch 根目录，按精确相对路径匹配，因此已经嵌套在保留的 `artifacts/` 或 `inputs/` 子目录内的同名文件不会被重复计入——即写出代码从未把它归入 `SCIENCE_ARTIFACT_DIR` 的 PNG，任何捕获策略都从未有机会接纳它。在任一位置找到合格 PNG 时，只有 `ARTIFACT_NOT_FOUND` 消息会改变：它会指示调用方重新运行写出代码、声明该路径（若 PNG 是在 run 的 scratch 根目录发现的，则指示写入 `SCIENCE_ARTIFACT_DIR` 之下），然后再次 annotation。这项诊断只读取路径元数据，从不读取或导入文件字节、改变 project artifact store，或改变 annotation 只操作元数据的含义。单个 run 的 scratch 计划读取失败会跳过该 run 而不中止整个遍历；这项诊断自身执行的 run-root 与 artifact-dir 目录列举不会失败(一次有界、拒绝 symlink 的遍历，读取失败本身也只会报告为空结果)，因此只有当 session 的 scratch 根目录本身无法规划时，诊断才会完全不可用并退回普通的未知 artifact 错误。
 
 ### 持久化有界且已脱敏的 Desktop Host stderr
 
@@ -36,7 +36,7 @@ Electron carrier 会通过串行轮转 writer 把 Host stderr 写到 `<dshHome>/
 
 ## 后果
 
-未声明的 PNG 在一次新的 run 真正写出并声明它之前，仍不会进入 artifact store。即时 run 结果与后续 annotation 尝试都会告诉模型如何执行该 run，keyless Science snapshot 也记录这段恢复文本。本方案不改变 session event、SDK 字段、图表捕获判别字段或 UI 状态。
+未声明的 PNG 在一次新的 run 真正写出并声明它之前，仍不会进入 artifact store。即时 run 结果与后续 annotation 尝试都会告诉模型如何执行该 run，keyless Science snapshot 也记录这段恢复文本。本方案不改变 session event、SDK 字段、图表捕获判别字段或 UI 状态。`annotateDiagnosticMaxRuns` 为该诊断自身在 runtime lease 内的逐 run 目录遍历设定上限，记录于 `dsh-science-runtime` 的 README 与 `docs/config-catalog.md`，与其他每个随部署而变的 Science Runtime 上限保持一致。
 
 Desktop 失败后会在 Harness home 中留下有界的诊断记录。轮转与脱敏是确定且经过测试的，但脱敏无法证明已经识别所有可能的 secret 格式；Host 组件仍不得打印凭据。随应用发布的 Host 配置缺失或无效时会使启动失败，而不是静默取消上限。
 

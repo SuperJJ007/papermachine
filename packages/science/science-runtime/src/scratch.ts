@@ -545,6 +545,18 @@ export function runArtifactDirectory(sessionScratch: ScienceSessionScratch, runI
 }
 
 /**
+ * Rederive one already-published run's own scratch root — its process cwd,
+ * distinct from the `artifacts` subdirectory {@link runArtifactDirectory}
+ * returns — without a source filename or language.
+ * @param sessionScratch - Retained private root that owns the run directory.
+ * @param runId - The exact successful run's durable identifier.
+ * @returns the private Host root directory for that run.
+ */
+export function runScratchDirectory(sessionScratch: ScienceSessionScratch, runId: ScienceRunId): string {
+  return runDirectory(sessionScratch, runId).directory
+}
+
+/**
  * Remove only a quiescent provider-owned probe directory.
  * @param sessionScratch - Retained private root that owns the probe directory.
  * @param probe - Exact unpublished probe paths to remove.

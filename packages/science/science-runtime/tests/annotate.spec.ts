@@ -18,7 +18,7 @@ import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { StartScienceRunRequest } from '../src/types.ts'
-import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
+import { planSessionScratch, runArtifactDirectory, runScratchDirectory } from '../src/scratch.ts'
 import {
   attachScienceSession,
   authorizeAnnotateArtifact,
@@ -55,6 +55,16 @@ async function writeArtifact(
   const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
   const artifacts = runArtifactDirectory(sessionScratch, runId)
   const target = join(artifacts, relativePath)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, data)
+}
+
+/** Write one file below a run's own scratch root, outside its `artifacts/` subdirectory. */
+async function writeRunRootFile(
+  root: string, session: Session, runId: ScienceRunId, relativePath: string, data: Uint8Array | string,
+): Promise<void> {
+  const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
+  const target = join(runScratchDirectory(sessionScratch, runId), relativePath)
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, data)
 }
@@ -427,6 +437,88 @@ describe('ScienceRuntime.annotateArtifact', () => {
     if (session.header.cwd === undefined) throw new Error('expected test Session workspace')
     const project = await harness.ctx.scienceArtifactStore.openProject(session.header.cwd)
     await expect(harness.ctx.scienceArtifactStore.listArtifacts(project.projectId)).resolves.toEqual([])
+  })
+
+  it('directs a retained PNG written outside SCIENCE_ARTIFACT_DIR back to that directory', async () => {
+    const root = tmp('.science-annotate-run-root-raster-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-run-root-raster')
+    const runId = await captureFiles(harness, root, session, {})
+    await writeRunRootFile(root, session, runId, 'figure.png', 'PNG')
+
+    const operation = harness.runtime.annotateArtifact({
+      session, logicalName: 'figure.png', title: 'Figure',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+    await expect(operation).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    await expect(operation).rejects.toThrow(
+      'file "figure.png" exists in retained run output but was written outside SCIENCE_ARTIFACT_DIR; '
+      + 'run the code that writes it again, save it under SCIENCE_ARTIFACT_DIR, and declare it with raster_artifacts: ["figure.png"], then call annotate_artifact again',
+    )
+    expect(replayScience(session.events)?.artifacts).toEqual([])
+  })
+
+  it('inspects a retained run within the annotateDiagnosticMaxRuns bound', async () => {
+    const root = tmp('.science-annotate-diagnostic-bound-within-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { annotateDiagnosticMaxRuns: 2 },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-diagnostic-bound-within')
+    await captureFiles(harness, root, session, { 'older.png': 'PNG' })
+    await captureFiles(harness, root, session, { 'newer.csv': 'x' })
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'older.png', title: 'Older',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toThrow(
+      'file "older.png" exists in retained run output but was not captured; '
+      + 'run the code that writes it again with raster_artifacts: ["older.png"], then call annotate_artifact again',
+    )
+  })
+
+  it('does not inspect a run older than the annotateDiagnosticMaxRuns bound for a retained, uncaptured PNG', async () => {
+    const root = tmp('.science-annotate-diagnostic-bound-outside-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, undefined, { annotateDiagnosticMaxRuns: 1 },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-diagnostic-bound-outside')
+    await captureFiles(harness, root, session, { 'older.png': 'PNG' })
+    await captureFiles(harness, root, session, { 'newer.csv': 'x' })
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'older.png', title: 'Older',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toThrow('no artifact named "older.png" exists in this session')
+  })
+
+  it('degrades to the generic not-found diagnostic when retained scratch cannot be planned', async () => {
+    const root = tmp('.science-annotate-scratch-plan-failure-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-scratch-plan-failure')
+
+    // `annotateArtifact` needs no bound environment to resolve a not-found
+    // logical name. A plain file standing where the retained-session tree's
+    // own `sessions` ancestor directory belongs makes `planSessionScratch`'s
+    // path canonicalization throw (`ENOTDIR` opening it as a directory),
+    // exercising `findRetainedRasterLocation`'s own catch rather than an
+    // ordinary filesystem miss — this session's scratch tree does not exist
+    // yet, since no operation that would materialize it has run.
+    const sessionsAncestor = join(root, 'dsh-home', 'science', 'v1', 'sessions')
+    mkdirSync(dirname(sessionsAncestor), { recursive: true })
+    writeFileSync(sessionsAncestor, 'blocks directory traversal')
+
+    await expect(harness.runtime.annotateArtifact({
+      session, logicalName: 'missing.png', title: 'x',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })).rejects.toThrow('no artifact named "missing.png" exists in this session')
   })
 
   it('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {

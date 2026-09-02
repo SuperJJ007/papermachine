@@ -84,6 +84,7 @@ import {
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
   runArtifactDirectory,
+  runScratchDirectory,
 } from './scratch.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
@@ -122,6 +123,12 @@ function environmentBinding(
     ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
   }
 }
+
+/** Where `annotate_artifact`'s not-found diagnostic located a retained, uncaptured same-named PNG, if anywhere. */
+type RetainedRasterLocation = 'artifact-dir' | 'run-root' | 'not-found'
+
+/** Fixed empty raster declaration: `'always'`-policy PNG discovery needs no declared-path set. */
+const EMPTY_RASTER_DECLARATION: ReadonlySet<string> = new Set()
 
 /** Restart-local progress across bounded reconciliation attempts for one project. */
 interface ProjectReconciliationProgress {
@@ -392,6 +399,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly reconcileMaxSessions: number
   /** Configured minimum interval between reconciliation attempts for one project. */
   private readonly reconcileRetryDelayMs: number
+  /** Configured bound on runs `annotate_artifact`'s not-found diagnostic inspects for a retained, uncaptured PNG. */
+  private readonly annotateDiagnosticMaxRuns: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
@@ -449,6 +458,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
     this.reconcileMaxSessions = resolved.reconcileMaxSessions
     this.reconcileRetryDelayMs = resolved.reconcileRetryDelayMs
+    this.annotateDiagnosticMaxRuns = resolved.annotateDiagnosticMaxRuns
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -1475,13 +1485,16 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
     const latest = logical.at(-1)
     if (latest === undefined) {
-      const retainedRaster = await this.hasRetainedUncapturedRaster(request.session, projection, request.logicalName)
+      const retainedLocation = await this.findRetainedRasterLocation(request.session, projection, request.logicalName)
       throw new ScienceRuntimeError(
         'ARTIFACT_NOT_FOUND',
-        retainedRaster
+        retainedLocation === 'artifact-dir'
           ? `file ${JSON.stringify(request.logicalName)} exists in retained run output but was not captured; `
             + `run the code that writes it again with raster_artifacts: [${JSON.stringify(request.logicalName)}], then call annotate_artifact again`
-          : `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
+          : retainedLocation === 'run-root'
+            ? `file ${JSON.stringify(request.logicalName)} exists in retained run output but was written outside SCIENCE_ARTIFACT_DIR; `
+              + `run the code that writes it again, save it under SCIENCE_ARTIFACT_DIR, and declare it with raster_artifacts: [${JSON.stringify(request.logicalName)}], then call annotate_artifact again`
+            : `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
       )
     }
     const source = request.version === undefined ? latest : logical.find(candidate => candidate.version === request.version)
@@ -1496,40 +1509,75 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Check retained per-run output for a same-named PNG solely to improve an
-   * `annotate_artifact` not-found diagnostic. Every run owns a distinct
-   * `SCIENCE_ARTIFACT_DIR`, so finding the file never imports or captures it:
-   * the model must execute code that writes it into a new run and declare it
-   * there. Missing or unreadable retained scratch cannot change the
-   * authoritative projection's not-found result and therefore degrades to
-   * the generic diagnostic.
+   * Check the `annotateDiagnosticMaxRuns` most recent retained runs for a
+   * same-named PNG solely to improve an `annotate_artifact` not-found
+   * diagnostic. Every run owns a distinct `SCIENCE_ARTIFACT_DIR`, so finding
+   * the file never imports or captures it: the model must execute code that
+   * writes it into a new run. A session with no retained scratch (or one this
+   * bound leaves unvisited) degrades to the generic not-found diagnostic.
    * @param session - exact live Session that owns the retained scratch.
    * @param projection - current Science projection whose run ids identify directories to inspect.
    * @param logicalName - missing logical artifact name requested for curation.
-   * @returns whether retained run output contains an eligible same-named PNG.
+   * @returns `'artifact-dir'` when a run has the file undeclared under
+   *   `SCIENCE_ARTIFACT_DIR`, `'run-root'` when a run instead has it in the
+   *   run's own scratch root (outside `SCIENCE_ARTIFACT_DIR` entirely), or
+   *   `'not-found'`.
    */
-  private async hasRetainedUncapturedRaster(
+  private async findRetainedRasterLocation(
     session: Session,
     projection: ScienceProjection,
     logicalName: string,
-  ): Promise<boolean> {
+  ): Promise<RetainedRasterLocation> {
+    let scratch: ScienceSessionScratch
     try {
-      const scratch = await planSessionScratch(this.dshHome, session)
-      const declaration = new Set([logicalName])
-      for (const run of projection.runs.toReversed()) {
-        const paths = await capturablePngPaths(
-          runArtifactDirectory(scratch, run.runId),
-          'declared',
-          declaration,
-        )
-        if (paths.includes(logicalName)) return true
-      }
+      scratch = await planSessionScratch(this.dshHome, session)
     } catch {
       // Retained scratch is diagnostic evidence only; the projection already
-      // proved the curation target absent, so inspection failure cannot turn
+      // proved the curation target absent, so a planning failure cannot turn
       // this metadata operation into a filesystem failure.
+      return 'not-found'
     }
-    return false
+    const recentRuns = projection.runs.toReversed().slice(0, this.annotateDiagnosticMaxRuns)
+    for (const run of recentRuns) {
+      const location = await this.findRunRetainedRasterLocation(scratch, run.runId, logicalName)
+      if (location !== 'not-found') return location
+    }
+    return 'not-found'
+  }
+
+  /**
+   * Inspect one retained run's `SCIENCE_ARTIFACT_DIR` and its own scratch
+   * root for an eligible same-named PNG. `capturablePngPaths` never throws —
+   * an unreadable directory at any depth degrades to an empty result inside
+   * `walkArtifactFiles`, not an exception — so this method has no catch of
+   * its own; the caller's `planSessionScratch` catch is the only fallible
+   * step in this diagnostic. An `'artifact-dir'` match means the model wrote
+   * the file but did not declare it in `raster_artifacts`; a `'run-root'`
+   * match (outside the run's two reserved `artifacts/` and `inputs/`
+   * subdirectories) means the model wrote the file outside
+   * `SCIENCE_ARTIFACT_DIR` entirely, so auto-capture never saw it regardless
+   * of declaration.
+   * @param scratch - the owning session's private scratch root.
+   * @param runId - one retained run's durable identifier.
+   * @param logicalName - missing logical artifact name requested for curation.
+   * @returns where the file was found for this run alone, or `'not-found'`.
+   */
+  private async findRunRetainedRasterLocation(
+    scratch: ScienceSessionScratch,
+    runId: ScienceRunId,
+    logicalName: string,
+  ): Promise<RetainedRasterLocation> {
+    const declaration = new Set([logicalName])
+    const artifactPaths = await capturablePngPaths(runArtifactDirectory(scratch, runId), 'declared', declaration)
+    if (artifactPaths.includes(logicalName)) return 'artifact-dir'
+    // Walking the run's whole scratch root also revisits its `artifacts/`
+    // and `inputs/` subdirectories, but only as their own nested relative
+    // paths (`artifacts/${logicalName}`, `inputs/${logicalName}`) — an exact
+    // match against the bare `logicalName` this diagnostic already failed to
+    // find directly under `SCIENCE_ARTIFACT_DIR` names only a file at the
+    // scratch root itself, never one already inside either reserved directory.
+    const rootPaths = await capturablePngPaths(runScratchDirectory(scratch, runId), 'always', EMPTY_RASTER_DECLARATION)
+    return rootPaths.includes(logicalName) ? 'run-root' : 'not-found'
   }
 
   /**

@@ -332,6 +332,25 @@ export class ProjectArtifactStoreEngine {
       .run(versionId, figureState.figureKey, figureState.dpi, figureState.stateJson)
   }
 
+  private insertProducedVersion(
+    db: DatabaseSync,
+    versionId: VersionId,
+    artifactId: ArtifactId,
+    ordinal: number,
+    input: CreateArtifactInput | AppendVersionInput,
+    producerSessionId: SessionId,
+    sha256: string,
+    byteCount: number,
+    createdAt: number,
+  ): void {
+    db.prepare(INSERT_VERSION_SQL).run(
+      versionId, artifactId, ordinal, input.baseVersionId ?? null, input.baseVersionId === undefined ? 0 : 1,
+      sha256, input.mediaType, byteCount, input.contentOrigin, producerSessionId,
+      input.producerRunId ?? null, input.producerToolCallId ?? null, input.producerRequestHeaderSeq ?? null,
+      input.producerTurn ?? null, input.environmentRevision ?? null, input.environmentFingerprint ?? null, createdAt,
+    )
+  }
+
   /**
    * Insert one `version_annotations` row and advance the version's
    * `latestAnnotationId` to it. Shared by `annotateVersion` (`derived:
@@ -378,12 +397,7 @@ export class ProjectArtifactStoreEngine {
         INSERT INTO artifacts (artifact_id, owning_project_id, origin_session_id, logical_name, kind, latest_version_id, created_at)
         VALUES (?, ?, ?, ?, ?, NULL, ?)
       `).run(artifactId, String(projectId), input.originSessionId, input.logicalName, input.kind, now)
-      db.prepare(INSERT_VERSION_SQL).run(
-        versionId, artifactId, 1, input.baseVersionId ?? null, input.baseVersionId === undefined ? 0 : 1,
-        sha256, input.mediaType, byteCount, input.contentOrigin, input.originSessionId,
-        input.producerRunId ?? null, input.producerToolCallId ?? null, input.producerRequestHeaderSeq ?? null,
-        input.producerTurn ?? null, input.environmentRevision ?? null, input.environmentFingerprint ?? null, now,
-      )
+      this.insertProducedVersion(db, versionId, artifactId, 1, input, input.originSessionId, sha256, byteCount, now)
       db.prepare('UPDATE artifacts SET latest_version_id = ? WHERE artifact_id = ?').run(versionId, artifactId)
       if (input.figureState !== undefined) this.insertFigureState(db, versionId, input.figureState)
     })
@@ -418,12 +432,7 @@ export class ProjectArtifactStoreEngine {
       const ordinalRow = db.prepare('SELECT COALESCE(MAX(ordinal), 0) AS max_ordinal FROM versions WHERE artifact_id = ?')
         .get(artifactId) as { max_ordinal: number }
       const ordinal = ordinalRow.max_ordinal + 1
-      db.prepare(INSERT_VERSION_SQL).run(
-        versionId, artifactId, ordinal, input.baseVersionId ?? null, input.baseVersionId === undefined ? 0 : 1,
-        sha256, input.mediaType, byteCount, input.contentOrigin, input.producerSessionId,
-        input.producerRunId ?? null, input.producerToolCallId ?? null, input.producerRequestHeaderSeq ?? null,
-        input.producerTurn ?? null, input.environmentRevision ?? null, input.environmentFingerprint ?? null, now,
-      )
+      this.insertProducedVersion(db, versionId, artifactId, ordinal, input, input.producerSessionId, sha256, byteCount, now)
       db.prepare('UPDATE artifacts SET latest_version_id = ? WHERE artifact_id = ?').run(versionId, artifactId)
       if (input.figureState !== undefined) this.insertFigureState(db, versionId, input.figureState)
     })

@@ -42,6 +42,7 @@ import type { Config, ConfiguredProfile } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
+import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
 import {
@@ -98,6 +99,26 @@ import type {
   ScienceRuntimeService,
   StartScienceRunRequest,
 } from './types.ts'
+
+function environmentBinding(
+  revision: number,
+  profileId: ScienceEnvironmentBinding['profileId'],
+  observed: ObservedProfile,
+): ScienceEnvironmentBinding {
+  const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
+  const failures = bindings.filter(binding => binding.capability !== 'available')
+  const now = Date.now()
+  return {
+    revision,
+    profileId,
+    configuredAt: now,
+    validatedAt: now,
+    status: failures.length === 0 ? 'applied' : 'invalid',
+    ...(observed.python === undefined ? {} : { python: observed.python.binding }),
+    ...(observed.r === undefined ? {} : { r: observed.r.binding }),
+    ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
+  }
+}
 
 export type {
   AnnotateScienceArtifactRequest,
@@ -672,19 +693,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session)
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
-      const failures = bindings.filter(binding => binding.capability !== 'available')
-      const now = Date.now()
-      const environment: ScienceEnvironmentBinding = {
-        revision: (current.environment?.revision ?? 0) + 1,
-        profileId: ScienceEnvironmentProfileId(String(request.profileId)),
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
-      }
+      const environment = environmentBinding(
+        (current.environment?.revision ?? 0) + 1,
+        ScienceEnvironmentProfileId(String(request.profileId)),
+        observed,
+      )
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment })
       return environment
@@ -725,18 +738,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     assertValidPackageSpecs(request.packages)
     const lease = await this.reserveQueued(request.session, request.signal)
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Mirrors startRun's own orphan check: the lease itself is free, but an
-      // orphaned durable 'running' run (a crash before its own terminal
-      // committed) must still block a whole-value environment rebind.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const binding = selectBinding(environment, request.language)
       const profile = this.profile(String(environment.profileId))
       const executable = await staticMicromamba(installer.micromambaPath)
@@ -796,19 +798,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (current === null) {
         throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
       }
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
-      const failures = bindings.filter(candidate => candidate.capability !== 'available')
-      const now = Date.now()
-      const fresh: ScienceEnvironmentBinding = {
-        revision: current.revision + 1,
-        profileId: current.profileId,
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
-      }
+      const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment: fresh })
       return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
@@ -843,21 +833,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Reaching this with an open run means the lease itself is free (the
-      // holder released it) while the durable log still shows a run
-      // 'running' — an orphan left by a run whose settlement fired without
-      // its own `run-finished` ever committing (e.g. a crash before a Host
-      // restart re-attached this Session), not the in-process race
-      // `reserveQueued` already resolved by queueing.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
       const projectId = await this.sessionProject(request.session)
@@ -1608,6 +1584,25 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science mode must be bound before Runtime operations')
     }
     return projection
+  }
+
+  /** Require an applied environment with no orphaned durable running run. */
+  private assertIdleAppliedEnvironment(
+    session: BindScienceEnvironmentRequest['session'],
+    control: OperationControl,
+  ): { projection: ScienceProjection; environment: ScienceEnvironmentBinding } {
+    this.assertPrepublication(session, control)
+    const projection = this.assertSession(session)
+    const environment = projection.environment
+    if (environment === null || environment.status !== 'applied') {
+      throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
+    }
+    // The lease can be free while the durable log retains a run whose
+    // terminal event never committed before a crash or detach.
+    if (projection.runs.some(run => run.status === 'running')) {
+      throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
+    }
+    return { projection, environment }
   }
 
   /** Recheck exact liveness and caller-controlled pre-publication cancellation. */

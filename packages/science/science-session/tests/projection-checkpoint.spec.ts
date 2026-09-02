@@ -99,6 +99,17 @@ describe('Science private projection checkpoint', () => {
     })
   })
 
+  it('leaves an artifact fact without owner coordinates when no run or annotate call is open at save time', () => {
+    const events = [
+      ...legalEvents().slice(0, 7),
+      event('step/end', 7, 155, { turn: 1, step: 1 }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
+    ]
+    const client = viewScienceProjectionState(projectState(events))
+    expect(client?.artifacts.at(-1)?.turn).toBeUndefined()
+    expect(client?.artifacts.at(-1)?.step).toBeUndefined()
+  })
+
   it('retains only pre-mode facts that can constrain later Science replay', () => {
     const unrelated = event('turn/start', 0, 90, { turn: 1 })
     const empty = emptyScienceProjectionState()

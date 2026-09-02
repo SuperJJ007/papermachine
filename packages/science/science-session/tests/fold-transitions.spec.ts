@@ -455,6 +455,23 @@ describe('strict Science fold transitions', () => {
     }
   })
 
+  it('rejects a repeated turn/start and a turn/end without one currently open turn', () => {
+    expect(() => foldScience([
+      event('turn/start', 0, 0, { turn: 1 }),
+      event('turn/start', 1, 10, { turn: 1 }),
+    ])).toThrow(/turn\/start cannot repeat a turn/)
+
+    expect(() => foldScience([
+      event('turn/end', 0, 0, { turn: 1, reason: { kind: 'completed' } }),
+    ])).toThrow(/turn\/end requires one open turn/)
+
+    expect(() => foldScience([
+      event('turn/start', 0, 0, { turn: 1 }),
+      event('turn/end', 1, 10, { turn: 1, reason: { kind: 'completed' } }),
+      event('turn/end', 2, 20, { turn: 1, reason: { kind: 'completed' } }),
+    ])).toThrow(/turn\/end requires one open turn/)
+  })
+
   it('derives interruption only for an unmatched run at session/end-seed', () => {
     const openRun = legalEvents().slice(0, 6)
     openRun.push(event('session/end-seed', 6, 150, {}))

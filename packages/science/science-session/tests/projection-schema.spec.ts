@@ -243,6 +243,13 @@ describe('Science projection wire schema', () => {
       { ...state, trace: { ...state.trace, turns: [{}] } },
       { ...state, trace: { ...state.trace, calls: [{ ...state.trace.calls[0], step: 0 }] } },
       { ...state, trace: { ...state.trace, calls: [...state.trace.calls].reverse() } },
+      {
+        ...state,
+        trace: {
+          ...state.trace,
+          turns: [{ turn: 1, startSeq: 5, startTime: 100 }, { turn: 2, startSeq: 5, startTime: 100 }],
+        },
+      },
       { ...state, runs: [{ ...currentRun, turn: 2 }] },
       { ...state, artifacts: [{ ...currentChart, turn: 2 }] },
       { ...kernelState, kernels: {} },

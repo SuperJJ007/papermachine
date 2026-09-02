@@ -178,6 +178,40 @@ const tools = [
 ] as const
 
 describe('Science process model', () => {
+  it('uses projection trace coordinates when the loaded conversation is only a cold tail', () => {
+    const early = { ...run('early', 1), turn: 1, step: 1 }
+    const current = { ...run('current', 2), turn: 2, step: 1 }
+    const science = projection({ runs: [early, current] } as Partial<ScienceClientProjection>) as ScienceClientProjection & {
+      trace: {
+        turns: readonly Record<string, unknown>[]
+        calls: readonly Record<string, unknown>[]
+      }
+    }
+    science.trace = {
+      turns: [
+        { turn: 1, startSeq: 1, startTime: 1_000, endSeq: 9, endTime: 9_000 },
+        { turn: 2, startSeq: 10, startTime: 10_000, endSeq: 19, endTime: 19_000 },
+      ],
+      calls: [
+        { seq: 3, time: 3_000, callId: 'early', turn: 1, step: 1, name: 'run_python' },
+        { seq: 12, time: 12_000, callId: 'current', turn: 2, step: 1, name: 'run_python' },
+      ],
+    }
+
+    const model = buildScienceTraceModel(
+      [step(12, 1, [{ name: 'run_python', callId: 'current' }], 2)],
+      science,
+      new Map([[2, { startTime: 10_000, endTime: 19_000 }]]),
+      new Map(),
+    )
+
+    expect(model.groups.map(group => ({ turn: group.turn, steps: group.stepCount, runs: group.runs.length }))).toEqual([
+      { turn: 1, steps: 1, runs: 1 },
+      { turn: 2, steps: 1, runs: 1 },
+    ])
+    expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
+  })
+
   it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {
     expect(build([step(1, 1, [{ name, argsRaw }])]).groups[0]?.steps[0]).toMatchObject({ kind, title })
   })

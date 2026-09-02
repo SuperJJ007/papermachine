@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   applyScienceProjectionState,
   emptyScienceProjectionState,
@@ -26,6 +26,7 @@ import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
   artifact,
+  appendFixtureEvents,
   event,
   kernelExited,
   kernelStarted,
@@ -77,6 +78,27 @@ function outcomeEvent(
 }
 
 describe('Science private projection checkpoint', () => {
+  it('keeps full turn and tool-call coordinates in the cold client projection', () => {
+    const session = Session.create(SessionId('science-cold-trace'))
+    session.append('turn/start', { turn: 1 })
+    appendFixtureEvents(session)
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const client = viewScienceProjectionState(projectState(session.events))
+    expect(client).toMatchObject({
+      trace: {
+        turns: [{ turn: 1 }],
+        calls: [
+          { callId: 'call-run', turn: 1, step: 1, name: 'run_python' },
+          { callId: 'call-chart', turn: 1, step: 1, name: 'annotate_artifact' },
+          { callId: 'call-outcome', turn: 1, step: 1, name: 'publish_outcome' },
+        ],
+      },
+      runs: [{ turn: 1, step: 1 }],
+      artifacts: [{ turn: 1, step: 1 }],
+    })
+  })
+
   it('retains only pre-mode facts that can constrain later Science replay', () => {
     const unrelated = event('turn/start', 0, 90, { turn: 1 })
     const empty = emptyScienceProjectionState()

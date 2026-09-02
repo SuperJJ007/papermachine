@@ -159,6 +159,32 @@ setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealt
 readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>
 
 /**
+ * Reconcile one project's store against session-log events a caller has
+ * already read and folded — see the package README's Reconciliation
+ * section for the six-case table this decides. This package never reads
+ * session logs itself; `dsh-science-runtime` reads them (bounded by its
+ * own `reconcileMaxSessions` Config) and folds duplicate events per
+ * `versionId` (last write wins) before calling this. Never throws for one
+ * bad item — see `ReconcileResult.errors` — and never writes a session
+ * log; the store is the sole write target.
+ * @param projectId - the project to reconcile.
+ * @param events - every `science/artifact-saved` event the caller read from this project's session logs, folded per `versionId`.
+ * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
+ */
+reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult>
+
+/**
+ * Read project-wide reconciliation health — the read interface a Host
+ * BFF (`dsh-api-proxy`) surfaces to a client's Files panel: aggregate
+ * `orphan`/`reconstructed`/`missingContent` counts plus the per-version
+ * list backing them. A pure read of whatever the last `reconcileProject`
+ * call recorded; it never itself compares the store against a session log.
+ * @param projectId - the owning project.
+ * @returns aggregate counts and the unhealthy version list, most recently checked first.
+ */
+getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary>
+
+/**
  * Permanently delete a project's entire store. The one cascade boundary:
  * session deletion never calls this, and never removes artifact rows.
  * @param projectId - the project to delete.

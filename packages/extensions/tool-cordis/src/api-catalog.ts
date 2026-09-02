@@ -1295,6 +1295,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the verified bytes.',
       },
       {
+        signature: 'reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult>',
+        description: 'Reconcile one project\'s store against session-log events a caller has already read and folded — see the package README\'s Reconciliation section for the six-case table this decides. This package never reads session logs itself; `dsh-science-runtime` reads them (bounded by its own `reconcileMaxSessions` Config) and folds duplicate events per `versionId` (last write wins) before calling this. Never throws for one bad item — see `ReconcileResult.errors` — and never writes a session log; the store is the sole write target.',
+        parameters: [{ name: 'projectId', description: 'the project to reconcile.' }, { name: 'events', description: 'every `science/artifact-saved` event the caller read from this project\'s session logs, folded per `versionId`.' }],
+        returns: 'what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.',
+      },
+      {
+        signature: 'getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary>',
+        description: 'Read project-wide reconciliation health — the read interface a Host BFF (`dsh-api-proxy`) surfaces to a client\'s Files panel: aggregate `orphan`/`reconstructed`/`missingContent` counts plus the per-version list backing them. A pure read of whatever the last `reconcileProject` call recorded; it never itself compares the store against a session log.',
+        parameters: [{ name: 'projectId', description: 'the owning project.' }],
+        returns: 'aggregate counts and the unhealthy version list, most recently checked first.',
+      },
+      {
         signature: 'deleteProject(projectId: ProjectId): Promise<void>',
         description: 'Permanently delete a project\'s entire store. The one cascade boundary: session deletion never calls this, and never removes artifact rows.',
         parameters: [{ name: 'projectId', description: 'the project to delete.' }],
@@ -3618,7 +3630,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DownloadsApi',
-    declaration: 'export interface DownloadsApi {\n    sessionLog(request: {\n        sessionId: SessionId;\n        includeDescendants?: boolean;\n    }, signal: AbortSignal): Promise<Response>;\n}',
+    declaration: 'export interface DownloadsApi {\n    sessionLog(request: {\n        sessionId: SessionId;\n        includeDescendants?: boolean;\n    }, signal: AbortSignal): Promise<Response>;\n    scienceArtifact(request: {\n        sessionId: SessionId;\n        versionId: VersionId;\n    }, signal: AbortSignal): Promise<Response>;\n}',
   },
   {
     name: 'DshEnvironment',
@@ -4267,6 +4279,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReasoningEffortId',
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
+  },
+  {
+    name: 'ReconcileArtifactSavedEvent',
+    declaration: 'export interface ReconcileArtifactSavedEvent {\n    readonly artifactId: ArtifactId;\n    readonly versionId: VersionId;\n    readonly ordinal: number;\n    readonly logicalName: string;\n    readonly sha256: string;\n    readonly title: string | null;\n    readonly caption: string | null;\n    readonly seenAt: number;\n    readonly producerSessionId: SessionId;\n}',
+  },
+  {
+    name: 'ReconcileOutcome',
+    declaration: 'export interface ReconcileOutcome {\n    readonly versionId: VersionId;\n    readonly kind: ReconcileVersionKind;\n}',
+  },
+  {
+    name: 'ReconcileResult',
+    declaration: 'export interface ReconcileResult {\n    readonly checkedVersions: number;\n    readonly outcomes: readonly ReconcileOutcome[];\n    readonly reconstructed: readonly VersionId[];\n    readonly truncated: boolean;\n    readonly errors: readonly string[];\n}',
+  },
+  {
+    name: 'ReconcileVersionKind',
+    declaration: 'export type ReconcileVersionKind = \'consistent\' | \'orphan\' | \'content-conflict\' | \'metadata-diverged\';',
+  },
+  {
+    name: 'ReconciliationSummary',
+    declaration: 'export interface ReconciliationSummary {\n    readonly orphanCount: number;\n    readonly reconstructedCount: number;\n    readonly missingContentCount: number;\n    readonly items: readonly VersionHealthRecord[];\n}',
   },
   {
     name: 'RedactedSecret',

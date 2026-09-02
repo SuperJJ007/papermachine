@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-02-science-cold-trajectory-ownership.md
-2026-09-02-science-cold-trajectory-ownership.md: 2828433bc86f1911968252a3fc533613800e68db
-2026-09-02-science-cold-trajectory-ownership.zh.md: e0bee6379689533ba8f13624c0cf6be715269703
+2026-09-02-science-cold-trajectory-ownership.md: 34aec53558be44130ae20759c1fb9da316732e0f
+2026-09-02-science-cold-trajectory-ownership.zh.md: 30be1811a047e96128d885a3ece8cd3166f2244e

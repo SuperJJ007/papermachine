@@ -57,7 +57,7 @@
 - paragraph: I will revise the selected chart elements.
 - paragraph: "Artifacts produced this turn: 1"
 - list:
-  - listitem "Missing revision v2"
+  - listitem "Missing revision v3"
 - button "Copy":
   - img
 - button "Good response":
@@ -67,17 +67,21 @@
 - button "Branch into a new conversation" [disabled]:
   - img
 - text: Available only on the last message of a completed turn {{clock}}
-- button "Ran 2 code executions, Ran 2 other steps 4 steps · 1 failed" [expanded]:
+- button "Ran 3 code executions, Ran 2 other steps 5 steps · 1 failed" [expanded]:
   - img
-  - text: Ran 2 code executions, Ran 2 other steps 4 steps · 1 failed
+  - text: Ran 3 code executions, Ran 2 other steps 5 steps · 1 failed
 - 'button "Python run {}"':
   - img
   - img
   - text: "Python run {}"
-- button "Artifact artifact \"observed-series\" v2 curated":
+- 'button "Python run {}"':
   - img
   - img
-  - text: Artifact artifact "observed-series" v2 curated
+  - text: "Python run {}"
+- button "Artifact artifact \"observed-series\" v3 curated":
+  - img
+  - img
+  - text: Artifact artifact "observed-series" v3 curated
 - button "Outcome Outcome published · revision 2":
   - img
   - img

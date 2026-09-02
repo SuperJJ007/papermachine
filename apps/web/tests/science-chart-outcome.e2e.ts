@@ -56,9 +56,11 @@ const CHART = decodeScienceChartState(JSON.parse(await readFile(new URL('./fixtu
 const FINGERPRINT = 'b'.repeat(64)
 const RUN_ID = ScienceRunId('run-browser-1')
 const SECOND_RUN_ID = ScienceRunId('run-browser-2')
+const FINAL_RUN_ID = ScienceRunId('run-browser-3')
 const CANCELLED_RUN_ID = ScienceRunId('run-browser-cancelled')
 const RUN_CALL_ID = CallId('call-run-browser')
 const SECOND_RUN_CALL_ID = CallId('call-run-browser-2')
+const FINAL_RUN_CALL_ID = CallId('call-run-browser-3')
 const CANCELLED_RUN_CALL_ID = CallId('call-run-browser-cancelled')
 const FIRST_CHART_CALL_ID = CallId('call-chart-browser-1')
 const SECOND_CHART_CALL_ID = CallId('call-chart-browser-2')
@@ -99,7 +101,7 @@ interface ChartContent {
 /** Build one valid closed Science session around stored and missing chart object versions. */
 function scienceFixture(
   projectId: ReturnType<typeof ScienceProjectId>, artifactId: ReturnType<typeof ScienceArtifactId>,
-  stored: ChartContent, missing: ChartContent,
+  stored: ChartContent, intermediate: ChartContent, missing: ChartContent,
 ): string {
   const PROJECT_ID = projectId
   const CHART_ID = artifactId
@@ -346,6 +348,7 @@ function scienceFixture(
       content: [
         { type: 'text', text: 'I will revise the selected chart elements.' },
         { type: 'tool-call', id: SECOND_RUN_CALL_ID, name: 'run_python', arguments: '{}' },
+        { type: 'tool-call', id: FINAL_RUN_CALL_ID, name: 'run_python', arguments: '{}' },
         { type: 'tool-call', id: SECOND_CHART_CALL_ID, name: 'annotate_artifact', arguments: '{}' },
         { type: 'tool-call', id: SECOND_OUTCOME_CALL_ID, name: 'publish_outcome', arguments: '{}' },
         { type: 'tool-call', id: CANCELLED_RUN_CALL_ID, name: 'run_python', arguments: '{}' },
@@ -376,9 +379,33 @@ function scienceFixture(
       stderrTruncated: false,
     },
   })
-  appendCapturedChart(2, missing, SECOND_RUN_CALL_ID, secondRunCall.seq, 'revised run complete', 2)
-  appendChart(2, SECOND_CHART_CALL_ID, missing, 2)
-  appendOutcome(2, SECOND_OUTCOME_CALL_ID, 2, 2)
+  appendCapturedChart(2, intermediate, SECOND_RUN_CALL_ID, secondRunCall.seq, 'intermediate run complete', 2)
+  const finalRunCall = session.append('tool/call', {
+    turn: 2, step: 1, callId: FINAL_RUN_CALL_ID, name: 'run_python', arguments: '{}',
+  })
+  const finalRun = {
+    ...run,
+    runId: FINAL_RUN_ID,
+    toolCallId: FINAL_RUN_CALL_ID,
+    startedAt: eventTime(finalRunCall.seq + 1),
+    runDirectoryRef: 'runs/run-browser-3/',
+  }
+  session.append('science/run-started', { version: 1, run: { ...finalRun, status: 'running' } })
+  session.append('science/run-finished', {
+    version: 1,
+    run: {
+      ...finalRun,
+      status: 'success',
+      finishedAt: eventTime(finalRunCall.seq + 2),
+      stdoutBytes: 2,
+      stderrBytes: 0,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    },
+  })
+  appendCapturedChart(3, missing, FINAL_RUN_CALL_ID, finalRunCall.seq, 'revised run complete', 2)
+  appendChart(3, SECOND_CHART_CALL_ID, missing, 2)
+  appendOutcome(2, SECOND_OUTCOME_CALL_ID, 3, 2)
   const cancelledRunCall = session.append('tool/call', {
     turn: 2, step: 1, callId: CANCELLED_RUN_CALL_ID, name: 'run_python', arguments: '{}',
   })
@@ -459,14 +486,24 @@ describe('web e2e: Science chart and Outcome replay', () => {
       environmentRevision: 1, environmentFingerprint: FINGERPRINT,
     })
     await store.annotateVersion(project.projectId, second.versionId, {
+      actor: 'model', sessionId: SessionId(SEED_ID), toolCallId: 'seed-curation-intermediate', requestHeaderSeq: 2,
+      title: 'Intermediate revision', caption: 'Same-turn draft fixture',
+    })
+    const third = await store.appendVersion(project.projectId, first.artifact.artifactId, {
+      producerSessionId: SessionId(SEED_ID), data: Uint8Array.from([...PNG, 0, 1]),
+      mediaType: 'image/png', contentOrigin: 'run-auto',
+      producerRunId: FINAL_RUN_ID, producerToolCallId: FINAL_RUN_CALL_ID, producerTurn: 2,
+      environmentRevision: 1, environmentFingerprint: FINGERPRINT,
+    })
+    await store.annotateVersion(project.projectId, third.versionId, {
       actor: 'model', sessionId: SessionId(SEED_ID), toolCallId: 'seed-curation-missing', requestHeaderSeq: 2,
       title: 'Missing revision', caption: 'Missing object fixture',
     })
     // Keep its durable index row but remove only this test-owned blob to exercise load failure.
-    await unlink(join(project.storeRoot, 'blobs', 'sha256', second.sha256.slice(0, 2), second.sha256))
+    await unlink(join(project.storeRoot, 'blobs', 'sha256', third.sha256.slice(0, 2), third.sha256))
     await seedSession(scaffold, scienceFixture(project.projectId, first.artifact.artifactId, {
       ...first.version, mediaType: 'image/png',
-    }, { ...second, mediaType: 'image/png' }), SEED_ID, 'science')
+    }, { ...second, mediaType: 'image/png' }, { ...third, mediaType: 'image/png' }), SEED_ID, 'science')
     // A non-Science Session (no agentPreset), seeded alongside the Science
     // one so the header-action test can assert real absence rather than an
     // absence that only holds because no other Session exists yet.
@@ -541,7 +578,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(0)
     expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(0)
     expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v2/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
     expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
     // Disclosure resizing can leave the transcript at either scroll position.
@@ -564,7 +601,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await openSeed()
     expect(await page.locator('[class*="centerCol"]').getByText('Revise the accepted Science result.', { exact: true }).count()).toBe(1)
     expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v2/u }).count()).toBe(1)
+    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
     const center = page.locator('[class*="centerCol"]')
     await center.getByRole('tab', { name: 'Trajectory', exact: true }).click()
     await center.getByRole('tab', { name: 'Process', exact: true }).click()
@@ -662,8 +699,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await scienceAction.click()
     await detailsPanel.getByRole('button', { name: 'Artifact library', exact: true }).click()
 
-    // Only the latest accepted chart version renders in the gallery (v2, the missing object).
-    await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).waitFor()
+    // Only the latest accepted chart version renders in the gallery (v3, the missing object).
+    await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 3' }).waitFor()
     await detailsPanel.getByRole('button', { name: 'Failed to load, click to retry' }).waitFor()
     expect(await detailsPanel.getByText('Updated finding', { exact: true }).count()).toBe(0)
     // No Environment strip or Runs list on the landing view (removed with
@@ -673,7 +710,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     // Drill into the artifact's Provenance → Environment sub-tab: the same
     // client-safe projection, rendered as JSON.
-    await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 2' }).click()
+    await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 3' }).click()
     await detailsPanel.getByRole('button', { name: 'Provenance' }).click()
     await detailsPanel.getByRole('tab', { name: 'Environment' }).click()
     // Shiki-highlighted JSON tokenizes the text across spans, so poll the
@@ -720,26 +757,28 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     // Execution cells stay folded; exact artifact versions open from their Turn-end cards.
     const runRows = centerCol.locator('[data-tool="science-run"]')
-    expect(await runRows.count()).toBe(3)
+    expect(await runRows.count()).toBe(4)
     const firstRun = runRows.nth(0)
     const secondRun = runRows.nth(1)
     expect(await firstRun.innerText()).not.toContain('run complete')
     expect(await secondRun.innerText()).not.toContain('revised run complete')
     // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
-    // "Version" definition, which renders the identical "v1"/"v2" text.
+    // "Version" definition, which renders the same compact version text.
     const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
     await centerCol.getByRole('listitem', { name: /Observed series v1/u }).click()
     await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
-    await centerCol.getByRole('listitem', { name: /Missing revision v2/u }).click()
-    await stepperLabel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
+    await centerCol.getByRole('listitem', { name: /Missing revision v3/u }).click()
+    await stepperLabel.getByText('v3', { exact: true }).waitFor({ timeout: 10_000 })
 
-    // The v2 run chip opens its exact version directly in the content view —
+    // The v3 run chip opens its exact version directly in the content view —
     // no intermediate gallery click.
     const tab = detailsPanel.getByRole('tab', { name: 'Missing revision' })
     await tab.waitFor({ timeout: 10_000 })
     expect(await tab.getAttribute('aria-selected')).toBe('true')
 
-    // The version stepper walks to the other durable version and back.
+    // The default walk folds v2 because v2 and v3 were produced in this same
+    // session turn. The earlier draft remains directly reachable from its
+    // Turn-end card, and once directly selected its own stepper can leave it.
     const prevVersion = detailsPanel.getByRole('button', { name: 'Previous version' })
     const nextVersion = detailsPanel.getByRole('button', { name: 'Next version' })
     expect(await nextVersion.isDisabled()).toBe(true)
@@ -751,15 +790,22 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     // Maximize opens the shared lightbox from the toolbar (not the image's
     // own click-to-open state) — v1's attachment is stored, so the load
-    // resolves. (v2's is the deliberately missing object; maximize on it is
+    // resolves. (v3's is the deliberately missing object; maximize on it is
     // covered by the loader-rejection unit coverage instead.)
     await detailsPanel.getByRole('button', { name: 'Expand' }).click()
     await page.getByRole('dialog', { name: 'Original' }).waitFor({ timeout: 10_000 })
     await page.keyboard.press('Escape')
     await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
 
-    await nextVersion.click()
+    await centerCol.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await centerCol.getByRole('tab', { name: 'Process', exact: true }).click()
+    const producingTurn = centerCol.locator('[data-anchor="turn:2"]')
+    const turnToggle = producingTurn.locator('button[aria-expanded][aria-controls$="-steps"]').first()
+    if (await turnToggle.getAttribute('aria-expanded') !== 'true') await turnToggle.click()
+    await producingTurn.getByTitle('observed-series v2', { exact: true }).first().click()
     await stepperLabel.getByText('v2', { exact: true }).waitFor({ timeout: 10_000 })
+    await nextVersion.click()
+    await stepperLabel.getByText('v3', { exact: true }).waitFor({ timeout: 10_000 })
 
     // Provenance drills in: a breadcrumb over four sub-tabs. The sub-tab
     // selection is a sticky preference carried across tabs (not reset here),

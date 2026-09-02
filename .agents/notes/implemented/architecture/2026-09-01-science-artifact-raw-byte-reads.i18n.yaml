@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-science-artifact-raw-byte-reads.md
-2026-09-01-science-artifact-raw-byte-reads.md: 33ef4b822811cdfe807526f6d119a3a68341bc27
-2026-09-01-science-artifact-raw-byte-reads.zh.md: b5a02f453088d9bc8f6af9ad9856d3760a533f54
+2026-09-01-science-artifact-raw-byte-reads.md: 095d66b133a0154bb289b4b9e14d4738a713299b
+2026-09-01-science-artifact-raw-byte-reads.zh.md: fab705095a6f43a4713d6f706a526ac4cff51719

@@ -50,13 +50,15 @@ import { artifactImageLabels, ArtifactContent } from './ArtifactContent.tsx'
 import type { ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { ScienceArtifactProvenance } from './ScienceArtifactProvenance.tsx'
+import { foldIntermediateVersions } from './intermediate-versions.ts'
+import type { ScienceIntermediateVersionFact } from './intermediate-versions.ts'
 import type { ScienceLibraryArtifact, ScienceLibraryHealth } from './library-artifact.ts'
 import { scienceTabId } from './selection-store.ts'
 import type { ScienceArtifactView, ScienceProvenanceSubTab, ScienceSelectionStore } from './selection-store.ts'
 import type { ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 import type { ScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
-import type { LoadScienceVersions, ScienceRenderableVersion } from './version-summaries.ts'
+import type { LoadScienceVersions, ScienceRenderableVersion, ScienceVersionSummaryMap } from './version-summaries.ts'
 import { toRenderableVersion, useScienceVersionSummaries } from './version-summaries.ts'
 import css from './ScienceDetailsView.module.css'
 
@@ -136,6 +138,9 @@ function versionsOf<T extends ScienceClientArtifactVersion>(artifacts: readonly 
   return artifacts.filter(artifact => artifact.artifactId === artifactId).sort((left, right) => left.version - right.version)
 }
 
+/** `ArtifactToolbar`'s default `intermediateVersions`: a single-version stepper (the library preview tab) never folds. */
+const NO_INTERMEDIATE_VERSIONS: ReadonlySet<number> = new Set()
+
 /** Resolve store-owned producer identity against the current session projection. */
 function resolveProducingCall(
   chart: ScienceRenderableVersion,
@@ -163,6 +168,32 @@ function resolveProducingCall(
     producingCallId: producer.toolCallId ?? run?.toolCallId,
     sourceSessionTitle: undefined,
   }
+}
+
+/**
+ * Build the same-turn intermediate-draft fold facts for one artifact's
+ * versions (C2). Content origin and producer session/turn all come from the
+ * exact store version summary. A version whose summary has not loaded stays
+ * walkable instead of being folded on a session-projection guess.
+ * @param versions - every version of one artifact, from `versionsOf`.
+ * @param summaries - current store facts, keyed by `versionId` (`useScienceVersionSummaries`).
+ * @returns the version numbers {@link foldIntermediateVersions} folds out of the stepper's default walk.
+ */
+function intermediateVersionsOf(
+  versions: readonly ScienceClientArtifactVersion[], summaries: ScienceVersionSummaryMap,
+): ReadonlySet<number> {
+  const facts: ScienceIntermediateVersionFact[] = []
+  for (const version of versions) {
+    const summary = summaries.get(version.versionId)
+    if (summary === undefined) continue
+    facts.push({
+      version: version.version,
+      origin: summary.contentOrigin,
+      producerSessionId: summary.producer.sessionId,
+      ...(summary.producer.turn === undefined ? {} : { turn: summary.producer.turn }),
+    })
+  }
+  return foldIntermediateVersions(facts)
 }
 
 function workspaceFileName(path: string): string {
@@ -291,11 +322,21 @@ function SaveAsForm({ onSubmit, onCancel, t }: {
 }
 
 function ArtifactToolbar({
-  chart, versions, onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, sessionId, onSaveAs, t,
+  chart, versions, intermediateVersions = NO_INTERMEDIATE_VERSIONS,
+  onBack, onStepVersion, onOpenProvenance, onMaximize, onCloseTab, sessionId, onSaveAs, t,
   contentUnavailable = false,
 }: {
   chart: ScienceRenderableVersion
   versions: readonly { version: number }[]
+  /**
+   * Version numbers folded out of the stepper's default walk order (C2): a
+   * same-turn intermediate draft superseded by a later version of the same
+   * artifact within the same authorizing turn and producing session. The
+   * version this toolbar currently shows stays walkable regardless of
+   * membership here, so a direct link or the provenance drill-in can still
+   * land on one directly.
+   */
+  intermediateVersions?: ReadonlySet<number>
   onBack: () => void
   onStepVersion: (version: number) => void
   onOpenProvenance: () => void
@@ -308,9 +349,10 @@ function ArtifactToolbar({
   /** T3 reconciliation: this version's blob is missing from the store — download and maximize are unavailable, not silently broken. */
   contentUnavailable?: boolean
 }) {
-  const walkable = versions
-  // `chart` is always one of `walkable`, so `index` is never -1 — no
-  // defensive branch for it.
+  const walkable = versions.filter(candidate => candidate.version === chart.version || !intermediateVersions.has(candidate.version))
+  // `chart` is always one of `walkable` (either it is not folded, or the
+  // filter above keeps the open version in regardless), so `index` is never
+  // -1 — no defensive branch for it.
   const index = walkable.findIndex(candidate => candidate.version === chart.version)
   const prev = index > 0 ? walkable[index - 1] : undefined
   const next = index < walkable.length - 1 ? walkable[index + 1] : undefined
@@ -897,14 +939,17 @@ function createSaveAsHandler(
 
 /** One open tab's body: the toolbar plus dispatched content, or — one toolbar click away — the provenance drill-in. */
 function ArtifactTab({
-  currentSessionId, rawArtifacts, chart, notes, view, science, snapshot, provenanceSubTab, loadImage, loadText, loadChartState,
+  currentSessionId, rawArtifacts, summaries, chart, notes, view, science, snapshot, provenanceSubTab,
+  loadImage, loadText, loadChartState,
   addToConversation, removeFromConversation, composerSelections,
   addArtifactNote, removeArtifactNote, saveArtifactAs, applyChartOps, previewChartOps,
   returnToConversation, selectDetailed, inspectCall, actions, t,
 }: {
   currentSessionId: SessionId
-  /** The session-log identity list, used only to derive the stepper's sibling version numbers. */
+  /** The session-log identity list, used to derive the stepper's sibling version numbers and their C2 fold facts. */
   rawArtifacts: readonly ScienceClientArtifactVersion[]
+  /** Current store facts for every version of `chart`'s artifact, keyed by `versionId` — this tab's own C2 fold input. */
+  summaries: ScienceVersionSummaryMap
   chart: ScienceRenderableVersion
   notes: readonly ScienceArtifactNote[]
   view: ScienceArtifactView
@@ -914,6 +959,7 @@ function ArtifactTab({
   provenanceSubTab: ScienceProvenanceSubTab
 } & ArtifactControls) {
   const versions = versionsOf(rawArtifacts, chart.artifactId)
+  const intermediateVersions = intermediateVersionsOf(versions, summaries)
   const saveAs = createSaveAsHandler(saveArtifactAs, actions, t)
   const [target, setTarget] = useState<ScienceEditTarget | undefined>(undefined)
   const [previewSrc, setPreviewSrc] = useState<string>()
@@ -1006,6 +1052,7 @@ function ArtifactTab({
       <ArtifactToolbar
         chart={chart}
         versions={versions}
+        intermediateVersions={intermediateVersions}
         onBack={() => { actions.showLibrary() }}
         onStepVersion={(version) => { actions.setTabVersion({ artifactId: chart.artifactId, version }) }}
         onOpenProvenance={() => { actions.setView('provenance') }}
@@ -1186,6 +1233,7 @@ function ArtifactViewer({
           <ArtifactTab
             currentSessionId={currentSessionId}
             rawArtifacts={artifacts}
+            summaries={summaries}
             chart={renderChart}
             notes={notes.filter(note => note.artifactId === renderChart.artifactId)}
             view={view}

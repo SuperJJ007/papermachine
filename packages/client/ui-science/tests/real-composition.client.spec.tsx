@@ -7,11 +7,18 @@
 // compact `annotate_artifact` row opens that exact version's tab through the
 // real openDetailsView write path), the one selection-store instance
 // genuinely shared across the transcript row and the artifact viewer, the
-// toolbar's provenance control switching to the drill-in, the drill-in's
-// Messages sub-tab reaching DetailsPanel's real `inspectCall` owner callback
-// (the one ui-conversation touch this redesign made — proven here on the
-// real render tree, not a mock), and full disposal removing every
-// registration this package adds.
+// toolbar's provenance control switching to the drill-in, and full disposal
+// removing every registration this package adds.
+//
+// The provenance drill-in's former Messages sub-tab (and its
+// DetailsPanel.inspectCall/selectDetailed handoff into Detailed trajectory)
+// is gone with the T1/T2 artifact-authority migration: it resolved the
+// exact generating run via the now-removed runId/toolCallId fields on the
+// client-safe artifact projection, which no client-facing read replaces
+// (see ScienceArtifactProvenance.tsx's own module JSDoc). DetailsPanel's
+// inspectCall/selectDetailed owner callbacks remain part of the
+// 'conversation.details.view' slot's framework contract (ui-conversation's
+// territory, unchanged); ui-science simply has no current consumer for them.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent } from '@testing-library/react'
@@ -152,6 +159,17 @@ async function bench() {
       readScienceLibrary: vi.fn<ISession['readScienceLibrary']>(async () => ({
         ok: true, value: { projectId: 'project-1' as never, artifacts: [] },
       })),
+      // D9: the detail panel's own current-facts read (title/caption/
+      // content origin/media type/byte count), independent of the session
+      // projection's slimmed snapshot.
+      readScienceVersions: vi.fn<ISession['readScienceVersions']>(async () => ({
+        ok: true, value: { versions: [{
+          versionId: ARTIFACT_ITEM.content.versionId as never, artifactId: ARTIFACT_ITEM.artifactId as never,
+          logicalName: ARTIFACT_ITEM.logicalName, ordinal: ARTIFACT_ITEM.version, title: ARTIFACT_ITEM.title,
+          contentOrigin: 'run-auto', createdAt: 1_000,
+          mediaType: ARTIFACT_ITEM.content.mediaType, byteCount: ARTIFACT_ITEM.content.byteCount,
+        }] },
+      })),
     },
   })
   // The projection value the artifact viewer reads (useProjection('science'))
@@ -241,26 +259,15 @@ describe('ui-science on the real machinery stack', () => {
     await b.runtime.dispose()
   })
 
-  it('the toolbar Messages sub-tab reaches detailed trajectory through the real DetailsPanel handoff', async () => {
+  it('the toolbar Provenance control switches to the drill-in and shows the resolved version\'s current facts', async () => {
     const b = await bench()
     const view = b.runtime.renderRoot()
     fireEvent.click(await view.findByRole('listitem', { name: /^Loss curve/u }))
     fireEvent.click(await view.findByRole('button', { name: 'Provenance' }))
 
-    fireEvent.click(await view.findByRole('tab', { name: 'Messages' }))
-    fireEvent.click(view.getByRole('button', { name: 'View trajectory' }))
-
-    // DetailsPanel.tsx supplies this Details-seam owner callback from the
-    // same real `store: chatStore` share it already holds for its header
-    // controls and routed-entry dispatch — the one ui-conversation touch
-    // this redesign made (DetailsViewOwnerProps.inspectCall).
-    const chatStore = b.runtime.storeOf('conversation.view', SID) as {
-      getSnapshot(): { inspect: { callId: string } | null; view: string | null }
-    }
-    expect(chatStore.getSnapshot().inspect).toEqual({ callId: CALL_ID })
-    expect(chatStore.getSnapshot().view).toBe('trajectory')
-    expect((b.runtime.ctx.get('trajectorySubviews') as { selection(id: SessionId): string | null }).selection(SID))
-      .toBe('detailed')
+    expect(await view.findByText('Produced by an automatic run')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Loss curve' }))
+    expect(await view.findByRole('button', { name: 'Provenance' })).toBeTruthy()
     await b.runtime.dispose()
   })
 
@@ -278,7 +285,11 @@ describe('ui-science on the real machinery stack', () => {
     const injected = (outcome?.inject as (sessionId: SessionId) => {
       loadScienceImage(content: typeof ARTIFACT_ITEM.content): Promise<string>
     })(SID)
-    await expect(injected.loadScienceImage(ARTIFACT_ITEM.content)).resolves.toBe('data:image/png;base64,')
+    // Backed by the raw-bytes endpoint now (scienceArtifactUrl), not a
+    // base64 RPC read — resolves synchronously to the browser-navigable URL.
+    await expect(injected.loadScienceImage(ARTIFACT_ITEM.content)).resolves.toContain(
+      `/api/science/artifact/${SID}/${ARTIFACT_ITEM.content.versionId}`,
+    )
 
     await b.scienceHandle.dispose()
 

@@ -52,7 +52,11 @@ export function ScienceArtifactImage({ content, label, load, variant, labels, sr
       >
         {resolvedSrc === null
           ? <span className={css.notice}>{labels.loading}</span>
-          : <img className={css.artifactImage} src={resolvedSrc} alt={label} />}
+          // `load` resolving a raw-bytes URL (`createScienceImageUrlLoader`)
+          // never inspects the response: the browser fetches `src` itself,
+          // so a missing or unreadable blob surfaces only as this `<img>`'s
+          // own load failure, never a rejection `load`'s caller could catch.
+          : <img className={css.artifactImage} src={resolvedSrc} alt={label} onError={() => { setFailed(true) }} />}
       </button>
       {open && resolvedSrc !== null && <ImageLightbox src={resolvedSrc} alt={label} labels={labels.lightbox} onClose={close} />}
     </>

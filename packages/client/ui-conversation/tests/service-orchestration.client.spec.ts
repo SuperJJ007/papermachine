@@ -82,6 +82,22 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('disposes exact Details toggler bindings and ignores unmounted Sessions', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    const first = vi.fn()
+    const second = vi.fn()
+    const disposeFirst = b.root.bindDetailsToggler(sessionId, first)
+    const disposeSecond = b.root.bindDetailsToggler(sessionId, second)
+    disposeFirst()
+    b.root.toggleDetailsView(sessionId, 'science')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith('science')
+    disposeSecond()
+    expect(() => { b.root.toggleDetailsView(sessionId, 'science') }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
   it('routes main-view openings and disposes exact Session visibility predicates', async () => {
     const b = await bench()
     const sessionId = b.runtime.sessions.behavior('s1').sessionId

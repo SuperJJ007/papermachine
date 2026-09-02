@@ -126,8 +126,10 @@ function setup(sessionsOverride?: unknown) {
   // unbound-method lint rule that a real interface-typed method reference would.
   const conversationCancel = vi.fn(() => Promise.resolve())
   const conversationOpenDetailsView = vi.fn()
+  const conversationToggleDetailsView = vi.fn()
   const conversation = {
-    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: conversationOpenDetailsView, openView: vi.fn(), openChatAt: vi.fn(),
+    registerSubmissionHandler: vi.fn(() => () => {}), openDetailsView: conversationOpenDetailsView,
+    toggleDetailsView: conversationToggleDetailsView, openView: vi.fn(), openChatAt: vi.fn(),
     registerTranscriptDetailVisibility: vi.fn(() => () => {}), cancel: conversationCancel,
   }
   ctx.provide('conversation', conversation as never)
@@ -140,7 +142,7 @@ function setup(sessionsOverride?: unknown) {
   } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   return {
-    ctx, slots, scienceEdits, conversation, conversationCancel, conversationOpenDetailsView,
+    ctx, slots, scienceEdits, conversation, conversationCancel, conversationOpenDetailsView, conversationToggleDetailsView,
     trajectoryRegisterVisibility, trajectorySelect, registerUserInput,
     readScienceLibrary, readWorkspaceFiles, readWorkspaceFile,
   }
@@ -244,8 +246,8 @@ describe('ui-science apply', () => {
     await fiber.dispose()
   })
 
-  it('the sidebar destination returns an already-mounted Science Details entry to the artifact library', async () => {
-    const { ctx, slots, conversationOpenDetailsView } = setup()
+  it('the sidebar destination returns an open artifact tab to the artifact library', async () => {
+    const { ctx, slots, conversationOpenDetailsView, conversationToggleDetailsView } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const details = slots.entries('conversation.details.view')[0]
@@ -255,20 +257,44 @@ describe('ui-science apply', () => {
     // Simulate the Details entry already mounted (its own store instance
     // bound) showing some other page — an open artifact tab, or the files
     // page — when the sidebar destination is clicked.
-    ;(details.inject as (sessionId: SessionId, actions: unknown) => unknown)(SID, { showLibrary, setLibraryPage })
+    const injected = (details.inject as (sessionId: SessionId, actions: unknown) => {
+      bindArtifactLibraryView: (read: () => boolean) => () => void
+    })(SID, { showLibrary, setLibraryPage })
+    injected.bindArtifactLibraryView(() => false)
 
     const sidebar = slots.entries('sidebar.destinations')[0]
     if (sidebar?.inject === undefined) throw new Error('expected an injected sidebar destination')
     ;(sidebar.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
 
     expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(conversationToggleDetailsView).not.toHaveBeenCalled()
     expect(showLibrary).toHaveBeenCalledOnce()
     expect(setLibraryPage).toHaveBeenCalledExactlyOnceWith('artifacts')
     await fiber.dispose()
   })
 
+  it('the sidebar destination toggles the Details column while the artifact library is already selected', async () => {
+    const { ctx, slots, conversationOpenDetailsView, conversationToggleDetailsView } = setup()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const details = slots.entries('conversation.details.view')[0]
+    if (details?.inject === undefined) throw new Error('expected the injected Details entry')
+    const injected = (details.inject as (sessionId: SessionId, actions: unknown) => {
+      bindArtifactLibraryView: (read: () => boolean) => () => void
+    })(SID, { showLibrary: vi.fn(), setLibraryPage: vi.fn() })
+    injected.bindArtifactLibraryView(() => true)
+
+    const sidebar = slots.entries('sidebar.destinations')[0]
+    if (sidebar?.inject === undefined) throw new Error('expected an injected sidebar destination')
+    ;(sidebar.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
+
+    expect(conversationToggleDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(conversationOpenDetailsView).not.toHaveBeenCalled()
+    await fiber.dispose()
+  })
+
   it('the sidebar destination only opens the Details entry when it has never mounted for the session', async () => {
-    const { ctx, slots, conversationOpenDetailsView } = setup()
+    const { ctx, slots, conversationOpenDetailsView, conversationToggleDetailsView } = setup()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     // No prior `conversation.details.view` inject: nothing bound for SID yet.
@@ -276,6 +302,7 @@ describe('ui-science apply', () => {
     if (sidebar?.inject === undefined) throw new Error('expected an injected sidebar destination')
     ;(sidebar.inject() as { openScience: (id: SessionId) => void }).openScience(SID)
     expect(conversationOpenDetailsView).toHaveBeenCalledExactlyOnceWith(SID, 'science')
+    expect(conversationToggleDetailsView).not.toHaveBeenCalled()
     await fiber.dispose()
   })
 

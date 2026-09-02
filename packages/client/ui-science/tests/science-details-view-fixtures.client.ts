@@ -164,6 +164,7 @@ export function props(
     summaries?: readonly ScienceVersionSummary[]
     libraryArtifacts?: readonly ScienceLibraryArtifact[]
     health?: { orphan: number; reconstructed: number; missingContent: number }
+    bindArtifactLibraryView?: Props['bindArtifactLibraryView']
   } = {},
 ): Props {
   const store = over.store ?? testScienceSelectionStore()
@@ -182,6 +183,7 @@ export function props(
     useProjection: vi.fn((key: string) => key === 'science' ? science : (over.notes ?? [])),
     useStore: store.useStore,
     actions: store.actions,
+    bindArtifactLibraryView: over.bindArtifactLibraryView ?? vi.fn(() => () => {}),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
     loadChartState: over.loadChartState ?? vi.fn().mockResolvedValue(null),

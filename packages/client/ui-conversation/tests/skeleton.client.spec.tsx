@@ -207,6 +207,7 @@ function mount(
           open={open}
           openDetailsView={openDetailsView}
           toggleDetails={toggleDetails}
+          bindDetailsToggler={() => () => {}}
           t={t}
         />
       )

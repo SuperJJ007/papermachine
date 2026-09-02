@@ -16,14 +16,16 @@ The artifact viewer owns the toolbar lightbox for every PNG, including project-l
 
 A chart's preview callback keeps its identity while its artifact, version, and injected transport remain unchanged. Publishing the returned preview image must not restart the edit panel's debounce. Only a change to pending operations or their addressed version requests another preview. This complements the Runtime's [saved-version baseline isolation](2026-08-31-chart-edit-baseline-isolation.md), which owns rendered content rather than browser request scheduling.
 
+The sidebar Artifacts destination has three states. It toggles the Details column when the Science artifact library is already selected, opens the library when the column is closed, and returns an open artifact or Files tab to the artifact library without closing the column. The mounted viewer publishes only the current library predicate; `ui-conversation` retains ownership of selection-aware Details toggling.
+
 ## Alternatives considered
 
 Resetting only successful file content leaves failed reads attached to the next path. A second library-only lightbox duplicates the viewer's version selection and dismissal behavior. Removing the callback from debounce dependencies prevents legitimate transport or target changes from being observed.
 
 ## Consequences
 
-Returning to a file starts a fresh read. The library and editable viewer use the same maximize state without granting editing rights to library artifacts. Preview requests remain cancellable when operations or their target change.
+Returning to a file starts a fresh read. The library and editable viewer use the same maximize state without granting editing rights to library artifacts. Preview requests remain cancellable when operations or their target change. Repeated sidebar Artifacts clicks close and reopen the selected library without making an open artifact tab harder to return from.
 
 ## Verification
 
-Component tests cover direct file switches after success and failure, late responses, cross-session maximize/close, and one request after a title edit settles. Assembled browser fixtures exercise file-tab navigation, the shared lightbox, and the preview RPC through the mounted Science service.
+Component tests cover direct file switches after success and failure, late responses, cross-session maximize/close, one request after a title edit settles, and the sidebar destination's three states. Assembled browser fixtures exercise file-tab navigation, the shared lightbox, and the preview RPC through the mounted Science service.

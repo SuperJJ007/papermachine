@@ -8,7 +8,7 @@
 
 ## 过程视图
 
-运行与产物版本按 Science 投影自身的 trace——记录每个 turn 边界与授权工具调用的持久会话日志索引——归属到某个 turn,与已加载哪些对话页无关;加载更早的对话页只补充请求文本与结果,从不改变归属。授权调用在 trace 中没有条目的运行,单独显示在未归属历史区域,提供一个数量,不计入任何请求的步骤、失败或耗时。产物版本在投影记录了 trace 归属坐标时使用该坐标;否则使用 store 记录的该版本 `createdAt`(经 `sessions.scienceVersions` 读取,由 `useScienceVersionSummaries` 按 artifact 批量取——见 [Artifact viewer](#artifact-viewer-details-entry))落在某个 turn 自己的计时窗口内来归属——这与一次直接人工改图早就在用的按时间归属规则相同。时间戳兜底总能落到某个 turn(落在每个已声明窗口之外时,回退到推断出的最近一个 turn),因此从不会有产物版本进入未归属区域;一个步骤自己从不列出产物 chip,只有 turn 层的分组才有。
+运行与产物版本按 Science 投影自身的 trace——记录每个 turn 边界与授权工具调用的持久会话日志索引——归属到某个 turn,与已加载哪些对话页无关;加载更早的对话页只补充请求文本与结果,从不改变归属。授权调用在 trace 中没有条目的运行,单独显示在未归属历史区域,提供一个数量,不计入任何请求的步骤、失败或耗时。产物版本在投影记录了 trace 归属坐标时使用该坐标;否则使用 store 记录的该版本 `createdAt`(经 `sessions.scienceVersions` 读取,由 `useScienceVersionSummaries` 按 artifact 批量取——见 [Artifact viewer](#artifact-viewer-details-entry))落在某个 turn 自己的计时窗口内来归属——这与一次直接人工改图早就在用的按时间归属规则相同。时间戳兜底总能落到某个 turn(落在每个已声明窗口之外时,回退到推断出的最近一个 turn),因此从不会有产物版本进入未归属区域。trace 归属坐标精确到某一步的版本,除 turn 层分组自己那份最新版本 chip 外,还会在该步骤自己的行内渲染一份 chip;只归属到 turn(走时间戳兜底)的版本只出现在 turn 层分组。纯元数据重录——`annotate_artifact` 在其产出的 run 已经 settle 之后再修改 title 或 caption——保留该版本原产出步骤,绝不改成当前打开调用所在的步骤。
 
 「过程（Process）」以 `trajectory.view` id `process` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在「详细」之前，因此 Science 会话进入「轨迹」时默认显示过程，其他会话仍只有详细账本。单左轨右侧通栏排列 agent 与人工改图卡，人工改图保留用户图标与蓝色左边框。折叠的轮卡片有四个结构化行：截断的用户要求、通栏有序步骤条、右对齐的统计与展开控件，以及每个产物在本轮最终版本的小标签。要求之外不附加任何自由文本说明。长步骤条和产物标签行在卡片内换行。步骤条最多渲染 120 次调用并提示总数；展开清单仍然完整。
 

@@ -557,9 +557,10 @@ describe('Science process presentation', () => {
     expect(within(list).getByText('Success · 500 ms')).toBeTruthy()
     expect(within(list).getAllByRole('listitem')[1]?.getAttribute('data-highlight')).toBe('true')
     expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
-    // Per-step artifact chips are gone with the removed producing-call link
-    // (the turn-level chip, clicked above, already covers opening an exact
-    // version); the expanded step's own chip row renders empty now.
+    // This fixture's artifacts carry no `step` trace coordinate (they predate
+    // the projection field this package now reads), so no step's own chip
+    // row renders one; the turn-level chip, clicked above, already covers
+    // opening an exact version.
     expect(within(list).queryByRole('button', { name: 'chart.png v2' })).toBeNull()
     fireEvent.click(within(list).getAllByRole('button', { name: 'Python run' })[0]!)
     expect(selectDetailed).not.toHaveBeenCalled()
@@ -589,9 +590,9 @@ describe('Science process presentation', () => {
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
   })
   it('shows four final artifact chips for fourteen versions, with none repeated per-step', async () => {
-    // Per-step artifact chips are gone with the removed producing-call
-    // link: the expanded steps list carries no `file-` chips of its own now,
-    // only the one turn-level chip row this group's `artifacts` renders.
+    // None of these fixture versions carry a `step` trace coordinate, so the
+    // expanded steps list attaches no `file-` chip to any of them; only the
+    // one turn-level chip row this group's `artifacts` renders.
     const original = fixture().science.artifacts[0]!
     const artifacts = Array.from({ length: 14 }, (_, index) => ({ ...original,
       artifactId: ScienceArtifactId(`file-${String(index % 4)}`), logicalName: `file-${String(index % 4)}.png`,
@@ -606,6 +607,23 @@ describe('Science process presentation', () => {
     expect(screen.getByText(/Artifacts 4.*outcome published/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     expect(within(screen.getByRole('list')).queryAllByRole('button', { name: /file-/u })).toHaveLength(0)
+  })
+  it('attaches an artifact version to its producing step, keeping the chip inside that step\'s listitem', async () => {
+    // The projection now carries the producing call's own turn/step
+    // coordinate on each version (`ScienceClientArtifactVersion.turn`/
+    // `.step`), so a version whose coordinate is present attaches to its
+    // exact producing step, not only to the turn-level summary row.
+    const artifact = {
+      artifactId: ScienceArtifactId('trend-1'), logicalName: 'trend.png', version: 1, title: 'Trend',
+      versionId: 'version-trend-1' as never, sha256: 'a'.repeat(64), seenAt: 1_000, turn: 1, step: 1,
+    } as unknown as ScienceClientProjection['artifacts'][number]
+    mount([step(1, 1, [{ name: 'run_python', callId: 'create' }])],
+      projection({ artifacts: [artifact] as unknown as ScienceClientProjection['artifacts'], runs: [run('create', 1)] }))
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'trend.png v1' })).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
+    const stepItem = within(screen.getByRole('list', { name: 'Turn steps' })).getAllByRole('listitem')[0]!
+    expect(within(stepItem).getByRole('button', { name: 'trend.png v1' })).toBeTruthy()
+    expect(within(stepItem).getByRole('button', { name: 'Python run' })).toBeTruthy()
   })
   it('caps the strip at 120 calls while keeping all expanded rows', () => {
     mount([step(1, 1, Array.from({ length: 123 }, () => ({ name: 'todo_write' })))])

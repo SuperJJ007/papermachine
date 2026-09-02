@@ -253,15 +253,6 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   }
   const known = state.artifacts.filter(candidate => candidate.artifactId === artifact.artifactId)
   const target = known.find(candidate => candidate.version === artifact.version)
-  const owner = state.toolCalls.findLast(call => !state.settledToolCallSeqs.includes(call.seq)
-    && (call.name === 'run_python' || call.name === 'run_r' || call.name === 'annotate_artifact'))
-  const fact = {
-    artifactId: artifact.artifactId,
-    version: artifact.version,
-    seq: event.seq,
-    time: event.time,
-    ...owner === undefined ? {} : { turn: owner.turn, step: owner.step },
-  }
   if (target === undefined) {
     // A version beyond this session's own last locally-known one for this
     // artifactId is trusted the same way a wholly new artifactId is: the
@@ -280,8 +271,19 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     if (state.artifacts.some(candidate => candidate.versionId === artifact.versionId)) {
       throw new Error('a Science artifact versionId cannot back two committed versions')
     }
+    // A wholly new version's owner is whichever producing call is currently
+    // open: the store transaction that authored this content committed
+    // during that call, so its coordinates are this version's trace anchor.
+    const owner = state.toolCalls.findLast(call => !state.settledToolCallSeqs.includes(call.seq)
+      && (call.name === 'run_python' || call.name === 'run_r' || call.name === 'annotate_artifact'))
     state.artifacts.push(artifact)
-    state.artifactFacts.push(fact)
+    state.artifactFacts.push({
+      artifactId: artifact.artifactId,
+      version: artifact.version,
+      seq: event.seq,
+      time: event.time,
+      ...owner === undefined ? {} : { turn: owner.turn, step: owner.step },
+    })
   } else {
     // A re-record of an already-known ordinal is the metadata-curation
     // snapshot the store's `version_annotations` table now authors: content
@@ -297,9 +299,18 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
     state.artifacts[state.artifacts.indexOf(target)] = artifact
     const factIndex = state.artifactFacts.findIndex(candidate =>
       candidate.artifactId === artifact.artifactId && candidate.version === artifact.version)
+    const priorFact = state.artifactFacts[factIndex]
     /* v8 ignore next -- every accepted version appended its matching fact */
-    if (factIndex < 0) throw new Error('Science artifact event facts disappeared during synchronous replay')
-    state.artifactFacts[factIndex] = fact
+    if (priorFact === undefined) throw new Error('Science artifact event facts disappeared during synchronous replay')
+    // This is metadata curation, not new content: the version's trace
+    // anchor stays the call that produced this content, whatever call is
+    // open now. Reassigning to the currently open call — an
+    // `annotate_artifact` call still in flight after the producing
+    // `run_python`/`run_r` call has settled, in particular — would move the
+    // Process view's ownership chip for this version away from its actual
+    // producer. Only `seq`/`time` advance, to date this snapshot by the
+    // event that recorded it.
+    state.artifactFacts[factIndex] = { ...priorFact, seq: event.seq, time: event.time }
   }
 }
 

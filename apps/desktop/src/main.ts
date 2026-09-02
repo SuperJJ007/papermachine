@@ -20,6 +20,7 @@ import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.t
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
+import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const RESTART_URL = 'dsh-desktop://restart'
@@ -104,6 +105,11 @@ async function createTelemetryReporter(dshHome: string): Promise<TelemetryReport
       arch: desktopPlatform() === 'darwin-arm64' ? 'arm64' : 'x64',
     },
   })
+}
+
+/** Read and validate the build-time Host diagnostic configuration. */
+async function desktopHostConfig(): Promise<DesktopHostConfig> {
+  return parseDesktopHostConfig(JSON.parse(await readFile(join(resourceRoot(), 'host.json'), 'utf8')))
 }
 
 /** The one environment this build ships; disciplines are added as further declarations. */
@@ -252,7 +258,7 @@ async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding)
   return overlay
 }
 
-function hostCommand(dshHome: string, overlay: string, port: number): HostCommand {
+function hostCommand(dshHome: string, overlay: string, port: number, config: DesktopHostConfig): HostCommand {
   const packagedHost = join(process.resourcesPath, 'host')
   return {
     executable: process.execPath,
@@ -280,6 +286,11 @@ function hostCommand(dshHome: string, overlay: string, port: number): HostComman
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       DSH_HOME: dshHome,
+    },
+    stderrLog: {
+      path: join(dshHome, 'logs', 'host.log'),
+      maxBytes: config.logMaxBytes,
+      maxRotatedFiles: config.logMaxRotatedFiles,
     },
   }
 }
@@ -417,12 +428,13 @@ function onUnexpectedHostExit(exit: HostExit): void {
 
 async function launchHost(): Promise<void> {
   const dshHome = await harnessHome()
+  const config = await desktopHostConfig()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
   const overlay = await writeRuntimeOverlay(dshHome, status.binding)
   const url = await launchHostOnRememberedPort(
     dshHome,
-    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port), onUnexpectedHostExit),
+    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port, config), onUnexpectedHostExit),
   )
   activeOrigin = url.origin
   await window?.loadURL(url.href)

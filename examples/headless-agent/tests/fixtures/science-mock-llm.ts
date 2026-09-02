@@ -207,6 +207,15 @@ class ScienceMockAdapter extends LlmAdapter {
           raster_artifacts: ['edited.png'],
         })
         return
+      case 5:
+        // The first run retained this PNG without declaring it. Annotation
+        // remains metadata-only and must direct the model back through a
+        // producing run instead of importing the retained file itself.
+        yield * toolCall('science-annotate-missed-call', 'annotate_artifact', {
+          logical_name: 'missed.png',
+          title: 'Missed plot',
+        })
+        return
       default: {
         const reply = 'SCIENCE_TOOLS_SNAPSHOT_OK'
         yield { type: 'block-start', index: 0, blockType: 'text' }

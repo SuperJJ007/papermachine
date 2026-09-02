@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-01-desktop-host-port-persistence.md
-2026-09-01-desktop-host-port-persistence.md: 120a4613a8d0c664571864c8991425efb2cd685b
-2026-09-01-desktop-host-port-persistence.zh.md: f34fe68b3fbcfa5d4260c29bea4cfa0385db2867
+2026-09-01-desktop-host-port-persistence.md: c6c8bef67cc3509cad8d6c8d64e4c2d91e7a57bc
+2026-09-01-desktop-host-port-persistence.zh.md: d9694157401969ca3089d2e3f2e6a4d4e1997c44

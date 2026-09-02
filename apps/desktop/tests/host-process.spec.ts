@@ -1,18 +1,35 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { access, mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
-import { HostProcessSupervisor, parseHostReadyLine } from '../src/host-process.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { HostProcessSupervisor, parseHostReadyLine, type HostStderrLog } from '../src/host-process.ts'
 
-function nodeCommand(source: string): ConstructorParameters<typeof HostProcessSupervisor>[0] {
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function stderrLog(maxBytes = 1024, maxRotatedFiles = 2): HostStderrLog {
+  const dshHome = mkdtempSync(join(tmpdir(), 'dsh-desktop-host-log-'))
+  roots.push(dshHome)
+  return { path: join(dshHome, 'logs', 'host.log'), maxBytes, maxRotatedFiles }
+}
+
+function nodeCommand(
+  source: string,
+  options: { readonly env?: NodeJS.ProcessEnv; readonly stderrLog?: HostStderrLog } = {},
+): ConstructorParameters<typeof HostProcessSupervisor>[0] {
   return {
     executable: process.execPath,
     args: ['--input-type=module', '--eval', source],
     cwd: process.cwd(),
-    env: { ...process.env },
+    env: { ...process.env, ...options.env },
+    stderrLog: options.stderrLog ?? stderrLog(),
   }
 }
 
@@ -26,6 +43,54 @@ describe('desktop Host supervision', () => {
   it('rejects a Host that exits before readiness without exposing its output', async () => {
     const host = new HostProcessSupervisor(nodeCommand("console.error('fixture failed'); process.exit(7)"), { graceMs: 1000 })
     await expect(host.start()).rejects.toThrow(/exited before readiness \(7\)$/)
+  })
+
+  it('rotates Host stderr within the configured byte and retention bounds', async () => {
+    const log = stderrLog(1024, 2)
+    await mkdir(dirname(log.path), { recursive: true })
+    await writeFile(`${log.path}.3`, 'stale rotation')
+    const onUnexpectedExit = vi.fn()
+    const source = [
+      "process.stderr.write('A'.repeat(700) + '\\n')",
+      "process.stderr.write('B'.repeat(700) + '\\n')",
+      "process.stderr.write('C'.repeat(700) + '\\n')",
+      "console.log('dsh web: http://127.0.0.1:43123')",
+      'setTimeout(() => process.exit(0), 20)',
+    ].join(';')
+    const host = new HostProcessSupervisor(nodeCommand(source, { stderrLog: log }), { onUnexpectedExit, graceMs: 1000 })
+    await host.start()
+    await vi.waitFor(() => { expect(onUnexpectedExit).toHaveBeenCalledOnce() })
+
+    const files = await Promise.all([log.path, `${log.path}.1`, `${log.path}.2`].map(path => readFile(path)))
+    expect(files.map(file => file.byteLength)).toEqual([701, 701, 701])
+    await expect(access(`${log.path}.3`)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(files[0]?.toString()).toMatch(/^C+\n$/)
+    expect(files[1]?.toString()).toMatch(/^B+\n$/)
+    expect(files[2]?.toString()).toMatch(/^A+\n$/)
+  })
+
+  it('redacts inherited and labeled credentials before persisting Host stderr', async () => {
+    const log = stderrLog()
+    const onUnexpectedExit = vi.fn()
+    const source = [
+      "console.error('env=' + process.env.DEEPSEEK_API_KEY)",
+      "console.error('apiKey=literal-secret-value')",
+      "console.error('Authorization: Bearer bearer-secret-value')",
+      "console.log('dsh web: http://127.0.0.1:43123')",
+      'setTimeout(() => process.exit(0), 20)',
+    ].join(';')
+    const host = new HostProcessSupervisor(nodeCommand(source, {
+      env: { DEEPSEEK_API_KEY: 'abc' },
+      stderrLog: log,
+    }), { onUnexpectedExit, graceMs: 1000 })
+    await host.start()
+    await vi.waitFor(() => { expect(onUnexpectedExit).toHaveBeenCalledOnce() })
+
+    const persisted = await readFile(log.path, 'utf8')
+    expect(persisted).not.toContain('env=abc')
+    expect(persisted).not.toContain('literal-secret-value')
+    expect(persisted).not.toContain('bearer-secret-value')
+    expect(persisted.match(/\[REDACTED\]/g)?.length).toBeGreaterThanOrEqual(3)
   })
 
   it('reports an unexpected ready-Host exit and can restart over the same command', async () => {
@@ -71,6 +136,7 @@ describe('desktop Host supervision', () => {
       args: ['--eval', source],
       cwd: process.cwd(),
       env: { ...process.env },
+      stderrLog: stderrLog(),
     }, { graceMs: 300 })
     await host.start()
     const grandchildPid = Number(await readFile(pidFile, 'utf8'))

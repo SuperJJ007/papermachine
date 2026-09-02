@@ -23,6 +23,8 @@ extraResources:
     to: onboarding.html
   - from: resources/telemetry.json
     to: telemetry.json
+  - from: resources/host.json
+    to: host.json
   - from: resources/skills
     to: skills
   # `node_modules` is copied by scripts/after-pack.mjs: electron-builder drops

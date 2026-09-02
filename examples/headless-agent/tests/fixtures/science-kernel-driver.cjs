@@ -122,6 +122,12 @@ rl.on('line', (line) => {
   writeFileSync(join(artifactDir, 'meta.json'), '{"ok":true}\n')
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
   writeFileSync(join(artifactDir, 'plot.png'), PNG)
+  if (executionCount === 1
+    && !existsSync(join(cwd, 'inputs', 'source.png'))
+    && !existsSync(join(cwd, 'inputs', 'region-source.png'))
+    && !existsSync(join(cwd, 'inputs', 'region-source-1.png'))) {
+    writeFileSync(join(artifactDir, 'missed.png'), PNG)
+  }
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source-1.png'))) writeFileSync(join(artifactDir, 'region-edit-1.png'), PNG)

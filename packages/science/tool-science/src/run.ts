@@ -264,9 +264,10 @@ export function kernelRestartReason(projection: ScienceProjection, terminal: Sci
  * cannot drift from the durable `science/artifact-saved` events those
  * fields describe.
  * @param value - the bounded run value to render.
+ * @param language - language whose run tool can reproduce an uncaptured PNG.
  * @returns the rendered Native text.
  */
-export function formatRunResult(value: ScienceRunValue): string {
+export function formatRunResult(value: ScienceRunValue, language: ScienceLanguage): string {
   const header = [`status: ${value.status}`]
   const lines: string[] = []
   if (value.kernelRestartReason !== undefined) {
@@ -287,7 +288,10 @@ export function formatRunResult(value: ScienceRunValue): string {
   }
   if (value.skippedRaster !== undefined && value.skippedRaster.length > 0) {
     const noun = value.skippedRaster.length === 1 ? 'file' : 'files'
-    lines.push(`(${String(value.skippedRaster.length)} PNG ${noun} not captured, not declared in raster_artifacts: ${value.skippedRaster.join(', ')})`)
+    const pronoun = value.skippedRaster.length === 1 ? 'it' : 'them'
+    const tool = language === 'python' ? 'run_python' : 'run_r'
+    lines.push(`(${String(value.skippedRaster.length)} PNG ${noun} not captured, not declared in raster_artifacts: ${value.skippedRaster.join(', ')}; `
+      + `to capture, call ${tool} again with raster_artifacts: ${JSON.stringify(value.skippedRaster)} and code that writes ${pronoun})`)
   }
   if (value.captureSkippedOversizedCount !== undefined) {
     lines.push(`(${String(value.captureSkippedOversizedCount)} eligible file(s) skipped: too large to capture)`)
@@ -332,7 +336,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
     },
     output: {
       schema: runOutputSchema,
-      render: (_args, value) => [{ type: 'text', text: formatRunResult(value) }],
+      render: (_args, value) => [{ type: 'text', text: formatRunResult(value, language) }],
       presentationMeta: (_args, value) => scienceArtifactPresentation(
         (value.capturedArtifacts ?? []).map(capturedArtifactPresentationItem),
       ),

@@ -1870,7 +1870,7 @@ export interface BackfillProvenanceFigureState {
 }
 ```
 
-来源：[`packages/science/science-artifact-store/src/index.ts:83`](../packages/science/science-artifact-store/src/index.ts)
+来源：[`packages/science/science-artifact-store/src/index.ts:85`](../packages/science/science-artifact-store/src/index.ts)
 
 <a id="deepseek-aidsh-science-runtime"></a>
 
@@ -1976,6 +1976,19 @@ export interface Config {
    * Science operation is never blocked scanning every session it has ever had.
    */
   readonly reconcileMaxSessions?: number
+  /**
+   * Minimum interval between reconciliation attempts for one project until
+   * a complete, cursor-free, error-free pass succeeds. A later project
+   * resolution triggers the retry; this value does not schedule background work.
+   */
+  readonly reconcileRetryDelayMs?: number
+  /**
+   * Most-recent runs `annotate_artifact`'s not-found diagnostic inspects
+   * for a retained, uncaptured PNG before degrading to the generic
+   * not-found error. Bounds a per-run directory walk that otherwise runs
+   * once per retained run in the session, inside the runtime lease.
+   */
+  readonly annotateDiagnosticMaxRuns?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1997,7 +2010,7 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:112`](../packages/science/science-runtime/src/config.ts)
+来源：[`packages/science/science-runtime/src/config.ts:126`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

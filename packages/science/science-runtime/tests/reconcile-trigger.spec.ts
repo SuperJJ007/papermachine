@@ -194,6 +194,11 @@ describe('collectProjectArtifactEvents', () => {
     expect(result.complete).toBe(false)
     expect(result.events.has(VersionId('v2'))).toBe(true)
     expect(warnings.some(message => message.includes('malformed'))).toBe(true)
+    expect(result.cursor).toBeDefined()
+    const retry = await collectProjectArtifactEvents({
+      sessionPersistence: persistence, workspacePath: cwd, maxSessions: 100, cursor: result.cursor!,
+    })
+    expect(retry.changed).toBe(false)
   })
 
   it('skips a raw event value that is not an object', async () => {
@@ -268,7 +273,7 @@ describe('collectProjectArtifactEvents', () => {
     expect(result.events.get(VersionId('v1'))?.seenAt).toBe(555)
   })
 
-  it('caps the sessions read at maxSessions and reports truncated', async () => {
+  it('continues beyond maxSessions on the next bounded call and returns the accumulated event set', async () => {
     const persistence = new TestPersistence(new Context())
     const cwd = '/workspace/project-a'
     for (let i = 0; i < 3; i += 1) {
@@ -277,10 +282,45 @@ describe('collectProjectArtifactEvents', () => {
         events: [artifactSavedEvent(1, { artifactId: `a${String(i)}`, versionId: `v${String(i)}`, version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), title: 'x', seenAt: 1 })],
       })
     }
-    const result = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 2 })
-    expect(result.complete).toBe(false)
-    expect(result.truncated).toBe(true)
-    expect(result.events.size).toBe(2)
+    const first = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 2 })
+    expect(first.complete).toBe(false)
+    expect(first.truncated).toBe(true)
+    expect(first.events.size).toBe(2)
+    expect(first.cursor).toBeDefined()
+
+    const second = await collectProjectArtifactEvents({
+      sessionPersistence: persistence, workspacePath: cwd, maxSessions: 2,
+      cursor: first.cursor!,
+    })
+    expect(second.complete).toBe(true)
+    expect(second.truncated).toBe(false)
+    expect(second.events.size).toBe(3)
+    expect(persistence.inspectCalls).toBe(3)
+  })
+
+  it('rotates an unreadable session behind the unvisited tail', async () => {
+    const persistence = new TestPersistence(new Context())
+    const cwd = '/workspace/project-a'
+    persistence.setDurable({ meta: header('broken', cwd), events: [] })
+    persistence.inspectFailureFor.add(SessionId('broken'))
+    persistence.setDurable({
+      meta: header('tail', cwd),
+      events: [artifactSavedEvent(1, {
+        artifactId: 'tail-artifact', versionId: 'tail-version', version: 1,
+        logicalName: 'tail.png', sha256: 'a'.repeat(64), title: 'tail', seenAt: 1,
+      })],
+    })
+
+    const first = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 1 })
+    expect(first.events.size).toBe(0)
+    expect(first.cursor).toBeDefined()
+    const second = await collectProjectArtifactEvents({
+      sessionPersistence: persistence, workspacePath: cwd, maxSessions: 1,
+      cursor: first.cursor!,
+    })
+    expect(second.complete).toBe(false)
+    expect(second.events.has(VersionId('tail-version'))).toBe(true)
+    expect(second.cursor?.pendingSessionIds).toEqual([SessionId('broken')])
   })
 
   it('degrades gracefully to an empty result, with a warning, when listing session logs itself fails', async () => {
@@ -290,8 +330,30 @@ describe('collectProjectArtifactEvents', () => {
     const result = await collectProjectArtifactEvents({
       sessionPersistence: persistence, workspacePath: '/workspace/project-a', maxSessions: 100, onWarning: message => warnings.push(message),
     })
-    expect(result).toEqual({ events: new Map(), complete: false, truncated: false })
+    expect(result).toEqual({ events: new Map(), complete: false, truncated: false, changed: false })
     expect(warnings.some(message => message.includes('could not list session logs'))).toBe(true)
+  })
+
+  it('retains accumulated events and cursor when a later session listing fails', async () => {
+    const persistence = new TestPersistence(new Context())
+    const cwd = '/workspace/project-a'
+    persistence.setDurable({
+      meta: header('retained', cwd),
+      events: [artifactSavedEvent(1, {
+        artifactId: 'retained-artifact', versionId: 'retained-version', version: 1,
+        logicalName: 'retained.png', sha256: 'a'.repeat(64), title: 'retained', seenAt: 1,
+      })],
+    })
+    const first = await collectProjectArtifactEvents({ sessionPersistence: persistence, workspacePath: cwd, maxSessions: 1 })
+    expect(first.cursor).toBeDefined()
+    persistence.listFailure = new Error('forced later list failure')
+
+    const second = await collectProjectArtifactEvents({
+      sessionPersistence: persistence, workspacePath: cwd, maxSessions: 1, cursor: first.cursor!,
+    })
+    expect(second.events.has(VersionId('retained-version'))).toBe(true)
+    expect(second.cursor).toBe(first.cursor)
+    expect(second).toMatchObject({ complete: false, truncated: false, changed: false })
   })
 })
 
@@ -347,6 +409,115 @@ describe('ScienceRuntime reconciliation trigger', () => {
     await new Promise(resolve => setTimeout(resolve, 60))
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-later', cwd))
     await vi.waitFor(() => { expect(persistence.listCalls).toBe(2) })
+  })
+
+  it('advances a truncated session walk and memoizes only after the accumulated set is reconciled', async () => {
+    const root = tmp('.science-runtime-reconcile-trigger-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined,
+      { reconcileMaxSessions: 1, reconcileRetryDelayMs: 1 },
+    )
+    contexts.push(harness.ctx)
+    await harness.ctx.plugin(TestPersistence)
+    const persistence = harness.ctx.sessionPersistence as unknown as TestPersistence
+    const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
+    roots.push(cwd)
+    for (let index = 1; index <= 2; index += 1) {
+      persistence.setDurable({
+        meta: header(`durable-${String(index)}`, cwd),
+        events: [artifactSavedEvent(1, {
+          artifactId: `artifact-${String(index)}`, versionId: `version-${String(index)}`,
+          version: 1, logicalName: `plot-${String(index)}.png`, sha256: String(index).repeat(64),
+          title: `plot-${String(index)}`, seenAt: index,
+        })],
+      })
+    }
+
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-page-1', cwd))
+    await vi.waitFor(() => { expect(persistence.inspectCalls).toBe(1) })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-page-2', cwd))
+    await vi.waitFor(() => { expect(persistence.inspectCalls).toBe(2) })
+    const opened = await harness.ctx.scienceArtifactStore.openProject(cwd)
+    await vi.waitFor(async () => {
+      await expect(harness.ctx.scienceArtifactStore.getVersion(opened.projectId, VersionId('version-2'))).resolves.toBeDefined()
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-page-memoized', cwd))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(persistence.listCalls).toBe(2)
+  })
+
+  it('carries the store cursor to a later resolution and memoizes after it empties', async () => {
+    const root = tmp('.science-runtime-reconcile-trigger-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { reconcileRetryDelayMs: 1 },
+    )
+    contexts.push(harness.ctx)
+    await harness.ctx.plugin(TestPersistence)
+    const cursor = {
+      pending: [{ kind: 'version' as const, versionId: VersionId('pending-version') }],
+      completedVersionIds: [],
+      completedDanglingEventIds: [],
+    }
+    const reconcile = vi.spyOn(harness.ctx.scienceArtifactStore, 'reconcileProject')
+      .mockResolvedValueOnce({
+        checkedVersions: 1, outcomes: [], reconstructed: [], truncated: true, errors: [], cursor,
+      })
+      .mockResolvedValueOnce({
+        checkedVersions: 1, outcomes: [], reconstructed: [], truncated: false, errors: [],
+      })
+    const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
+    roots.push(cwd)
+
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-store-page-1', cwd))
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalledTimes(1) })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-store-page-2', cwd))
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalledTimes(2) })
+    expect(reconcile.mock.calls[1]?.[3]).toBe(cursor)
+
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-store-page-memoized', cwd))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(reconcile).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not memoize a completed store cursor when an earlier page reported an item error', async () => {
+    const root = tmp('.science-runtime-reconcile-trigger-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { reconcileRetryDelayMs: 1 },
+    )
+    contexts.push(harness.ctx)
+    await harness.ctx.plugin(TestPersistence)
+    const cursor = {
+      pending: [{ kind: 'version' as const, versionId: VersionId('pending-after-error') }],
+      completedVersionIds: [],
+      completedDanglingEventIds: [],
+    }
+    const reconcile = vi.spyOn(harness.ctx.scienceArtifactStore, 'reconcileProject')
+      .mockResolvedValueOnce({
+        checkedVersions: 1, outcomes: [], reconstructed: [], truncated: true,
+        errors: ['forced first-page item error'], cursor,
+      })
+      .mockResolvedValue({
+        checkedVersions: 1, outcomes: [], reconstructed: [], truncated: false, errors: [],
+      })
+    const cwd = mkdtempSync(join(process.cwd(), '.science-runtime-reconcile-ws-'))
+    roots.push(cwd)
+
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-error-page-1', cwd))
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalledTimes(1) })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-error-page-2', cwd))
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalledTimes(2) })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-error-retry', cwd))
+    await vi.waitFor(() => { expect(reconcile).toHaveBeenCalledTimes(3) })
   })
 
   it('reconciliation failure never blocks or fails the Science operation that triggered it', async () => {

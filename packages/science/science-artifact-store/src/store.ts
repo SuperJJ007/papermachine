@@ -13,7 +13,7 @@ import { admitBlob, blobByteCount, readBlob as readBlobBytes } from './blobs.ts'
 import { ProjectArtifactStoreError } from './errors.ts'
 import { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 import { reconcileProject as runReconciliation } from './reconcile.ts'
-import type { ReconcileArtifactSavedEvent, ReconcileResult } from './reconcile.ts'
+import type { ReconcileArtifactSavedEvent, ReconcileCursor, ReconcileResult } from './reconcile.ts'
 import { deleteProjectStore, resolveProjectIdentity, storeRootForProject } from './registry.ts'
 import { openStoreDatabase, type BackfillProvenanceHook, type JournalMode, type OpenStoreDatabaseOptions } from './schema.ts'
 import type {
@@ -757,17 +757,20 @@ export class ProjectArtifactStoreEngine {
    * @param events - every `science/artifact-saved` event the caller read
    * from this project's session logs, folded per `versionId` (last write wins).
    * @param eventSetComplete - whether the caller read every relevant session log and event.
+   * @param cursor - prior bounded-walk progress over this stable event set.
    * @returns what this call checked, reconstructed, and could not fully reconcile.
    */
   async reconcileProject(
     projectId: ProjectId,
     events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>,
     eventSetComplete: boolean,
+    cursor?: ReconcileCursor,
   ): Promise<ReconcileResult> {
     await this.connectionFor(projectId)
     return runReconciliation(this, projectId, events, {
       eventSetComplete,
       maxVersions: this.options.reconcileMaxVersions,
+      ...(cursor === undefined ? {} : { cursor }),
     })
   }
 

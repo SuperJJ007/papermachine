@@ -2594,7 +2594,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         message: 'fixture Science artifact missing',
         details: { reason: 'VERSION_NOT_FOUND' },
       }),
-      scienceLibrary: request => ok(request, { projectId: 'fixture-project' as never, artifacts: [] }),
+      scienceLibrary: request => ok(request, {
+        projectId: 'fixture-project' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 },
+      }),
+      scienceVersions: request => ok(request, { versions: [] }),
       workspaceFiles: request => ok(request, { root: request.payload.path ?? '', entries: [] }),
       workspaceFile: request => err(request, {
         code: 'science-artifact-error', message: 'fixture workspace file missing', details: { reason: 'VERSION_NOT_FOUND' },
@@ -3126,10 +3129,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return Promise.resolve({ accepted: true })
     },
     // Satisfies the ApiProxy contract type only: the browser export button
-    // hands GET /api/session.export to the native download manager, so this
-    // stub is never reached through the fixture's dispatch.
+    // and scienceArtifactUrl anchor/img/fetch reads hand their GET routes to
+    // the native download manager or browser fetch, so these stubs are never
+    // reached through the fixture's dispatch.
     downloads: {
       sessionLog: () => Promise.resolve(new Response('fixture mode does not serve session export', { status: 404 })),
+      scienceArtifact: () => Promise.resolve(new Response('fixture mode does not serve Science artifact bytes', { status: 404 })),
     },
   }
 
@@ -3231,6 +3236,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.attachment': return this.api.sessions.attachment(request)
       case 'session.scienceArtifact': return this.api.sessions.scienceArtifact(request)
       case 'sessions.scienceLibrary': return this.api.sessions.scienceLibrary(request)
+      case 'sessions.scienceVersions': return this.api.sessions.scienceVersions(request)
       case 'sessions.workspaceFiles': return this.api.sessions.workspaceFiles(request)
       case 'sessions.workspaceFile': return this.api.sessions.workspaceFile(request)
       case 'session.textAttachment': return this.api.sessions.textAttachment(request)

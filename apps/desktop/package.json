@@ -28,11 +28,13 @@
     "test": "vitest run --root ../.. apps/desktop/tests"
   },
   "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.2.0"
+  },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "electron": "43.4.1",
     "electron-builder": "26.15.3",
-    "js-yaml": "^4.2.0",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

@@ -21,7 +21,7 @@ import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
 import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
-import { windowBackgroundColor } from './window-theme.ts'
+import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
 import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
@@ -328,7 +328,15 @@ function guardWorkspaceNavigation(event: Electron.Event, target: string): void {
   if (activeOrigin === undefined || new URL(target).origin !== activeOrigin) event.preventDefault()
 }
 
-function createWindow(): BrowserWindow {
+/**
+ * Create the workspace window, painted for `preference` up front.
+ * `nativeTheme`'s `updated` event is only meaningful for `'system'` — for a
+ * fixed `'light'`/`'dark'` preference the background never changes with the
+ * OS, and subscribing anyway would repaint the window out from under an
+ * explicit choice the instant the user's OS theme flips.
+ * @param preference - the durable `ui-theme.preference` this launch resolved (see {@link resolveWindowThemePreference}).
+ */
+function createWindow(preference: WindowThemePreference): BrowserWindow {
   const created = new BrowserWindow({
     title: 'Science',
     width: 1440,
@@ -336,18 +344,20 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: windowBackgroundColor(nativeTheme.shouldUseDarkColors),
+    backgroundColor: windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
-  const updateBackground = (): void => {
-    created.setBackgroundColor(windowBackgroundColor(nativeTheme.shouldUseDarkColors))
+  if (preference === 'system') {
+    const updateBackground = (): void => {
+      created.setBackgroundColor(windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors))
+    }
+    nativeTheme.on('updated', updateBackground)
+    created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
   }
-  nativeTheme.on('updated', updateBackground)
-  created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
   created.once('ready-to-show', () => { created.show() })
   created.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
@@ -421,7 +431,8 @@ async function launchHost(): Promise<void> {
 async function openWorkspace(): Promise<void> {
   await coordinator.openWorkspaceUnlessQuitting(async () => {
     const previous = window
-    const created = createWindow()
+    const preference = await resolveWindowThemePreference(await harnessHome())
+    const created = createWindow(preference)
     window = created
     created.once('closed', () => { if (window === created) window = undefined })
     previous?.destroy()
@@ -613,7 +624,10 @@ async function boot(): Promise<void> {
     await startProvisioning(dshHome, declaration, sourceId)
   })
   await openInitialSurface().catch(async (error: unknown) => {
-    window ??= createWindow()
+    // `'system'`: this is the startup-failure fallback, and the failure may
+    // be `harnessHome()` itself throwing (a space-containing home), so
+    // there is no `dshHome` to read a preference from here.
+    window ??= createWindow('system')
     await window.loadURL(launchErrorPage(hostLogPath, error))
   })
 

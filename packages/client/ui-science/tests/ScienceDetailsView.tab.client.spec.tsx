@@ -77,9 +77,9 @@ describe('ScienceDetailsView: toolbar version stepper (D9 — store-sourced per-
       rawArtifact({ version: 1, versionId: 'v1' }), rawArtifact({ version: 2, versionId: 'v2' }), rawArtifact({ version: 3, versionId: 'v3' }),
     ] })
     const summaries = [
-      versionSummary({ versionId: 'v1', ordinal: 1, title: 'v1 title', caption: 'First pass' }),
-      versionSummary({ versionId: 'v2', ordinal: 2, title: 'v2 title' }),
-      versionSummary({ versionId: 'v3', ordinal: 3, title: 'v3 title' }),
+      versionSummary({ versionId: 'v1', ordinal: 1, title: 'v1 title', caption: 'First pass', producer: { sessionId: SESSION, turn: 1 } }),
+      versionSummary({ versionId: 'v2', ordinal: 2, title: 'v2 title', producer: { sessionId: SESSION, turn: 2 } }),
+      versionSummary({ versionId: 'v3', ordinal: 3, title: 'v3 title', producer: { sessionId: SESSION, turn: 3 } }),
     ]
     const store = testScienceSelectionStore()
     openTab(store, 'chart-1', 2)
@@ -111,6 +111,58 @@ describe('ScienceDetailsView: toolbar version stepper (D9 — store-sourced per-
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
     expect(store.instance.getSnapshot().openArtifacts.find(tab => tab.kind === 'artifact')).toMatchObject({ version: 3 })
+  })
+
+  it('folds an earlier same-turn version out of the default walk while keeping it directly reachable', async () => {
+    const store = testScienceSelectionStore()
+    openTab(store, 'chart-1', 2)
+    const science = baseProjection({ artifacts: [
+      rawArtifact({ version: 1, versionId: 'v1' }),
+      rawArtifact({ version: 2, versionId: 'v2' }),
+    ] })
+    const summaries = [
+      versionSummary({ versionId: 'v1', ordinal: 1, producer: { sessionId: SESSION, turn: 4 } }),
+      versionSummary({ versionId: 'v2', ordinal: 2, producer: { sessionId: SESSION, turn: 4 } }),
+    ]
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
+
+    act(() => { openTab(store, 'chart-1', 1) })
+    expect(screen.getByRole('button', { name: 'Previous version' }).nextElementSibling?.textContent).toBe('v1')
+    expect(screen.getByRole('button', { name: 'Next version' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('does not fold matching turn numbers from different producing sessions', async () => {
+    const store = testScienceSelectionStore()
+    openTab(store, 'chart-1', 2)
+    const science = baseProjection({ artifacts: [
+      rawArtifact({ version: 1, versionId: 'v1' }),
+      rawArtifact({ version: 2, versionId: 'v2' }),
+    ] })
+    const summaries = [
+      versionSummary({ versionId: 'v1', ordinal: 1, producer: { sessionId: 'session-a', turn: 1 } }),
+      versionSummary({ versionId: 'v2', ordinal: 2, producer: { sessionId: 'session-b', turn: 1 } }),
+    ]
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('does not fold a human edit even when a later version shares its producer turn', async () => {
+    const store = testScienceSelectionStore()
+    openTab(store, 'chart-1', 2)
+    const science = baseProjection({ artifacts: [
+      rawArtifact({ version: 1, versionId: 'v1' }),
+      rawArtifact({ version: 2, versionId: 'v2' }),
+    ] })
+    const summaries = [
+      versionSummary({ versionId: 'v1', ordinal: 1, contentOrigin: 'human-edit', producer: { sessionId: SESSION, turn: 8 } }),
+      versionSummary({ versionId: 'v2', ordinal: 2, producer: { sessionId: SESSION, turn: 8 } }),
+    ]
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    await waitFor(() => { expect(document.querySelector('img')).not.toBeNull() })
+    expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(false)
   })
 })
 

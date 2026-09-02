@@ -100,7 +100,7 @@ toggle 渲染在何处由本包 Host `Config` 中的 `toggleScope` 决定：`ses
 
 Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的启动值注入方式）把解析出的 `toggleScope` 发布为一个 `globalThis` 启动值——浏览器半侧在自己的 `apply()` 中同步读取一次；缺失或格式不正确的值会回退为 `session`。
 
-## 溯源下钻
+## 溯源下钻 <a id="provenance-drill-in"></a>
 
 从 artifact viewer 的工具栏进入（不是一个独立的 `conversation.view` 标签页，也不是一个按键分派的 `conversation.details.header.actions` 条目）：一条面包屑（`<图表标题> › 溯源`），其根节点点击后返回内容视图，下方是活跃标签页所解析版本当前的内容来源（`run-auto`/`human-edit`/`import`，本地化）与生成时间。
 

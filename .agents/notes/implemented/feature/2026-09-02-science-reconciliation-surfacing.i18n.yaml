@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-science-reconciliation-surfacing.md
-2026-09-02-science-reconciliation-surfacing.md: f533ebbd2bf5c10b49f53c079be13a39bc2d7b43
-2026-09-02-science-reconciliation-surfacing.zh.md: 65914f1d1bfcd184af53f3676b29326737db9b75
+2026-09-02-science-reconciliation-surfacing.md: 0b768ea803304ae0323cff627ddc7e0de2aaf733
+2026-09-02-science-reconciliation-surfacing.zh.md: 3d0a7d757ae22de234f7e33f44730ac49775fd8d

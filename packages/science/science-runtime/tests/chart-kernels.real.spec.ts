@@ -125,6 +125,12 @@ for (const language of ['python', 'r'] as const) {
       const nextSaveChart = await chartOf(ctx, nextSave.artifact)
       expect(nextSaveChart!.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
       expect(nextSaveChart!.elements.find(value => value.id === 'title')?.current).toBe('Final title')
+      const fontFamily = language === 'python' ? 'DejaVu Sans' : 'sans'
+      const fontSave = await runtime.applyChartEdit({ ...target, version: nextSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: fontFamily, size: 15 }] })
+      expect(fontSave.failedOps).toEqual([])
+      const savedFont = (await chartOf(ctx, fontSave.artifact))!.elements.find(value => value.kind === 'font')?.current
+      expect(savedFont).toEqual({ family: language === 'python' ? ['DejaVu Sans'] : 'sans', size: 15 })
       const regenerated = await runtime.startRun({ session, language,
         code: (language === 'python' ? pythonSource : rSource).replaceAll("'Original'", "'Regenerated'"),
         rasterArtifacts: ['plot.png'], ...authorizeRun(session, language, `regenerate-${language}`), signal: new AbortController().signal })

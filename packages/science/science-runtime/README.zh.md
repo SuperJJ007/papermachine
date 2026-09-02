@@ -63,7 +63,7 @@ kernel 会因一组封闭的原因之一结束，通常作为 `science/kernel-st
 
 series 或 annotation 的 id 会嵌入底层图形文本(series 标签、annotation 文本)的清洗、截断片段：每个适配器把控制字符——包括多行标签或标注中的换行——替换为空格，合并连续空白，并把结果截断到 60 字符，即使加上 axes 前缀与 `#N` 去重后缀，拼接后的 id 仍安全低于 host codec 的 200 字符上限。清洗后为空的片段(例如纯空白文本)使用位置占位符，如 `series[3]` 或 `annotation[2]`。元素自身的 `label` 字段从不清洗或截断——它保留用于展示的原始文本。
 
-目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合为 `set_title`、`set_subtitle`、`set_axis_label`、`set_legend_position`、`toggle_grid` 与 `set_font`；两个适配器都实现全部六项，预览也接受同一 codec。`font` 元素的 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。`set_font` 通过绘图 runtime 检查请求的字体族；无法精确解析时返回 `font_not_found`，并且不改变图对象。matplotlib adapter 把已解析字体族与字号施加到图对象已有的 `Text` 对象，不修改全局 `rcParams`；ggplot2 adapter 则通过 plot theme 施加字体。
+目录会保留全部 13 类元素，用于展示与精确模型引用。封闭的直接操作集合为 `set_title`、`set_subtitle`、`set_axis_label`、`set_legend_position`、`toggle_grid` 与 `set_font`；两个适配器都实现全部六项，预览也接受同一 codec。`font` 元素的 `current` 只包含 `family` 与 `size`，绝不枚举已安装字体族，也不携带截断元数据。`set_font` 通过绘图 runtime 检查请求的字体族；无法精确解析时返回 `font_not_found`，并且不改变图对象。matplotlib adapter 把已解析字体族与字号施加到图对象已有的 `Text` 对象，不修改全局 `rcParams`，并记录该 figure-wide 值供导出后抽取；ggplot2 adapter 则通过 plot theme 施加并重新抽取字体。
 
 `set_subtitle` 修改 ggplot2 图的副标题或所选 matplotlib axes 的标题（`axes: null` 选择全部 axes），不修改主标题。即使两者的 axes 目标均为 null，主标题与副标题编辑仍为独立操作。全 axes 图例操作遍历全部所选 axes，包括无图例 axes 之后的 axes。图形副本在导出前把 DPI 变换归一到逻辑 DPI，避免显示设备像素比改变保存 PNG 的尺寸。
 

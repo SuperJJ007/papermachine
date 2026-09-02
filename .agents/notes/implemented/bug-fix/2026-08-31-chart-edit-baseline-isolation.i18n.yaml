@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.md
-2026-08-31-chart-edit-baseline-isolation.md: fce9f85cba3b6edb38f8ba18844eafb5eb8bd7cf
-2026-08-31-chart-edit-baseline-isolation.zh.md: b3169eee8896aeb7a971a4e729e37bcac7fc2e13
+2026-08-31-chart-edit-baseline-isolation.md: 5d2569b6ba10ac489ffaa1703ecc71f666bf8791
+2026-08-31-chart-edit-baseline-isolation.zh.md: 2572d23f62f93812fd33fa817d0e35e753f267cc

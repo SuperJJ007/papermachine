@@ -80,6 +80,7 @@ import {
   planSessionScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
+  runArtifactDirectory,
 } from './scratch.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
@@ -1279,7 +1280,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     const lease = this.reserve(request.session, request.signal)
     try {
       this.assertPrepublication(request.session, lease.control)
-      const target = this.resolveAnnotateTarget(projection, request)
+      const target = await this.resolveAnnotateTarget(projection, request)
       const store = this.ctx.scienceArtifactStore
       const currentVersion = await store.getVersion(target.projectId, target.versionId)
       /* v8 ignore next 3 -- projection already resolved this versionId; a missing store row is a durable invariant violation */
@@ -1432,16 +1433,20 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
    *   (or its named `version`) does not exist in this session.
    */
-  private resolveAnnotateTarget(
+  private async resolveAnnotateTarget(
     projection: ScienceProjection,
     request: AnnotateScienceArtifactRequest,
-  ): ScienceArtifactVersion {
+  ): Promise<ScienceArtifactVersion> {
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
     const latest = logical.at(-1)
     if (latest === undefined) {
+      const retainedRaster = await this.hasRetainedUncapturedRaster(request.session, projection, request.logicalName)
       throw new ScienceRuntimeError(
         'ARTIFACT_NOT_FOUND',
-        `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
+        retainedRaster
+          ? `file ${JSON.stringify(request.logicalName)} exists in retained run output but was not captured; `
+            + `run the code that writes it again with raster_artifacts: [${JSON.stringify(request.logicalName)}], then call annotate_artifact again`
+          : `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
       )
     }
     const source = request.version === undefined ? latest : logical.find(candidate => candidate.version === request.version)
@@ -1453,6 +1458,43 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       )
     }
     return source
+  }
+
+  /**
+   * Check retained per-run output for a same-named PNG solely to improve an
+   * `annotate_artifact` not-found diagnostic. Every run owns a distinct
+   * `SCIENCE_ARTIFACT_DIR`, so finding the file never imports or captures it:
+   * the model must execute code that writes it into a new run and declare it
+   * there. Missing or unreadable retained scratch cannot change the
+   * authoritative projection's not-found result and therefore degrades to
+   * the generic diagnostic.
+   * @param session - exact live Session that owns the retained scratch.
+   * @param projection - current Science projection whose run ids identify directories to inspect.
+   * @param logicalName - missing logical artifact name requested for curation.
+   * @returns whether retained run output contains an eligible same-named PNG.
+   */
+  private async hasRetainedUncapturedRaster(
+    session: Session,
+    projection: ScienceProjection,
+    logicalName: string,
+  ): Promise<boolean> {
+    try {
+      const scratch = await planSessionScratch(this.dshHome, session)
+      const declaration = new Set([logicalName])
+      for (const run of projection.runs.toReversed()) {
+        const paths = await capturablePngPaths(
+          runArtifactDirectory(scratch, run.runId),
+          'declared',
+          declaration,
+        )
+        if (paths.includes(logicalName)) return true
+      }
+    } catch {
+      // Retained scratch is diagnostic evidence only; the projection already
+      // proved the curation target absent, so inspection failure cannot turn
+      // this metadata operation into a filesystem failure.
+    }
+    return false
   }
 
   /**

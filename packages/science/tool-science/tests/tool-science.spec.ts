@@ -655,7 +655,7 @@ describe('runValueFromResult / formatRunResult', () => {
     })
     expect(value).not.toHaveProperty('exitCode')
     expect(value).not.toHaveProperty('signal')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toContain('status: failed')
     expect(text).not.toContain('exit')
     expect(text).not.toContain('signal')
@@ -692,7 +692,7 @@ describe('runValueFromResult / formatRunResult', () => {
     }, unusedResolver)
     expect(value).not.toHaveProperty('failureCode')
     expect(value).not.toHaveProperty('failureMessage')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toBe('status: cancelled\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)')
   })
 
@@ -756,9 +756,9 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(value.captureSkippedOversizedCount).toBe(3)
     expect(value.captureTruncatedPerRun).toBe(true)
     expect(value.captureTruncatedPerSession).toBe(true)
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB).')
-    expect(text).toContain('(1 PNG file not captured, not declared in raster_artifacts: debug/preview.png)')
+    expect(text).toContain('(1 PNG file not captured, not declared in raster_artifacts: debug/preview.png; to capture, call run_python again with raster_artifacts: ["debug/preview.png"] and code that writes it)')
     expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
     expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
@@ -781,7 +781,7 @@ describe('runValueFromResult / formatRunResult', () => {
       },
     }, resolverFor([csvStore]))
     expect(value.skippedRaster).toEqual(['a.png', 'b.png'])
-    expect(formatRunResult(value)).toContain('(2 PNG files not captured, not declared in raster_artifacts: a.png, b.png)')
+    expect(formatRunResult(value, 'r')).toContain('(2 PNG files not captured, not declared in raster_artifacts: a.png, b.png; to capture, call run_r again with raster_artifacts: ["a.png","b.png"] and code that writes them)')
 
     const withoutSkips = await runValueFromResult({
       terminal: successTerminal(),
@@ -793,7 +793,7 @@ describe('runValueFromResult / formatRunResult', () => {
       },
     }, resolverFor([csvStore]))
     expect(withoutSkips).not.toHaveProperty('skippedRaster')
-    expect(formatRunResult(withoutSkips)).not.toContain('not captured')
+    expect(formatRunResult(withoutSkips, 'python')).not.toContain('not captured')
   })
 
   it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', async () => {
@@ -816,7 +816,7 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(value).not.toHaveProperty('captureSkippedOversizedCount')
     expect(value).not.toHaveProperty('captureTruncatedPerRun')
     expect(value).not.toHaveProperty('captureTruncatedPerSession')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toContain('Captured 1 artifact: `dataset.json` v1 (artifact-1; application/json, 3.0 MB).')
     expect(text).not.toContain('eligible file(s) skipped')
     expect(text).not.toContain('capture limit')
@@ -833,7 +833,7 @@ describe('runValueFromResult / formatRunResult', () => {
       },
     }, unusedResolver)
     expect(value.capturedArtifacts).toEqual([])
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).not.toContain('Captured')
   })
 
@@ -843,7 +843,7 @@ describe('runValueFromResult / formatRunResult', () => {
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
     }, unusedResolver), kernelRestartReason: 'idle timeout' }
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toBe(
       'kernel restarted (idle timeout): variables from earlier runs are gone\n'
       + 'status: success\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)',

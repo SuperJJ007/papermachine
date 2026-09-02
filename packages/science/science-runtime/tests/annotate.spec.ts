@@ -1,8 +1,9 @@
 /**
  * `ScienceRuntime.annotateArtifact`: metadata-only curation over an artifact
  * version auto-capture already produced — `annotateArtifact` never imports
- * bytes itself, so this suite seeds every annotated artifact through a real
- * captured run. Provenance facts (content origin, producer, `created_at`)
+ * bytes itself, while its not-found diagnostic may inspect retained run-file
+ * names. This suite seeds every annotated artifact through a real captured
+ * run. Provenance facts (content origin, producer, `created_at`)
  * live only in the project artifact store now (T1's authority rule), so
  * assertions about them read `ctx.scienceArtifactStore` directly rather than
  * the session projection.
@@ -403,6 +404,29 @@ describe('ScienceRuntime.annotateArtifact', () => {
       session, logicalName: 'does-not-exist.csv', title: 'x',
       ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+  })
+
+  it('directs an uncaptured retained PNG back through a producing run without capturing it during annotation', async () => {
+    const root = tmp('.science-annotate-uncaptured-raster-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-annotate-uncaptured-raster')
+    await captureFiles(harness, root, session, { 'plots/result.png': 'PNG' })
+
+    const operation = harness.runtime.annotateArtifact({
+      session, logicalName: 'plots/result.png', title: 'Result',
+      ...authorizeAnnotateArtifact(session), signal: new AbortController().signal,
+    })
+    await expect(operation).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
+    await expect(operation).rejects.toThrow(
+      'file "plots/result.png" exists in retained run output but was not captured; '
+      + 'run the code that writes it again with raster_artifacts: ["plots/result.png"], then call annotate_artifact again',
+    )
+    expect(replayScience(session.events)?.artifacts).toEqual([])
+    if (session.header.cwd === undefined) throw new Error('expected test Session workspace')
+    const project = await harness.ctx.scienceArtifactStore.openProject(session.header.cwd)
+    await expect(harness.ctx.scienceArtifactStore.listArtifacts(project.projectId)).resolves.toEqual([])
   })
 
   it('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {

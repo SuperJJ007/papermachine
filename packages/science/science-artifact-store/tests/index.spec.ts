@@ -97,7 +97,7 @@ describe('ScienceArtifactStore Cordis service', () => {
     const emptySummaryBefore = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
     expect(emptySummaryBefore).toEqual({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })
 
-    const result = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map())
+    const result = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map(), true)
     expect(result.outcomes).toEqual([{ versionId: version.versionId, kind: 'orphan' }])
     expect(result.errors).toEqual([])
 

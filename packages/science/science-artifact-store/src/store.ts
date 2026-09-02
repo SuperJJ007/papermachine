@@ -747,11 +747,19 @@ export class ProjectArtifactStoreEngine {
    * @param projectId - the project to reconcile.
    * @param events - every `science/artifact-saved` event the caller read
    * from this project's session logs, folded per `versionId` (last write wins).
+   * @param eventSetComplete - whether the caller read every relevant session log and event.
    * @returns what this call checked, reconstructed, and could not fully reconcile.
    */
-  async reconcileProject(projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>): Promise<ReconcileResult> {
+  async reconcileProject(
+    projectId: ProjectId,
+    events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>,
+    eventSetComplete: boolean,
+  ): Promise<ReconcileResult> {
     await this.connectionFor(projectId)
-    return runReconciliation(this, projectId, events, { maxVersions: this.options.reconcileMaxVersions })
+    return runReconciliation(this, projectId, events, {
+      eventSetComplete,
+      maxVersions: this.options.reconcileMaxVersions,
+    })
   }
 
   /**

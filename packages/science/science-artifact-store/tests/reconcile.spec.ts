@@ -73,28 +73,32 @@ function event(overrides: Partial<ReconcileArtifactSavedEvent>): ReconcileArtifa
 
 describe('classifyVersion', () => {
   it('consistent: same versionId in both, same sha256, same title/caption', () => {
-    expect(classifyVersion(version({ title: 'x', caption: 'y' }), event({ title: 'x', caption: 'y' }))).toBe('consistent')
+    expect(classifyVersion(version({ title: 'x', caption: 'y' }), event({ title: 'x', caption: 'y' }), true)).toBe('consistent')
   })
 
   it('orphan: version exists in the store, no matching event', () => {
-    expect(classifyVersion(version({}), undefined)).toBe('orphan')
+    expect(classifyVersion(version({}), undefined, true)).toBe('orphan')
+  })
+
+  it('unverified: an incomplete event set cannot prove that an absent event is an orphan', () => {
+    expect(classifyVersion(version({}), undefined, false)).toBe('unverified')
   })
 
   it('content-conflict: same versionId, different sha256', () => {
-    expect(classifyVersion(version({ sha256: 'a'.repeat(64) }), event({ sha256: 'b'.repeat(64) }))).toBe('content-conflict')
+    expect(classifyVersion(version({ sha256: 'a'.repeat(64) }), event({ sha256: 'b'.repeat(64) }), false)).toBe('content-conflict')
   })
 
   it('metadata-diverged: same sha256, store\'s current title differs from the event\'s presentation snapshot', () => {
-    expect(classifyVersion(version({ title: 'Curated Title', caption: undefined }), event({ title: 'plot.png', caption: null })))
+    expect(classifyVersion(version({ title: 'Curated Title', caption: undefined }), event({ title: 'plot.png', caption: null }), true))
       .toBe('metadata-diverged')
   })
 
   it('metadata-diverged: caption alone differs', () => {
-    expect(classifyVersion(version({ title: 'x', caption: 'new' }), event({ title: 'x', caption: 'old' }))).toBe('metadata-diverged')
+    expect(classifyVersion(version({ title: 'x', caption: 'new' }), event({ title: 'x', caption: 'old' }), true)).toBe('metadata-diverged')
   })
 
   it('treats an undefined store title/caption as equal to a null event title/caption', () => {
-    expect(classifyVersion(version({ title: undefined, caption: undefined }), event({ title: null, caption: null }))).toBe('consistent')
+    expect(classifyVersion(version({ title: undefined, caption: undefined }), event({ title: null, caption: null }), true)).toBe('consistent')
   })
 })
 
@@ -110,16 +114,63 @@ describe('reconcileProject', () => {
     })
 
     const noEvents = new Map<VersionId, ReconcileArtifactSavedEvent>()
-    const first = await reconcileProject(engine, projectId, noEvents, { maxVersions: 100 })
+    const first = await reconcileProject(engine, projectId, noEvents, { eventSetComplete: true, maxVersions: 100 })
     expect(first.outcomes).toEqual([{ versionId: v1.versionId, kind: 'orphan' }])
     const health1 = await engine.getReconciliationSummary(projectId)
     expect(health1.orphanCount).toBe(1)
 
     const withEvent = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: v1.sha256 })]])
-    const second = await reconcileProject(engine, projectId, withEvent, { maxVersions: 100 })
+    const second = await reconcileProject(engine, projectId, withEvent, { eventSetComplete: true, maxVersions: 100 })
     expect(second.outcomes).toEqual([{ versionId: v1.versionId, kind: 'consistent' }])
     const health2 = await engine.getReconciliationSummary(projectId)
     expect(health2.orphanCount).toBe(0)
+  })
+
+  it('preserves orphan health but refreshes missing content when an incomplete event set cannot verify a row', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-reconcile-ws-'))
+    dirs.push(workspace)
+    const { projectId, storeRoot } = await engine.openProject(workspace)
+    const { version: stored } = await engine.createArtifact(projectId, {
+      logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A,
+      data: new TextEncoder().encode('bytes-v1'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    await engine.setVersionHealth(projectId, stored.versionId, { orphan: true })
+    await rm(join(storeRoot, 'blobs', 'sha256', stored.sha256.slice(0, 2), stored.sha256), { force: true })
+    const healthSpy = vi.spyOn(engine, 'setVersionHealth')
+
+    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: false, maxVersions: 100 })
+
+    expect(result.outcomes).toEqual([{ versionId: stored.versionId, kind: 'unverified' }])
+    expect(healthSpy).toHaveBeenCalledWith(projectId, stored.versionId, { missingContent: true })
+    const health = await engine.getReconciliationSummary(projectId)
+    expect(health).toMatchObject({ orphanCount: 1, missingContentCount: 1 })
+  })
+
+  it('still records content conflicts and reconstructs dangling events from an incomplete event set', async () => {
+    const engine = await makeEngine()
+    const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-reconcile-ws-'))
+    dirs.push(workspace)
+    const { projectId } = await engine.openProject(workspace)
+    const { version: stored } = await engine.createArtifact(projectId, {
+      logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A,
+      data: new TextEncoder().encode('bytes-v1'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    const danglingVersionId = VersionId('dangling-incomplete')
+    const events = new Map<VersionId, ReconcileArtifactSavedEvent>([
+      [stored.versionId, event({ artifactId: stored.artifactId, versionId: stored.versionId, sha256: 'f'.repeat(64) })],
+      [danglingVersionId, event({
+        artifactId: ArtifactId('dangling-artifact-incomplete'), versionId: danglingVersionId,
+        logicalName: 'summary.csv', sha256: 'c'.repeat(64),
+      })],
+    ])
+
+    const result = await reconcileProject(engine, projectId, events, { eventSetComplete: false, maxVersions: 100 })
+
+    expect(result.outcomes).toEqual([{ versionId: stored.versionId, kind: 'content-conflict' }])
+    expect(result.reconstructed).toEqual([danglingVersionId])
+    const health = await engine.getReconciliationSummary(projectId)
+    expect(health).toMatchObject({ orphanCount: 1, reconstructedCount: 1 })
   })
 
   it('reconstructs a dangling event into a new store row and artifact, marked reconstructed', async () => {
@@ -135,7 +186,7 @@ describe('reconcileProject', () => {
       sha256: 'c'.repeat(64), title: 'Summary', caption: 'A caption', producerSessionId: SESSION_B,
     })]])
 
-    const result = await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     expect(result.reconstructed).toEqual([danglingVersionId])
 
     const reconstructedVersion = await engine.getVersion(projectId, danglingVersionId)
@@ -163,7 +214,7 @@ describe('reconcileProject', () => {
     })
     const conflicting = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: 'f'.repeat(64) })]])
 
-    const result = await reconcileProject(engine, projectId, conflicting, { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, conflicting, { eventSetComplete: true, maxVersions: 100 })
     expect(result.outcomes).toEqual([{ versionId: v1.versionId, kind: 'content-conflict' }])
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]).toContain(v1.versionId)
@@ -187,7 +238,7 @@ describe('reconcileProject', () => {
     await engine.annotateVersion(projectId, v1.versionId, { actor: 'model', sessionId: SESSION_A, title: 'Curated Title' })
     const stale = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: v1.sha256, title: 'plot.png' })]])
 
-    const result = await reconcileProject(engine, projectId, stale, { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, stale, { eventSetComplete: true, maxVersions: 100 })
     expect(result.outcomes).toEqual([{ versionId: v1.versionId, kind: 'metadata-diverged' }])
     expect(result.errors).toEqual([])
 
@@ -209,7 +260,7 @@ describe('reconcileProject', () => {
     await rm(join(storeRoot, 'blobs', 'sha256', v1.sha256.slice(0, 2), v1.sha256), { force: true })
     const events = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: v1.sha256 })]])
 
-    const result = await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     expect(result.outcomes).toEqual([{ versionId: v1.versionId, kind: 'consistent' }])
     const health = await engine.getReconciliationSummary(projectId)
     expect(health.missingContentCount).toBe(1)
@@ -232,10 +283,10 @@ describe('reconcileProject', () => {
     })]])
     // v1 is orphan (no event names it); danglingVersionId is a dangling event.
 
-    await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     const after1 = await engine.getReconciliationSummary(projectId)
 
-    await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     const after2 = await engine.getReconciliationSummary(projectId)
 
     expect(after2.orphanCount).toBe(after1.orphanCount)
@@ -258,7 +309,7 @@ describe('reconcileProject', () => {
         data: new TextEncoder().encode(`bytes-${String(i)}`), mediaType: 'image/png', contentOrigin: 'run-auto',
       })
     }
-    const result = await reconcileProject(engine, projectId, new Map(), { maxVersions: 2 })
+    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 2 })
     expect(result.checkedVersions).toBe(2)
     expect(result.truncated).toBe(true)
   })
@@ -272,7 +323,7 @@ describe('reconcileProject', () => {
       logicalName: 'plot.png', kind: 'figure', originSessionId: SESSION_A,
       data: new TextEncoder().encode('bytes'), mediaType: 'image/png', contentOrigin: 'run-auto',
     })
-    const result = await reconcileProject(engine, projectId, new Map(), { maxVersions: 1 })
+    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 1 })
     expect(result.checkedVersions).toBe(1)
     expect(result.truncated).toBe(false)
   })
@@ -294,12 +345,12 @@ describe('reconcileProject', () => {
     const beforeContent = await readFile(sessionLogPath, 'utf8')
 
     const events = new Map([[v1.versionId, event({ artifactId: v1.artifactId, versionId: v1.versionId, sha256: v1.sha256 })]])
-    await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     // Also exercise the dangling-event/reconstruction write path in the same call.
     const danglingVersionId = VersionId('dangling-version-2')
     await reconcileProject(engine, projectId, new Map([[danglingVersionId, event({
       artifactId: ArtifactId('dangling-artifact-2'), versionId: danglingVersionId, logicalName: 'notes.txt', sha256: 'd'.repeat(64),
-    })]]), { maxVersions: 100 })
+    })]]), { eventSetComplete: true, maxVersions: 100 })
 
     const after = await stat(sessionLogPath)
     const afterContent = await readFile(sessionLogPath, 'utf8')
@@ -320,7 +371,7 @@ describe('reconcileProject', () => {
       logicalName: 'archive.zip', sha256: 'e'.repeat(64),
     })]])
 
-    await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     const reconstructedVersion = await engine.getVersion(projectId, danglingVersionId)
     expect(reconstructedVersion?.mediaType).toBe('application/octet-stream')
     const artifact = await engine.getArtifact(projectId, ArtifactId('dangling-unknown-artifact'))
@@ -338,7 +389,7 @@ describe('reconcileProject', () => {
     })
     const spy = vi.spyOn(engine, 'blobByteCount').mockRejectedValueOnce(new Error('forced blob check failure'))
 
-    const result = await reconcileProject(engine, projectId, new Map(), { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 100 })
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]).toContain('blob existence check failed')
     expect(result.errors[0]).toContain(v1.versionId)
@@ -356,7 +407,7 @@ describe('reconcileProject', () => {
     })
     const spy = vi.spyOn(engine, 'setVersionHealth').mockRejectedValueOnce(new Error('forced health write failure'))
 
-    const result = await reconcileProject(engine, projectId, new Map(), { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, new Map(), { eventSetComplete: true, maxVersions: 100 })
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]).toContain('failed to record reconciliation health')
     expect(result.errors[0]).toContain(v1.versionId)
@@ -380,7 +431,7 @@ describe('reconcileProject', () => {
       logicalName: 'shared.png', sha256: 'f'.repeat(64),
     })]])
 
-    const result = await reconcileProject(engine, projectId, events, { maxVersions: 100 })
+    const result = await reconcileProject(engine, projectId, events, { eventSetComplete: true, maxVersions: 100 })
     expect(result.reconstructed).toEqual([])
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0]).toContain('reconstruction failed')

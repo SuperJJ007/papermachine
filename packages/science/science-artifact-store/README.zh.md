@@ -84,22 +84,23 @@ v1→v2 migration(`STORE_MIGRATIONS` 目前唯一的一步)在一个事务里做
 
 ## 对账
 
-`reconcile.ts` 把库里自己的 version 行拿去和调用方已经从该 project 的 session 日志读出、按 `versionId` 归并(后写覆盖)后的 `science/artifact-saved` 事件比对——本包自己从不读 session 日志。`ScienceArtifactStore.reconcileProject(projectId, events)` 跑这次比对并修复库来对齐;`getReconciliationSummary(projectId)` 是对上一次对账结果的纯读取。硬规则:**对账只写库,绝不写 session 日志**——日志是只追加的,重写其历史会破坏重放契约。
+`reconcile.ts` 把存储里自己的 version 行拿去和调用方已经从该 project 的 session 日志读出、按 `versionId` 归并（后写覆盖）后的 `science/artifact-saved` 事件比对，本包自己从不读 session 日志。`ScienceArtifactStore.reconcileProject(projectId, events, eventSetComplete)` 执行比对并修复存储；`eventSetComplete` 表明调用方是否读完了每条相关 session 日志和事件。`getReconciliationSummary(projectId)` 是对上一次对账结果的纯读取。硬规则：**对账只写存储，绝不写 session 日志**；日志是仅追加的，重写其历史会破坏回放约定。
 
-按 version 分类,共六种情况:
+按 version 分类，共七种情况：
 
 | 情况 | 判定条件 | 处理 |
 |---|---|---|
 | 一致 | 库行与事件都命名了这个 `versionId`,`sha256` 相同,title/caption 相同 | 不写 |
-| 孤儿库行(W1/W2) | 库行存在,没有事件命名这个 `versionId` | `version_health.orphan = 1`;行与其字节原样保留——孤儿是一个真实、完整的 artifact version,只是没有任何 session 声明是它的生产者 |
+| 无法验证 | 存储行存在，没有事件命名这个 `versionId`，且 `eventSetComplete` 为 false | 不写 orphan；部分读取无法证明或排除 orphan，因此保留既有 orphan 值，但仍刷新 `missingContent` |
+| 孤儿库行（W1/W2） | 存储行存在，没有事件命名这个 `versionId`，且 `eventSetComplete` 为 true | `version_health.orphan = 1`；行与其字节原样保留，孤儿是一个真实、完整的 artifact version，只是没有任何 session 声明是它的生产者 |
 | 悬空事件 | 某事件命名的 `versionId` 在库里没有对应行(库行丢失,事件却留存下来) | `reconstructVersion` 用事件的兜底字段重建一个 version 行(以及缺失的所属 artifact 行),`content_origin` 固定为 `'import'`(`ContentOrigin` 里唯一一个不声称真实来源的值,因为这次重建本来就无法恢复真实来源);`version_health.reconstructed = 1` |
 | 内容冲突 | 同一个 `versionId` 两边都有,`sha256` 不同 | 正常写入路径不可能产生这种情况;记为诊断错误,库行标记 `orphan`,事件不动 |
 | 元数据分歧 | 同一个 `versionId`、同一个 `sha256`,但事件的 title/caption 快照与库当前的 annotation 不同 | 不写——库的最新 annotation 本身就是当前事实;事件是模型当时看到的呈现快照,保持原样是正确的 |
 | blob 丢失 | version 行存在,但其 blob 在 `blobs/sha256/` 下不存在 | `version_health.missingContent = 1`;行不会被删除 |
 
-对账是幂等的:在库和事件集都不变的情况下重复跑会得到相同的 `version_health` 状态,因为每次写入都是从当前比对结果重新计算,而不是累加。工作量由 `reconcileMaxVersions`(见下方 Config)设上限:一个 project 的 version 行加悬空事件数超过这个上限时,只处理一段被截断的前缀,通过 `ReconcileResult.truncated` 报告,而不是卡住调用方。`reconstructVersion` 重建出的行对自己无法恢复的信息很诚实:`mediaType` 从悬空事件的 `logicalName` 扩展名推断(无法识别的扩展名回退到 `application/octet-stream`);`byteCount` 在 blob 存在时是其真实的磁盘大小,在 blob 也丢失时是 `0`——这是一个哨兵值,不是声称的真实大小(此时 `missingContent` 也会被置位,调用方应先检查这个标记再信任字节数)。
+对账是幂等的：在存储和事件集都不变的情况下重复运行会得到相同的 `version_health` 状态，因为每次确定性写入都从当前比对结果重新计算而非累加，不完整事件集则保留无法确定的 orphan 状态。内容冲突、悬空事件重建、元数据比较和 `missingContent` 刷新仍会在事件集不完整时运行；只有从“缺少事件”推断 orphan 的操作会被跳过。工作量由 `reconcileMaxVersions`（见下方配置）设上限：一个 project 的 version 行加悬空事件数超过这个上限时，只处理一段被截断的前缀，通过 `ReconcileResult.truncated` 报告，而不是卡住调用方。`reconstructVersion` 重建出的行对自己无法恢复的信息保持明确：`mediaType` 从悬空事件的 `logicalName` 扩展名推断（无法识别的扩展名回退到 `application/octet-stream`）；`byteCount` 在 blob 存在时是其真实磁盘大小，在 blob 也丢失时是 `0`，这是哨兵值而非声称的真实大小（此时 `missingContent` 也会被置位，调用方应先检查这个标记再信任字节数）。
 
-谁来调用 `reconcileProject`、事件集怎么构建,是消费方自己的事:`dsh-science-runtime` 的 `sessionProject` 在某个 Host 生命周期内第一次解析出某个 project id 时,触发一次全 project 的对账,通过 `@deepseek-ai/dsh-session-persistence` 的 `SessionPersistence.inspect()` 读取该 project 自己的 session 日志(由它自己的 `reconcileMaxSessions` Config 设上限)——触发机制以及它自己 `annotateArtifact`/`performChartEdit`/`saveArtifactAs` 追加点上对 W2/W3 崩溃窗口的收窄,见该包的 README。
+谁来调用 `reconcileProject`、事件集如何构建，由消费方负责。`dsh-science-runtime` 的 `sessionProject` 每次解析 project id 时都可触发一次有界对账，并通过 `@deepseek-ai/dsh-session-persistence` 的 `SessionPersistence.inspect()` 读取该 project 自己的 session 日志（由它自己的 `reconcileMaxSessions` 配置设上限）。一次完整、未截断且无错误的运行会在当前 Host 生命周期内抑制该 project 的后续尝试；否则，之后的 project 解析可在 `reconcileRetryDelayMs` 后重试。触发机制以及它在 `annotateArtifact`、`performChartEdit`、`saveArtifactAs` 追加点上对 W2/W3 崩溃窗口的收窄，见该包的 README。
 
 ## 配置(schemastery)
 

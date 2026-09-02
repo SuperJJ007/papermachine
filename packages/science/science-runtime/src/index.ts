@@ -358,18 +358,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly chartLiveRunsRetained: number
   /** Configured store ↔ session reconciliation session-scan bound. */
   private readonly reconcileMaxSessions: number
+  /** Configured minimum interval between reconciliation attempts for one project. */
+  private readonly reconcileRetryDelayMs: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
   private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
   /**
-   * Project ids this Runtime has already triggered a reconciliation pass
-   * for, in this Host's lifetime. A plain `Set`, not a `WeakMap` keyed on
-   * anything session-scoped: reconciliation runs once per PROJECT (which
-   * may span many sessions across this process's lifetime), not once per
-   * session.
+   * Project ids with one complete, untruncated, error-free reconciliation
+   * pass in this Host lifetime. Project identity spans many sessions, so a
+   * plain `Set` owns this suppression rather than a Session-keyed `WeakMap`.
    */
   private readonly reconciledProjects = new Set<string>()
+  /** Project ids whose reconciliation promise has not settled. */
+  private readonly reconcilingProjects = new Set<string>()
+  /** Wall-clock start of each project's latest attempt, used only for retry throttling. */
+  private readonly reconciliationAttemptedAt = new Map<string, number>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -410,6 +414,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.chartExtractTimeoutMs = resolved.chartExtractTimeoutMs
     this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
     this.reconcileMaxSessions = resolved.reconcileMaxSessions
+    this.reconcileRetryDelayMs = resolved.reconcileRetryDelayMs
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -526,42 +531,56 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   }
 
   /**
-   * Fire-and-forget: run one full-project store ↔ session reconciliation
-   * pass the first time this Runtime resolves a given project id in this
-   * Host's lifetime — never again for that project id, and never awaited by
-   * the caller. Reconciliation failure never blocks or fails the Science
-   * operation that triggered it: every failure this reaches is logged
-   * through `ctx.logger.warn` and otherwise swallowed. A deployment with no
-   * `sessionPersistence` service mounted (this Runtime's test harness, and
-   * some minimal compositions) skips reconciliation entirely rather than
-   * treating the missing service as an error — reconciliation is a
-   * self-healing pass over data this Runtime does not itself require to
-   * function.
+   * Fire-and-forget: run a bounded full-project store ↔ session
+   * reconciliation attempt when this Runtime resolves a project. A
+   * complete, untruncated, error-free pass suppresses every later attempt
+   * for that project during this Host lifetime; any other settlement remains
+   * eligible on a later project resolution after `reconcileRetryDelayMs`.
+   * Reconciliation never blocks or fails the Science operation that
+   * triggered it: every failure this reaches is logged through
+   * `ctx.logger.warn` and otherwise swallowed. A deployment with no
+   * `sessionPersistence` service mounted skips reconciliation entirely
+   * rather than treating the missing service as an error.
    * @param projectId - the project this Runtime just resolved.
    * @param workspacePath - the project's canonical workspace path, from `OpenedProject.workspacePath`.
    */
   private triggerReconciliation(projectId: ScienceProjectId, workspacePath: string): void {
     const key = String(projectId)
-    if (this.reconciledProjects.has(key)) return
-    this.reconciledProjects.add(key)
+    if (this.reconciledProjects.has(key) || this.reconcilingProjects.has(key)) return
     const sessionPersistence = this.ctx.get('sessionPersistence')
     if (sessionPersistence === undefined) return
+    const attemptedAt = this.reconciliationAttemptedAt.get(key)
+    const now = Date.now()
+    if (attemptedAt !== undefined && now - attemptedAt < this.reconcileRetryDelayMs) return
+    this.reconciliationAttemptedAt.set(key, now)
+    this.reconcilingProjects.add(key)
     collectProjectArtifactEvents({
       sessionPersistence,
       workspacePath,
       maxSessions: this.reconcileMaxSessions,
       onWarning: (message) => { this.ctx.logger.warn(message) },
-    }).then(async ({ events, truncated: sessionsTruncated }) => {
-      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events)
+    }).then(async ({ events, complete: eventSetComplete, truncated: sessionsTruncated }) => {
+      const result = await this.ctx.scienceArtifactStore.reconcileProject(projectId, events, eventSetComplete)
       for (const message of result.errors) this.ctx.logger.warn(`science-runtime: reconciliation: ${message}`)
+      if (!eventSetComplete) {
+        this.ctx.logger.warn(
+          `science-runtime: reconciliation for project "${key}" used an incomplete session event set; `
+          + 'orphan classification was skipped for versions with no event',
+        )
+      }
       if (sessionsTruncated || result.truncated) {
         this.ctx.logger.warn(
           `science-runtime: reconciliation for project "${key}" was truncated (more sessions or versions remain than this `
-          + 'call\'s configured bound admits); it runs once per project per Host lifetime and does not automatically resume',
+          + 'call\'s configured bound admits); a later project resolution may retry after the configured delay',
         )
+      }
+      if (eventSetComplete && !result.truncated && result.errors.length === 0) {
+        this.reconciledProjects.add(key)
       }
     }).catch((error: unknown) => {
       this.ctx.logger.warn(`science-runtime: project reconciliation failed and was skipped: ${String(error)}`)
+    }).finally(() => {
+      this.reconcilingProjects.delete(key)
     })
   }
 

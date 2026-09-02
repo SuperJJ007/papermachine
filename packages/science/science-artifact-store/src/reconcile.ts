@@ -40,16 +40,17 @@ export interface ReconcileArtifactSavedEvent {
 
 /**
  * One version's classification against its (possibly absent) session-log
- * event. `'orphan'` and `'content-conflict'` both mean "no session event
- * currently affirms these exact bytes"; `'metadata-diverged'` means the
- * bytes agree but the event's presentation snapshot is stale, which is
- * expected and requires no repair (the store's latest annotation already is
- * the current fact). A dangling event (an event with no matching store row
- * at all) is not a `ReconcileVersionKind` — it never reaches `classifyVersion`,
- * since there is no `VersionRecord` to classify; see `reconcileProject`'s own
- * dangling-event pass.
+ * event. `'orphan'` and `'content-conflict'` both mean "no complete session
+ * event set currently affirms these exact bytes"; `'unverified'` means the
+ * event set is incomplete and therefore cannot prove an absent event;
+ * `'metadata-diverged'` means the bytes agree but the event's presentation
+ * snapshot is stale, which is expected and requires no repair (the store's
+ * latest annotation already is the current fact). A dangling event (an event
+ * with no matching store row at all) is not a `ReconcileVersionKind` — it
+ * never reaches `classifyVersion`, since there is no `VersionRecord` to
+ * classify; see `reconcileProject`'s own dangling-event pass.
  */
-export type ReconcileVersionKind = 'consistent' | 'orphan' | 'content-conflict' | 'metadata-diverged'
+export type ReconcileVersionKind = 'consistent' | 'unverified' | 'orphan' | 'content-conflict' | 'metadata-diverged'
 
 /**
  * Classify one store version row against its (possibly absent) session-log
@@ -57,10 +58,15 @@ export type ReconcileVersionKind = 'consistent' | 'orphan' | 'content-conflict' 
  * that turns a classification into a store write.
  * @param version - the store's own row for this version.
  * @param event - the folded session-log event for the same `versionId`, when one exists.
+ * @param eventSetComplete - whether the caller read every relevant session log and event.
  * @returns the classification.
  */
-export function classifyVersion(version: VersionRecord, event: ReconcileArtifactSavedEvent | undefined): ReconcileVersionKind {
-  if (event === undefined) return 'orphan'
+export function classifyVersion(
+  version: VersionRecord,
+  event: ReconcileArtifactSavedEvent | undefined,
+  eventSetComplete: boolean,
+): ReconcileVersionKind {
+  if (event === undefined) return eventSetComplete ? 'orphan' : 'unverified'
   if (event.sha256 !== version.sha256) return 'content-conflict'
   const titleMatches = event.title === (version.title ?? null)
   const captionMatches = event.caption === (version.caption ?? null)
@@ -95,6 +101,8 @@ function inferMediaTypeFromLogicalName(logicalName: string): string {
 
 /** Bounds one `reconcileProject` call's work. */
 export interface ReconcileOptions {
+  /** Whether the caller read every relevant session log and event. */
+  readonly eventSetComplete: boolean
   /**
    * Upper bound on how many of the project's existing version rows this
    * call checks, and how many dangling events (events with no matching
@@ -104,6 +112,28 @@ export interface ReconcileOptions {
    * idempotent, so repeating an already-checked version is harmless.
    */
   readonly maxVersions: number
+}
+
+/** Reject a newly added classification until its health-write semantics are explicit. */
+/* v8 ignore next 3 -- the closed ReconcileVersionKind union makes this runtime arm unreachable */
+function assertNeverClassification(kind: never): never {
+  throw new Error(`science-artifact-store: unsupported reconciliation classification ${JSON.stringify(kind)}`)
+}
+
+/** The orphan patch for one classification; `undefined` preserves the existing flag. */
+function orphanForClassification(kind: ReconcileVersionKind): boolean | undefined {
+  switch (kind) {
+    case 'consistent':
+    case 'metadata-diverged':
+      return false
+    case 'orphan':
+    case 'content-conflict':
+      return true
+    case 'unverified':
+      return undefined
+    default:
+      return assertNeverClassification(kind)
+  }
 }
 
 /** One version's reconciliation outcome, for diagnostics and tests. */
@@ -147,7 +177,7 @@ export interface ReconcileResult {
  * @param projectId - the project to reconcile.
  * @param events - every `science/artifact-saved` event the caller read from
  * this project's session logs, folded per `versionId` (last write wins), keyed by `versionId`.
- * @param options - validated work bounds.
+ * @param options - event-set completeness and validated work bounds.
  * @returns what this call checked, reconstructed, and could not fully reconcile.
  */
 export async function reconcileProject(
@@ -174,7 +204,7 @@ export async function reconcileProject(
 
   for (const version of batch) {
     const event = events.get(version.versionId)
-    const kind = classifyVersion(version, event)
+    const kind = classifyVersion(version, event, options.eventSetComplete)
     outcomes.push({ versionId: version.versionId, kind })
     if (kind === 'content-conflict') {
       // classifyVersion returns 'content-conflict' only on its own
@@ -186,7 +216,7 @@ export async function reconcileProject(
         + `sha256 ${eventSha256} for the same versionId`,
       )
     }
-    const orphan = kind === 'orphan' || kind === 'content-conflict'
+    const orphan = orphanForClassification(kind)
     let byteCount: number | undefined
     try {
       byteCount = await engine.blobByteCount(projectId, version.sha256)
@@ -195,7 +225,10 @@ export async function reconcileProject(
       continue
     }
     try {
-      await engine.setVersionHealth(projectId, version.versionId, { orphan, missingContent: byteCount === undefined })
+      await engine.setVersionHealth(projectId, version.versionId, {
+        ...(orphan === undefined ? {} : { orphan }),
+        missingContent: byteCount === undefined,
+      })
     } catch (error) {
       errors.push(`version "${version.versionId}": failed to record reconciliation health: ${String(error)}`)
     }

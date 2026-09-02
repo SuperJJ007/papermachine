@@ -42,6 +42,8 @@ export interface CollectProjectArtifactEventsResult {
    * `SessionPersistence.list()` returned them).
    */
   readonly events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>
+  /** `true` only when listing, every admitted session read, and every relevant event parse succeeded without truncation. */
+  readonly complete: boolean
   /** `true` when more sessions matched this project's workspace than `maxSessions` admitted; only a bounded prefix was read. */
   readonly truncated: boolean
 }
@@ -107,7 +109,7 @@ function headerNamesWorkspace(header: SessionHeader, workspacePath: string): boo
  * warning, and a malformed event within an otherwise-readable log is
  * skipped the same way — one bad log or event never stops the walk.
  * @param request - the persistence backend, project workspace, and validated work bound.
- * @returns the folded events and whether more matching sessions existed than `maxSessions` admitted.
+ * @returns the folded events, their completeness, and whether more matching sessions existed than `maxSessions` admitted.
  */
 export async function collectProjectArtifactEvents(
   request: CollectProjectArtifactEventsRequest,
@@ -117,12 +119,13 @@ export async function collectProjectArtifactEvents(
     headers = await request.sessionPersistence.list()
   } catch (error) {
     request.onWarning?.(`science-runtime: reconciliation could not list session logs: ${String(error)}`)
-    return { events: new Map(), truncated: false }
+    return { events: new Map(), complete: false, truncated: false }
   }
 
   const matching = headers.filter(header => headerNamesWorkspace(header, request.workspacePath))
   const truncated = matching.length > request.maxSessions
   const batch = matching.slice(0, request.maxSessions)
+  let complete = !truncated
 
   const events = new Map<VersionId, ReconcileArtifactSavedEvent>()
   for (const header of batch) {
@@ -131,6 +134,7 @@ export async function collectProjectArtifactEvents(
       inspection = await request.sessionPersistence.inspect(header.id)
     } catch (error) {
       request.onWarning?.(`science-runtime: reconciliation skipped an unreadable session log "${header.id}": ${String(error)}`)
+      complete = false
       continue
     }
     for (const event of inspection.events) {
@@ -138,6 +142,7 @@ export async function collectProjectArtifactEvents(
       const extracted = extractReconcileEvent(event.data, header.id)
       if (extracted === undefined) {
         request.onWarning?.(`science-runtime: reconciliation skipped a malformed science/artifact-saved event in session "${header.id}"`)
+        complete = false
         continue
       }
       // Folded per versionId, last write wins: a curated re-record (same
@@ -146,5 +151,5 @@ export async function collectProjectArtifactEvents(
       events.set(extracted.versionId, extracted)
     }
   }
-  return { events, truncated }
+  return { events, complete, truncated }
 }

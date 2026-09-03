@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-desktop-usage-telemetry.md
-2026-09-01-desktop-usage-telemetry.md: 2000d1fec06e22aa792b9a798ffd2642797dc76c
-2026-09-01-desktop-usage-telemetry.zh.md: 4eba883db995ae74a7ffce4b98e2b0956ad8b8ac
+2026-09-01-desktop-usage-telemetry.md: 26440d5cc0ef0122618c64961e9af48cd3354393
+2026-09-01-desktop-usage-telemetry.zh.md: dce88a181be2cd7ee4da8ebbe78dcfd659a5957a

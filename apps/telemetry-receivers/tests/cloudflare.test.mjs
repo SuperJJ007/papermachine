@@ -46,6 +46,23 @@ describe('Cloudflare Worker receiver', () => {
     assert.equal(database.rows.size, 0)
   })
 
+  it('returns 413 for an oversized body even when the reader rejects cancel()', async () => {
+    const database = createDatabase()
+    const body = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode('x'.repeat(8193)))
+        controller.close()
+      },
+      cancel() {
+        throw new Error('cancel not supported')
+      },
+    })
+    const request = new Request('https://telemetry.example/', { method: 'POST', body, duplex: 'half' })
+    const response = await worker.fetch(request, { DB: database })
+    assert.equal(response.status, 413)
+    assert.equal(database.rows.size, 0)
+  })
+
   it('returns an empty 500 when D1 rejects the insert', async () => {
     const database = {
       prepare() {

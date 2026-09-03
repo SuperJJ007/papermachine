@@ -577,6 +577,11 @@ function coverageGates(): Gate[] {
     ], {
       label: 'test:coverage-exempt-heavy',
     }),
+    // apps/telemetry-receivers/tests/*.test.mjs are node:test files, invisible
+    // to the vitest-based instrumented and exempt gates above.
+    pnpmScript('telemetry-receivers-test', 'test:telemetry-receivers', {
+      label: 'telemetry receivers test',
+    }),
   ]
 }
 

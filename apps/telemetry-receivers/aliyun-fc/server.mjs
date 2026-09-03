@@ -93,7 +93,23 @@ export function createTelemetryServer(options = {}) {
   })
 }
 
+/**
+ * Resolve the listening port from `FC_SERVER_PORT`, the Function Compute
+ * web-function convention for a configurable port, defaulting to `9000`
+ * (Function Compute's own documented example and API default).
+ * @param {string | undefined} rawPort - `process.env.FC_SERVER_PORT`.
+ * @returns {number} The port to listen on.
+ * @throws when `rawPort` is set but does not parse to an integer.
+ */
+export function resolveServerPort(rawPort) {
+  const port = Number(rawPort ?? 9000)
+  if (!Number.isInteger(port)) {
+    throw new Error(`telemetry-receivers: FC_SERVER_PORT must be an integer, got ${JSON.stringify(rawPort)}`)
+  }
+  return port
+}
+
 const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
-  createTelemetryServer().listen(9000, '0.0.0.0')
+  createTelemetryServer().listen(resolveServerPort(process.env.FC_SERVER_PORT), '0.0.0.0')
 }

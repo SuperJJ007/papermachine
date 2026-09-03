@@ -1,9 +1,15 @@
 /** Validation shared by both telemetry receivers. */
 
+/** Request body byte ceiling. Both receivers stop buffering a request body once it exceeds this and return `413` without JSON-parsing it. */
 export const MAX_BODY_BYTES = 8 * 1024
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const ISO_8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u
+// The package sources the shipped environment declaration ships, matching
+// apps/desktop/src/environment-declaration.ts's shipped source ids.
+const SOURCE_IDS = ['tuna', 'ustc', 'official']
+// Equal to ProvisioningProgress['phase'] in apps/desktop/src/provisioning.ts.
+const PHASES = ['checking', 'solving', 'installing', 'verifying', 'publishing', 'ready']
 const COMMON_KEYS = [
   'anonymousId',
   'appVersion',
@@ -26,6 +32,10 @@ function isRecord(value) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.length > 0
+}
+
+function isValidSourceId(value) {
+  return SOURCE_IDS.includes(value)
 }
 
 function hasExactKeys(value, expectedKeys) {
@@ -71,15 +81,15 @@ export function parseTelemetryEvent(bodyBytes) {
     case 'app.launch':
       return value
     case 'environment.installed':
-      if ((value.sourceId !== 'tuna' && value.sourceId !== 'ustc' && value.sourceId !== 'official')
+      if (!isValidSourceId(value.sourceId)
         || typeof value.durationMs !== 'number'
         || !Number.isFinite(value.durationMs)
         || value.durationMs < 0
         || (value.environmentId !== 'general' && value.environmentId !== 'custom')) return undefined
       return value
     case 'environment.install-failed':
-      if (!isNonEmptyString(value.sourceId)
-        || !isNonEmptyString(value.phase)
+      if (!isValidSourceId(value.sourceId)
+        || !PHASES.includes(value.phase)
         || typeof value.cancelled !== 'boolean') return undefined
       return value
     default:

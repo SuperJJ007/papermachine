@@ -13,7 +13,7 @@
 
 ## 阿里云函数计算
 
-把本目录作为代码根目录，部署到 `cn-hongkong` 的 Node.js 20 custom runtime Web 函数。启动命令设为 `node aliyun-fc/server.mjs`，监听端口设为 `9000`。函数计算当前允许 Web 函数配置端口，官方示例和 API 默认值均为 `9000`。
+把本目录作为代码根目录，部署到 `cn-hongkong` 的 Node.js 20 custom runtime Web 函数。启动命令设为 `node aliyun-fc/server.mjs`。server 从 `FC_SERVER_PORT` 读取监听端口，默认为 `9000`——这是函数计算针对可配置端口 Web 函数的官方示例和 API 默认值——如果 `FC_SERVER_PORT` 被设为非整数值，server 会拒绝启动。
 
 接收端没有 NPM 依赖。每个合法事件会以一行裸 `JSON.stringify(event)` stdout 写入，供 SLS 采集。函数计算实例不提供持久的进程内状态，因此此目标有意省略写入时去重；SLS 查询按 `eventId` 去重。
 

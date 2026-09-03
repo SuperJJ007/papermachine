@@ -38,7 +38,10 @@ async function readLimitedBody(request) {
     if (done) break
     byteLength += value.byteLength
     if (byteLength > MAX_BODY_BYTES) {
-      await reader.cancel()
+      // The oversize response must return regardless of whether the runtime
+      // can actually cancel the in-flight read; a cancel failure here is not
+      // actionable and must not turn a 413 into an unhandled rejection.
+      void reader.cancel().catch(() => {})
       return undefined
     }
     chunks.push(value)

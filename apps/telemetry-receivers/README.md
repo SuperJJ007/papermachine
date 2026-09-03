@@ -13,7 +13,7 @@ This private workspace contains the two deployment targets for PaperMachine's me
 
 ## Alibaba Cloud Function Compute
 
-Deploy this directory as the code root of a Node.js 20 custom-runtime web function in `cn-hongkong`. Set the startup command to `node aliyun-fc/server.mjs` and the listening port to `9000`. Function Compute's current web-function convention is a configurable port with `9000` as the documented example and API default.
+Deploy this directory as the code root of a Node.js 20 custom-runtime web function in `cn-hongkong`. Set the startup command to `node aliyun-fc/server.mjs`. The server reads its listening port from `FC_SERVER_PORT`, defaulting to `9000` — Function Compute's own documented example and API default for a configurable-port web function — and refuses to start if `FC_SERVER_PORT` is set to something other than an integer.
 
 The receiver has no NPM dependencies. Each valid event is written as one bare `JSON.stringify(event)` stdout line for SLS ingestion. Function Compute instances do not provide durable process-local state, so this target deliberately omits write-time deduplication; SLS queries deduplicate by `eventId`.
 

@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
-import { createTelemetryServer } from '../aliyun-fc/server.mjs'
+import { createTelemetryServer, resolveServerPort } from '../aliyun-fc/server.mjs'
 import { validEvent } from './fixtures.mjs'
+
+describe('resolveServerPort', () => {
+  it('defaults to 9000 when FC_SERVER_PORT is unset', () => {
+    assert.equal(resolveServerPort(undefined), 9000)
+  })
+
+  it('parses a configured FC_SERVER_PORT', () => {
+    assert.equal(resolveServerPort('9100'), 9100)
+  })
+
+  it('rejects a non-integer FC_SERVER_PORT', () => {
+    assert.throws(() => resolveServerPort('not-a-port'), /FC_SERVER_PORT must be an integer/u)
+    assert.throws(() => resolveServerPort('9000.5'), /FC_SERVER_PORT must be an integer/u)
+  })
+})
 
 describe('Aliyun Function Compute receiver', () => {
   const loggedLines = []

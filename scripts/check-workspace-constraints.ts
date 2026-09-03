@@ -52,6 +52,15 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** npm namespace reserved for private experimental packages. */
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
+/**
+ * `apps/*` packages that are deployment-only backends (Worker/Function code
+ * pushed straight to a cloud provider) rather than a release member: no
+ * consumer ever installs them, so they carry no publication surface. Named
+ * explicitly rather than by a private/no-publishConfig heuristic, so a
+ * genuine release member cannot silently opt out of the release-member rule
+ * by omitting those fields.
+ */
+const deploymentOnlyAppDirectories = new Set(['apps/telemetry-receivers'])
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 
@@ -273,8 +282,18 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
   return errors
 }
 
+/** Deployment-only app manifest requirements enforced independently from release metadata. */
+export function checkDeploymentOnlyAppManifest({ dir, manifest }: WorkspaceManifest): string[] {
+  if (!deploymentOnlyAppDirectories.has(dir)) return []
+  const label = manifest.name ?? dir
+  const errors: string[] = []
+  if (manifest.private !== true) errors.push(`${label}: deployment-only app package must set "private": true`)
+  if (manifest.publishConfig !== undefined) errors.push(`${label}: deployment-only app package must omit publishConfig`)
+  return errors
+}
+
 function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
-  const errors = checkExperimentalManifest({ dir, manifest })
+  const errors = [...checkExperimentalManifest({ dir, manifest }), ...checkDeploymentOnlyAppManifest({ dir, manifest })]
   const label = manifest.name ?? dir
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
   const isPublicLandlockPackage = isLandlockPackageDir
@@ -294,7 +313,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (releaseMemberDirectory.test(dir)) {
+  } else if (!deploymentOnlyAppDirectories.has(dir) && releaseMemberDirectory.test(dir)) {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
@@ -316,7 +335,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== dir) {
       errors.push(`${label}: release member repository must use ${publishedRepositoryUrl} with directory ${dir}`)
     }
-  } else if (!experimentalPackageDirectory.test(dir) && manifest.private !== true) {
+  } else if (!experimentalPackageDirectory.test(dir) && !deploymentOnlyAppDirectories.has(dir) && manifest.private !== true) {
     errors.push(`${label}: package.json must set "private": true`)
   }
 
@@ -333,7 +352,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/') && !deploymentOnlyAppDirectories.has(dir)) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)

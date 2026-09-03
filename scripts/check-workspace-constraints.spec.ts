@@ -1,7 +1,8 @@
-/** Experimental-package publication and dependency constraints. */
+/** Experimental-package and deployment-only-app publication and dependency constraints. */
 
 import { describe, expect, it } from 'vitest'
 import {
+  checkDeploymentOnlyAppManifest,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   type WorkspaceManifest,
@@ -71,6 +72,34 @@ describe('experimental workspace constraints', () => {
 
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
+    ])
+  })
+})
+
+const deploymentOnlyApp: WorkspaceManifest = {
+  dir: 'apps/telemetry-receivers',
+  manifest: { name: '@deepseek-ai/dsh-telemetry-receivers', private: true },
+}
+
+describe('deployment-only app workspace constraints', () => {
+  it('ignores a directory outside the deployment-only allowlist', () => {
+    expect(checkDeploymentOnlyAppManifest({
+      dir: 'apps/desktop',
+      manifest: { name: '@deepseek-ai/dsh-desktop', private: false },
+    })).toEqual([])
+  })
+
+  it('accepts a private manifest without publication metadata', () => {
+    expect(checkDeploymentOnlyAppManifest(deploymentOnlyApp)).toEqual([])
+  })
+
+  it('rejects a non-private manifest and any publishConfig', () => {
+    expect(checkDeploymentOnlyAppManifest({
+      ...deploymentOnlyApp,
+      manifest: { ...deploymentOnlyApp.manifest, private: false, publishConfig: { access: 'public' } },
+    })).toEqual([
+      '@deepseek-ai/dsh-telemetry-receivers: deployment-only app package must set "private": true',
+      '@deepseek-ai/dsh-telemetry-receivers: deployment-only app package must omit publishConfig',
     ])
   })
 })

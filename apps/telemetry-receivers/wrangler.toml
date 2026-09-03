@@ -1,0 +1,10 @@
+name = "dsh-telemetry"
+main = "cloudflare/worker.mjs"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dsh-telemetry"
+database_id = "0fe38a58-bd99-46c7-b147-b1744e01b06d"
+migrations_dir = "cloudflare/migrations"

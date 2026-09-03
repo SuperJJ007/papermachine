@@ -1,4 +1,4 @@
 {
   "schemaVersion": 1,
-  "endpoints": []
+  "endpoints": ["https://dsh-telemetry.deepseek-ai-dsh-telemetry-receivers.workers.dev"]
 }

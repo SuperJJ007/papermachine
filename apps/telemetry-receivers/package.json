@@ -1,0 +1,21 @@
+{
+  "name": "@deepseek-ai/dsh-telemetry-receivers",
+  "description": "Deployment-only anonymous usage telemetry receivers",
+  "version": "0.1.1-rc.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "aliyun:start": "node aliyun-fc/server.mjs",
+    "cloudflare:deploy": "wrangler deploy --config wrangler.toml",
+    "cloudflare:dev": "wrangler dev --config wrangler.toml",
+    "cloudflare:login": "wrangler login",
+    "cloudflare:whoami": "wrangler whoami",
+    "cloudflare:d1:create": "wrangler d1 create dsh-telemetry",
+    "cloudflare:d1:init": "wrangler d1 migrations apply dsh-telemetry --remote --config wrangler.toml",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  }
+}

@@ -1182,7 +1182,18 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       const failedIndices = new Set(failedOps.map(failed => failed.index))
       const successfulOps = request.ops.filter((_, index) => !failedIndices.has(index))
       if (commit && successfulOps.length === 0) {
-        throw new ScienceRuntimeError('CHART_ELEMENT_NOT_FOUND', 'No chart edit operation resolved an addressable element')
+        // Every op's own resolution reason (e.g. set_font's font_not_found,
+        // which never fails for element-resolution reasons) rides in the
+        // thrown message: the failedOps list itself only reaches the caller
+        // on a non-throwing partial-failure result, so a whole-request
+        // rejection would otherwise discard why each op failed and leave
+        // only this generic summary. See edit-message.ts's
+        // translateChartRuntimeError and the panel's `style.failed` render.
+        const detail = failedOps
+          // oxlint-disable-next-line typescript/no-non-null-assertion -- failed.index indexes request.ops (see successfulOps above)
+          .map(failed => `op ${String(failed.index + 1)} ${request.ops[failed.index]!.op} — ${failed.reason}`)
+          .join('; ')
+        throw new ScienceRuntimeError('CHART_ELEMENT_NOT_FOUND', `No chart edit operation applied: ${detail}`)
       }
       const chart = decodeScienceChartState({
         ...application.chart,

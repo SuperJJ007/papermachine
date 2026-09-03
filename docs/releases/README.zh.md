@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-每个已发布的 PaperMachine 桌面 DMG 版本对应一份记录,文件名为 `<version>.md`,取自 `apps/desktop/package.json` 的 `version` 字段(例如 [0.1.1-rc.3.md](0.1.1-rc.3.zh.md)、[0.1.1-rc.4.md](0.1.1-rc.4.zh.md))。每份记录固定包含三节,顺序如下:
+每个已发布的 PaperMachine 桌面 DMG 版本对应一份记录,文件名为 `<version>.md`,取自 `apps/desktop/package.json` 的 `version` 字段(例如 [0.1.1-rc.3.md](0.1.1-rc.3.zh.md)、[0.1.1-rc.4.md](0.1.1-rc.4.zh.md)、[0.1.0.md](0.1.0.zh.md))。每份记录固定包含三节,顺序如下:
 
 - **改了什么** — 相对上一个已发布版本改了什么:功能、修复和已知问题,按类别分组并链接到对应的 Agent Note。
 - **实机验了什么** — 该 DMG 的实机验收结果,以按 checklist 条目 id 索引的表格呈现。

@@ -260,6 +260,13 @@ async function prepareCliMockFixture(cwd: string): Promise<void> {
  */
 async function prepareScienceFixture(root: string): Promise<void> {
   const prefix = join(root, 'fake-conda')
+  // A conda-meta package record `fake-micromamba` writes on invocation,
+  // modeling a real micromamba install actually adding the requested
+  // package. The `-m` package-listing probe below reads this marker so the
+  // fixture's own install turn re-observes a genuinely different inventory
+  // — required for `installPackages` to append a fresh environment revision
+  // rather than the no-op a redundant, unchanged install now reports.
+  const numpyMarker = join(prefix, 'conda-meta', 'numpy-1.26.4.json')
   await Promise.all([
     mkdir(join(prefix, 'bin'), { recursive: true }),
     mkdir(join(prefix, 'conda-meta'), { recursive: true }),
@@ -268,7 +275,13 @@ async function prepareScienceFixture(root: string): Promise<void> {
     writeFile(join(prefix, 'bin', 'python'), `#!/bin/sh
 case " $* " in
   *" --version "*) printf 'Python 3.13.5\\n' ;;
-  *" -m "*) printf '[{"name":"pip","version":"24.0"}]' ;;
+  *" -m "*)
+    if [ -f ${JSON.stringify(numpyMarker)} ]; then
+      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
+    else
+      printf '[{"name":"pip","version":"24.0"}]'
+    fi
+    ;;
   *" -c "*) printf 'dsh-科学-✓' ;;
   *)
     while [ "$#" -gt 1 ]; do shift; done
@@ -280,7 +293,10 @@ esac
     // Always-succeeding stand-in for micromamba: `install_science_packages`
     // reaches this through the real sandbox passthrough runner, so it must
     // be a real executable a real subprocess can spawn, not a fake handle.
-    writeFile(join(root, 'fake-micromamba'), '#!/bin/sh\nexit 0\n', { mode: 0o700 }),
+    writeFile(join(root, 'fake-micromamba'), `#!/bin/sh
+touch ${JSON.stringify(numpyMarker)}
+exit 0
+`, { mode: 0o700 }),
   ])
 }
 

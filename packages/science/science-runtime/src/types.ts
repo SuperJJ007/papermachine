@@ -186,14 +186,24 @@ export interface InstallScienceEnvironmentPackagesResult {
   /** Terminal classification for this attempt. */
   readonly status: InstallScienceEnvironmentPackagesStatus
   /**
-   * The fresh whole-value environment revision this install appended,
-   * present iff {@link status} is `'success'`. A live kernel serving the
-   * superseded revision is unaffected by this call itself; the next
-   * `startRun` for either language of this session finds the revision
-   * mismatch and ends it (`environment-rebound`) before starting a fresh one,
-   * the same path an out-of-band rebind already takes.
+   * The environment as it now stands, present iff {@link status} is
+   * `'success'`: the session's existing binding when re-observation matched
+   * it exactly, or the fresh whole-value revision this call appended when it
+   * did not. See {@link environmentChanged} for which one this is. A live
+   * kernel serving a superseded revision is unaffected by this call itself;
+   * the next `startRun` for either language of this session finds the
+   * revision mismatch and ends it (`environment-rebound`) before starting a
+   * fresh one, the same path an out-of-band rebind already takes.
    */
   readonly environment?: ScienceEnvironmentBinding
+  /**
+   * Whether this call appended {@link environment} as a fresh revision,
+   * present iff {@link status} is `'success'`. `false` means re-observation
+   * found no difference from the session's existing binding — every
+   * requested package was already present — so no revision was appended and
+   * no kernel restarts because of this call.
+   */
+  readonly environmentChanged?: boolean
   /** Bounded standard-output tail from the installer process. */
   readonly stdout: ScienceRunOutput
   /** Bounded standard-error tail from the installer process. */
@@ -332,12 +342,20 @@ export interface ScienceRuntimeService {
   /**
    * Install packages into the applied environment's configured prefix for
    * one language through micromamba, then, only on success, re-observe the
-   * whole profile and append a fresh whole-value `science/environment-bound`
-   * revision. Requires a configured micromamba executable
-   * (`INSTALLER_NOT_CONFIGURED` otherwise) and an applied environment with no
-   * run in flight.
+   * whole profile. A re-observation that differs from the session's current
+   * binding appends a fresh whole-value `science/environment-bound`
+   * revision; a re-observation that matches it exactly (every requested
+   * package was already present, or an earlier attempt classified
+   * `'timed-out'` had in fact already finished writing the prefix) appends
+   * none and returns the existing binding unchanged, so a caller that
+   * retries after a misreported timeout never restarts an otherwise
+   * unaffected kernel for no environment change. Requires a configured
+   * micromamba executable (`INSTALLER_NOT_CONFIGURED` otherwise) and an
+   * applied environment with no run in flight.
    * @param request - Exact Session, target language, package specs, and cancellation.
-   * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+   * @returns The install's terminal classification, output tails, and — on
+   *   success — the environment as it now stands plus whether this call
+   *   actually appended it as a fresh revision.
    */
   installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>
 }

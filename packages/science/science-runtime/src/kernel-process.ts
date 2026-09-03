@@ -353,6 +353,13 @@ export class KernelProcess {
     readStream.on('data', (chunk: string) => { this.onFifoData(chunk) })
     readStream.on('end', () => { void this.onFifoEnd() })
     readStream.on('error', (error: unknown) => { this.onFifoError(error) })
+    // Bare pipe stdin (no batch-stdin mode: subprocess-local's own stdin
+    // error listener at spawn.ts only covers that mode) emits 'error'
+    // asynchronously — a write's synchronous try/catch in execute(),
+    // extractCharts(), applyChart(), and performEnd() cannot observe a
+    // later EPIPE. Retained for stdin's whole lifetime so a write racing
+    // process death never becomes an uncaught EventEmitter error.
+    this.stdin.on('error', (error: unknown) => { this.onStdinError(error) })
     handle.done.then(
       (outcome) => { this.settleExit(outcome.exitCode, outcome.signal) },
       () => { this.settleExit(null, null) },
@@ -560,7 +567,11 @@ export class KernelProcess {
     try {
       this.stdin.write('EXIT\n')
     } catch {
-      // Best-effort: a closed or broken stdin means the kernel is already gone.
+      // Only a synchronous throw lands here (an already-ended stream). A
+      // write accepted synchronously but failing later (EPIPE against a
+      // process that died between accept and flush) surfaces through the
+      // stdin 'error' listener instead, which is benign once teardown is
+      // already underway (see onStdinError).
     }
     const quiescence = await quiesce(this.handle)
     const readerQuiescence = await stopResponseReader(this.reader)
@@ -692,10 +703,26 @@ export class KernelProcess {
   }
 
   private onFifoError(error: unknown): void {
+    this.onStreamError('kernel response FIFO', error)
+  }
+
+  /**
+   * A stdin write accepted synchronously can still fail asynchronously
+   * (EPIPE against a process that exited between accept and flush). Once
+   * {@link exitSettled} is already true — the designed dead-kernel path,
+   * `KernelSet` tearing down a process that already crashed — this is
+   * benign: {@link onStreamError}'s guard discards it rather than routing
+   * a stale error into {@link failProtocol}.
+   */
+  private onStdinError(error: unknown): void {
+    this.onStreamError('kernel stdin', error)
+  }
+
+  private onStreamError(source: string, error: unknown): void {
     if (this.exitSettled) return
     this.failProtocol(error instanceof Error
-      ? new KernelProtocolError(`science-runtime: kernel response FIFO failed: ${error.message}`)
-      : new KernelProtocolError('science-runtime: kernel response FIFO failed'))
+      ? new KernelProtocolError(`science-runtime: ${source} failed: ${error.message}`)
+      : new KernelProtocolError(`science-runtime: ${source} failed`))
   }
 
   private failProtocol(error: KernelProtocolError): void {

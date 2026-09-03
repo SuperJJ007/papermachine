@@ -1369,9 +1369,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult>',
-        description: 'Install packages into one language\'s applied prefix through micromamba, then, only on a successful install, re-observe the whole profile and append a fresh whole-value `science/environment-bound` revision — exactly the operation `bindEnvironment`\'s own post-first-run guard refuses. A live kernel serving the superseded revision is left running: the next `startRun` for either language finds the revision mismatch and ends it (`environment-rebound`) before starting a fresh one, the same path an out-of-band rebind already takes (`kernel-set.ts`).',
+        description: 'Install packages into one language\'s applied prefix through micromamba, then, only on a successful install, re-observe the whole profile — exactly the operation `bindEnvironment`\'s own post-first-run guard refuses. A re-observation that differs from the session\'s current binding appends a fresh whole-value `science/environment-bound` revision; one that matches it exactly appends none and returns the existing binding, since every requested package was already present (or an earlier attempt this session retried after a `\'timed-out\'` misclassification had, in fact, already finished — see `runMicromambaInstall`). A live kernel serving a superseded revision is left running: the next `startRun` for either language finds the revision mismatch and ends it (`environment-rebound`) before starting a fresh one, the same path an out-of-band rebind already takes (`kernel-set.ts`).',
         parameters: [{ name: 'request', description: 'Exact live Session, target language, package specs, and cancellation.' }],
-        returns: 'The install\'s terminal classification, output tails, and — on success — the fresh environment revision.',
+        returns: 'The install\'s terminal classification, output tails, and — on success — the environment as it now stands plus whether this call appended it as a fresh revision.',
       },
       {
         signature: 'async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle>',
@@ -3834,7 +3834,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstallScienceEnvironmentPackagesResult',
-    declaration: 'export interface InstallScienceEnvironmentPackagesResult {\n    readonly status: InstallScienceEnvironmentPackagesStatus;\n    readonly environment?: ScienceEnvironmentBinding;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
+    declaration: 'export interface InstallScienceEnvironmentPackagesResult {\n    readonly status: InstallScienceEnvironmentPackagesStatus;\n    readonly environment?: ScienceEnvironmentBinding;\n    readonly environmentChanged?: boolean;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n}',
   },
   {
     name: 'InstallScienceEnvironmentPackagesStatus',

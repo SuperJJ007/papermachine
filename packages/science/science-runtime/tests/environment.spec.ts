@@ -1394,6 +1394,23 @@ describe('Science Runtime configuration', () => {
     })
   })
 
+  it('validates installTimeoutMs as its own bound, distinct from timeoutMs', () => {
+    expect(resolveConfig({ profiles: {} }).installTimeoutMs).toBe(900_000)
+    expect(resolveConfig({ profiles: {}, installTimeoutMs: 1 }).installTimeoutMs).toBe(1)
+    expect(resolveConfig({ profiles: {}, installTimeoutMs: 3_600_000 }).installTimeoutMs).toBe(3_600_000)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 0 })).toThrow(/installTimeoutMs must be a safe integer/)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 3_600_001 })).toThrow(/installTimeoutMs must be a safe integer/)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 1.5 })).toThrow(/installTimeoutMs must be a safe integer/)
+    // timeoutMs keeps its own separate, smaller max (600_000): the two
+    // fields are validated independently against their own MIN/MAX, never
+    // against each other, so installTimeoutMs's larger ceiling never widens
+    // what timeoutMs itself accepts.
+    expect(() => resolveConfig({ profiles: {}, timeoutMs: 3_600_000 })).toThrow(/timeoutMs must be a safe integer/)
+    expect(resolveConfig({ profiles: {}, timeoutMs: 600_000, installTimeoutMs: 3_600_000 })).toMatchObject({
+      timeoutMs: 600_000, installTimeoutMs: 3_600_000,
+    })
+  })
+
   it('requires micromambaPath to be an absolute string when configured, undefined otherwise', () => {
     expect(resolveConfig({ profiles: {} }).micromambaPath).toBeUndefined()
     expect(() => resolveConfig({
@@ -1779,18 +1796,45 @@ describe('ScienceRuntime.installPackages', () => {
     })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
   })
 
-  it('appends a fresh whole-value environment revision and returns it on a successful install', async () => {
-    const { runtime, session } = await boundHarness('install-success')
+  it('appends a fresh whole-value environment revision and returns it when a successful install actually changed the inventory', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-success')
     const before = replayScience(session.events)?.environment
+    // A real micromamba install writes the requested package into the
+    // prefix; the fake harness's probe stdout is the only signal
+    // `observeProfile` reads, so this simulates that write landing before
+    // the post-install re-observation runs.
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: JSON.stringify([{ name: 'pip', version: '24.0' }, { name: 'numpy', version: '1.26.4' }, { name: 'pandas', version: '2.2.0' }]),
+    }
     const result = await runtime.installPackages({
-      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      session, language: 'python', packages: ['pandas'], signal: new AbortController().signal,
     })
     expect(result.status).toBe('success')
+    expect(result.environmentChanged).toBe(true)
     expect(result.environment?.revision).toBe((before?.revision ?? 0) + 1)
     expect(result.environment?.status).toBe('applied')
     const after = replayScience(session.events)?.environment
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
     expect(result.stdout.text.length >= 0).toBe(true)
+  })
+
+  it('appends no revision and reports environmentChanged: false when a successful install re-observes an identical inventory', async () => {
+    const { runtime, session } = await boundHarness('install-redundant')
+    const before = replayScience(session.events)?.environment
+    // The fake installer succeeds (default queued-run behavior: exitCode 0)
+    // but the probe stdout `boundHarness` already configured is unchanged,
+    // modeling every requested package already being present — the
+    // `install_science_packages` retry this fix targets after a
+    // misreported 'timed-out' whose install had, in fact, already finished.
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environmentChanged).toBe(false)
+    expect(result.environment?.revision).toBe(before?.revision)
+    const after = replayScience(session.events)?.environment
+    expect(after?.revision).toBe(before?.revision)
   })
 
   it('does not append a fresh revision when the install fails', async () => {

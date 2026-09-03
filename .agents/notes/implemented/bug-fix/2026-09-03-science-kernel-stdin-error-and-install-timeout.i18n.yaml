@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-03-science-kernel-stdin-error-and-install-timeout.md
+2026-09-03-science-kernel-stdin-error-and-install-timeout.md: 6dd9e25820bce03f31e6e6b1f20e201751ef23e4
+2026-09-03-science-kernel-stdin-error-and-install-timeout.zh.md: 4c631aac12f3775b10389d51356ca3da9d83decf

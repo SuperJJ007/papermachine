@@ -57,6 +57,7 @@ describe('desktop Runtime overlay', () => {
     expect(byId.get('science-runtime')?.config).toEqual({
       micromambaPath: installer.micromambaPath,
       installChannels: [...installer.installChannels],
+      installTimeoutMs: 3_600_000,
       profiles: {
         science: {
           pythonPrefix: '/Applications Support/Science/env',

@@ -1920,6 +1920,12 @@ export interface Config {
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
   /**
+   * One caller-independent bound for one `installPackages` micromamba
+   * solve/install attempt, separate from {@link Config.timeoutMs} because a
+   * package solve routinely takes far longer than a bind or a run.
+   */
+  readonly installTimeoutMs?: number
+  /**
    * Maximum package-inventory entries retained per observed interpreter.
    * An inventory exceeding this cap is truncated and flagged; the digest
    * still covers the complete pre-truncation inventory.
@@ -2008,7 +2014,7 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:126`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:137`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

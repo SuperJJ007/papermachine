@@ -43,6 +43,13 @@ const BAD_READY_DRIVER_PATH = join(FIXTURES, 'fake-kernel-driver-bad-ready.mjs')
 const capturedReadStreams: Readable[] = []
 
 /**
+ * Every real kernel-interpreter stdin write stream this file's
+ * KernelProcess.start() calls have created, for a focused test to command
+ * directly (parallels {@link capturedReadStreams} for the write side).
+ */
+const capturedStdinStreams: Writable[] = []
+
+/**
  * Wraps the real local subprocess provider so the kernel's own confined spawn
  * (identified by `stdio.stdin === 'pipe'`, unique among this harness's spawns
  * to `KernelProcess`'s own spawn — `mkfifo` uses `stdin: 'ignore'`) reports a
@@ -62,6 +69,9 @@ class KernelStdinFaultSubprocess extends LocalSubprocessRuntime {
     if (spec.stdio.stdin !== 'pipe' || this.fault === undefined) return handle
     if (this.fault === 'missing') return { ...handle, stdin: undefined }
     const fakeStdin = {
+      // The constructor unconditionally retains a stdin 'error' listener
+      // (see kernel-process.ts); this fake only needs to accept that call.
+      on: (): unknown => fakeStdin,
       write: (): void => {
         if (this.writeError !== undefined) throw this.writeError
       },
@@ -133,6 +143,7 @@ const contexts: Context[] = []
 
 afterEach(async () => {
   capturedReadStreams.length = 0
+  capturedStdinStreams.length = 0
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -196,6 +207,7 @@ async function createHarness(
   vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
     const handle = spawn(spec)
     if (spec.stdio.stdout === 'pipe' && handle.stdout !== undefined) capturedReadStreams.push(handle.stdout)
+    if (spec.stdio.stdin === 'pipe' && handle.stdin !== undefined) capturedStdinStreams.push(handle.stdin)
     return handle
   })
   const runner = createFakeSandboxRunner(root)
@@ -621,6 +633,52 @@ describe('KernelProcess', () => {
     if (stream === undefined) throw new Error('no response-FIFO read stream was captured')
     await kernel.end('test-teardown')
     expect(() => { stream.emit('error', new Error('late FIFO error')) }).not.toThrow()
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
+  })
+
+  it('classifies a stdin stream error by whether it carries a real Error, both ways from the same kernel', async () => {
+    const harness = await createHarness('kernel-stdin-stream-error')
+    const kernel = await startKernel(harness, 'python')
+    const stdin = capturedStdinStreams.at(-1)
+    if (stdin === undefined) throw new Error('no kernel stdin write stream was captured')
+    // Mirrors the response-FIFO case above: synchronous, back-to-back, so
+    // exitSettled cannot yet be true for either emit.
+    stdin.emit('error', new Error('injected real stdin error'))
+    stdin.emit('error', 'injected non-Error stdin failure')
+    await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
+  })
+
+  it('never lets an EPIPE-shaped stdin error racing performEnd\'s own EXIT write become an uncaught exception', async () => {
+    // Reproduces the designed dead-kernel path (KernelSet.teardown calling
+    // end() on a kernel whose process is dying): performEnd's synchronous
+    // EXIT write can be accepted by the stream and still fail
+    // asynchronously (EPIPE) once the remote end is gone. Before the stdin
+    // 'error' listener this fix adds, that async failure had no listener
+    // and became an uncaught EventEmitter error, crashing the Host mid-teardown.
+    const uncaught = vi.fn()
+    process.on('uncaughtException', uncaught)
+    try {
+      const harness = await createHarness('kernel-stdin-error-during-end')
+      const kernel = await startKernel(harness, 'python')
+      const stdin = capturedStdinStreams.at(-1)
+      if (stdin === undefined) throw new Error('no kernel stdin write stream was captured')
+      const endResult = kernel.end('test-teardown')
+      stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      await expect(endResult).resolves.toMatchObject({ quiescent: true })
+      await new Promise(resolve => setImmediate(resolve))
+      expect(uncaught).not.toHaveBeenCalled()
+    } finally {
+      process.off('uncaughtException', uncaught)
+    }
+  })
+
+  it('ignores a stdin stream error that arrives after the kernel already exited', async () => {
+    const harness = await createHarness('kernel-stdin-error-after-exit')
+    const kernel = await startKernel(harness, 'python')
+    const stdin = capturedStdinStreams.at(-1)
+    if (stdin === undefined) throw new Error('no kernel stdin write stream was captured')
+    await kernel.end('test-teardown')
+    expect(() => { stdin.emit('error', new Error('late stdin error')) }).not.toThrow()
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 

@@ -1,6 +1,16 @@
 /** Desktop-owned Host composition applied above the generic Web bundle. */
 
 /**
+ * Fixed deadline for one `install_science_packages` micromamba
+ * solve/install attempt, matching the bound this Host's own provisioning
+ * already gives the same micromamba work (`custom-environment.ts`'s
+ * `TIMEOUT_MS`, `resources/environments/general.json`'s `timeoutMs`):
+ * `science-runtime`'s generic `timeoutMs` (120s) is sized for a bind or run,
+ * not a package solve, which routinely takes minutes.
+ */
+const INSTALL_TIMEOUT_MS = 3_600_000
+
+/**
  * The Runtime facts the overlay carries into the Host: the prefix(es) bound
  * into the `science` profile (at least one is required), the bundled
  * micromamba executable, and the ordered install channels — the two
@@ -72,5 +82,5 @@ export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string 
     ...(input.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(input.rPrefix)}`]),
   ].join('\n')
   const channels = input.installChannels.map(url => `      - ${JSON.stringify(url)}`).join('\n')
-  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n- id: skill-filesystem\n  disabled: false\n  config:\n    providerName: bundled-skills\n    includeDefaultRoots: false\n    bundledSkillDir: ${JSON.stringify(input.skillsRoot)}\n`
+  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    installTimeoutMs: ${String(INSTALL_TIMEOUT_MS)}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n- id: skill-filesystem\n  disabled: false\n  config:\n    providerName: bundled-skills\n    includeDefaultRoots: false\n    bundledSkillDir: ${JSON.stringify(input.skillsRoot)}\n`
 }

@@ -60,6 +60,7 @@ function panel(over: {
   onAddTarget?: (target: ScienceEditTarget, comment: string) => void
   onRemoveTarget?: (target: ScienceEditTarget) => void
   onPendingChange?: (hasPending: boolean) => void
+  referencesDisabled?: boolean
 } = {}) {
   const onSave = over.onSave ?? vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
   const isTargetAdded = over.isTargetAdded ?? vi.fn().mockReturnValue(false)
@@ -71,6 +72,7 @@ function panel(over: {
       {...over.onPreview === undefined ? {} : { onPreview: over.onPreview }}
       {...over.onPreviewSrc === undefined ? {} : { onPreviewSrc: over.onPreviewSrc }}
       {...over.onPendingChange === undefined ? {} : { onPendingChange: over.onPendingChange }}
+      {...over.referencesDisabled === undefined ? {} : { referencesDisabled: over.referencesDisabled }}
       isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
       t={over.t ?? t}
     />,
@@ -396,6 +398,48 @@ describe('ScienceChartEditPanel: element +/- composer reference', () => {
     expect(onRemoveTarget).toHaveBeenCalledWith({
       kind: 'element', elementId: 'title', elementKind: 'title', axes: null, label: null, current: 'Loss',
     })
+  })
+
+  it('shows the default help text with references enabled when nothing is staged', () => {
+    panel()
+    expect(screen.getByText('Select an element to reference, then describe your edit in chat.')).toBeTruthy()
+    const button = screen.getByRole('button', { name: 'Add Title to the conversation' })
+    expect(button.hasAttribute('disabled')).toBe(false)
+    expect(button.hasAttribute('title')).toBe(false)
+  })
+
+  it('disables the + buttons and swaps the notice once a direct edit is staged', () => {
+    panel()
+    const row = expandRow('Grid')
+    fireEvent.click(within(row).getByRole('checkbox'))
+
+    expect(screen.getByText('References are unavailable until the staged edits are committed or discarded.')).toBeTruthy()
+    expect(screen.queryByText('Select an element to reference, then describe your edit in chat.')).toBeNull()
+
+    const directButton = within(row).getByRole('button', { name: 'Add Grid to the conversation' })
+    expect(directButton.hasAttribute('disabled')).toBe(true)
+    expect(directButton.getAttribute('title')).toBe('References are unavailable until the staged edits are committed or discarded.')
+
+    const chipButton = screen.getByRole('button', { name: 'Add Series · treatment to the conversation' })
+    expect(chipButton.hasAttribute('disabled')).toBe(true)
+    expect(chipButton.getAttribute('title')).toBe('References are unavailable until the staged edits are committed or discarded.')
+  })
+
+  it('does not disable an already-added chip while edits are staged', () => {
+    panel({ isTargetAdded: () => true })
+    const row = expandRow('Grid')
+    fireEvent.click(within(row).getByRole('checkbox'))
+
+    const directButton = within(row).getByRole('button', { name: 'Remove Grid' })
+    expect(directButton.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('shows the preview-blocked notice and disables + while a preview is displayed', () => {
+    panel({ referencesDisabled: true })
+    expect(screen.getByText('References are unavailable while a preview is displayed.')).toBeTruthy()
+    const button = screen.getByRole('button', { name: 'Add Title to the conversation' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    expect(button.getAttribute('title')).toBe('References are unavailable while a preview is displayed.')
   })
 })
 

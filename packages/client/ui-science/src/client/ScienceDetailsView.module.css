@@ -811,6 +811,11 @@
   outline: 1px solid var(--dsw-alias-brand-primary);
 }
 
+.referenceChip:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .referenceChipSummary {
   margin-left: auto;
   color: var(--dsw-alias-label-secondary);
@@ -847,6 +852,11 @@
 .elementReference:hover {
   border-color: var(--dsw-alias-label-caption);
   color: var(--dsw-alias-label-primary);
+}
+
+.elementReference:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .elementReference[data-selected] {

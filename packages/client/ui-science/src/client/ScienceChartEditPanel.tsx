@@ -233,38 +233,46 @@ function ElementControl({ element, onStage, t }: {
   }
 }
 
-function DirectEditRow({ element, added, onAddTarget, onRemoveTarget, onStage, disabled, t }: {
+function DirectEditRow({ element, added, onAddTarget, onRemoveTarget, onStage, disabled, blockedReason, t }: {
   element: ScienceChartElement & { kind: DirectEditKind }
   added: boolean
   disabled: boolean
+  /** Why references are unavailable right now; shown as the disabled button's `title`. */
+  blockedReason: string | undefined
   onAddTarget: () => void
   onRemoveTarget: () => void
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
   const label = scienceElementLabel(element.kind, null, t)
+  const isDisabled = disabled && !added
   return <li className={css.directEditRow} data-editable="true" data-selected={added || undefined}>
     <span className={css.directEditName}>{label}</span>
     <ElementControl element={element} onStage={onStage} t={t} />
     <button type="button" className={css.elementReference} data-selected={added || undefined}
-      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={disabled && !added}
+      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={isDisabled}
+      title={isDisabled ? blockedReason : undefined}
       onClick={added ? onRemoveTarget : onAddTarget}>{added ? '−' : '+'}</button>
   </li>
 }
 
 
-function ReferenceChip({ element, added, onAddTarget, onRemoveTarget, disabled, t }: {
+function ReferenceChip({ element, added, onAddTarget, onRemoveTarget, disabled, blockedReason, t }: {
   element: ScienceChartElement
   added: boolean
   disabled: boolean
+  /** Why references are unavailable right now; shown as the disabled button's `title`. */
+  blockedReason: string | undefined
   onAddTarget: () => void
   onRemoveTarget: () => void
   t: TranslateNS<'science'>
 }) {
   const color = scienceElementColor(element.current)
+  const isDisabled = disabled && !added
   return <li data-selected={added || undefined}>
     <button type="button" className={css.referenceChip} data-selected={added || undefined}
-      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={disabled && !added}
+      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={isDisabled}
+      title={isDisabled ? blockedReason : undefined}
       onClick={added ? onRemoveTarget : onAddTarget}>
       <span>{scienceElementLabel(element.kind, element.label, t, element.id.startsWith('axes[') && element.axes !== null ? element.axes + 1 : undefined, element.current, element.id)}</span>
       {color !== undefined && <span className={css.elementColorSwatch} style={{ backgroundColor: color }} aria-hidden="true" />}
@@ -375,8 +383,11 @@ export function ScienceChartEditPanel({
     }
   }
 
+  const referencesBlocked = referencesDisabled || pending.length > 0
+  const referenceBlockedReason = pending.length > 0 ? t('panel.referenceBlockedPending') : referencesDisabled ? t('panel.referenceBlockedPreview') : undefined
+
   return <section className={css.elementPanel} aria-label={t('edit.elements')}>
-    <p className={css.notice}>{t('panel.referenceHelp')}</p>
+    <p className={css.notice}>{referenceBlockedReason ?? t('panel.referenceHelp')}</p>
     <div className={css.elementPanelColumns}>
       <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
         <h4 id="science-direct-edit-heading">{t('edit.elements')}</h4>
@@ -384,14 +395,14 @@ export function ScienceChartEditPanel({
           {multiAxes && element.axes !== null && direct[index - 1]?.axes !== element.axes
             && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: element.axes + 1 })}</li>}
           <DirectEditRow element={element} {...targetProps(element)} onStage={stage} t={t}
-            disabled={referencesDisabled || pending.length > 0} />
+            disabled={referencesBlocked} blockedReason={referenceBlockedReason} />
         </Fragment>)}</ul>
       </section>
       <section className={css.elementPanelSection} aria-labelledby="science-reference-heading">
         <h4 id="science-reference-heading">{t('panel.referenceEdit')}</h4>
         <ul className={css.referenceChips}>{references.map(element => <ReferenceChip key={element.id} element={element}
           {...targetProps(element)} t={t}
-          disabled={referencesDisabled || pending.length > 0} />)}
+          disabled={referencesBlocked} blockedReason={referenceBlockedReason} />)}
         {hiddenAnnotations > 0 && <li><button type="button" className={css.referenceChip}
           aria-expanded={annotationsExpanded} onClick={() => { setAnnotationsExpanded(value => !value) }}>
           {annotationsExpanded ? t('panel.annotationsCollapse') : t('panel.annotationsMore', { count: hiddenAnnotations })}

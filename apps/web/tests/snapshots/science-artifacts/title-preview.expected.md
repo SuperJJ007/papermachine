@@ -29,7 +29,7 @@
 - button "Select region to edit" [disabled]
 - paragraph: Save or discard the preview before referencing elements or selecting a region.
 - region "Modify elements":
-  - paragraph: Select an element to reference, then describe your edit in chat.
+  - paragraph: References are unavailable until the staged edits are committed or discarded.
   - region "Modify elements":
     - heading "Modify elements" [level=4]
     - list:

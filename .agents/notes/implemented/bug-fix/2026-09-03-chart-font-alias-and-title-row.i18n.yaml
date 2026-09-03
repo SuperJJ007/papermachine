@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-03-chart-font-alias-and-title-row.md
+2026-09-03-chart-font-alias-and-title-row.md: 1eb509b707af18eceef53c22e84c553aa054b97a
+2026-09-03-chart-font-alias-and-title-row.zh.md: 6ddffa8c6a89dc31b5f9ae853aefed3c2291b837

@@ -65,4 +65,25 @@ describe('desktop bundled default Science skills', () => {
       expect(definition?.description.length ?? 0).toBeGreaterThan(0)
     }
   })
+
+  /**
+   * The science preset's `tool-result-pruner` row
+   * (`apps/cli/config/agent-presets/science/agent.cordis.yml`) sets
+   * `thresholdChars: 8192` and exempts the `skill` tool from pruning
+   * entirely — a truncated skill body is worse than an untouched one. That
+   * exemption is only safe because every bundled body already fits under
+   * the pruner's threshold in one piece; this asserts the invariant the
+   * exemption relies on, not the threshold value itself.
+   */
+  it('keeps each bundled skill body under the science preset pruner threshold (8192 chars)', async () => {
+    const scienceToolResultPrunerThresholdChars = 8192
+    const provider = bundledSkillsProvider()
+    const candidates = await listCandidates(provider)
+
+    for (const candidate of candidates) {
+      const definition = await provider.get(candidate, {})
+      expect(definition?.content.length ?? 0).toBeLessThanOrEqual(8000)
+      expect(definition?.content.length ?? 0).toBeLessThan(scienceToolResultPrunerThresholdChars)
+    }
+  })
 })

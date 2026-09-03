@@ -138,6 +138,10 @@
         thresholdChars: 8192
         headChars: 4096
         tailChars: 1024
+        # A `skill` result is instructions, not data — a head/tail-truncated
+        # instruction set is worse than an untouched one, so skill bodies are
+        # exempt from pruning rather than silently losing their middle.
+        exemptTools: [skill]
 
 # ── skills ──────────────────────────────────────────────────────────────────
 

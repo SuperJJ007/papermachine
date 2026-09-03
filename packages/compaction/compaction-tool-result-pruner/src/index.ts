@@ -50,6 +50,7 @@ export class ToolResultPruner extends Service {
     thresholdChars: z.number().step(1).min(1).default(DEFAULTS.thresholdChars),
     headChars: z.number().step(1).min(0).default(DEFAULTS.headChars),
     tailChars: z.number().step(1).min(0).default(DEFAULTS.tailChars),
+    exemptTools: z.array(z.string()).default([...DEFAULTS.exemptTools]),
   })
 
   /** Resolved and immutable character budgets. */
@@ -122,12 +123,35 @@ export class ToolResultPruner extends Service {
   }
 
   /**
+   * Resolve each `tool/call` name keyed by call id from one session's
+   * complete log, mirroring the host-side `tool/result` back-scan the
+   * conversation client uses to pair a result with its call
+   * (`viewFor` in `dsh-client-connection`'s fixture).
+   * @param session - session whose log supplies the call/name pairing.
+   * @returns call id (stringified `CallId`) to tool name.
+   */
+  private indexCallNames(session: Session): ReadonlyMap<string, string> {
+    const index = new Map<string, string>()
+    for (const event of session.events) {
+      if (event?.type === 'tool/call') index.set(String(event.data.callId), event.data.name)
+    }
+    return index
+  }
+
+  /**
    * Prune every over-budget tool result from one stable current-surface snapshot.
    * Each replacement preserves the complete event data except for `content`,
    * cites the shadowed node so replay can recover the replacement input, and is
    * immediately preceded by a `compaction/prune` shadow-price event pricing the
    * shadowed node through the injected token meter, so pure consumers can
    * subtract it without per-node state.
+   *
+   * A `tool/result` whose originating `tool/call` name appears in
+   * `config.exemptTools` is skipped entirely, never truncated: an exempt
+   * result carries instructions rather than data, and a truncated
+   * instruction set is worse than an untouched one. A result whose call id
+   * has no matching `tool/call` in the log (an unknown call id) is treated
+   * as non-exempt and pruned normally.
    * @param session - session whose current surface is rewritten.
    * @returns landed replacements and aggregate Unicode-code-point savings.
    * @throws when the session rejects a replacement; replacements committed
@@ -141,9 +165,15 @@ export class ToolResultPruner extends Service {
       if (event?.type === 'tool/result') candidates.push({ seq, event })
     }
 
+    const callNames = this.config.exemptTools.length > 0
+      ? this.indexCallNames(session)
+      : undefined
+
     const pruned: PrunedEntry[] = []
     let charsRemoved = 0
     for (const { seq, event } of candidates) {
+      const callName = callNames?.get(String(event.data.message.source.callId))
+      if (callName !== undefined && this.config.exemptTools.includes(callName)) continue
       const result = event.data.message.content[0]
       const content = this.pruneContent(result.content)
       if (content === null) continue

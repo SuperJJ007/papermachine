@@ -53,8 +53,11 @@ describe('parseTelemetryConfig', () => {
     }
   })
 
-  it('parses the shipped resources/telemetry.json, shipping with telemetry off by default', async () => {
+  it('parses the shipped resources/telemetry.json against the same strict-https validation as any other config', async () => {
     const raw = JSON.parse(await readFile(join(resources, 'telemetry.json'), 'utf8')) as unknown
-    expect(parseTelemetryConfig(raw)).toEqual({ schemaVersion: 1, endpoints: [] })
+    expect(parseTelemetryConfig(raw)).toEqual({
+      schemaVersion: 1,
+      endpoints: ['https://dsh-telemetry.deepseek-ai-dsh-telemetry-receivers.workers.dev'],
+    })
   })
 })

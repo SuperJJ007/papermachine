@@ -64,7 +64,7 @@ DMG 内置三个默认 Science skill——`scientific-visualization`、`statisti
 
 PaperMachine 上报三个只含元数据、绝不含内容的事件：`app.launch`（每次进程启动一次）、`environment.installed`、`environment.install-failed`（一次 provisioning 运行的 package source、耗时或最后阶段，以及是否被取消）。每个事件都带有新生成的 `eventId`、与 Host identity 插件共享的匿名 id（`<dshHome>/.anonymous-user-id`；desktop 自己的首个 `app.launch` 会在任何 Host 运行之前先发生，此时 `src/anonymous-id.ts` 会按该插件的确切格式创建这个文件）、时间戳、`appVersion`、`platform`、`arch`，以及 `schemaVersion: 1`——不含 hostname、路径、package 清单或错误文本。
 
-Receiver 在构建期的 `resources/telemetry.json` 中配置（`schemaVersion: 1`，`endpoints: string[]`，元素为 `https://` URL；由 `src/telemetry-config.ts` 解析，文件缺失或格式错误会 loud 报错，而不是悄悄禁用）。每个已配置的 endpoint 都独立收到每一个事件——没有 failover、没有重试队列、没有离线缓冲。本版本发布时 `endpoints: []`（telemetry 关闭），直到 owner 配置好 receiver。将 `DSH_TELEMETRY_DISABLED` 设为任意非空值——与 Host 自身 session telemetry 使用的开关及其解释完全相同（`resolveTelemetryPatch`，`apps/cli/src/profile-boot.ts`）——会让什么都不发送。
+Receiver 在构建期的 `resources/telemetry.json` 中配置（`schemaVersion: 1`，`endpoints: string[]`，元素为 `https://` URL；由 `src/telemetry-config.ts` 解析，文件缺失或格式错误会 loud 报错，而不是悄悄禁用）。每个已配置的 endpoint 都独立收到每一个事件——没有 failover、没有重试队列、没有离线缓冲。本版本发布时携带一个 endpoint，即已部署的 Cloudflare Worker（`apps/telemetry-receivers`）；空数组 `endpoints: []` 是有效且独立的 “telemetry 关闭” 状态，未来某个版本可以选择改用它。将 `DSH_TELEMETRY_DISABLED` 设为任意非空值——与 Host 自身 session telemetry 使用的开关及其解释完全相同（`resolveTelemetryPatch`，`apps/cli/src/profile-boot.ts`）——会让什么都不发送。
 
 ## 限制
 

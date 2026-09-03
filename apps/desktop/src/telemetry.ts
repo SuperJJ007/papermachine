@@ -7,8 +7,14 @@
 
 import { randomUUID } from 'node:crypto'
 
-/** Platform/arch vocabulary this application ships for; matches `DesktopPlatform` in `environment-declaration.ts`. */
-type TelemetryPlatform = 'darwin'
+/**
+ * Platform vocabulary this application ships for. Wider than
+ * `DesktopPlatform` in `environment-declaration.ts`, which stays
+ * darwin-only: that type names platform+arch pairs with a supported conda
+ * environment declaration, while this one names every platform `main.ts`
+ * can run the Electron process on and report telemetry from.
+ */
+type TelemetryPlatform = 'darwin' | 'win32'
 type TelemetryArch = 'arm64' | 'x64'
 
 /** Fields identical across every event, filled in by {@link TelemetryReporter.report}. */

@@ -56,6 +56,25 @@ describe('TelemetryReporter', () => {
     })
   })
 
+  it('reports the configured platform, including win32', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const fetchStub: TelemetryFetch = async (_url, init) => {
+      bodies.push(JSON.parse(init.body as string) as Record<string, unknown>)
+      return new Response(null, { status: 200 })
+    }
+    const reporter = new TelemetryReporter({
+      endpoints: ['https://a.example/events'],
+      context: { ...CONTEXT, platform: 'win32', arch: 'x64' },
+      fetch: fetchStub,
+      now: () => Date.parse('2026-09-01T00:00:00.000Z'),
+      randomUUID: () => 'event-uuid-1',
+    })
+
+    await reporter.report({ event: 'app.launch' })
+
+    expect(bodies[0]).toEqual(expect.objectContaining({ platform: 'win32', arch: 'x64' }))
+  })
+
   it('sends the documented fields for environment.installed and environment.install-failed', async () => {
     const bodies: Record<string, unknown>[] = []
     const fetchStub: TelemetryFetch = async (_url, init) => {

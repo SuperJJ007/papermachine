@@ -244,10 +244,15 @@ export interface InstallOutcome {
 
 /**
  * Run one confined micromamba install to completion, classifying the
- * outcome against `control`'s first cause. Never throws for a completed or
- * aborted attempt; only an unproven quiescence or a subprocess-provider
- * failure (never observed as an abort) throws, since neither can be
- * expressed as a durable install status.
+ * settled subprocess outcome ahead of `control`'s own first cause: a
+ * process that exits `0` with no signal is `'success'` even when `control`
+ * separately latched a cause (a solve that finishes inside the bounded
+ * SIGTERM grace after its deadline fired is a real, on-disk install, not a
+ * failed one). Only a process that did not complete successfully falls back
+ * to `control.cause` for `'timed-out'`/`'cancelled'`, else `'failed'`. Never
+ * throws for a completed or aborted attempt; only an unproven quiescence or
+ * a subprocess-provider failure (never observed as an abort) throws, since
+ * neither can be expressed as a durable install status.
  * @param subprocess - subprocess seam performing the spawn.
  * @param confined - confined installer argv.
  * @param env - exact child environment (see {@link installEnvironment}).
@@ -288,6 +293,15 @@ export async function runMicromambaInstall(
   const quiescent = await handle.waitForExit()
   const stdout = toRunOutput(handle.collected.stdout?.readFrom(0))
   const stderr = toRunOutput(handle.collected.stderr?.readFrom(0))
+  // Success is checked ahead of control.cause: a micromamba that exits 0
+  // inside the bounded SIGTERM grace after the deadline fired already wrote
+  // its target environment, and reporting that as 'timed-out' misleads the
+  // caller into a redundant retry (the retry then observes an unchanged
+  // inventory and appends no revision — see installPackages — but only
+  // after wrongly restarting the kernel epoch on the first, misreported run).
+  if (quiescent && completionError === undefined && outcome !== undefined && outcome.exitCode === 0 && outcome.signal === null) {
+    return { status: 'success', stdout, stderr }
+  }
   if (control.cause !== undefined) {
     return { status: control.cause === 'timeout' ? 'timed-out' : 'cancelled', stdout, stderr }
   }
@@ -296,6 +310,5 @@ export async function runMicromambaInstall(
     throw completionError instanceof Error ? completionError : new Error('science-runtime: package installer failed without an Error object')
   }
   if (outcome === undefined) throw new Error('science-runtime: package installer settled without a subprocess outcome')
-  const success = outcome.exitCode === 0 && outcome.signal === null
-  return { status: success ? 'success' : 'failed', stdout, stderr }
+  return { status: 'failed', stdout, stderr }
 }

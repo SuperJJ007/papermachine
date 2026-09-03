@@ -360,6 +360,31 @@ describe('runMicromambaInstall', () => {
     control.dispose()
   })
 
+  it('classifies a zero-exit settlement that lands inside the deadline\'s SIGTERM grace as success, not timed-out', async () => {
+    const { subprocess, root } = await harness()
+    // 'immediate' mode pre-resolves whole-tree quiescence (matching a real
+    // process whose termination is already fully observed) so this test can
+    // isolate exactly one race: the deadline firing before the process's own
+    // completion settles. 'deferred' mode's own quiescence answer never
+    // resolves true from runMicromambaInstall's single, un-retried
+    // `waitForExit()` call, which would make this success path unreachable
+    // for a reason unrelated to what this test targets.
+    const run = subprocess.queueRun('immediate', { stdout: 'installed numpy-1.26.4\n', stderr: '' })
+    const control = new OperationControl(new AbortController().signal, 1)
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const pending = runMicromambaInstall(subprocess, confined, {}, root, control)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    // control.cause has already latched 'timeout' by the time the process
+    // finishes cleanly — the exact race runMicromambaInstall's own
+    // exit-code-first classification exists to resolve.
+    expect(control.cause).toBe('timeout')
+    run.complete({ exitCode: 0, signal: null })
+    const outcome = await pending
+    expect(outcome.status).toBe('success')
+    expect(outcome.stdout.text).toBe('installed numpy-1.26.4\n')
+    control.dispose()
+  })
+
   it('throws when the subprocess settles without whole-tree quiescence', async () => {
     const { subprocess, root } = await harness()
     const run = subprocess.queueRun('deferred', { stdout: '', stderr: '' })

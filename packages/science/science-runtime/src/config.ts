@@ -16,6 +16,17 @@ export const MIN_TIMEOUT_MS = 1
 /** Highest accepted configured operation timeout. */
 export const MAX_TIMEOUT_MS = 600_000
 
+/**
+ * Default timeout for one `installPackages` micromamba solve/install, distinct
+ * from {@link DEFAULT_TIMEOUT_MS}: a package solve routinely runs minutes
+ * longer than a bind or a run.
+ */
+export const DEFAULT_INSTALL_TIMEOUT_MS = 900_000
+/** Lowest accepted configured install timeout. */
+export const MIN_INSTALL_TIMEOUT_MS = 1
+/** Highest accepted configured install timeout. */
+export const MAX_INSTALL_TIMEOUT_MS = 3_600_000
+
 /** Default maximum retained package-inventory entries per observed interpreter. */
 export const DEFAULT_PACKAGES_MAX_ENTRIES = 2_000
 /** Lowest accepted configured package-inventory entry bound. */
@@ -165,6 +176,12 @@ export interface Config {
   /** One caller-independent bound for bind and run operations. */
   readonly timeoutMs?: number
   /**
+   * One caller-independent bound for one `installPackages` micromamba
+   * solve/install attempt, separate from {@link Config.timeoutMs} because a
+   * package solve routinely takes far longer than a bind or a run.
+   */
+  readonly installTimeoutMs?: number
+  /**
    * Maximum package-inventory entries retained per observed interpreter.
    * An inventory exceeding this cap is truncated and flagged; the digest
    * still covers the complete pre-truncation inventory.
@@ -296,6 +313,9 @@ export const configSchema: z<Config> = z.object({
     rPrefix: z.string(),
   })).required(),
   timeoutMs: z.number().step(1).min(MIN_TIMEOUT_MS).max(MAX_TIMEOUT_MS).default(DEFAULT_TIMEOUT_MS),
+  installTimeoutMs: z.number().step(1)
+    .min(MIN_INSTALL_TIMEOUT_MS).max(MAX_INSTALL_TIMEOUT_MS)
+    .default(DEFAULT_INSTALL_TIMEOUT_MS),
   packagesMaxEntries: z.number().step(1)
     .min(MIN_PACKAGES_MAX_ENTRIES).max(MAX_PACKAGES_MAX_ENTRIES)
     .default(DEFAULT_PACKAGES_MAX_ENTRIES),
@@ -353,6 +373,8 @@ export interface ResolvedConfig {
   readonly profiles: ReadonlyMap<string, ConfiguredProfile>
   /** Explicitly resolved operation deadline. */
   readonly timeoutMs: number
+  /** Explicitly resolved `installPackages` micromamba solve/install deadline. */
+  readonly installTimeoutMs: number
   /** Explicitly resolved package-inventory entry bound. */
   readonly packagesMaxEntries: number
   /** Explicitly resolved package-inventory byte bound. */
@@ -454,7 +476,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   assertKnownKeys(
     config,
     [
-      'dshHome', 'micromambaPath', 'installChannels', 'profiles', 'timeoutMs',
+      'dshHome', 'micromambaPath', 'installChannels', 'profiles', 'timeoutMs', 'installTimeoutMs',
       'packagesMaxEntries', 'packagesMaxBytes',
       'rasterCapture',
       'captureMaxFileBytes', 'captureMaxFilesPerRun', 'captureMaxArtifactVersionsPerSession',
@@ -486,6 +508,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
     throw new Error(`science-runtime: timeoutMs must be a safe integer from ${String(MIN_TIMEOUT_MS)} through ${String(MAX_TIMEOUT_MS)}`)
+  }
+  const installTimeoutMs = config.installTimeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS
+  if (!Number.isSafeInteger(installTimeoutMs) || installTimeoutMs < MIN_INSTALL_TIMEOUT_MS || installTimeoutMs > MAX_INSTALL_TIMEOUT_MS) {
+    throw new Error(`science-runtime: installTimeoutMs must be a safe integer from ${String(MIN_INSTALL_TIMEOUT_MS)} through ${String(MAX_INSTALL_TIMEOUT_MS)}`)
   }
   const packagesMaxEntries = config.packagesMaxEntries ?? DEFAULT_PACKAGES_MAX_ENTRIES
   if (!Number.isSafeInteger(packagesMaxEntries)
@@ -580,6 +606,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     installChannels,
     profiles: parseProfiles(config.profiles),
     timeoutMs,
+    installTimeoutMs,
     packagesMaxEntries,
     packagesMaxBytes,
     rasterCapture,

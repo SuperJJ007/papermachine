@@ -22,6 +22,7 @@ import type {
   ScienceChartOp,
   ScienceChartState,
   ScienceEnvironmentBinding,
+  ScienceInterpreterBinding,
   ScienceLanguage,
   ScienceProjectId,
   ScienceProjection,
@@ -42,7 +43,7 @@ import type { Config, ConfiguredProfile } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { assertProfileRunConfinement, observeProfile } from './environment.ts'
+import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
 import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
@@ -121,6 +122,25 @@ function environmentBinding(
     ...(observed.r === undefined ? {} : { r: observed.r.binding }),
     ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
   }
+}
+
+/**
+ * Whether an install's re-observed binding for one language is identical to
+ * the session's existing one, including the installed package inventory —
+ * which `sameObservation` itself deliberately excludes (see its own doc on
+ * `bindingFingerprint`), because `installPackages` needs exactly the
+ * comparison `sameObservation` does not make: whether the requested
+ * packages actually changed anything. `undefined` compares equal to
+ * `undefined` (the language absent from the profile on both sides);
+ * `sameObservation` returning `true` for two defined bindings already
+ * proves both are `capability: 'available'` and therefore both carry a real
+ * `packagesSha256` to compare.
+ */
+function sameInstalledBinding(
+  observed: ScienceInterpreterBinding | undefined,
+  current: ScienceInterpreterBinding | undefined,
+): boolean {
+  return sameObservation(observed, current) && observed?.packagesSha256 === current?.packagesSha256
 }
 
 /** Where `annotate_artifact`'s not-found diagnostic located a retained, uncaptured same-named PNG, if anywhere. */
@@ -360,6 +380,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly cordisConfig: Config
   /** Configured operation deadline. */
   private readonly timeoutMs: number
+  /** Configured `installPackages` micromamba solve/install deadline. */
+  private readonly installTimeoutMs: number
   /** Explicit or shared-resolver Harness home input. */
   private readonly dshHome: string | undefined
   /**
@@ -430,6 +452,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.profiles = resolved.profiles
     this.cordisConfig = config
     this.timeoutMs = resolved.timeoutMs
+    this.installTimeoutMs = resolved.installTimeoutMs
     this.dshHome = resolved.dshHome
     if (resolved.micromambaPath === undefined) {
       this.installer = undefined
@@ -716,7 +739,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     if (initial.runs.length !== 0) {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science environment cannot be rebound after the first run')
     }
-    const lease = this.reserve(request.session, request.signal)
+    const lease = this.reserve(request.session, request.signal, this.timeoutMs)
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     try {
       this.assertPrepublication(request.session, lease.control)
@@ -768,15 +791,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Install packages into one language's applied prefix through micromamba,
-   * then, only on a successful install, re-observe the whole profile and
-   * append a fresh whole-value `science/environment-bound` revision —
+   * then, only on a successful install, re-observe the whole profile —
    * exactly the operation `bindEnvironment`'s own post-first-run guard
-   * refuses. A live kernel serving the superseded revision is left running:
-   * the next `startRun` for either language finds the revision mismatch and
-   * ends it (`environment-rebound`) before starting a fresh one, the same
-   * path an out-of-band rebind already takes (`kernel-set.ts`).
+   * refuses. A re-observation that differs from the session's current
+   * binding appends a fresh whole-value `science/environment-bound`
+   * revision; one that matches it exactly appends none and returns the
+   * existing binding, since every requested package was already present (or
+   * an earlier attempt this session retried after a `'timed-out'`
+   * misclassification had, in fact, already finished — see
+   * `runMicromambaInstall`). A live kernel serving a superseded revision is
+   * left running: the next `startRun` for either language finds the
+   * revision mismatch and ends it (`environment-rebound`) before starting a
+   * fresh one, the same path an out-of-band rebind already takes (`kernel-set.ts`).
    * @param request - Exact live Session, target language, package specs, and cancellation.
-   * @returns The install's terminal classification, output tails, and — on success — the fresh environment revision.
+   * @returns The install's terminal classification, output tails, and — on
+   *   success — the environment as it now stands plus whether this call
+   *   appended it as a fresh revision.
    */
   async installPackages(request: InstallScienceEnvironmentPackagesRequest): Promise<InstallScienceEnvironmentPackagesResult> {
     this.assertSession(request.session)
@@ -786,7 +816,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       throw new ScienceRuntimeError('INSTALLER_NOT_CONFIGURED', 'Science package installation requires a configured micromamba executable path')
     }
     assertValidPackageSpecs(request.packages)
-    const lease = await this.reserveQueued(request.session, request.signal)
+    const lease = await this.reserveQueued(request.session, request.signal, this.installTimeoutMs)
     try {
       const { environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const binding = selectBinding(environment, request.language)
@@ -848,10 +878,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (current === null) {
         throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
       }
+      // A redundant install (every requested spec was already on disk, or a
+      // prior attempt reporting 'timed-out' had in fact already finished
+      // writing the prefix — see runMicromambaInstall's own reordered
+      // classification) re-observes the identical binding for both
+      // languages. Appending a revision unconditionally here would advance
+      // `current.revision` past what changed, and the next `startRun` for
+      // either language would read that revision mismatch as a real rebind
+      // and restart an otherwise-unaffected kernel, discarding its in-memory
+      // variables for no environment change.
+      if (sameInstalledBinding(observed.python?.binding, current.python) && sameInstalledBinding(observed.r?.binding, current.r)) {
+        return { status: 'success', environment: current, environmentChanged: false, stdout: outcome.stdout, stderr: outcome.stderr }
+      }
       const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment: fresh })
-      return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
+      return { status: 'success', environment: fresh, environmentChanged: true, stdout: outcome.stdout, stderr: outcome.stderr }
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {
@@ -878,7 +920,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     // read fresh AFTER the lease is granted, not from this pre-queue probe:
     // a call that queued behind a run has stale state by the time it
     // actually starts.
-    const lease = await this.reserveQueued(request.session, request.signal)
+    const lease = await this.reserveQueued(request.session, request.signal, this.timeoutMs)
     let sessionScratch: ScienceSessionScratch | undefined
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
@@ -1013,7 +1055,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     }
     this.assertSession(request.session)
     this.assertHostLocal()
-    const lease = await this.reserveQueued(request.session, request.signal)
+    const lease = await this.reserveQueued(request.session, request.signal, this.timeoutMs)
     let replayScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     let replayKernel: KernelProcess | undefined
     let usingReplay = false
@@ -1321,7 +1363,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    */
   async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion> {
     const projection = this.assertSession(request.session)
-    const lease = this.reserve(request.session, request.signal)
+    const lease = this.reserve(request.session, request.signal, this.timeoutMs)
     try {
       this.assertPrepublication(request.session, lease.control)
       const target = await this.resolveAnnotateTarget(projection, request)
@@ -1401,7 +1443,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    */
   async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion> {
     this.assertSession(request.session)
-    const lease = this.reserve(request.session, request.signal)
+    const lease = this.reserve(request.session, request.signal, this.timeoutMs)
     try {
       this.assertPrepublication(request.session, lease.control)
       const projectId = await this.sessionProject(request.session)
@@ -1589,9 +1631,17 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     return rootPaths.includes(logicalName) ? 'run-root' : 'not-found'
   }
 
-  /** Reserve a non-queuing exact Session lease without leaking a rejected timer. */
-  private reserve(session: BindScienceEnvironmentRequest['session'], signal: AbortSignal) {
-    const control = new OperationControl(signal, this.timeoutMs)
+  /**
+   * Reserve a non-queuing exact Session lease without leaking a rejected timer.
+   * @param session - exact live Session that will own the reservation.
+   * @param signal - caller-owned cancellation signal.
+   * @param timeoutMs - caller-owned operation deadline; explicit rather than a
+   *   hidden default so a caller whose own operation legitimately runs
+   *   longer than {@link ScienceRuntime.timeoutMs} (`installPackages`'s
+   *   {@link ScienceRuntime.installTimeoutMs}) states its own bound.
+   */
+  private reserve(session: BindScienceEnvironmentRequest['session'], signal: AbortSignal, timeoutMs: number) {
+    const control = new OperationControl(signal, timeoutMs)
     try {
       return this.leases.reserve(session, control)
     } catch (error) {
@@ -1623,16 +1673,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * while only queued never touches Runtime state.
    * @param session - exact live Session that will own the reservation.
    * @param signal - caller-owned cancellation signal.
+   * @param timeoutMs - caller-owned operation deadline passed to each retry's
+   *   fresh {@link reserve} call; see that method's own parameter doc.
    * @returns the granted lease.
    */
-  private async reserveQueued(session: BindScienceEnvironmentRequest['session'], signal: AbortSignal): Promise<RuntimeLease> {
+  private async reserveQueued(
+    session: BindScienceEnvironmentRequest['session'],
+    signal: AbortSignal,
+    timeoutMs: number,
+  ): Promise<RuntimeLease> {
     for (;;) {
       if (signal.aborted) {
         throw new ScienceRuntimeError('OPERATION_CANCELLED', 'Science Runtime operation was cancelled', { cause: signal.reason })
       }
       if (this.disposing) throw new ScienceRuntimeError('SERVICE_DISPOSING', 'Science Runtime is disposing')
       try {
-        return this.reserve(session, signal)
+        return this.reserve(session, signal, timeoutMs)
       } catch (error) {
         // LeaseRegistry.reserve's only throw is the RUNTIME_BUSY rejection
         // this loop retries on (lifecycle.ts); a different shape is a

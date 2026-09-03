@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-One record per shipped PaperMachine desktop DMG version, named `<version>.md` after `apps/desktop/package.json`'s `version` field (for example [0.1.1-rc.3.md](0.1.1-rc.3.md), [0.1.1-rc.4.md](0.1.1-rc.4.md)). Each record carries exactly three sections, in order:
+One record per shipped PaperMachine desktop DMG version, named `<version>.md` after `apps/desktop/package.json`'s `version` field (for example [0.1.1-rc.3.md](0.1.1-rc.3.md), [0.1.1-rc.4.md](0.1.1-rc.4.md), [0.1.0.md](0.1.0.md)). Each record carries exactly three sections, in order:
 
 - **改了什么** — what changed against the previous shipped version: features, fixes, and known issues, grouped and linked to their owning Agent Notes.
 - **实机验了什么** — the on-device acceptance results for that DMG, as a table keyed by checklist item id.

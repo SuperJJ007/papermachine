@@ -147,9 +147,12 @@ export interface ScienceTraceModel {
     /** Runs whose owning call has no turn in the loaded conversation or the projection trace. */
     readonly runs: readonly ScienceClientRun[]
     /**
-     * Always empty: an artifact version resolves a turn from its projection
-     * owner coordinate, or otherwise from its store time against known turn
-     * windows, so no version is ever coordinate-free.
+     * A version resolves a turn from its projection owner coordinate
+     * (the run or annotation call that produced it), otherwise from the
+     * store's `producerTurn` (a viewer operation such as save-as or a
+     * direct chart edit), otherwise from its store time against known turn
+     * windows. A version lands here only when none of those resolve —
+     * its store commit time precedes every turn this model knows about.
      */
     readonly artifacts: readonly ScienceClientArtifactVersion[]
   }
@@ -161,16 +164,27 @@ function textOf(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>):
   return node.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').trim()
 }
 
-/** Place a direct edit, import, or legacy artifact into its store-time turn. */
+/**
+ * Place a coordinate-free artifact version (no projection owner, no
+ * store producer turn) into the last turn already under way when its
+ * content committed. A turn that started after `createdAt` is never a
+ * candidate, so a version saved in an idle gap between turns lands on the
+ * preceding turn rather than drifting to whichever turn is newest by the
+ * time this model is built.
+ * @param createdAt - the version's store commit time.
+ * @param turnTimes - authoritative turn start/end times.
+ * @returns the matching turn, or `undefined` when no turn had started yet.
+ */
 function artifactTurn(
   createdAt: number,
   turnTimes: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>,
-  fallback: number,
-): number {
+): number | undefined {
+  let best: { turn: number; startTime: number } | undefined
   for (const [turn, timing] of turnTimes) {
-    if (createdAt >= timing.startTime && createdAt <= (timing.endTime ?? Number.POSITIVE_INFINITY)) return turn
+    if (timing.startTime > createdAt) continue
+    if (best === undefined || timing.startTime > best.startTime) best = { turn, startTime: timing.startTime }
   }
-  return fallback
+  return best?.turn
 }
 
 function runDuration(run: ScienceClientRun): number | undefined {
@@ -336,7 +350,11 @@ export function buildScienceTraceModel(
   for (const artifact of science.artifacts) {
     const summary = summaries.get(artifact.versionId)
     if (summary === undefined) continue
-    const turn = artifact.turn ?? artifactTurn(summary.createdAt, effectiveTurnTimes, lastTurn)
+    const turn = artifact.turn ?? summary.producer.turn ?? artifactTurn(summary.createdAt, effectiveTurnTimes)
+    if (turn === undefined) {
+      unassigned.artifacts.push(artifact)
+      continue
+    }
     if (summary.contentOrigin === 'human-edit') {
       humanEdits.push({ actor: 'user', turn, artifact, anchor: `artifact:${artifact.artifactId}@${artifact.version}` })
       continue

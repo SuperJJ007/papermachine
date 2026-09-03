@@ -1,9 +1,8 @@
 ---
 name: scientific-visualization
-description: Create and audit truthful, accessible, publication-ready scientific figures with Matplotlib, Seaborn, or Plotly. Use for figure design, multi-panel layouts, uncertainty and missing-data displays, color/contrast review, image metadata validation, and journal export planning.
+description: "Create and audit truthful, accessible, publication-ready scientific figures with Matplotlib, Seaborn, or Plotly — layouts, uncertainty/missing-data displays, color/contrast review, image metadata validation, and journal export planning. Trigger terms: 画图、出图、作图、论文配图、可视化、科学图表."
 license: MIT
-compatibility: Requires Python 3.11+ and uv for pinned examples. Bundled CLIs are network-free and load Matplotlib, Pillow, or pypdf only when needed. Plotly static export with Kaleido v1 requires a compatible Chrome/Chromium installation.
-allowed-tools: Read Write Edit Bash Glob Grep
+compatibility: Requires Python 3.11+; pinned example versions in `references/sources.md`. Scripts are network-free. Plotly static export with Kaleido v1 requires a compatible Chrome/Chromium installation.
 metadata:
   version: "1.1"
   skill-author: K-Dense Inc.
@@ -11,7 +10,7 @@ metadata:
 
 # Scientific Visualization
 
-Build figures that preserve scientific meaning before optimizing appearance. Separate universal principles from dated publisher rules, preserve raw data and transformations, use color redundantly, and inspect delivered files rather than trusting plotting defaults.
+Build figures that preserve scientific meaning before optimizing appearance: separate universal principles from dated publisher rules, preserve raw data and transformations, use color redundantly, and inspect delivered files rather than trusting plotting defaults.
 
 ## Non-negotiable guardrails
 
@@ -20,266 +19,58 @@ Build figures that preserve scientific meaning before optimizing appearance. Sep
 - Do not infer journal requirements. Identify the exact journal, article type, figure type, and submission phase; verify its live official guidance.
 - Do not claim that a palette, DPI value, format, or automated report makes a figure accessible or journal-compliant.
 - Do not silently connect missing observations, suppress inconvenient points, upsample images as if detail increased, or tune axes/dual axes to exaggerate a conclusion.
-- Keep interactive and static outputs as distinct deliverables. Interactive hover is not a substitute for labels, alt text, keyboard access, an accessible data table, or a static fallback.
+- Keep interactive and static outputs distinct deliverables; interactive hover does not substitute for labels, alt text, keyboard access, or a static fallback.
 
-Read `references/publication_guidelines.md` for deceptive-encoding and integrity checks. Read `references/journal_requirements.md` only after the target and phase are known.
+Read `references/publication_guidelines.md` for deceptive-encoding/integrity checks and `references/journal_requirements.md` once the target and phase are known.
 
 ## Workflow
 
+Run every step below through `run_python` (or `run_r`), not a shell session.
+
 ### 1. Define the evidence and destination
 
-Record:
-
-- audience and medium: manuscript, web, slide, poster, supplement;
-- exact publisher/journal, article type, submission phase, and intended final width;
-- variable semantics, units, sample/replicate structure, missing/censored values;
-- estimator and uncertainty definition;
-- transformations: filtering, aggregation, normalization, smoothing, bins, image processing;
-- source-data paths/identifiers and output provenance.
-
-If requirements are not known, create a provisional general figure and label all publisher choices as pending verification.
+Record audience/medium, exact publisher/journal/article type/phase and final width, variable semantics/units/sample structure/missing values, the estimator and uncertainty definition, every transformation (filtering, aggregation, normalization, smoothing, bins, image processing), and source-data paths. If requirements are unknown, build a provisional figure and label publisher choices pending verification.
 
 ### 2. Choose an honest encoding
 
-Prefer position on a common scale. Before coding, check:
-
-- **Bars/areas:** normally include zero because length/area is measured from a baseline.
-- **Points/lines:** nonzero limits can be valid; show context and disclose breaks.
-- **Uncertainty:** name SD, SE, CI, percentile, posterior, or another interval; state `n` and the unit of replication.
-- **Raw observations:** show them when feasible; do not let jitter obscure categories/values.
-- **Missing data:** distinguish missing, zero, censored, and excluded; use gaps or explicit model/interpolation styling.
-- **Area/volume:** scale area/volume, not radius/diameter; avoid decorative 3D.
-- **Log axes:** label the base/transform and declare how zero/negative values are handled.
-- **Binning/smoothing:** record edges, bandwidth/window, method, and sensitivity.
-- **Normalization:** state formula/reference and keep limits consistent across compared panels.
-- **Dual axes:** prefer aligned panels; if unavoidable, justify units and do not engineer apparent correlation.
-- **Images:** preserve originals, disclose whole-image adjustments, show scale bars, and avoid clipped/erased background.
+Prefer position on a common scale. Bars/areas include a zero baseline; nonzero-limit point/line plots show context and disclose breaks. Name the uncertainty interval (SD/SE/CI/percentile/posterior) with `n` and replication unit. Show raw observations when feasible. Distinguish missing/zero/censored/excluded values instead of silently connecting or dropping them. Scale area/volume, never radius/diameter. Declare the log-axis base and zero/negative policy. Record bin edges/bandwidth and normalization formula. Justify any dual axis instead of engineering apparent correlation. Full checklist: `references/publication_guidelines.md`.
 
 ### 3. Design accessibility in, not after
 
-- Use color plus marker, line style, hatching, direct label, or panel separation.
-- Choose qualitative, sequential, diverging, or cyclic color according to data semantics.
-- Audit foreground/background contrast at the rendered size.
-- Make missing and out-of-range values explicit.
-- Provide alt text, a longer description for complex figures, and underlying data for web delivery.
-- Treat WCAG 2.2 as web guidance: 4.5:1 normal text, 3:1 large text, and 3:1 for graphical objects required for understanding; color cannot be the only cue. Applicability and exceptions matter.
-
-See `references/color_palettes.md`. A grayscale screen is useful but is not a complete color-vision or accessibility test.
+Pair color with marker, line style, hatching, direct label, or panel separation. Choose qualitative/sequential/diverging/cyclic color by data semantics; give missing/out-of-range values an explicit color. Audit rendered-size contrast against WCAG 2.2 (4.5:1 normal text, 3:1 large text/graphical objects). Provide alt text, a longer description for complex figures, and underlying data for web delivery. A grayscale screen is useful but not a complete accessibility test. Palette values and exact contrast math: `references/color_palettes.md`.
 
 ### 4. Implement with scoped styles
 
-Use Matplotlib's object-oriented API and temporary style contexts:
-
-```python
-import matplotlib.pyplot as plt
-
-from style_presets import style_context
-
-with style_context("default", palette_name="okabe_ito_on_white"):
-    fig, ax = plt.subplots(
-        figsize=(89 / 25.4, 60 / 25.4),
-        layout="constrained",
-    )
-    ax.plot(x, y, marker="o", label="Observed")
-    ax.set(xlabel="Time (hours)", ylabel="Response (unit)")
-    ax.legend()
-```
-
-`layout="constrained"` supports colorbars, nested GridSpec, subfigures, and `subplot_mosaic`. Do not call `tight_layout()` afterward; it disables constrained layout.
-
-For exact physical dimensions, do not use `bbox_inches="tight"` unless the changed page size is intentional.
-
-#### Color normalization
-
-```python
-import matplotlib as mpl
-
-norm = mpl.colors.TwoSlopeNorm(vmin=-2, vcenter=0, vmax=5)
-cmap = mpl.colormaps["RdBu_r"].with_extremes(bad="#777777")
-image = ax.imshow(values, norm=norm, cmap=cmap, interpolation="nearest")
-fig.colorbar(image, ax=ax, label="Change (unit)")
-```
-
-Use `LogNorm`, `CenteredNorm`, `SymLogNorm`, `BoundaryNorm`, or `TwoSlopeNorm` only when its mapping matches the scientific meaning.
-
-#### Seaborn
-
-Seaborn 0.13.2 uses the current `errorbar` API:
-
-```python
-sns.lineplot(
-    data=frame,
-    x="time",
-    y="response",
-    hue="treatment",
-    style="treatment",
-    markers=True,
-    errorbar=("ci", 95),
-    n_boot=5000,
-    seed=20260723,
-    ax=ax,
-)
-```
-
-Axes-level functions fit custom Matplotlib layouts; figure-level functions create their own figures/facets. Do not customize Seaborn's internal artist lists as if they were stable API.
-
-#### Plotly
-
-- Use `write_html()` for interaction and `write_image()`/`plotly.io.write_images()` for static output.
-- Kaleido 1.3.0 requires Chrome/Chromium; it no longer bundles Chrome.
-- Current static formats: PNG, JPEG, WebP, SVG, PDF. EPS is Kaleido v0-only.
-- Do not pass deprecated `engine=` or use Orca/`plotly.io.kaleido.scope`.
-- `width`, `height`, and `scale` control pixels; `scale=3` is not inherently “300 DPI.”
-- WebGL traces embed raster content in PDF/SVG.
-- Fully offline exports need local external assets when a figure references MathJax/topojson/tiles.
+Use Matplotlib's object-oriented API and `style_context(name, palette_name=...)` from `scripts/style_presets.py` instead of mutating global rcParams. Prefer `layout="constrained"` on `plt.subplots(...)` (colorbars, nested GridSpec, subfigures, `subplot_mosaic`) and never call `tight_layout()` afterward — it disables constrained layout. Skip `bbox_inches="tight"` unless changing the page size is intentional. Colormap normalization, current Seaborn `errorbar` usage, and Plotly/Kaleido static export: `references/matplotlib_examples.md`.
 
 ### 5. Export explicitly and record provenance
 
-```python
-from figure_export import export_figure
-
-report = export_figure(
-    fig,
-    "outputs/figure1",
-    formats=["pdf", "png"],
-    dpi=600,
-    bbox_inches=None,  # preserve figure page dimensions
-    provenance={
-        "raw_data": "data/source.csv",
-        "transformations": ["predeclared QC filter", "group mean"],
-        "uncertainty": "95% bootstrap CI; seed 20260723",
-        "missing_data": "retained as gaps",
-    },
-    write_manifest=True,
-)
-```
-
-The exporter refuses implicit overwrite, writes atomically, keeps vector DPI for embedded rasters, uses TIFF LZW, and can use PDF/PS Type 42 fonts. It does not validate scientific content or publisher acceptance.
-
-For editable fonts:
-
-- PDF/PS Type 42 embeds TrueType fonts.
-- `svg.fonttype="none"` keeps text editable/searchable but does not embed fonts; appearance depends on installed fonts.
-- `svg.fonttype="path"` preserves glyph appearance as paths but loses editable/searchable text.
-
-Use an opaque explicit background unless transparency is required; blending against another background changes apparent contrast.
+Call `figure_export.export_figure(fig, path, formats=[...], dpi=..., bbox_inches=None, provenance={raw_data, transformations, uncertainty, missing_data}, write_manifest=True)`. It refuses implicit overwrite, writes atomically, keeps vector DPI for embedded rasters, uses TIFF LZW, and can embed PDF/PS Type 42 fonts for editable text (SVG `fonttype="none"` keeps text editable without embedding; `"path"` embeds glyph shapes but loses editable text). It does not validate scientific content or publisher acceptance. Use an opaque explicit background unless transparency is required. Font/transparency checks: `references/matplotlib_examples.md`.
 
 ### 6. Inspect, compare, and review
 
-1. Inspect file metadata.
-2. Audit palette contrast/grayscale separation.
-3. Compare against a dated publisher snapshot.
-4. View at final size in the manuscript/web context.
-5. Manually review fonts, embedded rasters, clipping, legends, scale bars, image integrity, caption, alt text, and source data.
-6. Re-check the live target-journal page immediately before upload.
+Inspect file metadata (`image_metadata.py`), audit palette contrast/grayscale (`palette_audit.py`), and compare against a dated publisher snapshot (`export_plan.py`). View at final size in context, manually review fonts, embedded rasters, clipping, legends, scale bars, image integrity, caption, alt text, and source data, then re-check the live target-journal page immediately before upload.
 
-## Pinned snapshot
+## Bundled scripts
 
-The examples and smoke tests use direct package pins current on 2026-07-23:
+Every script under `scripts/` is deterministic, network-free, bounded, rejects symlink inputs/destinations, and refuses overwrite unless `--force` is explicit. Run each through `run_python` via `subprocess.run([sys.executable, "scripts/<name>.py", ...])` or by importing its functions; each script's own `--help` lists its arguments.
 
-```bash
-uv run --isolated --no-project --python 3.13 \
-  --with "matplotlib==3.11.1" \
-  --with "seaborn==0.13.2" \
-  --with "plotly==6.9.0" \
-  --with "kaleido==1.3.0" \
-  --with "pillow==12.3.0" \
-  --with "pypdf==6.14.2" \
-  python your_figure.py
-```
+- `image_metadata.py <file> [--min-dpi N] [--target-width-mm N] [--alpha-policy forbid|allow]` — raster/SVG/PDF/EPS metadata (dimensions, effective DPI, mode, alpha, ICC, compression, page size, PDF fonts); does not inspect every embedded raster in a vector container.
+- `palette_audit.py --palette <name> --background <hex> --role graphical|text` — WCAG sRGB contrast plus CIE L* grayscale screening (a heuristic, not a standard).
+- `export_plan.py --publisher <name> --figure-type <type> --width single|double --phase initial|revised|final [--input figure.pdf]` — plans/screens against dated official snapshots, not automatic compliance rules.
+- `style_preview.py --style <name> --palette <name> --formats png,svg` — renders a style/palette preview.
+- `style_presets.py --list`/`--show <name>` inspects bundled styles; `figure_export.py --demo <path> --manifest` smoke-tests the exporter.
 
-This is a dated direct-dependency snapshot, not a transitive lock. Use the project's uv lock for exact replay; this skill intentionally ships no dependency lock.
+## Assets and references
 
-## Bundled CLIs
+Assets: `publication.mplstyle` (general print), `nature.mplstyle` (dated Nature starting point, not a compliance preset), `presentation.mplstyle` (projected-display), `color_palettes.py` (Okabe-Ito/Paul Tol values), `publisher_profiles.json` (dated planning snapshots). Style files omit `#` in hex colors because `#` begins comments in `.mplstyle` parsing.
 
-All helpers are deterministic, network-free, bounded, reject symlink inputs/destinations where relevant, and refuse overwrite unless `--force` is explicit.
-
-### Inspect raster/vector metadata
-
-```bash
-uv run --isolated --no-project --python 3.13 \
-  --with "pillow==12.3.0" \
-  python scripts/image_metadata.py figure.tiff \
-  --format tiff --mode RGB --min-dpi 300 --target-width-mm 85 \
-  --alpha-policy forbid
-```
-
-Supports raster images (Pillow), SVG, PDF (pypdf), and EPS/PS. Reports dimensions, DPI/effective DPI, mode, alpha, ICC presence, compression, page size, and conservative first-page PDF font resources. It does not inspect every embedded raster in a vector container.
-
-### Audit palette contrast and grayscale
-
-```bash
-uv run --isolated --no-project --python 3.13 \
-  python scripts/palette_audit.py \
-  --palette okabe_ito_on_white \
-  --background FFFFFF \
-  --role graphical
-```
-
-Reports exact WCAG sRGB contrast plus pairwise CIE L* grayscale screening. The grayscale threshold is a heuristic, not a standard.
-
-### Plan/screen publisher export
-
-```bash
-uv run --isolated --no-project --python 3.13 \
-  python scripts/export_plan.py \
-  --publisher nature \
-  --figure-type combination \
-  --width single \
-  --phase final
-```
-
-Add `--input figure.pdf` to screen machine-readable properties. Profiles are official-source snapshots accessed 2026-07-23, not automatic compliance rules.
-
-### Preview styles
-
-```bash
-uv run --isolated --no-project --python 3.13 \
-  --with "matplotlib==3.11.1" \
-  python scripts/style_preview.py \
-  --output outputs/style-preview \
-  --style default \
-  --palette okabe_ito_on_white \
-  --formats png,svg
-```
-
-### Inspect/write styles and smoke-test export
-
-```bash
-uv run --isolated --no-project --python 3.13 \
-  python scripts/style_presets.py --list
-uv run --isolated --no-project --python 3.13 \
-  python scripts/style_presets.py --show nature
-uv run --isolated --no-project --python 3.13 \
-  --with "matplotlib==3.11.1" \
-  python scripts/figure_export.py --demo outputs/export-smoke --manifest
-```
-
-## Assets
-
-- `assets/publication.mplstyle`: general print starting point.
-- `assets/nature.mplstyle`: dated flagship Nature visual starting point, not a compliance preset.
-- `assets/presentation.mplstyle`: larger projected-display style.
-- `assets/color_palettes.py`: importable Okabe-Ito and Paul Tol values with metadata.
-- `assets/publisher_profiles.json`: dated, machine-readable planning snapshots.
-
-Matplotlib style files omit `#` in hex colors because `#` begins comments in `.mplstyle` parsing.
-
-## References
-
-- `references/publication_guidelines.md`: integrity, deceptive encodings, accessibility, static/interactive output.
-- `references/color_palettes.md`: palette semantics, exact values, WCAG contrast, grayscale caveats, color management.
-- `references/journal_requirements.md`: phase-specific official publisher snapshots.
-- `references/matplotlib_examples.md`: current, runnable Matplotlib/Seaborn/Plotly patterns.
-- `references/sources.md`: official URLs, dates, versions, and research basis.
+References: `publication_guidelines.md` (integrity, deceptive encodings, accessibility), `color_palettes.md` (palette values, WCAG contrast, color management), `journal_requirements.md` (phase-specific publisher snapshots), `matplotlib_examples.md` (runnable Matplotlib/Seaborn/Plotly patterns), `sources.md` (URLs, dates, versions).
 
 ## Final review checklist
 
-- [ ] Raw data/images and transformation code are preserved.
-- [ ] Missing values, exclusions, bins, normalization, and uncertainty are explicit.
-- [ ] Baselines, scales, limits, and area/volume encodings are honest.
-- [ ] Color is redundant and rendered contrast was reviewed.
-- [ ] Figure has an accessible description/data alternative where applicable.
-- [ ] Physical dimensions, DPI, format, fonts, transparency, and file size were inspected after export.
-- [ ] Publisher rules were verified for the exact journal and phase.
-- [ ] No automated report is presented as a scientific, accessibility, or compliance certification.
+- [ ] Raw data/images, transformation code, missing/exclusion/bin/normalization/uncertainty facts are preserved and explicit.
+- [ ] Baselines, scales, limits, area/volume encodings, and color redundancy/contrast are honest and reviewed.
+- [ ] Accessible description/data alternative provided where applicable.
+- [ ] Dimensions, DPI, format, fonts, transparency, and file size inspected after export.
+- [ ] Publisher rules verified for the exact journal and phase; no automated report is presented as a compliance certification.

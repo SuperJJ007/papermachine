@@ -2069,44 +2069,71 @@ describe('annotate_artifact', () => {
 describe('installValueFromResult / formatInstallResult', () => {
   const stream = (text: string, truncated = false): ScienceInstallValue['stdout'] => ({ text, bytes: Buffer.byteLength(text), truncated })
 
-  it('carries environmentRevision only when the Runtime result names a fresh environment', () => {
+  it('carries environmentRevision only when the Runtime result names a fresh environment, and always carries environmentChanged', () => {
     expect(installValueFromResult({
       status: 'success',
       environment: { revision: 4 } as never,
+      environmentChanged: true,
       stdout: stream(''), stderr: stream(''),
-    })).toMatchObject({ status: 'success', environmentRevision: 4 })
+    })).toMatchObject({ status: 'success', environmentRevision: 4, environmentChanged: true })
+    expect(installValueFromResult({
+      status: 'success',
+      environment: { revision: 4 } as never,
+      environmentChanged: false,
+      stdout: stream(''), stderr: stream(''),
+    })).toMatchObject({ status: 'success', environmentRevision: 4, environmentChanged: false })
     expect(installValueFromResult({
       status: 'failed', stdout: stream(''), stderr: stream(''),
-    })).toEqual({ status: 'failed', stdout: stream(''), stderr: stream('') })
+    })).toEqual({ status: 'failed', environmentChanged: false, stdout: stream(''), stderr: stream('') })
   })
 
-  it('states plainly that a successful install takes effect on the next run and loses in-memory kernel state then', () => {
+  it('states plainly that a successful install that appended a fresh revision takes effect on the next run and loses in-memory kernel state then', () => {
     const text = formatInstallResult({
-      status: 'success', environmentRevision: 3, stdout: stream(''), stderr: stream(''),
+      status: 'success', environmentRevision: 3, environmentChanged: true, stdout: stream(''), stderr: stream(''),
     })
     expect(text).toContain('takes effect on the next run_python/run_r call')
     expect(text).toContain('not now')
     expect(text).toContain('lost then')
   })
 
-  it('omits the environment-revision line on a non-success status', () => {
-    const text = formatInstallResult({ status: 'failed', stdout: stream(''), stderr: stream('') })
+  it('states plainly that a redundant successful install changed nothing and restarts no kernel', () => {
+    const text = formatInstallResult({
+      status: 'success', environmentRevision: 3, environmentChanged: false, stdout: stream(''), stderr: stream(''),
+    })
+    expect(text).toContain('environment revision 3 unchanged')
+    expect(text).toContain('no kernel restarts because of this call')
     expect(text).not.toContain('takes effect')
+  })
+
+  it('omits the environment-revision line on a non-success status', () => {
+    const text = formatInstallResult({ status: 'failed', environmentChanged: false, stdout: stream(''), stderr: stream('') })
+    expect(text).not.toContain('takes effect')
+    expect(text).not.toContain('environment revision')
   })
 
   it('steers the model away from pip/install.packages() only on a failed status', () => {
     const steering = 'the environment is unchanged; try a different package name or version spec — do not fall back to pip/install.packages(), which is lost on the next kernel restart'
-    expect(formatInstallResult({ status: 'failed', stdout: stream(''), stderr: stream('') })).toContain(steering)
-    expect(formatInstallResult({ status: 'cancelled', stdout: stream(''), stderr: stream('') })).not.toContain(steering)
-    expect(formatInstallResult({ status: 'timed-out', stdout: stream(''), stderr: stream('') })).not.toContain(steering)
+    expect(formatInstallResult({ status: 'failed', environmentChanged: false, stdout: stream(''), stderr: stream('') })).toContain(steering)
+    expect(formatInstallResult({ status: 'cancelled', environmentChanged: false, stdout: stream(''), stderr: stream('') })).not.toContain(steering)
+    expect(formatInstallResult({ status: 'timed-out', environmentChanged: false, stdout: stream(''), stderr: stream('') })).not.toContain(steering)
     expect(formatInstallResult({
-      status: 'success', environmentRevision: 1, stdout: stream(''), stderr: stream(''),
+      status: 'success', environmentRevision: 1, environmentChanged: true, stdout: stream(''), stderr: stream(''),
     })).not.toContain(steering)
+  })
+
+  it('tells the model a timed-out install may have partially or fully written the environment and to verify before retrying', () => {
+    const guidance = 'the installer was stopped at its deadline before confirming completion — the environment may be partially or fully written; check get_science_state or try importing the package before deciding whether to retry, and retry at most once'
+    expect(formatInstallResult({ status: 'timed-out', environmentChanged: false, stdout: stream(''), stderr: stream('') })).toContain(guidance)
+    expect(formatInstallResult({ status: 'failed', environmentChanged: false, stdout: stream(''), stderr: stream('') })).not.toContain(guidance)
+    expect(formatInstallResult({ status: 'cancelled', environmentChanged: false, stdout: stream(''), stderr: stream('') })).not.toContain(guidance)
+    expect(formatInstallResult({
+      status: 'success', environmentRevision: 1, environmentChanged: true, stdout: stream(''), stderr: stream(''),
+    })).not.toContain(guidance)
   })
 
   it('renders "(empty)" for empty streams and appends truncation markers when set', () => {
     const text = formatInstallResult({
-      status: 'success', environmentRevision: 1,
+      status: 'success', environmentRevision: 1, environmentChanged: true,
       stdout: stream('', false), stderr: stream('boom\n', true),
     })
     expect(text).toContain('--- stdout ---\n(empty)')
@@ -2117,7 +2144,7 @@ describe('installValueFromResult / formatInstallResult', () => {
 
   it('renders captured non-empty stdout and a stdout truncation marker', () => {
     const text = formatInstallResult({
-      status: 'success', environmentRevision: 1,
+      status: 'success', environmentRevision: 1, environmentChanged: true,
       stdout: stream('installed numpy-1.26.4\n', true), stderr: stream(''),
     })
     expect(text).toContain('installed numpy-1.26.4')
@@ -2165,13 +2192,41 @@ describe('install_science_packages', () => {
     expect(result.content.some(block => block.type === 'text' && block.text.includes('configured micromamba executable path'))).toBe(true)
   })
 
-  it('installs successfully, appends a fresh environment revision, and tells the model plainly that it takes effect next run', async () => {
+  it('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-success')
     const before = replayScience(session.events)?.environment
+    // The shared fake Python prefix (createFakePythonPrefix) and fake
+    // micromamba (makeMicromamba) both report a fixed static package list
+    // regardless of what was requested — correct for every other test in
+    // this file, but this test specifically exercises a real environment
+    // change, so it overwrites both with a marker-file pair that models
+    // micromamba actually writing the requested package (mirrors
+    // examples/headless-agent's own science fixture, prepareScienceFixture).
+    const pandasMarker = join(root, 'fake-conda', 'conda-meta', 'pandas-2.2.0.json')
+    writeFileSync(join(root, 'fake-conda', 'bin', 'python'), `#!/bin/sh
+case " $* " in
+  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+  *" -m "*)
+    if [ -f ${JSON.stringify(pandasMarker)} ]; then
+      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"},{"name":"pandas","version":"2.2.0"}]'
+    else
+      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
+    fi
+    ;;
+  *" -c "*) printf 'dsh-科学-✓' ;;
+  *)
+    while [ "$#" -gt 2 ]; do shift; done
+    exec "${process.execPath}" "$1" "$2"
+    ;;
+esac
+`)
+    chmodSync(join(root, 'fake-conda', 'bin', 'python'), 0o700)
+    writeFileSync(join(root, 'fake-micromamba'), `#!/bin/sh\ntouch ${JSON.stringify(pandasMarker)}\nexit 0\n`)
+    chmodSync(join(root, 'fake-micromamba'), 0o755)
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('install-success'), name: 'install_science_packages',
-      arguments: { language: 'python', packages: ['numpy'] },
+      arguments: { language: 'python', packages: ['pandas'] },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
@@ -2181,6 +2236,27 @@ describe('install_science_packages', () => {
     expect(text).toContain('lost then')
     const after = replayScience(session.events)?.environment
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
+  })
+
+  it('reports a redundant install as unchanged, appending no revision', async () => {
+    const { ctx } = await setup({ installer: true })
+    const session = await boundSession(ctx, 'science-install-redundant')
+    const before = replayScience(session.events)?.environment
+    // Default fake harness: every requested package is already in the
+    // static probe output, modeling the retry this fix targets after a
+    // misreported 'timed-out' whose install had, in fact, already finished.
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('install-redundant'), name: 'install_science_packages',
+      arguments: { language: 'python', packages: ['numpy'] },
+      agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
+    expect(text).toContain('status: success')
+    expect(text).toContain('unchanged')
+    expect(text).not.toContain('takes effect')
+    const after = replayScience(session.events)?.environment
+    expect(after?.revision).toBe(before?.revision)
   })
 })
 

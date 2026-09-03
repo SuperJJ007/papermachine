@@ -23,11 +23,17 @@ const installOutputSchema = {
   additionalProperties: false,
   properties: {
     status: { type: 'string', enum: ['success', 'failed', 'timed-out', 'cancelled'], required: true },
-    // Present iff status === 'success': the fresh whole-value environment
-    // revision this install applied. Its packages are not repeated here;
+    // Present iff status === 'success': the environment as it now stands —
+    // fresh only when environmentChanged is true; a redundant install
+    // (every requested package already present) reports the unchanged
+    // current revision instead. Packages are not repeated here;
     // get_science_state already reports the current environment's full
     // package inventory per language.
     environmentRevision: { type: 'integer' },
+    // Always present: whether this call appended environmentRevision as a
+    // fresh revision (always false for a non-success status, since nothing
+    // durable changed).
+    environmentChanged: { type: 'boolean', required: true },
     stdout: { ...outputStreamSchema, required: true },
     stderr: { ...outputStreamSchema, required: true },
   },
@@ -45,6 +51,7 @@ export function installValueFromResult(result: InstallScienceEnvironmentPackages
   return {
     status: result.status,
     ...result.environment === undefined ? {} : { environmentRevision: result.environment.revision },
+    environmentChanged: result.environmentChanged === true,
     stdout: result.stdout,
     stderr: result.stderr,
   }
@@ -58,10 +65,15 @@ export function installValueFromResult(result: InstallScienceEnvironmentPackages
 export function formatInstallResult(value: ScienceInstallValue): string {
   const lines = [`status: ${value.status}`]
   if (value.environmentRevision !== undefined) {
-    lines.push(`environment revision ${String(value.environmentRevision)} applied — this takes effect on the next run_python/run_r call for this language, not now: that call restarts the kernel (an environment re-bind) and every variable, import, and definition it currently holds in memory is lost then`)
+    lines.push(value.environmentChanged
+      ? `environment revision ${String(value.environmentRevision)} applied — this takes effect on the next run_python/run_r call for this language, not now: that call restarts the kernel (an environment re-bind) and every variable, import, and definition it currently holds in memory is lost then`
+      : `environment revision ${String(value.environmentRevision)} unchanged — every requested package was already present, so no revision was appended and no kernel restarts because of this call`)
   }
   if (value.status === 'failed') {
     lines.push('the environment is unchanged; try a different package name or version spec — do not fall back to pip/install.packages(), which is lost on the next kernel restart')
+  }
+  if (value.status === 'timed-out') {
+    lines.push('the installer was stopped at its deadline before confirming completion — the environment may be partially or fully written; check get_science_state or try importing the package before deciding whether to retry, and retry at most once')
   }
   lines.push('--- stdout ---', value.stdout.text.length > 0 ? value.stdout.text : '(empty)')
   if (value.stdout.truncated) lines.push('(stdout truncated)')

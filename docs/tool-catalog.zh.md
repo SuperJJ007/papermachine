@@ -2235,7 +2235,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `annotate_artifact`
 
-为你的代码已经产出的某个 artifact（参见 run 结果或 get_science_state 中的 artifact 列表）添加人类可读的标题与可选 caption。被策展的 artifact 会为读者高亮显示——把它用在最能展示你结果的那个文件上，而不是每一个中间产物。返回文本回执；绝不返回文件字节。
+为你的代码已经产出的某个 artifact（参见 run 结果或 get_science_state 中的 artifact 列表）添加人类可读的标题与可选 caption。被策展的 artifact 会为读者高亮显示——把它用在最能展示你结果的那个文件上，而不是每一个中间产物。如果用户命名的 artifact 你没有任何记录，仍按该确切名称调用本工具并转达其诊断信息——绝不用一个替代文件来顶替你找不到的那个。返回文本回执；绝不返回文件字节。
 
 ```json
 {
@@ -2243,7 +2243,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
   "properties": {
     "logical_name": {
       "type": "string",
-      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state."
+      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it."
     },
     "version": {
       "type": "integer",

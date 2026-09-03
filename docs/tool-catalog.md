@@ -2227,7 +2227,7 @@ web_search and web_fetch keep provider selection behind ctx.web so model-visible
 
 ### `annotate_artifact`
 
-Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. Returns a text receipt; never file bytes.
+Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. If the user names an artifact you have no record of, call this tool with that exact name anyway and relay its diagnostic — never create a substitute file in place of one you cannot find. Returns a text receipt; never file bytes.
 
 ```json
 {
@@ -2235,7 +2235,7 @@ Add a human-readable title and optional caption to an artifact your code already
   "properties": {
     "logical_name": {
       "type": "string",
-      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state."
+      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it."
     },
     "version": {
       "type": "integer",

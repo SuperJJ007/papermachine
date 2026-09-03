@@ -106,9 +106,9 @@ function nonEmpty(value: string, field: string): string {
 export function applyAnnotateArtifactTool(ctx: Context, directEditLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'annotate_artifact',
-    description: 'Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. Returns a text receipt; never file bytes.',
+    description: 'Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. If the user names an artifact you have no record of, call this tool with that exact name anyway and relay its diagnostic — never create a substitute file in place of one you cannot find. Returns a text receipt; never file bytes.',
     parameters: {
-      logical_name: { type: 'string', required: true, description: 'The artifact\'s logical_name, exactly as it appeared in a run result or get_science_state.' },
+      logical_name: { type: 'string', required: true, description: 'The artifact\'s logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it.' },
       version: { type: 'integer', description: 'Exact existing version of logical_name to curate. Defaults to its latest version.' },
       title: { type: 'string', required: true, description: 'Human-readable artifact title.' },
       caption: { type: 'string', description: 'Optional human-readable caption.' },

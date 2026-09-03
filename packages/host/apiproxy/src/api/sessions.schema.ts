@@ -9,6 +9,7 @@ import { z } from 'zod'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
+import type { ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
@@ -391,6 +392,12 @@ export const sessionScienceArtifactValueSchema = z.object({
 /** Project Science library request payload. */
 export const sessionsScienceLibraryRequestSchema = z.object({ sessionId: sessionIdSchema }) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceLibrary'>>>
 
+/** Per-version reconciliation flags — see `ScienceVersionHealthFlags`. */
+const scienceVersionHealthFlagsSchema = z.object({
+  reconstructed: z.literal(true).optional(),
+  missingContent: z.literal(true).optional(),
+})
+
 /** Project Science library response value. */
 export const sessionsScienceLibraryValueSchema = z.object({
   projectId: z.string().min(1),
@@ -400,9 +407,101 @@ export const sessionsScienceLibraryValueSchema = z.object({
     latest: z.object({
       versionId: scienceVersionIdSchema, ordinal: z.number().int().positive(), mediaType: z.string().min(1),
       byteCount: z.number().int().nonnegative(), createdAt: z.number(),
+      health: scienceVersionHealthFlagsSchema.optional(),
     }),
   })),
+  health: z.object({
+    orphan: z.number().int().nonnegative(),
+    reconstructed: z.number().int().nonnegative(),
+    missingContent: z.number().int().nonnegative(),
+  }),
 }) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceLibrary'>>>
+
+/** Protocol constant: `scienceVersions` request array cap — see its JSDoc on `SessionsApi`. */
+export const SCIENCE_VERSIONS_BATCH_LIMIT = 200
+
+/** `ScienceContentOrigin` field-shape mirror — see `sessions.ts`'s own JSDoc for why it is redeclared rather than imported. */
+const scienceContentOriginSchema = z.union([z.literal('run-auto'), z.literal('human-edit'), z.literal('import')])
+
+/** Batch Science version-summary request payload. */
+export const sessionsScienceVersionsRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  versionIds: z.array(scienceVersionIdSchema).max(SCIENCE_VERSIONS_BATCH_LIMIT),
+}) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceVersions'>>>
+
+/** Batch Science version-summary response value. */
+export const sessionsScienceVersionsValueSchema = z.object({
+  versions: z.array(z.object({
+    versionId: scienceVersionIdSchema, artifactId: z.string().min(1), logicalName: z.string(),
+    ordinal: z.number().int().positive(), title: z.string().optional(), caption: z.string().optional(),
+    contentOrigin: scienceContentOriginSchema, createdAt: z.number(),
+    mediaType: z.string().min(1), byteCount: z.number().int().nonnegative(),
+    producer: z.object({
+      sessionId: sessionIdSchema, sessionTitle: z.string().optional(),
+      runId: z.string().optional(), toolCallId: z.string().optional(),
+      requestHeaderSeq: z.number().int().nonnegative().optional(), turn: z.number().int().positive().optional(),
+    }),
+    health: scienceVersionHealthFlagsSchema.optional(),
+  })),
+}) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceVersions'>>>
+
+/** One host-extracted addressable chart element — see `ScienceChartElement`. */
+const scienceChartElementSchema = z.object({
+  id: z.string(),
+  kind: z.enum([
+    'title', 'subtitle', 'x_label', 'y_label', 'tick_labels', 'legend', 'series', 'grid',
+    'axis_range', 'axis_scale', 'figure_size', 'font', 'annotation',
+  ]),
+  axes: z.number().int().nullable(),
+  label: z.string().nullable(),
+  current: z.unknown(),
+})
+
+/** One pixel-space hit target for an extracted chart element — see `ScienceChartHit`. */
+const scienceChartHitSchema = z.object({
+  id: z.string(),
+  bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  z: z.number(),
+})
+
+/**
+ * ScienceChartOp passthrough: this wire carries the op log for display only
+ * (the chart edit panel re-derives its own outgoing ops from user input, it
+ * never replays these), so only the discriminant is locked.
+ */
+const scienceChartOpSchema = z.looseObject({ op: z.string() })
+
+/**
+ * `ScienceChartState` wire shape. Structural, not a re-implementation of
+ * `dsh-science-session`'s own `decodeScienceChartState` cross-field checks
+ * (element/hitmap id references, bbox ordering, byte-size cap) — the host
+ * already ran that validation before writing the store's `figure_state` row,
+ * so this schema exists only to shape the parsed client-side value, mirroring
+ * `sessionProjectionsBlockSchema`'s and `toolEventViewSchema`'s own
+ * already-host-validated passthroughs.
+ */
+export const scienceChartStateSchema = z.object({
+  runtime: z.enum(['matplotlib', 'ggplot2']),
+  figureKey: z.string(),
+  png: z.object({
+    width: z.number().int().positive(), height: z.number().int().positive(), dpi: z.number().positive(),
+  }),
+  elements: z.array(scienceChartElementSchema),
+  ops: z.array(scienceChartOpSchema),
+  hitmap: z.array(scienceChartHitSchema),
+  hitmapStatus: z.enum(['ok', 'unavailable']),
+}) as unknown as z.ZodType<Wire<ScienceChartState>>
+
+/** Single-version chart-state request payload. */
+export const sessionsScienceChartStateRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  versionId: scienceVersionIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'sessions.scienceChartState'>>>
+
+/** Single-version chart-state response value; `chart` is `null` for a non-PNG version or one with no stored figure state. */
+export const sessionsScienceChartStateValueSchema = z.object({
+  chart: scienceChartStateSchema.nullable(),
+}) as unknown as z.ZodType<Wire<ResponseValue<'sessions.scienceChartState'>>>
 
 /** Bounded workspace directory request payload. */
 export const sessionsWorkspaceFilesRequestSchema = z.object({ sessionId: sessionIdSchema, path: z.string().optional() }) satisfies z.ZodType<Wire<RequestPayload<'sessions.workspaceFiles'>>>

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-02-science-same-turn-draft-folding-restoration.md
+2026-09-02-science-same-turn-draft-folding-restoration.md: 22c7ce03bd470562e86493dfa9daa01b978c593a
+2026-09-02-science-same-turn-draft-folding-restoration.zh.md: 06c2f0ba4cfe01b9291b81dc421387ddd89e856c

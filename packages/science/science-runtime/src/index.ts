@@ -10,7 +10,6 @@ import { randomUUID } from 'node:crypto'
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import {
   decodeScienceChartState,
   MAX_CHART_OPS,
@@ -27,10 +26,12 @@ import type {
   ScienceProjectId,
   ScienceProjection,
   ScienceRunTerminal,
-  ScienceRunArtifactVersion,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox'
+import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ReconcileCursor } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -38,7 +39,11 @@ import { capturablePngPaths, captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.ts'
 import { configSchema, resolveConfig } from './config.ts'
 import type { Config, ConfiguredProfile } from './config.ts'
+import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
+import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { assertProfileRunConfinement, observeProfile } from './environment.ts'
+import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
 import {
@@ -77,6 +82,8 @@ import {
   planSessionScratch,
   removeUnpublishedRunScratch,
   rollbackSessionScratch,
+  runArtifactDirectory,
+  runScratchDirectory,
 } from './scratch.ts'
 import type { ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
@@ -85,6 +92,7 @@ import type {
   BindScienceEnvironmentRequest,
   InstallScienceEnvironmentPackagesRequest,
   InstallScienceEnvironmentPackagesResult,
+  SaveScienceArtifactAsRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -95,12 +103,47 @@ import type {
   StartScienceRunRequest,
 } from './types.ts'
 
+function environmentBinding(
+  revision: number,
+  profileId: ScienceEnvironmentBinding['profileId'],
+  observed: ObservedProfile,
+): ScienceEnvironmentBinding {
+  const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
+  const failures = bindings.filter(binding => binding.capability !== 'available')
+  const now = Date.now()
+  return {
+    revision,
+    profileId,
+    configuredAt: now,
+    validatedAt: now,
+    status: failures.length === 0 ? 'applied' : 'invalid',
+    ...(observed.python === undefined ? {} : { python: observed.python.binding }),
+    ...(observed.r === undefined ? {} : { r: observed.r.binding }),
+    ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
+  }
+}
+
+/** Where `annotate_artifact`'s not-found diagnostic located a retained, uncaptured same-named PNG, if anywhere. */
+type RetainedRasterLocation = 'artifact-dir' | 'run-root' | 'not-found'
+
+/** Fixed empty raster declaration: `'always'`-policy PNG discovery needs no declared-path set. */
+const EMPTY_RASTER_DECLARATION: ReadonlySet<string> = new Set()
+
+/** Restart-local progress across bounded reconciliation attempts for one project. */
+interface ProjectReconciliationProgress {
+  readonly collectorCursor: CollectProjectArtifactEventsCursor | undefined
+  readonly storeCursor: ReconcileCursor | undefined
+  readonly eventSetComplete: boolean
+  readonly hadErrors: boolean
+}
+
 export type {
   AnnotateScienceArtifactRequest,
   BindScienceEnvironmentRequest,
   InstallScienceEnvironmentPackagesRequest,
   InstallScienceEnvironmentPackagesResult,
   InstallScienceEnvironmentPackagesStatus,
+  SaveScienceArtifactAsRequest,
   ScienceChartEditRequest,
   ScienceChartEditResult,
   ScienceChartPreviewResult,
@@ -351,10 +394,28 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly chartExtractTimeoutMs: number
   /** Configured recent-run live-figure retention count. */
   private readonly chartLiveRunsRetained: number
+  /** Configured store ↔ session reconciliation session-scan bound. */
+  private readonly reconcileMaxSessions: number
+  /** Configured minimum interval between reconciliation attempts for one project. */
+  private readonly reconcileRetryDelayMs: number
+  /** Configured bound on runs `annotate_artifact`'s not-found diagnostic inspects for a retained, uncaptured PNG. */
+  private readonly annotateDiagnosticMaxRuns: number
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
   private readonly projects = new WeakMap<Session, Promise<ScienceProjectId>>()
+  /**
+   * Project ids with one complete, cursor-free, error-free reconciliation
+   * pass in this Host lifetime. Project identity spans many sessions, so a
+   * plain `Set` owns this suppression rather than a Session-keyed `WeakMap`.
+   */
+  private readonly reconciledProjects = new Set<string>()
+  /** Project ids whose reconciliation promise has not settled. */
+  private readonly reconcilingProjects = new Set<string>()
+  /** Wall-clock start of each project's latest attempt, used only for retry throttling. */
+  private readonly reconciliationAttemptedAt = new Map<string, number>()
+  /** Bounded session/store walk progress for projects not yet fully reconciled. */
+  private readonly reconciliationProgress = new Map<string, ProjectReconciliationProgress>()
   /** Every live persistent Science kernel across sessions. */
   private readonly kernels: KernelSet
   private disposing = false
@@ -394,6 +455,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.kernelStartTimeoutMs = resolved.kernelStartTimeoutMs
     this.chartExtractTimeoutMs = resolved.chartExtractTimeoutMs
     this.chartLiveRunsRetained = resolved.chartLiveRunsRetained
+    this.reconcileMaxSessions = resolved.reconcileMaxSessions
+    this.reconcileRetryDelayMs = resolved.reconcileRetryDelayMs
+    this.annotateDiagnosticMaxRuns = resolved.annotateDiagnosticMaxRuns
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -500,10 +564,129 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         'Science project store requires the session\'s workspace directory (session header cwd)',
       ))
     }
-    const resolved = this.ctx.scienceArtifactStore.openProject(cwd).then(opened => opened.projectId)
+    const resolved = this.ctx.scienceArtifactStore.openProject(cwd).then((opened) => {
+      this.triggerReconciliation(opened.projectId, opened.workspacePath)
+      return opened.projectId
+    })
     this.projects.set(session, resolved)
     resolved.catch(() => { this.projects.delete(session) })
     return resolved
+  }
+
+  /**
+   * Fire-and-forget: run a bounded full-project store ↔ session
+   * reconciliation attempt when this Runtime resolves a project. A
+   * complete, cursor-free, error-free pass suppresses every later attempt
+   * for that project during this Host lifetime; any other settlement remains
+   * eligible on a later project resolution after `reconcileRetryDelayMs`.
+   * Reconciliation never blocks or fails the Science operation that
+   * triggered it: every failure this reaches is logged through
+   * `ctx.logger.warn` and otherwise swallowed. A deployment with no
+   * `sessionPersistence` service mounted skips reconciliation entirely
+   * rather than treating the missing service as an error.
+   * @param projectId - the project this Runtime just resolved.
+   * @param workspacePath - the project's canonical workspace path, from `OpenedProject.workspacePath`.
+   */
+  private triggerReconciliation(projectId: ScienceProjectId, workspacePath: string): void {
+    const key = String(projectId)
+    if (this.reconciledProjects.has(key) || this.reconcilingProjects.has(key)) return
+    const sessionPersistence = this.ctx.get('sessionPersistence')
+    if (sessionPersistence === undefined) return
+    const attemptedAt = this.reconciliationAttemptedAt.get(key)
+    const now = Date.now()
+    if (attemptedAt !== undefined && now - attemptedAt < this.reconcileRetryDelayMs) return
+    this.reconciliationAttemptedAt.set(key, now)
+    this.reconcilingProjects.add(key)
+    const previous = this.reconciliationProgress.get(key) ?? {
+      collectorCursor: undefined,
+      storeCursor: undefined,
+      eventSetComplete: false,
+      hadErrors: false,
+    }
+    collectProjectArtifactEvents({
+      sessionPersistence,
+      workspacePath,
+      maxSessions: this.reconcileMaxSessions,
+      ...(previous.collectorCursor === undefined ? {} : { cursor: previous.collectorCursor }),
+      onWarning: (message) => { this.ctx.logger.warn(message) },
+    }).then(async (collection) => {
+      const resetStoreCycle = collection.changed || (collection.complete && !previous.eventSetComplete)
+      const storeCursor = resetStoreCycle ? undefined : previous.storeCursor
+      const priorErrors = resetStoreCycle ? false : previous.hadErrors
+      const result = await this.ctx.scienceArtifactStore.reconcileProject(
+        projectId,
+        collection.events,
+        collection.complete,
+        storeCursor,
+      )
+      for (const message of result.errors) this.ctx.logger.warn(`science-runtime: reconciliation: ${message}`)
+      if (!collection.complete) {
+        this.ctx.logger.warn(
+          `science-runtime: reconciliation for project "${key}" used an incomplete session event set; `
+          + 'orphan classification was skipped for versions with no event',
+        )
+      }
+      if (collection.truncated || result.truncated) {
+        this.ctx.logger.warn(
+          `science-runtime: reconciliation for project "${key}" was truncated (more sessions or versions remain than this `
+          + 'call\'s configured bound admits); a later project resolution may retry after the configured delay',
+        )
+      }
+      const hadErrors = priorErrors || result.errors.length !== 0
+      if (collection.complete && !result.truncated && !hadErrors) {
+        this.reconciledProjects.add(key)
+        this.reconciliationProgress.delete(key)
+      } else if (collection.complete && !result.truncated) {
+        // A finished cycle with item errors retries from a fresh collection
+        // and store cursor on the next eligible project resolution.
+        this.reconciliationProgress.delete(key)
+      } else {
+        this.reconciliationProgress.set(key, {
+          collectorCursor: collection.cursor ?? previous.collectorCursor,
+          storeCursor: result.cursor,
+          eventSetComplete: collection.complete,
+          hadErrors,
+        })
+      }
+    }).catch((error: unknown) => {
+      this.ctx.logger.warn(`science-runtime: project reconciliation failed and was skipped: ${String(error)}`)
+    }).finally(() => {
+      this.reconcilingProjects.delete(key)
+    })
+  }
+
+  /**
+   * Append a `science/artifact-saved` store-reference event, marking the
+   * just-committed version's `version_health.orphan` immediately when the
+   * append is vetoed (the Session detached, or otherwise refused it) —
+   * narrowing the W2/W3 crash window the same way `capture.ts`'s auto-
+   * capture walk already does for its own append site, extended here to
+   * every OTHER call site that commits a store version and then appends its
+   * reference event (`annotateArtifact`, `performChartEdit`'s human-edit
+   * commit, `saveArtifactAs`). A health-marking failure on top of an
+   * already-failed append is logged and swallowed, not thrown — the
+   * append's own error is what the caller needs to see, and an unmarked row
+   * is still recoverable by a later reconciliation pass either way.
+   * @param session - the exact Session to append onto.
+   * @param projectId - the owning project, for the health write.
+   * @param versionId - the just-committed version this event references.
+   * @param artifact - the event payload.
+   * @returns the appended event.
+   * @throws whatever `session.append` itself throws, after a best-effort orphan mark.
+   */
+  private appendArtifactSavedOrMarkOrphan(
+    session: Session, projectId: ScienceProjectId, versionId: ScienceVersionId, artifact: ScienceArtifactVersion,
+  ): SessionEvent<'science/artifact-saved'> {
+    try {
+      return session.append('science/artifact-saved', { version: 1, artifact })
+    } catch (error) {
+      this.ctx.scienceArtifactStore.setVersionHealth(projectId, versionId, { orphan: true }).catch((healthError: unknown) => {
+        this.ctx.logger.warn(
+          `science-runtime: failed to mark version "${String(versionId)}" orphan after a vetoed artifact-saved append: ${String(healthError)}`,
+        )
+      })
+      throw error
+    }
   }
 
   /**
@@ -560,19 +743,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session)
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
-      const failures = bindings.filter(binding => binding.capability !== 'available')
-      const now = Date.now()
-      const environment: ScienceEnvironmentBinding = {
-        revision: (current.environment?.revision ?? 0) + 1,
-        profileId: ScienceEnvironmentProfileId(String(request.profileId)),
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
-      }
+      const environment = environmentBinding(
+        (current.environment?.revision ?? 0) + 1,
+        ScienceEnvironmentProfileId(String(request.profileId)),
+        observed,
+      )
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment })
       return environment
@@ -613,18 +788,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     assertValidPackageSpecs(request.packages)
     const lease = await this.reserveQueued(request.session, request.signal)
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Mirrors startRun's own orphan check: the lease itself is free, but an
-      // orphaned durable 'running' run (a crash before its own terminal
-      // committed) must still block a whole-value environment rebind.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const binding = selectBinding(environment, request.language)
       const profile = this.profile(String(environment.profileId))
       const executable = await staticMicromamba(installer.micromambaPath)
@@ -684,19 +848,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (current === null) {
         throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
       }
-      const bindings = [observed.python?.binding, observed.r?.binding].filter(candidate => candidate !== undefined)
-      const failures = bindings.filter(candidate => candidate.capability !== 'available')
-      const now = Date.now()
-      const fresh: ScienceEnvironmentBinding = {
-        revision: current.revision + 1,
-        profileId: current.profileId,
-        configuredAt: now,
-        validatedAt: now,
-        status: failures.length === 0 ? 'applied' : 'invalid',
-        ...(observed.python === undefined ? {} : { python: observed.python.binding }),
-        ...(observed.r === undefined ? {} : { r: observed.r.binding }),
-        ...(failures.length === 0 ? {} : { failureReason: failures.map(candidate => candidate.reason).join('; ') }),
-      }
+      const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
       this.assertPrepublication(request.session, lease.control)
       request.session.append('science/environment-bound', { version: 1, environment: fresh })
       return { status: 'success', environment: fresh, stdout: outcome.stdout, stderr: outcome.stderr }
@@ -731,21 +883,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
-      this.assertPrepublication(request.session, lease.control)
-      const projection = this.assertSession(request.session)
-      const environment = projection.environment
-      if (environment === null || environment.status !== 'applied') {
-        throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
-      }
-      // Reaching this with an open run means the lease itself is free (the
-      // holder released it) while the durable log still shows a run
-      // 'running' — an orphan left by a run whose settlement fired without
-      // its own `run-finished` ever committing (e.g. a crash before a Host
-      // restart re-attached this Session), not the in-process race
-      // `reserveQueued` already resolved by queueing.
-      if (projection.runs.some(run => run.status === 'running')) {
-        throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
-      }
+      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
       const projectId = await this.sessionProject(request.session)
@@ -890,20 +1028,61 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (parent === undefined || parent.version !== request.version) {
         throw new ScienceRuntimeError('CHART_STALE_VERSION', 'Chart edit must name the current artifact version')
       }
-      if (parent.mediaType !== 'image/png' || parent.chart === undefined) {
+      const projectId = parent.projectId
+      const store = this.ctx.scienceArtifactStore
+      // mediaType/contentOrigin/figure_state live only in the store now (T1's
+      // authority rule): the session projection carries no more than the
+      // versionId this exact reference names.
+      const parentRecord = await store.getVersion(projectId, parent.versionId)
+      const parentFigureState = await store.getFigureState(projectId, parent.versionId)
+      /* v8 ignore next 3 -- projection already resolved this versionId; a missing store row is a durable invariant violation */
+      if (parentRecord === undefined) {
+        throw new Error('science-runtime: chart edit target no longer identifies a committed store version')
+      }
+      if (parentRecord.mediaType !== 'image/png' || parentFigureState === undefined) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart edit target is not an addressable PNG version')
       }
+      const parentChart = decodeScienceChartState(JSON.parse(parentFigureState.stateJson))
       try {
-        decodeScienceChartState({ ...parent.chart, ops: [...parent.chart.ops, ...request.ops] })
+        decodeScienceChartState({ ...parentChart, ops: [...parentChart.ops, ...request.ops] })
       } catch (error) {
         throw new ScienceRuntimeError('CHART_OP_INVALID', 'Chart edit operations are invalid or exceed chart state bounds', { cause: error })
       }
       // Human edits must parent the current version, so the nearest run-origin version owns their baseline.
-      const source = versions.findLast((candidate): candidate is ScienceRunArtifactVersion => candidate.origin !== 'human-edit')
-      if (source?.chart === undefined || source.chart.figureKey !== parent.chart.figureKey) {
+      // `contentOrigin` lives only in the store, so the artifact's full
+      // ordinal history is read from there rather than the session's own
+      // (possibly partial) local knowledge of this artifactId.
+      const artifactHistory = await store.listVersions(projectId, parent.artifactId)
+      const sourceVersion = artifactHistory.findLast(candidate => candidate.contentOrigin !== 'human-edit')
+      // A version's baseVersionId chain always terminates at ordinal 1, and
+      // `commitStyleEdit` only ever appends onto an existing artifact
+      // (`createArtifact` always supplies its own contentOrigin, never
+      // `commitStyleEdit`'s hardcoded 'human-edit') — so ordinal 1 is never
+      // itself human-edit, and this findLast always resolves.
+      /* v8 ignore next 3 */
+      if (sourceVersion === undefined) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
-      const sourceRun = projection.runs.find(candidate => candidate.runId === source.runId)
+      const sourceFigureState = await store.getFigureState(projectId, sourceVersion.versionId)
+      // `parentChart.figureKey` chains back, unchanged, to whichever
+      // run-auto version's own successful chart extraction first produced
+      // it (every step here and in capture.ts's figureState copies the
+      // prior figureKey verbatim) — so that same ancestor's figure_state
+      // row still exists whenever `sourceVersion` does.
+      /* v8 ignore next 3 */
+      if (sourceFigureState === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const sourceChart = decodeScienceChartState(JSON.parse(sourceFigureState.stateJson))
+      if (sourceChart.figureKey !== parentChart.figureKey) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      /* v8 ignore next 3 -- a run-auto version's producer always carries the run id that produced it */
+      if (sourceVersion.producerRunId === undefined) {
+        throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
+      }
+      const sourceRunId = ScienceRunId(sourceVersion.producerRunId)
+      const sourceRun = projection.runs.find(candidate => candidate.runId === sourceRunId)
       const environment = projection.environment
       // The durable Science invariant requires every run-origin artifact to reference a terminal
       // run under an applied environment revision.
@@ -911,30 +1090,29 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (sourceRun === undefined || environment === null || environment.status !== 'applied') {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart source run is unavailable; rerun the code to regenerate this figure')
       }
-      const language: ScienceLanguage = parent.chart.runtime === 'matplotlib' ? 'python' : 'r'
+      const language: ScienceLanguage = parentChart.runtime === 'matplotlib' ? 'python' : 'r'
       editLanguage = language
       if (sourceRun.language !== language) {
         throw new ScienceRuntimeError('CHART_NOT_ADDRESSABLE', 'Chart runtime does not match its source run language')
       }
       const scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
       sessionScratch = scratchPreparation.scratch
-      const projectId = parent.projectId
       const kernel = await this.acquireKernel(request.session, language, environment, sessionScratch, lease.control)
       this.kernels.disarmIdleTimer(request.session, language)
 
-      const cumulativeOps = [...parent.chart.ops, ...request.ops]
-      const failedOffset = parent.chart.ops.length
+      const cumulativeOps = [...parentChart.ops, ...request.ops]
+      const failedOffset = parentChart.ops.length
       let application = await this.applyChartInKernel(
         kernel.process,
-        source.runId,
-        parent.chart.figureKey,
+        sourceRunId,
+        parentChart.figureKey,
         cumulativeOps,
-        parent.chart.png.dpi,
-        planRunScratch(sessionScratch, source.runId, language).directory,
+        parentChart.png.dpi,
+        planRunScratch(sessionScratch, sourceRunId, language).directory,
         lease.control.signal,
       )
       if (application.kind === 'not-registered') {
-        const sourceScratch = planRunScratch(sessionScratch, source.runId, language)
+        const sourceScratch = planRunScratch(sessionScratch, sourceRunId, language)
         let sourceBytes: Uint8Array
         try {
           sourceBytes = await readFile(sourceScratch.source)
@@ -970,7 +1148,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         )
         this.assertPrepublication(request.session, lease.control)
         const replayOutcome = await settleKernelExecution(lease.control, replayKernel, {
-          runId: source.runId,
+          runId: sourceRunId,
           sourcePath: replayScratch.source,
           cwd: replayScratch.directory,
           stdoutPath: replayScratch.stdout,
@@ -984,10 +1162,10 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         }
         application = await this.applyChartInKernel(
           replayKernel,
-          source.runId,
-          parent.chart.figureKey,
+          sourceRunId,
+          parentChart.figureKey,
           cumulativeOps,
-          parent.chart.png.dpi,
+          parentChart.png.dpi,
           replayScratch.directory,
           lease.control.signal,
         )
@@ -1008,46 +1186,52 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       }
       const chart = decodeScienceChartState({
         ...application.chart,
-        figureKey: parent.chart.figureKey,
-        ops: [...parent.chart.ops, ...successfulOps],
+        figureKey: parentChart.figureKey,
+        ops: [...parentChart.ops, ...successfulOps],
       })
       this.assertPrepublication(request.session, lease.control)
       if (!commit) {
         previewReady = true
         return { png: application.png, chart, failedOps }
       }
-      const stored = await this.ctx.scienceArtifactStore.appendVersion(projectId, parent.artifactId, {
+      // Human-edit provenance (T2§6): the new version's base is the exact
+      // parent version, its content_origin is 'human-edit', its
+      // environment* fields are ASSIGNED from the parent's own store-read
+      // values (never re-validated against a fold check — the store row is
+      // already the fact), and it carries no run/tool-call producer fields
+      // of its own.
+      const stored = await store.appendVersion(projectId, parent.artifactId, {
         producerSessionId: request.session.id,
         data: application.png,
         mediaType: 'image/png',
-        origin: 'human-edit',
+        contentOrigin: 'human-edit',
+        baseVersionId: parent.versionId,
+        ...parentRecord.environmentRevision === undefined ? {} : { environmentRevision: parentRecord.environmentRevision },
+        ...parentRecord.environmentFingerprint === undefined ? {} : { environmentFingerprint: parentRecord.environmentFingerprint },
+        figureState: { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) },
+      })
+      // Title/caption are inherited verbatim from the parent's current
+      // presentation (a separate annotation, not a `versions` column — T1
+      // dropped title/caption from `createArtifact`/`appendVersion` entirely).
+      await store.annotateVersion(projectId, stored.versionId, {
+        actor: 'human',
+        sessionId: request.session.id,
         title: parent.title,
-        ...parent.caption === undefined ? {} : { caption: parent.caption },
-        editBaselines: parent.versionId,
-        environmentRevision: String(parent.environmentRevision),
-        environmentFingerprintPreview: parent.environmentFingerprint.slice(0, 12),
+        caption: parent.caption ?? null,
       })
       const artifact: ScienceArtifactVersion = {
         artifactId: parent.artifactId,
-        producerSessionId: stored.producerSessionId,
         logicalName: parent.logicalName,
         version: stored.ordinal,
-        parent: { artifactId: parent.artifactId, version: parent.version },
         title: parent.title,
         ...parent.caption === undefined ? {} : { caption: parent.caption },
-        origin: 'human-edit',
         projectId,
         versionId: stored.versionId,
         sha256: stored.sha256,
-        mediaType: 'image/png',
-        byteCount: stored.byteCount,
-        environmentRevision: parent.environmentRevision,
-        environmentFingerprint: parent.environmentFingerprint,
-        createdAt: stored.createdAt,
-        chart,
+        seenAt: Date.now(),
       }
       this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/artifact-saved', { version: 1, artifact })
+      this.appendArtifactSavedOrMarkOrphan(request.session, projectId, stored.versionId, artifact)
       return { artifact, failedOps }
     } catch (error) {
       if (!usingReplay && (error instanceof KernelProtocolError || error instanceof KernelExitedError)) {
@@ -1120,15 +1304,18 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Re-commit an existing artifact version's exact store content reference
-   * with a curated title and caption: metadata-only, so it supersedes the
-   * version it names rather than opening a new one whose bytes would repeat
-   * their predecessor's. The store row's metadata is curated in place first
-   * (`annotateVersion`), then the superseding event commits; a vetoed append
-   * after the store update leaves the store curated with no matching event —
-   * accepted metadata decay, resolved by the fold's own value staying the
-   * projection authority. A committed event is never rolled back because a
-   * later step fails; there is no later step here that can fail after the
-   * append.
+   * with a curated title and caption: metadata-only, appending one new
+   * `version_annotations` row (`annotateVersion`) rather than opening a new
+   * version whose bytes would repeat their predecessor's. The store's
+   * annotation write is the sole authority for this metadata edit's own
+   * provenance (`actor: 'model'`, `sessionId`, `toolCallId`,
+   * `requestHeaderSeq`) — this operation never rebuilds a full version value
+   * and never lets the curating call's identity stand in for the content's
+   * own producer. A vetoed append after the store update leaves the store
+   * curated with no matching event — accepted metadata decay, resolved by
+   * the fold's own value staying the projection authority. A committed
+   * event is never rolled back because a later step fails; there is no
+   * later step here that can fail after the append.
    * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
    * @returns The durable curated version this operation committed.
    */
@@ -1137,14 +1324,151 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     const lease = this.reserve(request.session, request.signal)
     try {
       this.assertPrepublication(request.session, lease.control)
-      const artifact = this.curatedVersion(projection, request)
-      await this.ctx.scienceArtifactStore.annotateVersion(artifact.projectId, artifact.versionId, {
-        title: artifact.title,
-        ...artifact.caption === undefined ? {} : { caption: artifact.caption },
-        origin: 'model',
-      })
+      const target = await this.resolveAnnotateTarget(projection, request)
+      const store = this.ctx.scienceArtifactStore
+      const currentVersion = await store.getVersion(target.projectId, target.versionId)
+      /* v8 ignore next 3 -- projection already resolved this versionId; a missing store row is a durable invariant violation */
+      if (currentVersion === undefined) {
+        throw new Error('science-runtime: annotate target no longer identifies a committed store version')
+      }
+      if (currentVersion.contentOrigin === 'human-edit') {
+        throw new ScienceRuntimeError(
+          'ARTIFACT_NOT_CURATABLE',
+          `artifact ${JSON.stringify(request.logicalName)} version ${String(target.version)} exists but is a direct human style edit and cannot be curated; `
+            + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
+        )
+      }
       this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/artifact-saved', { version: 1, artifact })
+      try {
+        await store.annotateVersion(target.projectId, target.versionId, {
+          actor: 'model',
+          sessionId: request.session.id,
+          toolCallId: request.toolCallId,
+          requestHeaderSeq: request.requestHeaderSeq,
+          title: request.title,
+          caption: request.caption ?? null,
+        })
+      } catch (error) {
+        if (error instanceof ProjectArtifactStoreError && error.code === 'ANNOTATION_TOOL_CALL_REUSED') {
+          throw new ScienceRuntimeError(
+            'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED',
+            `toolCallId ${JSON.stringify(request.toolCallId)} already authorized a prior artifact annotation and cannot authorize another`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
+      const artifact: ScienceArtifactVersion = {
+        artifactId: target.artifactId,
+        logicalName: request.logicalName,
+        // Curation is metadata over content the session already holds, so it
+        // supersedes the version it names instead of opening one whose bytes
+        // would be identical to its predecessor's.
+        version: target.version,
+        title: request.title,
+        ...request.caption === undefined ? {} : { caption: request.caption },
+        projectId: target.projectId,
+        versionId: target.versionId,
+        sha256: currentVersion.sha256,
+        seenAt: Date.now(),
+      }
+      this.assertPrepublication(request.session, lease.control)
+      this.appendArtifactSavedOrMarkOrphan(request.session, target.projectId, target.versionId, artifact)
+      return artifact
+    } catch (error) {
+      throw this.prepublicationError(lease.control, error)
+    } finally {
+      this.leases.release(lease)
+    }
+  }
+
+  /**
+   * Duplicate one existing artifact version into a brand-new logical
+   * artifact in the same project. Content-addressed bytes are reused (the
+   * store's blob admission is idempotent by digest, so re-admitting the
+   * source's own bytes never duplicates them on disk); provenance is a
+   * fresh fact this session originates, not a copy of the source's own
+   * producer — `baseVersionId` names the source explicitly instead. A
+   * viewer operation: no authorizing tool call, so `session.append` records
+   * only the store reference and the presentation snapshot the store just
+   * committed.
+   * @param request - Exact Session, the store version to duplicate, and the new logical name.
+   * @returns The durable new artifact version this operation appended.
+   * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when
+   *   `sourceVersionId` does not identify a committed version in the
+   *   session's owning project, or (`ARTIFACT_LOGICAL_NAME_CONFLICT`) when
+   *   `newLogicalName` is already used in that project.
+   */
+  async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion> {
+    this.assertSession(request.session)
+    const lease = this.reserve(request.session, request.signal)
+    try {
+      this.assertPrepublication(request.session, lease.control)
+      const projectId = await this.sessionProject(request.session)
+      const store = this.ctx.scienceArtifactStore
+      const source = await store.getVersion(projectId, request.sourceVersionId)
+      if (source === undefined) {
+        throw new ScienceRuntimeError(
+          'ARTIFACT_VERSION_NOT_FOUND',
+          `version ${JSON.stringify(request.sourceVersionId)} does not identify a committed version in this project`,
+        )
+      }
+      const sourceArtifact = await store.getArtifact(projectId, source.artifactId)
+      /* v8 ignore next 3 -- a version's own store row always names an artifact row the same store still holds */
+      if (sourceArtifact === undefined) {
+        throw new Error('science-runtime: save-as source version no longer identifies a committed artifact')
+      }
+      const sourceFigureState = await store.getFigureState(projectId, source.versionId)
+      const data = await store.readBlob(projectId, source.sha256)
+      this.assertPrepublication(request.session, lease.control)
+      let created: Awaited<ReturnType<typeof store.createArtifact>>
+      try {
+        created = await store.createArtifact(projectId, {
+          logicalName: request.newLogicalName,
+          kind: sourceArtifact.kind,
+          originSessionId: request.session.id,
+          data,
+          mediaType: source.mediaType,
+          contentOrigin: source.contentOrigin,
+          baseVersionId: source.versionId,
+          ...source.environmentRevision === undefined ? {} : { environmentRevision: source.environmentRevision },
+          ...source.environmentFingerprint === undefined ? {} : { environmentFingerprint: source.environmentFingerprint },
+          ...sourceFigureState === undefined ? {} : {
+            figureState: { figureKey: sourceFigureState.figureKey, dpi: sourceFigureState.dpi, stateJson: sourceFigureState.stateJson },
+          },
+        })
+      } catch (error) {
+        if (error instanceof ProjectArtifactStoreError && error.code === 'LOGICAL_NAME_CONFLICT') {
+          throw new ScienceRuntimeError(
+            'ARTIFACT_LOGICAL_NAME_CONFLICT',
+            `an artifact named ${JSON.stringify(request.newLogicalName)} already exists in this project`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
+      // Title/caption are inherited verbatim from the source's current
+      // presentation (a separate annotation, not a `versions` column — T1
+      // dropped title/caption from `createArtifact` entirely).
+      await store.annotateVersion(projectId, created.version.versionId, {
+        actor: 'human',
+        sessionId: request.session.id,
+        title: source.title ?? request.newLogicalName,
+        caption: source.caption ?? null,
+      })
+      const artifact: ScienceArtifactVersion = {
+        artifactId: created.artifact.artifactId,
+        logicalName: request.newLogicalName,
+        version: created.version.ordinal,
+        title: source.title ?? request.newLogicalName,
+        ...source.caption === undefined ? {} : { caption: source.caption },
+        projectId,
+        versionId: created.version.versionId,
+        sha256: created.version.sha256,
+        seenAt: Date.now(),
+      }
+      this.assertPrepublication(request.session, lease.control)
+      this.appendArtifactSavedOrMarkOrphan(request.session, projectId, created.version.versionId, artifact)
       return artifact
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
@@ -1155,27 +1479,31 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
 
   /**
    * Resolve the exact source version `request` names (its exact `version`,
-   * or the logical artifact's latest version), then build that same version's
-   * curated replacement, reusing its store content reference and
-   * originating-run provenance unchanged.
+   * or the logical artifact's latest version) from this session's own live
+   * projection.
    * @param projection - exact live Science projection.
    * @param request - the annotate request naming the target logical artifact.
-   * @returns the complete curated version to commit.
+   * @returns the resolved target version's session-visible identity.
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_FOUND`) when `logicalName`
    *   (or its named `version`) does not exist in this session.
-   * @throws {@link ScienceRuntimeError} (`ARTIFACT_NOT_CURATABLE`) when the
-   *   resolved version's `origin` is `'human-edit'`.
    */
-  private curatedVersion(
+  private async resolveAnnotateTarget(
     projection: ScienceProjection,
     request: AnnotateScienceArtifactRequest,
-  ): ScienceArtifactVersion {
+  ): Promise<ScienceArtifactVersion> {
     const logical = projection.artifacts.filter(candidate => candidate.logicalName === request.logicalName)
     const latest = logical.at(-1)
     if (latest === undefined) {
+      const retainedLocation = await this.findRetainedRasterLocation(request.session, projection, request.logicalName)
       throw new ScienceRuntimeError(
         'ARTIFACT_NOT_FOUND',
-        `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
+        retainedLocation === 'artifact-dir'
+          ? `file ${JSON.stringify(request.logicalName)} exists in retained run output but was not captured; `
+            + `run the code that writes it again with raster_artifacts: [${JSON.stringify(request.logicalName)}], then call annotate_artifact again`
+          : retainedLocation === 'run-root'
+            ? `file ${JSON.stringify(request.logicalName)} exists in retained run output but was written outside SCIENCE_ARTIFACT_DIR; `
+              + `run the code that writes it again, save it under SCIENCE_ARTIFACT_DIR, and declare it with raster_artifacts: [${JSON.stringify(request.logicalName)}], then call annotate_artifact again`
+            : `no artifact named ${JSON.stringify(request.logicalName)} exists in this session`,
       )
     }
     const source = request.version === undefined ? latest : logical.find(candidate => candidate.version === request.version)
@@ -1186,38 +1514,79 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         `artifact ${JSON.stringify(request.logicalName)} has no version ${JSON.stringify(request.version)}. Available: ${available}.`,
       )
     }
-    if (source.origin === 'human-edit') {
-      throw new ScienceRuntimeError(
-        'ARTIFACT_NOT_CURATABLE',
-        `artifact ${JSON.stringify(request.logicalName)} version ${String(source.version)} exists but is a direct human style edit and cannot be curated; `
-          + 'edit its content through a new run (run_python/run_r against it as an edit_of baseline) or the viewer\'s style editor instead',
-      )
+    return source
+  }
+
+  /**
+   * Check the `annotateDiagnosticMaxRuns` most recent retained runs for a
+   * same-named PNG solely to improve an `annotate_artifact` not-found
+   * diagnostic. Every run owns a distinct `SCIENCE_ARTIFACT_DIR`, so finding
+   * the file never imports or captures it: the model must execute code that
+   * writes it into a new run. A session with no retained scratch (or one this
+   * bound leaves unvisited) degrades to the generic not-found diagnostic.
+   * @param session - exact live Session that owns the retained scratch.
+   * @param projection - current Science projection whose run ids identify directories to inspect.
+   * @param logicalName - missing logical artifact name requested for curation.
+   * @returns `'artifact-dir'` when a run has the file undeclared under
+   *   `SCIENCE_ARTIFACT_DIR`, `'run-root'` when a run instead has it in the
+   *   run's own scratch root (outside `SCIENCE_ARTIFACT_DIR` entirely), or
+   *   `'not-found'`.
+   */
+  private async findRetainedRasterLocation(
+    session: Session,
+    projection: ScienceProjection,
+    logicalName: string,
+  ): Promise<RetainedRasterLocation> {
+    let scratch: ScienceSessionScratch
+    try {
+      scratch = await planSessionScratch(this.dshHome, session)
+    } catch {
+      // Retained scratch is diagnostic evidence only; the projection already
+      // proved the curation target absent, so a planning failure cannot turn
+      // this metadata operation into a filesystem failure.
+      return 'not-found'
     }
-    return {
-      artifactId: latest.artifactId,
-      producerSessionId: source.producerSessionId,
-      logicalName: request.logicalName,
-      // Curation is metadata over content the session already holds, so it
-      // supersedes the version it names instead of opening one whose bytes
-      // would be identical to its predecessor's.
-      version: source.version,
-      title: request.title,
-      ...(request.caption === undefined ? {} : { caption: request.caption }),
-      origin: 'model',
-      ...(source.parent === undefined ? {} : { parent: source.parent }),
-      projectId: source.projectId,
-      versionId: source.versionId,
-      sha256: source.sha256,
-      mediaType: source.mediaType,
-      byteCount: source.byteCount,
-      ...(source.chart === undefined ? {} : { chart: source.chart }),
-      runId: source.runId,
-      toolCallId: request.toolCallId,
-      requestHeaderSeq: request.requestHeaderSeq,
-      environmentRevision: source.environmentRevision,
-      environmentFingerprint: source.environmentFingerprint,
-      createdAt: Date.now(),
+    const recentRuns = projection.runs.toReversed().slice(0, this.annotateDiagnosticMaxRuns)
+    for (const run of recentRuns) {
+      const location = await this.findRunRetainedRasterLocation(scratch, run.runId, logicalName)
+      if (location !== 'not-found') return location
     }
+    return 'not-found'
+  }
+
+  /**
+   * Inspect one retained run's `SCIENCE_ARTIFACT_DIR` and its own scratch
+   * root for an eligible same-named PNG. `capturablePngPaths` never throws —
+   * an unreadable directory at any depth degrades to an empty result inside
+   * `walkArtifactFiles`, not an exception — so this method has no catch of
+   * its own; the caller's `planSessionScratch` catch is the only fallible
+   * step in this diagnostic. An `'artifact-dir'` match means the model wrote
+   * the file but did not declare it in `raster_artifacts`; a `'run-root'`
+   * match (outside the run's two reserved `artifacts/` and `inputs/`
+   * subdirectories) means the model wrote the file outside
+   * `SCIENCE_ARTIFACT_DIR` entirely, so auto-capture never saw it regardless
+   * of declaration.
+   * @param scratch - the owning session's private scratch root.
+   * @param runId - one retained run's durable identifier.
+   * @param logicalName - missing logical artifact name requested for curation.
+   * @returns where the file was found for this run alone, or `'not-found'`.
+   */
+  private async findRunRetainedRasterLocation(
+    scratch: ScienceSessionScratch,
+    runId: ScienceRunId,
+    logicalName: string,
+  ): Promise<RetainedRasterLocation> {
+    const declaration = new Set([logicalName])
+    const artifactPaths = await capturablePngPaths(runArtifactDirectory(scratch, runId), 'declared', declaration)
+    if (artifactPaths.includes(logicalName)) return 'artifact-dir'
+    // Walking the run's whole scratch root also revisits its `artifacts/`
+    // and `inputs/` subdirectories, but only as their own nested relative
+    // paths (`artifacts/${logicalName}`, `inputs/${logicalName}`) — an exact
+    // match against the bare `logicalName` this diagnostic already failed to
+    // find directly under `SCIENCE_ARTIFACT_DIR` names only a file at the
+    // scratch root itself, never one already inside either reserved directory.
+    const rootPaths = await capturablePngPaths(runScratchDirectory(scratch, runId), 'always', EMPTY_RASTER_DECLARATION)
+    return rootPaths.includes(logicalName) ? 'run-root' : 'not-found'
   }
 
   /** Reserve a non-queuing exact Session lease without leaking a rejected timer. */
@@ -1317,6 +1686,25 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science mode must be bound before Runtime operations')
     }
     return projection
+  }
+
+  /** Require an applied environment with no orphaned durable running run. */
+  private assertIdleAppliedEnvironment(
+    session: BindScienceEnvironmentRequest['session'],
+    control: OperationControl,
+  ): { projection: ScienceProjection; environment: ScienceEnvironmentBinding } {
+    this.assertPrepublication(session, control)
+    const projection = this.assertSession(session)
+    const environment = projection.environment
+    if (environment === null || environment.status !== 'applied') {
+      throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science Runtime requires an applied environment')
+    }
+    // The lease can be free while the durable log retains a run whose
+    // terminal event never committed before a crash or detach.
+    if (projection.runs.some(run => run.status === 'running')) {
+      throw new ScienceRuntimeError('RUNTIME_BUSY', 'Science Session already has an open run')
+    }
+    return { projection, environment }
   }
 
   /** Recheck exact liveness and caller-controlled pre-publication cancellation. */

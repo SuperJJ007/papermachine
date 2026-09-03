@@ -13,7 +13,9 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
-import type { ScienceLibraryArtifact, WorkspaceFileEntry } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type {
+  ScienceChartState, ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, WorkspaceFileEntry,
+} from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ConversationSnapshot } from './session-state.ts'
 import type { ObservableSnapshot } from './store.ts'
 
@@ -64,15 +66,52 @@ export interface ISession {
   ): Promise<RpcResult<{ attachment: TextAttachmentRef; data: string }>>
   /**
    * Resolve one project-store Science artifact version authorized by this
-   * session's strict fold.
+   * session's strict fold, decoding its base64 wire payload into bytes.
+   * Preview and download now read raw bytes directly from
+   * `scienceArtifactUrl` instead (no base64 inflation, no decode/re-encode
+   * pass for text) — this method stays for the RPC's remaining non-browser
+   * consumers; see `readScienceVersions` for the metadata-only batch read
+   * both the Files panel and the detail view use instead of a session
+   * projection snapshot.
    * @param versionId - opaque store version id carried by the Science projection.
    * @returns Host-verified metadata and decoded bytes.
    */
   readScienceArtifact(
     versionId: VersionId,
   ): Promise<RpcResult<{ versionId: VersionId; mediaType: string; byteCount: number; data: Uint8Array }>>
-  /** List the latest artifacts in the project selected by this session's workspace. */
-  readScienceLibrary(): Promise<RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>>
+  /** List the latest artifacts in the project selected by this session's workspace, plus project-wide reconciliation health. */
+  readScienceLibrary(): Promise<RpcResult<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>>
+  /**
+   * Batch-read the current library facts (title, caption, content origin,
+   * health, ...) for a caller-chosen set of versions — each independently
+   * authorized by this session's own fold, with an unauthorized or
+   * nonexistent id silently dropped from the result rather than failing the
+   * whole call (see the RPC's own JSDoc on `SessionsApi`). Callers render
+   * "this version's own current name" from this read (the Files panel, a
+   * detail view's version stepper) rather than from a session-log
+   * projection snapshot taken when the version was captured.
+   * @param versionIds - up to 200 opaque store version ids.
+   * @returns the subset of requested versions this session's fold can prove.
+   */
+  readScienceVersions(
+    versionIds: readonly VersionId[],
+  ): Promise<RpcResult<{ versions: ScienceVersionSummary[] }>>
+  /**
+   * Read one PNG artifact version's live chart-object state (addressable
+   * elements, the direct-edit operation log, hit regions) — the seat the
+   * chart edit panel mounts from. `chart` is `null` for a non-PNG version or
+   * a PNG version with no stored figure state (imported or legacy content);
+   * a caller cannot distinguish the two and shows no edit affordance either
+   * way. Unlike {@link readScienceVersions}, a `versionId` this session's
+   * fold cannot prove is a business error, not a silent omission — this
+   * method always names exactly one version an already-open artifact tab is
+   * rendering.
+   * @param versionId - opaque store version id carried by the Science projection.
+   * @returns the version's chart state, or `null`.
+   */
+  readScienceChartState(
+    versionId: VersionId,
+  ): Promise<RpcResult<{ chart: ScienceChartState | null }>>
   /** List one relative directory inside this session's workspace. */
   readWorkspaceFiles(path?: string): Promise<RpcResult<{ root: string; entries: WorkspaceFileEntry[]; truncated?: true }>>
   /** Read one bounded relative workspace file as preview bytes. */

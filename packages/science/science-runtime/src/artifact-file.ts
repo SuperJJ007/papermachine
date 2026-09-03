@@ -1,7 +1,8 @@
 /**
  * Bounded artifact-directory walk and bounded file reads for auto-capture
- * (`capture.ts`), the sole consumer: curation (`annotate_artifact`) is
- * metadata-only and never touches the filesystem.
+ * (`capture.ts`). Curation remains metadata-only, but its not-found path
+ * reuses the safe walk to identify a retained, uncaptured PNG and return an
+ * actionable diagnostic without reading or importing its bytes.
  */
 
 import { Buffer } from 'node:buffer'

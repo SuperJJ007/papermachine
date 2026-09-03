@@ -8,7 +8,7 @@
 
 ## 过程视图
 
-运行及运行产出的产物只通过已加载对话中的来源调用归属请求。缺失来源调用的保留记录单独显示在未归属历史区域，提供数量与精确版本的产物链接，不计入任何请求的步骤、失败、产物或耗时。加载更早的对话页后重新计算归属。标注调用不替代版本的原始生产运行身份。
+运行与产物版本按 Science 投影自身的 trace——记录每个 turn 边界与授权工具调用的持久会话日志索引——归属到某个 turn,与已加载哪些对话页无关;加载更早的对话页只补充请求文本与结果,从不改变归属。授权调用在 trace 中没有条目的运行,单独显示在未归属历史区域,提供一个数量,不计入任何请求的步骤、失败或耗时。产物版本在投影记录了 trace 归属坐标时使用该坐标;否则使用 store 记录的该版本 `createdAt`(经 `sessions.scienceVersions` 读取,由 `useScienceVersionSummaries` 按 artifact 批量取——见 [Artifact viewer](#artifact-viewer-details-entry))落在某个 turn 自己的计时窗口内来归属——这与一次直接人工改图早就在用的按时间归属规则相同。时间戳兜底总能落到某个 turn(落在每个已声明窗口之外时,回退到推断出的最近一个 turn),因此从不会有产物版本进入未归属区域。trace 归属坐标精确到某一步的版本,除 turn 层分组自己那份最新版本 chip 外,还会在该步骤自己的行内渲染一份 chip;只归属到 turn(走时间戳兜底)的版本只出现在 turn 层分组。纯元数据重录——`annotate_artifact` 在其产出的 run 已经 settle 之后再修改 title 或 caption——保留该版本原产出步骤,绝不改成当前打开调用所在的步骤。
 
 「过程（Process）」以 `trajectory.view` id `process` 贡献，仅在会话的 preset 或已解析投影为 `science` 时可见。它排在「详细」之前，因此 Science 会话进入「轨迹」时默认显示过程，其他会话仍只有详细账本。单左轨右侧通栏排列 agent 与人工改图卡，人工改图保留用户图标与蓝色左边框。折叠的轮卡片有四个结构化行：截断的用户要求、通栏有序步骤条、右对齐的统计与展开控件，以及每个产物在本轮最终版本的小标签。要求之外不附加任何自由文本说明。长步骤条和产物标签行在卡片内换行。步骤条最多渲染 120 次调用并提示总数；展开清单仍然完整。
 
@@ -23,8 +23,6 @@
 可见性通过 `ctx.trajectorySubviews.registerVisibility('process', source)` 注册。会话列表变化时，该 source 会重新绑定投影订阅，因此 preset 指派、Session 创建、投影解析、插件卸载与热更新都会直接使轨迹内层切换器失效并重算。
 
 标注标题需要逻辑名称和标题；仅在调用提供数字版本号时显示版本。
-
-具有运行来源的产物版本归属于该运行的生成调用和轮次，即使标注更改版本的工具调用 id。没有运行来源时直接使用调用归属。如果引用的运行不在已加载投影中，版本保留在轮次摘要中，不归到标注行。
 
 步骤条与清单标记共用两种状态色和中性形状：柔和绿色运行方块、红色失败方块、浅中性的资料查看／委派／其他方块、中性空心标注方块，以及中性实心发布圆点。结果使用辅助文字色的纯文本，失败为红色；蓝色只标识选中行与人工操作。
 
@@ -66,7 +64,7 @@ Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant �
 
 ## 选择状态存储
 
-artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在成果库主页处为 null；`libraryPage` 记住该主页显示成果还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 与 `provenanceSubTab` 仍是共享 viewer 字段：激活文档会回到 content，同时保留最近一次 provenance 子标签偏好。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括已打开的标签页、成果库页与折叠分组，因此刷新浏览器后仍会恢复；`view` 与 `lightboxOpen` 被声明为瞬态字段（`defineStore` 的 `transient` 列表），始终来自 `init()`——标签页关闭时仍处于打开状态的灯箱或溯源下钻，不得在下次加载时重新盖在内容之上。
+artifact viewer 与会话记录行共享一个本包私有的按会话存储（`selection-store.ts`），其中 `openArtifacts` 是有序联合：`{ kind: 'artifact', artifactId, version }` 或 `{ kind: 'file', path }`。`activeTabId` 为 `artifact:<artifactId>`、`file:<path>`，或者在成果库主页处为 null；`libraryPage` 记住该主页显示成果还是项目文件。artifact 条目继续按 logical artifact 去重，并在唯一位置记录选中的持久版本。`view` 是共享 viewer 字段：激活文档总是回到 content。`provenanceSubTab` 选择并持久化溯源下钻的「代码」「执行日志」「消息」或「环境」页面。框架的「句柄 × 会话」缓存让该状态与会话记录行共享，并在 Details 列关闭再打开时继续存活。引擎以会话作用域的 localStorage 键持久化选择状态，包括已打开的标签页、成果库页、溯源页与折叠分组，因此刷新浏览器后仍会恢复；`view` 与 `lightboxOpen` 被声明为瞬态字段（`defineStore` 的 `transient` 列表），始终来自 `init()`——标签页关闭时仍处于打开状态的灯箱或溯源下钻，不得在下次加载时重新盖在内容之上。
 
 产物按产生它的对话分组，组可折叠，折叠状态随选择存储持久化。当前会话置顶，其他组按最新产物时间降序，排序只影响组内卡片。搜索过滤卡片并隐藏空组。组头显示会话标题、可见数量及最新相对时间，时间格式与侧边栏共享；网格卡片是一张有边框的整体——上半是通栏 1:1 缩略图（图片裁到左上角，非图片则居中显示文件类型磁贴），下半是脚注，显示标题与 `vN · 相对时间`，不再显示媒体类型文字。列表布局仍是 76px 缩略行，脚注文案与网格一致。`ProjectLibrary` 每次渲染只取一次 `Date.now()`，组头与每张卡片的脚注共用同一个值。
 
@@ -78,19 +76,20 @@ artifact viewer 与会话记录行共享一个本包私有的按会话存储（`
 viewer 以 id `science`、`primary: true` 注册进 `conversation.details.view`——会话未显式选定某个配置项时,Details 列默认显示的就是这一项(ui-conversation 的 `DetailsPanel.tsx resolveActiveDetailsView`;整个注册表最多一个条目可以声明 `primary`,第二个在注册时抛错)。它的 keyed `conversation.details.header.actions` 条目把一级「成果」与「项目文件」页签放进 Details header，同时由通用 shell 保留关闭控件。它渲染的数据来自 chart/Outcome 行读取的同一个 `science` Session 投影，加上上面的选择状态存储；写路径调用 Host 所有的 `scienceEdits` Remote，而不在浏览器里改写投影状态：
 
 - **标签栏** — artifact tab 与 workspace file tab 共用同一条二级可关闭标签栏；没有打开文档时完全不渲染。成果库主页没有自己的文档 tab。点击任一一级页签会让活跃文档返回所选成果库页，但不关闭任何已打开 tab。点击会话记录 artifact 会打开其精确版本，工具栏返回键回到上次选择的成果库页，关闭最后一个文档也会自动回到那里。
-- **工具栏** — 面向活跃标签页的内容视图：成果库返回键、一个版本步进器（‹ v*n* ›），以及溯源/下载/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。步进器只在两个相邻的非跳过版本间步进；同轮中间稿（`intermediate-versions.ts`——一个被同时共享授权 turn 与产生 session 的更晚版本取代的版本，永远不含 human-edit 保存）会从步进顺序中跳过，且没有入口可以展开它，除非它本身就是当前打开的版本。溯源下钻按每个版本自身的确切标题列出全部版本。下载通过同一个会话作用域加载器解析持久化字节（图像用 `loadImage`，文本用 `loadText`），并经由一个临时的 URI 锚点触发浏览器保存——图像是 `loadImage` 给出的 `data:` URI，文本则是基于 `loadText` 已解码字符串构建的 `data:` URI；放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
-- **内容**（`ArtifactContent.tsx`） — 按 artifact 的持久化 project-store 媒体类型分派：`image/png` 经本包的 `ScienceArtifactImage` 渲染；文本媒体类型通过 `loadText` 取得并解码字节后再次分派——`text/csv` 渲染为可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本。面向用户的内容不显示内部运行 id 与原始字节数。JSON 与纯文本在渲染前应用 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000），CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行。这些固定的浏览器呈现上限（`format.ts`）不是 `Config` 字段，也不改变部署的持久化文件准入上限。
-- **图表编辑**（`ScienceChartEditPanel.tsx`）— 对 `chart` 可寻址的 `image/png` 版本，在 raster 内容下方挂一张无卡片、无折叠层级的紧凑常显表单，直接提供标题／副标题、x/y 轴标签、网格、字体族／字号与图例位置控件。这些控件生成封闭的 `set_title`、`set_subtitle`、`set_axis_label`、`toggle_grid`、`set_font` 与 `set_legend_position` 操作。字体字段通过简短固定候选表接受自由输入，不枚举已安装字体；字体不可用时显示本地化操作失败。每个可直接编辑行只能通过自身 `+`/`−` 操作添加精确引用，点击行或编辑控件都不改变引用状态。其余已抽取元素显示为可换行的引用行，展示完整名称与图中实际颜色，整行都可切换引用；annotation 只常显前六项，其余由一个数量控件展开。直接改动在组件本地态里累积为待存 `ScienceChartOp`——全程不经模型、不进 session log——并通过 Runtime 获得防抖预览；引用变化绝不请求预览。Save 经注入的 `applyChartOps`（`scienceEdits.applyChartOps`）提交待存操作，产出新的 `origin: 'human-edit'` 版本并把已打开标签步进到该版本；Discard 清空待存列表。已提交操作默认折叠，待定操作只占一行摘要；回执里非空的 `failedOps` 会按下标与原因逐条列出未生效的操作。修改元素与引用芯片并排两栏，窄栏时上下堆叠：详情列窄于 440px 时引用芯片折到直接修改下方。
+- **工具栏** — 面向活跃标签页的内容视图：成果库返回键、一个版本步进器（‹ v*n* ›）、溯源/下载/另存为/关闭标签页控件，加上仅在图像 artifact 上出现的放大控件（文本附件没有可放大的位图）。同一个 artifact 的更晚版本如果拥有相同的 store 生产者 Session 与 turn，步进器会跳过较早的同轮中间稿；人工编辑以及生产者事实不完整的版本仍留在遍历顺序中。当前已经打开的版本也始终可遍历，因此 direct link 仍能打开一份被折叠的中间稿；根据[移除决策](../../../.agents/notes/implemented/simplification/2026-09-01-remove-intermediate-toggle.zh.md)，这里没有中间稿切换按钮。每个版本显示自己当前的标题（经由 `useScienceVersionSummaries`；D9——Files 面板与本工具栏读的是同一份 store 事实）。下载先对 `scienceArtifactUrl(sessionId, versionId)`（`@deepseek-ai/dsh-client-runtime` 的原始字节端点）做一次 HEAD 预检，在创建任何 anchor 之前就把 410 `missing_content`/409 `content_corrupt`/其他失败分类成可见文案，随后触发一次裸 `anchor.href = url; anchor.click()`，靠端点自己的 `Content-Disposition` 文件名——不经 base64、不经 `data:` URI、不由客户端算文件名。另存为打开一个内联命名表单，调用注入的 `saveArtifactAs`（`scienceEdits.saveArtifactAs`）；调用成功后把打开的标签页切到新成果。放大打开共享灯箱（第二个、由存储驱动的 `ImageLightbox` 实例，因为工具栏与内容图片自身的私有点击展开状态是兄弟关系，而非其祖先）。
+- **内容**（`ArtifactContent.tsx`） — 按 artifact 当前的 project-store 媒体类型分派（经由与工具栏相同的 `useScienceVersionSummaries` 批量读取）：`image/png` 经本包的 `ScienceArtifactImage` 渲染，这是一个直接读 `scienceArtifactUrl` 的 `<img>`；文本媒体类型 `fetch()` 同一个 URL 后按媒体类型再次分派——`text/csv` 渲染为可排序、可滚动的表格（`ArtifactTable.tsx`），`application/json` 渲染为 `JsonTree`（来自 `@deepseek-ai/dsh-client-ui-primitives`），`text/markdown` 经由 `MarkdownText` 渲染，`text/plain` 渲染为预格式化文本；浏览器按响应的 `Content-Type` 自行解码（端点刻意不声明 charset——理由见原始字节读取的 Agent Note：在客户端猜测一个非 UTF-8 编码,比把决定权留给浏览器更糟）。面向用户的内容不显示内部运行 id 与原始字节数。JSON 与纯文本在渲染前应用 `MAX_ARTIFACT_TEXT_CHARACTERS`（100,000），CSV 表格最多渲染 `MAX_ARTIFACT_TABLE_ROWS`（500）行。这些固定的浏览器呈现上限（`format.ts`）不是 `Config` 字段，也不改变部署的持久化文件准入上限。
+- **图表编辑**（`ScienceChartEditPanel.tsx`）— 已打开的 PNG 版本内容挂载时，`ArtifactContent.tsx` 的 `ChartEditSlot` 经 `loadChartState`（`sessions.scienceChartState`，走 `ISession.readScienceChartState`）取一次该版本的实时图表对象状态；读取结果非 `null` 才挂载面板——没有存下 figure state 的版本（导入或历史内容）或读取失败都不挂载任何东西。对 `chart` 可寻址的 `image/png` 版本，在 raster 内容下方挂一张无卡片、无折叠层级的紧凑常显表单，直接提供标题／副标题、x/y 轴标签、网格、字体族／字号与图例位置控件。这些控件生成封闭的 `set_title`、`set_subtitle`、`set_axis_label`、`toggle_grid`、`set_font` 与 `set_legend_position` 操作。字体字段通过简短固定候选表接受自由输入，不枚举已安装字体；字体不可用时显示本地化操作失败。每个可直接编辑行只能通过自身 `+`/`−` 操作添加精确引用，点击行或编辑控件都不改变引用状态。其余已抽取元素显示为可换行的引用行，展示完整名称与图中实际颜色，整行都可切换引用；annotation 只常显前六项，其余由一个数量控件展开。直接改动在组件本地态里累积为待存 `ScienceChartOp`——全程不经模型、不进 session log——并通过 Runtime 获得防抖预览；引用变化绝不请求预览。Save 经注入的 `applyChartOps`（`scienceEdits.applyChartOps`）提交待存操作，产出新的 `origin: 'human-edit'` 版本并把已打开标签步进到该版本；Discard 清空待存列表。已提交操作默认折叠，待定操作只占一行摘要；回执里非空的 `failedOps` 会按下标与原因逐条列出未生效的操作。修改元素与引用芯片并排两栏，窄栏时上下堆叠：详情列窄于 440px 时引用芯片折到直接修改下方。
 - **编辑选择** — 每行的 `+`/`−` 控件通过共享的 `composerSelections` store 把确切 artifact 版本与 target 引用进主 composer：raster 的可选归一化拖拽层对应区域 target，元素行则对应它的 `ScienceElementTarget`（`{ elementId, elementKind, axes, label, current }`，不带像素坐标）。每张 PNG 都提供归一化区域框选，包括带元素目录的版本。选择、悬停或聚焦元素不会遮挡 PNG。显示未保存的预览时，禁止新增元素与区域引用，直到保存或放弃修改。标注文字、系列的希腊字母和重复项序号在查看器、composer 与已发送消息中使用同一个命名函数；原始 id 保持不变。单纯画出区域或列出元素不会暂存任何东西；显式的 `+`/`−` 控件才会暂存或撤销确切 target 及其可选备注。每一份备注草稿都绑定到其确切的 artifact 身份（artifact id、版本，元素 target 还带元素 id），已暂存 target 的备注变化会立即同步。Composer chip 显示 artifact 的展示名（与标签栏相同的最新版本既定标题）、确切版本与本地化元素名称；`selection.logicalName` 仍是 Host 校验准入所依据的线上身份，不受展示文本影响。发送一条指令时，浏览器通过 `remote.scienceEdits.submit` 提交有序 `{ targets, instruction }` 请求。Host 在排入一条 `user/message` 前校验每个确切当前版本，并逐字段比对元素与被寻址的 chart catalog——区域 target 还要求 raster 媒体类型，并把选中图片铸造为消息附件；元素 target 既不读 store 也不铸造附件。任一缺失、媒体类型不匹配、格式错误、版本陈旧或目录不匹配的 target 会拒绝整条请求，并标明其列表位置。artifact viewer 不含第二个指令输入框或发送操作。
 - **Review 备注** — 内容查看页列出 logical artifact 的私有备注，并针对当前确切版本接受新备注。添加与删除走专用 Remote 和 Session 投影；Host 强制执行 8,192 字符上限。空输入框分两行显示备注提示与隐私说明。备注只属于用户、绝不进入模型上下文，溯源下钻也不会复制它们。
 - **溯源下钻** — 距内容视图一次工具栏点击之遥（见下文）；一条面包屑可返回内容视图。
 - **成果库主页** — 一级「成果」页通过 `sessions.scienceLibrary` 提供 Session 所属 project 内每个 logical artifact 的一张最新版本卡片，并提供搜索、排序和网格／列表控制。一级「项目文件」页通过 `sessions.workspaceFiles` 提供可搜索的单层目录浏览；file tab 通过 `sessions.workspaceFile` 读取至多 2 MiB，并把支持的媒体类型交给现有内容 renderer。主页内部不再有额外的分区开关。选中的页面每次显示时刷新，当前 Session 的 artifact 投影变化时也会刷新。
+- **对账条幅** — 当 `scienceLibrary` 的 `health.reconstructed` 或 `health.missingContent` 非零时，「成果」页显示一条非模态条幅（`ReconcileBanner`，`ScienceDetailsView.tsx`），标出各自的计数，并可展开受影响成果的清单（取自每条成果自己的 `latest.health` 标记——仅当其确切的 latest 版本恰是受影响版本之一；`health` 计入但并非该成果 `latest` 行的、较旧的受影响版本不会单独列出）。`health.orphan` 无论在条幅还是逐项标记里都从不提及：孤儿版本是 `dsh-science-artifact-store` 文档已接受的正常崩溃窗口结果，不值得当作警告呈现。`latest.health.missingContent` 已置位的库内打开标签页，会以明确的"内容已丢失"文案取代其内容，工具栏禁用下载（图片版本还会隐藏放大），而不是尝试一次注定失败的加载——这种处理只覆盖 `scienceLibrary` 响应标记的那个确切最新版本；版本步进器还够不到等价处理（更旧的版本完全没有逐项健康标记）。
 
 无论自身 `science` 投影处于什么状态，viewer 对任何当前会话都渲染产物库：Science 模式尚未绑定的会话（`science === null`——空白会话，或还没出现第一条 `science/mode-bound` 事件的会话）渲染的库主页，与一个已绑定但没有产物的会话完全一样，背后用一个惰性占位投影（`EMPTY_SCIENCE_PROJECTION`，`ScienceDetailsView.tsx`）支撑——库本身经 `sessions.scienceLibrary` 加载，这是一条项目级 RPC，与任何单一会话的投影无关，因此不需要真正绑定就能显示。缺失投影支持（`science === undefined`——本次部署压根没有组合 Science 会话投影）、附件不可用，以及指向投影已无法解析的 artifact/版本的失效标签页，仍各自渲染不同文案。
 
 **设计说明——原仪表盘中的事实去了哪里。** 常驻的环境概览与运行列表不会重新出现为会话级面板小节。环境事实只存在于溯源下钻的「环境」子标签页，作用域是某一个 artifact 的运行。Outcome 保留在折叠的 `publish_outcome` 会话单元格中，不再有独立 Details 目的地或落地视图小节。
 
-Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-attachment-loader.ts`）解析，而非会话界面拥有的附件加载器。两者都调用 `ISession.readScienceArtifact(versionId)`：Host 接受 Session fold 证明的版本、经确认的跨 Session input，或 Session 所属 project 中的精确成员。`loadImage` 把返回字节转换为 `data:` URI；`loadText` 以严格 UTF-8 解码。两者都不保留第二套持久缓存。
+Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-artifact-url-loader.ts`）解析，而非会话界面拥有的附件加载器。两者都解析成 `scienceArtifactUrl(sessionId, versionId)`——Host 的原始字节 GET 路由，接受 Session fold 证明的版本、经确认的跨 Session input，或 Session 所属 project 中的精确成员，原样流式传输、不经 base64。`loadImage` 立即解析成这个 URL 本身（作为 `<img src>` 目标）；`loadText` `fetch()` 它并返回解码后的响应文本。两者都不保留第二套持久缓存。`science-attachment-loader.ts` 原来那套 base64 loader（`ISession.readScienceArtifact`）仍在，但本包任何注册都不再接它——见已知限制。
 
 **CSV 表格（`ArtifactTable.tsx`）是本包内部组件，而非 `dsh-client-ui-primitives` 的导出。** 设计阶段对 `packages/client` 的一次全仓库搜索没有发现任何表格组件，也没有会需要它的第二个消费方；`JsonTree`/`MarkdownText` 之所以原样复用 `ui-primitives` 里的实现，是因为它们已经为其他消费方存在于那里。解析逻辑（`csv.ts`）是手写的、类 RFC4180 解析器（带引号字段、字段内嵌逗号/换行、双引号转义），而非一个依赖：这是对自动捕获或模型标注文件的只读预览，从不涉及任意不受信任的上传，"可配置性不能作为提供不受支持……公开操作集的理由"（`packages/AGENTS.md`）对一个投机性共享基础组件同样适用。未来出现真正的第二个消费方，才是把两者提升进 `ui-primitives` 的触发条件，而不是这一个。
 
@@ -101,22 +100,17 @@ toggle 渲染在何处由本包 Host `Config` 中的 `toggleScope` 决定：`ses
 
 Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的启动值注入方式）把解析出的 `toggleScope` 发布为一个 `globalThis` 启动值——浏览器半侧在自己的 `apply()` 中同步读取一次；缺失或格式不正确的值会回退为 `session`。
 
-## 溯源下钻
+## 溯源下钻 <a id="provenance-drill-in"></a>
 
-从 artifact viewer 的工具栏进入（不是一个独立的 `conversation.view` 标签页，也不是一个按键分派的 `conversation.details.header.actions` 条目）：一条面包屑（`<图表标题> › 溯源`），其根节点点击后返回内容视图，下方是针对活跃标签页已解析的 chart/run 的四个子标签页：
+从 artifact viewer 的工具栏进入（不是一个独立的 `conversation.view` 标签页，也不是一个按键分派的 `conversation.details.header.actions` 条目）：一条面包屑（`<图表标题> › 溯源`），其根节点点击后返回内容视图，下方有四个可记忆选择的子标签页。「代码」显示确切生产运行的源码；「执行日志」显示该运行的 stdout/stderr；「消息」只显示生产调用的 Question 与 Result 两行，并提供检查确切工具调用和返回其对话位置的动作；「环境」显示该运行当前可用的环境绑定。缺少事实时，受影响的页面会明确显示不可用状态。
 
-1. **代码** — 来源运行的 `code` 参数，通过该运行的 `toolCallId` 从会话快照中解析得到，并展示持久化的 `codeSha256` 作为锚点（与环境指纹不同，这里展示完整值——它是对同一次调用已经逐字复述过的源代码文本求的摘要，而不是 Host 基础设施事实）。
-2. **执行日志** — 来自同一调用已完成结果的 stdout/stderr 文本，并在旁展示投影中持久化的字节数与截断标记，作为权威度量——即使会话记录尚未加载也可见。
-3. **消息** — 展示生成轮次之前最近的用户文本和该轮最后一段 assistant 文本，二者在视觉上各限制为三行；另有两个不同动作，分别在对话中居中生成该产物的 assistant 节点，以及在详细 Trajectory 中检查该 run。下钻绝不重放对话。若某个 version 由另一 Session 产出，则仅以文本展示来源 Session 标题，不提供两个动作；跨 Session 导航延后处理。
-4. **环境** — 当投影仍保留该确切版本时，以 JSON 形式展示该环境版本（配置档案、版本号、状态、时间戳，以及逐语言的 capability/版本/指纹预览与包清单）；若该版本已被取代（投影只保留最新版本），则单独报告这一状态，并展示该运行自身的指纹预览作为仍然保留的事实。
-
-解析 chart/run 组合（并在其中任一方不再可解析时报告不可用）是 artifact viewer 的职责，不属于本下钻组件——它总是针对一个已经解析好的组合渲染。
+版本的 `sessions.scienceVersions` 摘要携带 store 持有的生产者 `sessionId` 以及可选的确切 run/call/request 坐标。生产者属于当前 Session 时，viewer 把这些 id 连接到已经加载的 `science.runs` 与对话工具调用投影；它从不根据相邻 turn 或 step 猜测。生产者属于另一个 Session 时，四个页面都显示来源 Session 标题或 id，并且不尝试连接本地 run/call。通过 library 打开的 artifact 标签也会先请求同一份已获授权的版本摘要再渲染溯源，因此即使不在生产者的实时投影中，四页下钻仍保持一致，同时不会拓宽项目库鉴权。
 
 ## 工作台外壳
 
 除了上面的文件 toggle 与 Details 条目之外，本包还通过 ui-conversation 与 ui-sidebar 声明的附加 slot 组装工作台的其余部分，每一处都按当前 Session 的 `agentPreset` 门控（若无 Session，则按一个已经指派为 `science` preset 的空白 Session 门控）——除 `global` 模式下的文件 toggle 之外，没有任何 Science 表面会出现在另一个 preset 之下，或在完全没有 Session 时出现：
 
-- **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个产物行；没有当前 Science Session 时不渲染。点击它始终落到成果库的 Artifacts 页:它打开 `science` Details 条目,随后——经由该条目自身的 `conversation.details.view` 注册在挂载期间绑定的按会话「回到成果库」回调(`index.ts` 中的 `libraryReturners`,由根作用域的侧边栏注册读取,因为它无法声明该条目按会话作用域的 selection store)——把该条目的 selection store 从任何已打开的产物标签、Project files 页或残留的持久化选择重置回来。
+- **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个产物行；没有当前 Science Session 时不渲染。成果库的 Artifacts 页已选中时，点击会切换 Details 列；该列关闭时会打开该页；已打开产物标签或 Project files 页时则返回该页而不关闭列。已挂载的 Details 条目发布按会话划分的文件库判断与返回操作，因为根作用域的侧栏注册不能声明该条目按会话作用域的 selection store；感知所选项的面板切换仍由 `ctx.conversation.toggleDetailsView` 负责。
 - **`conversation.page.utilities`** — 文件 toggle 在 `session` 模式下的欢迎页交接注册（`ScienceHeroAction`），或在 `global` 模式下的唯一注册（`ScienceGlobalToggle`）；见[文件 toggle](#files-toggle)。
 - **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
 - **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
@@ -124,7 +118,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 
 ## 组装
 
-请在 `@deepseek-ai/dsh-client-ui-tool`、`@deepseek-ai/dsh-client-ui-attachment`、`@deepseek-ai/dsh-client-ui-conversation`（header action 与 Details 条目所在的座位，以及 artifact viewer 溯源下钻复用的 Details 座位 `inspectCall` 宿主回调）、客户端 locale/runtime 包、`@deepseek-ai/dsh-client-ui-settings`（`ctx.settingsScope`），以及会暴露 `science` 会话投影的 Host 组合之后加载本浏览器插件。已发布的 Web bundle 会以有意留空的配置档案映射挂载 `@deepseek-ai/dsh-science-runtime/with-settings`，因此在有人填写 Python/R Conda 前缀并重启 Host 之前，卡片会以未配置的 `science` 配置档案出现；CLI 与 headless bundle 保留各自显式的 Runtime 组合，不显示该卡片。本包的 Host 行（`main` 入口）订阅 `webserver/index-inject` 时并未声明 `webServer` 注入（仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的 Host 半侧）；没有 webserver 行的组合只是永远不会收集到这次订阅。桌面应用的 overlay（`apps/desktop/src/runtime-overlay.ts`）会为这一行设置 `toggleScope: global`，因为它自己的 overlay 已经把 Science 强制设为产品默认值。
+请在 `@deepseek-ai/dsh-client-ui-tool`、`@deepseek-ai/dsh-client-ui-attachment`、`@deepseek-ai/dsh-client-ui-conversation`（header action 与 Details 条目所在的座位）、客户端 locale/runtime 包、`@deepseek-ai/dsh-client-ui-settings`（`ctx.settingsScope`），以及会暴露 `science` 会话投影的 Host 组合之后加载本浏览器插件。已发布的 Web bundle 会以有意留空的配置档案映射挂载 `@deepseek-ai/dsh-science-runtime/with-settings`，因此在有人填写 Python/R Conda 前缀并重启 Host 之前，卡片会以未配置的 `science` 配置档案出现；CLI 与 headless bundle 保留各自显式的 Runtime 组合，不显示该卡片。本包的 Host 行（`main` 入口）订阅 `webserver/index-inject` 时并未声明 `webServer` 注入（仿照 `@deepseek-ai/dsh-client-ui-theme` 自身的 Host 半侧）；没有 webserver 行的组合只是永远不会收集到这次订阅。桌面应用的 overlay（`apps/desktop/src/runtime-overlay.ts`）会为这一行设置 `toggleScope: global`，因为它自己的 overlay 已经把 Science 强制设为产品默认值。
 
 ## 模型体验
 
@@ -141,7 +135,8 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 - **内核退出行的「查看退出原因」跳转到失败调用，而非其自身的 `kernel-state` 事件** — 该行复用与其他状态相同的调用级轨迹 `inspect`；跳转到精确的 `science/kernel-state` 事实是后续导航工作。
 - **不支持内存 DataFrame 提升** — 一次只产生内存值（画板中的「df — …」行）的 `run_python`/`run_r` 结果，在 Notebook/Compute 数据地基阶段落地前，没有可提升的产物式 chip。
 - **轮末产物依赖标签化 presentation 元数据** — 如果某个已完成 turn 的工具未发布 `science/artifact` presentation 值，即使独立投影稍后包含相关文件，该 turn 也没有产物组。
-- **没有独立 artifact 缓存** — 会话附件继续使用会话界面拥有的加载器。Science 缩略图与内容通过 `ISession.readScienceArtifact` 上的无状态加载器解析；两条路径都不添加自己的持久化 Map 缓存。
+- **没有独立 artifact 缓存** — 会话附件继续使用会话界面拥有的加载器。Science 缩略图与内容通过 `scienceArtifactUrl` 上的无状态加载器解析；两条路径都不添加自己的持久化 Map 缓存（`useScienceVersionSummaries` 自己那份累积缓存只存元数据，从不存字节）。
+- **`science-attachment-loader.ts` 的 base64 loader 待删** — `ISession.readScienceArtifact` 的 base64 RPC 及其 `createScienceImageLoader`/`createScienceTextLoader` 工厂仍在，但本包任何注册都不再接它们（`science-artifact-url-loader.ts` 的原始字节工厂已经在所有地方取代了它们），只是因为该 RPC 本身可能还有非浏览器消费者才保留（见原始字节读取 Agent Note 自己那次消费者 grep）。等没人再需要该 RPC 了就把两者一起删掉。
 - **仅一个固定配置档案、两个字段** — 卡片只编辑内置 `science` 配置档案的 `pythonPrefix`/`rPrefix`，因为内置 preset 是当前唯一的产品消费方；其他部署配置档案 id 仍是文件/配置层面的事，不由浏览器管理。
 - **没有发现、探测或即时生效** — 卡片从不列出、探测或校验某个 Conda 环境，也没有文件系统选择器或即时生效控件；已存储的前缀只有到下一次 Host 重启才会生效，卡片的 `pendingRestart`/`effective` 状态会上报这一点，但无法缩短等待。
 - **环境历史仅保留单一版本** — `science` 投影只保留最新的一次环境绑定，因此一旦绑定发生变化，溯源下钻"环境"子标签页就无法展示某个较旧图表运行时的确切版本；它会转而报告仍然保留的版本号与指纹预览。

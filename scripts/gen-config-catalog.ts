@@ -28,7 +28,7 @@ const FENCE = 'ts config-catalog'
  * omission is loud, not silent. */
 const GLOBAL_TYPES = new Set([
   'Array', 'ReadonlyArray', 'Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit',
-  'Promise', 'Map', 'Set', 'Date', 'Error', 'RegExp', 'Exclude', 'Extract', 'NonNullable',
+  'Promise', 'Map', 'ReadonlyMap', 'Set', 'Date', 'Error', 'RegExp', 'Exclude', 'Extract', 'NonNullable',
   'ReturnType', 'Parameters', 'AbortSignal', 'URL', 'Buffer', 'NodeJS', 'Iterable', 'AsyncIterable',
 ])
 

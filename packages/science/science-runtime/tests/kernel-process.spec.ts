@@ -203,7 +203,7 @@ async function createHarness(
     runnerCommand: [runner],
     runnerFailureSignatures: ['science-runtime fake runner failure'],
   })
-  const session = ctx.sessions.create(SessionId(id))
+  const session = ctx.sessions.create(SessionId(id), { meta: { cwd: root } })
   const sessionScratch: ScienceSessionScratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
   return {
     root,
@@ -741,6 +741,16 @@ describe('KernelProcess', () => {
     const result = await kernel.execute(request)
     expect(result.detail).toBe(`${request.cwd}|${request.artifactDir}|${request.inputDir}`)
     expect(request.inputDir).not.toBe(request.artifactDir)
+    await kernel.end('test-teardown')
+  })
+
+  it('publishes the Session workspace without changing the run working directory', async () => {
+    const harness = await createHarness('kernel-workspace-dir')
+    const kernel = await startKernel(harness, 'python')
+    const request = await prepareRun(harness.root, 'run-echo-workspace', { action: 'echo-workspace' })
+    const result = await kernel.execute(request)
+    expect(result.detail).toBe(harness.session.header.cwd)
+    expect(request.cwd).not.toBe(harness.session.header.cwd)
     await kernel.end('test-teardown')
   })
 

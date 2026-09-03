@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
@@ -14,15 +14,19 @@ import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
-import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
+import { resolveHarnessHome } from './harness-home.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
 import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
+import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
+import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
+import { applicationMenuTemplate } from './application-menu.ts'
+import { resolveDisciplineStatus } from './discipline-status.ts'
+import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const RESTART_URL = 'dsh-desktop://restart'
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
 // (SIGTERM) before escalating to SIGKILL.
 const HOST_STOP_GRACE_MS = 5000
@@ -39,6 +43,11 @@ let provisioning: AbortController | undefined
 // document can display it. `undefined` for an ordinary first-run or
 // user-requested ("Change Environment…") open.
 let onboardingStatus: string | undefined
+// True exactly while the onboarding window is the active `window`. Restart
+// Host is disabled while this holds — see ApplicationMenuOptions.onboarding
+// — and every transition refreshes the application menu so the disabled
+// state is never stale.
+let onboardingOpen = false
 
 // Constructed once, early in `boot()`, once the Harness home and its
 // anonymous id exist; `undefined` only during that brief startup window
@@ -46,6 +55,13 @@ let onboardingStatus: string | undefined
 // rather than constructing its own reporter, so `environment.installed`/
 // `environment.install-failed` share the exact context `app.launch` reported.
 let telemetry: TelemetryReporter | undefined
+
+// Resolved once, early in `boot()`, alongside `telemetry`; `undefined` only
+// during that same brief startup window. Every rendered error page names
+// this exact path (see `hostCommand`'s `stderrLog.path`) so a device tester
+// can find the Host's persisted, redacted stderr without knowing the
+// Harness home layout.
+let hostLogPath: string | undefined
 
 const hostLifecycle = new HostLifecycle({
   graceMs: HOST_STOP_GRACE_MS,
@@ -104,6 +120,11 @@ async function createTelemetryReporter(dshHome: string): Promise<TelemetryReport
       arch: desktopPlatform() === 'darwin-arm64' ? 'arm64' : 'x64',
     },
   })
+}
+
+/** Read and validate the build-time Host diagnostic configuration. */
+async function desktopHostConfig(): Promise<DesktopHostConfig> {
+  return parseDesktopHostConfig(JSON.parse(await readFile(join(resourceRoot(), 'host.json'), 'utf8')))
 }
 
 /** The one environment this build ships; disciplines are added as further declarations. */
@@ -175,7 +196,8 @@ async function bindProvisionedPrefix(dshHome: string, prefix: string, sourceId: 
 }
 
 /**
- * Start one provisioning run and open the workspace on the environment it
+ * Start one provisioning run, stopping the current Host only after this
+ * explicit install request, and open the workspace on the environment it
  * publishes. The in-flight check and its `provisioning` assignment run
  * before this function's first await, so two invocations racing from the
  * renderer cannot both claim the slot.
@@ -189,6 +211,7 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
   const control = new AbortController()
   provisioning = control
+  refreshApplicationMenu()
   const startedAt = Date.now()
   // Tracks the most recent progress update's phase/sourceId across the whole
   // run, so a caught failure below can report which source was last being
@@ -199,6 +222,8 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
   let lastSourceId = sourceId
   const run = (async () => {
     try {
+      activeOrigin = undefined
+      await coordinator.prepareProvisioning()
       const published = await provisioner(dshHome).provision(declaration, control.signal, (update) => {
         lastPhase = update.phase
         if (update.sourceId !== undefined) lastSourceId = update.sourceId
@@ -221,7 +246,10 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
       })
       throw error
     }
-  })().finally(() => { provisioning = undefined })
+  })().finally(() => {
+    provisioning = undefined
+    refreshApplicationMenu()
+  })
   await coordinator.trackRun(run)
 }
 
@@ -252,7 +280,7 @@ async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding)
   return overlay
 }
 
-function hostCommand(dshHome: string, overlay: string, port: number): HostCommand {
+function hostCommand(dshHome: string, overlay: string, port: number, config: DesktopHostConfig): HostCommand {
   const packagedHost = join(process.resourcesPath, 'host')
   return {
     executable: process.execPath,
@@ -281,62 +309,12 @@ function hostCommand(dshHome: string, overlay: string, port: number): HostComman
       ELECTRON_RUN_AS_NODE: '1',
       DSH_HOME: dshHome,
     },
+    stderrLog: {
+      path: join(dshHome, 'logs', 'host.log'),
+      maxBytes: config.logMaxBytes,
+      maxRotatedFiles: config.logMaxRotatedFiles,
+    },
   }
-}
-
-/**
- * Render one of the app's data-URL error pages.
- * @param heading - the page's `<h1>`.
- * @param detail - the page's `<p>` body.
- * @param restart - whether to show the "Restart Host" action; omitted for a
- *   startup configuration failure a Host restart cannot fix.
- */
-function errorSurface(heading: string, detail: string, restart: boolean): string {
-  const action = restart ? `<a href="${RESTART_URL}">Restart Host</a>` : ''
-  const html = `<!doctype html><html><meta charset="utf-8"><title>PaperMachine</title>
-    <style>body{font:16px system-ui;margin:0;display:grid;place-items:center;min-height:100vh;background:#f5f7fa;color:#16202a}main{max-width:34rem;padding:2rem;text-align:center}a{display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:.5rem;background:#1769aa;color:white;text-decoration:none}</style>
-    <main><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(detail)}</p>${action}</main></html>`
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
-}
-
-function errorPage(exit?: HostExit, reason?: string): string {
-  const detail = reason ?? (exit === undefined
-    ? 'Host unavailable'
-    : `Host stopped (${String(exit.code ?? exit.signal)})`)
-  return errorSurface('Science Host needs attention', detail, true)
-}
-
-/**
- * The dedicated error page for a space-containing Harness home: a startup
- * configuration failure, not a Host crash, so the ordinary Restart Host
- * action — which would relaunch the Host against the same unusable path —
- * is omitted.
- * @param error - the resolved space-containing path this launch could not use.
- */
-function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError): string {
-  return errorSurface(
-    'PaperMachine cannot start',
-    `Your user home directory's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory, so PaperMachine cannot run science kernels from this location.`,
-    false,
-  )
-}
-
-/**
- * The error page to show for a caught startup/launch failure: the dedicated
- * space-in-home page for {@link HarnessHomeSpaceError}, otherwise the
- * general Host error page.
- * @param error - the caught error.
- */
-function launchErrorPage(error: unknown): string {
-  return error instanceof HarnessHomeSpaceError
-    ? harnessHomeSpaceErrorPage(error)
-    : errorPage(undefined, error instanceof Error ? error.message : String(error))
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, character => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character] as string)
 }
 
 /**
@@ -355,7 +333,15 @@ function guardWorkspaceNavigation(event: Electron.Event, target: string): void {
   if (activeOrigin === undefined || new URL(target).origin !== activeOrigin) event.preventDefault()
 }
 
-function createWindow(): BrowserWindow {
+/**
+ * Create the workspace window, painted for `preference` up front.
+ * `nativeTheme`'s `updated` event is only meaningful for `'system'` — for a
+ * fixed `'light'`/`'dark'` preference the background never changes with the
+ * OS, and subscribing anyway would repaint the window out from under an
+ * explicit choice the instant the user's OS theme flips.
+ * @param preference - the durable `ui-theme.preference` this launch resolved (see {@link resolveWindowThemePreference}).
+ */
+function createWindow(preference: WindowThemePreference): BrowserWindow {
   const created = new BrowserWindow({
     title: 'Science',
     width: 1440,
@@ -363,13 +349,20 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
+  if (preference === 'system') {
+    const updateBackground = (): void => {
+      created.setBackgroundColor(windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors))
+    }
+    nativeTheme.on('updated', updateBackground)
+    created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
+  }
   created.once('ready-to-show', () => { created.show() })
   created.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)
@@ -412,17 +405,18 @@ async function onboardingDocument(): Promise<string> {
 
 function onUnexpectedHostExit(exit: HostExit): void {
   activeOrigin = undefined
-  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(exit))
+  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(hostLogPath, exit))
 }
 
 async function launchHost(): Promise<void> {
   const dshHome = await harnessHome()
+  const config = await desktopHostConfig()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
   const overlay = await writeRuntimeOverlay(dshHome, status.binding)
   const url = await launchHostOnRememberedPort(
     dshHome,
-    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port), onUnexpectedHostExit),
+    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port, config), onUnexpectedHostExit),
   )
   activeOrigin = url.origin
   await window?.loadURL(url.href)
@@ -442,7 +436,8 @@ async function launchHost(): Promise<void> {
 async function openWorkspace(): Promise<void> {
   await coordinator.openWorkspaceUnlessQuitting(async () => {
     const previous = window
-    const created = createWindow()
+    const preference = await resolveWindowThemePreference(await harnessHome())
+    const created = createWindow(preference)
     window = created
     created.once('closed', () => { if (window === created) window = undefined })
     previous?.destroy()
@@ -450,7 +445,7 @@ async function openWorkspace(): Promise<void> {
       await launchHost()
     } catch (error) {
       if (created.isDestroyed()) return
-      await created.loadURL(launchErrorPage(error))
+      await created.loadURL(launchErrorPage(hostLogPath, error))
       created.show()
     }
   })
@@ -469,8 +464,12 @@ async function openOnboarding(): Promise<void> {
   const previous = window
   const created = createOnboardingWindow()
   window = created
+  onboardingOpen = true
+  refreshApplicationMenu()
   created.once('closed', () => {
     if (window === created) window = undefined
+    onboardingOpen = false
+    refreshApplicationMenu()
     provisioning?.abort()
   })
   previous?.destroy()
@@ -509,7 +508,7 @@ async function restartHost(): Promise<void> {
     // watchdog before starting the replacement.
     await launchHost()
   } catch (error) {
-    await window?.loadURL(launchErrorPage(error))
+    await window?.loadURL(launchErrorPage(hostLogPath, error))
   }
 }
 
@@ -544,32 +543,20 @@ function runDetached(action: () => Promise<void>, context: string): void {
 }
 
 function buildApplicationMenu(): Menu {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        {
-          label: 'Change Environment…',
-          // Opens onboarding so the user can install a different
-          // environment, or reinstall the current one after a repair. A
-          // live Host would otherwise keep running against the prefix
-          // onboarding is about to replace, so ProvisioningCoordinator stops
-          // the Host before onboarding opens. It also aborts and awaits any
-          // in-flight run first, so clicking mid-run opens onboarding once
-          // that run has actually unwound instead of hitting "another
-          // operation is running" until it does, and a second click while
-          // the first is still unwinding coalesces rather than queuing
-          // another open.
-          click: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
-        },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
-    { role: 'editMenu' },
-    { role: 'windowMenu' },
-  ]
-  return Menu.buildFromTemplate(template)
+  return Menu.buildFromTemplate(applicationMenuTemplate({
+    appName: app.name,
+    provisioning: provisioning !== undefined,
+    onboarding: onboardingOpen,
+    restartHost: () => { runDetached(restartHost, 'restart host') },
+    // ProvisioningCoordinator aborts and awaits an in-flight run before it
+    // opens onboarding, and coalesces repeated requests while that happens.
+    changeEnvironment: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
+  }))
+}
+
+function refreshApplicationMenu(): void {
+  if (!app.isReady()) return
+  Menu.setApplicationMenu(buildApplicationMenu())
 }
 
 app.setName('PaperMachine')
@@ -589,9 +576,10 @@ app.setName('PaperMachine')
  */
 async function boot(): Promise<void> {
   const dshHome = await harnessHome()
+  hostLogPath = join(dshHome, 'logs', 'host.log')
   telemetry = await createTelemetryReporter(dshHome)
   void telemetry.report({ event: 'app.launch' })
-  Menu.setApplicationMenu(buildApplicationMenu())
+  refreshApplicationMenu()
   ipcMain.handle('desktop:environments', async () => {
     const signals = localeSignals()
     return (await declarations(await harnessHome())).map(item => ({
@@ -605,6 +593,19 @@ async function boot(): Promise<void> {
       defaultSourceId: resolveDefaultSourceId(item.sources, signals),
     }))
   })
+  ipcMain.handle('desktop:current-environment', async () => {
+    const dshHome = await harnessHome()
+    const applied = await provisioner(dshHome).applied()
+    if (applied === undefined) return undefined
+    const status = resolveDisciplineStatus(applied, await declarations(dshHome))
+    return {
+      id: applied.id,
+      revision: applied.revision,
+      prefix: applied.prefix,
+      status: status.kind === 'current' ? 'applied' : 'stale',
+    }
+  })
+  ipcMain.handle('desktop:keep-current-environment', async () => { await openWorkspace() })
   ipcMain.handle('desktop:onboarding-status', () => {
     const value = onboardingStatus
     onboardingStatus = undefined
@@ -633,8 +634,11 @@ async function boot(): Promise<void> {
     await startProvisioning(dshHome, declaration, sourceId)
   })
   await openInitialSurface().catch(async (error: unknown) => {
-    window ??= createWindow()
-    await window.loadURL(launchErrorPage(error))
+    // `'system'`: this is the startup-failure fallback, and the failure may
+    // be `harnessHome()` itself throwing (a space-containing home), so
+    // there is no `dshHome` to read a preference from here.
+    window ??= createWindow('system')
+    await window.loadURL(launchErrorPage(hostLogPath, error))
   })
 
   app.on('activate', () => { void handleActivate() })

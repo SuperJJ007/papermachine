@@ -13,18 +13,19 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ScienceChartOp, ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
-import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactMediaType, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
+import type { ScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { ScienceArtifactImage } from './ScienceArtifactImage.tsx'
-import { ScienceChartEditPanel, type ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
+import { ScienceChartEditPanel, type ScienceChartPreview, type ScienceChartSaveOutcome } from './ScienceChartEditPanel.tsx'
 import { ArtifactTable } from './ArtifactTable.tsx'
 import { parseCsv } from './csv.ts'
 import {
   capTextForDisplay,
   MAX_ARTIFACT_TEXT_CHARACTERS,
 } from './format.ts'
+import type { ScienceRenderableVersion } from './version-summaries.ts'
 import css from './ScienceDetailsView.module.css'
 
 /** Closed-union exhaustiveness fence. */
@@ -78,6 +79,72 @@ function useLoadedText(content: ScienceArtifactContentRef, loadText: TextLoader,
   // text and refetch.
   }, [content.versionId, loadText, retryToken])
   return state
+}
+
+type ChartStateLoadState =
+  | { status: 'loading' }
+  | { status: 'ready'; chart: ScienceChartState | null }
+  | { status: 'error' }
+
+/**
+ * Fetch one PNG version's live chart-object state once per version — the
+ * chart edit panel's mount trigger. Keyed by `content.versionId` the same
+ * way {@link useLoadedText} is, so a structurally-equal `content` rebuilt for
+ * the same version does not refetch.
+ */
+function useLoadedChartState(content: ScienceArtifactContentRef, loadChartState: ScienceChartStateLoader): ChartStateLoadState {
+  const [state, setState] = useState<ChartStateLoadState>({ status: 'loading' })
+  useEffect(() => {
+    let live = true
+    setState({ status: 'loading' })
+    loadChartState(content)
+      .then((chart) => { if (live) setState({ status: 'ready', chart }) })
+      .catch(() => { if (live) setState({ status: 'error' }) })
+    return () => { live = false }
+  }, [content.versionId, loadChartState])
+  return state
+}
+
+/**
+ * The live chart-edit panel for one open PNG version: direct title/legend/
+ * grid/font operations and element-level annotation targeting. Fetches
+ * `content`'s chart state once on mount — a full remount per artifact/
+ * version already happens at `ArtifactContent`'s own call site (keyed by
+ * `artifactId:version`), so this fires exactly once per opened version, never
+ * on an unrelated re-render. Renders nothing while loading, on a fetch
+ * error, and for a version whose chart state is `null` (a non-PNG version
+ * never reaches this component; a PNG version with no stored figure state —
+ * imported or legacy content — has no edit affordance to offer).
+ */
+function ChartEditSlot({
+  content, loadChartState, onSave, onPreview, onPreviewSrc, onPendingChange,
+  referencesDisabled, isTargetAdded, onAddTarget, onRemoveTarget, t,
+}: {
+  content: ScienceArtifactContentRef & { version: number }
+  loadChartState: ScienceChartStateLoader
+  onSave: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
+  onPreview?: ScienceChartPreview
+  onPreviewSrc?: (src: string | undefined) => void
+  onPendingChange?: (hasPending: boolean) => void
+  referencesDisabled: boolean
+  isTargetAdded: (target: ScienceEditTarget) => boolean
+  onAddTarget: (target: ScienceEditTarget, comment: string) => void
+  onRemoveTarget: (target: ScienceEditTarget) => void
+  t: TranslateNS<'science'>
+}) {
+  const state = useLoadedChartState(content, loadChartState)
+  if (state.status !== 'ready' || state.chart === null) return null
+  return (
+    <ScienceChartEditPanel
+      version={content.version} chart={state.chart} onSave={onSave}
+      referencesDisabled={referencesDisabled}
+      {...onPreview === undefined ? {} : { onPreview }}
+      {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
+      {...onPendingChange === undefined ? {} : { onPendingChange }}
+      isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+      t={t}
+    />
+  )
 }
 
 /** Parse JSON text into a `JsonTree`-acceptable value, or `undefined` for malformed or non-object/array content. */
@@ -161,7 +228,7 @@ function RasterArtifact({
   chart, loadImage, previewSrc, selectionTarget, onSelectTarget, isTargetAdded, targetComment, onAddTarget, onRemoveTarget,
   t,
 }: {
-  chart: ScienceClientArtifactVersion & { mediaType: 'image/png' }
+  chart: ScienceRenderableVersion & { mediaType: 'image/png' }
   loadImage: ScienceImageLoader
   previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
@@ -300,18 +367,21 @@ function BoundedPreText({ text, truncated, total, t }: {
 }
 
 /**
- * Render one artifact version's content: an image preview, or text fetched
- * through `loadText` and dispatched by media type.
- * @param props - the artifact version to render and both durable-byte loaders.
+ * Render one artifact version's content: an image preview (with its live
+ * chart-edit panel, `ChartEditSlot`, whenever the store has chart state for
+ * this exact version) or text fetched through `loadText` and dispatched by
+ * media type.
+ * @param props - the artifact version to render, its loaders, and the chart-edit callbacks the edit panel invokes.
  * @returns the dispatched content and optional human-edit ancestry.
  */
 export function ArtifactContent({
-  chart, loadImage, loadText, previewSrc, selectionTarget, onSelectTarget, isTargetAdded,
+  chart, loadImage, loadText, loadChartState, previewSrc, selectionTarget, onSelectTarget, isTargetAdded,
   targetComment, onAddTarget, onRemoveTarget, onSaveChartOps, onPreviewChartOps, onPreviewSrc, onPendingChartEditsChange, t,
 }: {
-  chart: ScienceClientArtifactVersion
+  chart: ScienceRenderableVersion
   loadImage: ScienceImageLoader
   loadText: TextLoader
+  loadChartState: ScienceChartStateLoader
   previewSrc?: string
   selectionTarget: ScienceEditTarget | undefined
   onSelectTarget: (target: ScienceEditTarget) => void
@@ -321,7 +391,7 @@ export function ArtifactContent({
   onRemoveTarget: (target: ScienceEditTarget) => void
   /** Apply pending chart operations through the caller's `applyChartOps` Remote, already scoped to this artifact/version. */
   onSaveChartOps: (ops: readonly ScienceChartOp[]) => Promise<ScienceChartSaveOutcome>
-  onPreviewChartOps?: import('./ScienceChartEditPanel.tsx').ScienceChartPreview
+  onPreviewChartOps?: ScienceChartPreview
   onPreviewSrc?: (src: string | undefined) => void
   /**
    * Reported whenever the chart edit panel's unsaved direct-edit count
@@ -338,23 +408,21 @@ export function ArtifactContent({
         ? (
           <>
             <RasterArtifact
-              chart={chart as ScienceClientArtifactVersion & { mediaType: 'image/png' }}
+              chart={chart as ScienceRenderableVersion & { mediaType: 'image/png' }}
               loadImage={loadImage} {...previewSrc === undefined ? {} : { previewSrc }}
               selectionTarget={selectionTarget} onSelectTarget={onSelectTarget}
               isTargetAdded={isTargetAdded} targetComment={targetComment} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
               t={t}
             />
-            {chart.chart !== undefined && (
-              <ScienceChartEditPanel
-                version={chart.version} chart={chart.chart} onSave={onSaveChartOps}
-                referencesDisabled={previewSrc !== undefined}
-                {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
-                {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
-                {...onPendingChartEditsChange === undefined ? {} : { onPendingChange: onPendingChartEditsChange }}
-                isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
-                t={t}
-              />
-            )}
+            <ChartEditSlot
+              content={chart} loadChartState={loadChartState} onSave={onSaveChartOps}
+              referencesDisabled={previewSrc !== undefined}
+              {...onPreviewChartOps === undefined ? {} : { onPreview: onPreviewChartOps }}
+              {...onPreviewSrc === undefined ? {} : { onPreviewSrc }}
+              {...onPendingChartEditsChange === undefined ? {} : { onPendingChange: onPendingChartEditsChange }}
+              isTargetAdded={isTargetAdded} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+              t={t}
+            />
           </>
         )
         : (
@@ -364,7 +432,7 @@ export function ArtifactContent({
           />
         )}
       {chart.caption !== undefined && <p className={css.caption}>{chart.caption}</p>}
-      {chart.origin === 'human-edit' && <div className={css.contentFacts}><span>{t('artifact.humanEdit', { version: chart.parent.version })}</span></div>}
+      {chart.contentOrigin === 'human-edit' && <div className={css.contentFacts}><span>{t('artifact.humanEdit', { version: chart.version - 1 })}</span></div>}
     </div>
   )
 }

@@ -1771,6 +1771,32 @@ export interface Config {
    * processes instead of failing the second writer outright.
    */
   busyTimeoutMs?: number
+  /**
+   * How many pre-upgrade `.bak` copies of a project's `store.sqlite` to
+   * retain when a schema migration runs. Deployment-varying because it
+   * trades disk space against how far back a bad migration can be undone
+   * by hand.
+   */
+  storeBackupRetention?: number
+  /**
+   * Upper bound on how many version rows and dangling session-log events one
+   * `reconcileProject` call processes before reporting `truncated: true` and
+   * returning rather than continuing. Deployment-varying: a larger project
+   * (more versions accumulated, more sessions to fold events from) can
+   * afford — or need — a larger single-call budget than a small one; the
+   * caller (`dsh-science-runtime`) decides whether and how to schedule a
+   * follow-up call for the remainder.
+   */
+  reconcileMaxVersions?: number
+  /**
+   * Consulted at most once per project, during a v1→v2 store upgrade's
+   * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
+   * figure state/annotation provenance this package's v1 rows never held
+   * and only that project's session logs still do. This package never reads
+   * session-log format itself; a consumer that does (e.g. `dsh-science-runtime`)
+   * supplies this hook. Omitted: step 4 is skipped and logged as a warning.
+   */
+  backfillProvenance?: BackfillProvenanceHook
 }
 
 /**
@@ -1779,9 +1805,70 @@ export interface Config {
  * files do not work (network mounts).
  */
 export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
+
+/**
+ * Caller-supplied hook, invoked at most once during the v1→v2 migration's
+ * optional step 4. This package never reads session logs itself — that
+ * format is owned by `dsh-session`/`dsh-science-session`, layers above this
+ * one — so the hook lets the CALLER supply whatever it can recover from a
+ * project's session logs, keyed by `versionId`.
+ *
+ * A `versionId` absent from the returned map (or the hook itself omitted,
+ * or the hook's promise rejecting) leaves that row exactly as steps 1–3 left
+ * it and the migration logs one warning through `onWarning` — it never
+ * fails the migration. A single unreadable session log is this hook's own
+ * concern to skip past; nothing this hook returns can roll back the rest of
+ * the migration's already-applied schema and data changes.
+ * @param projectId - the project whose session logs to consult.
+ * @param rows - every version row migrated from v1, still missing the fields above.
+ * @returns recovered values keyed by `versionId`; an absent key means "nothing found".
+ */
+export type BackfillProvenanceHook = (
+  projectId: string,
+  rows: readonly BackfillProvenanceRow[],
+) => Promise<ReadonlyMap<string, BackfillProvenanceValue>>
+
+/** One version row still missing fields only a v1-era session log ever held, handed to a `backfillProvenance` hook. */
+export interface BackfillProvenanceRow {
+  /** The migrated version's id — the key the hook's returned map is looked up by. */
+  readonly versionId: string
+  /** The artifact this version belongs to, for scoping which session logs are relevant. */
+  readonly artifactId: string
+  /** The session that produced this version, for scoping which session logs are relevant. */
+  readonly producerSessionId: string
+}
+
+/**
+ * What a `backfillProvenance` hook may recover for one version from its
+ * project's session logs. Every field is independently optional: an omitted
+ * field leaves that column at its step-1..3 migrated default (`NULL`, or
+ * `derived: true` on the version's annotation).
+ */
+export interface BackfillProvenanceValue {
+  /** Full 64-hex-character digest, not a preview. */
+  readonly environmentFingerprint?: string
+  /** The request/response turn number of the authorizing tool call. */
+  readonly producerTurn?: number
+  /** The live-figure-object state to write into `figure_state` for this version. */
+  readonly figureState?: BackfillProvenanceFigureState
+  /** The authorizing tool call for the version's ONE migration-derived annotation row, if the log still names it. */
+  readonly annotationToolCallId?: string
+  /** The real edit timestamp for that annotation row, if the log still names it; supplying this also clears the row's `derived` flag. */
+  readonly annotationCreatedAt?: number
+}
+
+/** Live-figure-object state a `backfillProvenance` hook recovered for one version. */
+export interface BackfillProvenanceFigureState {
+  /** Identifies which live figure this state belongs to, opaque to this package. */
+  readonly figureKey: string
+  /** Rendering resolution, dots per inch. */
+  readonly dpi: number
+  /** Opaque JSON text for the chart's live-object state; this package stores it verbatim without parsing. */
+  readonly stateJson: string
+}
 ```
 
-Source: [`packages/science/science-artifact-store/src/index.ts:48`](../packages/science/science-artifact-store/src/index.ts)
+Source: [`packages/science/science-artifact-store/src/index.ts:85`](../packages/science/science-artifact-store/src/index.ts)
 
 <a id="deepseek-aidsh-science-runtime"></a>
 
@@ -1879,6 +1966,27 @@ export interface Config {
   readonly chartExtractTimeoutMs?: number
   /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
   readonly chartLiveRunsRetained?: number
+  /**
+   * Maximum session logs read, per project, when building the event set for
+   * one store ↔ session reconciliation pass. A project with more matching
+   * sessions than this reports its walk truncated rather than reading them
+   * all in one call — bounded so a large multi-session project's first
+   * Science operation is never blocked scanning every session it has ever had.
+   */
+  readonly reconcileMaxSessions?: number
+  /**
+   * Minimum interval between reconciliation attempts for one project until
+   * a complete, cursor-free, error-free pass succeeds. A later project
+   * resolution triggers the retry; this value does not schedule background work.
+   */
+  readonly reconcileRetryDelayMs?: number
+  /**
+   * Most-recent runs `annotate_artifact`'s not-found diagnostic inspects
+   * for a retained, uncaptured PNG before degrading to the generic
+   * not-found error. Bounds a per-run directory walk that otherwise runs
+   * once per retained run in the session, inside the runtime lease.
+   */
+  readonly annotateDiagnosticMaxRuns?: number
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -1900,7 +2008,7 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-Source: [`packages/science/science-runtime/src/config.ts:105`](../packages/science/science-runtime/src/config.ts)
+Source: [`packages/science/science-runtime/src/config.ts:126`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
@@ -2963,7 +3071,7 @@ export interface Config {
   readonly profileId: string
   /** Deployment-owned Science mode contract revision. */
   readonly modeRevision: string
-  /** Maximum recent runs and chart versions returned by `get_science_state`, per collection. */
+  /** Maximum recent runs, artifact versions, and direct edits returned per applicable collection. */
   readonly stateHistoryLimit: number
 }
 ```

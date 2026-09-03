@@ -61,7 +61,7 @@ describe('strict Science provenance', () => {
         toolCall(7, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
         event('science/artifact-saved', 8, 170, {
           version: 1,
-          artifact: artifact({ requestHeaderSeq: 0 }),
+          artifact: artifact(),
         }),
       ], /cannot follow pre-mode/],
       ['chart tool call', [
@@ -69,7 +69,7 @@ describe('strict Science provenance', () => {
         ...validRunPrefix,
         event('science/artifact-saved', 7, 170, {
           version: 1,
-          artifact: artifact({ requestHeaderSeq: 3 }),
+          artifact: artifact(),
         }),
       ], /cannot follow pre-mode/],
       ['outcome request header', [
@@ -129,13 +129,6 @@ describe('strict Science provenance', () => {
         ...legalEvents().slice(0, 7),
         event('science/run-started', 7, 160, { version: 1, run: secondRun }),
       ]],
-      ['chart', [
-        ...legalEvents().slice(0, 9),
-        event('science/artifact-saved', 9, 180, {
-          version: 1,
-          artifact: artifact({ version: 2, createdAt: 179 }),
-        }),
-      ]],
       ['outcome', [
         ...legalEvents(),
         event('science/outcome-published', 11, 190, {
@@ -153,11 +146,6 @@ describe('strict Science provenance', () => {
         ...legalEvents().slice(0, 5),
         toolResult(5, 135, RUN_CALL_ID),
         event('science/run-started', 6, 140, { version: 1, run: runStarted() }),
-      ]],
-      ['chart', [
-        ...legalEvents().slice(0, 8),
-        toolResult(8, 165, ARTIFACT_CALL_ID),
-        event('science/artifact-saved', 9, 170, { version: 1, artifact: artifact() }),
       ]],
       ['outcome', [
         ...legalEvents().slice(0, 10),
@@ -182,11 +170,6 @@ describe('strict Science provenance', () => {
         event('step/end', 5, 135, { turn: 1, step: 1 }),
         event('science/run-started', 6, 140, { version: 1, run: runStarted() }),
       ]],
-      ['chart', [
-        ...legalEvents().slice(0, 8),
-        event('step/end', 8, 165, { turn: 1, step: 1 }),
-        event('science/artifact-saved', 9, 170, { version: 1, artifact: artifact() }),
-      ]],
       ['outcome', [
         ...legalEvents().slice(0, 10),
         event('step/end', 10, 177, { turn: 1, step: 1 }),
@@ -210,9 +193,6 @@ describe('strict Science provenance', () => {
       ['run', legalEvents().slice(0, 6).map((candidate, index) => index === 4
         ? toolCall(4, 130, RUN_CALL_ID, 'bash')
         : candidate), /expected run_python/],
-      ['chart', legalEvents().slice(0, 9).map((candidate, index) => index === 7
-        ? toolCall(7, 160, ARTIFACT_CALL_ID, 'bash')
-        : candidate), /expected annotate_artifact/],
       ['outcome', legalEvents().map((candidate, index) => index === 9
         ? toolCall(9, 175, OUTCOME_CALL_ID, 'bash')
         : candidate), /expected publish_outcome/],
@@ -265,35 +245,11 @@ describe('strict Science provenance', () => {
       }),
     ])).toThrow(/durable start-to-finish event interval/)
 
-    const chartTimeCases: Array<readonly [string, SessionEvent[]]> = [
-      ['request header', [
-        ...legalEvents().slice(0, 7),
-        event('request/header', 7, 165, {}),
-        toolCall(8, 160, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 9, 170, {
-          version: 1,
-          artifact: artifact({ requestHeaderSeq: 7, createdAt: 164 }),
-        }),
-      ]],
-      ['tool call', legalEvents().slice(0, 9).map((candidate, index) => index === 8
-        ? event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: artifact({ createdAt: 159 }),
-        })
-        : candidate)],
-      ['source terminal event', [
-        ...legalEvents().slice(0, 6),
-        event('science/run-finished', 6, 165, { version: 1, run: runTerminal() }),
-        toolCall(7, 150, ARTIFACT_CALL_ID, 'annotate_artifact'),
-        event('science/artifact-saved', 8, 170, {
-          version: 1,
-          artifact: artifact({ createdAt: 164 }),
-        }),
-      ]],
-    ]
-    for (const [name, events] of chartTimeCases) {
-      expect(() => foldScience(events), name).toThrow(/supporting-fact event interval/)
-    }
+    // No chart/artifact timing cases: `science/artifact-saved` no longer
+    // carries `createdAt`/`requestHeaderSeq`, so this fold has nothing to
+    // check an artifact version's own timing against — that check moved to
+    // the project artifact store's write transaction, which fixes
+    // `created_at` at content-commit time.
 
     const outcomeTimeCases: Array<readonly [string, SessionEvent[], RegExp]> = [
       ['request header', [

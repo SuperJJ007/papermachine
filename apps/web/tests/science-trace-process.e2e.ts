@@ -15,6 +15,7 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/process.expected.md', import.meta.url))
+const HISTORY_EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-process-web-e2e'
 const FINGERPRINT = 'e'.repeat(64)
@@ -47,11 +48,9 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
     source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('session/title', { title: historyTail ? 'Science process history' : 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
   const artifact = {
-    artifactId: stored.artifact.artifactId, producerSessionId: session.id, logicalName: 'scatter_plot.png', version: 1,
-    title: 'Scatter plot', origin: 'auto' as const, projectId, versionId: stored.version.versionId,
-    sha256: stored.version.sha256, mediaType: 'image/png' as const, byteCount: stored.version.byteCount,
-    runId: ScienceRunId('process-run-2'), toolCallId: CallId('process-call-2'), requestHeaderSeq: 0,
-    environmentRevision: 1, environmentFingerprint: FINGERPRINT, createdAt: 0,
+    artifactId: stored.artifact.artifactId, logicalName: 'scatter_plot.png', version: 1,
+    title: 'Scatter plot', projectId, versionId: stored.version.versionId,
+    sha256: stored.version.sha256, seenAt: 0,
   }
   const calls = [
     ['get_science_state', {}],
@@ -90,11 +89,11 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
         finishedAt: eventTime(call.seq + 2), stdoutBytes: Buffer.byteLength(stdout), stderrBytes: Buffer.byteLength(stderr),
         stdoutTruncated: false, stderrTruncated: false } })
       if (index === 5) session.append('science/artifact-saved', { version: 1, artifact: {
-        ...artifact, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 3),
+        ...artifact, seenAt: eventTime(call.seq + 3),
       } })
     }
     if (name === 'annotate_artifact') session.append('science/artifact-saved', { version: 1, artifact: {
-      ...artifact, origin: 'model', toolCallId: callId, requestHeaderSeq: request.seq, createdAt: eventTime(call.seq + 1),
+      ...artifact, seenAt: eventTime(call.seq + 1),
     } })
     const output = name === 'run_python' || name === 'run_r'
       ? `status: ${index === 1 ? 'failed' : 'success'}\n--- stdout ---\n${stdout || '(empty)'}\n--- stderr ---\n${stderr || '(empty)'}`
@@ -165,13 +164,24 @@ describe('web e2e: Science process view', () => {
     scaffold = await launchWebScaffold({})
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
     const stored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto', originSessionId: SessionId(SEED_ID),
+      logicalName: 'scatter_plot.png', kind: 'figure', data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', originSessionId: SessionId(SEED_ID),
     })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, stored.version.versionId, { actor: 'capture', title: 'Scatter plot' })
     await seedSession(scaffold, processFixture(projectId, stored), SEED_ID, 'science')
-    const historyStored = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'scatter_plot.png', data: PNG, mediaType: 'image/png', title: 'Scatter plot', origin: 'auto',
-      originSessionId: SessionId(`${SEED_ID}-history`),
+    // A second conversation plotting the same logical name in one project is
+    // real product behavior (`capture.ts`'s `projectArtifactIdFor` finds the
+    // existing artifact and appends), not a fresh artifact — the store's
+    // `UNIQUE(owningProjectId, logicalName)` constraint rejects the latter.
+    // The session-local `science/artifact-saved` payload keeps `version: 1`
+    // regardless (`processFixture`'s decorative per-session counter; the
+    // fold validates it only against this session's own prior versions, see
+    // `transition.ts`'s `applyArtifactSaved`), so this history session's own
+    // Process view still reads "scatter_plot.png v1".
+    const historyVersion = await scaffold.ctx.scienceArtifactStore.appendVersion(projectId, stored.artifact.artifactId, {
+      data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', producerSessionId: SessionId(`${SEED_ID}-history`),
     })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, historyVersion.versionId, { actor: 'capture', title: 'Scatter plot' })
+    const historyStored: Stored = { artifact: stored.artifact, version: historyVersion }
     await seedSession(scaffold, processFixture(projectId, historyStored, true), `${SEED_ID}-history`, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 960)
@@ -328,7 +338,7 @@ describe('web e2e: Science process view', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('keeps records outside the loaded history page separate from the latest request', async () => {
+  it('keeps records outside the loaded history page on their original turn', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-process-history'))
     await page.close()
     page = await newEnglishPage(browser, 1280)
@@ -337,17 +347,17 @@ describe('web e2e: Science process view', () => {
     await openSeed(true)
     const process = page.getByRole('region', { name: 'Science process view' })
     const history = process.getByRole('region', { name: 'Unassigned history' })
-    await history.waitFor()
-    expect(await history.innerText()).toContain('3 runs and 1 artifact versions')
+    await expect.poll(() => history.count()).toBe(0)
+    expect(await process.locator('article[data-anchor="turn:1"]').innerText()).toContain('Runs 3')
     const current = process.locator('article[data-anchor="turn:2"]')
     expect(await current.innerText()).toContain('Runs 0')
     expect(await current.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).count()).toBe(0)
     const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
     mkdirSync(evidenceDir, { recursive: true })
     await page.screenshot({ path: `${evidenceDir}/science-process-history.png`, fullPage: true })
-    await compareOrRefreshGolden(fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url)),
+    await compareOrRefreshGolden(HISTORY_EXPECTED,
       await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
-    await history.getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
+    await process.locator('article[data-anchor="turn:1"]').getByRole('button', { name: 'scatter_plot.png v1', exact: true }).click()
     await page.locator('[class*="detailsCol"]').getByRole('img', { name: /Scatter plot|scatter_plot/u }).waitFor()
     await page.getByRole('tab', { name: 'Chat', exact: true }).click()
     await page.getByRole('button', { name: 'Load earlier', exact: true }).click()

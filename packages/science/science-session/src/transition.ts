@@ -5,7 +5,6 @@ import { decodeScienceDomainEvent } from './codec.ts'
 import type { DecodedScienceDomainEvent } from './codec.ts'
 import type { ScienceFoldState, IndexedSessionFact, IndexedToolCall } from './fold-state.ts'
 import type {
-  ScienceArtifactVersion,
   ScienceArtifactVersionRef,
   ScienceEnvironmentBinding,
   ScienceKernel,
@@ -14,24 +13,6 @@ import type {
   ScienceRun,
   ScienceRunIdentity,
 } from './types.ts'
-
-function sameArtifactVersionRef(
-  left: ScienceArtifactVersionRef | undefined,
-  right: ScienceArtifactVersionRef | undefined,
-): boolean {
-  return left === undefined
-    ? right === undefined
-    : right !== undefined && left.artifactId === right.artifactId && left.version === right.version
-}
-
-function requireArtifactVersion(state: ScienceFoldState, ref: ScienceArtifactVersionRef, subject: string): ScienceArtifactVersion {
-  const artifact = state.artifacts.find(candidate =>
-    candidate.artifactId === ref.artifactId && candidate.version === ref.version)
-  if (artifact === undefined) {
-    throw new Error(`${subject} ${JSON.stringify(ref.artifactId)}@${String(ref.version)} does not identify a committed artifact version`)
-  }
-  return artifact
-}
 
 /**
  * Validate one `science/run-started` input reference against this session's
@@ -250,6 +231,19 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
   state.runFacts[factIndex] = { ...fact, terminalSeq: event.seq, terminalEventTime: event.time }
 }
 
+/**
+ * Fold `science/artifact-saved` under the store-is-authority rule: the
+ * project artifact store's write transaction is the sole authority for a
+ * version's provenance (content origin, producer, base version, creation
+ * time), so this fold no longer re-derives or cross-checks any of it — it
+ * only maintains the session-local facts a replaying reader can still prove
+ * from the log alone. Every check this function no longer performs moved to
+ * the store write transaction that commits before this event does (see
+ * `.agents/notes/implemented/architecture/2026-09-02-science-artifact-event-slimming.md`
+ * for the complete list and each check's new home).
+ * @param state - fold accumulator to validate and update in place.
+ * @param event - decoded `science/artifact-saved` event.
+ */
 function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/artifact-saved' }>): void {
   if (state.mode === undefined) throw new Error('Science artifact requires a prior mode binding')
   const artifact = event.data.artifact
@@ -257,137 +251,67 @@ function applyArtifactSaved(state: ScienceFoldState, event: Extract<DecodedScien
   if (priorProjectId !== undefined && artifact.projectId !== priorProjectId) {
     throw new Error('Science artifacts of one session must name one owning projectId')
   }
-  let parent: ScienceArtifactVersion | undefined
-  if (artifact.parent !== undefined) {
-    if (artifact.parent.artifactId === artifact.artifactId && artifact.parent.version === artifact.version) {
-      throw new Error('Science artifact parent cannot name the version being committed')
-    }
-    parent = requireArtifactVersion(state, artifact.parent, 'Science artifact parent')
-  }
-  let consumedToolCallSeq: number | undefined
-  if (artifact.origin === 'human-edit') {
-    /* v8 ignore next -- the discriminated codec and type require this parent */
-    if (parent === undefined) throw new Error('a human-edited Science artifact requires a committed parent')
-    const latest = state.artifacts.filter(candidate => candidate.artifactId === artifact.artifactId).at(-1)
-    if (latest !== parent) throw new Error('a human-edited Science artifact parent must be the current committed version')
-    if (parent.logicalName !== artifact.logicalName) {
-      throw new Error('a human-edited Science artifact must retain its parent logical name')
-    }
-    if (parent.mediaType !== 'image/png') {
-      throw new Error('a human-edited Science artifact parent must be a PNG')
-    }
-    if (artifact.environmentRevision !== parent.environmentRevision
-      || artifact.environmentFingerprint !== parent.environmentFingerprint) {
-      throw new Error('a human-edited Science artifact must copy its parent environment provenance')
-    }
-    const parentFact = state.artifactFacts.find(candidate =>
-      candidate.artifactId === parent.artifactId && candidate.version === parent.version)
-    /* v8 ignore next -- every accepted version appends the matching fact */
-    if (parentFact === undefined) throw new Error('Science artifact parent event facts are missing')
-    if (artifact.createdAt < parent.createdAt || artifact.createdAt < parentFact.time || artifact.createdAt > event.time) {
-      throw new Error('human-edited Science artifact creation time is outside its parent-to-commit event interval')
-    }
-  } else {
-    const source = state.runs.find(run => run.runId === artifact.runId)
-    if (source === undefined || source.status === 'running' || source.status === 'interrupted') {
-      throw new Error('Science artifact must reference a run that reached a terminal status')
-    }
-    const requestHeader = requireRequestHeader(state, artifact.requestHeaderSeq)
-    // An auto-captured save (origin 'auto') is not a distinct model-issued
-    // call: it carries exactly its source run's own toolCallId/requestHeaderSeq,
-    // already proven and consumed by that run's science/run-started fact, so it
-    // never re-consumes a tool call — many captured files share one run's call.
-    // A curating save (origin 'model', today only annotate_artifact) consumes a
-    // fresh tool call exactly once, whether it opens a version or supersedes one.
-    let toolCallTime: number | undefined
-    if (artifact.origin === 'auto') {
-      if (artifact.toolCallId !== source.toolCallId || artifact.requestHeaderSeq !== source.requestHeaderSeq) {
-        throw new Error('an auto-captured Science artifact must carry its source run\'s own toolCallId and requestHeaderSeq')
-      }
-    } else {
-      const toolCall = requireToolCall(state, event.seq, artifact.toolCallId, artifact.requestHeaderSeq, ['annotate_artifact'])
-      toolCallTime = toolCall.time
-      consumedToolCallSeq = toolCall.seq
-    }
-    if (artifact.environmentRevision !== source.environmentRevision
-      || artifact.environmentFingerprint !== source.environmentFingerprint) {
-      throw new Error('Science artifact environment provenance must match its source run')
-    }
-    const sourceFact = state.runFacts.find(candidateFact => candidateFact.runId === artifact.runId)
-    /* v8 ignore next -- a terminal run always has its terminal fact */
-    if (sourceFact?.terminalEventTime === undefined) throw new Error('Science artifact source-run event facts are missing')
-    if (artifact.createdAt < source.finishedAt
-      || artifact.createdAt < sourceFact.terminalEventTime
-      || artifact.createdAt < requestHeader.time
-      || (toolCallTime !== undefined && artifact.createdAt < toolCallTime)
-      || artifact.createdAt > event.time) {
-      throw new Error('Science artifact creation time is outside its supporting-fact event interval')
-    }
-  }
-  // New content always opens a version beyond this session's own
-  // locally-known range for that logicalName, whose store row is fresh;
-  // only a model curation (annotate_artifact) supersedes an existing
-  // version in place, and it is metadata-only — the superseded version's
-  // store content reference (versionId/sha256/mediaType/byteCount) is
-  // retained verbatim.
-  const logical = state.artifacts.filter(candidate => candidate.logicalName === artifact.logicalName)
-  const target = logical.find(candidate => candidate.version === artifact.version)
+  const known = state.artifacts.filter(candidate => candidate.artifactId === artifact.artifactId)
+  const target = known.find(candidate => candidate.version === artifact.version)
   if (target === undefined) {
-    const latest = logical.at(-1)
-    if (latest === undefined) {
-      // Historical logs can first record a logicalName above v1 because
-      // earlier capture joined chains across sessions. Accept those durable
-      // ordinals so existing sessions remain replayable; capture's create
-      // path enforces v1 for a name first encountered by a live session.
-      const reusedId = state.artifacts.find(candidate => candidate.artifactId === artifact.artifactId)
-      if (reusedId !== undefined) throw new Error('an artifactId cannot name two logical artifacts')
-    } else if (artifact.artifactId !== latest.artifactId
-      || artifact.version <= latest.version
-      || artifact.createdAt < latest.createdAt) {
-      // A version beyond this session's own last locally-known one for this
-      // logicalName is trusted the same way the "never recorded at all"
-      // branch above trusts version 1: the store's own linearized
-      // MAX(ordinal)+1 transaction already proved it real before this event
-      // committed, whether it is this session's own immediate next version
-      // or a gap left by a concurrent session's interleaved append landing
-      // in between in store-serialized order (S3 cross-session interleaving).
-      // A version at or below that local maximum is fully verifiable from
-      // the log alone and is never trusted from the store: it must equal
-      // `latest.version` exactly to reach the `target !== undefined`
-      // supersede path below, or it names a regression or an already-decided
-      // gap inside the locally-seen range, and throws here.
-      throw new Error('artifact versions must retain artifactId and advance beyond the locally committed version')
+    // A version beyond this session's own last locally-known one for this
+    // artifactId is trusted the same way a wholly new artifactId is: the
+    // store's own linearized MAX(ordinal)+1 write transaction already
+    // proved it real before this event committed, whether it is this
+    // session's own immediate next version or a gap left by a concurrent
+    // session's interleaved append landing in between in store-serialized
+    // order. A version at or inside the locally-known range is fully
+    // verifiable from the log alone: it must equal an already-recorded
+    // ordinal exactly (the `target !== undefined` branch below) or it is a
+    // regression this session's own history disproves, and throws here.
+    const latest = known.at(-1)
+    if (latest !== undefined && artifact.version <= latest.version) {
+      throw new Error('artifact versions must advance beyond the locally committed version')
     }
     if (state.artifacts.some(candidate => candidate.versionId === artifact.versionId)) {
       throw new Error('a Science artifact versionId cannot back two committed versions')
     }
+    // A wholly new version's owner is whichever producing call is currently
+    // open: the store transaction that authored this content committed
+    // during that call, so its coordinates are this version's trace anchor.
+    const owner = state.toolCalls.findLast(call => !state.settledToolCallSeqs.includes(call.seq)
+      && (call.name === 'run_python' || call.name === 'run_r' || call.name === 'annotate_artifact'))
     state.artifacts.push(artifact)
-    state.artifactFacts.push({ artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time })
+    state.artifactFacts.push({
+      artifactId: artifact.artifactId,
+      version: artifact.version,
+      seq: event.seq,
+      time: event.time,
+      ...owner === undefined ? {} : { turn: owner.turn, step: owner.step },
+    })
   } else {
-    if (artifact.artifactId !== target.artifactId || artifact.createdAt < target.createdAt) {
-      throw new Error('artifact versions must retain artifactId and advance contiguously')
-    }
-    if (!sameArtifactVersionRef(artifact.parent, target.parent)) {
-      throw new Error('a superseding Science artifact cannot rewrite its parent')
-    }
-    if (target.origin === 'human-edit') throw new Error('annotate_artifact cannot curate a human-edited Science artifact version')
-    if (artifact.origin !== 'model') {
-      throw new Error('only a model curation may supersede a committed Science artifact version')
-    }
-    if (artifact.versionId !== target.versionId
-      || artifact.sha256 !== target.sha256
-      || artifact.mediaType !== target.mediaType
-      || artifact.byteCount !== target.byteCount) {
-      throw new Error('a model-curated Science artifact must retain the superseded version\'s store content reference')
+    // A re-record of an already-known ordinal is the metadata-curation
+    // snapshot the store's `version_annotations` table now authors: content
+    // is unchanged, and only the projection's title/caption snapshot
+    // advances. `sha256` is the discriminant: identical to the recorded
+    // version, this is that snapshot; any other value would mean this
+    // ordinal's content silently changed, which the store's immutable
+    // version row makes impossible for a conforming producer, so the fold
+    // still rejects it as a defensive check rather than accepting it.
+    if (artifact.versionId !== target.versionId || artifact.sha256 !== target.sha256) {
+      throw new Error('a Science artifact re-recorded at an already-committed version must retain its store content reference')
     }
     state.artifacts[state.artifacts.indexOf(target)] = artifact
     const factIndex = state.artifactFacts.findIndex(candidate =>
       candidate.artifactId === artifact.artifactId && candidate.version === artifact.version)
+    const priorFact = state.artifactFacts[factIndex]
     /* v8 ignore next -- every accepted version appended its matching fact */
-    if (factIndex < 0) throw new Error('Science artifact event facts disappeared during synchronous replay')
-    state.artifactFacts[factIndex] = { artifactId: artifact.artifactId, version: artifact.version, seq: event.seq, time: event.time }
+    if (priorFact === undefined) throw new Error('Science artifact event facts disappeared during synchronous replay')
+    // This is metadata curation, not new content: the version's trace
+    // anchor stays the call that produced this content, whatever call is
+    // open now. Reassigning to the currently open call — an
+    // `annotate_artifact` call still in flight after the producing
+    // `run_python`/`run_r` call has settled, in particular — would move the
+    // Process view's ownership chip for this version away from its actual
+    // producer. Only `seq`/`time` advance, to date this snapshot by the
+    // event that recorded it.
+    state.artifactFacts[factIndex] = { ...priorFact, seq: event.seq, time: event.time }
   }
-  if (consumedToolCallSeq !== undefined) state.consumedToolCallSeqs.push(consumedToolCallSeq)
 }
 
 function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedScienceDomainEvent, { type: 'science/outcome-published' }>): void {
@@ -440,7 +364,11 @@ function applyOutcomePublished(state: ScienceFoldState, event: Extract<DecodedSc
         if (outcome.publishedAt < fact.time) {
           throw new Error('Science outcome publication time precedes cited chart evidence')
         }
-        citedEnvironmentRevisions.add(artifact.environmentRevision)
+        // No environmentRevision contribution: an artifact version's
+        // environment provenance lives only in the project artifact store
+        // under the store-is-authority rule, so this fold cannot derive it
+        // from `artifact` any more (see `science/artifact-saved`'s slimmed
+        // event shape).
         break
       }
       case 'message': {
@@ -606,6 +534,17 @@ export function applyScienceEvent(state: ScienceFoldState, event: SessionEvent):
   if (domainEvent !== undefined) applyDomainEvent(state, domainEvent)
   else {
     switch (event.type) {
+      case 'turn/start':
+        if (state.turns.some(turn => turn.turn === event.data.turn)) throw new Error('turn/start cannot repeat a turn')
+        state.turns.push({ turn: event.data.turn, startSeq: event.seq, startTime: event.time })
+        break
+      case 'turn/end': {
+        const index = state.turns.findIndex(turn => turn.turn === event.data.turn)
+        const turn = state.turns[index]
+        if (turn === undefined || turn.endSeq !== undefined) throw new Error('turn/end requires one open turn')
+        state.turns[index] = { ...turn, endSeq: event.seq, endTime: event.time }
+        break
+      }
       case 'step/start':
         if (state.mode === undefined) state.preModeStepStarted = true
         break

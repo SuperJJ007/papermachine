@@ -28,6 +28,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
+import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import {
   appendFixtureEvents,
   ARTIFACT_ID,
@@ -341,9 +342,11 @@ describe('Web session model selection', () => {
     appendFixtureEvents(agent.session)
     const readBlob = vi.fn(() => Promise.resolve(Uint8Array.of(1, 2, 3)))
     const openProject = vi.fn()
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
     ctx.provide('scienceArtifactStore', {
       readBlob,
       openProject,
+      getVersion,
       listVersions: vi.fn(),
     } as never)
     const api = createApiProxy(ctx, {
@@ -433,12 +436,14 @@ describe('Web session model selection', () => {
       getVersion: vi.fn((projectId: typeof PROJECT_ID) => Promise.resolve(projectId === PROJECT_ID ? version : undefined)),
       listVersions: vi.fn(() => Promise.resolve([])),
       readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })),
     } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
 
     expect(expectValue(await api.sessions.scienceLibrary(request({ sessionId })))).toMatchObject({
       projectId: PROJECT_ID,
       artifacts: [{ logicalName: 'results.csv', title: 'Results', latest: { versionId: 'project-version-1', ordinal: 1 } }],
+      health: { orphan: 0, reconstructed: 0, missingContent: 0 },
     })
     expect(expectValue(await api.sessions.scienceArtifact(request({ sessionId, versionId: version.versionId as never })))).toMatchObject({
       mediaType: 'text/csv', data: 'YQox',
@@ -447,6 +452,121 @@ describe('Web session model selection', () => {
       sessionId: otherSession.id, versionId: version.versionId as never,
     }))).result).toMatchObject({
       ok: false, error: { details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('batch-reads current library and producer facts without leaking rows the session cannot authorize', async () => {
+    const cwd = '/tmp/science-versions-batch'
+    const { ctx, sessionId, agent } = await harness(undefined, cwd)
+    appendFixtureEvents(agent.session, legalEvents().slice(0, 4))
+    const orphanArtifactId = 'artifact-orphan-owner' as typeof ARTIFACT_ID
+    const runCall = agent.session.append('tool/call', {
+      turn: 1, step: 1, callId: RUN_CALL_ID, name: 'run_python', arguments: '{}',
+    })
+    agent.session.append('science/run-started', {
+      version: 1,
+      run: runStarted({
+        requestHeaderSeq: 3,
+        startedAt: runCall.time,
+        inputs: [
+          { artifactId: ARTIFACT_ID, version: 2, path: 'a.png' },
+          { artifactId: ARTIFACT_ID, version: 3, path: 'b.png' },
+          { artifactId: orphanArtifactId, version: 5, path: 'c.csv' },
+        ],
+      }),
+    })
+    agent.session.append('session/title', {
+      title: 'Source analysis', messageSeqs: [], source: { kind: 'user' },
+    })
+    const versionWithTitle = {
+      versionId: 'batch-version-2', artifactId: ARTIFACT_ID, ordinal: 2, sha256: '2'.repeat(64),
+      mediaType: 'image/png', byteCount: 10, title: 'Chart v2', caption: undefined, contentOrigin: 'run-auto', createdAt: 100,
+      producerSessionId: sessionId, producerRunId: 'run-1', producerToolCallId: RUN_CALL_ID,
+      producerRequestHeaderSeq: 3, producerTurn: 1,
+    }
+    const versionWithCaption = {
+      versionId: 'batch-version-3', artifactId: ARTIFACT_ID, ordinal: 3, sha256: '3'.repeat(64),
+      mediaType: 'image/png', byteCount: 12, title: undefined, caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200,
+      producerSessionId: sessionId, producerRunId: undefined, producerToolCallId: undefined,
+      producerRequestHeaderSeq: undefined, producerTurn: undefined,
+    }
+    const orphanOwnerVersion = {
+      versionId: 'no-owner-version', artifactId: orphanArtifactId, ordinal: 5, sha256: '5'.repeat(64),
+      mediaType: 'text/csv', byteCount: 1, title: undefined, caption: undefined, contentOrigin: 'import', createdAt: 50,
+      producerSessionId: 'unavailable-producer' as SessionId, producerRunId: undefined, producerToolCallId: undefined,
+      producerRequestHeaderSeq: undefined, producerTurn: undefined,
+    }
+    const openProject = vi.fn(() => Promise.resolve({ projectId: PROJECT_ID }))
+    const listVersions = vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+      artifactId === ARTIFACT_ID ? [versionWithTitle, versionWithCaption]
+        : artifactId === orphanArtifactId ? [orphanOwnerVersion]
+          : [],
+    ))
+    const getVersion = vi.fn(() => Promise.resolve(undefined))
+    const getArtifact = vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+      artifactId === ARTIFACT_ID
+        ? { artifactId: ARTIFACT_ID, owningProjectId: PROJECT_ID, logicalName: 'chart.png', originSessionId: sessionId, latestVersionId: versionWithCaption.versionId, createdAt: 1 }
+        : undefined,
+    ))
+    const getReconciliationSummary = vi.fn(() => Promise.resolve({
+      orphanCount: 0, reconstructedCount: 1, missingContentCount: 0,
+      items: [{ versionId: versionWithCaption.versionId, orphan: false, reconstructed: true, missingContent: false, checkedAt: 1 }],
+    }))
+    ctx.provide('scienceArtifactStore', { openProject, listVersions, getVersion, getArtifact, getReconciliationSummary } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    const result = expectValue(await api.sessions.scienceVersions(request({
+      sessionId,
+      versionIds: ['batch-version-2', 'batch-version-3', 'no-owner-version', 'totally-unreferenced'] as never,
+    })))
+    expect(result.versions).toEqual([
+      {
+        versionId: 'batch-version-2', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 2,
+        title: 'Chart v2', contentOrigin: 'run-auto', createdAt: 100, mediaType: 'image/png', byteCount: 10,
+        producer: {
+          sessionId, sessionTitle: 'Source analysis', runId: 'run-1', toolCallId: RUN_CALL_ID,
+          requestHeaderSeq: 3, turn: 1,
+        },
+      },
+      {
+        versionId: 'batch-version-3', artifactId: ARTIFACT_ID, logicalName: 'chart.png', ordinal: 3,
+        caption: 'no title yet', contentOrigin: 'human-edit', createdAt: 200, mediaType: 'image/png', byteCount: 12,
+        producer: { sessionId, sessionTitle: 'Source analysis' },
+        health: { reconstructed: true },
+      },
+    ])
+    // batch-version-3 reuses batch-version-2's cached owner lookup (same
+    // artifact); the dropped no-owner-version's distinct artifactId is a
+    // cache miss, so getArtifact is called once per distinct artifact (2),
+    // never once per requested version (4). The reconciliation summary is
+    // cached per project and every authorized version shares one project,
+    // so it is fetched exactly once despite three authorized lookups.
+    expect(getArtifact).toHaveBeenCalledTimes(2)
+    expect(getReconciliationSummary).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('fails the version batch explicitly when the artifact store is not mounted', async () => {
+    const { ctx, sessionId } = await harness(undefined, '/tmp/science-versions-no-store')
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.scienceVersions(request({ sessionId, versionIds: [] as never }))).result).toMatchObject({
+      ok: false, error: { code: 'internal' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a version-batch store failure to a business error instead of losing partial results silently', async () => {
+    const cwd = '/tmp/science-versions-store-error'
+    const { ctx, sessionId, agent } = await harness(undefined, cwd)
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.reject(new ProjectArtifactStoreError('store wedged', 'ARTIFACT_NOT_FOUND')))
+    ctx.provide('scienceArtifactStore', { getVersion, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    expect((await api.sessions.scienceVersions(request({ sessionId, versionIds: [VERSION_ID] as never }))).result).toMatchObject({
+      ok: false, error: { code: 'science-artifact-error', details: { reason: 'ARTIFACT_NOT_FOUND' } },
     })
     await ctx.fiber.dispose()
   })
@@ -474,6 +594,7 @@ describe('Web session model selection', () => {
       getVersion: vi.fn(() => Promise.resolve(png)),
       listVersions: vi.fn(() => Promise.resolve([])),
       readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })),
     } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
 
@@ -485,12 +606,174 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('carries project-wide reconciliation health counts and marks only reconstructed/missing-content latest versions, never orphan', async () => {
+    const cwd = '/tmp/science-library-health'
+    const { ctx, sessionId } = await harness(undefined, cwd)
+    const reconstructedArtifactId = 'artifact-reconstructed' as typeof ARTIFACT_ID
+    const missingContentArtifactId = 'artifact-missing-content' as typeof ARTIFACT_ID
+    const orphanArtifactId = 'artifact-orphan' as typeof ARTIFACT_ID
+    const reconstructedVersion = {
+      versionId: 'reconstructed-version-1', artifactId: reconstructedArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 10, origin: 'auto', title: 'Reconstructed',
+    }
+    const missingContentVersion = {
+      versionId: 'missing-content-version-1', artifactId: missingContentArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 11, origin: 'auto', title: 'Missing content',
+    }
+    const orphanVersion = {
+      versionId: 'orphan-version-1', artifactId: orphanArtifactId, ordinal: 1, sha256: ARTIFACT_SHA,
+      mediaType: 'text/csv', byteCount: 3, createdAt: 12, origin: 'auto', title: 'Orphan',
+    }
+    ctx.provide('scienceArtifactStore', {
+      openProject: vi.fn(() => Promise.resolve({ projectId: PROJECT_ID })),
+      listArtifacts: vi.fn(() => Promise.resolve([
+        { artifactId: reconstructedArtifactId, owningProjectId: PROJECT_ID, logicalName: 'reconstructed.csv', originSessionId: sessionId, latestVersionId: reconstructedVersion.versionId, createdAt: 9 },
+        { artifactId: missingContentArtifactId, owningProjectId: PROJECT_ID, logicalName: 'missing.csv', originSessionId: sessionId, latestVersionId: missingContentVersion.versionId, createdAt: 9 },
+        { artifactId: orphanArtifactId, owningProjectId: PROJECT_ID, logicalName: 'orphan.csv', originSessionId: sessionId, latestVersionId: orphanVersion.versionId, createdAt: 9 },
+      ])),
+      getLatestVersion: vi.fn((_projectId: typeof PROJECT_ID, artifactId: typeof ARTIFACT_ID) => Promise.resolve(
+        artifactId === reconstructedArtifactId ? reconstructedVersion
+          : artifactId === missingContentArtifactId ? missingContentVersion
+            : orphanVersion,
+      )),
+      listVersions: vi.fn(() => Promise.resolve([])),
+      readBlob: vi.fn(() => Promise.resolve(Buffer.from('a\n1'))),
+      getReconciliationSummary: vi.fn(() => Promise.resolve({
+        orphanCount: 1, reconstructedCount: 1, missingContentCount: 1,
+        items: [
+          { versionId: reconstructedVersion.versionId, orphan: false, reconstructed: true, missingContent: false, checkedAt: 1 },
+          { versionId: missingContentVersion.versionId, orphan: false, reconstructed: false, missingContent: true, checkedAt: 2 },
+          { versionId: orphanVersion.versionId, orphan: true, reconstructed: false, missingContent: false, checkedAt: 3 },
+        ],
+      })),
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+
+    const library = expectValue(await api.sessions.scienceLibrary(request({ sessionId })))
+    expect(library.health).toEqual({ orphan: 1, reconstructed: 1, missingContent: 1 })
+    const byArtifactId = new Map(library.artifacts.map(item => [item.artifactId, item]))
+    expect(byArtifactId.get(reconstructedArtifactId)?.latest.health).toEqual({ reconstructed: true })
+    expect(byArtifactId.get(missingContentArtifactId)?.latest.health).toEqual({ missingContent: true })
+    // Orphan is a project-wide count only — never a per-item flag on the
+    // affected artifact's `latest`, matching the Files-panel rule that never
+    // surfaces it.
+    expect(byArtifactId.get(orphanArtifactId)?.latest.health).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
   it('fails the project library explicitly when the artifact store is not mounted', async () => {
     const { ctx, sessionId } = await harness(undefined, '/tmp/science-library-no-store')
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
     })
     expect((await api.sessions.scienceLibrary(request({ sessionId }))).result).toMatchObject({
+      ok: false, error: { code: 'internal' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('reads a PNG version\'s stored chart state only for a version proven by the named session fold', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const chart = {
+      runtime: 'matplotlib', figureKey: 'loss.png', png: { width: 100, height: 80, dpi: 100 },
+      elements: [{ id: 'axes[0].title', kind: 'title', axes: 0, label: null, current: 'Loss' }],
+      ops: [], hitmap: [], hitmapStatus: 'unavailable',
+    }
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve({
+      versionId: VERSION_ID, figureKey: 'loss.png', dpi: 100, stateJson: JSON.stringify(chart),
+    }))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const allowed = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(allowed.result).toEqual({ ok: true, value: { chart } })
+    expect(getFigureState).toHaveBeenCalledWith(PROJECT_ID, VERSION_ID)
+
+    const denied = await api.sessions.scienceChartState(request({ sessionId, versionId: 'unreferenced' as never }))
+    expect(denied.result).toMatchObject({
+      ok: false,
+      error: { code: 'science-artifact-error', details: { reason: 'VERSION_NOT_REFERENCED' } },
+    })
+    expect(getFigureState).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('answers null chart state for a non-PNG version without reading figure state', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'text/csv', byteCount: 3 }))
+    const getFigureState = vi.fn()
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toEqual({ ok: true, value: { chart: null } })
+    expect(getFigureState).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('answers null chart state for a PNG version with no stored figure state', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve(undefined))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toEqual({ ok: true, value: { chart: null } })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a chart-state store failure to a business error', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.reject(new ProjectArtifactStoreError('store wedged', 'ARTIFACT_NOT_FOUND')))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toMatchObject({
+      ok: false, error: { code: 'science-artifact-error', details: { reason: 'ARTIFACT_NOT_FOUND' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('folds a malformed stored figure state to a generic internal error', async () => {
+    const { ctx, sessionId, agent } = await harness()
+    appendFixtureEvents(agent.session)
+    const getVersion = vi.fn(() => Promise.resolve({ versionId: VERSION_ID, mediaType: 'image/png', byteCount: 128 }))
+    const getFigureState = vi.fn(() => Promise.resolve({
+      versionId: VERSION_ID, figureKey: 'loss.png', dpi: 100, stateJson: '{"not":"a chart"}',
+    }))
+    ctx.provide('scienceArtifactStore', { getVersion, getFigureState, openProject: vi.fn(), listVersions: vi.fn() } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+
+    const result = await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))
+    expect(result.result).toMatchObject({ ok: false, error: { code: 'internal' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('fails chart-state reads explicitly when the artifact store is not mounted', async () => {
+    const { ctx, sessionId } = await harness(undefined, '/tmp/science-chart-state-no-store')
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.scienceChartState(request({ sessionId, versionId: VERSION_ID as never }))).result).toMatchObject({
       ok: false, error: { code: 'internal' },
     })
     await ctx.fiber.dispose()

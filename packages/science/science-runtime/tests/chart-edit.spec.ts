@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSy
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { ScienceEnvironmentProfileId, ScienceVersionId, replayScience } from '@deepseek-ai/dsh-science-session'
-import type { ScienceChartOp, ScienceHumanEditArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import { ScienceEnvironmentProfileId, ScienceRunId, decodeScienceChartState, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { planRunScratch, planSessionScratch } from '../src/scratch.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
@@ -51,6 +51,7 @@ const ops: readonly ScienceChartOp[] = [
 
 async function harness(id: string, action: Record<string, unknown> = {}, timeoutMs = 10_000, config: Partial<Config> = {}): Promise<{
   readonly root: string
+  readonly ctx: Context
   readonly runtime: Awaited<ReturnType<typeof createKernelRuntimeHarness>>['runtime']
   readonly session: Session
 }> {
@@ -87,42 +88,73 @@ async function harness(id: string, action: Record<string, unknown> = {}, timeout
     signal: new AbortController().signal,
   })
   await handle.done
-  return { root, runtime: assembled.runtime, session }
+  return { root, ctx: assembled.ctx, runtime: assembled.runtime, session }
 }
 
-function chart(session: Session) {
+function chart(session: Session): ScienceArtifactVersion {
   const artifact = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'plot.png')
   if (artifact === undefined) throw new Error('chart fixture was not captured')
   return artifact
 }
 
-function appendHumanEdit(
+/** Read one version's live-figure-object state from the store and decode it. */
+async function figureStateOf(ctx: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState> {
+  const state = await ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  if (state === undefined) throw new Error('chart test: expected a figure_state row for this version')
+  return decodeScienceChartState(JSON.parse(state.stateJson))
+}
+
+/** Read the run that produced one version, from its store row's `producerRunId`. */
+async function producerRunIdOf(ctx: Context, artifact: ScienceArtifactVersion) {
+  const record = await ctx.scienceArtifactStore.getVersion(artifact.projectId, artifact.versionId)
+  if (record?.producerRunId === undefined) throw new Error('chart test: expected a run-produced version with a producerRunId')
+  return ScienceRunId(record.producerRunId)
+}
+
+/**
+ * Synthesize one human-edit version directly against the store and its
+ * matching slimmed `science/artifact-saved` event, mirroring what
+ * `ScienceRuntime`'s own `commitStyleEdit` path writes: `appendVersion` with
+ * `contentOrigin: 'human-edit'` and `baseVersionId` set to the parent, a
+ * `figure_state` row derived from the parent's own (optionally overridden),
+ * and a title-inheriting `annotateVersion` call.
+ */
+async function appendHumanEdit(
+  ctx: Context,
   session: Session,
-  parent: ReturnType<typeof chart>,
-  overrides: Partial<ScienceHumanEditArtifactVersion>,
-): void {
-  if (parent.origin === 'human-edit') throw new Error('synthetic edit parent must be run-origin')
-  if (parent.mediaType !== 'image/png') throw new Error('synthetic edit parent must be a PNG')
-  const { runId: _runId, toolCallId: _toolCallId, requestHeaderSeq: _requestHeaderSeq, ...common } = parent
-  const artifact: ScienceHumanEditArtifactVersion = {
-    ...common,
-    version: parent.version + 1,
-    versionId: ScienceVersionId(`${String(parent.versionId)}-synthetic-${String(parent.version + 1)}`),
-    parent: { artifactId: parent.artifactId, version: parent.version },
-    origin: 'human-edit',
+  parent: ScienceArtifactVersion,
+  chartOverride: Partial<ScienceChartState> = {},
+  data: Uint8Array | string = 'synthetic human edit',
+): Promise<ScienceArtifactVersion> {
+  const store = ctx.scienceArtifactStore
+  const parentChart = await figureStateOf(ctx, parent)
+  const editedChart = { ...parentChart, ...chartOverride }
+  const stored = await store.appendVersion(parent.projectId, parent.artifactId, {
+    producerSessionId: session.id,
+    data: typeof data === 'string' ? new TextEncoder().encode(data) : data,
     mediaType: 'image/png',
-    createdAt: Date.now(),
-    ...overrides,
-  }
-  session.append('science/artifact-saved', {
-    version: 1,
-    artifact,
+    contentOrigin: 'human-edit',
+    baseVersionId: parent.versionId,
+    figureState: { figureKey: editedChart.figureKey, dpi: editedChart.png.dpi, stateJson: JSON.stringify(editedChart) },
   })
+  await store.annotateVersion(parent.projectId, stored.versionId, { actor: 'human', sessionId: session.id, title: parent.title })
+  const artifact: ScienceArtifactVersion = {
+    artifactId: parent.artifactId,
+    logicalName: parent.logicalName,
+    version: stored.ordinal,
+    title: parent.title,
+    projectId: parent.projectId,
+    versionId: stored.versionId,
+    sha256: stored.sha256,
+    seenAt: Date.now(),
+  }
+  session.append('science/artifact-saved', { version: 1, artifact })
+  return artifact
 }
 
 describe('ScienceRuntime.applyChartEdit', () => {
   it('edits the newest producing run and keeps that source through consecutive human edits', async () => {
-    const { runtime, session } = await harness('chart-edit-newest-source')
+    const { ctx, runtime, session } = await harness('chart-edit-newest-source')
     const first = chart(session)
     const secondExtraction = { ...editExtraction, elements: [{ ...editExtraction.elements[0], current: 'Second source' }] }
     const handle = await runtime.startRun({
@@ -137,17 +169,18 @@ describe('ScienceRuntime.applyChartEdit', () => {
       const result = await runtime.applyChartEdit({
         session, artifactId: first.artifactId, version, ops: [titleOp], signal: new AbortController().signal,
       })
-      expect(result.artifact.chart?.elements).toEqual(secondExtraction.elements)
-      expect(result.artifact.chart?.ops).toHaveLength(version - 1)
+      const resultChart = await figureStateOf(ctx, result.artifact)
+      expect(resultChart.elements).toEqual(secondExtraction.elements)
+      expect(resultChart.ops).toHaveLength(version - 1)
     }
   })
 
   it.each(['warm', 'evicted'])('sends all committed operations on %s kernels and reports new failure indices', async (registration) => {
-    const { runtime, session } = await harness(`chart-edit-cumulative-${registration}`, {
+    const { ctx, runtime, session } = await harness(`chart-edit-cumulative-${registration}`, {
       evictCharts: registration === 'evicted', chartApplyResult: { chart: editExtraction, failedOps: [{ index: 2, reason: 'element_not_found' }] },
     })
     const parent = chart(session)
-    appendHumanEdit(session, parent, { chart: { ...parent.chart!, ops: [titleOp] } })
+    await appendHumanEdit(ctx, session, parent, { ops: [titleOp] })
     const received: unknown[] = []
     // The saved method is invoked with the exact kernel receiver inside the spy.
     // oxlint-disable-next-line typescript/unbound-method
@@ -166,11 +199,11 @@ describe('ScienceRuntime.applyChartEdit', () => {
   })
 
   it('refuses to save when a committed operation cannot be reconstructed', async () => {
-    const { runtime, session } = await harness('chart-edit-invalid-baseline', {
+    const { ctx, runtime, session } = await harness('chart-edit-invalid-baseline', {
       chartApplyResult: { chart: editExtraction, failedOps: [{ index: 0, reason: 'element_not_found' }] },
     })
     const parent = chart(session)
-    appendHumanEdit(session, parent, { chart: { ...parent.chart!, ops: [titleOp] } })
+    await appendHumanEdit(ctx, session, parent, { ops: [titleOp] })
     await expect(runtime.applyChartEdit({
       session, artifactId: parent.artifactId, version: 2, ops: [titleOp], signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
@@ -178,24 +211,66 @@ describe('ScienceRuntime.applyChartEdit', () => {
   })
 
   it('commits one warm human-edit version with cumulative successful operations', async () => {
-    const { runtime, session } = await harness('chart-edit-warm')
+    const { ctx, runtime, session } = await harness('chart-edit-warm')
     const parent = chart(session)
     const result = await runtime.applyChartEdit({
       session, artifactId: parent.artifactId, version: parent.version, ops, signal: new AbortController().signal,
     })
     expect(result.failedOps).toEqual([])
-    expect(result.artifact).toMatchObject({ version: 2, origin: 'human-edit', parent: { version: 1 } })
-    expect(result.artifact.chart?.ops).toEqual(ops)
+    expect(result.artifact).toMatchObject({ version: 2 })
+    await expect(ctx.scienceArtifactStore.getVersion(result.artifact.projectId, result.artifact.versionId))
+      .resolves.toMatchObject({ contentOrigin: 'human-edit', baseVersionId: parent.versionId, baseExplicit: true })
+    const resultChart = await figureStateOf(ctx, result.artifact)
+    expect(resultChart.ops).toEqual(ops)
     expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
   })
 
+  it('omits environment provenance a chained edit target does not itself carry (e.g. a v1-migrated row)', async () => {
+    const { ctx, runtime, session } = await harness('chart-edit-no-environment')
+    const parent = chart(session)
+    const store = ctx.scienceArtifactStore
+    const parentChart = await figureStateOf(ctx, parent)
+    // A version with no environment provenance of its own — the store never
+    // requires one (it is `undefined`-tolerant on every `appendVersion`
+    // call) — is edited here as the CURRENT head; the nearest run-origin
+    // ancestor (`parent`, still the real captured run) remains resolvable
+    // for the actual edit, but `commitStyleEdit` must copy THIS version's
+    // (absent) environment fields onto the appended edit, not the source
+    // run's.
+    const noEnvEdit = await store.appendVersion(parent.projectId, parent.artifactId, {
+      producerSessionId: session.id,
+      data: new TextEncoder().encode('PNG no-environment edit'),
+      mediaType: 'image/png',
+      contentOrigin: 'human-edit',
+      baseVersionId: parent.versionId,
+      figureState: { figureKey: parentChart.figureKey, dpi: parentChart.png.dpi, stateJson: JSON.stringify(parentChart) },
+    })
+    await store.annotateVersion(parent.projectId, noEnvEdit.versionId, { actor: 'human', sessionId: session.id, title: parent.title })
+    session.append('science/artifact-saved', {
+      version: 1,
+      artifact: {
+        artifactId: parent.artifactId, logicalName: parent.logicalName, version: noEnvEdit.ordinal, title: parent.title,
+        projectId: parent.projectId, versionId: noEnvEdit.versionId, sha256: noEnvEdit.sha256, seenAt: Date.now(),
+      },
+    })
+
+    const result = await runtime.applyChartEdit({
+      session, artifactId: parent.artifactId, version: noEnvEdit.ordinal, ops: [titleOp], signal: new AbortController().signal,
+    })
+    await expect(store.getVersion(result.artifact.projectId, result.artifact.versionId)).resolves.toMatchObject({
+      environmentRevision: undefined, environmentFingerprint: undefined,
+    })
+  })
+
   it('replays an unregistered source without publishing a scientific run', async () => {
-    const { runtime, session, root } = await harness('chart-edit-replay', { evictCharts: true })
+    const { ctx, runtime, session, root } = await harness('chart-edit-replay', { evictCharts: true })
     const parent = chart(session)
     const result = await runtime.applyChartEdit({
       session, artifactId: parent.artifactId, version: parent.version, ops: [titleOp], signal: new AbortController().signal,
     })
-    expect(result.artifact).toMatchObject({ version: 2, origin: 'human-edit' })
+    expect(result.artifact).toMatchObject({ version: 2 })
+    await expect(ctx.scienceArtifactStore.getVersion(result.artifact.projectId, result.artifact.versionId))
+      .resolves.toMatchObject({ contentOrigin: 'human-edit' })
     expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
     const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
     expect(readdirSync(sessionScratch.runs).filter(name => name.startsWith('replay-'))).toEqual([])
@@ -203,11 +278,11 @@ describe('ScienceRuntime.applyChartEdit', () => {
 
   for (const cause of ['cancel', 'timeout'] as const) {
     it.each([true, false])(`rejects ${cause} during cold replay (cooperative=%s) and releases the session for another run`, async (trapSigint) => {
-      const { runtime, session, root } = await harness(`chart-replay-${cause}`,
+      const { ctx, runtime, session, root } = await harness(`chart-replay-${cause}`,
         { evictCharts: true })
       const parent = chart(session)
-      if (parent.origin === 'human-edit') throw new Error('expected a run artifact')
-      const scratch = planRunScratch(await planSessionScratch(join(root, 'dsh-home'), session), parent.runId, 'python')
+      const producerRunId = await producerRunIdOf(ctx, parent)
+      const scratch = planRunScratch(await planSessionScratch(join(root, 'dsh-home'), session), producerRunId, 'python')
       writeFileSync(scratch.source, kernelAction({ action: 'sleep', sleepMs: 60_000, trapSigint,
         chartApplyResult: { chart: editExtraction, failedOps: [] } }))
       const controller = new AbortController()
@@ -293,9 +368,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
   it('rejects cumulative overflow and mismatched source provenance', async () => {
     const overflow = await harness('chart-edit-overflow')
     const overflowParent = chart(overflow.session)
-    appendHumanEdit(overflow.session, overflowParent, {
-      chart: { ...overflowParent.chart!, ops: [titleOp] },
-    })
+    await appendHumanEdit(overflow.ctx, overflow.session, overflowParent, { ops: [titleOp] })
     await expect(overflow.runtime.applyChartEdit({
       session: overflow.session, artifactId: overflowParent.artifactId, version: 2,
       ops: Array.from({ length: 100 }, () => titleOp), signal: new AbortController().signal,
@@ -303,9 +376,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
 
     const noSource = await harness('chart-edit-no-source')
     const noSourceParent = chart(noSource.session)
-    appendHumanEdit(noSource.session, noSourceParent, {
-      chart: { ...noSourceParent.chart!, figureKey: 'missing.png' },
-    })
+    await appendHumanEdit(noSource.ctx, noSource.session, noSourceParent, { figureKey: 'missing.png' })
     await expect(noSource.runtime.applyChartEdit({
       session: noSource.session, artifactId: noSourceParent.artifactId, version: 2,
       ops: [titleOp], signal: new AbortController().signal,
@@ -313,9 +384,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
 
     const mismatch = await harness('chart-edit-language-mismatch')
     const mismatchParent = chart(mismatch.session)
-    appendHumanEdit(mismatch.session, mismatchParent, {
-      chart: { ...mismatchParent.chart!, runtime: 'ggplot2' },
-    })
+    await appendHumanEdit(mismatch.ctx, mismatch.session, mismatchParent, { runtime: 'ggplot2' })
     await expect(mismatch.runtime.applyChartEdit({
       session: mismatch.session, artifactId: mismatchParent.artifactId, version: 2,
       ops: [titleOp], signal: new AbortController().signal,
@@ -382,7 +451,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
   })
 
   it('commits partial success and reports the failed request index', async () => {
-    const { runtime, session } = await harness('chart-edit-partial', {
+    const { ctx, runtime, session } = await harness('chart-edit-partial', {
       chartApplyResult: { chart: editExtraction, failedOps: [{ index: 1, reason: 'element_not_found' }] },
     })
     const parent = chart(session)
@@ -390,7 +459,8 @@ describe('ScienceRuntime.applyChartEdit', () => {
       session, artifactId: parent.artifactId, version: parent.version, ops, signal: new AbortController().signal,
     })
     expect(result.failedOps).toEqual([{ index: 1, reason: 'element_not_found' }])
-    expect(result.artifact.chart?.ops).toEqual([titleOp])
+    const resultChart = await figureStateOf(ctx, result.artifact)
+    expect(resultChart.ops).toEqual([titleOp])
   })
 
   it('retires a timed-out kernel and rejects replay when source scratch is gone', async () => {

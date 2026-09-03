@@ -71,17 +71,26 @@ describe('web e2e: project Science file library', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
-    await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'alpha.csv', mediaType: 'text/csv', data: Buffer.from('name,value\nalpha,1\n'),
-      originSessionId: SessionId(SESSION_A), origin: 'auto', title: 'Alpha results',
+    const alpha = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'alpha.csv', kind: 'dataset', mediaType: 'text/csv', data: Buffer.from('name,value\nalpha,1\n'),
+      originSessionId: SessionId(SESSION_A), contentOrigin: 'run-auto',
     })
-    await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'notes.md', mediaType: 'text/markdown', data: Buffer.from('# Notes from A\n'),
-      originSessionId: SessionId(SESSION_A), origin: 'auto', title: 'Research notes',
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, alpha.version.versionId, {
+      actor: 'capture', title: 'Alpha results',
     })
-    await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'beta.json', mediaType: 'application/json', data: Buffer.from('{"source":"B"}'),
-      originSessionId: SessionId(SESSION_B), origin: 'auto', title: 'Beta metrics',
+    const notes = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'notes.md', kind: 'document', mediaType: 'text/markdown', data: Buffer.from('# Notes from A\n'),
+      originSessionId: SessionId(SESSION_A), contentOrigin: 'run-auto',
+    })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, notes.version.versionId, {
+      actor: 'capture', title: 'Research notes',
+    })
+    const beta = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'beta.json', kind: 'document', mediaType: 'application/json', data: Buffer.from('{"source":"B"}'),
+      originSessionId: SessionId(SESSION_B), contentOrigin: 'run-auto',
+    })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, beta.version.versionId, {
+      actor: 'capture', title: 'Beta metrics',
     })
     await writeFile(`${scaffold.workspaceCwd}/seed.csv`, 'label,score\nproject,42\n')
     await seedSession(scaffold, sessionFixture(SESSION_A, 'Source session A'), SESSION_A, 'science')
@@ -132,7 +141,12 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('table', { name: 'alpha.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('alpha', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Provenance', exact: true }).click()
-    expect(await details.getByText('Source session A', { exact: true }).count()).toBe(1)
+    expect(await details.getByText(
+      'This version was produced in a different session (Source session A) — nothing to show here.',
+      { exact: true },
+    ).count()).toBe(1)
+    await details.getByRole('tab', { name: 'Messages', exact: true }).click()
+    expect(await details.getByText('Source session A').count()).toBe(1)
     expect(await details.getByRole('button', { name: 'Back to original conversation', exact: true }).isDisabled()).toBe(true)
     await page.screenshot({ path: SHOT_CROSS_SESSION, fullPage: true })
     await details.getByRole('button', { name: 'Alpha results', exact: true }).click()
@@ -167,14 +181,23 @@ describe('web e2e: project Science file library', () => {
 
   it('maximizes an image from another session and switches file previews directly', async () => {
     const { projectId } = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
-    await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
-      logicalName: 'shared.png', mediaType: 'image/png',
+    const shared = await scaffold.ctx.scienceArtifactStore.createArtifact(projectId, {
+      logicalName: 'shared.png', kind: 'figure', mediaType: 'image/png',
       data: new Uint8Array(await readFile(new URL('./fixtures/chart-references/plot.png', import.meta.url))),
-      originSessionId: SessionId(SESSION_A), origin: 'auto', title: 'Shared chart',
+      originSessionId: SessionId(SESSION_A), contentOrigin: 'run-auto',
+    })
+    await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, shared.version.versionId, {
+      actor: 'capture', title: 'Shared chart',
     })
     await writeFile(`${scaffold.workspaceCwd}/other.csv`, 'label,score\nsecond-file,73\n')
     await page.reload({ waitUntil: 'load' })
-    await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+    // The Details column's open/selected-entry state persists across reload
+    // (dsh.conversation.chat), and `beforeAll` already opened the Science
+    // library once for this session — so it reopens showing the library on
+    // its own. Clicking the sidebar "Artifacts" destination again here would
+    // hit its toggle-closed branch instead (it closes the column when the
+    // library is already the selected entry), collapsing it before the next
+    // assertion ever runs.
     const details = page.locator('[class*="detailsCol"]')
     await details.getByRole('button', { name: 'Open Shared chart, version 1', exact: true }).click()
     await details.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()

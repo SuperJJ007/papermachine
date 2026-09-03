@@ -10,17 +10,15 @@ Artifact identity belongs to the producing conversation: a session's first captu
 
 ## Operations
 
-`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, resolves optional artifact-version inputs through verified attachment reads, materializes them below the reserved `inputs/` directory, appends the complete mapping on `science/run-started`, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. Optional edit baselines assign exact `parent` refs during the post-terminal capture walk, including stale and cross-artifact branches. `commitChart` accepts one successful run started locally in the exact Session, resolves a regular non-symlink PNG inside its artifact directory, persists it through `ctx.attachments`, and appends the next immutable logical artifact version with `origin: 'model'` without publishing a Host path. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
+`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, resolves optional artifact-version inputs through verified attachment reads, materializes them below the reserved `inputs/` directory, appends the complete mapping on `science/run-started`, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. Optional edit baselines name an exact declared content baseline (`base_version_id`/`base_explicit` on the appended store row), never latest-defaulted, including stale and cross-artifact branches. The project artifact store's write transaction is the sole authority for a version's provenance — `contentOrigin`, the full producer group, `baseVersionId`/`baseExplicit`, and `createdAt`; the Session event carries only `versionId`/`sha256` and the title/caption presentation snapshot the model or user saw when it committed. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
 
-An `image/png` artifact version may carry `ScienceChartState`: its `runtime`, capture-relative `figureKey`, saved pixel dimensions and DPI, bounded `elements`, cumulative `ops`, `hitmap`, and `hitmapStatus`. The Python and R kernels produce this projection only for captured paths registered through matplotlib savefig or ggplot2 ggsave. A missing or unavailable chart projection never invalidates the PNG; `hitmapStatus: 'unavailable'` requires an empty hit map while preserving any extracted elements. Chart state belongs to the Session event and client projection, while the project artifact store retains the PNG bytes and ordinary version metadata.
+An `image/png` artifact version may carry `ScienceChartState` in the store's `figure_state` side table: its `runtime`, capture-relative `figureKey`, saved pixel dimensions and DPI, bounded `elements`, cumulative `ops`, `hitmap`, and `hitmapStatus`. The Python and R kernels produce this projection only for captured paths registered through matplotlib savefig or ggplot2 ggsave. A missing or unavailable chart projection never invalidates the PNG; `hitmapStatus: 'unavailable'` requires an empty hit map while preserving any extracted elements.
 
-`applyChartEdit` applies the closed `set_title`, `set_subtitle`, `set_axis_label`, `set_legend_position`, `toggle_grid`, and `set_font` operations to an exact current addressable version and appends a child `origin: 'human-edit'` PNG. It uses the live figure when registered; otherwise it privately replays the source run, exact materialized inputs, and prior operations without appending run events. Successful operations accumulate on the new chart state, partial target failures return as indexed `failedOps`, and stale, unaddressable, invalid, or wholly unresolved requests retain distinct stable error codes. A font operation checks exact availability without enumerating installed families, reports `font_not_found` without mutating the figure when resolution fails, and never changes matplotlib's global `rcParams`. The `scienceEdits.applyChartOps` Remote translates the chart-specific Runtime errors for browser clients. `get_science_state` and artifact receipts expose only each operation name and element target plus the edit count, never operation values. Element references carry id, kind, axes, label, and a bounded current-value summary; the Host requires every field to match the exact addressed chart catalog entry.
+`applyChartEdit` applies the closed `set_title`, `set_subtitle`, `set_axis_label`, `set_legend_position`, `toggle_grid`, and `set_font` operations to an exact current addressable version and appends a child `content_origin: 'human-edit'` PNG. It uses the live figure when registered; otherwise it privately replays the source run, exact materialized inputs, and prior operations without appending run events. Successful operations accumulate on the new chart state, partial target failures return as indexed `failedOps`, and stale, unaddressable, invalid, or wholly unresolved requests retain distinct stable error codes. A font operation checks exact availability without enumerating installed families, reports `font_not_found` without mutating the figure when resolution fails, and never changes matplotlib's global `rcParams`. The `scienceEdits.applyChartOps` Remote translates the chart-specific Runtime errors for browser clients. `get_science_state` and artifact receipts expose only `contentOrigin` and whether the version has been curated, never operation names, element targets, or operation values — those live only in the store's `figure_state` row. Element references carry id, kind, axes, label, and a bounded current-value summary; the Host requires every field to match the exact addressed chart catalog entry.
 
 A single-axes figure with no figure-level title (`fig.suptitle()`/no ggplot2 equivalent) extracts its one axes title as `kind: 'title'` in both runtimes; matplotlib keeps it `kind: 'subtitle'` only when a suptitle exists or the figure has more than one axes. `set_legend_position`'s shared enum maps straight through to matplotlib's own `loc`, but ggplot2 4's `theme(legend.position = ...)` has no matching corner/edge vocabulary — an unmapped string silently drops the legend rather than erroring — so the ggplot2 adapter maps each value deterministically to `"right"` or to `"inside"` plus a normalized coordinate ([full table](../../packages/science/science-runtime/README.md)); an unmapped `position` fails the operation instead.
 
-The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history with exact artifact-version inputs when recorded, artifact attachment references with optional exact parent identities, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures. The strict fold and pre-commit invariant require every recorded parent and input to resolve to an earlier committed artifact version; self-parenting and terminal rewrites of start-owned inputs fail loud.
-
-A run-produced artifact version's client projection also carries `turn`: the authorizing tool call's agent turn, resolved from the fold's own `tool/call` facts (`toolCallTurnsOf`) rather than reconstructed by a client from raw session events; a human-edit version has no authorizing tool call and so no `turn`. `turn` counts per producing session, so the viewer folds a same-turn intermediate draft — a version superseded by a later, non-human-edit version of the same artifact sharing both `turn` and `producerSessionId` — out of its version stepper's default walk, and shows an artifact's latest-version curated title (not the exact open version's own title) everywhere it names an artifact outside a version-scoped detail; both are client-side presentation over this data, detailed in [`dsh-client-ui-science`](../../packages/client/ui-science).
+The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history with exact artifact-version inputs when recorded, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures. An artifact version's client projection carries only its identity, the title/caption presentation snapshot as committed, `versionId`, `sha256`, and `seenAt` — content origin, producer, and declared baseline are project artifact store facts (`content_origin`, the producer group, `base_version_id`/`base_explicit`), not session-log facts, and are read from the store rather than replayed from the fold. The strict fold and pre-commit invariant require every recorded artifact-input reference to resolve to an earlier committed artifact version; a declared baseline's own validity is a store write-time concern (a foreign-key reference plus the call-site checks in `dsh-science-runtime`), not a fold-time one.
 
 Every probe and run uses direct argv, `environmentBase: 'empty'`, a fixed allowlist, owned cwd, and full `workspace-write` confinement. Python uses frozen isolated UTF-8 flags. R version discovery uses standalone `Rscript --version`; UTF-8 probes and runs use `--vanilla --encoding=UTF-8`. File-write confinement is not confidentiality: it does not isolate reads, network, syscalls, or scientific correctness.
 
@@ -49,7 +47,7 @@ openProject(workspacePath: string): Promise<OpenedProject>
 /**
  * Create a new artifact and its first version.
  * @param projectId - the owning project.
- * @param input - the first version's bytes, media type, origin, and metadata.
+ * @param input - the first version's bytes, kind, provenance, and optional explicit baseline.
  * @returns the created artifact and its first version.
  */
 createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }>
@@ -59,17 +57,17 @@ createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ arti
  * other concurrent append to the same artifact.
  * @param projectId - the owning project.
  * @param artifactId - the artifact to append to.
- * @param input - the new version's bytes, media type, origin, and metadata.
+ * @param input - the new version's bytes, provenance, and optional explicit baseline.
  * @returns the appended version.
  */
 appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord>
 
 /**
- * Apply a metadata-only patch to one version in place.
+ * Append one metadata edit onto a version.
  * @param projectId - the owning project.
- * @param versionId - the version to curate.
- * @param patch - fields to overwrite; an omitted field keeps its current value.
- * @returns the updated version.
+ * @param versionId - the version to annotate.
+ * @param patch - the edit's author and the fields to change.
+ * @returns the version, reflecting the newly appended annotation.
  */
 annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord>
 
@@ -113,12 +111,82 @@ listArtifacts(projectId: ProjectId): Promise<readonly ArtifactRecord[]>
 listVersions(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly VersionRecord[]>
 
 /**
+ * List one artifact's active (non-removed) notes, oldest first.
+ * @param projectId - the owning project.
+ * @param artifactId - the artifact whose notes to list.
+ * @returns every note that has not been removed.
+ */
+listNotes(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly ArtifactNoteRecord[]>
+
+/**
+ * Add a new note.
+ * @param projectId - the owning project.
+ * @param input - the artifact (and optional version) to attach the note to, its text, and its author.
+ * @returns the created note.
+ */
+putNote(projectId: ProjectId, input: PutNoteInput): Promise<ArtifactNoteRecord>
+
+/**
+ * Soft-delete a note.
+ * @param projectId - the owning project.
+ * @param noteId - the note to remove.
+ */
+removeNote(projectId: ProjectId, noteId: NoteId): Promise<void>
+
+/**
+ * Look up one version's live-figure-object state.
+ * @param projectId - the owning project.
+ * @param versionId - the version whose figure state to fetch.
+ * @returns the figure state, or `undefined` when this version carries none.
+ */
+getFigureState(projectId: ProjectId, versionId: VersionId): Promise<FigureStateRecord | undefined>
+
+/**
+ * Apply a reconciliation-status patch to one version.
+ * @param projectId - the owning project.
+ * @param versionId - the version whose health to update.
+ * @param patch - fields to overwrite; an omitted field keeps its current value.
+ * @returns the updated health row.
+ */
+setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealthPatch): Promise<VersionHealthRecord>
+
+/**
  * Read one version's bytes by content address.
  * @param projectId - the owning project.
  * @param sha256 - the digest from an already-resolved version row.
  * @returns the verified bytes.
  */
 readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array>
+
+/**
+ * Reconcile one project's store against session-log events a caller has
+ * already read and folded — see the package README's Reconciliation
+ * section for the seven-case table this decides. This package never reads
+ * session logs itself; `dsh-science-runtime` reads them (bounded by its
+ * own `reconcileMaxSessions` Config) and folds duplicate events per
+ * `versionId` (last write wins) before calling this. Never throws for one
+ * bad item — see `ReconcileResult.errors` — and never writes a session
+ * log; the store is the sole write target.
+ * @param projectId - the project to reconcile.
+ * @param events - every `science/artifact-saved` event the caller read from
+ * this project's session logs, folded per `versionId`.
+ * @param eventSetComplete - whether the caller read every relevant session
+ * log and event; when false, an absent event cannot mark or clear orphan health.
+ * @param cursor - prior bounded-walk progress over this stable event set.
+ * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
+ */
+reconcileProject( projectId: ProjectId, events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>, eventSetComplete: boolean, cursor?: ReconcileCursor, ): Promise<ReconcileResult>
+
+/**
+ * Read project-wide reconciliation health — the read interface a Host
+ * BFF (`dsh-api-proxy`) surfaces to a client's Files panel: aggregate
+ * `orphan`/`reconstructed`/`missingContent` counts plus the per-version
+ * list backing them. A pure read of whatever the last `reconcileProject`
+ * call recorded; it never itself compares the store against a session log.
+ * @param projectId - the owning project.
+ * @returns aggregate counts and the unhealthy version list, most recently checked first.
+ */
+getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary>
 
 /**
  * Permanently delete a project's entire store. The one cascade boundary:
@@ -139,12 +207,14 @@ Remote service admitting browser edit gestures into the addressed live agent.
 ```ts cordis-catalog
 /**
  * Validate exact current artifact selections and queue one structured edit
- * message. A region target's raster is read back from the project artifact
- * store and admitted as an ordinary session message attachment, so the
- * model-visible image stays reconstructable from the session log alone; an
- * element target must match one addressable chart entry's id, kind, axes,
- * label, and current-value summary, and never reads the store or mints an
- * attachment.
+ * message. Media type and live-figure-object state — the store's, since
+ * the T1/T2 artifact-authority migration — gate each target: a region
+ * target's raster is read back from the project artifact store and
+ * admitted as an ordinary session message attachment, so the model-visible
+ * image stays reconstructable from the session log alone; an element
+ * target must match one addressable chart entry's id, kind, axes, label,
+ * and current-value summary, read from the store's `figure_state` row and
+ * never minting an attachment.
  * @param agent - exact live agent resolved by the Remote lookup policy.
  * @param request - selected versions, targets, and shared user instruction.
  * @returns durable-inbox admission receipt.
@@ -186,6 +256,17 @@ Remote service admitting browser edit gestures into the addressed live agent.
  * @returns acceptance receipt after the removal event commits.
  */
 @Remote('removeArtifactNote') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt
+
+/**
+ * Duplicate one exact committed artifact version into a brand-new logical
+ * artifact in the same project. A viewer-only operation — never exposed
+ * as a model tool.
+ * @param agent - Agent whose session owns the new artifact's origin.
+ * @param request - Store version id to duplicate and the new logical name.
+ * @param signal - Client-owned cancellation for the Runtime operation.
+ * @returns the new artifact's identity and first version.
+ */
+@Remote('saveArtifactAs') async saveArtifactAs( agent: Agent, request: ScienceSaveArtifactAsRequest, signal: AbortSignal, ): Promise<ScienceSaveArtifactAsReceipt>
 ```
 
 Types: [Agent](core.md)
@@ -251,19 +332,41 @@ async previewChartEdit(request: ScienceChartEditRequest): Promise<ScienceChartPr
 
 /**
  * Re-commit an existing artifact version's exact store content reference
- * with a curated title and caption: metadata-only, so it supersedes the
- * version it names rather than opening a new one whose bytes would repeat
- * their predecessor's. The store row's metadata is curated in place first
- * (`annotateVersion`), then the superseding event commits; a vetoed append
- * after the store update leaves the store curated with no matching event —
- * accepted metadata decay, resolved by the fold's own value staying the
- * projection authority. A committed event is never rolled back because a
- * later step fails; there is no later step here that can fail after the
- * append.
+ * with a curated title and caption: metadata-only, appending one new
+ * `version_annotations` row (`annotateVersion`) rather than opening a new
+ * version whose bytes would repeat their predecessor's. The store's
+ * annotation write is the sole authority for this metadata edit's own
+ * provenance (`actor: 'model'`, `sessionId`, `toolCallId`,
+ * `requestHeaderSeq`) — this operation never rebuilds a full version value
+ * and never lets the curating call's identity stand in for the content's
+ * own producer. A vetoed append after the store update leaves the store
+ * curated with no matching event — accepted metadata decay, resolved by
+ * the fold's own value staying the projection authority. A committed
+ * event is never rolled back because a later step fails; there is no
+ * later step here that can fail after the append.
  * @param request - Exact live Session, target logical artifact (and optional version), title/caption, and cancellation.
  * @returns The durable curated version this operation committed.
  */
 async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
+
+/**
+ * Duplicate one existing artifact version into a brand-new logical
+ * artifact in the same project. Content-addressed bytes are reused (the
+ * store's blob admission is idempotent by digest, so re-admitting the
+ * source's own bytes never duplicates them on disk); provenance is a
+ * fresh fact this session originates, not a copy of the source's own
+ * producer — `baseVersionId` names the source explicitly instead. A
+ * viewer operation: no authorizing tool call, so `session.append` records
+ * only the store reference and the presentation snapshot the store just
+ * committed.
+ * @param request - Exact Session, the store version to duplicate, and the new logical name.
+ * @returns The durable new artifact version this operation appended.
+ * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when
+ *   `sourceVersionId` does not identify a committed version in the
+ *   session's owning project, or (`ARTIFACT_LOGICAL_NAME_CONFLICT`) when
+ *   `newLogicalName` is already used in that project.
+ */
+async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion>
 ```
 
 Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts)

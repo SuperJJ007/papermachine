@@ -1,0 +1,209 @@
+[
+  {
+    "logicalName": "edited.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-run-call-2",
+      "requestHeaderSeq": 9,
+      "turn": 1
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "meta.json",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceRunId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-idle-0",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "idle-kernel-0",
+      "requestHeaderSeq": 4,
+      "turn": 1
+    },
+    "baseExplicit": false,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "application/json",
+    "byteCount": 12
+  },
+  {
+    "logicalName": "notes.md",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceRunId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-idle-0",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "idle-kernel-0",
+      "requestHeaderSeq": 4,
+      "turn": 1
+    },
+    "baseExplicit": false,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "text/markdown",
+    "byteCount": 37
+  },
+  {
+    "logicalName": "plot-review-copy.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "human-edit",
+    "producer": {
+      "sessionId": "science-tools-snapshot"
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "plot.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-run-call",
+      "requestHeaderSeq": 9,
+      "turn": 1
+    },
+    "baseExplicit": false,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "plot.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 2,
+    "contentOrigin": "human-edit",
+    "producer": {
+      "sessionId": "science-tools-snapshot"
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "plot.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 3,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-continue-call",
+      "requestHeaderSeq": 9,
+      "turn": 6
+    },
+    "baseExplicit": false,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "region-edit-1.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-region-edit-call",
+      "requestHeaderSeq": 9,
+      "turn": 5
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "region-edit-2.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-region-edit-call",
+      "requestHeaderSeq": 9,
+      "turn": 5
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "region-edit.png",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceChartId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-tools-snapshot",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "science-selected-edit-call",
+      "requestHeaderSeq": 9,
+      "turn": 4
+    },
+    "baseVersionId": "{{scienceRunId}}",
+    "baseExplicit": true,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "image/png",
+    "byteCount": 68
+  },
+  {
+    "logicalName": "summary.csv",
+    "versionId": "{{scienceRunId}}",
+    "artifactId": "{{scienceRunId}}",
+    "ordinal": 1,
+    "contentOrigin": "run-auto",
+    "producer": {
+      "sessionId": "science-idle-0",
+      "runId": "{{scienceRunId}}",
+      "toolCallId": "idle-kernel-0",
+      "requestHeaderSeq": 4,
+      "turn": 1
+    },
+    "baseExplicit": false,
+    "createdAt": 0,
+    "sha256": "<sha256>",
+    "mediaType": "text/csv",
+    "byteCount": 27
+  }
+]

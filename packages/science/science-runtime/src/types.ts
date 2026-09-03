@@ -16,6 +16,7 @@ import type {
   ScienceRunStarted,
   ScienceRunArtifactInput,
   ScienceRunTerminal,
+  ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
 import type { CaptureRunArtifactsResult } from './capture.ts'
 import type { CallId } from '@deepseek-ai/dsh-llm'
@@ -52,6 +53,15 @@ export type ScienceRuntimeErrorCode =
    * viewer's own style editor.
    */
   | 'ARTIFACT_NOT_CURATABLE'
+  /**
+   * `annotate_artifact`'s `toolCallId` already authorized a prior artifact
+   * annotation: one authorizing model call cannot back two curation facts.
+   */
+  | 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED'
+  /** `saveArtifactAs` named a `sourceVersionId` that does not identify a committed version in the session's owning project. */
+  | 'ARTIFACT_VERSION_NOT_FOUND'
+  /** `saveArtifactAs` named a `newLogicalName` an artifact in the owning project already uses. */
+  | 'ARTIFACT_LOGICAL_NAME_CONFLICT'
   /** A requested run input does not identify a committed artifact version. */
   | 'INPUT_NOT_FOUND'
   /** A requested run input path is unsafe or collides with another input path. */
@@ -210,6 +220,22 @@ export interface AnnotateScienceArtifactRequest {
   readonly signal: AbortSignal
 }
 
+/**
+ * Inputs for duplicating one existing artifact version into a brand-new
+ * logical artifact within the same project. A viewer-driven operation, not
+ * a model tool: no `toolCallId`/`requestHeaderSeq` provenance.
+ */
+export interface SaveScienceArtifactAsRequest {
+  /** Exact live Science Session that will own the new artifact's origin. */
+  readonly session: Session
+  /** Store version to duplicate; may name any version this project's store holds, not only ones this session's own projection knows. */
+  readonly sourceVersionId: ScienceVersionId
+  /** Logical name for the new artifact; must be unused in the owning project. */
+  readonly newLogicalName: string
+  /** Caller-owned cancellation signal. */
+  readonly signal: AbortSignal
+}
+
 /** Live handle for a published Science run. */
 export interface ScienceRunHandle {
   /** Session-local run identifier. */
@@ -293,6 +319,16 @@ export interface ScienceRuntimeService {
    * @returns The durable curated version this operation appended.
    */
   annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<ScienceArtifactVersion>
+  /**
+   * Duplicate one existing artifact version into a brand-new logical
+   * artifact in the same project: a fresh `artifactId`, ordinal 1, an
+   * explicit declared baseline naming the source version, the source's own
+   * content origin, and reused (never re-copied) content-addressed bytes.
+   * A viewer operation, never a model tool.
+   * @param request - Exact Session, the store version to duplicate, and the new logical name.
+   * @returns The durable new artifact version this operation appended.
+   */
+  saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion>
   /**
    * Install packages into the applied environment's configured prefix for
    * one language through micromamba, then, only on success, re-observe the

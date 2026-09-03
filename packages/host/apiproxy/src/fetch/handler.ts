@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { ApiProxy, MuxFrame, HostFrame } from '../api/index.ts'
-import { sessionLogQuerySchema } from '../api/downloads.schema.ts'
+import { scienceArtifactDownloadPathSchema, sessionLogQuerySchema } from '../api/downloads.schema.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerRequest, ServerResponse } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
@@ -27,7 +27,9 @@ import {
   sessionRenameRequestSchema,
   sessionSearchRequestSchema,
   sessionScienceArtifactRequestSchema,
+  sessionsScienceChartStateRequestSchema,
   sessionsScienceLibraryRequestSchema,
+  sessionsScienceVersionsRequestSchema,
   sessionsWorkspaceFileRequestSchema,
   sessionsWorkspaceFilesRequestSchema,
   sessionSelectModelRequestSchema,
@@ -106,6 +108,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.textAttachment': { schema: sessionTextAttachmentRequestSchema, invoke: (api, r) => api.sessions.textAttachment(r) },
   'session.scienceArtifact': { schema: sessionScienceArtifactRequestSchema, invoke: (api, r) => api.sessions.scienceArtifact(r) },
   'sessions.scienceLibrary': { schema: sessionsScienceLibraryRequestSchema, invoke: (api, r) => api.sessions.scienceLibrary(r) },
+  'sessions.scienceVersions': { schema: sessionsScienceVersionsRequestSchema, invoke: (api, r) => api.sessions.scienceVersions(r) },
+  'sessions.scienceChartState': { schema: sessionsScienceChartStateRequestSchema, invoke: (api, r) => api.sessions.scienceChartState(r) },
   'sessions.workspaceFiles': { schema: sessionsWorkspaceFilesRequestSchema, invoke: (api, r) => api.sessions.workspaceFiles(r) },
   'sessions.workspaceFile': { schema: sessionsWorkspaceFileRequestSchema, invoke: (api, r) => api.sessions.workspaceFile(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
@@ -275,6 +279,29 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
           return new Response('missing or invalid sessionId query parameter', { status: 400 })
         }
         const response = await api.downloads.sessionLog(parsed.data, req.signal)
+        if (req.method === 'GET') return response
+        await response.body?.cancel()
+        return new Response(null, { status: response.status, headers: response.headers })
+      }
+      // `/api/science/artifact/:sessionId/:versionId`: opaque path segments,
+      // not a query string, since the client always knows both ids up front
+      // (unlike session.export's optional includeDescendants flag). The
+      // regex's two capturing groups are non-optional, so a match guarantees
+      // both segments are non-empty; `.parse()` (not `.safeParse()`) reflects
+      // that this domain schema's `.min(1)` brand cast cannot actually reject
+      // a matched segment, so there is no separate 400 branch to answer.
+      // HEAD is routed the same as GET (mirroring session.export just above):
+      // the client's download flow HEAD-checks this exact URL to classify a
+      // 410/409/other failure before ever creating a save anchor.
+      const scienceArtifactMatch = req.method === 'GET' || req.method === 'HEAD'
+        ? /^\/api\/science\/artifact\/([^/]+)\/([^/]+)$/u.exec(path)
+        : null
+      if (scienceArtifactMatch !== null) {
+        const parsed = scienceArtifactDownloadPathSchema.parse({
+          sessionId: decodeURIComponent(scienceArtifactMatch[1] as string),
+          versionId: decodeURIComponent(scienceArtifactMatch[2] as string),
+        })
+        const response = await api.downloads.scienceArtifact(parsed, req.signal)
         if (req.method === 'GET') return response
         await response.body?.cancel()
         return new Response(null, { status: response.status, headers: response.headers })

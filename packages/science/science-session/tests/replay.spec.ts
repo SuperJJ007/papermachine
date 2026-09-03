@@ -5,7 +5,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ScienceSessionDomain from '../src/index.ts'
-import { foldScience, replayScience, toClientScienceProjection, toolCallTurnsOf } from '../src/index.ts'
+import { replayScience, toClientScienceProjection } from '../src/index.ts'
 import { SCIENCE_PROJECTION_STATE_VERSION } from '../src/ids.ts'
 import {
   applyScienceProjectionState,
@@ -26,9 +26,8 @@ interface ScienceCheckpointState {
   readonly witness: readonly { readonly seq: number }[]
 }
 
-/** `toClientScienceProjection`, deriving `toolCallTurns` from the same events. */
 function clientOf(events: readonly SessionEvent[]): ReturnType<typeof toClientScienceProjection> {
-  return toClientScienceProjection(replayScience(events), toolCallTurnsOf(foldScience(events)))
+  return toClientScienceProjection(replayScience(events))
 }
 
 async function harness(): Promise<Context> {

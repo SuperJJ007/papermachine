@@ -7,7 +7,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, installFailLoud, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { runFixtureTurn } from '@deepseek-ai/dsh-loader-smoke'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import { foldScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
+import {
+  decodeScienceChartState, foldScience, ScienceEnvironmentProfileId,
+  type ScienceProjectId, type ScienceVersionId,
+} from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-tool-science'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 
@@ -66,7 +69,14 @@ try {
   if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
   const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'plot.png')
   if (chart === undefined) throw new Error(`${NAME}: first turn produced no plot.png artifact`)
-  if (chart.chart === undefined || chart.chart.ops.length !== 0) {
+  const readChartState = async (
+    projectId: ScienceProjectId, versionId: ScienceVersionId,
+  ) => {
+    const figureState = await ctx!.scienceArtifactStore.getFigureState(projectId, versionId)
+    return figureState === undefined ? undefined : decodeScienceChartState(JSON.parse(figureState.stateJson))
+  }
+  const chartState = await readChartState(chart.projectId, chart.versionId)
+  if (chartState === undefined || chartState.ops.length !== 0) {
     throw new Error(`${NAME}: first-turn plot.png did not preserve its initial chart state`)
   }
   const directReceipt = await ctx.scienceEdits.applyChartOps(agent, {
@@ -81,7 +91,10 @@ try {
   }, new AbortController().signal)
   const directChart = foldScience(agent.session.events).artifacts.find(artifact =>
     artifact.artifactId === directReceipt.artifactId && artifact.version === directReceipt.version)
-  if (directChart?.origin !== 'human-edit' || directChart.chart?.ops.length !== 4) {
+  if (directChart === undefined) throw new Error(`${NAME}: direct chart edit committed no artifact`)
+  const directVersion = await ctx.scienceArtifactStore.getVersion(directChart.projectId, directChart.versionId)
+  const directChartState = await readChartState(directChart.projectId, directChart.versionId)
+  if (directVersion?.contentOrigin !== 'human-edit' || directChartState?.ops.length !== 4) {
     throw new Error(`${NAME}: direct chart edit did not preserve its four cumulative operations`)
   }
   const directEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'
@@ -169,7 +182,113 @@ try {
   } finally {
     disposeEditListener()
   }
+
+  // T5 six-path acceptance, path 3 ("continue"): a plain second run
+  // overwriting `plot.png` — no `edit_of`, so the store's chain-continuation
+  // default applies (`baseVersionId` stays undefined) rather than the
+  // explicit baseline `edit_of`/`saveArtifactAs` below use. Placed after the
+  // region edits above: `scienceEdits.submit`'s targets must cite the
+  // artifact's currently committed version, so a plain continuation run
+  // earlier would have made those targets' hardcoded `directChart.version`
+  // stale before they ever ran.
+  await runFixtureTurn(ctx, {
+    task: 'Continue the plotted analysis with a fresh run.',
+    onEvent: (sessionId: string, event: SessionEvent) => {
+      process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
+    },
+  })
+  const continued = foldScience(agent.session.events).artifacts
+    .findLast(artifact => artifact.artifactId === chart.artifactId)
+  if (continued === undefined || continued.version <= chart.version) {
+    throw new Error(`${NAME}: the continuation run did not commit a fresh plot.png version`)
+  }
+
+  // T5 six-path acceptance, path 5 ("save as"): duplicate the direct-edited
+  // version into a brand-new logical artifact. A viewer operation — no
+  // authorizing tool call — so this reads `agent.session.events` for the
+  // `science/artifact-saved` `saveArtifactAs` itself appended.
+  const savedAs = await ctx.scienceRuntime.saveArtifactAs({
+    session: agent.session,
+    sourceVersionId: directChart.versionId,
+    newLogicalName: 'plot-review-copy.png',
+    signal: new AbortController().signal,
+  })
+  const saveAsEvent = agent.session.events.findLast(event => event.type === 'science/artifact-saved'
+    && event.data.artifact.artifactId === savedAs.artifactId)
+  if (saveAsEvent === undefined) throw new Error(`${NAME}: save-as committed no artifact event`)
+  process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event: saveAsEvent })}\n`)
+
   await ctx.sessions.flush(agent.session)
+
+  // T5 six-path acceptance, path 6 ("restart, replay"): dispose the whole
+  // Context and boot a fresh one against the same `DSH_SCIENCE_SNAPSHOT_ROOT`
+  // (so the same on-disk `dshHome`/store), then resume the persisted session
+  // from durable storage. Everything from here on is read-only replay —
+  // proving the Session log and the project artifact store still agree on
+  // every version's provenance after a cold restart, not merely within one
+  // live process.
+  await ctx.fiber.dispose()
+  ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  const resumed = await ctx.agents.resume({
+    resumeSessionId: sessionId,
+    agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
+  })
+  const resumedProjection = foldScience(resumed.agent.session.events)
+  for (const [label, before] of [
+    ['plot.png v1', chart], ['plot.png (continued)', continued],
+    ['directly edited chart', directChart], ['saved-as copy', savedAs],
+  ] as const) {
+    const after = resumedProjection.artifacts.find(artifact => artifact.versionId === before.versionId)
+    if (after === undefined || after.sha256 !== before.sha256) {
+      throw new Error(`${NAME}: replayed session lost or diverged on ${label} after restart`)
+    }
+  }
+
+  // Fourth expected file: the project artifact store's own version records
+  // (the sole authority for provenance — see `science-session`'s module
+  // doc), sorted by `(logicalName, ordinal)`, dumped after the restart so
+  // this proves agreement survives a cold reload, not just the live run.
+  const projectId = chart.projectId
+  const storeArtifacts = await ctx.scienceArtifactStore.listArtifacts(projectId)
+  const sourceAgreement = (await Promise.all(storeArtifacts.map(async (artifact) => {
+    const versions = await ctx!.scienceArtifactStore.listVersions(projectId, artifact.artifactId)
+    return versions.map(version => ({
+      logicalName: artifact.logicalName,
+      versionId: version.versionId,
+      artifactId: version.artifactId,
+      ordinal: version.ordinal,
+      contentOrigin: version.contentOrigin,
+      producer: {
+        sessionId: version.producerSessionId,
+        runId: version.producerRunId,
+        toolCallId: version.producerToolCallId,
+        requestHeaderSeq: version.producerRequestHeaderSeq,
+        turn: version.producerTurn,
+      },
+      baseVersionId: version.baseVersionId,
+      baseExplicit: version.baseExplicit,
+      createdAt: version.createdAt,
+      sha256: version.sha256,
+      mediaType: version.mediaType,
+      byteCount: version.byteCount,
+    }))
+  }))).flat().sort((a, b) => a.logicalName === b.logicalName ? a.ordinal - b.ordinal : a.logicalName.localeCompare(b.logicalName))
+
+  // The event side of the agreement: every `science/artifact-saved` this
+  // resumed replay still carries names a `versionId` the store dump above
+  // also names, with a matching `sha256` — proving the session's own
+  // content-identity fact was never a second copy that could drift.
+  const sessionSha256ByVersionId = new Map(resumed.agent.session.events
+    .filter(event => event.type === 'science/artifact-saved')
+    .map(event => [event.data.artifact.versionId, event.data.artifact.sha256] as const))
+  for (const record of sourceAgreement) {
+    const sessionSha256 = sessionSha256ByVersionId.get(record.versionId)
+    if (sessionSha256 !== undefined && sessionSha256 !== record.sha256) {
+      throw new Error(`${NAME}: session and store disagree on sha256 for version ${record.versionId}`)
+    }
+  }
+  await writeFile(join(process.cwd(), 'science-source-agreement.json'), JSON.stringify(sourceAgreement, undefined, 2))
+
   process.stdout.write(`${JSON.stringify({ ...result, output: editOutput })}\n`)
 } catch (error: unknown) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)

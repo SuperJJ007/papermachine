@@ -1,10 +1,15 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import ScienceArtifactStore from '../src/index.ts'
+import { storeRootForProject } from '../src/registry.ts'
+import { ProjectId } from '../src/ids.ts'
+import type { BackfillProvenanceHook } from '../src/schema.ts'
 
 const dirs: string[] = []
 
@@ -31,23 +36,22 @@ describe('ScienceArtifactStore Cordis service', () => {
     const sessionId = 'session-1' as SessionId
     const { artifact, version } = await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
       logicalName: 'chart.png',
+      kind: 'figure',
       originSessionId: sessionId,
       data: new TextEncoder().encode('chart bytes'),
       mediaType: 'image/png',
-      origin: 'auto',
-      title: 'Chart',
+      contentOrigin: 'run-auto',
     })
 
     const appended = await ctx.scienceArtifactStore.appendVersion(opened.projectId, artifact.artifactId, {
       producerSessionId: sessionId,
       data: new TextEncoder().encode('chart bytes v2'),
       mediaType: 'image/png',
-      origin: 'auto',
+      contentOrigin: 'run-auto',
     })
 
     const latest = await ctx.scienceArtifactStore.getLatestVersion(opened.projectId, artifact.artifactId)
     expect(latest?.versionId).toBe(appended.versionId)
-    expect(latest?.parentVersionId).toBe(version.versionId)
 
     const bytes = await ctx.scienceArtifactStore.readBlob(opened.projectId, appended.sha256)
     expect(new TextDecoder().decode(bytes)).toBe('chart bytes v2')
@@ -59,11 +63,85 @@ describe('ScienceArtifactStore Cordis service', () => {
     const versions = await ctx.scienceArtifactStore.listVersions(opened.projectId, artifact.artifactId)
     expect(versions.map(v => v.versionId)).toEqual([version.versionId, appended.versionId])
 
-    const annotated = await ctx.scienceArtifactStore.annotateVersion(opened.projectId, appended.versionId, { title: 'Curated' })
+    const annotated = await ctx.scienceArtifactStore.annotateVersion(opened.projectId, appended.versionId, { actor: 'human', title: 'Curated' })
     expect(annotated.title).toBe('Curated')
+
+    const note = await ctx.scienceArtifactStore.putNote(opened.projectId, { artifactId: artifact.artifactId, text: 'note text' })
+    await expect(ctx.scienceArtifactStore.listNotes(opened.projectId, artifact.artifactId)).resolves.toEqual([note])
+    await ctx.scienceArtifactStore.removeNote(opened.projectId, note.noteId)
+    await expect(ctx.scienceArtifactStore.listNotes(opened.projectId, artifact.artifactId)).resolves.toEqual([])
+
+    const health = await ctx.scienceArtifactStore.setVersionHealth(opened.projectId, appended.versionId, { orphan: true })
+    expect(health.orphan).toBe(true)
+
+    await expect(ctx.scienceArtifactStore.getFigureState(opened.projectId, appended.versionId)).resolves.toBeUndefined()
 
     await ctx.scienceArtifactStore.deleteProject(opened.projectId)
     await expect(ctx.scienceArtifactStore.getArtifact(opened.projectId, artifact.artifactId)).resolves.toBeUndefined()
+
+    await ctx.fiber.dispose()
+  })
+
+  it('reconciles a project through the Cordis service and reads its health back through getReconciliationSummary', async () => {
+    const home = await makeDir('home')
+    const workspace = await makeDir('workspace')
+    const ctx = new Context()
+    await ctx.plugin(ScienceArtifactStore, { dshHome: home, reconcileMaxVersions: 100 })
+    const opened = await ctx.scienceArtifactStore.openProject(workspace)
+    const sessionId = 'session-1' as SessionId
+    const { version } = await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'orphaned.png', kind: 'figure', originSessionId: sessionId,
+      data: new TextEncoder().encode('bytes'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+
+    const emptySummaryBefore = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+    expect(emptySummaryBefore).toEqual({ orphanCount: 0, reconstructedCount: 0, missingContentCount: 0, items: [] })
+
+    const result = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map(), true)
+    expect(result.outcomes).toEqual([{ versionId: version.versionId, kind: 'orphan' }])
+    expect(result.errors).toEqual([])
+
+    const summary = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+    expect(summary.orphanCount).toBe(1)
+    expect(summary.items).toHaveLength(1)
+    expect(summary.items[0]?.versionId).toBe(version.versionId)
+
+    await ctx.fiber.dispose()
+  })
+
+  it('resumes a bounded reconciliation walk through the Cordis service using a prior call\'s returned cursor', async () => {
+    const home = await makeDir('home')
+    const workspace = await makeDir('workspace')
+    const ctx = new Context()
+    // maxVersions: 1 forces the first call to truncate after one of the two
+    // orphaned versions below, returning a cursor `reconcileProject` must
+    // forward on the caller's next call — the wrapper's own `cursor` spread
+    // (`store.ts`'s `reconcileProject`), not just `runReconciliation`'s.
+    await ctx.plugin(ScienceArtifactStore, { dshHome: home, reconcileMaxVersions: 1 })
+    const opened = await ctx.scienceArtifactStore.openProject(workspace)
+    const sessionId = 'session-1' as SessionId
+    const { version: first } = await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'orphaned-1.png', kind: 'figure', originSessionId: sessionId,
+      data: new TextEncoder().encode('bytes-1'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    const { version: second } = await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+      logicalName: 'orphaned-2.png', kind: 'figure', originSessionId: sessionId,
+      data: new TextEncoder().encode('bytes-2'), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+
+    const initial = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map(), true)
+    expect(initial.truncated).toBe(true)
+    expect(initial.checkedVersions).toBe(1)
+    expect(initial.cursor).toBeDefined()
+
+    const resumed = await ctx.scienceArtifactStore.reconcileProject(opened.projectId, new Map(), true, initial.cursor)
+    expect(resumed.truncated).toBe(false)
+    expect(resumed.checkedVersions).toBe(1)
+    const checkedVersionIds = [...initial.outcomes, ...resumed.outcomes].map(outcome => outcome.versionId).sort()
+    expect(checkedVersionIds).toEqual([first.versionId, second.versionId].sort())
+
+    const summary = await ctx.scienceArtifactStore.getReconciliationSummary(opened.projectId)
+    expect(summary.orphanCount).toBe(2)
 
     await ctx.fiber.dispose()
   })
@@ -86,10 +164,11 @@ describe('ScienceArtifactStore Cordis service', () => {
     const opened = await ctx.scienceArtifactStore.openProject(workspace)
     await ctx.scienceArtifactStore.createArtifact(opened.projectId, {
       logicalName: 'note.txt',
+      kind: 'document',
       originSessionId: 'session-1' as SessionId,
       data: new TextEncoder().encode('note'),
       mediaType: 'text/plain',
-      origin: 'auto',
+      contentOrigin: 'run-auto',
     })
 
     await ctx.fiber.dispose()
@@ -102,5 +181,63 @@ describe('ScienceArtifactStore Cordis service', () => {
     const artifacts = await ctx2.scienceArtifactStore.listArtifacts(reopened.projectId)
     expect(artifacts).toHaveLength(1)
     await ctx2.fiber.dispose()
+  })
+
+  it('wires a v1→v2 migration warning through ctx.logger.warn, and passes a configured backfillProvenance through', async () => {
+    const home = await makeDir('home')
+    const workspace = await makeDir('workspace')
+
+    // Pre-seed a v1 store directly on disk (bypassing the service entirely,
+    // like a real rc.3 user's store), naming its project via the SAME
+    // marker format `openProject` writes, so the service resolves onto it.
+    const projectId = ProjectId(randomUUID())
+    await mkdir(join(workspace, '.papermachine'), { recursive: true })
+    await writeFile(join(workspace, '.papermachine', 'project.json'), `${JSON.stringify({ projectId, createdAt: Date.now() })}\n`)
+    const storeRoot = storeRootForProject(projectId, home)
+    await mkdir(storeRoot, { recursive: true })
+    const seed = new DatabaseSync(join(storeRoot, 'store.sqlite'))
+    seed.exec(`
+      CREATE TABLE artifacts (
+        artifact_id TEXT PRIMARY KEY, owning_project_id TEXT NOT NULL, origin_session_id TEXT NOT NULL,
+        logical_name TEXT NOT NULL, latest_version_id TEXT, created_at INTEGER NOT NULL
+      ) STRICT
+    `)
+    seed.exec(`
+      CREATE TABLE versions (
+        version_id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(artifact_id), ordinal INTEGER NOT NULL,
+        parent_version_id TEXT, sha256 TEXT NOT NULL, media_type TEXT NOT NULL, byte_count INTEGER NOT NULL,
+        origin TEXT NOT NULL CHECK (origin IN ('auto','model','human-edit')), title TEXT, caption TEXT,
+        producer_session_id TEXT NOT NULL, producer_run_id TEXT, producer_tool_call_id TEXT, producer_request_header_seq INTEGER,
+        environment_revision TEXT, environment_fingerprint_preview TEXT, created_at INTEGER NOT NULL, UNIQUE (artifact_id, ordinal)
+      ) STRICT
+    `)
+    const artifactId = randomUUID()
+    const versionId = randomUUID()
+    seed.prepare('INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?)').run(artifactId, String(projectId), 'session-1', 'plot.png', versionId, 1000)
+    seed.prepare(`
+      INSERT INTO versions (version_id, artifact_id, ordinal, sha256, media_type, byte_count, origin, producer_session_id, created_at)
+      VALUES (?, ?, 1, ?, ?, ?, 'auto', 'session-1', ?)
+    `).run(versionId, artifactId, 'a'.repeat(64), 'image/png', 10, 1000)
+    seed.exec('PRAGMA user_version = 1')
+    seed.close()
+
+    let hookCalls = 0
+    const backfillProvenance: BackfillProvenanceHook = async () => {
+      hookCalls += 1
+      return new Map()
+    }
+    const warnings: string[] = []
+    const ctx = new Context()
+    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+    await ctx.plugin(ScienceArtifactStore, { dshHome: home, backfillProvenance })
+
+    const opened = await ctx.scienceArtifactStore.openProject(workspace)
+    expect(opened.projectId).toBe(projectId)
+    expect(hookCalls).toBe(1)
+    // The hook returned an empty map, so the version stays without recovered
+    // provenance and the migration's step-4 warning reaches ctx.logger.warn.
+    expect(warnings.some(message => message.includes(versionId))).toBe(true)
+
+    await ctx.fiber.dispose()
   })
 })

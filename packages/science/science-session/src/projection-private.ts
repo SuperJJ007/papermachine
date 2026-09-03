@@ -23,6 +23,7 @@ export interface ScienceProjectionFoldJson {
   readonly artifacts: ScienceFoldState['artifacts']
   readonly outcomes: ScienceFoldState['outcomes']
   readonly requestHeaders: ScienceFoldState['requestHeaders']
+  readonly turns: ScienceFoldState['turns']
   readonly toolCalls: ScienceFoldState['toolCalls']
   readonly settledToolCallSeqs: readonly number[]
   readonly consumedToolCallSeqs: readonly number[]

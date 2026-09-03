@@ -1,11 +1,9 @@
 /** Focused pre-publication validation for artifact inputs and edit baselines. */
 
 import { describe, expect, it, vi } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
-import { ScienceArtifactId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
+import { ScienceArtifactId, ScienceProjectId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import { prepareRunArtifacts } from '../src/inputs.ts'
 
 const PROJECT_ID = ScienceProjectId('inputs-project')
@@ -19,36 +17,25 @@ const STYLE_SHA = '3'.repeat(64)
 function artifact(
   artifactId: ReturnType<typeof ScienceArtifactId>,
   logicalName: string,
-  mediaType: ScienceArtifactMediaType,
   sha256: string,
-  byteCount: number,
 ): ScienceArtifactVersion {
   return {
     artifactId,
-    producerSessionId: SessionId('inputs-session'),
     logicalName,
     version: 1,
     title: logicalName,
-    origin: 'auto',
     projectId: PROJECT_ID,
     versionId: ScienceVersionId(`${logicalName}-v1`),
     sha256,
-    mediaType,
-    byteCount,
-    runId: ScienceRunId('source-run'),
-    toolCallId: CallId('source-call'),
-    requestHeaderSeq: 1,
-    environmentRevision: 1,
-    environmentFingerprint: 'fingerprint',
-    createdAt: 1,
+    seenAt: 1,
   }
 }
 
 const projection = {
   artifacts: [
-    artifact(TEXT_ID, 'text.txt', 'text/plain', TEXT_SHA, 2),
-    artifact(IMAGE_ID, 'image.png', 'image/png', IMAGE_SHA, 3),
-    artifact(STYLE_ID, 'style.png', 'image/png', STYLE_SHA, 2),
+    artifact(TEXT_ID, 'text.txt', TEXT_SHA),
+    artifact(IMAGE_ID, 'image.png', IMAGE_SHA),
+    artifact(STYLE_ID, 'style.png', STYLE_SHA),
     {
       artifactId: STYLE_ID,
       logicalName: 'style.png',

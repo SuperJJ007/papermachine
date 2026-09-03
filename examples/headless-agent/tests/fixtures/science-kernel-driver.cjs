@@ -24,6 +24,15 @@ const PNG = Buffer.from(
   'base64',
 )
 
+// Distinct valid 1x1 PNG bytes for the main kernel's third execution — the
+// "continue" scenario step's plain chain continuation of `plot.png` (a
+// second run overwriting the same logical name commits a new version only
+// when its bytes actually differ from the current head).
+const PNG_V2 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=',
+  'base64',
+)
+
 const fifoPath = process.argv[2]
 if (fifoPath === undefined) {
   process.stderr.write('usage: science-kernel-driver.cjs <fifoPath>\n')
@@ -121,7 +130,19 @@ rl.on('line', (line) => {
   writeFileSync(join(artifactDir, 'summary.csv'), 'metric,value\naccuracy,0.97\n')
   writeFileSync(join(artifactDir, 'meta.json'), '{"ok":true}\n')
   writeFileSync(join(artifactDir, 'notes.md'), '# Notes\n\nDeterministic snapshot run.\n')
-  writeFileSync(join(artifactDir, 'plot.png'), PNG)
+  // The "continue" scenario step (a fresh run declaring `plot.png` again
+  // with no `edit_of`) stages this marker as a plain `artifact_inputs`
+  // entry to signal its identity — a run-count-based signal would be
+  // fragile across the lazy kernel restart the install/region-edit flow
+  // triggers earlier in the same scenario (a restarted kernel is a fresh
+  // process with its own `executionCount` starting back at 1).
+  writeFileSync(join(artifactDir, 'plot.png'), existsSync(join(cwd, 'inputs', 'continue-marker.png')) ? PNG_V2 : PNG)
+  if (executionCount === 1
+    && !existsSync(join(cwd, 'inputs', 'source.png'))
+    && !existsSync(join(cwd, 'inputs', 'region-source.png'))
+    && !existsSync(join(cwd, 'inputs', 'region-source-1.png'))) {
+    writeFileSync(join(artifactDir, 'missed.png'), PNG)
+  }
   if (existsSync(join(cwd, 'inputs', 'source.png'))) writeFileSync(join(artifactDir, 'edited.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source.png'))) writeFileSync(join(artifactDir, 'region-edit.png'), PNG)
   if (existsSync(join(cwd, 'inputs', 'region-source-1.png'))) writeFileSync(join(artifactDir, 'region-edit-1.png'), PNG)

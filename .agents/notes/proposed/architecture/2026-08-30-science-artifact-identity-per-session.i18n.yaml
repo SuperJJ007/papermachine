@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-30-science-artifact-identity-per-session.md
-2026-08-30-science-artifact-identity-per-session.md: eb1250e0ad76f91226ac386961c2e5cfd1f0f514
-2026-08-30-science-artifact-identity-per-session.zh.md: feed71c09844c360559d978503543ce33b61cb45

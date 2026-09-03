@@ -28,6 +28,10 @@ carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，�
 
 Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTERM`，使 Host 得以 dispose（资源释放）Cordis 及其子进程树，随后在限定宽限期后升级为 `SIGKILL`。一个同级的纯 Node 看门狗进程观察 Electron，并在 Electron 被强制终止时停止该 Host 进程组。
 
+## Host 诊断日志
+
+Electron 会把 Host 的 stderr 持久化到 `<dshHome>/logs/host.log`；Host 输出绝不会进入 renderer。随应用发布的 `resources/host.json` 使用 schema version 1，把 active file 限定为 5 MiB（`logMaxBytes`），并保留 2 个轮转文件（`logMaxRotatedFiles: 2`）。两个上限都是严格的 safe integer（`logMaxBytes` 为 1 KiB 至 50 MiB，保留轮转数为 1 至 20）；配置缺失、不可读、格式错误或带有多余字段都会使启动失败。任何一行写入磁盘前，writer 会替换 Host environment 中凭据类名称对应的精确值，以及常见的 bearer、API key、authorization、credential、password、secret、token 与 `sk-…` 形式。日志目录与文件会强制设为 `0700` 与 `0600` mode；非普通文件与 symlink 会被拒绝；按发布配置，轮转最多保留 `host.log`、`host.log.1` 与 `host.log.2`。单行若大于 active-file 上限，会替换成固定的省略标记，而不会保留无界 buffer 或写出凭据的一部分。
+
 ## Host 端口
 
 Host 会在它上一次成功绑定的端口上启动——该端口记录在 `<dshHome>/host-port.json`（`src/host-port.ts`）——而不是每次都请求一个全新的 OS 分配端口。浏览器端状态以 origin 为 key，而 OS 分配端口每次启动都会改变 origin，因而会悄悄丢弃客户端此前写入 `localStorage` 的所有内容。目前受影响的包括:侧边栏 details panel 的宽度、当前 session 选中项、trajectory-duration 偏好、workspace browser 的分组/排序/展开状态、per-session 的 chat draft 与 view 选择,以及 Science artifact viewer 的已打开标签页与 library 状态(`packages/client/*/src/**/stores.ts` 中任何通过 `defineStore`/`createSnapshotStore` 选择 `persist` 的 store);sidebar 自身宽度在上游被特意排除在持久化之外,不受此影响。跨普通启动保持 origin 稳定,就能保住上述全部状态。把这部分状态从 `localStorage` 迁移到 settings service 才是真正的长期方案——那样连 fallback 也能保住状态——但它跨越多个 client package,不在本次范围内。
@@ -38,7 +42,7 @@ Host 在上报 bind 失败时,不会给这个 carrier 留下任何可与其他�
 
 启动时的路由完全依据 `<dshHome>/environment-binding.json`（`src/environment-binding.ts`）：文件不存在是普通的首次运行，会打开 onboarding。文件解析失败、所命名的 prefix 已不存在，或所命名的 prefix 位于本应用自己的 provisioned environments root（`<dshHome>/desktop-environments/environments/`）之外，同样会路由到 onboarding 并带上醒目的状态提示——最后一种情况覆盖了本应用完全拥有自己环境之前写入的 binding，或任何其他外部 conda-family 安装，绝不会被悄悄保留。binding 有效则直接打开 workspace。binding 还记录本次安装成功所经由的 package source 的 id（`sourceId`）；缺少它的 binding 视为无效。下文“环境声明”中描述的学科包 `applied.json` pointer 在这条路由中不起任何作用。
 
-Onboarding 只有一条路径：安装。PaperMachine 不提供绑定机器上已有 conda-family environment 的选项——由本应用配备并拥有的一个 environment 是唯一可复现的代码路径，因此首次运行不需要任何 conda 知识，向本应用拥有的 prefix 中安装 package 也可以自由重新求解，而不会危及用户自己的 Anaconda 安装。`src/interpreter-presence.ts` 的 `qualifyingInterpreters` 会在 `main.ts` 的 `bindProvisionedPrefix` 写入 binding 之前，按与 Science Runtime 自身 interpreter 检查相同的规则（一个正规、非 symlink 的 `conda-meta/history` 文件，外加至少一个 `bin/python` 或 `bin/Rscript`）重新校验刚刚配备好的 prefix——这是对 provisioning 刚刚跑过的同一组 health check、在即将写入的那个确切路径上做的一次纵深防御式复核。应用菜单的 "Change Environment…" 操作会先停止活跃的 Host，再重新打开 onboarding，供用户安装一个不同的（或修复后的）environment。
+Onboarding 只有一条路径：安装。PaperMachine 不提供绑定机器上已有 conda-family environment 的选项——由本应用配备并拥有的一个 environment 是唯一可复现的代码路径，因此首次运行不需要任何 conda 知识，向本应用拥有的 prefix 中安装 package 也可以自由重新求解，而不会危及用户自己的 Anaconda 安装。`src/interpreter-presence.ts` 的 `qualifyingInterpreters` 会在 `main.ts` 的 `bindProvisionedPrefix` 写入 binding 之前，按与 Science Runtime 自身 interpreter 检查相同的规则（一个正规、非 symlink 的 `conda-meta/history` 文件，外加至少一个 `bin/python` 或 `bin/Rscript`）重新校验刚刚配备好的 prefix——这是对 provisioning 刚刚跑过的同一组 health check、在即将写入的那个确切路径上做的一次纵深防御式复核。应用菜单的 "Change Environment…" 操作会在活跃 Host 继续服务当前 environment 时重新打开 onboarding。Onboarding 顶部显示已应用 environment 的 id、revision、`applied` 或 `stale` 状态及 prefix；"Keep current environment" 会通过重新启动 Host 返回 workspace。当 applied revision 与标准 declaration 一致时，主要操作显示为 "Reinstall"，并说明会再次下载标示的 520 MB。只有用户明确确认安装后，应用才会在 provisioning 可以修改 prefix 之前停止 Host。
 
 ## 环境声明
 

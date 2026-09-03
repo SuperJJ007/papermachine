@@ -1,11 +1,21 @@
 - region "Science process view":
-  - text: Turns 2 · Steps 1 · Runs 3 · Artifacts 1 · 7.0 s
-  - region "Unassigned history":
-    - paragraph: The producing calls for 3 runs and 1 artifact versions are absent from the loaded conversation. These records are not counted under any request.
+  - text: "Turns 2 · Steps 9 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 1"
+  - article:
+    - paragraph: Request unavailable for this turn
+    - group "Step strip":
+      - button "Read session state"
+      - button "Python run"
+      - button "read"
+      - button "read"
+      - button "read"
+      - button "Python run"
+      - button "R run"
+      - button "annotate_artifact"
+    - button "Expand steps · Steps 8 · Runs 3 · 1 failed · {{duration}}": Steps 8 · Runs 3 · 1 failed · {{duration}}
     - button "scatter_plot.png v1":
       - img
       - code: scatter_plot.png v1
-  - text: "Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 2"
+  - text: Turn 2
   - article:
     - paragraph: Inspect the latest state.
     - group "Step strip":

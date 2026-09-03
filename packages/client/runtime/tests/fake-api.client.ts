@@ -7,6 +7,7 @@ import type {
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { ScienceChartState, ScienceVersionSummary } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 
 /** Programmable-default workspace row (branded id, ISO-ish times). */
@@ -105,6 +106,10 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'text/plain', bytes: 1 }, data: 'a' }))
   onScienceArtifact: (payload: unknown) => Promise<RpcResponse<{ versionId: never; mediaType: string; byteCount: number; data: string }>> =
     () => Promise.resolve(ok({ versionId: 'version-a' as never, mediaType: 'image/png', byteCount: 1, data: 'AA==' }))
+  onScienceVersions: (payload: unknown) => Promise<RpcResponse<{ versions: ScienceVersionSummary[] }>> =
+    () => Promise.resolve(ok({ versions: [] }))
+  onScienceChartState: (payload: unknown) => Promise<RpcResponse<{ chart: ScienceChartState | null }>> =
+    () => Promise.resolve(ok({ chart: null }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
 
@@ -160,7 +165,11 @@ export class FakeApiClient implements IApiClient {
     attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
     textAttachment: (payload: unknown) => this.record('session.textAttachment', payload, this.onTextAttachment(payload)),
     scienceArtifact: (payload: unknown) => this.record('session.scienceArtifact', payload, this.onScienceArtifact(payload)),
-    scienceLibrary: (payload: unknown) => this.record('sessions.scienceLibrary', payload, Promise.resolve(ok({ projectId: 'project-a' as never, artifacts: [] }))),
+    scienceLibrary: (payload: unknown) => this.record('sessions.scienceLibrary', payload, Promise.resolve(ok({
+      projectId: 'project-a' as never, artifacts: [], health: { orphan: 0, reconstructed: 0, missingContent: 0 },
+    }))),
+    scienceVersions: (payload: unknown) => this.record('sessions.scienceVersions', payload, this.onScienceVersions(payload)),
+    scienceChartState: (payload: unknown) => this.record('sessions.scienceChartState', payload, this.onScienceChartState(payload)),
     workspaceFiles: (payload: unknown) => this.record('sessions.workspaceFiles', payload, Promise.resolve(ok({ root: '', entries: [] }))),
     workspaceFile: (payload: unknown) => this.record('sessions.workspaceFile', payload, Promise.resolve(ok({ mediaType: 'text/plain', byteCount: 0, data: '' }))),
     updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),

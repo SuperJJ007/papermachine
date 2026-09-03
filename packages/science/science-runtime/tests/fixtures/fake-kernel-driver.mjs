@@ -113,6 +113,10 @@ function handleRun(runId, sourcePath, cwd, artifactDir, inputDir) {
     send(`DONE\t${runId}\tok\t${cwd}|${artifactDir}|${inputDir}\t`)
     return
   }
+  if (kind === 'echo-workspace') {
+    send(`DONE\t${runId}\tok\t${process.env.SCIENCE_WORKSPACE_DIR ?? ''}\t`)
+    return
+  }
   if (kind === 'reply') {
     send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
     return

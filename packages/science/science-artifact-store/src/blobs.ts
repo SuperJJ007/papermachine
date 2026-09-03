@@ -5,7 +5,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { ProjectArtifactStoreError } from './errors.ts'
 
@@ -73,4 +73,22 @@ export async function readBlob(storeRoot: string, sha256: string): Promise<Uint8
     throw new ProjectArtifactStoreError(`blob ${sha256} in the store at "${storeRoot}" failed integrity verification`, 'BLOB_CORRUPT')
   }
   return data
+}
+
+/**
+ * Check whether one content-addressed blob exists on disk, without reading
+ * or digest-verifying its bytes — used by reconciliation, which only needs
+ * presence and byte count, never the content itself.
+ * @param storeRoot - absolute path to the project's store directory.
+ * @param sha256 - digest identifying the blob.
+ * @returns the blob's on-disk byte count, or `undefined` when it is missing.
+ */
+export async function blobByteCount(storeRoot: string, sha256: string): Promise<number | undefined> {
+  try {
+    const stats = await stat(blobPath(storeRoot, sha256))
+    return stats.size
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
 }

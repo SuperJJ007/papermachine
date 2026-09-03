@@ -16,7 +16,7 @@ import type {
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ArtifactId, ProjectId, VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
-import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceArtifactMediaType, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
 // cordis Context merge (via dsh-agent) must not enter client aggregates.
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
@@ -62,6 +62,44 @@ export interface SessionListMetadata {
   lastPromptAt: number | null
 }
 
+/**
+ * Reconciliation flags for one project artifact's `latest` version, present
+ * only when that exact version is currently unhealthy — see
+ * {@link ScienceLibraryHealth} for the project-wide counts this is drawn
+ * from. Each flag is `true` (never `false`); an absent flag means that
+ * condition does not hold for this version. `orphan` is deliberately never
+ * included here: an orphan version is an accepted, silent crash-window
+ * outcome (`dsh-science-artifact-store`'s Reconciliation section), not a
+ * fact the Files panel marks per item.
+ */
+export interface ScienceVersionHealthFlags {
+  reconstructed?: true
+  missingContent?: true
+}
+
+/**
+ * How one version's bytes came to exist. Mirrors
+ * `@deepseek-ai/dsh-science-artifact-store`'s `ContentOrigin` field-for-field
+ * (redeclared here, not imported, because that package exposes no
+ * browser-safe subpath beyond `.`, `./ids`, and `./invariant`, and `api/`
+ * must stay importable by browser bundles).
+ */
+export type ScienceContentOrigin = 'run-auto' | 'human-edit' | 'import'
+
+/**
+ * Store-owned producer identity for one Science artifact version. Optional
+ * call fields distinguish run capture from direct human or import commits;
+ * `sessionTitle` is best-effort display text and does not affect identity.
+ */
+export interface ScienceVersionProducer {
+  sessionId: SessionId
+  sessionTitle?: string
+  runId?: string
+  toolCallId?: string
+  requestHeaderSeq?: number
+  turn?: number
+}
+
 /** Latest project artifact metadata shown by the project file library. */
 export interface ScienceLibraryArtifact {
   artifactId: ArtifactId
@@ -70,7 +108,52 @@ export interface ScienceLibraryArtifact {
   caption?: string
   originSessionId: SessionId
   originSessionTitle?: string
-  latest: { versionId: VersionId; ordinal: number; mediaType: ScienceArtifactMediaType; byteCount: number; createdAt: number }
+  latest: {
+    versionId: VersionId
+    ordinal: number
+    mediaType: ScienceArtifactMediaType
+    byteCount: number
+    createdAt: number
+    health?: ScienceVersionHealthFlags
+  }
+}
+
+/**
+ * Project-wide store↔session reconciliation counts, read from
+ * `ScienceArtifactStore.getReconciliationSummary` on every `scienceLibrary`
+ * call — a pure read of whatever the last reconciliation pass recorded,
+ * never itself comparing the store against a session log. `orphan` is a
+ * count only: the Files panel's non-modal banner never surfaces it, and no
+ * per-item flag names it either (see {@link ScienceVersionHealthFlags}).
+ */
+export interface ScienceLibraryHealth {
+  orphan: number
+  reconstructed: number
+  missingContent: number
+}
+
+/**
+ * One project-store artifact version's current library facts: the exact
+ * metadata a Files-panel row or a version-stepper entry renders, read fresh
+ * from the store rather than echoed from a session-log snapshot taken when
+ * the version was captured. Fixes the drift where the Files panel (reading
+ * the store's current value) and a session's detail view (reading its own
+ * projected snapshot) showed two different names for the same version after
+ * a later curation call — see `scienceVersions`'s own JSDoc.
+ */
+export interface ScienceVersionSummary {
+  versionId: VersionId
+  artifactId: ArtifactId
+  logicalName: string
+  ordinal: number
+  title?: string
+  caption?: string
+  contentOrigin: ScienceContentOrigin
+  createdAt: number
+  mediaType: string
+  byteCount: number
+  producer: ScienceVersionProducer
+  health?: ScienceVersionHealthFlags
 }
 
 /** One direct child of a session workspace directory. */
@@ -414,9 +497,51 @@ export interface SessionsApi {
   scienceArtifact(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
   Promise<RpcResponse<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>>
 
-  /** Lists one latest row per artifact in the project selected by the named session's workspace. */
+  /**
+   * Lists one latest row per artifact in the project selected by the named
+   * session's workspace, plus the project's store↔session reconciliation
+   * health (see {@link ScienceLibraryHealth}).
+   */
   scienceLibrary(request: RpcRequest<{ sessionId: SessionId }>):
-  Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[] }>>
+  Promise<RpcResponse<{ projectId: ProjectId; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>>
+
+  /**
+   * Batch-reads the current library facts (see {@link ScienceVersionSummary})
+   * for a caller-chosen set of versions, each independently authorized by
+   * the named session's own fold through the same three proof paths
+   * `scienceArtifact` uses. A `versionId` the fold cannot prove is silently
+   * dropped from the result rather than failing the whole call: this RPC
+   * serves a batch render (a Files-panel page, a version stepper) where
+   * partial visibility is the ordinary case, exactly as one hidden row
+   * already is in `scienceLibrary`'s per-artifact listing — a client cannot
+   * distinguish "not authorized" from "no longer exists" from the omission,
+   * matching `scienceArtifact`'s own no-reason-leaked 404 stance. At most
+   * 200 ids per call; a longer array is rejected (`bad-request`) before any
+   * lookup runs.
+   */
+  scienceVersions(request: RpcRequest<{ sessionId: SessionId; versionIds: VersionId[] }>):
+  Promise<RpcResponse<{ versions: ScienceVersionSummary[] }>>
+
+  /**
+   * Reads one PNG artifact version's live-figure chart state (addressable
+   * elements, the direct-edit operation log, pixel-space hit regions), from
+   * the store's `figure_state` table — the client-facing read path the chart
+   * edit panel needs (see `ArtifactContent.tsx`'s Note). Authorization
+   * reuses the same three proof paths `scienceArtifact`/`scienceVersions`
+   * use.
+   *
+   * `null` covers two distinct cases a caller cannot and need not
+   * distinguish: a non-PNG version, and a PNG version with no `figure_state`
+   * row (imported or legacy content, or a v1→v2 migration row the optional
+   * backfill hook never recovered) — a client shows no edit affordance
+   * either way. Unlike the batch `scienceVersions` read, an unauthorized or
+   * nonexistent `versionId` here fails loud with `science-artifact-error`
+   * (`VERSION_NOT_REFERENCED`): this RPC always names exactly one version an
+   * already-open artifact tab is rendering, not a batch where partial
+   * visibility is the expected outcome.
+   */
+  scienceChartState(request: RpcRequest<{ sessionId: SessionId; versionId: VersionId }>):
+  Promise<RpcResponse<{ chart: ScienceChartState | null }>>
 
   /** Lists one workspace directory without following paths outside the named session's workspace. */
   workspaceFiles(request: RpcRequest<{ sessionId: SessionId; path?: string }>):

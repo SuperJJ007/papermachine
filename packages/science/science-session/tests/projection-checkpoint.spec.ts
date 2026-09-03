@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   applyScienceProjectionState,
   emptyScienceProjectionState,
@@ -11,13 +11,11 @@ import {
   viewScienceProjectionState,
 } from '../src/projection.ts'
 import {
-  foldScience,
   replayScience,
   ScienceArtifactId,
   ScienceRunId,
   ScienceVersionId,
   toClientScienceProjection,
-  toolCallTurnsOf,
 } from '../src/index.ts'
 import type {
   ScienceOutcomePublication,
@@ -27,8 +25,8 @@ import type {
 import type { ScienceProjectionState } from '../src/projection-private.ts'
 import {
   OUTCOME_CALL_ID,
-  ARTIFACT_ID,
   artifact,
+  appendFixtureEvents,
   event,
   kernelExited,
   kernelStarted,
@@ -80,13 +78,44 @@ function outcomeEvent(
 }
 
 describe('Science private projection checkpoint', () => {
+  it('keeps full turn and tool-call coordinates in the cold client projection', () => {
+    const session = Session.create(SessionId('science-cold-trace'))
+    session.append('turn/start', { turn: 1 })
+    appendFixtureEvents(session)
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const client = viewScienceProjectionState(projectState(session.events))
+    expect(client).toMatchObject({
+      trace: {
+        turns: [{ turn: 1 }],
+        calls: [
+          { callId: 'call-run', turn: 1, step: 1, name: 'run_python' },
+          { callId: 'call-chart', turn: 1, step: 1, name: 'annotate_artifact' },
+          { callId: 'call-outcome', turn: 1, step: 1, name: 'publish_outcome' },
+        ],
+      },
+      runs: [{ turn: 1, step: 1 }],
+      artifacts: [{ turn: 1, step: 1 }],
+    })
+  })
+
+  it('leaves an artifact fact without owner coordinates when no run or annotate call is open at save time', () => {
+    const events = [
+      ...legalEvents().slice(0, 7),
+      event('step/end', 7, 155, { turn: 1, step: 1 }),
+      event('science/artifact-saved', 8, 170, { version: 1, artifact: artifact() }),
+    ]
+    const client = viewScienceProjectionState(projectState(events))
+    expect(client?.artifacts.at(-1)?.turn).toBeUndefined()
+    expect(client?.artifacts.at(-1)?.step).toBeUndefined()
+  })
+
   it('retains only pre-mode facts that can constrain later Science replay', () => {
     const unrelated = event('turn/start', 0, 90, { turn: 1 })
     const empty = emptyScienceProjectionState()
     const observed = applyScienceProjectionState(empty, unrelated)
-    expect(observed).toEqual({ ...empty, observedSeq: 0 })
-    expect(observed.fold).toBe(empty.fold)
-    expect(observed.witness).toBe(empty.witness)
+    expect(observed.fold.turns).toEqual([{ turn: 1, startSeq: 0, startTime: 90 }])
+    expect(observed.witness).toEqual([{ seq: 0, time: 90, type: 'turn/start', data: { turn: 1 } }])
     expect(scienceProjectionChanged(empty, observed)).toBe(false)
 
     for (const type of ['step/start', 'request/header', 'tool/call'] as const) {
@@ -148,7 +177,7 @@ describe('Science private projection checkpoint', () => {
 
   it('advances the private watermark without publishing an unchanged Science value', () => {
     const complete = projectState(legalEvents())
-    const irrelevant = event('turn/start', 11, 190, { turn: 2 })
+    const irrelevant = event('session/title', 11, 190, {})
     const observed = applyScienceProjectionState(complete, irrelevant)
 
     expect(observed.observedSeq).toBe(11)
@@ -157,36 +186,28 @@ describe('Science private projection checkpoint', () => {
     expect(scienceProjectionStateSeq(observed)).toBe(11)
     expect(scienceProjectionChanged(complete, observed)).toBe(false)
     const withIrrelevant = [...legalEvents(), irrelevant]
-    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(
-      replayScience(withIrrelevant),
-      toolCallTurnsOf(foldScience(withIrrelevant)),
-    ))
+    expect(viewScienceProjectionState(observed)).toEqual(toClientScienceProjection(replayScience(withIrrelevant)))
     expect(scienceProjectionStateSchema.safeParse(observed).success).toBe(true)
   })
 
-  it('round-trips artifact ancestry and run inputs through the witness-backed checkpoint', () => {
-    const branchCall = CallId('checkpoint-branch-call')
+  it('round-trips a run input referencing a prior committed artifact version through the witness-backed checkpoint', () => {
     const branchId = ScienceArtifactId('checkpoint-branch')
-    const parent = { artifactId: ARTIFACT_ID, version: 1 }
     const runCall = CallId('checkpoint-input-run')
     const inputs = [{ artifactId: branchId, version: 1, path: 'source/branch.png' }]
     const events: SessionEvent[] = [
       ...legalEvents().slice(0, 9),
-      toolCall(9, 175, branchCall, 'annotate_artifact'),
-      event('science/artifact-saved', 10, 180, {
+      event('science/artifact-saved', 9, 180, {
         version: 1,
         artifact: artifact({
           artifactId: branchId,
           logicalName: 'checkpoint-branch.png',
-          parent,
-          toolCallId: branchCall,
           versionId: ScienceVersionId('checkpoint-branch-v1'),
           sha256: '3'.repeat(64),
-          createdAt: 179,
+          seenAt: 179,
         }),
       }),
-      toolCall(11, 185, runCall, 'run_python', { turn: 2, step: 1 }),
-      event('science/run-started', 12, 190, {
+      toolCall(10, 185, runCall, 'run_python', { turn: 2, step: 1 }),
+      event('science/run-started', 11, 190, {
         version: 1,
         run: runStarted({
           runId: ScienceRunId('checkpoint-input-run'),
@@ -200,7 +221,7 @@ describe('Science private projection checkpoint', () => {
 
     const state = projectState(events)
     expect(scienceProjectionStateSchema.safeParse(state).success).toBe(true)
-    expect(viewScienceProjectionState(state)?.artifacts.at(-1)).toMatchObject({ parent })
+    expect(viewScienceProjectionState(state)?.artifacts.at(-1)).toMatchObject({ artifactId: branchId })
     expect(viewScienceProjectionState(state)?.runs.at(-1)).toMatchObject({ inputs })
   })
 
@@ -345,7 +366,7 @@ describe('Science private projection checkpoint', () => {
       completeState,
       event('session/end-seed', 12, 190, {}),
     )
-    const unrelatedTurn = applyScienceProjectionState(
+    const nextTurn = applyScienceProjectionState(
       completeState,
       event('turn/start', 12, 190, { turn: 2 }),
     )
@@ -357,10 +378,12 @@ describe('Science private projection checkpoint', () => {
       ...event('science/mode-bound', 12, 190, events[0]!.data),
       ignorable: true,
     })
-    for (const observed of [ignoredSeed, unrelatedTurn, duplicateMode, ignorableMode]) {
+    for (const observed of [ignoredSeed, duplicateMode, ignorableMode]) {
       expect(observed).toEqual({ ...completeState, observedSeq: 12 })
       expect(scienceProjectionChanged(completeState, observed)).toBe(false)
     }
+    expect(nextTurn.fold.turns).toEqual([{ turn: 2, startSeq: 12, startTime: 190 }])
+    expect(scienceProjectionChanged(completeState, nextTurn)).toBe(true)
 
     const headerTampered: ScienceProjectionState = {
       ...terminalState,

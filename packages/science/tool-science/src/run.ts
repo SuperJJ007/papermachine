@@ -6,7 +6,9 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-science-runtime'
 import type { ScienceRunResult } from '@deepseek-ai/dsh-science-runtime/types'
-import { replayScience, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
+import type ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
+import type { VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
+import { decodeScienceChartState, replayScience, ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactMediaType,
   ScienceArtifactVersion,
@@ -19,7 +21,8 @@ import { closedKernelFacts, isScienceSession, modelKernelEndReason } from './con
 import { requireDirectDispatch } from './guard.ts'
 import { scienceArtifactPresentation } from './presentation.ts'
 import type { ScienceArtifactPresentationItem } from './presentation.ts'
-import { formatScienceArtifactEdits, scienceArtifactEdits } from './artifact-schema.ts'
+import { formatScienceArtifactEdits, scienceArtifactEdits, scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import type { ResolveArtifactStoreFacts, ScienceArtifactLineage, ScienceArtifactStoreFacts } from './artifact-schema.ts'
 
 const outputStreamSchema = {
   type: 'object',
@@ -53,11 +56,6 @@ const capturedArtifactSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    artifactId: { type: 'string', required: true },
-    logicalName: { type: 'string', required: true },
-    version: { type: 'integer', required: true },
-    mediaType: { type: 'string', required: true },
-    bytes: { type: 'integer', required: true },
     // `title` and the store version id are carried for `presentationMeta`
     // (below) to build a clickable Client reference per file; `render()`
     // deliberately omits both from the model-visible receipt text — `title`
@@ -65,19 +63,27 @@ const capturedArtifactSchema = {
     // `basename` default), and versionId is an internal storage coordinate,
     // not a fact the model reasons about — the same split
     // `annotate_artifact`'s own receipt schema uses.
-    title: { type: 'string', required: true },
+    ...scienceArtifactSchemaProperties,
     versionId: { type: 'string', required: true },
-    parent: artifactVersionRefSchema,
-    edits: {
-      type: 'array', items: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          op: { type: 'string', enum: ['set_title', 'set_subtitle', 'set_axis_label', 'set_legend_position', 'toggle_grid', 'set_font'], required: true },
-          target: { type: 'string', required: true },
+    lineage: {
+      oneOf: [
+        {
+          type: 'object', additionalProperties: false,
+          properties: {
+            kind: { type: 'string', const: 'edited-from', required: true },
+            logicalName: { type: 'string', required: true },
+            version: { type: 'integer', required: true },
+          },
         },
-      },
+        {
+          type: 'object', additionalProperties: false,
+          properties: {
+            kind: { type: 'string', const: 'continues', required: true },
+            version: { type: 'integer', required: true },
+          },
+        },
+      ],
     },
-    editCount: { type: 'integer' },
   },
 } as const
 
@@ -138,27 +144,108 @@ export function latestRequestHeaderSeq(session: Session): number | undefined {
   return session.events.findLast(event => event.type === 'request/header')?.seq
 }
 
+/**
+ * Read the optional `ctx.scienceArtifactStore` service, failing loud when no
+ * project artifact store is mounted. A plain function-plugin `Context`'s
+ * `ctx.<name>` property proxy is reserved for names this package's own
+ * `inject` declares; `scienceArtifactStore` is not one of them (only
+ * `dsh-science-runtime` requires it), so every tool that reads the store
+ * directly resolves it through `ctx.get` instead.
+ * @param ctx - plugin context.
+ * @returns the mounted project artifact store service.
+ */
+export function requireArtifactStore(ctx: Context): ScienceArtifactStore {
+  const store = ctx.get('scienceArtifactStore')
+  if (store === undefined) throw new Error('tool-science: no Science Artifact Store is mounted (ctx.scienceArtifactStore)')
+  return store
+}
+
+/**
+ * Resolve one session-visible artifact version's store-owned model facts.
+ * @param ctx - plugin context.
+ * @param directEditLimit - maximum recent direct-edit summaries to return.
+ * @param artifact - the session-visible artifact version to resolve.
+ * @returns the version row and bounded PNG edit history.
+ * @throws when the store no longer holds a version by this exact reference — a
+ *   durable invariant violation, since the store commit always precedes the
+ *   session event that names it.
+ */
+export async function resolveArtifactStoreFacts(
+  ctx: Context,
+  directEditLimit: number,
+  artifact: ScienceArtifactVersion,
+): Promise<ScienceArtifactStoreFacts> {
+  const store = requireArtifactStore(ctx)
+  const version = await store.getVersion(artifact.projectId, artifact.versionId)
+  if (version === undefined) {
+    throw new Error('tool-science: artifact no longer identifies a committed store version')
+  }
+  const figureState = version.mediaType === 'image/png'
+    ? await store.getFigureState(artifact.projectId, artifact.versionId)
+    : undefined
+  const chart = figureState === undefined ? undefined : decodeScienceChartState(JSON.parse(figureState.stateJson))
+  return {
+    version,
+    ...scienceArtifactEdits(chart, directEditLimit),
+  }
+}
+
+/**
+ * Resolve store facts plus the model-visible lineage used by a run capture receipt.
+ * @param ctx - plugin context.
+ * @param directEditLimit - maximum recent direct-edit summaries to return.
+ * @param artifact - the captured artifact version to resolve.
+ * @returns store facts with explicit-edit or ordinary-continuation lineage when applicable.
+ */
+export async function resolveCapturedArtifactStoreFacts(
+  ctx: Context,
+  directEditLimit: number,
+  artifact: ScienceArtifactVersion,
+): Promise<ScienceArtifactStoreFacts> {
+  const facts = await resolveArtifactStoreFacts(ctx, directEditLimit, artifact)
+  return {
+    ...facts,
+    ...await resolveArtifactLineage(requireArtifactStore(ctx), artifact, facts.version),
+  }
+}
+
+async function resolveArtifactLineage(
+  store: ScienceArtifactStore,
+  artifact: ScienceArtifactVersion,
+  version: VersionRecord,
+): Promise<{ readonly lineage?: ScienceArtifactLineage }> {
+  if (version.baseVersionId === undefined) {
+    return version.ordinal > 1 ? { lineage: { kind: 'continues', version: version.ordinal - 1 } } : {}
+  }
+  const base = await store.getVersion(artifact.projectId, version.baseVersionId)
+  if (base === undefined) throw new Error('tool-science: artifact baseline no longer identifies a committed store version')
+  if (!version.baseExplicit) return { lineage: { kind: 'continues', version: base.ordinal } }
+  const baseArtifact = await store.getArtifact(artifact.projectId, base.artifactId)
+  if (baseArtifact === undefined) throw new Error('tool-science: artifact baseline no longer identifies a committed artifact')
+  return { lineage: { kind: 'edited-from', logicalName: baseArtifact.logicalName, version: base.ordinal } }
+}
+
 /** Reject empty or whitespace-only source before it reaches the Runtime. */
 function nonEmptyCode(code: string): string {
   if (code.trim().length === 0) throw new Error('tool-science: code must be a non-empty string')
   return code
 }
 
-/** Flatten one captured artifact version into the run result's bounded listing entry. */
-function capturedArtifactValue(artifact: ScienceArtifactVersion): InferValue<typeof capturedArtifactSchema> {
-  const edits = scienceArtifactEdits(artifact)
+/**
+ * Flatten one captured artifact version into the run result's bounded
+ * listing entry.
+ * @param artifact - the session-visible captured artifact version.
+ * @param store - the resolved store facts for `artifact.versionId`.
+ * @returns the bounded listing entry.
+ */
+function capturedArtifactValue(
+  artifact: ScienceArtifactVersion,
+  store: ScienceArtifactStoreFacts,
+): InferValue<typeof capturedArtifactSchema> {
   return {
-    artifactId: String(artifact.artifactId),
-    logicalName: artifact.logicalName,
-    version: artifact.version,
-    mediaType: artifact.mediaType,
-    bytes: artifact.byteCount,
-    title: artifact.title,
+    ...scienceArtifactValueFields(artifact, store),
     versionId: String(artifact.versionId),
-    ...artifact.parent === undefined ? {} : {
-      parent: { artifactId: String(artifact.parent.artifactId), version: artifact.parent.version },
-    },
-    ...edits.length === 0 ? {} : { edits, editCount: edits.length },
+    ...store.lineage === undefined ? {} : { lineage: store.lineage },
   }
 }
 
@@ -179,10 +266,17 @@ function capturedArtifactPresentationItem(artifact: InferValue<typeof capturedAr
 
 /**
  * Flatten a Runtime result into the tool's bounded canonical value.
+ * `content_origin`/`curated`/`mediaType`/`bytes` for each captured artifact
+ * come from the store — the sole authority for those facts since the T1/T2
+ * artifact-authority migration — through `resolveStore`.
  * @param result - the durably committed run result from `ctx.scienceRuntime.startRun(...).done`.
+ * @param resolveStore - resolves each captured artifact's store facts.
  * @returns the bounded structured value the tool returns.
  */
-export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
+export async function runValueFromResult(
+  result: ScienceRunResult,
+  resolveStore: ResolveArtifactStoreFacts,
+): Promise<ScienceRunValue> {
   const { terminal, capture } = result
   return {
     status: terminal.status,
@@ -194,7 +288,9 @@ export function runValueFromResult(result: ScienceRunResult): ScienceRunValue {
     stdout: result.stdout,
     stderr: result.stderr,
     ...capture === undefined ? {} : {
-      capturedArtifacts: capture.captured.map(capturedArtifactValue),
+      capturedArtifacts: await Promise.all(
+        capture.captured.map(async artifact => capturedArtifactValue(artifact, await resolveStore(artifact))),
+      ),
       ...capture.skippedRasterPaths.length > 0 ? { skippedRaster: [...capture.skippedRasterPaths] } : {},
       ...capture.skippedOversizedCount > 0 ? { captureSkippedOversizedCount: capture.skippedOversizedCount } : {},
       ...capture.truncatedPerRun ? { captureTruncatedPerRun: true } : {},
@@ -235,9 +331,10 @@ export function kernelRestartReason(projection: ScienceProjection, terminal: Sci
  * cannot drift from the durable `science/artifact-saved` events those
  * fields describe.
  * @param value - the bounded run value to render.
+ * @param language - language whose run tool can reproduce an uncaptured PNG.
  * @returns the rendered Native text.
  */
-export function formatRunResult(value: ScienceRunValue): string {
+export function formatRunResult(value: ScienceRunValue, language: ScienceLanguage): string {
   const header = [`status: ${value.status}`]
   const lines: string[] = []
   if (value.kernelRestartReason !== undefined) {
@@ -252,21 +349,26 @@ export function formatRunResult(value: ScienceRunValue): string {
   if (value.stderr.truncated) lines.push('(stderr truncated)')
   if (value.capturedArtifacts !== undefined && value.capturedArtifacts.length > 0) {
     const items = value.capturedArtifacts.map((artifact) => {
-      const ancestry = artifact.parent === undefined
+      const lineage = artifact.lineage === undefined
         ? ''
-        : `, edited from ${artifact.parent.artifactId} v${String(artifact.parent.version)}`
-      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.artifactId}; ${artifact.mediaType}, ${formatBytes(artifact.bytes)}${ancestry})`
+        : artifact.lineage.kind === 'edited-from'
+          ? `, edited from ${artifact.lineage.logicalName} v${String(artifact.lineage.version)}`
+          : `, continues v${String(artifact.lineage.version)}`
+      return `\`${artifact.logicalName}\` v${String(artifact.version)} (${artifact.artifactId}; ${artifact.mediaType}, ${formatBytes(artifact.bytes)}${lineage})`
     })
     const noun = value.capturedArtifacts.length === 1 ? 'artifact' : 'artifacts'
     lines.push(`Captured ${String(value.capturedArtifacts.length)} ${noun}: ${items.join(', ')}.`)
     for (const artifact of value.capturedArtifacts) {
-      const summary = formatScienceArtifactEdits(artifact.edits ?? [])
+      const summary = formatScienceArtifactEdits(artifact.edits ?? [], artifact.editCount ?? 0)
       if (summary !== undefined) lines.push(summary)
     }
   }
   if (value.skippedRaster !== undefined && value.skippedRaster.length > 0) {
     const noun = value.skippedRaster.length === 1 ? 'file' : 'files'
-    lines.push(`(${String(value.skippedRaster.length)} PNG ${noun} not captured, not declared in raster_artifacts: ${value.skippedRaster.join(', ')})`)
+    const pronoun = value.skippedRaster.length === 1 ? 'it' : 'them'
+    const tool = language === 'python' ? 'run_python' : 'run_r'
+    lines.push(`(${String(value.skippedRaster.length)} PNG ${noun} not captured, not declared in raster_artifacts: ${value.skippedRaster.join(', ')}; `
+      + `to capture, call ${tool} again with raster_artifacts: ${JSON.stringify(value.skippedRaster)} and code that writes ${pronoun})`)
   }
   if (value.captureSkippedOversizedCount !== undefined) {
     lines.push(`(${String(value.captureSkippedOversizedCount)} eligible file(s) skipped: too large to capture)`)
@@ -284,13 +386,14 @@ export function formatRunResult(value: ScienceRunValue): string {
  * Register one persistent-kernel run tool for the given language.
  * @param ctx - plugin context; reads the optional `ctx.scienceRuntime` at call time.
  * @param language - `python` or `r`.
+ * @param directEditLimit - maximum recent direct-edit summaries in each artifact receipt.
  */
-export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
+export function applyRunTool(ctx: Context, language: ScienceLanguage, directEditLimit: number): void {
   ctx.tools.register(defineTool({
     name: language === 'python' ? 'run_python' : 'run_r',
     description: language === 'python'
-      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An exception is a result to inspect in stdout/stderr, not a tool failure.'
-      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An error condition is a result to inspect in stdout/stderr, not a tool failure.',
+      ? 'Run Python source against this session\'s persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An exception is a result to inspect in stdout/stderr, not a tool failure.'
+      : 'Run R source against this session\'s persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An error condition is a result to inspect in stdout/stderr, not a tool failure.',
     parameters: {
       code: { type: 'string', required: true, description: 'Non-empty source to execute.' },
       artifact_inputs: {
@@ -311,7 +414,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
     },
     output: {
       schema: runOutputSchema,
-      render: (_args, value) => [{ type: 'text', text: formatRunResult(value) }],
+      render: (_args, value) => [{ type: 'text', text: formatRunResult(value, language) }],
       presentationMeta: (_args, value) => scienceArtifactPresentation(
         (value.capturedArtifacts ?? []).map(capturedArtifactPresentationItem),
       ),
@@ -353,7 +456,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage): void {
         signal: exec.signal,
       })
       const result = await handle.done
-      const value = runValueFromResult(result)
+      const value = await runValueFromResult(result, resolveCapturedArtifactStoreFacts.bind(undefined, ctx, directEditLimit))
       const projection = replayScience(session.events)
       /* v8 ignore next -- a run that just settled already required a bound mode; replay cannot be null here */
       const restartReason = projection === null ? undefined : kernelRestartReason(projection, result.terminal)

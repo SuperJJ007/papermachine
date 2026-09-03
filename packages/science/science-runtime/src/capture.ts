@@ -10,7 +10,8 @@
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
+import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
+import type { ArtifactKind, ScienceArtifactStore, VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import { applyScienceEvent, foldScience, projectScienceFold } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactMediaType,
@@ -145,9 +146,30 @@ export interface CaptureRunArtifactsResult {
   readonly chartUnavailablePaths: readonly string[]
 }
 
-/** Twelve-character preview the store records beside a full binding fingerprint. */
-function fingerprintPreview(fingerprint: string): string {
-  return fingerprint.slice(0, 12)
+/**
+ * Resolve one capture media type to the store's artifact-kind vocabulary,
+ * for a brand-new artifact's `createArtifact` call. Exhaustive over
+ * {@link ScienceArtifactMediaType}'s closed set, mirroring the same mapping
+ * the store's own v1→v2 migration uses to infer `kind` from legacy data
+ * (`schema.ts`'s `inferArtifactKind`).
+ */
+function artifactKindForMediaType(mediaType: ScienceArtifactMediaType): ArtifactKind {
+  switch (mediaType) {
+    case 'image/png': return 'figure'
+    case 'text/csv': return 'dataset'
+    case 'application/json':
+    case 'text/markdown':
+    case 'text/plain':
+      return 'document'
+    /* v8 ignore next 2 -- ScienceArtifactMediaType is closed and every member is handled above. */
+    default:
+      return assertNeverCaptureMediaType(mediaType)
+  }
+}
+
+/* v8 ignore next 3 -- see assertNeverCaptureMediaType's only caller, above. */
+function assertNeverCaptureMediaType(mediaType: never): never {
+  throw new Error(`science-runtime: unreachable ScienceArtifactMediaType ${JSON.stringify(mediaType)}`)
 }
 
 /**
@@ -155,19 +177,24 @@ function fingerprintPreview(fingerprint: string): string {
  * project's artifact store as the next version of the logical artifact named
  * by its path relative to that directory, then committing the matching
  * store-reference `science/artifact-saved` event. Content addressing makes
- * admission idempotent: an unchanged file's checksum equals the latest
- * committed version's own `sha256`, so this walk skips it rather than
- * appending a redundant version. After a direct human edit, a file that
+ * admission idempotent: an unchanged file's checksum equals the store's
+ * current head version for that logical name, so this walk skips it rather
+ * than appending a redundant version. After a direct human edit, a file that
  * still matches the latest run-produced ancestor is also skipped unless this
  * run explicitly names that path in `editBaselines`; this prevents an untouched
  * stale workspace file from reverting the human edit while preserving an
- * intentional model edit or revert. Never throws for an oversized file,
- * a per-run/per-session cap, or a Session that detaches mid-walk — each
- * stops capture early (accounted in the returned result) rather than
- * failing the run that already committed its terminal fact. A store write
- * whose event append is then vetoed leaves an orphaned store version with no
- * session reference — accepted provenance decay, symmetric to the
- * crash-between-commit-and-capture gap this Runtime already accepts.
+ * intentional model edit or revert — both facts (the head's `sha256` and its
+ * `contentOrigin`) are read from the store, the sole authority for a
+ * version's provenance, rather than from this session's own local history,
+ * which is also what lets a logical name another session already created in
+ * this project continue here instead of colliding with the store's
+ * `UNIQUE(owningProjectId, logicalName)` constraint. Never throws for an
+ * oversized file, a per-run/per-session cap, or a Session that detaches
+ * mid-walk — each stops capture early (accounted in the returned result)
+ * rather than failing the run that already committed its terminal fact. A
+ * store write whose event append is then vetoed is marked `orphan` on the
+ * store's own `version_health` row immediately, rather than waiting for a
+ * later reconciliation pass.
  * @param request - the source run, its artifact directory, store coordinates, and validated Config bounds.
  * @returns every version appended, plus accounting for what the walk skipped.
  */
@@ -194,6 +221,30 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   // every one of up to `captureMaxFilesPerRun` iterations would be
   // quadratic in the session's total event count.
   const state: ScienceFoldState = foldScience(session.events)
+  // The authorizing run's own turn number, read once from this same fold's
+  // tool-call index (`tool/call` facts are unaffected by the Science
+  // artifact-event slimming) rather than per file — the authorizing call is
+  // fixed for the whole walk.
+  const authorizingCall = state.toolCalls.find(call => call.callId === sourceRun.toolCallId)
+  /* v8 ignore next 3 -- run-started already validated this toolCallId against a recorded tool/call event in this session */
+  if (authorizingCall === undefined) {
+    throw new Error('science-runtime: capture could not locate the authorizing run\'s tool/call event')
+  }
+  const producerTurn = authorizingCall.turn
+
+  // D7: lazily list every artifact this project's store already knows,
+  // once per walk, so a logical name this SESSION has never captured before
+  // can still continue an artifact a DIFFERENT session already created in
+  // the same project, instead of colliding with `createArtifact`'s
+  // `UNIQUE(owningProjectId, logicalName)` constraint.
+  let projectArtifactIdsByName: ReadonlyMap<string, ScienceArtifactVersion['artifactId']> | undefined
+  const projectArtifactIdFor = async (logicalName: string): Promise<ScienceArtifactVersion['artifactId'] | undefined> => {
+    if (projectArtifactIdsByName === undefined) {
+      const known = await store.listArtifacts(projectId)
+      projectArtifactIdsByName = new Map(known.map(candidate => [candidate.logicalName, candidate.artifactId]))
+    }
+    return projectArtifactIdsByName.get(logicalName)
+  }
 
   for (const relativePath of files) {
     const mediaType = captureMediaType(relativePath)
@@ -234,12 +285,30 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     }
     const sha256 = createHash('sha256').update(data).digest('hex')
 
-    const logical = projection.artifacts.filter(candidate => candidate.logicalName === relativePath)
-    const latest = logical.at(-1)
-    if (latest !== undefined && latest.sha256 === sha256) continue
-    if (latest?.origin === 'human-edit' && request.editBaselines?.has(relativePath) !== true) {
-      const latestRunProduced = logical.findLast(candidate => candidate.origin !== 'human-edit')
-      if (latestRunProduced?.sha256 === sha256) continue
+    const localKnown = projection.artifacts.filter(candidate => candidate.logicalName === relativePath)
+    const localLatest = localKnown.at(-1)
+    let artifactId = localLatest?.artifactId ?? await projectArtifactIdFor(relativePath)
+
+    if (artifactId !== undefined) {
+      // The store, not this session's own local history, is the sole
+      // authority for a version's content_origin and sha256 (T1's authority
+      // rule) — both the same-content skip and the human-edit stale-skip
+      // below read the store's current head and history rather than
+      // `localKnown`, which no longer carries either fact and would also
+      // miss a head another session advanced.
+      const head = await store.getLatestVersion(projectId, artifactId)
+      // An artifactId resolved here (from this session's own fold or D7's
+      // listArtifacts lookup) always names a real, already-committed store
+      // row, which always has a latest version.
+      /* v8 ignore next */
+      if (head !== undefined) {
+        if (head.sha256 === sha256) continue
+        if (head.contentOrigin === 'human-edit' && request.editBaselines?.has(relativePath) !== true) {
+          const history = await store.listVersions(projectId, artifactId)
+          const latestRunProduced = history.findLast(candidate => candidate.contentOrigin !== 'human-edit')
+          if (latestRunProduced?.sha256 === sha256) continue
+        }
+      }
     }
 
     const parent = request.editBaselines?.get(relativePath)
@@ -254,60 +323,67 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       parentVersionId = parentVersion.versionId
     }
 
+    const chart = mediaType === 'image/png' ? request.charts?.get(relativePath) : undefined
+    const figureState = chart === undefined
+      ? undefined
+      : { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) }
     const provenance = {
       producerRunId: String(sourceRun.runId),
       producerToolCallId: String(sourceRun.toolCallId),
       producerRequestHeaderSeq: sourceRun.requestHeaderSeq,
-      environmentRevision: String(sourceRun.environmentRevision),
-      environmentFingerprintPreview: fingerprintPreview(sourceRun.environmentFingerprint),
+      environmentRevision: sourceRun.environmentRevision,
+      environmentFingerprint: sourceRun.environmentFingerprint,
+      producerTurn,
+      ...parentVersionId === undefined ? {} : { baseVersionId: parentVersionId },
+      ...figureState === undefined ? {} : { figureState },
     }
-    const title = basename(relativePath)
-    const artifactId = latest?.artifactId
+
     // The store row commits before its session event: the event carries the
     // validated store coordinates as fact (S0's Host-side pre-commit rule).
-    const stored = artifactId === undefined
-      ? (await store.createArtifact(projectId, {
-        logicalName: relativePath,
-        originSessionId: session.id,
-        data,
-        mediaType,
-        origin: 'auto',
-        title,
-        ...provenance,
-      })).version
-      : await store.appendVersion(projectId, artifactId, {
-        producerSessionId: session.id,
-        data,
-        mediaType,
-        origin: 'auto',
-        title,
-        ...parentVersionId === undefined ? {} : { editBaselines: parentVersionId },
-        ...provenance,
-      })
+    let stored: VersionRecord
+    if (artifactId !== undefined) {
+      stored = await store.appendVersion(projectId, artifactId, { producerSessionId: session.id, data, mediaType, contentOrigin: 'run-auto', ...provenance })
+    } else {
+      try {
+        stored = (await store.createArtifact(projectId, {
+          logicalName: relativePath,
+          kind: artifactKindForMediaType(mediaType),
+          originSessionId: session.id,
+          data,
+          mediaType,
+          contentOrigin: 'run-auto',
+          ...provenance,
+        })).version
+      } catch (error) {
+        // A different session raced this same logical name into existence
+        // between this walk's D7 lookup and this create call — the store's
+        // own UNIQUE(owningProjectId, logicalName) constraint is the true
+        // serialization point; re-resolve and append onto the winner rather
+        // than failing this file.
+        if (!(error instanceof ProjectArtifactStoreError) || error.code !== 'LOGICAL_NAME_CONFLICT') throw error
+        const known = await store.listArtifacts(projectId)
+        const winner = known.find(candidate => candidate.logicalName === relativePath)
+        /* v8 ignore next 3 -- the conflict error itself proves a row with this logicalName now exists */
+        if (winner === undefined) throw error
+        artifactId = winner.artifactId
+        stored = await store.appendVersion(projectId, artifactId, { producerSessionId: session.id, data, mediaType, contentOrigin: 'run-auto', ...provenance })
+      }
+    }
 
-    const chart = mediaType === 'image/png' ? request.charts?.get(relativePath) : undefined
+    const title = basename(relativePath)
+    await store.annotateVersion(projectId, stored.versionId, { actor: 'capture', sessionId: session.id, title })
+
     const artifact: ScienceArtifactVersion = {
       artifactId: stored.artifactId,
-      producerSessionId: stored.producerSessionId,
       logicalName: relativePath,
       // New content always opens the next version; the store's per-artifact
       // ordinal is that version number, so the log and the index agree.
       version: stored.ordinal,
-      ...(parent === undefined ? {} : { parent }),
       title,
-      origin: 'auto',
       projectId,
       versionId: stored.versionId,
       sha256: stored.sha256,
-      mediaType,
-      byteCount: stored.byteCount,
-      runId: sourceRun.runId,
-      toolCallId: sourceRun.toolCallId,
-      requestHeaderSeq: sourceRun.requestHeaderSeq,
-      environmentRevision: sourceRun.environmentRevision,
-      environmentFingerprint: sourceRun.environmentFingerprint,
-      createdAt: stored.createdAt,
-      ...(chart === undefined ? {} : { chart }),
+      seenAt: Date.now(),
     }
     let appended
     try {
@@ -316,10 +392,18 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       // The Session detached (or otherwise refused the append) between the
       // walk starting and this file's commit: remaining eligible files in
       // this run stay uncaptured with no automatic retry, and the store row
-      // just written stays as an orphaned version no event references.
-      // `appendFailed` on the returned result is this fact's only signal —
-      // the caller (`ScienceRuntime.captureAfterFinish`) logs it.
+      // just written is marked orphan immediately rather than left for a
+      // later reconciliation pass to discover. `appendFailed` on the
+      // returned result is this fact's only signal to the caller
+      // (`ScienceRuntime.captureAfterFinish`, which logs it).
       appendFailed = true
+      try {
+        await store.setVersionHealth(projectId, stored.versionId, { orphan: true })
+      } catch {
+        // The append already failed for this file; a health-marking failure
+        // on top of it leaves the row for the next reconciliation pass
+        // instead of compounding this walk's error.
+      }
       break
     }
     // Advances `state` for the next iteration's `projectScienceFold` read;
@@ -328,7 +412,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     // between iterations of one synchronous walk.
     applyScienceEvent(state, appended)
     captured.push(artifact)
-    if (mediaType === 'image/png' && artifact.chart === undefined) chartUnavailablePaths.push(relativePath)
+    if (mediaType === 'image/png' && figureState === undefined) chartUnavailablePaths.push(relativePath)
   }
 
   return {

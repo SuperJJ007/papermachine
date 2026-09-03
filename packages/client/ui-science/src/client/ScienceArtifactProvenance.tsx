@@ -2,10 +2,12 @@
 // over four sub-tabs — Code, Execution log, Messages, Environment — for one
 // resolved artifact version. Reached from the artifact viewer's toolbar
 // ("Provenance"); the breadcrumb's root segment returns to the content view.
-// Resolution (which chart/run this bundle is for) is the caller's job
-// (ScienceDetailsView.tsx) — this component always renders for a chart/run
-// pair that already resolved, so it carries no "no selection"/"unavailable"
-// branch of its own.
+//
+// ScienceDetailsView resolves the version's store-owned producer summary
+// from `sessions.scienceVersions`, then joins that exact identity to the
+// current session's run and transcript projections. Cross-session and
+// non-run versions render explicit unavailable states rather than guessing a
+// producer from nearby trajectory coordinates.
 
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -14,11 +16,9 @@ import type { ConversationNode, ConversationSnapshot, ToolCallBlock, ToolResultN
 // 'tool-call' target the same way ui-conversation's own tool-node reader does.
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun,
-} from '@deepseek-ai/dsh-science-session/types'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from './selection-store.ts'
+import type { ScienceRenderableVersion } from './version-summaries.ts'
 import css from './ScienceArtifactProvenance.module.css'
 
 /** One resolved provenance sub-tab and its display label key, in display order. */
@@ -31,8 +31,11 @@ const SUB_TABS: readonly { id: ScienceProvenanceSubTab; labelKey: 'provenance.co
 
 /** Full props for the provenance drill-in. */
 export interface ScienceArtifactProvenanceProps {
-  chart: ScienceClientArtifactVersion
-  run: ScienceClientRun
+  chart: ScienceRenderableVersion
+  /** The version's producing run, when resolvable in the current session. */
+  run: ScienceClientRun | undefined
+  /** The version's producing tool call id, when resolvable in the current session. */
+  producingCallId: string | undefined
   environment: ScienceClientEnvironmentBinding | null | undefined
   snapshot: ConversationSnapshot
   subTab: ScienceProvenanceSubTab
@@ -41,9 +44,9 @@ export interface ScienceArtifactProvenanceProps {
   inspectCall: (callId: string) => void
   /** Select the detailed trajectory subview before inspecting one call. */
   selectDetailed: () => void
-  currentSessionId: SessionId
-  sourceSessionTitle: string | undefined
   returnToConversation: (anchorKey: string) => void
+  /** Display title or id for a producer outside the current session. */
+  sourceSessionTitle?: string
   t: TranslateNS<'science'>
 }
 
@@ -81,9 +84,9 @@ function generationSummary(snapshot: ConversationSnapshot, callId: string): {
   }
 }
 
-/** Resolve one root run_python/run_r call through the internal Chat Node index (direct-dispatch calls are always root). */
-function resolveRunCall(snapshot: ConversationSnapshot, toolCallId: string): ToolCallBlock | undefined {
-  const node = snapshot.chat.nodes.get(conversationContextKey('tool-call', toolCallId))
+/** Resolve one tool call through the internal Chat Node index (direct-dispatch calls are always root). */
+function resolveCall(snapshot: ConversationSnapshot, callId: string): ToolCallBlock | undefined {
+  const node = snapshot.chat.nodes.get(conversationContextKey('tool-call', callId))
   return node?.kind === 'tool-call' ? (node as ChatNode<'tool-call'>).data.root : undefined
 }
 
@@ -138,6 +141,39 @@ function terminalCounts(run: ScienceClientRun): {
   }
 }
 
+/**
+ * Localize one version's content origin for a "not produced by a run" notice.
+ * @param origin - the store's `contentOrigin` fact.
+ * @param t - the Science namespace translator.
+ * @returns localized origin text.
+ */
+function contentOriginText(origin: ScienceRenderableVersion['contentOrigin'], t: TranslateNS<'science'>): string {
+  switch (origin) {
+    case 'run-auto': return t('provenance.origin.runAuto')
+    case 'human-edit': return t('provenance.origin.humanEdit')
+    case 'import': return t('provenance.origin.import')
+    /* v8 ignore next -- closed ScienceContentOrigin union */
+    default: return origin
+  }
+}
+
+/** Shared unavailable body for a cross-session preview or unresolved run. */
+function UnavailableRunSection({ chart, sourceSessionTitle, t }: {
+  chart: ScienceRenderableVersion
+  sourceSessionTitle: string | undefined
+  t: TranslateNS<'science'>
+}) {
+  return (
+    <section className={css.section}>
+      <p className={css.notice} role="status">
+        {sourceSessionTitle === undefined
+          ? t('provenance.noRun', { origin: contentOriginText(chart.contentOrigin, t) })
+          : t('provenance.crossSession', { session: sourceSessionTitle })}
+      </p>
+    </section>
+  )
+}
+
 function CodeSection({ run, block, t }: { run: ScienceClientRun; block: ToolCallBlock | undefined; t: TranslateNS<'science'> }) {
   const code = parseCode(resolveArgsRaw(block))
   return (
@@ -174,30 +210,39 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
 }
 
 function MessagesSection({
-  chart, run, summary, currentSessionId, sourceSessionTitle, returnToConversation, inspectCall, selectDetailed, t,
+  summary, sourceSessionTitle, returnToConversation, inspectCall, selectDetailed, producingCallId, t,
 }: {
-  chart: ScienceClientArtifactVersion
-  run: ScienceClientRun
   summary: ReturnType<typeof generationSummary>
-  currentSessionId: SessionId
   sourceSessionTitle: string | undefined
   returnToConversation: (anchorKey: string) => void
   inspectCall: (callId: string) => void
   selectDetailed: () => void
+  producingCallId: string | undefined
   t: TranslateNS<'science'>
 }) {
-  if (summary === undefined) return <section className={css.section}><p className={css.notice}>{t('provenance.messages.pending')}</p></section>
-  const local = chart.producerSessionId === currentSessionId
+  if (sourceSessionTitle !== undefined) {
+    return (
+      <section className={css.messagesSection}>
+        <p className={css.sourceSession}><span>{t('provenance.messages.sourceSession')}</span>{sourceSessionTitle}</p>
+        <div className={css.messageActions}>
+          <button type="button" className={css.primaryAction} disabled title={t('library.sourceNavigationUnavailable')}>
+            {t('provenance.messages.conversation')}
+          </button>
+        </div>
+      </section>
+    )
+  }
+  if (summary === undefined || producingCallId === undefined) {
+    return <section className={css.section}><p className={css.notice} role="status">{t('provenance.messages.pending')}</p></section>
+  }
   return (
     <section className={css.messagesSection}>
       <div className={css.messageSummary}><span>{t('provenance.messages.question')}</span><p>{summary.user}</p></div>
       <div className={css.messageSummary}><span>{t('provenance.messages.result')}</span><p>{summary.agent}</p></div>
-      {local
-        ? <div className={css.messageActions}>
-          <button type="button" className={css.primaryAction} onClick={() => { returnToConversation(summary.anchorKey) }}>{t('provenance.messages.conversation')}</button>
-          <button type="button" className={css.secondaryAction} onClick={() => { selectDetailed(); inspectCall(run.toolCallId) }}>{t('provenance.messages.trajectory')}</button>
-        </div>
-        : <p className={css.sourceSession}><span>{t('provenance.messages.sourceSession')}</span>{sourceSessionTitle ?? chart.producerSessionId}</p>}
+      <div className={css.messageActions}>
+        <button type="button" className={css.primaryAction} onClick={() => { returnToConversation(summary.anchorKey) }}>{t('provenance.messages.conversation')}</button>
+        <button type="button" className={css.secondaryAction} onClick={() => { selectDetailed(); inspectCall(producingCallId) }}>{t('provenance.messages.trajectory')}</button>
+      </div>
     </section>
   )
 }
@@ -226,17 +271,19 @@ function EnvironmentSection({ run, environment, t }: {
 /**
  * Render the provenance drill-in for one resolved artifact version: the
  * breadcrumb, the sub-tab strip, and the active sub-tab's section.
- * @param props - the resolved chart/run pair, the current environment
- * binding, the conversation snapshot, the active sub-tab and its setter, the
- * back-to-content callback, the transcript jump handoff, and the locale seat.
+ * @param props - the resolved chart, its producing run and call (when
+ * resolvable), the current environment binding, the conversation snapshot,
+ * the active sub-tab and its setter, the back-to-content callback, the
+ * transcript jump handoffs, an optional cross-session source-session title,
+ * and the locale seat.
  * @returns the drill-in body.
  */
 export function ScienceArtifactProvenance({
-  chart, run, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed,
-  currentSessionId, sourceSessionTitle, returnToConversation, t,
+  chart, run, producingCallId, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed,
+  returnToConversation, sourceSessionTitle, t,
 }: ScienceArtifactProvenanceProps) {
-  const block = resolveRunCall(snapshot, run.toolCallId)
-  const summary = generationSummary(snapshot, run.toolCallId)
+  const block = producingCallId === undefined ? undefined : resolveCall(snapshot, producingCallId)
+  const summary = producingCallId === undefined ? undefined : generationSummary(snapshot, producingCallId)
 
   return (
     <div className={css.body}>
@@ -259,12 +306,18 @@ export function ScienceArtifactProvenance({
           </button>
         ))}
       </div>
-      {subTab === 'code' && <CodeSection run={run} block={block} t={t} />}
-      {subTab === 'log' && <ExecutionLogSection run={run} block={block} t={t} />}
-      {subTab === 'messages' && <MessagesSection chart={chart} run={run} summary={summary}
-        currentSessionId={currentSessionId} sourceSessionTitle={sourceSessionTitle}
-        returnToConversation={returnToConversation} inspectCall={inspectCall} selectDetailed={selectDetailed} t={t} />}
-      {subTab === 'environment' && <EnvironmentSection run={run} environment={environment} t={t} />}
+      {subTab === 'code' && (run === undefined
+        ? <UnavailableRunSection chart={chart} sourceSessionTitle={sourceSessionTitle} t={t} />
+        : <CodeSection run={run} block={block} t={t} />)}
+      {subTab === 'log' && (run === undefined
+        ? <UnavailableRunSection chart={chart} sourceSessionTitle={sourceSessionTitle} t={t} />
+        : <ExecutionLogSection run={run} block={block} t={t} />)}
+      {subTab === 'messages' && <MessagesSection
+        summary={summary} sourceSessionTitle={sourceSessionTitle} returnToConversation={returnToConversation}
+        inspectCall={inspectCall} selectDetailed={selectDetailed} producingCallId={producingCallId} t={t} />}
+      {subTab === 'environment' && (run === undefined
+        ? <UnavailableRunSection chart={chart} sourceSessionTitle={sourceSessionTitle} t={t} />
+        : <EnvironmentSection run={run} environment={environment} t={t} />)}
     </div>
   )
 }

@@ -32,7 +32,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-science-session/types'
 // Type-only: pulls the generated Science Remote namespace into ClientContext.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import { createScienceImageLoader, createScienceTextLoader } from './science-attachment-loader.ts'
+import { createScienceImageUrlLoader, createScienceTextUrlLoader } from './science-artifact-url-loader.ts'
+import { createScienceChartStateLoader } from './science-chart-state-loader.ts'
+import { createLoadScienceVersions } from './version-summaries.ts'
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow, type ScienceExecutionRowInjected } from './ScienceExecutionRow.tsx'
 import { ScienceOutcomeRow, type ScienceOutcomeInjected } from './ScienceOutcomeRow.tsx'
@@ -171,6 +173,7 @@ export function apply(ctx: ClientContext): void {
   // entry has never rendered (nothing to reset yet — opening it fresh
   // already lands on the library, the store's own init state).
   const libraryReturners = new Map<SessionId, () => void>()
+  const artifactLibraryViews = new Map<SessionId, () => boolean>()
   const composerSelections = new ScienceComposerSelections()
   const ComposerChipsEntry = (props: PropsRuntime<'conversation.input.accessory'> & PropsLocale<'science'>) => {
     const science = props.useProjection('science')
@@ -191,6 +194,10 @@ export function apply(ctx: ClientContext): void {
       // the library's artifacts page regardless of what it was showing —
       // an open artifact tab, the files page, or the library already.
       openScience: (sessionId: SessionId) => {
+        if (artifactLibraryViews.get(sessionId)?.() === true) {
+          ctx.conversation.toggleDetailsView(sessionId, SCIENCE_DETAILS_ID)
+          return
+        }
         ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID)
         libraryReturners.get(sessionId)?.()
       },
@@ -219,7 +226,8 @@ export function apply(ctx: ClientContext): void {
     yield ctx.slots.register({
       name: 'tool.call.toolview', key: 'publish_outcome', locale: NS,
       inject: (sessionId: SessionId): ScienceOutcomeInjected => ({
-        loadScienceImage: createScienceImageLoader(ctx.sessions, sessionId),
+        loadScienceImage: createScienceImageUrlLoader(sessionId),
+        loadVersions: createLoadScienceVersions(ctx.sessions, sessionId),
       }),
     }, ScienceOutcomeRow)
   })
@@ -230,7 +238,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceTurnArtifactsInjected => ({
-      loadImage: createScienceImageLoader(ctx.sessions, sessionId),
+      loadImage: createScienceImageUrlLoader(sessionId),
       openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
     }),
   }, ScienceTurnArtifacts))
@@ -325,6 +333,7 @@ export function apply(ctx: ClientContext): void {
     store: scienceSelectionStore,
     inject: (sessionId: SessionId): ScienceTraceInjected => ({
       openArtifact: () => { ctx.conversation.openDetailsView(sessionId, SCIENCE_DETAILS_ID) },
+      loadVersions: createLoadScienceVersions(ctx.sessions, sessionId),
     }),
   }, ScienceTraceView))
   ctx.slots.inject('conversation.details.view', () => ctx.slots.register({
@@ -355,8 +364,16 @@ export function apply(ctx: ClientContext): void {
         }
       }, `ui-science: library-return binding for ${sessionId}`)
       return {
-        loadImage: createScienceImageLoader(ctx.sessions, sessionId),
-        loadText: createScienceTextLoader(ctx.sessions, sessionId),
+        bindArtifactLibraryView: (read) => {
+          artifactLibraryViews.set(sessionId, read)
+          return () => {
+            if (artifactLibraryViews.get(sessionId) === read) artifactLibraryViews.delete(sessionId)
+          }
+        },
+        loadImage: createScienceImageUrlLoader(sessionId),
+        loadText: createScienceTextUrlLoader(sessionId),
+        loadChartState: createScienceChartStateLoader(ctx.sessions, sessionId),
+        loadVersions: createLoadScienceVersions(ctx.sessions, sessionId),
         loadLibrary: () => binding.session.readScienceLibrary(),
         loadWorkspaceFiles: path => binding.session.readWorkspaceFiles(path),
         loadWorkspaceFile: path => binding.session.readWorkspaceFile(path),
@@ -369,6 +386,7 @@ export function apply(ctx: ClientContext): void {
         removeArtifactNote: request => ctx.remote.scienceEdits.removeArtifactNote(sessionId, request),
         applyChartOps: request => ctx.remote.scienceEdits.applyChartOps(sessionId, request),
         previewChartOps: request => ctx.remote.scienceEdits.previewChartOps(sessionId, request),
+        saveArtifactAs: request => ctx.remote.scienceEdits.saveArtifactAs(sessionId, request),
       }
     },
   }, ScienceDetailsView))

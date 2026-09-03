@@ -29,7 +29,9 @@ import {
   sessionRenameValueSchema,
   sessionSearchValueSchema,
   sessionScienceArtifactValueSchema,
+  sessionsScienceChartStateValueSchema,
   sessionsScienceLibraryValueSchema,
+  sessionsScienceVersionsValueSchema,
   sessionsWorkspaceFileValueSchema,
   sessionsWorkspaceFilesValueSchema,
   sessionSelectModelValueSchema,
@@ -104,6 +106,8 @@ export interface IApiClient {
     textAttachment(payload: RequestPayload<'session.textAttachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.textAttachment'>>>
     scienceArtifact(payload: RequestPayload<'session.scienceArtifact'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.scienceArtifact'>>>
     scienceLibrary(payload: RequestPayload<'sessions.scienceLibrary'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceLibrary'>>>
+    scienceVersions(payload: RequestPayload<'sessions.scienceVersions'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceVersions'>>>
+    scienceChartState(payload: RequestPayload<'sessions.scienceChartState'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.scienceChartState'>>>
     workspaceFiles(payload: RequestPayload<'sessions.workspaceFiles'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFiles'>>>
     workspaceFile(payload: RequestPayload<'sessions.workspaceFile'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sessions.workspaceFile'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
@@ -193,6 +197,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'session.textAttachment': sessionTextAttachmentValueSchema,
   'session.scienceArtifact': sessionScienceArtifactValueSchema,
   'sessions.scienceLibrary': sessionsScienceLibraryValueSchema,
+  'sessions.scienceVersions': sessionsScienceVersionsValueSchema,
+  'sessions.scienceChartState': sessionsScienceChartStateValueSchema,
   'sessions.workspaceFiles': sessionsWorkspaceFilesValueSchema,
   'sessions.workspaceFile': sessionsWorkspaceFileValueSchema,
   'session.updateQueue': sessionUpdateQueueValueSchema,
@@ -237,6 +243,25 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+}
+
+/**
+ * Same-origin authority resolution, shared by every same-origin URL this
+ * carrier builds: a browser resolves to its own page origin (a fake
+ * authority would fail DNS on a real request — the desktop app's random
+ * per-launch port makes hardcoding one wrong by construction); a
+ * no-`location` environment (Node) falls back to a fixed fake authority,
+ * since nothing there ever issues a real network request against it.
+ * Exported so a caller outside this carrier — `dsh-client-runtime`'s
+ * `scienceArtifactUrl`, which builds a browser-navigable download/preview
+ * URL rather than going through `callUnary` — resolves the same origin
+ * this class's own POST/WebSocket traffic uses, without hardcoding a host
+ * or port of its own.
+ * @returns the resolved origin (e.g. `https://example.com`), never a bare hostname.
+ */
+export function resolveApiOrigin(): string {
+  const loc = (globalThis as { location?: { origin?: string } }).location
+  return loc?.origin !== undefined && loc.origin !== 'null' ? loc.origin : INTERNAL_BASE
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -304,10 +329,9 @@ export abstract class AbstractApiClient implements IApiClient {
     })
   }
 
-  /** Browser = same-origin (a fake authority would fail DNS on real requests); no-location env (Node) = fake authority. */
+  /** Delegates to the module-level {@link resolveApiOrigin} (single source of the same-origin rule). */
   protected resolveBase(): string {
-    const loc = (globalThis as { location?: { origin?: string } }).location
-    return loc?.origin !== undefined && loc.origin !== 'null' ? loc.origin : INTERNAL_BASE
+    return resolveApiOrigin()
   }
 
   protected mintRpcId(): RpcId {
@@ -438,6 +462,8 @@ export abstract class AbstractApiClient implements IApiClient {
     textAttachment: (payload, signal) => this.callUnary('session.textAttachment', payload, signal),
     scienceArtifact: (payload, signal) => this.callUnary('session.scienceArtifact', payload, signal),
     scienceLibrary: (payload, signal) => this.callUnary('sessions.scienceLibrary', payload, signal),
+    scienceVersions: (payload, signal) => this.callUnary('sessions.scienceVersions', payload, signal),
+    scienceChartState: (payload, signal) => this.callUnary('sessions.scienceChartState', payload, signal),
     workspaceFiles: (payload, signal) => this.callUnary('sessions.workspaceFiles', payload, signal),
     workspaceFile: (payload, signal) => this.callUnary('sessions.workspaceFile', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),

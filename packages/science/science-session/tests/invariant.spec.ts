@@ -8,7 +8,6 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import * as ScienceInvariant from '../src/invariant.ts'
 import {
   ScienceEnvironmentProfileId,
-  ScienceArtifactId,
   ScienceRunId,
   ScienceScratchKey,
   ScienceVersionId,
@@ -188,22 +187,8 @@ describe('Science stream invariant', () => {
     ])
   })
 
-  it('rejects unresolved artifact parents and run inputs before commit', async () => {
+  it('rejects an in-range run input mismatch before commit', async () => {
     const ctx = await setup()
-    const parentSession = ctx.sessions.create(SessionId('science-invariant-parent'), {
-      meta: { agentPreset: 'science' },
-    })
-    appendFixtureEvents(parentSession, legalEvents().slice(0, 8))
-    const parentSeq = parentSession.seq
-    expect(() => parentSession.append('science/artifact-saved', {
-      version: 1,
-      artifact: artifact({
-        parent: { artifactId: ScienceArtifactId('missing-parent'), version: 1 },
-        createdAt: parentSession.events.at(-1)!.time,
-      }),
-    })).toThrow(/does not identify a committed artifact version/)
-    expect(parentSession.seq).toBe(parentSeq)
-
     const inputSession = ctx.sessions.create(SessionId('science-invariant-input'), {
       meta: { agentPreset: 'science' },
     })
@@ -216,19 +201,10 @@ describe('Science stream invariant', () => {
     // a same-session inconsistency the fold catches, unlike a version ahead
     // of the local maximum (also accepted, same file) or an artifactId this
     // session's log has never recorded at all (S3's original acceptance).
-    const gapCall = inputSession.append('tool/call', {
-      turn: 1,
-      step: 1,
-      callId: CallId('call-artifact-gap'),
-      name: 'annotate_artifact',
-      arguments: '{}',
-    })
     inputSession.append('science/artifact-saved', {
       version: 1,
       artifact: artifact({
         version: 4,
-        toolCallId: gapCall.data.callId,
-        createdAt: gapCall.time,
         versionId: ScienceVersionId('version-gap-ahead-invariant'),
       }),
     })

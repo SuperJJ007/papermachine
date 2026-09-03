@@ -39,14 +39,15 @@ describe('concurrent append across separate processes', () => {
     const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-concurrent-ws-'))
     dirs.push(home, workspace)
 
-    const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, dshHome: home })
+    const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
     const { projectId } = await engine.openProject(workspace)
-    const { artifact, version: v1 } = await engine.createArtifact(projectId, {
+    const { artifact } = await engine.createArtifact(projectId, {
       logicalName: 'shared.txt',
+      kind: 'document',
       originSessionId: 'session-origin' as SessionId,
       data: new TextEncoder().encode('v1'),
       mediaType: 'text/plain',
-      origin: 'auto',
+      contentOrigin: 'run-auto',
     })
     await engine.close()
 
@@ -59,23 +60,22 @@ describe('concurrent append across separate processes', () => {
 
     expect(resultA.code, resultA.stderr).toBe(0)
     expect(resultB.code, resultB.stderr).toBe(0)
-    const a = JSON.parse(resultA.stdout) as { versionId: string; ordinal: number; parentVersionId: string | null }
-    const b = JSON.parse(resultB.stdout) as { versionId: string; ordinal: number; parentVersionId: string | null }
+    const a = JSON.parse(resultA.stdout) as { versionId: string; ordinal: number; baseVersionId: string | null }
+    const b = JSON.parse(resultB.stdout) as { versionId: string; ordinal: number; baseVersionId: string | null }
 
     // Both committed distinct ordinals contiguous with v1 — no two writers
-    // observed the same "latest" and no ordinal was skipped or reused.
+    // observed the same "latest" and no ordinal was skipped or reused. Neither
+    // appended an explicit baseline, so both are plain chain continuations —
+    // linearization is proved by the ordinal sequence itself, not by a
+    // stored parent pointer (this package no longer defaults one).
     const ordinals = [a.ordinal, b.ordinal].sort((x, y) => x - y)
     expect(ordinals).toEqual([2, 3])
+    expect(a.baseVersionId).toBeNull()
+    expect(b.baseVersionId).toBeNull()
 
-    const second = a.ordinal === 2 ? a : b
     const third = a.ordinal === 3 ? a : b
-    // The earlier committer's parent is the artifact's original version...
-    expect(second.parentVersionId).toBe(v1.versionId)
-    // ...and the LATER committer's parent is the EARLIER committer's version:
-    // a real linear chain, not two versions independently forking off v1.
-    expect(third.parentVersionId).toBe(second.versionId)
 
-    const readEngine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, dshHome: home })
+    const readEngine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 5000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
     try {
       const versions = await readEngine.listVersions(projectId, artifact.artifactId)
       expect(versions).toHaveLength(3)

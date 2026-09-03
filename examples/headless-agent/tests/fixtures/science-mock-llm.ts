@@ -44,6 +44,17 @@ function requestsDirectEditState(options: GenerateOptions): boolean {
     && message.content.some(block => block.type === 'text' && block.text === 'Inspect the direct chart edit state.'))
 }
 
+/** T5 six-path acceptance, path 3 ("continue"): a plain second run overwriting `plot.png`. */
+function requestsContinuation(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.source.kind === 'user'
+    && message.content.some(block => block.type === 'text' && block.text === 'Continue the plotted analysis with a fresh run.'))
+}
+
+function answeredContinuation(options: GenerateOptions): boolean {
+  return options.messages.some(message => message.role === 'assistant'
+    && message.content.some(block => block.type === 'text' && block.text === 'SCIENCE_CONTINUE_SNAPSHOT_OK'))
+}
+
 function requestsInstall(options: GenerateOptions): boolean {
   return options.messages.some(message => message.source.kind === 'user'
     && message.content.some(block => block.type === 'text' && block.text === 'Install numpy into the bound Python environment.'))
@@ -136,6 +147,30 @@ class ScienceMockAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'stop' } }
       return
     }
+    if (requestsContinuation(options) && !answeredContinuation(options)) {
+      if (!served.has('science-continue-call')) {
+        // No `edit_of`: a plain chain continuation, the store's
+        // `VersionRecord.baseVersionId` doc calls out as the common case
+        // that leaves `baseVersionId` undefined. `artifact_inputs` here
+        // stages an unrelated marker file only the fixture's fake kernel
+        // driver reads (to know which execution should write the second
+        // PNG variant) — not an editing input, and not `edit_of`.
+        const baseline = capturedPlotRef(options)
+        yield * toolCall('science-continue-call', 'run_python', {
+          code: 'from pathlib import Path\n'
+            + 'Path(SCIENCE_ARTIFACT_DIR, "plot.png").write_bytes(png_v2)',
+          raster_artifacts: ['plot.png'],
+          artifact_inputs: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'continue-marker.png' }],
+        })
+        return
+      }
+      const reply = 'SCIENCE_CONTINUE_SNAPSHOT_OK'
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: reply }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     if (requestsInstall(options) && !answeredInstall(options)) {
       if (!served.has('science-install-call')) {
         yield * toolCall('science-install-call', 'install_science_packages', { language: 'python', packages: ['numpy'] })
@@ -205,6 +240,15 @@ class ScienceMockAdapter extends LlmAdapter {
           artifact_inputs: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'source.png' }],
           edit_of: [{ artifactId: baseline.artifactId, version: baseline.version, path: 'edited.png' }],
           raster_artifacts: ['edited.png'],
+        })
+        return
+      case 5:
+        // The first run retained this PNG without declaring it. Annotation
+        // remains metadata-only and must direct the model back through a
+        // producing run instead of importing the retained file itself.
+        yield * toolCall('science-annotate-missed-call', 'annotate_artifact', {
+          logical_name: 'missed.png',
+          title: 'Missed plot',
         })
         return
       default: {

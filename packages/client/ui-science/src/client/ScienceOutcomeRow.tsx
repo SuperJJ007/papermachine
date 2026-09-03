@@ -24,11 +24,15 @@ import {
   scienceToolResultText,
   scienceToolRowState,
 } from './ScienceToolFallbackRow.tsx'
+import type { LoadScienceVersions, ScienceVersionSummaryMap } from './version-summaries.ts'
+import { toRenderableVersion, useScienceVersionSummaries } from './version-summaries.ts'
 
 /** Full row props: the toolview runtime share plus this package's locale seat. */
 export interface ScienceOutcomeInjected {
   /** Session-fold-authorized project-store image loader. */
   readonly loadScienceImage: ScienceImageLoader
+  /** Batch-read current library facts for the row's cited chart evidence (D9). */
+  readonly loadVersions: LoadScienceVersions
 }
 
 type ScienceOutcomeRowProps = ToolCallViewProps & PropsLocale<'science'> & InjectFace<ScienceOutcomeInjected>
@@ -55,9 +59,10 @@ function isEvidenceItem(value: unknown): value is ScienceOutcomeEvidencePresenta
 }
 
 /** One evidence row: a text label, plus a resolved chart thumbnail when the citation is a chart. */
-function EvidenceItem({ item, science, loadScienceImage, t }: {
+function EvidenceItem({ item, science, summaries, loadScienceImage, t }: {
   item: ScienceOutcomeEvidencePresentation
   science: ScienceClientProjection | null | undefined
+  summaries: ScienceVersionSummaryMap
   loadScienceImage: ScienceImageLoader
   t: ScienceOutcomeRowProps['t']
 }) {
@@ -68,7 +73,9 @@ function EvidenceItem({ item, science, loadScienceImage, t }: {
     return <li className={css.evidenceItem}>{t('outcome.evidenceMessage', { seq: item.seq })}</li>
   }
   const label = t('outcome.evidenceChart', { chartId: item.chart_id, version: item.version })
-  const chart = science?.artifacts.find(candidate => String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
+  const rawArtifact = science?.artifacts.find(candidate =>
+    String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
+  const chart = rawArtifact === undefined ? undefined : toRenderableVersion(rawArtifact, summaries)
   if (chart === undefined) {
     return (
       <li className={css.evidenceItem}>
@@ -113,11 +120,21 @@ function EvidenceItem({ item, science, loadScienceImage, t }: {
  * @param props - keyed toolview payload plus the science locale seat.
  * @returns the dedicated Outcome row.
  */
-export function ScienceOutcomeRow({ block, loadScienceImage, useProjection, inspect, t }: ScienceOutcomeRowProps) {
+export function ScienceOutcomeRow({ block, loadScienceImage, loadVersions, useProjection, inspect, t }: ScienceOutcomeRowProps) {
   const state = scienceToolRowState(block)
   const meta = 'kind' in block ? block.meta : undefined
   const presentation = state === 'ok' ? parsePresentation(meta) : null
   const science = useProjection('science')
+  // Batched once per row for every cited chart, not per evidence item — a Hook, so it
+  // runs on every render (including the plain-row early return below) with an
+  // empty request while there is no settled chart evidence yet.
+  const citedVersionIds = presentation === null ? [] : presentation.evidence.flatMap((item) => {
+    if (item.kind !== 'chart') return []
+    const artifact = science?.artifacts.find(candidate =>
+      String(candidate.artifactId) === item.chart_id && candidate.version === item.version)
+    return artifact === undefined ? [] : [artifact.versionId]
+  })
+  const summaries = useScienceVersionSummaries(loadVersions, citedVersionIds)
 
   if (presentation === null) {
     const status = state === 'running'
@@ -145,7 +162,7 @@ export function ScienceOutcomeRow({ block, loadScienceImage, useProjection, insp
           <div className={css.evidenceLabel}>{t('outcome.evidence')}</div>
           <ul className={css.evidenceList}>
             {presentation.evidence.map((item, index) => (
-              <EvidenceItem key={index} item={item} science={science} loadScienceImage={loadScienceImage} t={t} />
+              <EvidenceItem key={index} item={item} science={science} summaries={summaries} loadScienceImage={loadScienceImage} t={t} />
             ))}
           </ul>
         </div>

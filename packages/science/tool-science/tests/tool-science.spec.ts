@@ -17,6 +17,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
+import type { VersionAnnotationRecord, VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
@@ -29,7 +30,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartState, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunArtifactVersion, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartState, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
 import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -40,7 +41,18 @@ import { artifactReceiptFromArtifact, formatArtifactReceipt } from '../src/annot
 import type { ScienceArtifactReceiptValue } from '../src/annotate-artifact.ts'
 import { formatInstallResult, installValueFromResult } from '../src/install.ts'
 import type { ScienceInstallValue } from '../src/install.ts'
-import { formatRunResult, kernelRestartReason, latestRequestHeaderSeq, requireScienceSession, runValueFromResult } from '../src/run.ts'
+import {
+  formatRunResult,
+  kernelRestartReason,
+  latestRequestHeaderSeq,
+  requireArtifactStore,
+  requireScienceSession,
+  resolveArtifactStoreFacts,
+  resolveCapturedArtifactStoreFacts,
+  runValueFromResult,
+} from '../src/run.ts'
+import { scienceArtifactEdits } from '../src/artifact-schema.ts'
+import type { ResolveArtifactStoreFacts, ScienceArtifactStoreFacts } from '../src/artifact-schema.ts'
 import { stateValueFromProjection } from '../src/state.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
@@ -58,6 +70,7 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
     runs: [],
     kernels: [],
     artifacts: [],
+    trace: { turns: [], calls: [], artifacts: [] },
     outcome: null,
     metrics: {
       runCount: 0,
@@ -72,52 +85,92 @@ function projectionFixture(overrides: Partial<ScienceProjection> = {}): ScienceP
   }
 }
 
-/** Minimal valid `ScienceArtifactVersion` fixture (PNG content); callers override only what they test. */
-function artifactVersionFixture(overrides: Partial<ScienceRunArtifactVersion> = {}): ScienceRunArtifactVersion {
+/** Minimal valid `ScienceArtifactVersion` fixture (the session-level presentation snapshot); callers override only what they test. */
+function artifactVersionFixture(overrides: Partial<ScienceArtifactVersion> = {}): ScienceArtifactVersion {
   return {
     artifactId: ScienceArtifactId('artifact-1'),
-    producerSessionId: SessionId('session-1'),
     logicalName: 'file',
     version: 1,
     title: 'file',
-    origin: 'auto',
     projectId: ScienceProjectId('project-1'),
     versionId: ScienceVersionId('store-version-1'),
     sha256: 'a'.repeat(64),
+    seenAt: 1000,
+    ...overrides,
+  }
+}
+
+/**
+ * Minimal valid `VersionRecord` store-row fixture; callers override only
+ * what they test. `contentOrigin`/`curated`/`mediaType`/`bytes` come from
+ * this row, not from the session-level `ScienceArtifactVersion`, since the
+ * T1/T2 artifact-authority migration.
+ */
+function versionRecordFixture(overrides: Partial<VersionRecord> = {}): VersionRecord {
+  return {
+    versionId: ScienceVersionId('store-version-1'),
+    artifactId: ScienceArtifactId('artifact-1'),
+    ordinal: 1,
+    baseVersionId: undefined,
+    baseExplicit: false,
+    sha256: 'a'.repeat(64),
     mediaType: 'image/png',
     byteCount: 10,
-    runId: ScienceRunId('run-1'),
-    toolCallId: CallId('call-1'),
-    requestHeaderSeq: 1,
+    contentOrigin: 'run-auto',
+    producerSessionId: SessionId('session-1'),
+    producerRunId: 'run-1',
+    producerToolCallId: 'call-1',
+    producerRequestHeaderSeq: 1,
+    producerTurn: 1,
     environmentRevision: 1,
     environmentFingerprint: 'a'.repeat(64),
+    createdAt: 1000,
+    latestAnnotation: undefined,
+    title: undefined,
+    caption: undefined,
+    ...overrides,
+  }
+}
+
+/** Minimal valid `VersionAnnotationRecord` fixture; callers override only what they test. */
+function annotationFixture(overrides: Partial<VersionAnnotationRecord> = {}): VersionAnnotationRecord {
+  return {
+    annotationId: 'annotation-1' as never,
+    versionId: ScienceVersionId('store-version-1'),
+    title: 'Curated title',
+    caption: null,
+    actor: 'model',
+    sessionId: undefined,
+    toolCallId: undefined,
+    requestHeaderSeq: undefined,
+    derived: false,
     createdAt: 1000,
     ...overrides,
   }
 }
 
-/** Minimal direct-edit artifact fixture with exact ancestry and no run provenance. */
-function humanArtifactFixture(
-  overrides: Partial<Extract<ScienceArtifactVersion, { origin: 'human-edit' }>> = {},
-): Extract<ScienceArtifactVersion, { origin: 'human-edit' }> {
-  return {
-    artifactId: ScienceArtifactId('artifact-1'),
-    producerSessionId: SessionId('session-1'),
-    logicalName: 'chart.png',
-    version: 2,
-    parent: { artifactId: ScienceArtifactId('artifact-1'), version: 1 },
-    title: 'Chart',
-    origin: 'human-edit',
-    projectId: ScienceProjectId('project-1'),
-    versionId: ScienceVersionId('store-version-2'),
-    sha256: 'b'.repeat(64),
-    mediaType: 'image/png',
-    byteCount: 64,
-    environmentRevision: 1,
-    environmentFingerprint: 'a'.repeat(64),
-    createdAt: 1001,
-    ...overrides,
+/**
+ * Build a {@link ResolveArtifactStoreFacts} resolver over fixed store rows,
+ * keyed by `versionId` — the same key `runValueFromResult`/
+ * `stateValueFromProjection` resolve each listed artifact by.
+ */
+function resolverFor(records: readonly VersionRecord[]): ResolveArtifactStoreFacts {
+  const byVersionId = new Map(records.map(record => [String(record.versionId), record]))
+  return async (artifact) => {
+    const record = byVersionId.get(String(artifact.versionId))
+    if (record === undefined) throw new Error(`test fixture: no VersionRecord for versionId ${String(artifact.versionId)}`)
+    return { version: record, edits: [], editCount: 0 }
   }
+}
+
+/** Wrap one version row with model-safe store facts for pure receipt tests. */
+function storeFacts(version: VersionRecord, overrides: Partial<ScienceArtifactStoreFacts> = {}): ScienceArtifactStoreFacts {
+  return { version, edits: [], editCount: 0, ...overrides }
+}
+
+/** Resolver for a call site that names no captured/listed artifact and must never be invoked. */
+const unusedResolver: ResolveArtifactStoreFacts = () => {
+  throw new Error('test fixture: resolveStore should not be called')
 }
 
 const testSignal = new AbortController().signal
@@ -153,16 +206,25 @@ interface RunProvenance {
   readonly environmentFingerprint: string
 }
 
+/** Infer an `ArtifactKind`, matching the T1 v1→v2 migration's own three-case inference. */
+function artifactKindFor(mediaType: ScienceArtifactMediaType): 'figure' | 'dataset' | 'document' {
+  if (mediaType === 'image/png') return 'figure'
+  if (mediaType === 'text/csv') return 'dataset'
+  return 'document'
+}
+
 /**
- * Directly append one `origin: 'auto'` artifact version citing `run`'s own
- * authorizing facts — the durable shape `dsh-science-runtime`'s real capture
- * walk appends, for a file the fake kernel driver never writes (it only
- * replies over the kernel wire protocol's FIFO, never touching `SCIENCE_ARTIFACT_DIR`).
- * Persists the bytes through the mounted project artifact store first, so the
- * seeded event references a real store version row exactly as capture would.
+ * Directly append one `content_origin: 'run-auto'` artifact version, citing
+ * `run`'s authorizing facts when supplied. This is the durable write
+ * `dsh-science-runtime`'s real capture walk performs for a file the fake kernel driver never writes
+ * (it only replies over the kernel wire protocol's FIFO, never touching
+ * `SCIENCE_ARTIFACT_DIR`). Persists the bytes through the mounted project
+ * artifact store first (a `createArtifact` write plus a `capture`-actor
+ * title annotation), then appends the slimmed session-level presentation
+ * event exactly as capture would.
  */
 async function seedAutoArtifact(
-  ctx: Context, session: Session, run: RunProvenance, logicalName: string,
+  ctx: Context, session: Session, run: RunProvenance | undefined, logicalName: string,
   data: Uint8Array, mediaType: ScienceArtifactMediaType, chart?: ScienceChartState,
 ): Promise<ScienceArtifactVersion> {
   const cwd = session.header.cwd
@@ -170,31 +232,33 @@ async function seedAutoArtifact(
   const { projectId } = await ctx.scienceArtifactStore.openProject(cwd)
   const stored = await ctx.scienceArtifactStore.createArtifact(projectId, {
     logicalName,
+    kind: artifactKindFor(mediaType),
     originSessionId: session.id,
     data,
     mediaType,
-    origin: 'auto',
-    title: logicalName,
+    contentOrigin: 'run-auto',
+    ...run === undefined ? {} : {
+      producerRunId: String(run.runId),
+      producerToolCallId: String(run.toolCallId),
+      producerRequestHeaderSeq: run.requestHeaderSeq,
+      producerTurn: 1,
+      environmentRevision: run.environmentRevision,
+      environmentFingerprint: run.environmentFingerprint,
+    },
+    ...chart === undefined ? {} : {
+      figureState: { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) },
+    },
   })
+  await ctx.scienceArtifactStore.annotateVersion(projectId, stored.version.versionId, { actor: 'capture', title: logicalName })
   const artifact: ScienceArtifactVersion = {
     artifactId: stored.artifact.artifactId,
-    producerSessionId: stored.version.producerSessionId,
     logicalName,
     version: 1,
     title: logicalName,
-    origin: 'auto',
     projectId,
     versionId: stored.version.versionId,
     sha256: stored.version.sha256,
-    mediaType,
-    byteCount: stored.version.byteCount,
-    runId: run.runId,
-    toolCallId: run.toolCallId,
-    requestHeaderSeq: run.requestHeaderSeq,
-    environmentRevision: run.environmentRevision,
-    environmentFingerprint: run.environmentFingerprint,
-    createdAt: Date.now(),
-    ...chart === undefined ? {} : { chart },
+    seenAt: Date.now(),
   }
   session.append('science/artifact-saved', { version: 1, artifact })
   return artifact
@@ -571,8 +635,8 @@ describe('isScienceSession / requireScienceSession', () => {
 })
 
 describe('runValueFromResult / formatRunResult', () => {
-  it('carries failureCode and failureMessage when present (a kernel run has no per-run exit code or signal)', () => {
-    const value = runValueFromResult({
+  it('carries failureCode and failureMessage when present (a kernel run has no per-run exit code or signal)', async () => {
+    const value = await runValueFromResult({
       terminal: {
         runId: ScienceRunId('run-2'),
         language: 'python',
@@ -596,13 +660,13 @@ describe('runValueFromResult / formatRunResult', () => {
       },
       stdout: { text: '', bytes: 0, truncated: true },
       stderr: { text: 'boom', bytes: 5, truncated: true },
-    })
+    }, unusedResolver)
     expect(value).toMatchObject({
       status: 'failed', failureCode: 'EXECUTION_FAILED', failureMessage: 'ValueError',
     })
     expect(value).not.toHaveProperty('exitCode')
     expect(value).not.toHaveProperty('signal')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toContain('status: failed')
     expect(text).not.toContain('exit')
     expect(text).not.toContain('signal')
@@ -613,8 +677,8 @@ describe('runValueFromResult / formatRunResult', () => {
     expect(text).toContain('(stderr truncated)')
   })
 
-  it('omits failureCode and failureMessage when absent', () => {
-    const value = runValueFromResult({
+  it('omits failureCode and failureMessage when absent', async () => {
+    const value = await runValueFromResult({
       terminal: {
         runId: ScienceRunId('run-3'),
         language: 'python',
@@ -636,10 +700,10 @@ describe('runValueFromResult / formatRunResult', () => {
       },
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
-    })
+    }, unusedResolver)
     expect(value).not.toHaveProperty('failureCode')
     expect(value).not.toHaveProperty('failureMessage')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toBe('status: cancelled\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)')
   })
 
@@ -666,25 +730,21 @@ describe('runValueFromResult / formatRunResult', () => {
     }
   }
 
-  it('appends a plural captured-artifacts receipt mixing image and non-image entries, and both skip/truncation flags', () => {
+  it('appends a plural captured-artifacts receipt mixing image and non-image entries, and both skip/truncation flags', async () => {
     const image = artifactVersionFixture({
-      logicalName: 'plot.png',
-      version: 1,
-      versionId: ScienceVersionId('store-version-plot'),
-      sha256: 'b'.repeat(64),
-      mediaType: 'image/png',
-      byteCount: 500,
+      logicalName: 'plot.png', version: 1, versionId: ScienceVersionId('store-version-plot'), sha256: 'b'.repeat(64),
+    })
+    const imageStore = versionRecordFixture({
+      versionId: ScienceVersionId('store-version-plot'), sha256: 'b'.repeat(64), mediaType: 'image/png', byteCount: 500,
     })
     const csv = artifactVersionFixture({
-      logicalName: 'summary.csv',
-      version: 1,
-      parent: { artifactId: ScienceArtifactId('source-artifact'), version: 2 },
-      versionId: ScienceVersionId('store-version-csv'),
-      sha256: 'c'.repeat(64),
-      mediaType: 'text/csv',
-      byteCount: 2048,
+      logicalName: 'summary.csv', version: 1, versionId: ScienceVersionId('store-version-csv'), sha256: 'c'.repeat(64),
     })
-    const value = runValueFromResult({
+    const csvStore = versionRecordFixture({
+      versionId: ScienceVersionId('store-version-csv'), sha256: 'c'.repeat(64), mediaType: 'text/csv', byteCount: 2048,
+      contentOrigin: 'run-auto', baseVersionId: ScienceVersionId('store-version-source'), baseExplicit: true,
+    })
+    const value = await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
@@ -692,36 +752,66 @@ describe('runValueFromResult / formatRunResult', () => {
         captured: [image, csv], skippedRasterPaths: ['debug/preview.png'],
         skippedOversizedCount: 3, truncatedPerRun: true, truncatedPerSession: true, appendFailed: false, chartUnavailablePaths: [],
       },
-    })
+    }, resolverFor([imageStore, csvStore]))
     expect(value.capturedArtifacts).toEqual([
       {
         artifactId: 'artifact-1', logicalName: 'plot.png', version: 1, mediaType: 'image/png', bytes: 500,
-        title: 'file', versionId: 'store-version-plot',
+        contentOrigin: 'run-auto', curated: false, title: 'file', versionId: 'store-version-plot', seenAt: 1000,
       },
       {
         artifactId: 'artifact-1', logicalName: 'summary.csv', version: 1, mediaType: 'text/csv', bytes: 2048,
-        title: 'file', versionId: 'store-version-csv',
-        parent: { artifactId: 'source-artifact', version: 2 },
+        contentOrigin: 'run-auto', curated: false, title: 'file', versionId: 'store-version-csv', seenAt: 1000,
       },
     ])
     expect(value.skippedRaster).toEqual(['debug/preview.png'])
     expect(value.captureSkippedOversizedCount).toBe(3)
     expect(value.captureTruncatedPerRun).toBe(true)
     expect(value.captureTruncatedPerSession).toBe(true)
-    const text = formatRunResult(value)
-    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB, edited from source-artifact v2).')
-    expect(text).toContain('(1 PNG file not captured, not declared in raster_artifacts: debug/preview.png)')
+    const text = formatRunResult(value, 'python')
+    expect(text).toContain('Captured 2 artifacts: `plot.png` v1 (artifact-1; image/png, 500 B), `summary.csv` v1 (artifact-1; text/csv, 2.0 KB).')
+    expect(text).toContain('(1 PNG file not captured, not declared in raster_artifacts: debug/preview.png; to capture, call run_python again with raster_artifacts: ["debug/preview.png"] and code that writes it)')
     expect(text).toContain('(3 eligible file(s) skipped: too large to capture)')
     expect(text).toContain('(more eligible files existed than this run\'s capture limit admits; the rest were not captured)')
     expect(text).toContain('(this session\'s artifact-capture limit was reached; further eligible files were not captured)')
   })
 
-  it('appends a plural undeclared-raster receipt line, omitting it entirely when the list is empty', () => {
+  it('renders explicit edit ancestry, ordinary continuation, and bounded direct-edit history in model vocabulary', async () => {
+    const edited = artifactVersionFixture({ logicalName: 'plot.png', version: 2 })
+    const continued = artifactVersionFixture({ logicalName: 'plot.png', version: 3 })
+    const base = versionRecordFixture({ ordinal: 2 })
+    const edits = [
+      { op: 'set_title' as const, target: 'title' },
+      { op: 'toggle_grid' as const, target: 'axes[0].grid' },
+    ]
+    const values = await Promise.all([
+      runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+        capture: {
+          captured: [edited], skippedRasterPaths: [], skippedOversizedCount: 0,
+          truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
+        },
+      }, async () => storeFacts(base, { lineage: { kind: 'edited-from', logicalName: 'plot.png', version: 1 }, edits, editCount: 4 })),
+      runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false }, stderr: { text: '', bytes: 0, truncated: false },
+        capture: {
+          captured: [continued], skippedRasterPaths: [], skippedOversizedCount: 0,
+          truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
+        },
+      }, async () => storeFacts(versionRecordFixture({ ordinal: 3 }), { lineage: { kind: 'continues', version: 2 } })),
+    ])
+    expect(formatRunResult(values[0], 'python')).toContain('edited from plot.png v1')
+    expect(formatRunResult(values[0], 'python')).toContain('4 direct edits: set_title (title), toggle_grid (axes[0].grid); latest 2 shown.')
+    expect(formatRunResult(values[1], 'python')).toContain('continues v2')
+  })
+
+  it('appends a plural undeclared-raster receipt line, omitting it entirely when the list is empty', async () => {
     const csv = artifactVersionFixture({
-      logicalName: 'summary.csv', version: 1, versionId: ScienceVersionId('store-version-csv-2'),
-      sha256: 'e'.repeat(64), mediaType: 'text/csv', byteCount: 10,
+      logicalName: 'summary.csv', version: 1, versionId: ScienceVersionId('store-version-csv-2'), sha256: 'e'.repeat(64),
     })
-    const value = runValueFromResult({
+    const csvStore = versionRecordFixture({
+      versionId: ScienceVersionId('store-version-csv-2'), sha256: 'e'.repeat(64), mediaType: 'text/csv', byteCount: 10,
+    })
+    const value = await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
@@ -729,11 +819,11 @@ describe('runValueFromResult / formatRunResult', () => {
         captured: [csv], skippedRasterPaths: ['a.png', 'b.png'],
         skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
-    })
+    }, resolverFor([csvStore]))
     expect(value.skippedRaster).toEqual(['a.png', 'b.png'])
-    expect(formatRunResult(value)).toContain('(2 PNG files not captured, not declared in raster_artifacts: a.png, b.png)')
+    expect(formatRunResult(value, 'r')).toContain('(2 PNG files not captured, not declared in raster_artifacts: a.png, b.png; to capture, call run_r again with raster_artifacts: ["a.png","b.png"] and code that writes them)')
 
-    const withoutSkips = runValueFromResult({
+    const withoutSkips = await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
@@ -741,42 +831,20 @@ describe('runValueFromResult / formatRunResult', () => {
         captured: [csv], skippedRasterPaths: [],
         skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
-    })
+    }, resolverFor([csvStore]))
     expect(withoutSkips).not.toHaveProperty('skippedRaster')
-    expect(formatRunResult(withoutSkips)).not.toContain('not captured')
+    expect(formatRunResult(withoutSkips, 'python')).not.toContain('not captured')
   })
 
-  it('renders direct-edit operation and target identities for a captured artifact', () => {
-    const edited = artifactVersionFixture({
-      chart: {
-        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
-        hitmap: [], hitmapStatus: 'unavailable', elements: [],
-        ops: [{ op: 'toggle_grid', axes: 0, visible: false }],
-      },
-    })
-    const value = runValueFromResult({
-      terminal: successTerminal(),
-      stdout: { text: '', bytes: 0, truncated: false },
-      stderr: { text: '', bytes: 0, truncated: false },
-      capture: {
-        captured: [edited], skippedRasterPaths: [], skippedOversizedCount: 0,
-        truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
-      },
-    })
-    expect(formatRunResult(value)).toContain('1 direct edits: toggle_grid (axes[0].grid).')
-    expect(formatRunResult(value)).not.toContain('false')
-  })
-
-  it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', () => {
+  it('appends a singular captured-artifact receipt in the megabyte band, omitting skip/truncation flags at zero/false', async () => {
     const large = artifactVersionFixture({
-      logicalName: 'dataset.json',
-      version: 1,
-      versionId: ScienceVersionId('store-version-dataset'),
-      sha256: 'd'.repeat(64),
-      mediaType: 'application/json',
-      byteCount: 3 * 1024 * 1024,
+      logicalName: 'dataset.json', version: 1, versionId: ScienceVersionId('store-version-dataset'), sha256: 'd'.repeat(64),
     })
-    const value = runValueFromResult({
+    const largeStore = versionRecordFixture({
+      versionId: ScienceVersionId('store-version-dataset'), sha256: 'd'.repeat(64),
+      mediaType: 'application/json', byteCount: 3 * 1024 * 1024,
+    })
+    const value = await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
@@ -784,18 +852,18 @@ describe('runValueFromResult / formatRunResult', () => {
         captured: [large], skippedRasterPaths: [],
         skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
-    })
+    }, resolverFor([largeStore]))
     expect(value).not.toHaveProperty('captureSkippedOversizedCount')
     expect(value).not.toHaveProperty('captureTruncatedPerRun')
     expect(value).not.toHaveProperty('captureTruncatedPerSession')
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).toContain('Captured 1 artifact: `dataset.json` v1 (artifact-1; application/json, 3.0 MB).')
     expect(text).not.toContain('eligible file(s) skipped')
     expect(text).not.toContain('capture limit')
   })
 
-  it('omits the captured-artifacts line entirely when capture ran but produced nothing', () => {
-    const value = runValueFromResult({
+  it('omits the captured-artifacts line entirely when capture ran but produced nothing', async () => {
+    const value = await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
@@ -803,23 +871,137 @@ describe('runValueFromResult / formatRunResult', () => {
         captured: [], skippedRasterPaths: [],
         skippedOversizedCount: 0, truncatedPerRun: false, truncatedPerSession: false, appendFailed: false, chartUnavailablePaths: [],
       },
-    })
+    }, unusedResolver)
     expect(value.capturedArtifacts).toEqual([])
-    const text = formatRunResult(value)
+    const text = formatRunResult(value, 'python')
     expect(text).not.toContain('Captured')
   })
 
-  it('prepends the kernel-restart line before status when the value carries a kernelRestartReason', () => {
-    const value = { ...runValueFromResult({
+  it('prepends the kernel-restart line before status when the value carries a kernelRestartReason', async () => {
+    const value = { ...await runValueFromResult({
       terminal: successTerminal(),
       stdout: { text: '', bytes: 0, truncated: false },
       stderr: { text: '', bytes: 0, truncated: false },
-    }), kernelRestartReason: 'idle timeout' }
-    const text = formatRunResult(value)
+    }, unusedResolver), kernelRestartReason: 'idle timeout' }
+    const text = formatRunResult(value, 'python')
     expect(text).toBe(
       'kernel restarted (idle timeout): variables from earlier runs are gone\n'
       + 'status: success\n--- stdout ---\n(empty)\n--- stderr ---\n(empty)',
     )
+  })
+})
+
+describe('requireArtifactStore / resolveArtifactStoreFacts', () => {
+  it('fails loud when no Science Artifact Store is mounted', () => {
+    const ctx = new Context()
+    expect(() => requireArtifactStore(ctx)).toThrow(/no Science Artifact Store is mounted/)
+  })
+
+  it('resolves a captured artifact\'s current store version row, and rejects a versionId the store no longer holds', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-resolve-store-version')
+    const run = await runSuccessfully(ctx, session, 'science-resolve-store-version-run')
+    const seeded = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const store = await resolveArtifactStoreFacts(ctx, 4, seeded)
+    expect(store.version.versionId).toBe(seeded.versionId)
+    expect(store.version.mediaType).toBe('image/png')
+
+    const dangling = artifactVersionFixture({ projectId: seeded.projectId, versionId: ScienceVersionId('never-committed') })
+    await expect(resolveArtifactStoreFacts(ctx, 4, dangling)).rejects.toThrow(/no longer identifies a committed store version/)
+  })
+
+  it('reads PNG edit history only, bounds recent operations, and resolves explicit and implicit lineage', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-resolve-store-facts')
+    const run = await runSuccessfully(ctx, session, 'science-resolve-store-facts-run')
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'First' },
+        { op: 'toggle_grid', axes: 0, visible: true },
+      ],
+    }
+    const first = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', chart)
+    const explicit = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', baseVersionId: first.versionId,
+    })
+    const continued = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: Uint8Array.from([...PNG, 0]), mediaType: 'image/png', contentOrigin: 'run-auto',
+    })
+    const firstFacts = await resolveArtifactStoreFacts(ctx, 1, first)
+    expect(firstFacts).toMatchObject({ editCount: 2, edits: [{ op: 'toggle_grid', target: 'axes[0].grid' }] })
+    const initialFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, first)
+    expect(initialFacts.lineage).toBeUndefined()
+    const explicitFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 2, versionId: explicit.versionId,
+    }))
+    expect(explicitFacts.lineage).toEqual({ kind: 'edited-from', logicalName: 'plot.png', version: 1 })
+    const continuedFacts = await resolveCapturedArtifactStoreFacts(ctx, 4, artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 3, versionId: continued.versionId,
+    }))
+    expect(continuedFacts.lineage).toEqual({ kind: 'continues', version: 2 })
+  })
+
+  it('preserves migrated implicit-baseline lineage and fails loud for dangling baseline references', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-resolve-baseline-invariants')
+    const run = await runSuccessfully(ctx, session, 'science-resolve-baseline-invariants-run')
+    const first = await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png')
+    const base = await ctx.scienceArtifactStore.getVersion(first.projectId, first.versionId)
+    if (base === undefined) throw new Error('expected seeded base version')
+    const explicit = await ctx.scienceArtifactStore.appendVersion(first.projectId, first.artifactId, {
+      producerSessionId: session.id, data: Uint8Array.from([...PNG, 0]), mediaType: 'image/png', contentOrigin: 'run-auto', baseVersionId: first.versionId,
+    })
+    const artifact = artifactVersionFixture({
+      artifactId: first.artifactId, projectId: first.projectId, version: 2, versionId: explicit.versionId,
+    })
+    const getVersion = vi.spyOn(ctx.scienceArtifactStore, 'getVersion')
+    getVersion.mockResolvedValueOnce({ ...explicit, baseExplicit: false }).mockResolvedValueOnce(base)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).resolves.toMatchObject({
+      lineage: { kind: 'continues', version: 1 },
+    })
+    getVersion.mockRestore()
+
+    const readVersion = ctx.scienceArtifactStore.getVersion.bind(ctx.scienceArtifactStore)
+    const missingBase = vi.spyOn(ctx.scienceArtifactStore, 'getVersion')
+    missingBase.mockImplementationOnce(readVersion).mockResolvedValueOnce(undefined)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).rejects.toThrow(
+      /baseline no longer identifies a committed store version/,
+    )
+    missingBase.mockRestore()
+
+    vi.spyOn(ctx.scienceArtifactStore, 'getArtifact').mockResolvedValueOnce(undefined)
+    await expect(resolveCapturedArtifactStoreFacts(ctx, 4, artifact)).rejects.toThrow(/baseline no longer identifies a committed artifact/)
+  })
+})
+
+describe('scienceArtifactEdits', () => {
+  it('maps every chart operation to its model-safe target and keeps the complete count when bounded', () => {
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'Title' },
+        { op: 'set_subtitle', axes: 0, text: 'Subtitle' },
+        { op: 'set_axis_label', axes: null, axis: 'x', text: 'X' },
+        { op: 'set_legend_position', axes: 1, position: 'upper right' },
+        { op: 'toggle_grid', axes: null, visible: true },
+        { op: 'set_font', axes: null, family: 'Inter', size: 12 },
+      ],
+    }
+    expect(scienceArtifactEdits(chart, 6)).toEqual({
+      editCount: 6,
+      edits: [
+        { op: 'set_title', target: 'title' },
+        { op: 'set_subtitle', target: 'axes[0].subtitle' },
+        { op: 'set_axis_label', target: 'x_label' },
+        { op: 'set_legend_position', target: 'axes[1].legend' },
+        { op: 'toggle_grid', target: 'grid' },
+        { op: 'set_font', target: 'font' },
+      ],
+    })
+    expect(scienceArtifactEdits(undefined, 2)).toEqual({ edits: [], editCount: 0 })
   })
 })
 
@@ -977,7 +1159,7 @@ describe('get_science_state', () => {
     { limit: 1, expected: ['run-3'], omitted: 2 },
     { limit: 2, expected: ['run-2', 'run-3'], omitted: 1 },
     { limit: 3, expected: ['run-1', 'run-2', 'run-3'], omitted: 0 },
-  ])('caps recent run history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+  ])('caps recent run history at $limit and reports omissions', async ({ limit, expected, omitted }) => {
     const runs = ['run-1', 'run-2', 'run-3'].map((runId, index) => ({
       runId: ScienceRunId(runId),
       language: 'python' as const,
@@ -992,10 +1174,10 @@ describe('get_science_state', () => {
       kernelEpoch: 1,
       status: 'running' as const,
     }))
-    const value = stateValueFromProjection(projectionFixture({
+    const value = await stateValueFromProjection(projectionFixture({
       runs,
       metrics: { runCount: 3, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
-    }), limit)
+    }), limit, unusedResolver)
     expect(value.runs.map(run => (run as { runId: string }).runId)).toEqual(expected)
     expect(value.history.runsOmitted).toBe(omitted)
   })
@@ -1004,7 +1186,7 @@ describe('get_science_state', () => {
     { limit: 1, expected: [3], omitted: 2 },
     { limit: 2, expected: [2, 3], omitted: 1 },
     { limit: 3, expected: [1, 2, 3], omitted: 0 },
-  ])('caps recent kernel history at $limit and reports omissions', ({ limit, expected, omitted }) => {
+  ])('caps recent kernel history at $limit and reports omissions', async ({ limit, expected, omitted }) => {
     const kernels: readonly ScienceKernel[] = [1, 2, 3].map(kernelEpoch => ({
       kernelEpoch,
       language: 'python' as const,
@@ -1015,49 +1197,49 @@ describe('get_science_state', () => {
       environmentFingerprint: 'a'.repeat(64),
       at: kernelEpoch + 1,
     }))
-    const value = stateValueFromProjection(projectionFixture({
+    const value = await stateValueFromProjection(projectionFixture({
       kernels,
       metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 3, outcomeRevision: 0 },
-    }), limit)
+    }), limit, unusedResolver)
     expect(value.kernels.map(kernel => kernel.kernelEpoch)).toEqual(expected)
     expect(value.history.kernelsOmitted).toBe(omitted)
   })
 
-  it('renders a still-running kernel as "running", named by its own start time', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('renders a still-running kernel as "running", named by its own start time', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       kernels: [{
         kernelEpoch: 1, language: 'python', state: 'started',
         environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 100,
       }],
-    }), 4)
+    }), 4, unusedResolver)
     expect(value.kernels).toEqual([{ language: 'python', kernelEpoch: 1, state: 'running', startedAt: 100 }])
   })
 
-  it('renders an exited kernel with its model-vocabulary end reason and original start time', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('renders an exited kernel with its model-vocabulary end reason and original start time', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       kernels: [{
         kernelEpoch: 1, language: 'r', state: 'exited', reason: 'environment-rebound',
         startedAt: 100, environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 200,
       }],
-    }), 4)
+    }), 4, unusedResolver)
     expect(value.kernels).toEqual([{ language: 'r', kernelEpoch: 1, state: 'exited', reason: 'environment re-bind', startedAt: 100 }])
   })
 
-  it('renders a replay-derived interrupted kernel without a reason', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('renders a replay-derived interrupted kernel without a reason', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       kernels: [{
         kernelEpoch: 1, language: 'python', state: 'interrupted',
         environmentRevision: 1, environmentFingerprint: 'a'.repeat(64),
         startedAt: 100, finishedAt: 150, interruptedAtSeq: 9,
       }],
-    }), 4)
+    }), 4, unusedResolver)
     expect(value.kernels).toEqual([{ language: 'python', kernelEpoch: 1, state: 'interrupted', startedAt: 100 }])
   })
 
-  it('selects metrics fields explicitly, dropping the raw kernelCount counter', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('selects metrics fields explicitly, dropping the raw kernelCount counter', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       metrics: { runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4, kernelCount: 5, outcomeRevision: 6 },
-    }), 4)
+    }), 4, unusedResolver)
     expect(value.metrics).toEqual({ runCount: 2, successfulRunCount: 1, artifactCount: 3, artifactVersionCount: 4 })
     expect(value.metrics).not.toHaveProperty('kernelCount')
   })
@@ -1066,35 +1248,26 @@ describe('get_science_state', () => {
     { limit: 1, expected: ['artifact-3'], omitted: 2 },
     { limit: 2, expected: ['artifact-2', 'artifact-3'], omitted: 1 },
     { limit: 3, expected: ['artifact-1', 'artifact-2', 'artifact-3'], omitted: 0 },
-  ])('caps recent artifact-version history at $limit and reports omissions', ({ limit, expected, omitted }) => {
-    const artifacts = ['artifact-1', 'artifact-2', 'artifact-3'].map((artifactId, index) => ({
-      artifactId,
+  ])('caps recent artifact-version history at $limit and reports omissions', async ({ limit, expected, omitted }) => {
+    const artifacts = ['artifact-1', 'artifact-2', 'artifact-3'].map((artifactId, index) => artifactVersionFixture({
+      artifactId: ScienceArtifactId(artifactId),
       logicalName: artifactId,
-      version: 1,
-      title: artifactId,
-      origin: 'model',
-      projectId: 'project-1',
-      versionId: `store-version-${String(index + 1)}`,
-      sha256: 'a'.repeat(64),
-      mediaType: 'image/png',
-      byteCount: 10,
-      runId: `run-${String(index + 1)}`,
-      toolCallId: `call-${String(index + 1)}`,
-      requestHeaderSeq: 1,
-      environmentRevision: 1,
-      environmentFingerprint: 'a'.repeat(64),
-      createdAt: index + 1,
-    })) as unknown as ScienceProjection['artifacts']
-    const value = stateValueFromProjection(projectionFixture({
+      versionId: ScienceVersionId(`store-version-${String(index + 1)}`),
+      seenAt: index + 1,
+    }))
+    const stores = artifacts.map(artifact => versionRecordFixture({
+      versionId: artifact.versionId, artifactId: artifact.artifactId,
+    }))
+    const value = await stateValueFromProjection(projectionFixture({
       artifacts,
       metrics: { runCount: 0, successfulRunCount: 0, artifactCount: 3, artifactVersionCount: 3, kernelCount: 0, outcomeRevision: 0 },
-    }), limit)
-    expect(value.artifacts.map(artifact => (artifact as { artifactId: string }).artifactId)).toEqual(expected)
+    }), limit, resolverFor(stores))
+    expect(value.artifacts.map(artifact => artifact.artifactId)).toEqual(expected)
     expect(value.history.artifactVersionsOmitted).toBe(omitted)
   })
 
-  it('exposes only sanitized interpreter facts and a fingerprint preview', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('exposes only sanitized interpreter facts and a fingerprint preview', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       environment: {
         revision: 1,
         profileId: ScienceEnvironmentProfileId('fake'),
@@ -1116,7 +1289,7 @@ describe('get_science_state', () => {
           packagesTruncated: false,
         },
       },
-    }), 1)
+    }), 1, unusedResolver)
     expect(value.environment).toEqual({
       revision: 1,
       profileId: 'fake',
@@ -1130,8 +1303,8 @@ describe('get_science_state', () => {
     expect(JSON.stringify(value)).not.toContain('host-file-id')
   })
 
-  it('retains a sanitized R-only environment without adding a Python binding', () => {
-    const value = stateValueFromProjection(projectionFixture({
+  it('retains a sanitized R-only environment without adding a Python binding', async () => {
+    const value = await stateValueFromProjection(projectionFixture({
       environment: {
         revision: 1,
         profileId: ScienceEnvironmentProfileId('fake'),
@@ -1153,7 +1326,7 @@ describe('get_science_state', () => {
           packagesTruncated: false,
         },
       },
-    }), 1)
+    }), 1, unusedResolver)
     expect(value.environment).toEqual({
       revision: 1,
       profileId: 'fake',
@@ -1167,7 +1340,7 @@ describe('get_science_state', () => {
 
   it.each(['Python at /secret/prefix', String.raw`Python at C:\secret\prefix`])(
     'omits a path-bearing interpreter version %s from context and state',
-    (languageVersion) => {
+    async (languageVersion) => {
       const environment = {
         revision: 1,
         profileId: ScienceEnvironmentProfileId('fake'),
@@ -1191,7 +1364,7 @@ describe('get_science_state', () => {
       }
       const projection = projectionFixture({ environment })
       const renderedContext = renderScienceProjection(projection)
-      const state = stateValueFromProjection(projection, 1)
+      const state = await stateValueFromProjection(projection, 1, unusedResolver)
       expect(renderedContext).not.toContain(languageVersion)
       expect(JSON.stringify(state)).not.toContain(languageVersion)
       expect(renderedContext).toContain(`Python: available, fingerprint ${'b'.repeat(12)}.`)
@@ -1200,7 +1373,7 @@ describe('get_science_state', () => {
     },
   )
 
-  it('omits Runtime-owned free text that could disclose Host paths', () => {
+  it('omits Runtime-owned free text that could disclose Host paths', async () => {
     const run = {
       runId: ScienceRunId('failed-run'),
       language: 'python',
@@ -1222,7 +1395,7 @@ describe('get_science_state', () => {
       failureCode: 'EXECUTION_FAILED',
       failureMessage: 'failed at /secret/runtime/bin/python',
     } as const
-    const value = stateValueFromProjection(projectionFixture({
+    const value = await stateValueFromProjection(projectionFixture({
       environment: {
         revision: 1,
         profileId: ScienceEnvironmentProfileId('fake'),
@@ -1239,7 +1412,7 @@ describe('get_science_state', () => {
       },
       runs: [run],
       metrics: { runCount: 1, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
-    }), 1)
+    }), 1, unusedResolver)
     const rendered = JSON.stringify(value)
     expect(rendered).not.toContain('/secret')
     expect(rendered).not.toContain('failureMessage')
@@ -1247,7 +1420,7 @@ describe('get_science_state', () => {
     expect(rendered).not.toContain('"reason"')
   })
 
-  it('passes through a run with no failure fields unchanged, and strips only failureMessage from one that has it', () => {
+  it('passes through a run with no failure fields unchanged, and strips only failureMessage from one that has it', async () => {
     const run = (runId: string, failureMessage?: string) => ({
       runId: ScienceRunId(runId),
       language: 'python' as const,
@@ -1269,10 +1442,10 @@ describe('get_science_state', () => {
       failureCode: 'EXECUTION_FAILED',
       ...failureMessage === undefined ? {} : { failureMessage },
     })
-    const value = stateValueFromProjection(projectionFixture({
+    const value = await stateValueFromProjection(projectionFixture({
       runs: [run('without-message'), run('with-message', 'ValueError at /secret/path')],
       metrics: { runCount: 2, successfulRunCount: 0, artifactCount: 0, artifactVersionCount: 0, kernelCount: 0, outcomeRevision: 0 },
-    }), 2)
+    }), 2, unusedResolver)
     expect(value.runs[0]).toMatchObject({ runId: 'without-message', failureCode: 'EXECUTION_FAILED' })
     expect(value.runs[0]).not.toHaveProperty('failureMessage')
     expect(value.runs[1]).toMatchObject({ runId: 'with-message', failureCode: 'EXECUTION_FAILED' })
@@ -1562,44 +1735,62 @@ describe('run_python', () => {
 })
 
 describe('artifactReceiptFromArtifact / formatArtifactReceipt', () => {
-  it('rejects a human-edited artifact because annotate_artifact cannot produce one', () => {
-    expect(() => artifactReceiptFromArtifact(humanArtifactFixture())).toThrow(/cannot return a human-edited artifact/)
-  })
-
   it('omits caption when absent from the durable artifact', () => {
-    const value = artifactReceiptFromArtifact(artifactVersionFixture({
-      logicalName: 'main.png',
-      title: 'Main plot',
-      origin: 'model',
-    }))
+    const value = artifactReceiptFromArtifact(
+      artifactVersionFixture({ logicalName: 'main.png', title: 'Main plot' }),
+      storeFacts(versionRecordFixture({ latestAnnotation: annotationFixture({ title: 'Main plot' }) })),
+      undefined,
+    )
     expect(value).not.toHaveProperty('caption')
     expect(formatArtifactReceipt(value)).not.toContain('caption:')
   })
 
-  it('curates a non-image artifact identically', () => {
-    const value = artifactReceiptFromArtifact(artifactVersionFixture({
-      logicalName: 'summary.csv',
-      title: 'Summary',
-      origin: 'model',
-      versionId: ScienceVersionId('store-version-csv'),
-      mediaType: 'text/csv',
-      byteCount: 10,
-    }))
-    expect(value.versionId).toBe('store-version-csv')
-    expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1) curated from run run-1\ntitle: Summary\ntext/csv, 10 bytes')
+  it('names the producing run tool and turn without exposing its internal run id, and lists direct edits', () => {
+    const value = artifactReceiptFromArtifact(
+      artifactVersionFixture({ logicalName: 'plot.png', title: 'Plot' }),
+      storeFacts(versionRecordFixture({ producerRunId: 'internal-run-id', producerTurn: 3 }), {
+        edits: [{ op: 'set_title', target: 'title' }], editCount: 1,
+      }),
+      'python',
+    )
+    const text = formatArtifactReceipt(value)
+    expect(text).toContain('produced by run_python (turn 3)')
+    expect(text).toContain('1 direct edits: set_title (title).')
+    expect(text).not.toContain('internal-run-id')
   })
 
-  it('renders cumulative chart edit identities without operation values', () => {
-    const value = artifactReceiptFromArtifact(artifactVersionFixture({
-      origin: 'model',
-      chart: {
-        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
-        hitmap: [], hitmapStatus: 'unavailable', elements: [],
-        ops: [{ op: 'set_title', axes: null, text: 'Hidden value' }],
-      },
-    }))
-    expect(formatArtifactReceipt(value)).toContain('1 direct edits: set_title (title).')
-    expect(formatArtifactReceipt(value)).not.toContain('Hidden value')
+  it('names an R producer and omits producer detail when either the language or turn is unknown', () => {
+    const artifact = artifactVersionFixture({ logicalName: 'plot.png', title: 'Plot' })
+    const rValue = artifactReceiptFromArtifact(
+      artifact,
+      storeFacts(versionRecordFixture({ producerRunId: 'r-run', producerTurn: 4 })),
+      'r',
+    )
+    expect(formatArtifactReceipt(rValue)).toContain('produced by run_r (turn 4)')
+    expect(artifactReceiptFromArtifact(
+      artifact,
+      storeFacts(versionRecordFixture({ producerRunId: 'python-run', producerTurn: undefined })),
+      'python',
+    )).not.toHaveProperty('producer')
+  })
+
+  it('curates a non-image artifact identically', () => {
+    const value = artifactReceiptFromArtifact(
+      artifactVersionFixture({ logicalName: 'summary.csv', title: 'Summary', versionId: ScienceVersionId('store-version-csv') }),
+      storeFacts(versionRecordFixture({
+        versionId: ScienceVersionId('store-version-csv'), mediaType: 'text/csv', byteCount: 10,
+        latestAnnotation: annotationFixture({ versionId: ScienceVersionId('store-version-csv'), title: 'Summary' }),
+      })),
+      undefined,
+    )
+    expect(value.versionId).toBe('store-version-csv')
+    expect(formatArtifactReceipt(value)).toBe('artifact "summary.csv" v1 (artifact-1), run-auto, curated\ntitle: Summary\ntext/csv, 10 bytes')
+  })
+
+  it('names an artifact still on its auto-capture title as auto-captured, not curated', () => {
+    const value = artifactReceiptFromArtifact(artifactVersionFixture({ title: 'file' }), storeFacts(versionRecordFixture()), undefined)
+    expect(value.curated).toBe(false)
+    expect(formatArtifactReceipt(value)).toContain('run-auto, auto-captured')
   })
 })
 
@@ -1657,18 +1848,70 @@ describe('annotate_artifact', () => {
     expect(text).toContain('artifact "plot.png" v1')
     expect(text).toContain('title: Main plot')
     expect(text).toContain('caption: A caption')
+    expect(text).toContain('produced by run_python (turn 1)')
     expect(text).not.toMatch(/sha256:/)
+    expect(text).not.toContain(String(run.runId))
     // Two durable saves (the capture and its curation), one version.
     expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
     expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1])
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceArtifactReceiptValue
     expect(value.artifactId).toBeTypeOf('string')
-    expect(value).toMatchObject({ version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(value).toMatchObject({ version: 1, contentOrigin: 'run-auto', curated: true, mediaType: 'image/png', caption: 'A caption' })
     expect(result.meta).toMatchObject({
       kind: 'science/artifact', version: 2,
       artifacts: [{ version: 1, title: 'Main plot', content: { mediaType: 'image/png' } }],
     })
+  })
+
+  it('returns a model-visible error when one authorizing call is reused', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-reused-call')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-reused-call-run')
+    await seedAutoArtifact(ctx, session, run, 'a.csv', Buffer.from('a'), 'text/csv')
+    await seedAutoArtifact(ctx, session, run, 'b.csv', Buffer.from('b'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-reused-call-id')
+    const first = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'a.csv', title: 'A' }, agent: fakeAgent(session),
+    })
+    expect(first.isError).toBe(false)
+    const second = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'b.csv', title: 'B' }, agent: fakeAgent(session),
+    })
+    expect(second.isError).toBe(true)
+    expect(second.content.some(block => block.type === 'text' && block.text.includes('already authorized a prior artifact annotation'))).toBe(true)
+  })
+
+  it('omits producer wording when the stored producer run is not present in the current session', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-unknown-producer')
+    const run = await runSuccessfully(ctx, session, 'science-annotate-known-run')
+    await seedAutoArtifact(ctx, session, { ...run, runId: ScienceRunId('science-annotate-missing-run') }, 'summary.csv', Buffer.from('a'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 2, 'annotate_artifact', 'science-annotate-unknown-producer-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'summary.csv', title: 'Summary' }, agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).not.toContain('produced by')
+  })
+
+  it('omits producer wording when the artifact has no producer run', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-annotate-no-producer')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    await seedAutoArtifact(ctx, session, undefined, 'imported.csv', Buffer.from('a'), 'text/csv')
+    const toolCallId = authorizeToolCall(session, 1, 'annotate_artifact', 'science-annotate-no-producer-call')
+    const result = await ctx.tools.execute({
+      signal: testSignal, callId: toolCallId, name: 'annotate_artifact',
+      arguments: { logical_name: 'imported.csv', title: 'Imported' }, agent: fakeAgent(session),
+    })
+    expect(result.isError).toBe(false)
+    const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).not.toContain('produced by')
   })
 
   it('curates a captured non-image artifact into a clickable reference too, now that the presentation generalizes past image-only', async () => {
@@ -1705,7 +1948,7 @@ describe('annotate_artifact', () => {
     })
     expect(result.isError).toBe(false)
     expect(result.meta).toMatchObject({ artifacts: [{
-      content: { versionId: String(seeded.versionId), mediaType: 'image/png', byteCount: seeded.byteCount },
+      content: { versionId: String(seeded.versionId), mediaType: 'image/png', byteCount: PNG.byteLength },
     }] })
   })
 
@@ -1947,7 +2190,7 @@ describe('scienceEdits submit', () => {
     const session = scienceSession(ctx, 'science-chart-remote')
     const agent = fakeAgent(session)
     const service = new ScienceEditService(ctx)
-    const artifact = humanArtifactFixture()
+    const artifact = artifactVersionFixture({ version: 2 })
     const apply = vi.spyOn(ctx.scienceRuntime, 'applyChartEdit').mockResolvedValue({
       artifact,
       failedOps: [{ index: 1, reason: 'series missing' }],
@@ -2157,52 +2400,120 @@ describe('scienceEdits submit', () => {
     const text = followups[0]?.content[0]
     expect(text?.type === 'text' && text.text).toContain('element("axes[0].title", kind=title, axes=0, label=null, current="Loss")')
   })
+
+  it('rejects a non-image target without reading its (nonexistent) figure state', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-edit-submit-non-image')
+    const run = await runSuccessfully(ctx, session, 'science-edit-submit-non-image-run')
+    const artifact = await seedAutoArtifact(ctx, session, run, 'summary.csv', Buffer.from('a,b\n1,2\n'), 'text/csv')
+    const service = new ScienceEditService(ctx)
+    const agent = fakeAgent(session)
+    const getFigureState = vi.spyOn(ctx.scienceArtifactStore, 'getFigureState')
+
+    await expect(service.submit(agent, { targets: [{
+      artifactId: artifact.artifactId, logicalName: artifact.logicalName, version: 1,
+      target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 },
+    }], instruction: 'brighten it' })).rejects.toThrow(/raster image artifact/)
+    expect(getFigureState).not.toHaveBeenCalled()
+  })
+
+  it('rejects a target whose session event names a version the store never committed', async () => {
+    const { ctx } = await setup()
+    const session = await boundSession(ctx, 'science-edit-submit-dangling')
+    const { projectId } = await ctx.scienceArtifactStore.openProject(session.header.cwd ?? '')
+    const dangling = artifactVersionFixture({ projectId, versionId: ScienceVersionId('never-committed-edit-target') })
+    session.append('science/artifact-saved', { version: 1, artifact: dangling })
+    const service = new ScienceEditService(ctx)
+    const agent = fakeAgent(session)
+
+    await expect(service.submit(agent, { targets: [{
+      artifactId: dangling.artifactId, logicalName: dangling.logicalName, version: 1,
+      target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 },
+    }], instruction: 'brighten it' })).rejects.toThrow(/no longer identifies a committed store version/)
+  })
+
+  it('forwards a save-as request to the Runtime and returns the new artifact identity', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-save-as-remote')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const artifact = artifactVersionFixture({ artifactId: ScienceArtifactId('artifact-copy'), logicalName: 'copy.csv', version: 1 })
+    const saveArtifactAs = vi.spyOn(ctx.scienceRuntime, 'saveArtifactAs').mockResolvedValue(artifact)
+
+    const receipt = await service.saveArtifactAs(agent, { sourceVersionId: 'store-version-1', newLogicalName: 'copy.csv' }, testSignal)
+
+    expect(receipt).toEqual({ artifactId: 'artifact-copy', logicalName: 'copy.csv', version: 1 })
+    expect(saveArtifactAs).toHaveBeenCalledWith({
+      session, sourceVersionId: ScienceVersionId('store-version-1'), newLogicalName: 'copy.csv', signal: testSignal,
+    })
+  })
+
+  it('translates stable Runtime save-as rejections and passes through every other error unchanged', async () => {
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-save-as-remote-errors')
+    const agent = fakeAgent(session)
+    const service = new ScienceEditService(ctx)
+    const saveArtifactAs = vi.spyOn(ctx.scienceRuntime, 'saveArtifactAs')
+    const request = { sourceVersionId: 'store-version-1', newLogicalName: 'copy.csv' }
+
+    for (const [runtimeCode, remoteCode] of [
+      ['ARTIFACT_VERSION_NOT_FOUND', 'SAVE_AS_SOURCE_NOT_FOUND'],
+      ['ARTIFACT_LOGICAL_NAME_CONFLICT', 'SAVE_AS_NAME_CONFLICT'],
+    ] as const) {
+      saveArtifactAs.mockRejectedValueOnce(new ScienceRuntimeError(runtimeCode, runtimeCode))
+      await expect(service.saveArtifactAs(agent, request, testSignal))
+        .rejects.toMatchObject({ code: remoteCode, message: runtimeCode })
+    }
+    const infrastructure = new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'store failed')
+    saveArtifactAs.mockRejectedValueOnce(infrastructure)
+    await expect(service.saveArtifactAs(agent, request, testSignal)).rejects.toBe(infrastructure)
+    const unexpected = new Error('unexpected save-as failure')
+    saveArtifactAs.mockRejectedValueOnce(unexpected)
+    await expect(service.saveArtifactAs(agent, request, testSignal)).rejects.toBe(unexpected)
+  })
 })
 
 
 describe('get_science_state artifact sanitization', () => {
-  it('omits publication state and metrics from the model response', () => {
-    const value = stateValueFromProjection(projectionFixture(), 20)
+  it('omits publication state and metrics from the model response', async () => {
+    const value = await stateValueFromProjection(projectionFixture(), 20, unusedResolver)
     expect(value).not.toHaveProperty('outcome')
     expect(value.metrics).not.toHaveProperty('outcomeRevision')
   })
 
-  it('renders cumulative direct edits as operation and target identities without values', () => {
-    const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture({
-      chart: {
-        runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 640, height: 480, dpi: 100 },
-        hitmap: [], hitmapStatus: 'unavailable', elements: [],
-        ops: [
-          { op: 'set_title', axes: null, text: 'Secret title' },
-          { op: 'set_subtitle', axes: null, text: 'Secret subtitle' },
-          { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Secret label' },
-          { op: 'set_legend_position', axes: null, position: 'upper right' },
-          { op: 'toggle_grid', axes: 0, visible: true },
-          { op: 'set_font', axes: null, family: 'Secret Font', size: 14 },
-        ],
-      },
-    })] }), 20)
-    expect(value.artifacts[0]).toMatchObject({
-      editCount: 6,
-      edits: [
-        { op: 'set_title', target: 'title' },
-        { op: 'set_subtitle', target: 'subtitle' },
-        { op: 'set_axis_label', target: 'axes[0].x_label' },
-        { op: 'set_legend_position', target: 'legend' },
-        { op: 'toggle_grid', target: 'axes[0].grid' },
-        { op: 'set_font', target: 'font' },
-      ],
+  it('reports content_origin as human-edit, and never a producer run, for a direct-edit version', async () => {
+    const artifact = artifactVersionFixture({ logicalName: 'chart.png', version: 2 })
+    const store = versionRecordFixture({
+      contentOrigin: 'human-edit', baseVersionId: ScienceVersionId('store-version-1'), baseExplicit: true,
+      producerRunId: undefined, producerToolCallId: undefined, producerRequestHeaderSeq: undefined,
     })
-    expect(JSON.stringify(value.artifacts[0])).not.toMatch(/Secret/)
+    const value = await stateValueFromProjection(projectionFixture({ artifacts: [artifact] }), 20, resolverFor([store]))
+    expect(value.artifacts).toEqual([expect.objectContaining({ contentOrigin: 'human-edit' })])
+    expect(value.artifacts[0]).not.toHaveProperty('runId')
+    expect(value.artifacts[0]).not.toHaveProperty('parent')
   })
 
-  it('keeps direct-edit ancestry and omits run provenance', () => {
-    const value = stateValueFromProjection(projectionFixture({ artifacts: [humanArtifactFixture()] }), 20)
-    expect(value.artifacts).toEqual([expect.objectContaining({
-      origin: 'human-edit',
-      parent: { artifactId: 'artifact-1', version: 1 },
-    })])
-    expect(value.artifacts[0]).not.toHaveProperty('runId')
+  it('returns the complete direct-edit count with only the configured number of recent operations', async () => {
+    const { ctx } = await setup({ stateHistoryLimit: 1 })
+    const session = scienceSession(ctx, 'science-state-direct-edits')
+    const run = await runSuccessfully(ctx, session, 'science-state-direct-edits-run')
+    const chart: ScienceChartState = {
+      runtime: 'matplotlib', figureKey: 'plot.png', png: { width: 1, height: 1, dpi: 100 },
+      elements: [], hitmap: [], hitmapStatus: 'unavailable',
+      ops: [
+        { op: 'set_title', axes: null, text: 'First' },
+        { op: 'toggle_grid', axes: 0, visible: true },
+      ],
+    }
+    await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', chart)
+    const state = await ctx.tools.execute({
+      signal: testSignal, callId: CallId('science-state-direct-edits-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+    })
+    expect(state.isError).toBe(false)
+    if (state.isError) throw new Error('unreachable')
+    expect(state.value).toMatchObject({
+      artifacts: [{ editCount: 2, edits: [{ op: 'toggle_grid', target: 'axes[0].grid' }] }],
+    })
   })
 
   it('omits the internal store version id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
@@ -2241,16 +2552,19 @@ describe('get_science_state artifact sanitization', () => {
     expect(value.artifacts).toHaveLength(1)
     const artifact = value.artifacts[0]
     expect(artifact?.artifactId).toBeTypeOf('string')
-    expect(artifact).toMatchObject({ logicalName: 'plot.png', version: 1, origin: 'model', mediaType: 'image/png', caption: 'A caption' })
+    expect(artifact).toMatchObject({
+      logicalName: 'plot.png', version: 1, contentOrigin: 'run-auto', curated: true, mediaType: 'image/png', caption: 'A caption',
+    })
     expect(artifact).not.toHaveProperty('versionId')
     expect(artifact).not.toHaveProperty('sha256')
     expect(artifact).not.toHaveProperty('toolCallId')
     expect(artifact).not.toHaveProperty('requestHeaderSeq')
+    expect(artifact).not.toHaveProperty('environmentRevision')
     expect(artifact).not.toHaveProperty('environmentFingerprint')
-    expect(artifact?.environmentFingerprintPreview).toBeTypeOf('string')
+    expect(artifact).not.toHaveProperty('environmentFingerprintPreview')
   })
 
-  it('includes an origin:auto artifact with no model title override, and its own bounded fields', async () => {
+  it('includes a run-auto artifact with no model title override, and its own bounded fields', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-artifact-auto')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
@@ -2272,7 +2586,9 @@ describe('get_science_state artifact sanitization', () => {
     if (state.isError) throw new Error('unreachable')
     const value = state.value as unknown as { artifacts: readonly Record<string, unknown>[] }
     expect(value.artifacts).toHaveLength(1)
-    expect(value.artifacts[0]).toMatchObject({ logicalName: 'summary.csv', version: 1, origin: 'auto', title: 'summary.csv', mediaType: 'text/csv' })
+    expect(value.artifacts[0]).toMatchObject({
+      logicalName: 'summary.csv', version: 1, contentOrigin: 'run-auto', curated: false, title: 'summary.csv', mediaType: 'text/csv',
+    })
     expect(value.artifacts[0]).not.toHaveProperty('width')
     expect(value.artifacts[0]).not.toHaveProperty('height')
   })

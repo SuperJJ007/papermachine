@@ -165,8 +165,9 @@ describe('ScienceRuntime lifecycle ownership', () => {
       signal: new AbortController().signal,
     })
 
+    const rejected = expect(running.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
     attached.detach()
-    await expect(running.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
+    await rejected
     const successor = attachScienceSession(ctx, 'science-same-id', attached.session.events)
     const successorAuthorization = authorizePythonRun(successor.session, 'science-same-id-successor')
     await expect(runtime.startRun({

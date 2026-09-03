@@ -6,16 +6,17 @@ import type { InferValue } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
-  ScienceArtifactVersion,
   ScienceEnvironmentBinding,
   ScienceInterpreterBinding,
   ScienceKernel,
   ScienceProjection,
   ScienceProjectionMetrics,
 } from '@deepseek-ai/dsh-science-session'
+import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { closedKernelFacts, modelKernelEndReason, scienceFingerprintPreview, scienceModelObservedLabel } from './context.ts'
-import { requireScienceSession } from './run.ts'
+import { requireScienceSession, resolveArtifactStoreFacts } from './run.ts'
 import { scienceArtifactSchemaProperties, scienceArtifactValueFields } from './artifact-schema.ts'
+import type { ResolveArtifactStoreFacts } from './artifact-schema.ts'
 
 const stateInterpreterSchema = {
   type: 'object',
@@ -81,11 +82,7 @@ const stateMetricsSchema = {
 const stateArtifactSchema = {
   type: 'object',
   additionalProperties: false,
-  properties: {
-    ...scienceArtifactSchemaProperties,
-    environmentRevision: { type: 'integer', required: true },
-    environmentFingerprintPreview: { type: 'string', required: true },
-  },
+  properties: { ...scienceArtifactSchemaProperties },
 } as const
 
 const stateOutputSchema = {
@@ -152,39 +149,6 @@ function stateRun(run: ScienceProjection['runs'][number]): JsonValue {
 }
 
 /**
- * Remove the internal store version id, full environment fingerprint,
- * authorizing tool call, and request-header sequence from one durable
- * artifact version. The store content reference remains available only to
- * the durable projection, authorization, and Client presentation paths —
- * never to model state.
- *
- * Reconstructs the shared fields' key order rather than spreading
- * `scienceArtifactValueFields` as one block: this schema's pinned field
- * order interleaves `environmentRevision`/`environmentFingerprintPreview`
- * between `runId` and `mediaType`, which a trailing spread cannot produce.
- */
-function stateArtifact(artifact: ScienceArtifactVersion): InferValue<typeof stateArtifactSchema> {
-  const { artifactId, logicalName, version, title, caption, origin, parent, runId, mediaType, bytes, createdAt, edits, editCount } =
-    scienceArtifactValueFields(artifact)
-  return {
-    artifactId,
-    logicalName,
-    version,
-    title,
-    ...caption === undefined ? {} : { caption },
-    origin,
-    ...parent === undefined ? {} : { parent },
-    ...runId === undefined ? {} : { runId },
-    environmentRevision: artifact.environmentRevision,
-    environmentFingerprintPreview: scienceFingerprintPreview(artifact.environmentFingerprint),
-    mediaType,
-    bytes,
-    createdAt,
-    ...edits === undefined ? {} : { edits, editCount },
-  }
-}
-
-/**
  * Render one kernel record in model vocabulary: `started` reads as
  * `running` (the durable word names a fact, not the kernel's current
  * state-of-being from the model's perspective), `exited`/`interrupted` carry
@@ -233,23 +197,31 @@ function stateMetrics(metrics: ScienceProjectionMetrics): InferValue<typeof stat
  * Build the bounded model-facing value from one exact replay projection.
  * Durable codecs bound every retained item; this owner additionally caps both
  * growing history collections and reports the omitted counts.
+ * `contentOrigin`/`curated`/`mediaType`/`bytes` for each listed artifact come
+ * from the store — the sole authority for those facts since the T1/T2
+ * artifact-authority migration — through `resolveStore`.
  * @param projection - exact replayed Science projection.
  * @param historyItemLimit - maximum recent entries retained per history collection.
+ * @param resolveStore - resolves each listed artifact's store facts and bounded direct edits.
  * @returns sanitized, bounded tool value.
  */
-export function stateValueFromProjection(
+export async function stateValueFromProjection(
   projection: ScienceProjection,
   historyItemLimit: number,
-): ScienceStateValue {
+  resolveStore: ResolveArtifactStoreFacts,
+): Promise<ScienceStateValue> {
   const runsOmitted = Math.max(0, projection.runs.length - historyItemLimit)
   const kernelsOmitted = Math.max(0, projection.kernels.length - historyItemLimit)
   const artifactVersionsOmitted = Math.max(0, projection.artifacts.length - historyItemLimit)
+  const artifacts = await Promise.all(
+    projection.artifacts.slice(-historyItemLimit).map(async artifact => scienceArtifactValueFields(artifact, await resolveStore(artifact))),
+  )
   return {
     mode: projection.mode as unknown as JsonValue,
     environment: stateEnvironment(projection.environment),
     runs: projection.runs.slice(-historyItemLimit).map(stateRun),
     kernels: projection.kernels.slice(-historyItemLimit).map(stateKernel),
-    artifacts: projection.artifacts.slice(-historyItemLimit).map(stateArtifact),
+    artifacts,
     metrics: stateMetrics(projection.metrics),
     history: { runsOmitted, kernelsOmitted, artifactVersionsOmitted },
     lastScienceEventSeq: projection.lastScienceEventSeq,
@@ -258,14 +230,14 @@ export function stateValueFromProjection(
 
 /**
  * Register `get_science_state`, a no-argument read of the exact Session's
- * sanitized Science projection with bounded run and artifact-version history.
+ * sanitized Science projection with bounded run, artifact-version, and per-artifact direct-edit history.
  * @param ctx - plugin context.
  * @param historyItemLimit - maximum recent entries returned per history collection.
  */
 export function applyScienceStateTool(ctx: Context, historyItemLimit: number): void {
   ctx.tools.register(defineTool({
     name: 'get_science_state',
-    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run and artifact-version histories with omitted counts. Takes no arguments.',
+    description: 'Return the current Science session state: mode, sanitized bound environment, every language kernel\'s state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.',
     parameters: {},
     output: {
       schema: stateOutputSchema,
@@ -276,7 +248,7 @@ export function applyScienceStateTool(ctx: Context, historyItemLimit: number): v
       const session = requireScienceSession(exec)
       const projection = replayScience(session.events)
       if (projection === null) throw new Error('tool-science: Science mode is not bound for this session')
-      return Promise.resolve(stateValueFromProjection(projection, historyItemLimit))
+      return stateValueFromProjection(projection, historyItemLimit, resolveArtifactStoreFacts.bind(undefined, ctx, historyItemLimit))
     },
   }))
 }

@@ -18,19 +18,19 @@ async function main(): Promise<void> {
   if (missing) {
     throw new Error('usage: concurrent-append-worker.ts <home> <workspace> <artifactId> <producerSessionId> <payload>')
   }
-  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 10_000, dshHome: home })
+  const engine = new ProjectArtifactStoreEngine({ journalMode: 'wal', busyTimeoutMs: 10_000, storeBackupRetention: 1, reconcileMaxVersions: 2000, dshHome: home })
   try {
     const { projectId } = await engine.openProject(workspace)
     const version = await engine.appendVersion(projectId, ArtifactId(artifactIdArg), {
       producerSessionId: producerSessionIdArg as SessionId,
       data: new TextEncoder().encode(payload),
       mediaType: 'text/plain',
-      origin: 'auto',
+      contentOrigin: 'run-auto',
     })
     process.stdout.write(JSON.stringify({
       versionId: version.versionId,
       ordinal: version.ordinal,
-      parentVersionId: version.parentVersionId ?? null,
+      baseVersionId: version.baseVersionId ?? null,
     }))
   } finally {
     await engine.close()

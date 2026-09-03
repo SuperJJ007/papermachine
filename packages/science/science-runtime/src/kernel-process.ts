@@ -281,6 +281,8 @@ async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fi
 /**
  * Exact empty-base child environment for a persistent kernel's baseline
  * spawn (per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
+ * `SCIENCE_WORKSPACE_DIR` exposes the Session's immutable workspace path
+ * without changing the kernel or run working directory.
  * Carries the kernel-scoped user-install base
  * ({@link ScienceKernelScratch.userLibrary}) as `PYTHONUSERBASE` (Python) or
  * `R_LIBS_USER` (R): the writable target an inline `pip install`/
@@ -290,6 +292,7 @@ async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fi
  */
 function kernelEnvironment(
   binding: ScienceInterpreterAvailableBinding,
+  session: Session,
   sessionScratch: ScienceSessionScratch,
   kernelScratch: ScienceKernelScratch,
 ): NodeJS.ProcessEnv {
@@ -298,6 +301,7 @@ function kernelEnvironment(
     TMPDIR: kernelScratch.tmp,
     PATH: interpreterPathEnv(binding.canonicalPrefix),
     SCIENCE_STATE_DIR: sessionScratch.state,
+    ...(session.header.cwd === undefined ? {} : { SCIENCE_WORKSPACE_DIR: session.header.cwd }),
     ...(binding.language === 'python'
       ? { PYTHONUSERBASE: kernelScratch.userLibrary }
       : { R_LIBS_USER: kernelScratch.userLibrary }),
@@ -413,7 +417,7 @@ export class KernelProcess {
         },
         graceMs: DESCENDANT_GRACE_MS,
         environmentBase: 'empty',
-        env: kernelEnvironment(binding, services.sessionScratch, kernelScratch),
+        env: kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch),
       })
       const kernel = new KernelProcess(handle, fifoPath, reader, readStream)
       await kernel.awaitReady(kernelStartTimeoutMs, signal)

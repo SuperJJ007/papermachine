@@ -9,29 +9,66 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ReconcileArtifactSavedEvent, ReconcileCursor, ReconcileResult } from './reconcile.ts'
 import { ProjectArtifactStoreEngine } from './store.ts'
-import type { JournalMode } from './schema.ts'
+import type { BackfillProvenanceHook, JournalMode } from './schema.ts'
 import type {
   AnnotateVersionInput,
   AppendVersionInput,
+  ArtifactNoteRecord,
   ArtifactRecord,
   CreateArtifactInput,
+  FigureStateRecord,
   OpenedProject,
+  PutNoteInput,
+  ReconciliationSummary,
+  VersionHealthPatch,
+  VersionHealthRecord,
   VersionRecord,
 } from './types.ts'
-import type { ArtifactId, ProjectId, VersionId } from './ids.ts'
+import type { ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 
-export { ArtifactId, ProjectId, VersionId } from './ids.ts'
+export { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 export { ProjectArtifactStoreError, type ProjectArtifactStoreErrorCode } from './errors.ts'
-export { PROJECT_ARTIFACT_STORE_SCHEMA_VERSION, type JournalMode } from './schema.ts'
+export {
+  PROJECT_ARTIFACT_STORE_SCHEMA_VERSION,
+  STORE_MIGRATIONS,
+  type BackfillProvenanceFigureState,
+  type BackfillProvenanceHook,
+  type BackfillProvenanceRow,
+  type BackfillProvenanceValue,
+  type JournalMode,
+  type StoreMigration,
+} from './schema.ts'
+export {
+  classifyVersion,
+  type ReconcileArtifactSavedEvent,
+  type ReconcileCursor,
+  type ReconcileOptions,
+  type ReconcileOutcome,
+  type ReconcileResult,
+  type ReconcileVersionKind,
+  type ReconcileWorkItem,
+} from './reconcile.ts'
 export type {
   AnnotateVersionInput,
+  AnnotationActor,
   AppendVersionInput,
+  ArtifactKind,
+  ArtifactNoteRecord,
   ArtifactRecord,
-  ArtifactVersionOrigin,
+  ContentOrigin,
   CreateArtifactInput,
+  FigureStateInput,
+  FigureStateRecord,
   OpenedProject,
   ProjectIdentityOutcome,
+  PutNoteInput,
+  ReconciliationSummary,
+  ReconstructVersionInput,
+  VersionAnnotationRecord,
+  VersionHealthPatch,
+  VersionHealthRecord,
   VersionRecord,
 } from './types.ts'
 
@@ -61,6 +98,32 @@ export interface Config {
    * processes instead of failing the second writer outright.
    */
   busyTimeoutMs?: number
+  /**
+   * How many pre-upgrade `.bak` copies of a project's `store.sqlite` to
+   * retain when a schema migration runs. Deployment-varying because it
+   * trades disk space against how far back a bad migration can be undone
+   * by hand.
+   */
+  storeBackupRetention?: number
+  /**
+   * Upper bound on how many version rows and dangling session-log events one
+   * `reconcileProject` call processes before reporting `truncated: true` and
+   * returning rather than continuing. Deployment-varying: a larger project
+   * (more versions accumulated, more sessions to fold events from) can
+   * afford — or need — a larger single-call budget than a small one; the
+   * caller (`dsh-science-runtime`) decides whether and how to schedule a
+   * follow-up call for the remainder.
+   */
+  reconcileMaxVersions?: number
+  /**
+   * Consulted at most once per project, during a v1→v2 store upgrade's
+   * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
+   * figure state/annotation provenance this package's v1 rows never held
+   * and only that project's session logs still do. This package never reads
+   * session-log format itself; a consumer that does (e.g. `dsh-science-runtime`)
+   * supplies this hook. Omitted: step 4 is skipped and logged as a warning.
+   */
+  backfillProvenance?: BackfillProvenanceHook
 }
 
 /**
@@ -71,11 +134,19 @@ export interface Config {
  * knows the id of.
  */
 export class ScienceArtifactStore extends Service {
-  /** Schemastery validator for {@link Config}. */
+  /**
+   * Schemastery validator for {@link Config}. `backfillProvenance` is a
+   * function value, validated by `z.any()` like other injected-instance
+   * config fields in this repo (e.g. `dsh-session-telemetry-otel`'s
+   * `exporter`/`processor`).
+   */
   static Config: z<Config> = z.object({
     dshHome: z.string(),
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
     busyTimeoutMs: z.number().min(0).default(5000),
+    storeBackupRetention: z.number().min(0).default(1),
+    reconcileMaxVersions: z.number().min(1).max(1_000_000).default(2000),
+    backfillProvenance: z.any(),
   })
 
   private readonly engine: ProjectArtifactStoreEngine
@@ -86,11 +157,16 @@ export class ScienceArtifactStore extends Service {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'scienceArtifactStore')
-    const resolved = config as Required<Config>
+    const resolved = config as
+      Required<Pick<Config, 'journalMode' | 'busyTimeoutMs' | 'storeBackupRetention' | 'reconcileMaxVersions'>> & Config
     this.engine = new ProjectArtifactStoreEngine({
       journalMode: resolved.journalMode,
       busyTimeoutMs: resolved.busyTimeoutMs,
+      storeBackupRetention: resolved.storeBackupRetention,
+      reconcileMaxVersions: resolved.reconcileMaxVersions,
+      onWarning: (message) => { ctx.logger.warn(message) },
       ...config.dshHome === undefined ? {} : { dshHome: config.dshHome },
+      ...config.backfillProvenance === undefined ? {} : { backfillProvenance: config.backfillProvenance },
     })
     ctx.effect(() => () => this.engine.close(), 'science-artifact-store.close')
   }
@@ -107,7 +183,7 @@ export class ScienceArtifactStore extends Service {
   /**
    * Create a new artifact and its first version.
    * @param projectId - the owning project.
-   * @param input - the first version's bytes, media type, origin, and metadata.
+   * @param input - the first version's bytes, kind, provenance, and optional explicit baseline.
    * @returns the created artifact and its first version.
    */
   createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }> {
@@ -119,7 +195,7 @@ export class ScienceArtifactStore extends Service {
    * other concurrent append to the same artifact.
    * @param projectId - the owning project.
    * @param artifactId - the artifact to append to.
-   * @param input - the new version's bytes, media type, origin, and metadata.
+   * @param input - the new version's bytes, provenance, and optional explicit baseline.
    * @returns the appended version.
    */
   appendVersion(projectId: ProjectId, artifactId: ArtifactId, input: AppendVersionInput): Promise<VersionRecord> {
@@ -127,11 +203,11 @@ export class ScienceArtifactStore extends Service {
   }
 
   /**
-   * Apply a metadata-only patch to one version in place.
+   * Append one metadata edit onto a version.
    * @param projectId - the owning project.
-   * @param versionId - the version to curate.
-   * @param patch - fields to overwrite; an omitted field keeps its current value.
-   * @returns the updated version.
+   * @param versionId - the version to annotate.
+   * @param patch - the edit's author and the fields to change.
+   * @returns the version, reflecting the newly appended annotation.
    */
   annotateVersion(projectId: ProjectId, versionId: VersionId, patch: AnnotateVersionInput): Promise<VersionRecord> {
     return this.engine.annotateVersion(projectId, versionId, patch)
@@ -187,6 +263,56 @@ export class ScienceArtifactStore extends Service {
   }
 
   /**
+   * List one artifact's active (non-removed) notes, oldest first.
+   * @param projectId - the owning project.
+   * @param artifactId - the artifact whose notes to list.
+   * @returns every note that has not been removed.
+   */
+  listNotes(projectId: ProjectId, artifactId: ArtifactId): Promise<readonly ArtifactNoteRecord[]> {
+    return this.engine.listNotes(projectId, artifactId)
+  }
+
+  /**
+   * Add a new note.
+   * @param projectId - the owning project.
+   * @param input - the artifact (and optional version) to attach the note to, its text, and its author.
+   * @returns the created note.
+   */
+  putNote(projectId: ProjectId, input: PutNoteInput): Promise<ArtifactNoteRecord> {
+    return this.engine.putNote(projectId, input)
+  }
+
+  /**
+   * Soft-delete a note.
+   * @param projectId - the owning project.
+   * @param noteId - the note to remove.
+   */
+  removeNote(projectId: ProjectId, noteId: NoteId): Promise<void> {
+    return this.engine.removeNote(projectId, noteId)
+  }
+
+  /**
+   * Look up one version's live-figure-object state.
+   * @param projectId - the owning project.
+   * @param versionId - the version whose figure state to fetch.
+   * @returns the figure state, or `undefined` when this version carries none.
+   */
+  getFigureState(projectId: ProjectId, versionId: VersionId): Promise<FigureStateRecord | undefined> {
+    return this.engine.getFigureState(projectId, versionId)
+  }
+
+  /**
+   * Apply a reconciliation-status patch to one version.
+   * @param projectId - the owning project.
+   * @param versionId - the version whose health to update.
+   * @param patch - fields to overwrite; an omitted field keeps its current value.
+   * @returns the updated health row.
+   */
+  setVersionHealth(projectId: ProjectId, versionId: VersionId, patch: VersionHealthPatch): Promise<VersionHealthRecord> {
+    return this.engine.setVersionHealth(projectId, versionId, patch)
+  }
+
+  /**
    * Read one version's bytes by content address.
    * @param projectId - the owning project.
    * @param sha256 - the digest from an already-resolved version row.
@@ -194,6 +320,45 @@ export class ScienceArtifactStore extends Service {
    */
   readBlob(projectId: ProjectId, sha256: string): Promise<Uint8Array> {
     return this.engine.readBlob(projectId, sha256)
+  }
+
+  /**
+   * Reconcile one project's store against session-log events a caller has
+   * already read and folded — see the package README's Reconciliation
+   * section for the seven-case table this decides. This package never reads
+   * session logs itself; `dsh-science-runtime` reads them (bounded by its
+   * own `reconcileMaxSessions` Config) and folds duplicate events per
+   * `versionId` (last write wins) before calling this. Never throws for one
+   * bad item — see `ReconcileResult.errors` — and never writes a session
+   * log; the store is the sole write target.
+   * @param projectId - the project to reconcile.
+   * @param events - every `science/artifact-saved` event the caller read from
+   * this project's session logs, folded per `versionId`.
+   * @param eventSetComplete - whether the caller read every relevant session
+   * log and event; when false, an absent event cannot mark or clear orphan health.
+   * @param cursor - prior bounded-walk progress over this stable event set.
+   * @returns what this call checked, reconstructed, and could not fully reconcile, bounded by the configured `reconcileMaxVersions`.
+   */
+  reconcileProject(
+    projectId: ProjectId,
+    events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>,
+    eventSetComplete: boolean,
+    cursor?: ReconcileCursor,
+  ): Promise<ReconcileResult> {
+    return this.engine.reconcileProject(projectId, events, eventSetComplete, cursor)
+  }
+
+  /**
+   * Read project-wide reconciliation health — the read interface a Host
+   * BFF (`dsh-api-proxy`) surfaces to a client's Files panel: aggregate
+   * `orphan`/`reconstructed`/`missingContent` counts plus the per-version
+   * list backing them. A pure read of whatever the last `reconcileProject`
+   * call recorded; it never itself compares the store against a session log.
+   * @param projectId - the owning project.
+   * @returns aggregate counts and the unhealthy version list, most recently checked first.
+   */
+  getReconciliationSummary(projectId: ProjectId): Promise<ReconciliationSummary> {
+    return this.engine.getReconciliationSummary(projectId)
   }
 
   /**

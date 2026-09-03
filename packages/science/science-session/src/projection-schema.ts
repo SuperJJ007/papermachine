@@ -3,7 +3,7 @@
 import { isJsonValue } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import type { ZodType } from 'zod'
-import { decodeScienceChartState, decodeScienceMode } from './codec.ts'
+import { decodeScienceMode } from './codec.ts'
 import type { ScienceClientProjection, ScienceKernelEndReason } from './types.ts'
 
 /**
@@ -122,6 +122,8 @@ function validRunIdentity(candidate: Record<string, unknown>): boolean {
     && (candidate['language'] === 'python' || candidate['language'] === 'r')
     && typeof candidate['toolCallId'] === 'string'
     && candidate['toolCallId'].length > 0
+    && ((candidate['turn'] === undefined && candidate['step'] === undefined)
+      || (safeInteger(candidate['turn'], 1) && safeInteger(candidate['step'], 1)))
     && safeInteger(candidate['requestHeaderSeq'])
     && safeInteger(candidate['environmentRevision'], 1)
     && typeof candidate['environmentFingerprintPreview'] === 'string'
@@ -138,6 +140,7 @@ function validRun(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined || !validRunIdentity(candidate)) return false
   const identityKeys: string[] = [...RUN_IDENTITY_KEYS]
+  if (candidate['turn'] !== undefined) identityKeys.push('turn', 'step')
   if (candidate['inputs'] !== undefined) identityKeys.push('inputs')
   const status = candidate['status']
   if (status === 'running') return projectionExactKeys(candidate, [...identityKeys, 'status'])
@@ -216,64 +219,60 @@ function validKernel(value: unknown): boolean {
       || (typeof candidate['reason'] === 'string' && (KERNEL_END_REASONS as readonly string[]).includes(candidate['reason'])))
 }
 
-const ARTIFACT_MEDIA_TYPES = [
-  'image/png',
-  'text/csv',
-  'application/json',
-  'text/markdown',
-  'text/plain',
-]
-
 function validArtifact(value: unknown): boolean {
   const candidate = projectionRecord(value)
   if (candidate === undefined) return false
-  const humanEdit = candidate['origin'] === 'human-edit'
-  const keys = ['artifactId', 'producerSessionId', 'logicalName', 'version', 'title', 'origin',
-    'versionId', 'sha256', 'mediaType', 'byteCount',
-    'environmentRevision', 'environmentFingerprintPreview', 'createdAt']
-  if (!humanEdit) keys.push('runId', 'toolCallId', 'requestHeaderSeq', 'turn')
+  const keys = ['artifactId', 'logicalName', 'version', 'title', 'versionId', 'sha256', 'seenAt']
   if (candidate['caption'] !== undefined) keys.push('caption')
-  if (candidate['parent'] !== undefined) keys.push('parent')
-  if (candidate['chart'] !== undefined) keys.push('chart')
-  let validChart = true
-  if (candidate['chart'] !== undefined) {
-    if (candidate['mediaType'] !== 'image/png') validChart = false
-    else {
-      try {
-        decodeScienceChartState(candidate['chart'])
-      } catch {
-        validChart = false
-      }
-    }
-  }
+  if (candidate['turn'] !== undefined) keys.push('turn', 'step')
   return projectionExactKeys(candidate, keys)
     && typeof candidate['artifactId'] === 'string'
     && candidate['artifactId'].length > 0
-    && typeof candidate['producerSessionId'] === 'string'
-    && candidate['producerSessionId'].length > 0
     && typeof candidate['logicalName'] === 'string'
     && safeInteger(candidate['version'], 1)
-    && (humanEdit ? validArtifactVersionRef(candidate['parent']) : candidate['parent'] === undefined || validArtifactVersionRef(candidate['parent']))
     && typeof candidate['title'] === 'string'
     && (candidate['caption'] === undefined || typeof candidate['caption'] === 'string')
-    && (humanEdit || candidate['origin'] === 'auto' || candidate['origin'] === 'model')
     && typeof candidate['versionId'] === 'string'
     && candidate['versionId'].length > 0
     && typeof candidate['sha256'] === 'string'
     && /^[a-f0-9]{64}$/.test(candidate['sha256'])
-    && typeof candidate['mediaType'] === 'string'
-    && ARTIFACT_MEDIA_TYPES.includes(candidate['mediaType'])
-    && (!humanEdit || candidate['mediaType'] === 'image/png')
-    && safeInteger(candidate['byteCount'], 1)
-    && (humanEdit || typeof candidate['runId'] === 'string')
-    && (humanEdit || typeof candidate['toolCallId'] === 'string' && candidate['toolCallId'].length > 0)
-    && (humanEdit || safeInteger(candidate['requestHeaderSeq']))
-    && (humanEdit || safeInteger(candidate['turn'], 1))
-    && safeInteger(candidate['environmentRevision'], 1)
-    && typeof candidate['environmentFingerprintPreview'] === 'string'
-    && /^[a-f0-9]{12}$/.test(candidate['environmentFingerprintPreview'])
-    && safeInteger(candidate['createdAt'])
-    && validChart
+    && safeInteger(candidate['seenAt'])
+    && ((candidate['turn'] === undefined && candidate['step'] === undefined)
+      || (safeInteger(candidate['turn'], 1) && safeInteger(candidate['step'], 1)))
+}
+
+function validTraceTurn(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  if (candidate === undefined) return false
+  const keys = ['turn', 'startSeq', 'startTime']
+  if (candidate['endSeq'] !== undefined) keys.push('endSeq', 'endTime')
+  return projectionExactKeys(candidate, keys)
+    && safeInteger(candidate['turn'], 1)
+    && safeInteger(candidate['startSeq'])
+    && safeInteger(candidate['startTime'])
+    && ((candidate['endSeq'] === undefined && candidate['endTime'] === undefined)
+      || (safeInteger(candidate['endSeq'], candidate['startSeq'])
+        && safeInteger(candidate['endTime'], candidate['startTime'])))
+}
+
+function validTraceCall(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  return candidate !== undefined
+    && projectionExactKeys(candidate, ['seq', 'time', 'callId', 'turn', 'step', 'name'])
+    && safeInteger(candidate['seq'])
+    && safeInteger(candidate['time'])
+    && typeof candidate['callId'] === 'string' && candidate['callId'].length > 0
+    && safeInteger(candidate['turn'], 1)
+    && safeInteger(candidate['step'], 1)
+    && typeof candidate['name'] === 'string' && candidate['name'].length > 0
+}
+
+function validTrace(value: unknown): boolean {
+  const candidate = projectionRecord(value)
+  return candidate !== undefined
+    && projectionExactKeys(candidate, ['turns', 'calls'])
+    && Array.isArray(candidate['turns']) && candidate['turns'].every(validTraceTurn)
+    && Array.isArray(candidate['calls']) && candidate['calls'].every(validTraceCall)
 }
 
 function validEvidence(value: unknown): boolean {
@@ -325,6 +324,7 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     'runs',
     'kernels',
     'artifacts',
+    'trace',
     'outcome',
     'metrics',
     'lastScienceEventSeq',
@@ -335,6 +335,24 @@ export function validScienceProjection(value: unknown): value is ScienceClientPr
     if (!Array.isArray(candidate['runs']) || !candidate['runs'].every(validRun)) return false
     if (!Array.isArray(candidate['kernels']) || !candidate['kernels'].every(validKernel)) return false
     if (!Array.isArray(candidate['artifacts']) || !candidate['artifacts'].every(validArtifact)) return false
+    if (!validTrace(candidate['trace'])) return false
+    const trace = candidate['trace'] as { turns: Record<string, unknown>[]; calls: Record<string, unknown>[] }
+    if (trace.turns.some((turn, index) => index > 0
+      && (turn['startSeq'] as number) <= (trace.turns[index - 1]?.['startSeq'] as number))) return false
+    if (trace.calls.some((call, index) => index > 0
+      && (call['seq'] as number) <= (trace.calls[index - 1]?.['seq'] as number))) return false
+    if (new Set(trace.turns.map(turn => turn['turn'])).size !== trace.turns.length
+      || new Set(trace.calls.map(call => call['callId'])).size !== trace.calls.length) return false
+    const callsById = new Map(trace.calls.map(call => [call['callId'], call]))
+    for (const run of candidate['runs'] as Record<string, unknown>[]) {
+      if (run['turn'] === undefined) continue
+      const call = callsById.get(run['toolCallId'])
+      if (call === undefined || call['turn'] !== run['turn'] || call['step'] !== run['step']) return false
+    }
+    for (const artifact of candidate['artifacts'] as Record<string, unknown>[]) {
+      if (artifact['turn'] === undefined) continue
+      if (!trace.calls.some(call => call['turn'] === artifact['turn'] && call['step'] === artifact['step'])) return false
+    }
     if (!validOutcome(candidate['outcome'])) return false
     const lastScienceEventSeq = candidate['lastScienceEventSeq'] as number
     if (!Number.isSafeInteger(lastScienceEventSeq) || lastScienceEventSeq < 0) return false

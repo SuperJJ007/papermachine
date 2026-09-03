@@ -115,6 +115,21 @@ export interface ScienceArtifactNoteReceipt {
   readonly accepted: true
 }
 
+/** Browser request to duplicate one exact committed artifact version into a brand-new logical artifact. */
+export interface ScienceSaveArtifactAsRequest {
+  /** Store version id (`ScienceArtifactVersion.versionId`) of the source version. */
+  readonly sourceVersionId: string
+  /** Logical name for the new artifact; must be unused in the project. */
+  readonly newLogicalName: string
+}
+
+/** Exact new artifact version committed after a save-as duplication. */
+export interface ScienceSaveArtifactAsReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly logicalName: string
+  readonly version: number
+}
+
 /** Stable rejection classes for Science edit-message admission. */
 export type ScienceEditErrorCode =
   | 'SCIENCE_EDIT_INVALID_REQUEST'
@@ -124,6 +139,8 @@ export type ScienceEditErrorCode =
   | 'CHART_STALE'
   | 'CHART_NOT_ADDRESSABLE'
   | 'CHART_OP_INVALID'
+  | 'SAVE_AS_SOURCE_NOT_FOUND'
+  | 'SAVE_AS_NAME_CONFLICT'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {

@@ -7,7 +7,7 @@
  * catching a regression in `src/onboarding.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DesktopOnboardingBridge, OfferedEnvironment } from '../src/preload.ts'
+import type { CurrentEnvironment, DesktopOnboardingBridge, OfferedEnvironment } from '../src/preload.ts'
 import type { ProvisioningProgress } from '../src/provisioning.ts'
 
 const STANDARD: OfferedEnvironment = {
@@ -25,8 +25,23 @@ const STANDARD: OfferedEnvironment = {
   defaultSourceId: 'official',
 }
 
+const CURRENT: CurrentEnvironment = {
+  id: 'general',
+  revision: '2026.09.1',
+  status: 'applied',
+  prefix: '/Users/scientist/.papermachine/desktop-environments/environments/general/2026.09.1',
+}
+
 function setDom(): void {
   document.body.innerHTML = `
+    <section id="current-environment" hidden>
+      <span id="current-id"></span>
+      <span id="current-revision"></span>
+      <span id="current-status"></span>
+      <code id="current-prefix"></code>
+      <p id="reinstall-notice" hidden></p>
+      <button id="keep-current"></button>
+    </section>
     <section id="install">
       <p id="install-summary"></p>
       <ul id="packages"></ul>
@@ -76,6 +91,8 @@ function makeBridge(overrides: Partial<DesktopOnboardingBridge> = {}): DesktopOn
   return {
     onboardingStatus: vi.fn(async () => undefined),
     environments: vi.fn(async () => [STANDARD]),
+    currentEnvironment: vi.fn(async () => undefined),
+    keepCurrentEnvironment: vi.fn(async () => {}),
     provision: vi.fn(async () => {}),
     provisionCustom: vi.fn(async () => {}),
     cancelProvisioning: vi.fn(async () => {}),
@@ -123,6 +140,56 @@ function hiddenState(selector: string): boolean {
 }
 
 describe('onboarding install route', () => {
+  it('shows the current environment id, revision, status, and prefix before the install route', async () => {
+    const { bridge } = installBridge({ currentEnvironment: vi.fn(async () => CURRENT) })
+    await loadOnboarding(bridge)
+
+    expect(hiddenState('#current-environment')).toBe(false)
+    expect(textOf('#current-id')).toBe('general')
+    expect(textOf('#current-revision')).toBe('2026.09.1')
+    expect(textOf('#current-status')).toBe('applied')
+    expect(textOf('#current-prefix')).toBe(CURRENT.prefix)
+    expect(requireElement('#current-environment').compareDocumentPosition(requireElement('#install')) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  })
+
+  it('calls a matching current revision Reinstall and says the 520 MB download happens again', async () => {
+    const { bridge } = installBridge({ currentEnvironment: vi.fn(async () => CURRENT) })
+    await loadOnboarding(bridge)
+
+    expect(textOf('#provision')).toBe('重新安装 · Reinstall')
+    expect(hiddenState('#reinstall-notice')).toBe(false)
+    expect(textOf('#reinstall-notice')).toContain('520 MB')
+    expect(textOf('#reinstall-notice')).toContain('again')
+  })
+
+  it('keeps a current environment by asking the main process to relaunch the Host workspace', async () => {
+    const keepCurrentEnvironment = vi.fn(async () => {})
+    const { bridge } = installBridge({
+      currentEnvironment: vi.fn(async () => CURRENT),
+      keepCurrentEnvironment,
+    })
+    await loadOnboarding(bridge)
+
+    click('#keep-current')
+
+    expect(keepCurrentEnvironment).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels an older applied revision stale and keeps the primary action as an install', async () => {
+    const { bridge } = installBridge({
+      currentEnvironment: vi.fn(async (): Promise<CurrentEnvironment> => ({
+        ...CURRENT,
+        revision: '2026.08.1',
+        status: 'stale',
+      })),
+    })
+    await loadOnboarding(bridge)
+
+    expect(textOf('#current-status')).toBe('stale')
+    expect(textOf('#provision')).toBe('下载并安装 · Download and install')
+    expect(hiddenState('#reinstall-notice')).toBe(true)
+  })
+
   it('states the download size, disk requirement, and package count before any download starts', async () => {
     const { bridge, provision } = installBridge()
     await loadOnboarding(bridge)
@@ -285,7 +352,8 @@ describe('onboarding install route', () => {
     await loadOnboarding(bridge)
 
     expect(Object.keys(bridge).sort()).toEqual([
-      'cancelProvisioning', 'environments', 'onProvisioningProgress', 'onboardingStatus', 'provision', 'provisionCustom',
+      'cancelProvisioning', 'currentEnvironment', 'environments', 'keepCurrentEnvironment', 'onProvisioningProgress',
+      'onboardingStatus', 'provision', 'provisionCustom',
     ])
     expect(document.querySelector('#detected')).toBeNull()
     expect(document.querySelector('#bind')).toBeNull()

@@ -93,6 +93,27 @@ export const MIN_CHART_LIVE_RUNS_RETAINED = 1
 /** Highest accepted live-figure run retention count. */
 export const MAX_CHART_LIVE_RUNS_RETAINED = 100
 
+/** Default maximum session logs read to build one project's store ↔ session reconciliation event set. */
+export const DEFAULT_RECONCILE_MAX_SESSIONS = 500
+/** Lowest accepted configured reconciliation session-scan bound. */
+export const MIN_RECONCILE_MAX_SESSIONS = 1
+/** Highest accepted configured reconciliation session-scan bound. */
+export const MAX_RECONCILE_MAX_SESSIONS = 100_000
+
+/** Default minimum interval between reconciliation attempts for one project. */
+export const DEFAULT_RECONCILE_RETRY_DELAY_MS = 1_000
+/** Lowest accepted configured reconciliation retry interval. */
+export const MIN_RECONCILE_RETRY_DELAY_MS = 1
+/** Highest accepted configured reconciliation retry interval. */
+export const MAX_RECONCILE_RETRY_DELAY_MS = 600_000
+
+/** Default most-recent runs `annotate_artifact`'s not-found diagnostic inspects for a retained, uncaptured PNG. */
+export const DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 20
+/** Lowest accepted configured bound on runs inspected by that diagnostic. */
+export const MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 1
+/** Highest accepted configured bound on runs inspected by that diagnostic. */
+export const MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS = 1_000
+
 /** One allowlisted existing Conda prefix. */
 export interface ScienceEnvironmentProfileConfig {
   /** Existing prefix containing `bin/python` or `python.exe`. */
@@ -190,6 +211,27 @@ export interface Config {
   readonly chartExtractTimeoutMs?: number
   /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
   readonly chartLiveRunsRetained?: number
+  /**
+   * Maximum session logs read, per project, when building the event set for
+   * one store ↔ session reconciliation pass. A project with more matching
+   * sessions than this reports its walk truncated rather than reading them
+   * all in one call — bounded so a large multi-session project's first
+   * Science operation is never blocked scanning every session it has ever had.
+   */
+  readonly reconcileMaxSessions?: number
+  /**
+   * Minimum interval between reconciliation attempts for one project until
+   * a complete, cursor-free, error-free pass succeeds. A later project
+   * resolution triggers the retry; this value does not schedule background work.
+   */
+  readonly reconcileRetryDelayMs?: number
+  /**
+   * Most-recent runs `annotate_artifact`'s not-found diagnostic inspects
+   * for a retained, uncaptured PNG before degrading to the generic
+   * not-found error. Bounds a per-run directory walk that otherwise runs
+   * once per retained run in the session, inside the runtime lease.
+   */
+  readonly annotateDiagnosticMaxRuns?: number
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -288,6 +330,15 @@ export const configSchema: z<Config> = z.object({
   chartLiveRunsRetained: z.number().step(1)
     .min(MIN_CHART_LIVE_RUNS_RETAINED).max(MAX_CHART_LIVE_RUNS_RETAINED)
     .default(DEFAULT_CHART_LIVE_RUNS_RETAINED),
+  reconcileMaxSessions: z.number().step(1)
+    .min(MIN_RECONCILE_MAX_SESSIONS).max(MAX_RECONCILE_MAX_SESSIONS)
+    .default(DEFAULT_RECONCILE_MAX_SESSIONS),
+  reconcileRetryDelayMs: z.number().step(1)
+    .min(MIN_RECONCILE_RETRY_DELAY_MS).max(MAX_RECONCILE_RETRY_DELAY_MS)
+    .default(DEFAULT_RECONCILE_RETRY_DELAY_MS),
+  annotateDiagnosticMaxRuns: z.number().step(1)
+    .min(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS).max(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)
+    .default(DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -326,6 +377,12 @@ export interface ResolvedConfig {
   readonly chartExtractTimeoutMs: number
   /** Explicitly resolved strong-reference retention count. */
   readonly chartLiveRunsRetained: number
+  /** Explicitly resolved reconciliation session-scan bound. */
+  readonly reconcileMaxSessions: number
+  /** Explicitly resolved reconciliation retry interval. */
+  readonly reconcileRetryDelayMs: number
+  /** Explicitly resolved bound on runs inspected by the `annotate_artifact` not-found diagnostic. */
+  readonly annotateDiagnosticMaxRuns: number
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -404,6 +461,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'inputMaxFilesPerRun', 'inputMaxBytesPerRun',
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
       'chartExtractTimeoutMs', 'chartLiveRunsRetained',
+      'reconcileMaxSessions', 'reconcileRetryDelayMs', 'annotateDiagnosticMaxRuns',
     ],
     'config',
   )
@@ -498,6 +556,24 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || chartLiveRunsRetained > MAX_CHART_LIVE_RUNS_RETAINED) {
     throw new Error(`science-runtime: chartLiveRunsRetained must be a safe integer from ${String(MIN_CHART_LIVE_RUNS_RETAINED)} through ${String(MAX_CHART_LIVE_RUNS_RETAINED)}`)
   }
+  const reconcileMaxSessions = config.reconcileMaxSessions ?? DEFAULT_RECONCILE_MAX_SESSIONS
+  if (!Number.isSafeInteger(reconcileMaxSessions)
+    || reconcileMaxSessions < MIN_RECONCILE_MAX_SESSIONS
+    || reconcileMaxSessions > MAX_RECONCILE_MAX_SESSIONS) {
+    throw new Error(`science-runtime: reconcileMaxSessions must be a safe integer from ${String(MIN_RECONCILE_MAX_SESSIONS)} through ${String(MAX_RECONCILE_MAX_SESSIONS)}`)
+  }
+  const reconcileRetryDelayMs = config.reconcileRetryDelayMs ?? DEFAULT_RECONCILE_RETRY_DELAY_MS
+  if (!Number.isSafeInteger(reconcileRetryDelayMs)
+    || reconcileRetryDelayMs < MIN_RECONCILE_RETRY_DELAY_MS
+    || reconcileRetryDelayMs > MAX_RECONCILE_RETRY_DELAY_MS) {
+    throw new Error(`science-runtime: reconcileRetryDelayMs must be a safe integer from ${String(MIN_RECONCILE_RETRY_DELAY_MS)} through ${String(MAX_RECONCILE_RETRY_DELAY_MS)}`)
+  }
+  const annotateDiagnosticMaxRuns = config.annotateDiagnosticMaxRuns ?? DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS
+  if (!Number.isSafeInteger(annotateDiagnosticMaxRuns)
+    || annotateDiagnosticMaxRuns < MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS
+    || annotateDiagnosticMaxRuns > MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS) {
+    throw new Error(`science-runtime: annotateDiagnosticMaxRuns must be a safe integer from ${String(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS)} through ${String(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)}`)
+  }
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
@@ -516,5 +592,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     kernelStartTimeoutMs,
     chartExtractTimeoutMs,
     chartLiveRunsRetained,
+    reconcileMaxSessions,
+    reconcileRetryDelayMs,
+    annotateDiagnosticMaxRuns,
   }
 }

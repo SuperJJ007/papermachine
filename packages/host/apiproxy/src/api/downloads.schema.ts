@@ -1,14 +1,16 @@
 /**
- * downloads domain zod schemas. The download surface has no wire
- * envelope: the request arrives as query parameters (all strings), so its
- * request schema parses the raw query-parameter object into the method's
- * exact request shape. SessionId brand cast point: sessionIdSchema, and only
- * there (hosted in sessions.schema like every other cast).
+ * downloads domain zod schemas. The download surface has no wire envelope:
+ * each request arrives as query parameters or URL path segments (all
+ * strings, already percent-decoded by the carrier), so its request schema
+ * parses that raw string record into the method's exact request shape.
+ * SessionId brand cast point: sessionIdSchema, and only there (hosted in
+ * sessions.schema like every other cast); VersionId's own cast point is
+ * scienceVersionIdSchema, hosted the same way.
  */
 
 import { z } from 'zod'
 import type { DownloadsApi } from './downloads.ts'
-import { sessionIdSchema } from './sessions.schema.ts'
+import { scienceVersionIdSchema, sessionIdSchema } from './sessions.schema.ts'
 
 /**
  * session.export query params → the sessionLog request. `includeDescendants`
@@ -24,3 +26,14 @@ export const sessionLogQuerySchema = z
     sessionId: query.sessionId,
     ...(query.includeDescendants === 'true' ? { includeDescendants: true } : {}),
   })) satisfies z.ZodType<Parameters<DownloadsApi['sessionLog']>[0]>
+
+/**
+ * `/api/science/artifact/:sessionId/:versionId` path segments → the
+ * scienceArtifact request. No `projectId` segment exists — the route cannot
+ * accept one, so a caller cannot select an authorization domain of its own
+ * choosing; the session's own fold derives it, exactly as `session.scienceArtifact` does.
+ */
+export const scienceArtifactDownloadPathSchema = z.object({
+  sessionId: sessionIdSchema,
+  versionId: scienceVersionIdSchema,
+}) satisfies z.ZodType<Parameters<DownloadsApi['scienceArtifact']>[0]>

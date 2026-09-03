@@ -369,6 +369,10 @@ importers:
         version: 10.0.0
 
   apps/desktop:
+    dependencies:
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.2.0
     devDependencies:
       '@types/js-yaml':
         specifier: ^4.0.9
@@ -379,9 +383,6 @@ importers:
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
-      js-yaml:
-        specifier: ^4.2.0
-        version: 4.2.0
       tsx:
         specifier: ^4.20.6
         version: 4.22.4
@@ -2738,6 +2739,9 @@ importers:
       '@deepseek-ai/dsh-tool-science':
         specifier: workspace:^
         version: link:../../science/tool-science
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -6345,6 +6349,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-persistence':
+        specifier: workspace:^
+        version: link:../../session/session-persistence
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings

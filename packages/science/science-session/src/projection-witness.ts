@@ -47,6 +47,10 @@ export function scienceProjectionWitnessEvent(event: SessionEvent): ScienceProje
     case 'assistant/message':
     case 'session/end-seed':
       return projectionWitnessEvent(event, {})
+    case 'turn/start':
+    case 'turn/end':
+      if (!validExecutionCoordinate(event.data.turn)) throw new Error(`invalid ${event.type} projection witness`)
+      return projectionWitnessEvent(event, { turn: event.data.turn })
     case 'step/end':
       if (!validExecutionCoordinate(event.data.turn) || !validExecutionCoordinate(event.data.step)) {
         throw new Error('invalid step/end projection witness')
@@ -91,6 +95,7 @@ export function preventsScienceModeBinding(event: Pick<ScienceProjectionWitnessE
  */
 export function scienceEventRelevantBeforeMode(event: SessionEvent): boolean {
   return event.type.startsWith('science/')
+    || event.type === 'turn/start'
     || preventsScienceModeBinding(event)
     || event.type === 'user/message'
     || event.type === 'assistant/message'
@@ -116,6 +121,7 @@ export function scienceProjectionEventRelevant(state: ScienceFoldState, event: S
   if (state.mode === undefined) {
     return !scienceModeBindingBlocked(state) && scienceEventRelevantBeforeMode(event)
   }
+  if (event.type === 'turn/start' || event.type === 'turn/end') return true
   if (event.type === 'step/start') return false
   if (event.type === 'step/end') {
     return state.toolCalls.some(call => call.turn === event.data.turn

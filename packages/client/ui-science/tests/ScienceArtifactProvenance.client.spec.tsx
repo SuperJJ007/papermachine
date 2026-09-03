@@ -4,45 +4,40 @@
  * content), the sub-tab strip (aria-selected, switching), and each of the
  * four sub-tabs both available and distinctly unavailable — including the
  * run-outside-loaded-window "pending history" states, where the durable
- * digest and byte counts still render — the running-log state, byte
+ * digest and byte counts still render, the running-log state, byte
  * truncation, the environment-superseded state for a revision the projection
- * no longer retains (including no binding at all), and the jump-to-transcript
- * action. Resolution (chart/run existing) is the caller's job; this
- * component always renders for an already-resolved pair.
+ * no longer retains (including no binding at all), a version with no
+ * resolvable producing run at all (human-edit/import, or a run-produced
+ * version whose store producer is unavailable), a cross-session library
+ * preview, and the jump-to-transcript action. Resolution (which run/call
+ * produced this version) is the caller's job (`ScienceDetailsView.tsx`'s
+ * `resolveProducingCall`); this component always renders for an
+ * already-resolved store producer.
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ScienceClientArtifactVersion, ScienceClientEnvironmentBinding, ScienceClientRun, ScienceClientRunArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from '../src/client/selection-store.ts'
 import { ScienceArtifactProvenance, type ScienceArtifactProvenanceProps } from '../src/client/ScienceArtifactProvenance.tsx'
+import type { ScienceRenderableVersion } from '../src/client/version-summaries.ts'
 import { en } from '../src/client/locales.ts'
 
 type Props = ScienceArtifactProvenanceProps
 const CALL_ID = 'call-run-1'
-const SESSION_ID = 'session-1' as never
 const t: Props['t'] = makeTranslate(en)
 
 afterEach(cleanup)
 
-type LegacyChartOverrides = Omit<Partial<ScienceClientRunArtifactVersion>, 'mediaType' | 'byteCount'> & {
-  readonly attachment?: { readonly attachmentId?: string; readonly mediaType?: ScienceClientRunArtifactVersion['mediaType']; readonly bytes?: number }
-}
-
-function chart(over: LegacyChartOverrides = {}): ScienceClientRunArtifactVersion {
-  const { attachment, ...fields } = over
+function chart(over: Partial<ScienceRenderableVersion> = {}): ScienceRenderableVersion {
   return {
-    artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve', origin: 'model',
-    producerSessionId: SESSION_ID,
-    versionId: (attachment?.attachmentId ?? 'version-abc') as never,
-    sha256: attachment?.attachmentId ?? 'abc',
-    mediaType: attachment?.mediaType ?? 'image/png',
-    byteCount: attachment?.bytes ?? 10,
-    runId: 'run-1' as never, toolCallId: 'call-chart-1' as never, requestHeaderSeq: 8, turn: 1,
-    environmentRevision: 1, environmentFingerprintPreview: 'f'.repeat(12), createdAt: 3_000,
-    ...fields,
+    artifactId: 'chart-1' as never, logicalName: 'loss-curve', version: 2, title: 'Loss curve',
+    versionId: 'version-abc', sha256: 'abc', mediaType: 'image/png', byteCount: 10,
+    contentOrigin: 'run-auto', createdAt: 3_000,
+    producer: { sessionId: 'session-1', runId: 'run-1', toolCallId: CALL_ID, requestHeaderSeq: 7, turn: 1 },
+    ...over,
   }
 }
 
@@ -120,8 +115,9 @@ function snapshotWith(block: ToolCallBlock | undefined): ConversationSnapshot {
 }
 
 function props(over: {
-  chart?: ScienceClientArtifactVersion
-  run?: ScienceClientRun
+  chart?: ScienceRenderableVersion
+  run?: ScienceClientRun | undefined
+  producingCallId?: string | undefined
   environment?: ScienceClientEnvironmentBinding | null | undefined
   block?: ToolCallBlock | undefined
   subTab?: ScienceProvenanceSubTab
@@ -130,11 +126,13 @@ function props(over: {
   inspectCall?: (callId: string) => void
   selectDetailed?: () => void
   returnToConversation?: (anchorKey: string) => void
+  sourceSessionTitle?: string | undefined
   snapshot?: ConversationSnapshot
 } = {}): Props {
   return {
     chart: over.chart ?? chart(),
-    run: over.run ?? run(),
+    run: 'run' in over ? over.run : run(),
+    producingCallId: 'producingCallId' in over ? over.producingCallId : CALL_ID,
     environment: 'environment' in over ? over.environment : environment(),
     snapshot: over.snapshot ?? snapshotWith(over.block),
     subTab: over.subTab ?? 'code',
@@ -142,9 +140,8 @@ function props(over: {
     onBack: over.onBack ?? vi.fn(),
     inspectCall: over.inspectCall ?? vi.fn(),
     selectDetailed: over.selectDetailed ?? vi.fn(),
-    currentSessionId: SESSION_ID,
-    sourceSessionTitle: 'Source session',
     returnToConversation: over.returnToConversation ?? vi.fn(),
+    ...('sourceSessionTitle' in over && over.sourceSessionTitle !== undefined ? { sourceSessionTitle: over.sourceSessionTitle } : {}),
     t,
   }
 }
@@ -220,6 +217,13 @@ describe('ScienceArtifactProvenance: code', () => {
     view.rerender(<ScienceArtifactProvenance {...props({ subTab: 'code', block: settledInWindow('{"other":1}', 'output') })} />)
     expect(view.getByRole('status')).toBeTruthy()
   })
+
+  it('reports no content when the version has no resolvable producing run (a human edit)', () => {
+    const view = render(<ScienceArtifactProvenance {...props({
+      subTab: 'code', run: undefined, chart: chart({ contentOrigin: 'human-edit' }),
+    })} />)
+    expect(view.getByRole('status').textContent).toBe('Produced by a human edit, not by a code run — nothing to show here.')
+  })
 })
 
 describe('ScienceArtifactProvenance: execution log', () => {
@@ -263,6 +267,13 @@ describe('ScienceArtifactProvenance: execution log', () => {
     expect(view.getByRole('status').textContent)
       .toBe('The execution log is outside the loaded conversation history. Load more history to see it.')
     expect(view.container.textContent).toContain('stdout 12 bytes, stderr 3 bytes')
+  })
+
+  it('reports no content when the version has no resolvable producing run (an import)', () => {
+    const view = render(<ScienceArtifactProvenance {...props({
+      subTab: 'log', run: undefined, chart: chart({ contentOrigin: 'import' }),
+    })} />)
+    expect(view.getByRole('status').textContent).toBe('Produced by an import, not by a code run — nothing to show here.')
   })
 })
 
@@ -331,19 +342,20 @@ describe('ScienceArtifactProvenance: messages', () => {
     expect(view.getByText('The generating message is not loaded.')).toBeTruthy()
   })
 
-  it('shows a source-session label and no fake navigation for a foreign version', () => {
-    const view = render(<ScienceArtifactProvenance {...props({
-      subTab: 'messages', chart: chart({ producerSessionId: 'foreign-session' as never }),
-    })} />)
-    expect(view.container.textContent).toContain('Source session')
-    expect(view.queryByRole('button', { name: 'Back to original conversation' })).toBeNull()
-    expect(view.queryByRole('button', { name: 'View trajectory' })).toBeNull()
+  it('reports when the version carries no producing-call coordinate at all', () => {
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', run: undefined, producingCallId: undefined })} />)
+    expect(view.getByText('The generating message is not loaded.')).toBeTruthy()
   })
 
-  it('falls back to the foreign producer id when its session title is unavailable', () => {
-    const foreign = chart({ producerSessionId: 'foreign-session' as never })
-    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', chart: foreign })} sourceSessionTitle={undefined} />)
-    expect(view.container.textContent).toContain('foreign-session')
+  it('shows a source-session label and a disabled return button for a cross-session preview', () => {
+    const view = render(<ScienceArtifactProvenance {...props({
+      subTab: 'messages', run: undefined, producingCallId: undefined, sourceSessionTitle: 'Earlier analysis',
+    })} />)
+    expect(view.container.textContent).toContain('Source session')
+    expect(view.container.textContent).toContain('Earlier analysis')
+    const conversation = view.getByRole('button', { name: 'Back to original conversation' })
+    expect(conversation.hasAttribute('disabled')).toBe(true)
+    expect(view.queryByRole('button', { name: 'View trajectory' })).toBeNull()
   })
 })
 
@@ -365,5 +377,10 @@ describe('ScienceArtifactProvenance: environment', () => {
   it('reports the environment as superseded when no environment binding exists at all', () => {
     const view = render(<ScienceArtifactProvenance {...props({ subTab: 'environment', environment: null })} />)
     expect(view.getByRole('status')).toBeTruthy()
+  })
+
+  it('reports no content when the version has no resolvable producing run', () => {
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'environment', run: undefined })} />)
+    expect(view.getByRole('status').textContent).toBe('Produced by an automatic run, not by a code run — nothing to show here.')
   })
 })

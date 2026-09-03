@@ -62,12 +62,13 @@ describe('Science projection registry', () => {
     })
     session.append('turn/start', { turn: 2 })
 
-    expect(seen).toHaveLength(1)
+    expect(seen).toHaveLength(2)
     expect(seen[0]?.seq).toBe(modeBound.seq)
     expect(seen[0]?.value).toMatchObject({
       mode: mode(),
       lastScienceEventSeq: modeBound.seq,
     })
+    expect(seen[1]).toMatchObject({ seq: session.seq - 1, value: { trace: { turns: [{ turn: 1 }, { turn: 2 }] } } })
     const checkpoint = ctx.sessionProjections.checkpoint(session).science!
     expect((checkpoint.val as ScienceProjectionState).observedSeq).toBe(session.seq - 1)
     expect(checkpoint.seq).toBe(session.seq - 1)

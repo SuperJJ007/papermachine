@@ -2,13 +2,14 @@
 
 English | [中文](README.zh.md)
 
-This private workspace contains the two deployment targets for PaperMachine's metadata-only usage events. Both targets accept the same closed JSON record, reject unknown fields, return empty responses, and never read or store the request IP, User-Agent, or headers beyond `Content-Length` for the 8 KiB limit.
+This private workspace contains the two deployment targets for PaperMachine's metadata-only usage events. Both targets accept the same closed JSON record, reject unknown fields, return empty responses, and never store the request IP, User-Agent, or headers. The Aliyun target reads only `Content-Length` to enforce the 8 KiB limit. The Cloudflare Worker also reads `cf-connecting-ip` solely as a rate-limit key and never logs or persists it.
 
 ## HTTP behavior
 
 - `POST` is the only accepted method; other methods return `405` with `Allow: POST`.
 - A body larger than 8 KiB returns `413` without JSON parsing.
 - Malformed JSON, an unsupported event or schema version, a non-UUID event or anonymous id, a missing or invalid documented field, or an unknown field returns `400` without persistence.
+- After validation, the Cloudflare Worker permits 20 events per 60 seconds for each `cf-connecting-ip` within a Cloudflare location. Invalid requests do not consume this quota; an exceeded quota returns an empty `429`.
 - A stored event returns an empty `204`. Neither receiver performs authentication or CORS handling.
 
 ## Alibaba Cloud Function Compute
@@ -26,7 +27,7 @@ curl -i -X POST 'https://REPLACE_WITH_FC_ENDPOINT/' -H 'Content-Type: applicatio
 
 ## Cloudflare Worker and D1
 
-The Worker entry is [`cloudflare/worker.mjs`](cloudflare/worker.mjs), the D1 schema is [`cloudflare/migrations/0001_create_events.sql`](cloudflare/migrations/0001_create_events.sql), and [`wrangler.toml`](wrangler.toml) binds the database as `DB`. The Worker supplies `received_at` and uses `INSERT OR IGNORE` against the `event_id` primary key, so duplicate ids return the same empty `204` without another row.
+The Worker entry is [`cloudflare/worker.mjs`](cloudflare/worker.mjs), the D1 schema is [`cloudflare/migrations/0001_create_events.sql`](cloudflare/migrations/0001_create_events.sql), and [`wrangler.toml`](wrangler.toml) binds the database as `DB` and the rate limiter as `TELEMETRY_RATE_LIMIT`. The Worker supplies `received_at` and uses `INSERT OR IGNORE` against the `event_id` primary key, so duplicate ids return the same empty `204` without another row.
 
 From the repository root, install dependencies and configure the Cloudflare resources:
 

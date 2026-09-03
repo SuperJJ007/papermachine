@@ -83,10 +83,10 @@ async function insertEvent(database, event) {
 
 export default {
   /**
-   * Receive one anonymous telemetry event without logging request metadata.
+   * Receive one anonymous telemetry event without persisting request metadata.
    * @param {Request} request - Worker request.
-   * @param {{ DB: import('@cloudflare/workers-types').D1Database }} env - Worker bindings.
-   * @returns {Promise<Response>} Empty 204, 400, 405, 413, or 500 response.
+   * @param {{ DB: import('@cloudflare/workers-types').D1Database, TELEMETRY_RATE_LIMIT: import('@cloudflare/workers-types').RateLimit }} env - Worker bindings.
+   * @returns {Promise<Response>} Empty 204, 400, 405, 413, 429, or 500 response.
    */
   async fetch(request, env) {
     if (request.method !== 'POST') return emptyResponse(405, { allow: 'POST' })
@@ -102,6 +102,10 @@ export default {
     if (event === undefined) return emptyResponse(400)
 
     try {
+      const { success } = await env.TELEMETRY_RATE_LIMIT.limit({
+        key: request.headers.get('cf-connecting-ip') ?? 'unknown',
+      })
+      if (!success) return emptyResponse(429)
       await insertEvent(env.DB, event)
     } catch {
       return emptyResponse(500)

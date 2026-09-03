@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/telemetry-receivers/README.md
-README.md: 3f5a5a82723bcc53e62af60404e822b9bb32ab3f
-README.zh.md: 528b423e48078dd04c5725f795ed344da1e74c90
+README.md: bb7e9fec6ee07596159527ec51c2f6d9739b1212
+README.zh.md: 6d4e42fba47efb7bd193dbc251f98b3f65618079

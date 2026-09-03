@@ -8,3 +8,9 @@ binding = "DB"
 database_name = "dsh-telemetry"
 database_id = "0fe38a58-bd99-46c7-b147-b1744e01b06d"
 migrations_dir = "cloudflare/migrations"
+
+[[ratelimits]]
+name = "TELEMETRY_RATE_LIMIT"
+# Dedicated namespace for the telemetry receiver's per-IP counters.
+namespace_id = "20260903"
+simple = { limit = 20, period = 60 }

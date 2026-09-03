@@ -2,13 +2,14 @@
 
 [English](README.md) | 中文
 
-这个私有 workspace 包含 PaperMachine 只含元数据的使用事件所用的两个部署目标。两端接受同一个闭合 JSON 记录、拒绝未知字段、返回空响应，并且绝不读取或保存请求 IP、User-Agent 或请求头；唯一例外是读取 `Content-Length` 以执行 8 KiB 限制。
+这个私有 workspace 包含 PaperMachine 只含元数据的使用事件所用的两个部署目标。两端接受同一个闭合 JSON 记录、拒绝未知字段、返回空响应，并且绝不保存请求 IP、User-Agent 或请求头。阿里云目标只读取 `Content-Length` 以执行 8 KiB 限制。Cloudflare Worker 还会读取 `cf-connecting-ip`，但只把它用作限速 key，绝不记录或持久化该值。
 
 ## HTTP 行为
 
 - 只接受 `POST`；其他方法返回 `405` 和 `Allow: POST`。
 - 大于 8 KiB 的 body 不经 JSON 解析就返回 `413`。
 - JSON 格式错误、不支持的 event 或 schema version、非 UUID 的 event id 或 anonymous id、缺失或无效的已定义字段，或未知字段，均返回 `400` 且不持久化。
+- 通过校验后，Cloudflare Worker 在每个 Cloudflare location 内按 `cf-connecting-ip` 限制为每 60 秒 20 个事件。非法请求不消耗此额度；超出额度返回空的 `429`。
 - 事件保存后返回空的 `204`。两个接收端都不做鉴权或 CORS 处理。
 
 ## 阿里云函数计算
@@ -26,7 +27,7 @@ curl -i -X POST 'https://REPLACE_WITH_FC_ENDPOINT/' -H 'Content-Type: applicatio
 
 ## Cloudflare Worker 与 D1
 
-Worker 入口是 [`cloudflare/worker.mjs`](cloudflare/worker.mjs)，D1 schema 位于 [`cloudflare/migrations/0001_create_events.sql`](cloudflare/migrations/0001_create_events.sql)，[`wrangler.toml`](wrangler.toml) 把数据库绑定为 `DB`。Worker 填写 `received_at`，并针对 `event_id` 主键使用 `INSERT OR IGNORE`，因此重复 id 会返回同样的空 `204`，但不会再写一行。
+Worker 入口是 [`cloudflare/worker.mjs`](cloudflare/worker.mjs)，D1 schema 位于 [`cloudflare/migrations/0001_create_events.sql`](cloudflare/migrations/0001_create_events.sql)，[`wrangler.toml`](wrangler.toml) 把数据库绑定为 `DB`，把限速器绑定为 `TELEMETRY_RATE_LIMIT`。Worker 填写 `received_at`，并针对 `event_id` 主键使用 `INSERT OR IGNORE`，因此重复 id 会返回同样的空 `204`，但不会再写一行。
 
 在仓库根目录安装依赖并配置 Cloudflare 资源：
 

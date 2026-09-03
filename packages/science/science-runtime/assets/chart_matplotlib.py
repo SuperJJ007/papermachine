@@ -475,9 +475,20 @@ def apply_ops(fig, ops):
                 from matplotlib.text import Text
 
                 family = operation["family"]
+                # A one-element list keeps FontProperties on its explicit-family
+                # path (matplotlib.font_manager.FontProperties.__init__ takes the
+                # fontconfig-pattern path only for a bare `str` family with no
+                # other kwarg), so a generic alias with punctuation the pattern
+                # grammar rejects (e.g. "sans-serif") still resolves through
+                # rcParams['font.<alias>'] instead of raising a parse error.
+                # findfont raises ValueError for a family it cannot resolve with
+                # fallback disabled; that is the only exception this call can
+                # still raise once the pattern path is avoided, so catching it
+                # specifically (rather than Exception) lets a genuine bug at this
+                # call site propagate instead of being relabelled font_not_found.
                 try:
-                    font_manager.findfont(FontProperties(family=family), fallback_to_default=False)
-                except Exception as error:
+                    font_manager.findfont(FontProperties(family=[family]), fallback_to_default=False)
+                except ValueError as error:
                     raise ValueError("font_not_found") from error
                 for text in fig.findobj(match=Text):
                     text.set_fontfamily(family)

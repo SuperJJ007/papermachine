@@ -9,7 +9,7 @@
 - 只接受 `POST`；其他方法返回 `405` 和 `Allow: POST`。
 - 大于 8 KiB 的 body 不经 JSON 解析就返回 `413`。
 - JSON 格式错误、不支持的 event 或 schema version、非 UUID 的 event id 或 anonymous id、缺失或无效的已定义字段，或未知字段，均返回 `400` 且不持久化。
-- 通过校验后，Cloudflare Worker 在每个 Cloudflare location 内按 `cf-connecting-ip` 限制为每 60 秒 20 个事件。非法请求不消耗此额度；超出额度返回空的 `429`。
+- 通过校验后，Cloudflare Worker 在每个 Cloudflare location 内按 `cf-connecting-ip` 限制为每 60 秒 20 个事件，用于保护 D1 写入量，而不是 Worker 本身的请求预算；非法请求不消耗此额度。缺少 `cf-connecting-ip` 请求头的请求（只在测试和本地 `wrangler dev` 下才会出现）会落入同一个共享的 `unknown` 桶。超出额度返回空的 `429`；限速器本身出错时会放行该事件，不做限速。
 - 事件保存后返回空的 `204`。两个接收端都不做鉴权或 CORS 处理。
 
 ## 阿里云函数计算

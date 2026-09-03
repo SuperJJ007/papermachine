@@ -33,6 +33,17 @@ function createRateLimiter(success = true) {
   }
 }
 
+function createThrowingRateLimiter() {
+  const keys = []
+  return {
+    keys,
+    async limit({ key }) {
+      keys.push(key)
+      throw new Error('rate limiter unavailable')
+    },
+  }
+}
+
 function environment(database, rateLimiter = createRateLimiter()) {
   return { DB: database, TELEMETRY_RATE_LIMIT: rateLimiter }
 }
@@ -88,6 +99,18 @@ describe('Cloudflare Worker receiver', () => {
     assert.equal(await rejected.text(), '')
     assert.deepEqual(rejectedRateLimiter.keys, ['203.0.113.5'])
     assert.equal(rejectedDatabase.rows.size, 0)
+  })
+
+  it('fails open and writes the row when the rate limiter throws', async () => {
+    const database = createDatabase()
+    const rateLimiter = createThrowingRateLimiter()
+    const response = await worker.fetch(
+      post(JSON.stringify(validEvent), '203.0.113.6'),
+      environment(database, rateLimiter),
+    )
+    assert.equal(response.status, 204)
+    assert.deepEqual(rateLimiter.keys, ['203.0.113.6'])
+    assert.equal(database.rows.size, 1)
   })
 
   it('returns 413 for an oversized body even when the reader rejects cancel()', async () => {

@@ -1,4 +1,9 @@
-/** Cloudflare Worker receiver backed by a D1 binding named `DB`. */
+/**
+ * Cloudflare Worker receiver backed by a D1 binding named `DB` and a
+ * `TELEMETRY_RATE_LIMIT` rate-limit binding keyed by the request's
+ * `cf-connecting-ip`; the IP is used only as that key and is never logged or
+ * stored.
+ */
 
 import { MAX_BODY_BYTES, parseTelemetryEvent } from '../shared/telemetry-event.mjs'
 
@@ -101,11 +106,19 @@ export default {
     const event = parseTelemetryEvent(bodyBytes)
     if (event === undefined) return emptyResponse(400)
 
+    let allowed = true
     try {
-      const { success } = await env.TELEMETRY_RATE_LIMIT.limit({
+      allowed = (await env.TELEMETRY_RATE_LIMIT.limit({
         key: request.headers.get('cf-connecting-ip') ?? 'unknown',
-      })
-      if (!success) return emptyResponse(429)
+      })).success
+    } catch {
+      // Rate limiting is best-effort: a throwing limiter must not block
+      // telemetry ingestion, so a limiter failure is treated as an allowed
+      // request.
+    }
+    if (!allowed) return emptyResponse(429)
+
+    try {
       await insertEvent(env.DB, event)
     } catch {
       return emptyResponse(500)

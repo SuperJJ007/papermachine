@@ -9,7 +9,7 @@ This private workspace contains the two deployment targets for PaperMachine's me
 - `POST` is the only accepted method; other methods return `405` with `Allow: POST`.
 - A body larger than 8 KiB returns `413` without JSON parsing.
 - Malformed JSON, an unsupported event or schema version, a non-UUID event or anonymous id, a missing or invalid documented field, or an unknown field returns `400` without persistence.
-- After validation, the Cloudflare Worker permits 20 events per 60 seconds for each `cf-connecting-ip` within a Cloudflare location. Invalid requests do not consume this quota; an exceeded quota returns an empty `429`.
+- After validation, the Cloudflare Worker permits 20 events per 60 seconds for each `cf-connecting-ip` within a Cloudflare location, protecting D1 write volume rather than the Worker's overall request budget; invalid requests do not consume this quota. A request without a `cf-connecting-ip` header — reachable only in tests and local `wrangler dev` — falls into one shared `unknown` bucket. An exceeded quota returns an empty `429`; a rate-limiter failure lets the event through unthrottled.
 - A stored event returns an empty `204`. Neither receiver performs authentication or CORS handling.
 
 ## Alibaba Cloud Function Compute

@@ -25,7 +25,7 @@ Skipping steps is how analyses end up retracted — work through them in order a
 2. **Inspect the data.** Per group: n, mean, SD, median, missing values. Plot raw data before any test. Surface unequal group sizes, missingness, floor/ceiling effects, and outliers instead of working around them silently.
 3. **Select the test** from the quick reference below, or `references/test_selection_guide.md` for designs beyond basics.
 4. **Check assumptions** with `scripts/assumption_checks.py`. If one fails, switch to the remedial test (below) and report the plan and the change.
-5. **Run the test** with the right library (below) and always compute the effect size alongside it — a p-value says an effect exists; the effect size says whether anyone should care.
+5. **Run the test** with the right library (below) and always compute the effect size alongside it — a p-value says an effect exists; the effect size says whether anyone should care. Print `result.columns` (or `str(result)` in R) before indexing a result frame you have not used this session: `references/library_result_frames.md`.
 6. **Report** using APA style below: descriptives, exact statistics, effect sizes with CIs, assumption checks performed.
 
 If the user only needs one step ("how many participants do I need?"), jump straight there but still confirm the design assumptions the calculation rests on.

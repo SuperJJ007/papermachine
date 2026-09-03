@@ -64,7 +64,8 @@
     "ordinal": 1,
     "contentOrigin": "human-edit",
     "producer": {
-      "sessionId": "science-tools-snapshot"
+      "sessionId": "science-tools-snapshot",
+      "turn": 6
     },
     "baseVersionId": "{{scienceRunId}}",
     "baseExplicit": true,
@@ -99,7 +100,8 @@
     "ordinal": 2,
     "contentOrigin": "human-edit",
     "producer": {
-      "sessionId": "science-tools-snapshot"
+      "sessionId": "science-tools-snapshot",
+      "turn": 1
     },
     "baseVersionId": "{{scienceRunId}}",
     "baseExplicit": true,

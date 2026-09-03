@@ -21,7 +21,9 @@ import type { ScienceVersionSummaryMap } from '../src/client/version-summaries.t
  * fields, matching D9's `sessions.scienceVersions` response shape — the
  * turn/human-edit attribution these tests exercise now reads `contentOrigin`
  * and `createdAt` from here rather than the removed `origin`/`runId`/
- * `toolCallId`/`parent` fields directly on the artifact.
+ * `toolCallId`/`parent` fields directly on the artifact. An optional fixture
+ * `producerTurn` field carries into `producer.turn`, mirroring the store's
+ * `producerTurn` a viewer operation (save-as, a direct chart edit) sets.
  */
 function summariesFor(artifacts: readonly Record<string, unknown>[]): ScienceVersionSummaryMap {
   const map = new Map()
@@ -31,7 +33,7 @@ function summariesFor(artifacts: readonly Record<string, unknown>[]): ScienceVer
       versionId, artifactId: artifact.artifactId, logicalName: artifact.logicalName, ordinal: artifact.version,
       title: artifact.title, contentOrigin: artifact.origin === 'human-edit' ? 'human-edit' : 'run-auto',
       createdAt: artifact.createdAt, mediaType: 'image/png', byteCount: 0,
-      producer: { sessionId: 'session-1' },
+      producer: { sessionId: 'session-1', ...artifact.producerTurn === undefined ? {} : { turn: artifact.producerTurn } },
     })
   }
   return map
@@ -311,27 +313,52 @@ describe('Science process model', () => {
     expect(model.dialogues.find(item => item.seq === 21)?.turn).toBe(2)
     expect(model.environment?.languages).toEqual(['Python'])
   })
-  it('keeps legacy records without projection coordinates on the timestamp fallback', () => {
-    const human = fixture().science.artifacts[3]!
-    // Neither artifact's createdAt (9_000, 19_500) falls inside turn 2's
-    // declared window ([30_000, +Inf)); both fall back to the same lastTurn
-    // this run of nodes infers (2, from the lone assistant node) —
-    // `artifactTurn` never leaves an artifact unassigned the way a run
-    // without a matching call can stay unassigned.
+  it('attributes a coordinate-free version created in an idle gap to the turn already under way, not a later one', () => {
+    // The idle-gap bug this fix closes: a viewer operation (or a legacy
+    // record with neither a projection owner nor a store producer.turn)
+    // commits at 9_000, while turn 1 started at 0 and turn 2 does not start
+    // until 20_000 — well after this version's createdAt. Both nodes for
+    // turn 1 and turn 2 are already loaded (the model is built after the
+    // user has sent the next turn), so the old `lastTurn` fallback would
+    // have picked turn 2; the timestamp fallback must still pick turn 1,
+    // the last turn that had already started when the content committed.
     const orphan = fixture().science.artifacts[0]!
-    const nodes = [
-      { kind: 'user', seq: 1, time: 0, source: null, content: [{ type: 'image', attachment: {} as never }] },
-      { kind: 'steering', seq: 2, time: 1, messageId: 'm' as never, source: null, content: [] },
-      { kind: 'steering', seq: 3, time: 2, messageId: 'm2' as never, source: null, content: [{ type: 'text', text: 'First' }] },
-      step(4, 1, [], 2),
-    ] as ConversationNode[]
-    const model = build(nodes, { artifacts: [orphan, human], runs: [run('unseen', 1)] }, new Map([[2, { startTime: 30_000 }]]))
-    expect(model.groups).toMatchObject([{ turn: 2, artifacts: [{ version: 1, action: 'created' }] }])
+    const human = fixture().science.artifacts[3]!
+    const nodes = [step(1, 1, [], 1), step(2, 1, [], 2)] as ConversationNode[]
+    const turnTimes = new Map([[1, { startTime: 0 }], [2, { startTime: 20_000 }]])
+    const model = build(nodes, { artifacts: [orphan, human], runs: [run('unseen', 1)] }, turnTimes)
+    expect(model.groups.find(group => group.turn === 1)?.artifacts).toMatchObject([{ version: 1, action: 'created' }])
+    // Turn 2 has no steps and no artifacts of its own, so its otherwise-empty
+    // group does not render at all — the strongest possible proof the
+    // artifact did not drift there.
+    expect(model.groups.some(group => group.turn === 2)).toBe(false)
     expect(model).toMatchObject({ unassigned: { runs: [run('unseen', 1)], artifacts: [] } })
-    expect(model.humanEdits[0]?.turn).toBe(2)
-    expect(model.dialogues[0]?.turn).toBe(1)
-    const ongoing = build([step(1, 1, [], 2)], { artifacts: [human] }, new Map([[1, { startTime: 0 }]]))
-    expect(ongoing.humanEdits[0]?.turn).toBe(1)
+    expect(model.humanEdits[0]?.turn).toBe(1)
+  })
+  it('prefers the store\'s producer.turn over the timestamp fallback', () => {
+    // createdAt (9_000) alone falls inside turn 1's window and well before
+    // turn 2 starts (20_000), so the timestamp fallback would resolve turn
+    // 1 — but a viewer operation's own recorded producer.turn is the
+    // authoritative fact and must win instead.
+    const saveAsCopy = { ...fixture().science.artifacts[0]!, producerTurn: 2 }
+    const nodes = [step(1, 1, [], 1)] as ConversationNode[]
+    const turnTimes = new Map([[1, { startTime: 0 }]])
+    const model = build(nodes, { artifacts: [saveAsCopy] }, turnTimes)
+    expect(model.groups.find(group => group.artifacts.length > 0)).toMatchObject({ turn: 2 })
+  })
+  it('places a version created before any known turn in unassigned rather than guessing a turn', () => {
+    const orphan = fixture().science.artifacts[0]!
+    const human = fixture().science.artifacts[3]!
+    const nodes = [step(1, 1, [], 1)] as ConversationNode[]
+    // The only known turn starts at 30_000, strictly after both versions'
+    // createdAt (9_000, 19_500) — neither ever had a turn already under way.
+    const turnTimes = new Map([[1, { startTime: 30_000 }]])
+    const model = build(nodes, { artifacts: [orphan, human] }, turnTimes)
+    expect(model.groups.flatMap(group => group.artifacts)).toEqual([])
+    expect(model.humanEdits).toEqual([])
+    expect(model.unassigned.artifacts.map(item => item.versionId)).toEqual(
+      expect.arrayContaining([orphan.versionId, human.versionId]),
+    )
   })
   it('uses turn wall time and otherwise sums completed run durations', () => {
     const nodes = [step(1, 1, [{ name: 'run_python', callId: 'r' }])]
@@ -376,14 +403,14 @@ describe('Science process model', () => {
 
 describe('Science process presentation', () => {
   it('keeps an unowned run in unassigned history; opens exact artifact versions from its own turn chip', async () => {
-    // No turn-timing window is declared, so `artifactTurn` falls back to
-    // `lastTurn` (50, inferred from the one loaded assistant node) — the
+    // Turn 50's own declared window (starting before the artifact's
+    // createdAt, 9_000) resolves the timestamp fallback to that turn — the
     // artifact joins that turn's own group rather than staying unassigned
     // the way `produce` (a run whose callId never appears in the loaded
     // nodes) does.
     const artifact = fixture().science.artifacts[0]!
     const { openArtifact } = mount([step(50, 1, [{ name: 'run_python', callId: 'current' }], 50)],
-      projection({ runs: [run('produce', 8), run('current', 9)], artifacts: [artifact] }))
+      projection({ runs: [run('produce', 8), run('current', 9)], artifacts: [artifact] }), new Map([[50, { startTime: 0 }]]))
     await waitFor(() => { expect(screen.getByRole('button', { name: 'chart.png v1' })).toBeTruthy() })
     const history = screen.getByRole('region', { name: 'Unassigned history' })
     expect(history.textContent).toContain('1 runs and 0 artifact versions')
@@ -602,7 +629,7 @@ describe('Science process presentation', () => {
     })) as unknown as ScienceClientProjection['artifacts']
     const { container } = mount([step(1, 1, [{ name: 'run_python', callId: 'create' }])],
       projection({ artifacts: [...artifacts, artifacts[0]!], runs: [run('create', 8)],
-        outcome: { title: 'Done' } as ScienceClientProjection['outcome'] }))
+        outcome: { title: 'Done' } as ScienceClientProjection['outcome'] }), new Map([[1, { startTime: 0 }]]))
     await waitFor(() => { expect(screen.getByRole('button', { name: 'file-0.png v4' })).toBeTruthy() })
     expect(container.querySelectorAll('button[data-anchor^="artifact:"]')).toHaveLength(4)
     expect(screen.getByText(/Artifacts 4.*outcome published/u)).toBeTruthy()
@@ -645,12 +672,15 @@ describe('Science process presentation', () => {
     expect(screen.queryByText('Direct conclusion')).toBeNull()
   })
   it('keeps a human-only turn and omits empty agent turns', async () => {
+    // Turn 1 starts before the edit's createdAt (19_500) and turn 2 only
+    // afterward, so the timestamp fallback resolves turn 1 — the same last-
+    // started-turn rule the idle-gap fix relies on.
     const human = fixture().science.artifacts[3]!
     const { container } = mount([step(1, 1, [], 1), step(2, 1, [], 2)], projection({ artifacts: [human] }),
-      new Map([[1, { startTime: 30_000 }], [2, { startTime: 40_000 }]]))
+      new Map([[1, { startTime: 0 }], [2, { startTime: 40_000 }]]))
     await waitFor(() => { expect(container.querySelectorAll('[data-kind="human-edit"]')).toHaveLength(1) })
     expect(container.querySelectorAll('[data-actor="agent"]')).toHaveLength(0)
-    expect(screen.queryByText('Turn 1')).toBeNull()
+    expect(screen.queryByText('Turn 2')).toBeNull()
   })
   it.each(['idle', 'session-end', 'environment-rebound', 'run-escalation', 'protocol', 'crash', 'service-disposed', undefined] as const)(
     'renders kernel exit reason %s', (reason) => {

@@ -35,6 +35,7 @@ export const inject = ['tools', 'systemPrompt']
 const STATIC_GUIDANCE = [
   'Use run_python or run_r to execute source in the session\'s bound Science environment.',
   'Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language\'s run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart.',
+  'Bind a loaded table to a named variable so it stays in the kernel for later turns instead of re-reading the file.',
   'Store anything that must survive a kernel restart under SCIENCE_STATE_DIR; store final output files under SCIENCE_ARTIFACT_DIR; artifact_inputs materialize under SCIENCE_INPUT_DIR.',
   'The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path.',
   'When modifying or regenerating an existing artifact, reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path under SCIENCE_ARTIFACT_DIR so automatic capture appends the existing version chain. artifactId is the UUID printed in the capture receipt and by get_science_state, never the file name.',

@@ -149,6 +149,47 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(artifacts?.map(a => a.version)).toEqual([1])
   })
 
+  it('records the session\'s last started turn as producerTurn, unaffected by a turn that starts afterward', async () => {
+    const root = tmp('.science-save-as-producer-turn-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-save-as-producer-turn')
+    await captureFiles(root, harness, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    if (source === undefined) throw new Error('expected a captured summary.csv version')
+    session.append('turn/start', { turn: 1 })
+
+    const saved = await harness.runtime.saveArtifactAs({
+      session, sourceVersionId: source.versionId, newLogicalName: 'summary-copy.csv', signal: new AbortController().signal,
+    })
+    // A turn starting after the save-as call must not retroactively move
+    // this version's attribution to the newer turn — the idle-gap bug this
+    // fix closes.
+    session.append('turn/start', { turn: 2 })
+
+    const savedStore = await harness.ctx.scienceArtifactStore.getVersion(saved.projectId, saved.versionId)
+    expect(savedStore).toMatchObject({ producerTurn: 1 })
+  })
+
+  it('omits producerTurn when no turn has started in this session yet', async () => {
+    const root = tmp('.science-save-as-no-turn-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-save-as-no-turn')
+    await captureFiles(root, harness, session, { 'summary.csv': 'a,b\n1,2\n' })
+    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    if (source === undefined) throw new Error('expected a captured summary.csv version')
+
+    const saved = await harness.runtime.saveArtifactAs({
+      session, sourceVersionId: source.versionId, newLogicalName: 'summary-copy.csv', signal: new AbortController().signal,
+    })
+
+    const savedStore = await harness.ctx.scienceArtifactStore.getVersion(saved.projectId, saved.versionId)
+    expect(savedStore?.producerTurn).toBeUndefined()
+  })
+
   it('carries no caption forward when the source has none', async () => {
     const root = tmp('.science-save-as-no-caption-')
     const prefix = createFakePythonPrefix(root)

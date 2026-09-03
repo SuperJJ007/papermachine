@@ -358,7 +358,11 @@ async annotateArtifact(request: AnnotateScienceArtifactRequest): Promise<Science
  * producer — `baseVersionId` names the source explicitly instead. A
  * viewer operation: no authorizing tool call, so `session.append` records
  * only the store reference and the presentation snapshot the store just
- * committed.
+ * committed; the new version's `producerTurn` is the session's last
+ * started turn at the moment this method was called, so a save-as
+ * during an idle gap between turns attributes to the turn that was
+ * current then, never to whichever turn is newest by the time the store
+ * write commits.
  * @param request - Exact Session, the store version to duplicate, and the new logical name.
  * @returns The durable new artifact version this operation appended.
  * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when

@@ -12,6 +12,7 @@ function fakeEffects(overrides: Partial<ProvisioningCoordinatorEffects> = {}): P
     abort: vi.fn(),
     stopHost: vi.fn(async () => {}),
     openOnboarding: vi.fn(async () => {}),
+    flushTelemetry: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -94,6 +95,24 @@ describe('ProvisioningCoordinator', () => {
     run.resolve()
     await beforeQuit
     expect(effects.stopHost).toHaveBeenCalledTimes(1)
+    expect(effects.flushTelemetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('before-quit awaits the telemetry flush only after the run has settled, so a report enqueued by the run\'s own teardown is included', async () => {
+    const run = deferred()
+    const flushTelemetry = vi.fn(async () => {})
+    const effects = fakeEffects({ flushTelemetry })
+    const coordinator = new ProvisioningCoordinator(effects)
+    void coordinator.trackRun(run.promise)
+
+    const beforeQuit = coordinator.beforeQuit()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(flushTelemetry).not.toHaveBeenCalled()
+
+    run.resolve()
+    await beforeQuit
+    expect(flushTelemetry).toHaveBeenCalledTimes(1)
   })
 
   it('awaitRun resolves even when the tracked run rejects, without surfacing an unhandled rejection', async () => {
@@ -123,7 +142,8 @@ describe('ProvisioningCoordinator', () => {
     const abort = vi.fn()
     const stopHost = vi.fn(async () => {})
     const openOnboarding = vi.fn(async () => {})
-    const coordinator = new ProvisioningCoordinator({ abort, stopHost, openOnboarding })
+    const flushTelemetry = vi.fn(async () => {})
+    const coordinator = new ProvisioningCoordinator({ abort, stopHost, openOnboarding, flushTelemetry })
     void coordinator.trackRun(run.promise)
 
     const changeDiscipline = coordinator.changeDiscipline()

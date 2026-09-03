@@ -114,6 +114,8 @@ export class TelemetryReporter {
   readonly #now: () => number
   readonly #randomUUID: () => string
   readonly #requestTimeoutMs: number
+  /** Every `report()` call's dual-write, from when it starts sending until every endpoint settles; read by {@link flush}. */
+  readonly #inFlight = new Set<Promise<unknown>>()
 
   constructor(options: TelemetryReporterOptions) {
     this.#endpoints = options.endpoints
@@ -146,7 +148,28 @@ export class TelemetryReporter {
       ...input,
     }
     const body = JSON.stringify(event)
-    await Promise.allSettled(this.#endpoints.map(async endpoint => this.#send(endpoint, body)))
+    const sending = Promise.allSettled(this.#endpoints.map(async endpoint => this.#send(endpoint, body)))
+    this.#inFlight.add(sending)
+    try {
+      await sending
+    } finally {
+      this.#inFlight.delete(sending)
+    }
+  }
+
+  /**
+   * Wait for every `report()` call already started to finish sending to all
+   * its endpoints. Bounded by the reporter's own per-endpoint request
+   * timeout ({@link TelemetryReporterOptions.requestTimeoutMs}) — no
+   * additional timer here. Resolves immediately when nothing is in flight.
+   * `ProvisioningCoordinator.beforeQuit` awaits this after the provisioning
+   * run it just waited on has settled, so a `void report(...)` fired from
+   * that run's catch block (e.g. `environment.install-failed` on a
+   * cancel-by-quit) is not lost when the process exits before its request
+   * completes.
+   */
+  async flush(): Promise<void> {
+    await Promise.allSettled(this.#inFlight)
   }
 
   async #send(endpoint: string, body: string): Promise<void> {

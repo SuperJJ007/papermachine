@@ -77,11 +77,13 @@ const hostLifecycle = new HostLifecycle({
 
 // Owns the decisions that race one in-flight provisioning run: aborting and
 // waiting for it before "Change Environment…" opens onboarding, `activate`
-// waiting for it, and `before-quit` waiting for it alongside the Host stop.
+// waiting for it, and `before-quit` waiting for it alongside the Host stop,
+// then flushing any telemetry the run's own teardown enqueued.
 const coordinator = new ProvisioningCoordinator({
   abort: () => { provisioning?.abort() },
   stopHost: () => hostLifecycle.stop(),
   openOnboarding: () => openOnboarding(),
+  flushTelemetry: () => telemetry?.flush() ?? Promise.resolve(),
 })
 
 function resourceRoot(): string {

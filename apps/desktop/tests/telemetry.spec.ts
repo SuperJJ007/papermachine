@@ -162,4 +162,35 @@ describe('TelemetryReporter', () => {
 
     await expect(reporter.report({ event: 'app.launch' })).resolves.toBeUndefined()
   })
+
+  it('flush resolves only once a slow in-flight report finishes sending', async () => {
+    let resolveFetch: (() => void) | undefined
+    const fetchStub: TelemetryFetch = async () => {
+      await new Promise<void>((resolve) => { resolveFetch = resolve })
+      return new Response(null, { status: 200 })
+    }
+    const reporter = new TelemetryReporter({ endpoints: ['https://a.example/events'], context: CONTEXT, fetch: fetchStub })
+
+    void reporter.report({ event: 'app.launch' })
+
+    let flushed = false
+    const flush = reporter.flush().then(() => { flushed = true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(flushed).toBe(false)
+
+    resolveFetch?.()
+    await flush
+    expect(flushed).toBe(true)
+  })
+
+  it('flush resolves immediately when nothing is in flight', async () => {
+    const reporter = new TelemetryReporter({
+      endpoints: ['https://a.example/events'],
+      context: CONTEXT,
+      fetch: async () => new Response(null, { status: 200 }),
+    })
+
+    await expect(reporter.flush()).resolves.toBeUndefined()
+  })
 })

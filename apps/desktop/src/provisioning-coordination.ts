@@ -13,6 +13,13 @@ export interface ProvisioningCoordinatorEffects {
   readonly stopHost: () => Promise<void>
   /** Open the onboarding window. */
   readonly openOnboarding: () => Promise<void>
+  /**
+   * Wait for any telemetry reports already enqueued (e.g. a run's own
+   * `void report(...)` from its catch block) to finish sending. Called by
+   * {@link ProvisioningCoordinator.beforeQuit} after the in-flight run has
+   * unwound, so a cancel-by-quit report is not lost to process exit.
+   */
+  readonly flushTelemetry: () => Promise<void>
 }
 
 /**
@@ -104,12 +111,16 @@ export class ProvisioningCoordinator {
    * Begin app shutdown: mark quitting, abort provisioning, then stop the
    * Host and wait for the run to unwind concurrently — the whole call is a
    * single wait for two independent teardowns, so a slow one does not
-   * postpone the other's request.
+   * postpone the other's request. Flushes telemetry last, once the run has
+   * actually unwound: an aborted run's catch block enqueues its own
+   * `environment.install-failed` report on the way out, and that report
+   * must exist before there is anything to flush.
    */
   async beforeQuit(): Promise<void> {
     this.#quitting = true
     this.effects.abort()
     await Promise.allSettled([this.effects.stopHost(), this.awaitRun()])
+    await this.effects.flushTelemetry()
   }
 
   /**

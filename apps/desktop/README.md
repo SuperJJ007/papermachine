@@ -70,6 +70,8 @@ PaperMachine reports three metadata-only events, never content: `app.launch` (on
 
 Receivers are configured at build time in `resources/telemetry.json` (`schemaVersion: 1`, `endpoints: string[]` of `https://` URLs; parsed by `src/telemetry-config.ts`, which rejects a missing or malformed file loudly rather than silently disabling). Every configured endpoint receives every event independently — no failover, no retry queue, no offline buffer. This build ships one endpoint, the deployed Cloudflare Worker (`apps/telemetry-receivers`); an empty `endpoints: []` is the valid, distinct "telemetry off" state a future build can ship instead. Setting `DSH_TELEMETRY_DISABLED` to any non-empty value — the same switch and interpretation the Host's own session telemetry uses (`resolveTelemetryPatch`, `apps/cli/src/profile-boot.ts`) — sends nothing.
 
+Quitting (`before-quit`) waits for every already-enqueued report to finish sending, bounded by the reporter's own per-endpoint request timeout, so a `void report(...)` fired from a just-cancelled provisioning run (`environment.install-failed`, `cancelled: true`) is not lost to process exit.
+
 ## Limitations
 
 The UI still uses the Web HTTP carrier on private loopback. The packaged `file://` plus Electron IPC carrier, automatic update application, and Windows support remain outside this implementation. See the [desktop product decision](../../.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.md).

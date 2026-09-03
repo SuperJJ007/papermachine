@@ -70,6 +70,8 @@ PaperMachine 上报三个只含元数据、绝不含内容的事件：`app.launc
 
 Receiver 在构建期的 `resources/telemetry.json` 中配置（`schemaVersion: 1`，`endpoints: string[]`，元素为 `https://` URL；由 `src/telemetry-config.ts` 解析，文件缺失或格式错误会 loud 报错，而不是悄悄禁用）。每个已配置的 endpoint 都独立收到每一个事件——没有 failover、没有重试队列、没有离线缓冲。本版本发布时携带一个 endpoint，即已部署的 Cloudflare Worker（`apps/telemetry-receivers`）；空数组 `endpoints: []` 是有效且独立的 “telemetry 关闭” 状态，未来某个版本可以选择改用它。将 `DSH_TELEMETRY_DISABLED` 设为任意非空值——与 Host 自身 session telemetry 使用的开关及其解释完全相同（`resolveTelemetryPatch`，`apps/cli/src/profile-boot.ts`）——会让什么都不发送。
 
+退出时（`before-quit`）会等待所有已入队的上报发送完成，其上限就是 reporter 自身的单 endpoint 请求超时；因此一次被取消的 provisioning 运行所触发的 `void report(...)`（`environment.install-failed`，`cancelled: true`）不会因进程退出而丢失。
+
 ## 限制
 
 UI 仍在 private loopback 上使用 Web HTTP carrier。packaged `file://` 加 Electron IPC carrier、自动应用更新以及 Windows support 仍不在本次实现范围内。参见[桌面产品决定](../../.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.zh.md)。

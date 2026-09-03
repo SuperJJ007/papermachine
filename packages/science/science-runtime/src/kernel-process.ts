@@ -681,11 +681,14 @@ export class KernelProcess {
     } catch {
       // A provider that cannot answer the bounded observation has not proven the tree dead (mirrors quiesce()).
     }
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- handle.done can settle exit while this grace wait is awaited.
-    if (this.exitSettled || exited) return
+    if (this.hasExitSettled() || exited) return
     this.failProtocol(new KernelProtocolError(
       'science-runtime: kernel response FIFO ended unexpectedly while the kernel process was still alive',
     ))
+  }
+
+  private hasExitSettled(): boolean {
+    return this.exitSettled
   }
 
   private onFifoError(error: unknown): void {

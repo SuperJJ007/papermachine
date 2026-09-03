@@ -1023,6 +1023,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     try {
       this.assertPrepublication(request.session, lease.control)
       const projection = this.assertSession(request.session)
+      const producerTurn = projection.trace.turns.at(-1)?.turn
       const versions = projection.artifacts.filter(candidate => candidate.artifactId === request.artifactId)
       const parent = versions.at(-1)
       if (parent === undefined || parent.version !== request.version) {
@@ -1199,13 +1200,17 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       // environment* fields are ASSIGNED from the parent's own store-read
       // values (never re-validated against a fold check — the store row is
       // already the fact), and it carries no run/tool-call producer fields
-      // of its own.
+      // of its own beyond `producerTurn` — the session's last started turn
+      // when this method was called, captured before the replay/kernel work
+      // below so an edit applied during an idle gap between turns
+      // attributes to the turn that was current then.
       const stored = await store.appendVersion(projectId, parent.artifactId, {
         producerSessionId: request.session.id,
         data: application.png,
         mediaType: 'image/png',
         contentOrigin: 'human-edit',
         baseVersionId: parent.versionId,
+        ...producerTurn === undefined ? {} : { producerTurn },
         ...parentRecord.environmentRevision === undefined ? {} : { environmentRevision: parentRecord.environmentRevision },
         ...parentRecord.environmentFingerprint === undefined ? {} : { environmentFingerprint: parentRecord.environmentFingerprint },
         figureState: { figureKey: chart.figureKey, dpi: chart.png.dpi, stateJson: JSON.stringify(chart) },
@@ -1391,7 +1396,11 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * producer — `baseVersionId` names the source explicitly instead. A
    * viewer operation: no authorizing tool call, so `session.append` records
    * only the store reference and the presentation snapshot the store just
-   * committed.
+   * committed; the new version's `producerTurn` is the session's last
+   * started turn at the moment this method was called, so a save-as
+   * during an idle gap between turns attributes to the turn that was
+   * current then, never to whichever turn is newest by the time the store
+   * write commits.
    * @param request - Exact Session, the store version to duplicate, and the new logical name.
    * @returns The durable new artifact version this operation appended.
    * @throws {@link ScienceRuntimeError} (`ARTIFACT_VERSION_NOT_FOUND`) when
@@ -1400,7 +1409,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    *   `newLogicalName` is already used in that project.
    */
   async saveArtifactAs(request: SaveScienceArtifactAsRequest): Promise<ScienceArtifactVersion> {
-    this.assertSession(request.session)
+    const projection = this.assertSession(request.session)
+    const producerTurn = projection.trace.turns.at(-1)?.turn
     const lease = this.reserve(request.session, request.signal)
     try {
       this.assertPrepublication(request.session, lease.control)
@@ -1431,6 +1441,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           mediaType: source.mediaType,
           contentOrigin: source.contentOrigin,
           baseVersionId: source.versionId,
+          ...producerTurn === undefined ? {} : { producerTurn },
           ...source.environmentRevision === undefined ? {} : { environmentRevision: source.environmentRevision },
           ...source.environmentFingerprint === undefined ? {} : { environmentFingerprint: source.environmentFingerprint },
           ...sourceFigureState === undefined ? {} : {

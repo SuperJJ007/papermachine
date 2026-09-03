@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/science.md
-science.md: 99e8fea2b14c50642d339a1cbfa58df3905a5c61
-science.zh.md: 09946e57cee18598171d278d92526cbfbe07fc5e
+science.md: ebd6ed446701fdfce94a0d4910ded2c5ab429af3
+science.zh.md: 0176b7560507aa8e098afdacd341cc4177a6d5d9

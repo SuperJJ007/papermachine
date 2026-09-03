@@ -225,6 +225,21 @@ describe('ScienceRuntime.applyChartEdit', () => {
     expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
   })
 
+  it('records the session\'s last started turn as producerTurn, unaffected by a turn that starts afterward', async () => {
+    const { ctx, runtime, session } = await harness('chart-edit-producer-turn')
+    const parent = chart(session)
+    session.append('turn/start', { turn: 1 })
+    const result = await runtime.applyChartEdit({
+      session, artifactId: parent.artifactId, version: parent.version, ops: [titleOp], signal: new AbortController().signal,
+    })
+    // A later turn starting after the edit committed must not retroactively
+    // move this version's attribution — the value was captured when the
+    // method was called, matching the save-as fix for the same idle-gap bug.
+    session.append('turn/start', { turn: 2 })
+    await expect(ctx.scienceArtifactStore.getVersion(result.artifact.projectId, result.artifact.versionId))
+      .resolves.toMatchObject({ producerTurn: 1 })
+  })
+
   it('omits environment provenance a chained edit target does not itself carry (e.g. a v1-migrated row)', async () => {
     const { ctx, runtime, session } = await harness('chart-edit-no-environment')
     const parent = chart(session)

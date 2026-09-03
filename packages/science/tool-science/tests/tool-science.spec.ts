@@ -590,8 +590,13 @@ describe('renderScienceProjection', () => {
     expect(text).toContain('R: available, version 4.5.0, fingerprint bbbbbbbbbbbb.')
   })
 
-  it('renders the latest run summary', () => {
-    const text = renderScienceProjection(projectionFixture({
+  it('omits run history so the context stays unchanged by run outcomes', () => {
+    // Run outcomes already reach the model through each run tool's result,
+    // and get_science_state returns run history on demand; re-rendering a
+    // run summary here would change this always-resent context on every
+    // run and re-emit the whole block under append-only history.
+    const withoutRuns = renderScienceProjection(projectionFixture({ runs: [] }))
+    const withRuns = renderScienceProjection(projectionFixture({
       runs: [{
         runId: ScienceRunId('run-1'),
         language: 'python',
@@ -607,7 +612,9 @@ describe('renderScienceProjection', () => {
         status: 'running',
       }],
     }))
-    expect(text).toContain('Latest run run-1 (python): running.')
+    expect(withRuns).not.toContain('run-1')
+    expect(withRuns).not.toContain('Latest run')
+    expect(withRuns).toBe(withoutRuns)
   })
 })
 

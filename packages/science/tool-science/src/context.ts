@@ -125,10 +125,6 @@ export function renderScienceProjection(projection: ScienceProjection | null): s
     const r = renderInterpreter('R', environment.r)
     if (r !== undefined) lines.push(r)
   }
-  const lastRun = projection.runs.at(-1)
-  if (lastRun !== undefined) {
-    lines.push(`Latest run ${lastRun.runId} (${lastRun.language}): ${lastRun.status}.`)
-  }
   lines.push(STATE_RULE)
   return lines.join('\n')
 }

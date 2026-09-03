@@ -70,11 +70,11 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；存在时最近一次 run 的 id、语言与 status；以及固定的 kernel 持久化/重启规则（现在与静态指引使用同一套重启原因）加上 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR`/`SCIENCE_INPUT_DIR` 的划分。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field；也——刻意地，为了让这个每轮都渲染的区块保持小而稳定——不包含当前 kernel 状态本身：这项内容留给 run 结果里的重启 fact，以及按需读取（而非每轮重发）的 `get_science_state` 的有界 `kernels` 列表。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
+对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；以及固定的 kernel 持久化/重启规则（现在与静态指引使用同一套重启原因）加上 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR`/`SCIENCE_INPUT_DIR` 的划分。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field；也——刻意地，为了让这段上下文在多次 run 之间保持不变——不包含 run 历史与当前 kernel 状态：这两项内容分别留给每个 run 工具自身的结果，以及按需读取（而非每轮重发）的 `get_science_state` 的有界 `runs`/`kernels` 列表。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
 
 #### Token 影响
 
-有界：一行 mode、一行 environment、至多两行解释器信息，以及一行最近 run 信息。在两次请求之间未变化时不会新增任何 token；environment 变化或出现新 run 时会替换整个快照。
+有界：一行 mode、一行 environment，以及至多两行解释器信息。在多次 run 之间保持不变——开始或结束一次 run 不会改变这段文本——因此在无关的一轮请求中不会新增任何 token；只有 mode revision 提升或 environment 重新绑定才会替换整个快照。
 
 #### KV Cache 影响
 

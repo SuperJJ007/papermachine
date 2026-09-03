@@ -70,11 +70,11 @@ Prefix-stable while the guidance text is unchanged; plugin lifecycle may invalid
 
 #### What the model sees
 
-For a `science`-preset session, the current mode revision; the bound environment's profile, revision, and status; each configured interpreter's capability plus its version and truncated fingerprint when available; the latest run's id, language, and status when one exists; and the fixed kernel-persistence/restart rule (which now names the same restart causes as the static guidance) plus the `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR`/`SCIENCE_INPUT_DIR` split. It omits Runtime-owned free-text reasons, source, stdout, stderr, credentials, and Host path/identity fields, and — deliberately, to keep this always-rendered block small and stable — current kernel state itself; that lives in the run-result restart fact and in `get_science_state`'s bounded `kernels` list, read on demand rather than resent on every turn. Outside Science mode, or for a diagnostic assembly with no initiating Agent, it renders `''` and contributes nothing.
+For a `science`-preset session, the current mode revision; the bound environment's profile, revision, and status; each configured interpreter's capability plus its version and truncated fingerprint when available; and the fixed kernel-persistence/restart rule (which now names the same restart causes as the static guidance) plus the `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR`/`SCIENCE_INPUT_DIR` split. It omits Runtime-owned free-text reasons, source, stdout, stderr, credentials, and Host path/identity fields, and — deliberately, to keep this context invariant across runs — run history and current kernel state; those live in each run tool's own result and in `get_science_state`'s bounded `runs`/`kernels` lists, read on demand rather than resent on every turn. Outside Science mode, or for a diagnostic assembly with no initiating Agent, it renders `''` and contributes nothing.
 
 #### Token effect
 
-Bounded: one mode line, one environment line, up to two interpreter lines, and one latest-run line. Unchanged between requests, it adds no further tokens; a changed environment or new run replaces the whole snapshot.
+Bounded: one mode line, one environment line, and up to two interpreter lines. Invariant across runs — starting or finishing a run does not change this text — so it adds no further tokens on an unrelated turn; only a mode revision bump or a rebound environment replaces the whole snapshot.
 
 #### KV Cache effect
 

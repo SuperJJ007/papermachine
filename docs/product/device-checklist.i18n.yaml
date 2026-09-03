@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/product/device-checklist.md
-device-checklist.md: 4b6e14a977117cdfca0a0e9c81c515399000ed3d
-device-checklist.zh.md: bbce6eccdec2e5070a353794f36c0793d07998a8
+device-checklist.md: a800eab436cc57bf230d990ee401f36e475f62fa
+device-checklist.zh.md: 37fb474cda1cd30b016f41c249d2bf3b33bb02d7

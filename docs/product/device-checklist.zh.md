@@ -20,7 +20,7 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 2.3 | 品牌与外壳 | 把系统切到深色模式。 | 窗口背景跟随的是应用内的 Appearance 设置,而不只是系统:Appearance 设为 System 时,窗口实时跟随系统主题切换,深色下文字、面板和成果库都可读;Appearance 明确设为 Light 或 Dark 时,窗口保持该背景,系统主题切换不会闪一下不匹配的颜色。 | rc.3 |
 | 2.4 | 品牌与外壳 | 详情面板关闭时点侧栏的 Artifacts 入口;打开一张图;再点一次 Artifacts。 | 第一次点击打开成果库;第二次点击关闭详情面板;第三次点击(打开图之后)从图返回成果库列表——这是一个三态开关,不会卡在打开状态。 | rc.3 |
 | 2.5 | 品牌与外壳 | 点右上角的面板图标(Science 详情)。 | 详情面板开/关切换;之后点侧栏 Artifacts 入口能重新打开它。 | rc.3 |
-| 3.1 | Python 运行与内核 | 新会话:"读一下工作区里的某个 CSV,告诉我有哪些列"(用相对路径命名文件)。 | `run_python` 卡片显示 Success,stdout 可展开,回答准确;模型通过 `SCIENCE_WORKSPACE_DIR` 或绝对路径读到文件,不会报 `FileNotFoundError`。 | rc.3 |
+| 3.1 | Python 运行与内核 | 新会话:"读一下工作区里的某个 CSV,告诉我有哪些列"(用相对路径命名文件)。 | `run_python` 卡片显示 Success,stdout 可展开,回答准确;模型通过 `run_python` 把 CSV 读进一个命名的 DataFrame——而不是用 `read`/`glob`——经由 `SCIENCE_WORKSPACE_DIR` 或绝对路径读到文件,不会报 `FileNotFoundError`。 | rc.3 |
 | 3.2 | Python 运行与内核 | 接着问:"用刚才的 df 算一下每列缺失率。" | 模型直接复用上一轮的变量,不重新读文件;卡片的 Kernel # 不变。 | rc.3 |
 | 3.3 | Python 运行与内核 | 问:"现在内核里有哪些变量?" | 模型走 `get_science_state`,列出变量名、类型和形状。 | rc.3 |
 | 3.4 | Python 运行与内核 | 让它执行一段必定报错的代码(比如除零)。 | 卡片标为失败,模型自行修正;Kernel # 不变(内核没死)。 | rc.3 |
@@ -28,7 +28,7 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 4.1 | R 运行 | "用 R 读同一个 CSV(readr/haven),summary 一下。" | `run_r` 显示 Success;tidyverse 函数可用。 | rc.3 |
 | 4.2 | R 运行 | 接着:"用刚才那个 R 对象画直方图。" | R 变量跨轮持久;ggplot2 出图,成果出现在详情面板里。 | rc.3 |
 | 4.3 | R 运行 | 同一会话里,让一次 R 运行读取按相对文件名指定的工作区文件并出图。 | R 的运行同样能通过 `SCIENCE_WORKSPACE_DIR` 读工作区;`ggsave()` 出的图正常被捕获。 | rc.4 |
-| 5.1 | 成果与图表编辑 | Python:"用 matplotlib 画分组柱状图,图例标签写成 `对照组\n(n=30)` 和 `干预组\n(n=28)`(带换行),再加一段两行的注释。"点开成果。 | 图下方有编辑面板(Title/Font/Panel…)和"框选编辑区域"按钮。 | rc.3 |
+| 5.1 | 成果与图表编辑 | Python:"用 matplotlib 画分组柱状图,图例标签写成 `对照组\n(n=30)` 和 `干预组\n(n=28)`(带换行),再加一段两行的注释。"点开成果。 | 图下方的编辑面板始终带一行 Title——即使这张图还没有标题——再加上该图具有的元素对应的 Font、Y 轴标题、Legend、Grid 各行,以及一个"框选编辑区域"按钮。 | rc.3 |
 | 5.2 | 成果与图表编辑 | R:"用 ggplot2 画同样的图,图例标签同样带换行。"点开成果。 | 出现同样的编辑面板。 | rc.3 |
 | 5.3 | 成果与图表编辑 | 在编辑面板里改字号(比如 12 → 15),预览后提交为新版本;切到新版本再看一次字号控件。 | 出现 v2,工具栏的 `‹ v2 ›` 步进器能在版本间切换,v1 仍可查看;v2 的字号控件显示的是新字号,不是回到原来的字号。 | rc.3 |
 | 5.4 | 成果与图表编辑 | 点"框选编辑区域",拖出一块区域,添加为引用,再在聊天里说"把这块的颜色换成蓝色"。 | 聊天输入框出现引用芯片;模型带着这块区域引用改图,产生新版本。 | rc.3 |
@@ -36,7 +36,7 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 5.6 | 成果与图表编辑 | 用成果工具栏对一张 PNG 和一个 CSV 分别执行 Export/下载。 | 文件落到下载目录,且能正常打开。 | rc.3 |
 | 5.7 | 成果与图表编辑 | 在成果库里用搜索框、Newest 排序、Grid/List、按会话分组和 Project files 标签。 | 都有响应;Project files 能看到工作区的文件。 | rc.3 |
 | 5.8 | 成果与图表编辑 | 让模型把同一个文件名的图重画两次。 | 同一成果串成 v1/v2/v3 一条链,不是三个独立成果。 | rc.3 |
-| 5.9 | 成果与图表编辑 | 让模型给一个不存在的成果名做 annotate(比如"给 nothing.png 加标题")。 | 结果给出明确的 `ARTIFACT_NOT_FOUND` 说明而不是挂死;模型不反复重试。 | rc.4 |
+| 5.9 | 成果与图表编辑 | 让模型给一个不存在的成果名做 annotate(比如"给 nothing.png 加标题")。 | 模型会对这个名字调用 `annotate_artifact`;结果给出明确的 `ARTIFACT_NOT_FOUND` 说明,而不是挂死或者模型自己新建一个替代文件;模型不反复重试。 | rc.4 |
 | 6.1 | 轨迹与会话 | 切到 Trajectory 标签。 | 按步骤显示卡片(运行/浏览/整理…);点击卡片能跳到对应消息。 | rc.3 |
 | 6.2 | 轨迹与会话 | 点 Session log 导出。 | 得到一个日志文件。 | rc.3 |
 | 6.3 | 轨迹与会话 | 完全退出应用再打开,进入同一会话。 | 消息、成果、图表版本都在;轮次/步骤计数和退出前一致,是从会话自身的轨迹索引重建的,不取决于当前加载了哪些页;继续对话时内核重启(新的 Kernel #),并提示早先的变量已经不在。 | rc.3 |
@@ -47,16 +47,16 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 7.3 | 联网、文献、Plan、Skill | "用 PubMed 找 2022 年后关于 ICU 谵妄非药物干预的三篇 RCT,给标题、期刊、DOI。" | 调用 PubMed 的 MCP 工具,结果带 DOI;年份过滤应当精确,不应过宽。 | rc.3 |
 | 7.4 | 联网、文献、Plan、Skill | "找一篇 2024 年 arXiv 上关于 diffusion 加速采样的论文,摘出方法一节并导出 BibTeX。" | 调用 arXiv MCP 工具的章节抽取和引文导出功能。 | rc.3 |
 | 7.5 | 联网、文献、Plan、Skill | 输入 `/plan` 加"清洗这份 CSV → 拟合线性回归 → 画预测-实际图"。 | 出现 Plan 审核卡片,批准后按步骤执行;呈现出的勘察量应当与任务相称。 | rc.3 |
-| 7.6 | 联网、文献、Plan、Skill | "按出版级规范画一张分组箱线图。" | 模型先加载 `scientific-visualization` skill 再写代码(工具调用日志里可见);如果它写了图却没声明 `raster_artifacts`,运行结果会立即说明并点名确切的恢复调用,而不是让模型对未捕获的文件连续两次 annotate 都失败。 | rc.3 |
+| 7.6 | 联网、文献、Plan、Skill | "按出版级规范画一张分组箱线图。" | 在尚未加载过 `scientific-visualization` skill 的会话里,模型会先加载它再写代码(工具调用日志里可见);如果该 skill 在本会话更早已经加载过,之后出图的轮次不必再出现一次加载步骤。如果模型写了图却没声明 `raster_artifacts`,运行结果会立即说明并点名确切的恢复调用,而不是让模型对未捕获的文件连续两次 annotate 都失败。 | rc.3 |
 | 7.7 | 联网、文献、Plan、Skill | "这两组数据该用什么检验,写一段结果。" | 模型依次用 `statistical-analysis` 和 `scientific-writing` 两个 skill;不应在未经确认的情况下装包。 | rc.3 |
 | 7.8 | 联网、文献、Plan、Skill | "派一个子 agent 用 Python 算 1 到 100 的平方和并报告。" | 出现 subagent 工具步和 "1 subagent" 标记;子 agent 用自己的内核算出 338350 并报告;父 agent 复核。 | rc.3 |
 | 7.9 | 联网、文献、Plan、Skill | "派一个子 agent,让它把自己的全部工具名原样列出来。" | 十来个工具:`run_python`/`run_r`/`get_science_state`/`annotate_artifact`/`read`/`glob`/`grep`/`skill`/`todo_write`/`web_search`/`web_fetch`/`report`;没有 shell、写文件、装包或 `subagent` 工具。 | rc.3 |
-| 8.1 | 装包 | "安装 pingouin。" | `install_science_packages` 成功(走 TUNA 镜像);结果说明下次运行会重启内核;那次运行之后 Kernel # 增加,`import pingouin` 可用。 | rc.3 |
+| 8.1 | 装包 | "安装 pingouin。" | `install_science_packages` 在它一小时的 `installTimeoutMs` 内成功(走 TUNA 镜像);一次真正的新安装会追加一条新的环境版本,结果说明下次运行会重启内核,那次运行之后 Kernel # 增加,`import pingouin` 可用。如果更早一次尝试超时(网络状况可能超出这个一小时上限),那次尝试即使 micromamba 已经把文件写进了 prefix,也不会追加版本;随后一次成功的安装——哪怕 micromamba 报告"已经装过了"——会去对账持久化的清单并追加版本;只有当已记录的清单已经包含全部请求的包时,结果才是 `unchanged`。 | rc.3 |
 | 8.2 | 装包 | "安装 pip-nonexistent-xyz。" | 失败信息明确说明环境未改动、模型不应回退到 `pip install`;一个真正不存在的包应当尽快失败,而不是被镜像的 TLS 握手超时盖住。 | rc.3 |
 | 8.3 | 装包 | "安装 R 包 ggrepel。" | micromamba 安装 `r-ggrepel`;成功后 R 能 `library(ggrepel)`。 | rc.3 |
 | 9.1 | 设置与恢复 | Settings → Models:在 V4-Flash 和 V4-Flash-Vision-Exp 之间切换。 | 切换即刻生效;输入框旁边的模型名随之变化(这个控件刻意放在composer旁边,不在 Settings 页面里)。 | rc.3 |
 | 9.2 | 设置与恢复 | 用应用菜单的 Restart Host。 | Host 重启并回到当前会话,不丢东西;onboarding 或 Change Environment 打开时该菜单项变灰不可点。 | rc.3 |
-| 9.3 | 设置与恢复 | 用活动监视器强制结束 PaperMachine,再重新打开。 | 没有损坏提示;会话完整;`host.log` 里能看到上一次退出的记录。 | rc.3 |
+| 9.3 | 设置与恢复 | 用活动监视器强制结束 PaperMachine,再重新打开。 | 没有损坏提示;会话完整;新一段 `host.log` 里没有未处理的错误栈。 | rc.3 |
 | 9.4 | 设置与恢复 | 断网后问一个需要联网的问题。 | `web_search`/MCP 调用报出明确错误;界面不挂死。 | rc.3 |
 | 9.5 | 设置与恢复 | 打开 Change Environment…,页面显示期间查看应用菜单的 Restart Host。 | onboarding 打开期间 Restart Host 变灰不可点;选择"Keep current environment"回到工作台后恢复可点。 | rc.4 |
 | 10.1 | 使用遥测 | 从 Finder 冷启动 PaperMachine，然后在 10 秒内运行 `pnpm --filter @deepseek-ai/dsh-telemetry-receivers exec wrangler d1 execute dsh-telemetry --remote --command "SELECT event, platform, arch, app_version, anonymous_id, source_id, duration_ms, environment_id, phase, cancelled, received_at FROM events ORDER BY received_at DESC LIMIT 20"`。 | 新增 1 行 `app.launch`，其中 `platform=darwin`、`arch=arm64`，且 `app_version` 等于本构建的版本号。 | rc.4 |

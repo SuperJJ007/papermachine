@@ -59,3 +59,9 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 9.3 | 设置与恢复 | 用活动监视器强制结束 PaperMachine,再重新打开。 | 没有损坏提示;会话完整;`host.log` 里能看到上一次退出的记录。 | rc.3 |
 | 9.4 | 设置与恢复 | 断网后问一个需要联网的问题。 | `web_search`/MCP 调用报出明确错误;界面不挂死。 | rc.3 |
 | 9.5 | 设置与恢复 | 打开 Change Environment…,页面显示期间查看应用菜单的 Restart Host。 | onboarding 打开期间 Restart Host 变灰不可点;选择"Keep current environment"回到工作台后恢复可点。 | rc.4 |
+| 10.1 | 使用遥测 | 从 Finder 冷启动 PaperMachine，然后在 10 秒内运行 `pnpm --filter @deepseek-ai/dsh-telemetry-receivers exec wrangler d1 execute dsh-telemetry --remote --command "SELECT event, platform, arch, app_version, anonymous_id, source_id, duration_ms, environment_id, phase, cancelled, received_at FROM events ORDER BY received_at DESC LIMIT 20"`。 | 新增 1 行 `app.launch`，其中 `platform=darwin`、`arch=arm64`，且 `app_version` 等于本构建的版本号。 | rc.4 |
+| 10.2 | 使用遥测 | 运行 `cat ~/.papermachine/.anonymous-user-id`。 | 该值与 10.1 记录中的 `anonymous_id` 一致；文件只包含一个小写 UUID 和紧随其后的一个换行符。 | rc.4 |
+| 10.3 | 使用遥测 | 清空 `~/.papermachine/desktop-environments`，然后完成通用环境安装。 | 新增 1 行 `environment.installed`；`source_id` 是进度中实际显示成功的源，`duration_ms` 大于零，且 `environment_id=general`。 | rc.4 |
+| 10.4 | 使用遥测 | 再次开始安装环境，并在中途取消。 | 新增 1 行 `environment.install-failed`，其中 `cancelled=1`、`phase` 非空，且 `source_id` 是当时正在尝试的源。 | rc.4 |
+| 10.5 | 使用遥测 | 使用 `DSH_TELEMETRY_DISABLED=1 /Applications/PaperMachine.app/Contents/MacOS/PaperMachine` 启动应用。 | D1 行数不变；应用的其他行为与 10.1 一致。 | rc.4 |
+| 10.6 | 使用遥测 | 确保环境已安装，断开网络后从 Finder 冷启动 PaperMachine。 | 启动耗时与在线启动没有明显差别，且不出现遥测相关错误；恢复网络后，D1 也不会补入本次的 `app.launch` 记录。 | rc.4 |

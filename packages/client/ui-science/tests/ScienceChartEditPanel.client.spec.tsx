@@ -156,7 +156,9 @@ describe('ScienceChartEditPanel: full element list', () => {
     }) })
     const names = [...document.querySelectorAll('[data-editable="true"]')]
       .map(row => row.firstElementChild?.textContent)
-    expect(names).toEqual(['Grid', 'Grid'])
+    // Neither grid element is a title, so the synthesized titleless Title row
+    // (see the 'no title element' describe block below) leads regardless.
+    expect(names).toEqual(['Title', 'Grid', 'Grid'])
   })
 
   it('stages nothing when a text control is cleared to empty or whitespace', () => {
@@ -368,6 +370,41 @@ describe('ScienceChartEditPanel: full element list', () => {
     expect(screen.getByText('Annotation · 6')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse annotations' }))
     expect(screen.queryByText('Annotation · 6')).toBeNull()
+  })
+})
+
+describe('ScienceChartEditPanel: titleless figure', () => {
+  const noTitleElements: readonly ScienceChartElement[] = [
+    element({ id: 'axes[0].x_label', kind: 'x_label', axes: 0 }),
+    element({ id: 'font', kind: 'font', current: { family: ['sans'], size: 12 } }),
+  ]
+
+  it('still shows an empty Title row when the runtime extracted no title element', () => {
+    panel({ chart: chartState({ elements: noTitleElements }) })
+    const row = expandRow('Title')
+    expect(row.getAttribute('data-editable')).toBe('true')
+    const input = within(row).getByLabelText('Enter text') as HTMLInputElement
+    expect(input.value).toBe('')
+  })
+
+  it('stages set_title with a figure-wide axes target from the synthesized row', () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, failedOps: [] } satisfies ScienceChartSaveOutcome)
+    panel({ onSave, chart: chartState({ elements: noTitleElements }) })
+    fireEvent.change(within(expandRow('Title')).getByLabelText('Enter text'), { target: { value: 'New title' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(onSave).toHaveBeenCalledWith([{ op: 'set_title', axes: null, text: 'New title' }])
+  })
+
+  it('renders no reference button for the synthesized Title row: it names no catalog element', () => {
+    panel({ chart: chartState({ elements: noTitleElements }) })
+    expect(screen.queryByRole('button', { name: 'Add Title to the conversation' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove Title' })).toBeNull()
+  })
+
+  it('does not synthesize a second Title row when one is already extracted', () => {
+    panel({ chart: chartState({ elements: [element({ id: 'title', kind: 'title', current: 'Loss' }), ...noTitleElements] }) })
+    expect(screen.getAllByText('Title')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Add Title to the conversation' })).toBeTruthy()
   })
 })
 

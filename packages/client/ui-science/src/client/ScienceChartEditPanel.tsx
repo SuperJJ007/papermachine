@@ -109,8 +109,27 @@ function directlyEditable(kind: ScienceChartElement['kind']): kind is DirectEdit
 /** Direct-edit order follows the compact form from top to bottom. */
 const DIRECT_EDIT_ROW_ORDER: readonly DirectEditKind[] = ['title', 'subtitle', 'x_label', 'y_label', 'legend', 'grid', 'font']
 
-function directEditRows(elements: readonly ScienceChartElement[]): readonly (ScienceChartElement & { kind: DirectEditKind })[] {
-  return elements
+/**
+ * A titleless figure carries no `title` catalog element — both adapters
+ * only extract one once text exists (`chart_matplotlib.py`'s
+ * `extract_elements`, `chart_ggplot2.R`'s `add("title", ...)`) — yet
+ * `set_title` with `axes: null` creates a figure-wide suptitle/
+ * `labs(title=...)` unconditionally when none exists. This placeholder
+ * lets a user add a title where the runtime has not extracted one, staging
+ * that same op; it names no catalog element, so it carries no reference
+ * identity (`directEditRows`' caller marks its row `referenceable: false`).
+ */
+const SYNTHESIZED_TITLE_ELEMENT: ScienceChartElement & { kind: 'title' } = { id: 'title', kind: 'title', axes: null, label: null, current: '' }
+
+/** One rendered direct-edit row: an addressable catalog element, or {@link SYNTHESIZED_TITLE_ELEMENT}. */
+interface DirectEditRowItem {
+  readonly element: ScienceChartElement & { kind: DirectEditKind }
+  /** Whether this row names a catalog element the reference feature (see `ElementPanel`'s reference chips) can target. */
+  readonly referenceable: boolean
+}
+
+function directEditRows(elements: readonly ScienceChartElement[]): readonly DirectEditRowItem[] {
+  const catalog = elements
     .map((element, index) => ({ element, index }))
     .filter((item): item is {
       element: ScienceChartElement & { kind: DirectEditKind }
@@ -119,7 +138,12 @@ function directEditRows(elements: readonly ScienceChartElement[]): readonly (Sci
     .sort((left, right) => (left.element.axes ?? -1) - (right.element.axes ?? -1)
       || DIRECT_EDIT_ROW_ORDER.indexOf(left.element.kind) - DIRECT_EDIT_ROW_ORDER.indexOf(right.element.kind)
       || left.index - right.index)
-    .map(({ element }) => element)
+    .map(({ element }): DirectEditRowItem => ({ element, referenceable: true }))
+  if (catalog.some(row => row.element.kind === 'title')) return catalog
+  // Sorts first regardless: 'title' leads DIRECT_EDIT_ROW_ORDER and its
+  // axes:null places it before every axes-scoped row the sort above
+  // produces, matching where a real title row would land.
+  return [{ element: SYNTHESIZED_TITLE_ELEMENT, referenceable: false }, ...catalog]
 }
 
 function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget, { kind: 'element' }> {
@@ -175,6 +199,28 @@ function fontInitial(current: ScienceChartElement['current']): { family: string;
     : Array.isArray(families) && typeof families[0] === 'string' ? families[0]
       : 'sans-serif'
   return { family: family.trim() === '' ? 'sans-serif' : family, size: typeof record['size'] === 'number' ? record['size'] : 10 }
+}
+
+/**
+ * Localize the one stable machine-readable failure reason the Runtime's
+ * chart adapters emit ('font_not_found' from `set_font`); every other
+ * reason stays as its Runtime-supplied text.
+ */
+function localizeFailureReason(reason: string, t: TranslateNS<'science'>): string {
+  return reason === 'font_not_found' ? t('panel.fontNotFound') : reason
+}
+
+/**
+ * Localize a `font_not_found` reason token embedded in a whole-request
+ * rejection message. A commit that resolves no op at all throws instead of
+ * returning a per-op `failedOps` list (see `panel.failedOp`'s own render
+ * below), so `style.failed` renders the Runtime's free-text message
+ * verbatim except for this one substitution — the message's op/reason
+ * format is `op <n> <op name> — <reason>`, chosen so this replacement stays
+ * unambiguous.
+ */
+function localizeFailureMessage(message: string, t: TranslateNS<'science'>): string {
+  return message.replaceAll('font_not_found', localizeFailureReason('font_not_found', t))
 }
 
 function FontControl({ element, onStage, t }: {
@@ -233,14 +279,20 @@ function ElementControl({ element, onStage, t }: {
   }
 }
 
-function DirectEditRow({ element, added, onAddTarget, onRemoveTarget, onStage, disabled, blockedReason, t }: {
+function DirectEditRow({ element, referenceable, added, onAddTarget, onRemoveTarget, onStage, disabled, blockedReason, t }: {
   element: ScienceChartElement & { kind: DirectEditKind }
-  added: boolean
+  /**
+   * Whether this row names a catalog element the reference feature can
+   * target; false suppresses the reference button entirely (see
+   * {@link SYNTHESIZED_TITLE_ELEMENT}).
+   */
+  referenceable: boolean
+  added?: boolean
   disabled: boolean
   /** Why references are unavailable right now; shown as the disabled button's `title`. */
   blockedReason: string | undefined
-  onAddTarget: () => void
-  onRemoveTarget: () => void
+  onAddTarget?: () => void
+  onRemoveTarget?: () => void
   onStage: (op: ScienceChartOp) => void
   t: TranslateNS<'science'>
 }) {
@@ -249,10 +301,10 @@ function DirectEditRow({ element, added, onAddTarget, onRemoveTarget, onStage, d
   return <li className={css.directEditRow} data-editable="true" data-selected={added || undefined}>
     <span className={css.directEditName}>{label}</span>
     <ElementControl element={element} onStage={onStage} t={t} />
-    <button type="button" className={css.elementReference} data-selected={added || undefined}
-      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={isDisabled}
+    {referenceable && <button type="button" className={css.elementReference} data-selected={added || undefined}
+      aria-label={referenceButtonLabel(element, added ?? false, t)} aria-pressed={added} disabled={isDisabled}
       title={isDisabled ? blockedReason : undefined}
-      onClick={added ? onRemoveTarget : onAddTarget}>{added ? '−' : '+'}</button>
+      onClick={added ? onRemoveTarget : onAddTarget}>{added ? '−' : '+'}</button>}
   </li>
 }
 
@@ -363,7 +415,7 @@ export function ScienceChartEditPanel({
   }
 
   const direct = directEditRows(chart.elements)
-  const multiAxes = new Set(direct.filter(element => element.axes !== null).map(element => element.axes)).size >= 2
+  const multiAxes = new Set(direct.filter(row => row.element.axes !== null).map(row => row.element.axes)).size >= 2
   let annotationIndex = 0
   const references = chart.elements.filter((element) => {
     if (directlyEditable(element.kind)) return false
@@ -391,10 +443,11 @@ export function ScienceChartEditPanel({
     <div className={css.elementPanelColumns}>
       <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
         <h4 id="science-direct-edit-heading">{t('edit.elements')}</h4>
-        <ul className={css.directEditRows}>{direct.map((element, index) => <Fragment key={element.id}>
-          {multiAxes && element.axes !== null && direct[index - 1]?.axes !== element.axes
-            && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: element.axes + 1 })}</li>}
-          <DirectEditRow element={element} {...targetProps(element)} onStage={stage} t={t}
+        <ul className={css.directEditRows}>{direct.map((row, index) => <Fragment key={row.element.id}>
+          {multiAxes && row.element.axes !== null && direct[index - 1]?.element.axes !== row.element.axes
+            && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: row.element.axes + 1 })}</li>}
+          <DirectEditRow element={row.element} referenceable={row.referenceable}
+            {...(row.referenceable ? targetProps(row.element) : {})} onStage={stage} t={t}
             disabled={referencesBlocked} blockedReason={referenceBlockedReason} />
         </Fragment>)}</ul>
       </section>
@@ -413,9 +466,9 @@ export function ScienceChartEditPanel({
     <OpsList committed={chart.ops} pending={pending} version={version} multiAxes={multiAxes} t={t} />
     {previewing && <p role="status" className={css.notice}>{t('panel.previewing')}</p>}
     {saved && <p role="status" className={css.notice}>{t('style.committed')}</p>}
-    {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: error })}</p>}
+    {error !== undefined && <p role="alert" className={css.notice}>{t('style.failed', { message: localizeFailureMessage(error, t) })}</p>}
     {failedOps.map(item => <p key={item.index} role="alert" className={css.notice}>
-      {t('panel.failedOp', { index: item.index + 1, reason: item.reason === 'font_not_found' ? t('panel.fontNotFound') : item.reason })}
+      {t('panel.failedOp', { index: item.index + 1, reason: localizeFailureReason(item.reason, t) })}
     </p>)}
     <div className={css.panelActions}>
       <button type="button" className={css.regionButton} disabled={pending.length === 0 || saving}

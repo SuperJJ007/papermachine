@@ -359,10 +359,33 @@ describe('ScienceRuntime.applyChartEdit', () => {
     })
     expect(unresolvedPreview.failedOps).toEqual([{ index: 0, reason: 'element_not_found' }])
     expect(unresolvedPreview.chart.ops).toEqual([])
+    // Every failed op's own reason rides in the thrown message, not just the
+    // generic error code: a caller (`edit-message.ts`'s
+    // `translateChartRuntimeError`) forwards `message` unchanged, and the
+    // panel renders it verbatim once localized.
     await expect(unresolved.runtime.applyChartEdit({
       session: unresolved.session, artifactId: unresolvedParent.artifactId, version: unresolvedParent.version,
       ops: [titleOp], signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'CHART_ELEMENT_NOT_FOUND' })
+    })).rejects.toMatchObject({ code: 'CHART_ELEMENT_NOT_FOUND', message: expect.stringContaining('op 1 set_title — element_not_found') as string })
+  })
+
+  it('lists every failed op\'s own index, name, and reason when a multi-op request resolves none of them', async () => {
+    const axisLabelOp = { op: 'set_axis_label', axes: 0, axis: 'x', text: 'Edited' } as const satisfies ScienceChartOp
+    const unresolved = await harness('chart-edit-unresolved-multi', {
+      chartApplyResult: {
+        chart: editExtraction,
+        failedOps: [{ index: 0, reason: 'font_not_found' }, { index: 1, reason: 'axes_not_found' }],
+      },
+    })
+    const unresolvedParent = chart(unresolved.session)
+    const fontOp = { op: 'set_font', axes: null, family: 'sans-serif', size: 12 } as const satisfies ScienceChartOp
+    await expect(unresolved.runtime.applyChartEdit({
+      session: unresolved.session, artifactId: unresolvedParent.artifactId, version: unresolvedParent.version,
+      ops: [fontOp, axisLabelOp], signal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      code: 'CHART_ELEMENT_NOT_FOUND',
+      message: expect.stringContaining('op 1 set_font — font_not_found; op 2 set_axis_label — axes_not_found') as string,
+    })
   })
 
   it('rejects cumulative overflow and mismatched source provenance', async () => {

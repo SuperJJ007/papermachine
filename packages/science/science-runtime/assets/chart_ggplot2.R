@@ -371,8 +371,24 @@ set_legend_position <- function(plot, position) {
                          legend.justification.inside = coords)
 }
 
+# R's grid graphics devices (including the cairo PNG device this driver
+# renders through) accept "sans"/"serif"/"mono" as built-in generic device
+# families, and render an unrecognized literal family string as a silent
+# substitution rather than an error — the shared chart-edit panel's own font
+# control also stages the CSS-style "sans-serif"/"monospace" spelling as its
+# default family regardless of which language produced the chart. All five
+# names always render, so they skip font resolution entirely instead of
+# going through the `identical()` check below, which a system font
+# substitution table can fail even for names that render correctly: on
+# macOS, `systemfonts::match_fonts()` silently substitutes an unmatched
+# family to a system default instead of erroring, so its resolved name
+# never matches a generic alias (or an installed font CoreText renamed on
+# resolution) literally.
+.dsh_generic_font_families <- c("sans", "serif", "mono", "sans-serif", "monospace")
+
 .dsh_font_available <- function(family) {
-  if (!requireNamespace("systemfonts", quietly = TRUE)) return(family %in% c("sans", "serif", "mono"))
+  if (family %in% .dsh_generic_font_families) return(TRUE)
+  if (!requireNamespace("systemfonts", quietly = TRUE)) return(FALSE)
   matched <- systemfonts::match_fonts(family)
   matched_family <- if ("family" %in% names(matched)) {
     as.character(matched$family[[1]])

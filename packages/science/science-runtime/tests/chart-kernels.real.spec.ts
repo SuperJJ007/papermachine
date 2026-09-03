@@ -131,6 +131,24 @@ for (const language of ['python', 'r'] as const) {
       expect(fontSave.failedOps).toEqual([])
       const savedFont = (await chartOf(ctx, fontSave.artifact))!.elements.find(value => value.kind === 'font')?.current
       expect(savedFont).toEqual({ family: language === 'python' ? ['DejaVu Sans'] : 'sans', size: 15 })
+      // A generic family alias (the panel's own extracted default, and its
+      // first FONT_FAMILIES suggestion) must resolve through the platform's
+      // installed-face substitution rather than fail outright: matplotlib's
+      // `FontProperties(family=<bare str>)` only takes the fontconfig-pattern
+      // parse path for a plain string, whose grammar rejects the hyphen in
+      // "sans-serif" (`set_font` now passes a one-element list instead), and
+      // R's grid/cairo devices accept it as a built-in generic family too.
+      const genericAliasSave = await runtime.applyChartEdit({ ...target, version: fontSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'sans-serif', size: 16 }] })
+      expect(genericAliasSave.failedOps).toEqual([])
+      const genericAliasFont = (await chartOf(ctx, genericAliasSave.artifact))!.elements.find(value => value.kind === 'font')?.current
+      expect(genericAliasFont).toEqual({ family: language === 'python' ? ['sans-serif'] : 'sans-serif', size: 16 })
+      // A family no installed face can satisfy still rejects with
+      // `font_not_found`, distinguishing a real missing font from the
+      // generic-alias case above.
+      const missingFontPreview = await runtime.previewChartEdit({ ...target, version: genericAliasSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'DshNoSuchFontFamily12345', size: 15 }] })
+      expect(missingFontPreview.failedOps).toEqual([{ index: 0, reason: 'font_not_found' }])
       const regenerated = await runtime.startRun({ session, language,
         code: (language === 'python' ? pythonSource : rSource).replaceAll("'Original'", "'Regenerated'"),
         rasterArtifacts: ['plot.png'], ...authorizeRun(session, language, `regenerate-${language}`), signal: new AbortController().signal })

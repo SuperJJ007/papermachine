@@ -8,6 +8,14 @@ export interface ToolResultPruneConfig {
   headChars?: number
   /** Maximum trailing Unicode code points retained. Defaults to `1024`. */
   tailChars?: number
+  /**
+   * Tool names never pruned, regardless of size. A deployment names a tool
+   * here when its result is instructions rather than data — a truncated
+   * middle changes model behavior instead of merely losing detail — and
+   * head/tail pruning of instructions is worse than no pruning. Defaults to
+   * `[]`.
+   */
+  exemptTools?: string[]
 }
 
 /** Validated, detached, deeply immutable pruning configuration. */
@@ -15,6 +23,7 @@ export interface ResolvedConfig {
   readonly thresholdChars: number
   readonly headChars: number
   readonly tailChars: number
+  readonly exemptTools: readonly string[]
 }
 
 /** Cited source event and size accounting for one landed surface replacement. */

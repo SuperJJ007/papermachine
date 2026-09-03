@@ -16,6 +16,8 @@ The method throws synchronously when the session rejects a replacement. Replacem
 
 Every emitted result has exactly the configured head budget, fixed marker, and tail budget in text code points, is no larger than `thresholdChars`, and is strictly smaller than the triggering input. A second pass therefore emits no replacement.
 
+`pruneSession` resolves each `tool/result`'s originating tool name by scanning the session log for the `tool/call` sharing its call id, then skips any result whose name is in `exemptTools` entirely — that result is neither measured against the threshold nor replaced. A result whose call id has no matching `tool/call` (an unknown call id) is treated as non-exempt.
+
 ## Config
 
 Unrecognized keys fail at plugin construction. Resolved config is detached and deeply immutable.
@@ -25,8 +27,9 @@ Unrecognized keys fail at plugin construction. Resolved config is detached and d
 | `thresholdChars` | no (default `8192`) | Prune when combined text exceeds this many Unicode code points. |
 | `headChars` | no (default `4096`) | Leading Unicode code points retained. |
 | `tailChars` | no (default `1024`) | Trailing Unicode code points retained. |
+| `exemptTools` | no (default `[]`) | Tool names whose results are never pruned, regardless of size. |
 
-All values are integers; the threshold is positive and head/tail are non-negative. `headChars + marker + tailChars` must fit within `thresholdChars`, so a valid configuration can prune every over-budget result without growth or repeated rewriting.
+All values are integers; the threshold is positive and head/tail are non-negative. `headChars + marker + tailChars` must fit within `thresholdChars`, so a valid configuration can prune every over-budget result without growth or repeated rewriting. Every `exemptTools` entry must be a string.
 
 ## Usage
 
@@ -45,7 +48,7 @@ export function apply(ctx: Context): void {
 
 #### What the model sees
 
-Once a compaction trigger qualifies, future requests see the retained head, `\n\n[... tool result middle pruned ...]\n\n`, and retained tail in place of the removed text. Rich blocks keep their order. The model does not see a second copy of the original.
+Once a compaction trigger qualifies, future requests see the retained head, `\n\n[... tool result middle pruned ...]\n\n`, and retained tail in place of the removed text. Rich blocks keep their order. The model does not see a second copy of the original. A result from a tool named in `exemptTools` reaches the model complete, at any size.
 
 #### Token effect
 

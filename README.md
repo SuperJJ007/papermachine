@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 
 **Trustworthy research, done with AI.**
 
-[![Release](https://img.shields.io/github/v/release/SuperJJ007/papermachine?label=release)](https://github.com/SuperJJ007/papermachine/releases/latest) ![macOS](https://img.shields.io/badge/macOS-arm64%20%C2%B7%20x64-555) ![Python](https://img.shields.io/badge/Python-3.13-4176e6) ![R](https://img.shields.io/badge/R-4.5-4176e6) ![Model](https://img.shields.io/badge/model-DeepSeek%20V4-4176e6) [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SuperJJ007/papermachine?label=release)](https://github.com/SuperJJ007/papermachine/releases/latest) ![macOS](https://img.shields.io/badge/macOS-arm64%20%C2%B7%20x64-555) ![Windows](https://img.shields.io/badge/Windows-x64-555) ![Python](https://img.shields.io/badge/Python-3.13-4176e6) ![R](https://img.shields.io/badge/R-4.5-4176e6) ![Model](https://img.shields.io/badge/model-DeepSeek%20V4-4176e6) [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 PaperMachine is a desktop app for everyone whose work runs on data — researchers, business analysts, data analysts. You say what you want in one sentence and it runs Python and R on your own machine. The difference is that the result is not handed to you out of a black box: **agent trace** shows the code it ran and the output it got at every step; **result provenance** takes any figure or table back to the code, the log, and the environment that produced it; **data transparency** keeps every dataset it read and every variable it changed open to inspection. You supervise the AI, and the whole process stays under your control.
 
@@ -38,7 +38,7 @@ You do not have to go back to the code to fix a figure. Change a matplotlib or g
 
 ## Quick start
 
-1. Download the DMG for your Mac from [Releases](https://github.com/SuperJJ007/papermachine/releases/latest): `PaperMachine-<version>-arm64.dmg` for Apple silicon, `PaperMachine-<version>-x64.dmg` for Intel.
+1. Download your installer from [Releases](https://github.com/SuperJJ007/papermachine/releases/latest): `PaperMachine-<version>-arm64.dmg` for Apple silicon, `PaperMachine-<version>-x64.dmg` for an Intel Mac, `PaperMachine-<version>-x64.exe` for Windows.
 2. Open the app and install the environment as described under **First run** below.
 3. Open **Settings → Models** and enter your DeepSeek API key. The app ships without one; it calls `deepseek-v4-flash` by default.
 4. Drop a CSV, Excel, SPSS, or Stata file into a project and ask your first question, for example: *Plot life expectancy against GDP per capita for 2007, colored by continent.*
@@ -63,11 +63,13 @@ The choices on this screen:
 
 The workspace opens when the install finishes, but you cannot ask anything yet — the model key is yours to enter, as in step 3 above.
 
-The DMG is not yet code-signed. If macOS reports the app is damaged or from an unidentified developer, right-click the app and choose **Open**, or run the following once:
+Neither installer is code-signed. On macOS, if the system reports the app is damaged or from an unidentified developer, right-click the app and choose **Open**, or run the following once:
 
 ```sh
 xattr -d com.apple.quarantine /Applications/PaperMachine.app
 ```
+
+On Windows, SmartScreen warns about an unrecognized publisher: choose **More info**, then **Run anyway**. The installer is per-user and asks for no administrator rights.
 
 ## What is inside
 
@@ -98,7 +100,7 @@ Five science tools the model can call: `run_python`, `run_r`, `get_science_state
 ![Window, local host, Python and R kernels, ~/.papermachine; only model calls leave the machine](docs/media/how-it-works.png)
 -->
 
-The window talks to a local host process on your Mac. The host owns one Python kernel and one R kernel per session, a bundled micromamba, and a project-level artifact store. Only model requests leave the machine, to the DeepSeek API with your key.
+The window talks to a local host process on your own machine. The host owns one Python kernel and one R kernel per session, a bundled micromamba, and a project-level artifact store. Only model requests leave the machine, to the DeepSeek API with your key.
 
 Everything else stays in `~/.papermachine`: sessions, artifacts, the installed environment, skills, and logs. Deleting that folder removes all of it.
 
@@ -108,15 +110,14 @@ PaperMachine sends three anonymous telemetry events (`app.launch`, `environment.
 
 PaperMachine 0.1 is an early release. Known limitations:
 
-- macOS only (Apple silicon and Intel). Windows is planned.
+- macOS (Apple silicon and Intel) and Windows (x64). The Windows build is new: it is built and tested on a Windows runner, but no release of it has been through acceptance on a physical Windows machine yet.
 - A DeepSeek API key is required; the app ships no key.
-- The DMG is unsigned; see the Gatekeeper note above.
-- Updates are manual: download the next DMG.
+- Neither installer is signed; see the notes above.
+- Updates are manual: download the next installer.
 - There is no variables panel yet; the kernel status bar shows each language's kernel state.
 
 ## Roadmap
 
-- Windows build.
 - Discipline environments, starting with the social sciences.
 - A variable history view: shape changes of each dataset across cleaning steps.
 
@@ -142,7 +143,7 @@ pnpm dsh web
 
 ### Run from source
 
-The desktop app runs from the same checkout after `pnpm run build`; fetch the pinned micromamba for your architecture first (`darwin-x64` on Intel):
+The desktop app runs from the same checkout after `pnpm run build`; fetch the pinned micromamba for your architecture first (`darwin-x64` on an Intel Mac, `win32-x64` on Windows):
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-desktop fetch:micromamba darwin-arm64

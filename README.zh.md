@@ -6,7 +6,7 @@
 
 **用 AI 完成可信的科学研究。**
 
-[![Release](https://img.shields.io/github/v/release/SuperJJ007/papermachine?label=release)](https://github.com/SuperJJ007/papermachine/releases/latest) ![macOS](https://img.shields.io/badge/macOS-arm64%20%C2%B7%20x64-555) ![Python](https://img.shields.io/badge/Python-3.13-4176e6) ![R](https://img.shields.io/badge/R-4.5-4176e6) ![Model](https://img.shields.io/badge/model-DeepSeek%20V4-4176e6) [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SuperJJ007/papermachine?label=release)](https://github.com/SuperJJ007/papermachine/releases/latest) ![macOS](https://img.shields.io/badge/macOS-arm64%20%C2%B7%20x64-555) ![Windows](https://img.shields.io/badge/Windows-x64-555) ![Python](https://img.shields.io/badge/Python-3.13-4176e6) ![R](https://img.shields.io/badge/R-4.5-4176e6) ![Model](https://img.shields.io/badge/model-DeepSeek%20V4-4176e6) [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 PaperMachine 是给所有围绕数据工作的人做的桌面应用——科研人员、商业分析师、数据分析师。从查询资料文献、到清理数据、到产出结果，全流程透明可控。
 
@@ -40,7 +40,7 @@ PaperMachine 是给所有围绕数据工作的人做的桌面应用——科研�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/SuperJJ007/papermachine/releases/latest) 下载对应你 Mac 的 DMG:Apple 芯片用 `PaperMachine-<version>-arm64.dmg`,Intel 用 `PaperMachine-<version>-x64.dmg`。
+1. 从 [Releases](https://github.com/SuperJJ007/papermachine/releases/latest) 下载对应你机器的安装包:Apple 芯片用 `PaperMachine-<version>-arm64.dmg`,Intel Mac 用 `PaperMachine-<version>-x64.dmg`,Windows 用 `PaperMachine-<version>-x64.exe`。
 2. 打开应用,按下面的**首次运行**装好环境。
 3. 打开 **设置 → 模型**,填入你的 DeepSeek API key。应用不附带 key,默认调用 `deepseek-v4-flash`。
 4. 把 CSV、Excel、SPSS 或 Stata 文件拖进项目,问出第一个问题,例如:*画出 2007 年各国人均 GDP 与预期寿命的关系,按大洲着色。*
@@ -63,11 +63,13 @@ PaperMachine 不使用你机器上已有的 conda 环境,而是自带一份 micr
 | **高级:自定义包清单** | 在预填的清单上增删 conda 包,每行一个,支持 `名称=版本`。删掉 `python` 或 `r-base` 会导致装完的校验失败。 |
 | **保留当前环境** | 只在已经装过一次时才出现。重装会再下一遍 520 MB,所以除非要换包清单,保留即可。 |
 
-DMG 尚未做代码签名。如果 macOS 提示应用已损坏或来自身份不明的开发者,右键点击应用选择**打开**,或运行一次下面的命令:
+两个平台的安装包都未做代码签名。macOS 上如果提示应用已损坏或来自身份不明的开发者,右键点击应用选择**打开**,或运行一次下面的命令:
 
 ```sh
 xattr -d com.apple.quarantine /Applications/PaperMachine.app
 ```
+
+Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再点**仍要运行**。安装包是 per-user 安装,不需要管理员权限。
 
 ## 里面有什么
 
@@ -94,7 +96,7 @@ xattr -d com.apple.quarantine /Applications/PaperMachine.app
 
 ## 工作原理
 
-窗口与你 Mac 上的一个本机 Host 进程通信。Host 为每个会话持有一个 Python 内核和一个 R 内核、一份随应用打包的 micromamba,以及项目级的产物存储。只有模型请求离开本机,带着你的 key 发往 DeepSeek API。
+窗口与你机器上的一个本机 Host 进程通信。Host 为每个会话持有一个 Python 内核和一个 R 内核、一份随应用打包的 micromamba,以及项目级的产物存储。只有模型请求离开本机,带着你的 key 发往 DeepSeek API。
 
 其余一切都在 `~/.papermachine` 里:会话、产物、已安装的环境、技能和日志。删掉这个目录就全部清除。
 
@@ -104,15 +106,14 @@ PaperMachine 发送三个匿名遥测事件(`app.launch`、`environment.installe
 
 PaperMachine 0.1 是早期版本。已知限制:
 
-- 仅支持 macOS(Apple 芯片与 Intel)。Windows 在计划中。
+- 支持 macOS(Apple 芯片与 Intel)与 Windows(x64)。Windows 版是新加的:它在 Windows runner 上构建并跑过测试,但还没有任何一版在真实 Windows 机器上完成过验收。
 - 需要 DeepSeek API key;应用不附带 key。
-- DMG 未签名;见上文 Gatekeeper 说明。
-- 更新需手动:下载下一个 DMG。
+- 两个平台的安装包都未签名;见上文说明。
+- 更新需手动:下载下一个安装包。
 - 暂无变量面板;内核状态栏显示每种语言的内核状态。
 
 ## 路线图
 
-- Windows 版本。
 - 学科环境,从社会科学开始。
 - 变量变化史视图:每个数据集在各清洗步骤中的形状变化。
 
@@ -142,7 +143,7 @@ pnpm dsh web
 
 ### 从源码运行
 
-桌面应用在 `pnpm run build` 之后从同一检出运行;先获取对应你架构的固定版本 micromamba(Intel 用 `darwin-x64`):
+桌面应用在 `pnpm run build` 之后从同一检出运行;先获取对应你架构的固定版本 micromamba(Intel Mac 用 `darwin-x64`,Windows 用 `win32-x64`):
 
 ```sh
 pnpm --filter @deepseek-ai/dsh-desktop fetch:micromamba darwin-arm64

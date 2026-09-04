@@ -56,7 +56,7 @@ Onboarding 只有一条路径：安装。PaperMachine 不提供绑定机器上�
 
 ## 安装包
 
-`package:mac` 与 `package:win` 各自构建仓库、下载本平台 target 的 pinned micromamba 资产、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成本平台的安装包——macOS 上是 arm64 与 x64 DMG，Windows 上是 x64 NSIS 安装包。两者都只能在各自平台上运行，且 `package:win` 需要一个接受 `&&` 串联与前置环境变量赋值的 shell（Windows 上用 Git Bash，不能用 PowerShell）。随后 `scripts/write-update-metadata.ts` 记录该次运行所出安装包的名称、架构、大小与 SHA-256，并拒绝产出不足本平台完整集合的运行。
+`package:mac` 与 `package:win` 各自构建仓库、下载本平台 target 的 pinned micromamba 资产、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成本平台的安装包——macOS 上是 arm64 与 x64 DMG，Windows 上是 x64 NSIS 安装包。两者都只能在各自平台上运行，且都通过 `pnpm -w run build --profile official` 选择官方 client profile，而不是用前置环境变量赋值——Windows 上 pnpm 运行脚本所用的 shell 不接受后者。两者都不发布：`--publish never` 阻止 Electron Builder 读取 `repository` 字段并索要 GitHub token，release 由 workflow 自己创建。随后 `scripts/write-update-metadata.ts` 记录该次运行所出安装包的名称、架构、大小与 SHA-256，并拒绝产出不足本平台完整集合的运行。
 
 Windows 安装包是 per-user 安装（`%LOCALAPPDATA%`，不需要提权），两个平台的安装包都未做代码签名。`.github/workflows/desktop-release.yml` 构建两个平台并把产物收进同一个 draft GitHub release；draft 不创建 tag，在有人发布它之前对仓库写者之外不可见。
 

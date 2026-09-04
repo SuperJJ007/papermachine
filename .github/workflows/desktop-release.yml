@@ -65,8 +65,9 @@ jobs:
   windows:
     runs-on: windows-latest
     name: Windows installer (x64)
-    # Git Bash: the packaging scripts chain with `&&` and set the client
-    # profile as a command prefix, neither of which PowerShell accepts.
+    # Git Bash so the `run:` blocks below are one shell language across both
+    # jobs. The packaging script itself is shell-independent: pnpm runs it
+    # through cmd.exe here whatever this setting says.
     defaults:
       run:
         shell: bash

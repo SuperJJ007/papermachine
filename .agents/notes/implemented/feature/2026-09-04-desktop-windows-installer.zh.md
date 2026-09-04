@@ -36,7 +36,7 @@ Windows-on-ARM 刻意不作为 target：conda-forge 的 `win-arm64` subdir 没�
 
 Windows 安装包已能构建，carrier 自身的测试也在 Windows runner 上运行，但尚无 Windows 设备验收过任何一版。`apps/desktop/README.md` 陈述了这条限制，产品 README 也仍然把 macOS 列为受支持平台：这项声明改变的依据是设备验收，而不是一次构建成功。
 
-`package:win` 需要一个接受 `&&` 串联与前置环境变量赋值的 shell——Windows 上是 Git Bash，不是 PowerShell。workflow 因此设置 `shell: bash`。
+两个打包脚本都用 `pnpm -w run build --profile official` 选择官方 client profile，而不是前置 `DSH_BUILD_CLIENT_PROFILE=official`：pnpm 通过所在平台自己的 shell 运行 package script，而 cmd.exe 会把环境变量赋值当成命令拒绝，与外层 CI step 用的是哪个 shell 无关。两者也都传 `--publish never`，否则 Electron Builder 会读取 `repository` 字段，并在一次本已完成的构建末尾索要 GitHub token。
 
 `apps/desktop/tsconfig.json` 现在包含 `scripts`，此前没有任何 compiler face 检查它们。把它们纳入检查后，立刻发现了 `write-update-metadata.ts` 第一版参数处理里一个真实的窄化缺陷。
 
@@ -48,4 +48,4 @@ Windows 安装包已能构建，carrier 自身的测试也在 Windows runner 上
 
 workflow 的 Windows 作业在打包之前会运行 carrier 测试并执行取回的 `micromamba.exe --version`，因此架构错误或不可执行的资产会在被埋进安装包之前失败。
 
-第一次 dispatch 的运行立刻就回本了。它的 Windows 作业让两个从未在 POSIX 之外跑过的 carrier 测试失败：`stopProcessGroup` 的假 `ChildProcess` 只带了 `pid`，Windows 分支要调用的 `child.kill(signal)` 没有这个方法；environment-binding 那个测试断言 `0o600`，而该平台的权限存在 ACL 而不是 mode bits 里，`stat` 对任何可写文件都报 `0o666`。两者都改在测试上，不在产品上。它的 macOS 作业则在仓库级 `tsc -b tsconfig.host.json` 中因 V8 内存耗尽而中止：托管 macOS runner 是一台 7 GB 的机器，Node 把 old-space 定在其大约一半，因此 workflow 现在设置 `NODE_OPTIONS=--max-old-space-size=6144`。
+第一次 dispatch 的运行立刻就回本了。它的 Windows 作业让两个从未在 POSIX 之外跑过的 carrier 测试失败：`stopProcessGroup` 的假 `ChildProcess` 只带了 `pid`，Windows 分支要调用的 `child.kill(signal)` 没有这个方法；environment-binding 那个测试断言 `0o600`，而该平台的权限存在 ACL 而不是 mode bits 里，`stat` 对任何可写文件都报 `0o666`。两者都改在测试上，不在产品上。它的 macOS 作业则在仓库级 `tsc -b tsconfig.host.json` 中因 V8 内存耗尽而中止：托管 macOS runner 是一台 7 GB 的机器，Node 把 old-space 定在其大约一半，因此 workflow 现在设置 `NODE_OPTIONS=--max-old-space-size=6144`。第二次运行随后成功构建了两个 DMG，并分别倒在 Electron Builder 的发布步骤和 cmd.exe 对环境变量前缀的拒绝上——即上面记录的那两条事实。

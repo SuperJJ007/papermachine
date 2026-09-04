@@ -494,8 +494,10 @@ describe('stopProcessGroup', () => {
     // is stubbed to never throw for it, so isProcessGroupAlive reports it
     // alive across every poll (the same observable outcome an EPERM check
     // would produce), forcing stopProcessGroup through both bounded waits to
-    // their deadlines with nothing real ever signalled or leaked.
-    const fakeChild = { pid: 999_999 } as unknown as ChildProcess
+    // their deadlines with nothing real ever signalled or leaked. `kill` is
+    // the child's own method signalProcessGroup uses on Windows, where there
+    // is no process group to signal through `process.kill(-pid)`.
+    const fakeChild = { pid: 999_999, kill: () => true } as unknown as ChildProcess
     vi.useFakeTimers()
     try {
       const killSpy = vi.spyOn(process, 'kill').mockReturnValue(true)

@@ -47,3 +47,5 @@ Windows 安装包已能构建，carrier 自身的测试也在 Windows runner 上
 `node --import tsx/esm apps/desktop/scripts/fetch-micromamba.ts win32-x64` 下载了钉住的资产、匹配了记录的摘要并写出 `micromamba.exe`；`file` 报告为 `PE32+ executable (console) x86-64, for MS Windows`。
 
 workflow 的 Windows 作业在打包之前会运行 carrier 测试并执行取回的 `micromamba.exe --version`，因此架构错误或不可执行的资产会在被埋进安装包之前失败。
+
+第一次 dispatch 的运行立刻就回本了。它的 Windows 作业让两个从未在 POSIX 之外跑过的 carrier 测试失败：`stopProcessGroup` 的假 `ChildProcess` 只带了 `pid`，Windows 分支要调用的 `child.kill(signal)` 没有这个方法；environment-binding 那个测试断言 `0o600`，而该平台的权限存在 ACL 而不是 mode bits 里，`stat` 对任何可写文件都报 `0o666`。两者都改在测试上，不在产品上。它的 macOS 作业则在仓库级 `tsc -b tsconfig.host.json` 中因 V8 内存耗尽而中止：托管 macOS runner 是一台 7 GB 的机器，Node 把 old-space 定在其大约一半，因此 workflow 现在设置 `NODE_OPTIONS=--max-old-space-size=6144`。

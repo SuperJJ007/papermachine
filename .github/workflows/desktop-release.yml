@@ -26,6 +26,11 @@ env:
   PRIMARY_NODE_VERSION: '24'
   # A packaging run must never report to the production telemetry endpoint.
   DSH_TELEMETRY_DISABLED: '1'
+  # The repository-wide `tsc -b tsconfig.host.json` inside `pnpm -w run build`
+  # exhausts the default heap on a hosted macOS runner (7 GB machine, so Node
+  # sizes old-space at roughly half of it) and aborts with an OOM before
+  # Electron Builder is ever reached.
+  NODE_OPTIONS: --max-old-space-size=6144
 
 jobs:
   macos:

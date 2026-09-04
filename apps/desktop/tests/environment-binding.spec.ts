@@ -209,7 +209,10 @@ describe('writeEnvironmentBinding', () => {
     await writeEnvironmentBinding(dshHome, { pythonPrefix: '/env/py', sourceId: 'tuna', boundAt: 1 })
 
     const path = join(dshHome, 'environment-binding.json')
-    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    // Windows carries no POSIX permission bits: `stat` reports 0o666 for any
+    // writable file there whatever mode the write asked for, so the
+    // owner-only half of this test has nothing to observe on that platform.
+    if (process.platform !== 'win32') expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect(await readdir(dshHome)).toEqual(['environment-binding.json'])
   })
 

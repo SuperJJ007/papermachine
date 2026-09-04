@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
+import { DESKTOP_PLATFORMS, micromambaExecutableName, parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 
 const resources = join(import.meta.dirname, '../resources/environments')
+const desktopResources = join(import.meta.dirname, '../resources')
 
 /** A minimal, otherwise-valid declaration body; each test overrides only the field(s) it exercises. */
 function baseDeclaration(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -113,5 +114,37 @@ describe('desktop environment declarations', () => {
     expect(() => parseEnvironmentDeclaration(baseDeclaration({
       sources: [{ id: 'Official', name: 'Official', channels: ['https://conda.anaconda.org/conda-forge'] }],
     }))).toThrow(/invalid source id/)
+  })
+
+  it('rejects a platform this carrier does not ship for', () => {
+    expect(() => parseEnvironmentDeclaration(baseDeclaration({ supportedPlatforms: ['linux-x64'] })))
+      .toThrow(/unsupported platform identifier/)
+  })
+
+  // An installer built for a target whose declaration excludes it reaches
+  // onboarding with nothing to install, so the shipped declaration has to
+  // cover every target `electron-builder.yml` produces.
+  it('supports every platform this carrier ships an installer for', async () => {
+    const parsed = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')))
+    expect([...parsed.supportedPlatforms].sort()).toEqual([...DESKTOP_PLATFORMS].sort())
+  })
+})
+
+describe('bundled micromamba', () => {
+  // `fetch:micromamba <target>` is the only source of the packaged binary, and
+  // it fails on a target the manifest does not pin — a packaging run for a
+  // platform added here without its asset would otherwise fail at build time.
+  it('pins one checksummed asset for every shipped platform', async () => {
+    const manifest = JSON.parse(await readFile(join(desktopResources, 'micromamba.json'), 'utf8')) as Record<string, { url: string; sha256: string } | undefined>
+    for (const platform of DESKTOP_PLATFORMS) {
+      const asset = manifest[platform]
+      expect(asset?.url ?? '').toMatch(/^https:\/\//)
+      expect(asset?.sha256 ?? '').toMatch(/^[0-9a-f]{64}$/)
+    }
+  })
+
+  it('names the Windows binary with the extension Windows requires to execute it', () => {
+    expect(micromambaExecutableName('win32-x64')).toBe('micromamba.exe')
+    expect(micromambaExecutableName('darwin-arm64')).toBe('micromamba')
   })
 })

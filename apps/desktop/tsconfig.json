@@ -9,7 +9,8 @@
   },
   "include": [
     "src",
-    "tests"
+    "tests",
+    "scripts"
   ],
   "references": [
     { "path": "../../vendor/cordis" },

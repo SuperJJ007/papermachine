@@ -2,7 +2,36 @@
 
 import { HTTPS_URL } from './https-url.ts'
 
-export type DesktopPlatform = 'darwin-arm64' | 'darwin-x64'
+/**
+ * Platform-architecture pairs this carrier ships a micromamba binary and a
+ * conda package set for. `resources/micromamba.json` keys and every
+ * declaration's `supportedPlatforms` are drawn from this list, and
+ * {@link parseEnvironmentDeclaration} rejects anything outside it.
+ */
+export const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64'] as const
+
+export type DesktopPlatform = (typeof DESKTOP_PLATFORMS)[number]
+
+/**
+ * Whether `value` names a platform this carrier ships for.
+ * @param value - a `${process.platform}-${process.arch}` pair, or any other string.
+ * @returns true when `value` is one of {@link DESKTOP_PLATFORMS}.
+ */
+export function isDesktopPlatform(value: string): value is DesktopPlatform {
+  return (DESKTOP_PLATFORMS as readonly string[]).includes(value)
+}
+
+/**
+ * File name of the bundled micromamba binary for `platform`. Windows refuses
+ * to execute an extensionless image, so the fetch script and the runtime
+ * lookup must agree on the `.exe` suffix rather than each deriving it.
+ * @param platform - the platform whose bundled binary is being named.
+ * @returns the file name under `resources/bin/<platform>/`.
+ */
+export function micromambaExecutableName(platform: DesktopPlatform): string {
+  return platform.startsWith('win32-') ? 'micromamba.exe' : 'micromamba'
+}
+
 type EnvironmentLanguage = 'python' | 'r'
 
 /** One interpreter probe executed inside a provisioned prefix. */
@@ -92,7 +121,7 @@ export function parseEnvironmentDeclaration(value: unknown): EnvironmentDeclarat
   if (typeof value.revision !== 'string' || !REVISION.test(value.revision)) throw new Error('desktop environment: invalid revision')
   if (typeof value.name !== 'string' || value.name.trim().length === 0) throw new Error('desktop environment: name must be non-empty')
   nonEmptyStrings(value.supportedPlatforms, 'supportedPlatforms')
-  if (value.supportedPlatforms.some(item => item !== 'darwin-arm64' && item !== 'darwin-x64')) {
+  if (value.supportedPlatforms.some(item => !(DESKTOP_PLATFORMS as readonly string[]).includes(item))) {
     throw new Error('desktop environment: unsupported platform identifier')
   }
   if (!Array.isArray(value.sources) || value.sources.length === 0) {

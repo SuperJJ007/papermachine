@@ -1,0 +1,140 @@
+# Build the PaperMachine desktop installers for both shipped platforms and
+# collect them into one draft GitHub release.
+#
+# Manual-only. A draft release is invisible outside the repository's writers and
+# does not create its tag until someone publishes it, so a dispatched run can be
+# inspected, downloaded, and thrown away without leaving a public trace — which
+# is the whole point while the Windows build has no device acceptance behind it.
+#
+# Neither installer is code-signed: macOS shows the Gatekeeper warning the
+# README documents, and Windows shows SmartScreen. Signing is a separate change
+# that needs certificates in repository secrets.
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag the draft release is created for (created only when the release is published)
+        required: true
+        default: papermachine-v0.1.0
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  # A packaging run must never report to the production telemetry endpoint.
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  macos:
+    runs-on: macos-14
+    name: macOS installers (arm64 + x64)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Package
+        run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/desktop-update.darwin.json
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    name: Windows installer (x64)
+    # Git Bash: the packaging scripts chain with `&&` and set the client
+    # profile as a command prefix, neither of which PowerShell accepts.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      # The only Windows execution this repository can reach without a Windows
+      # device: the carrier's own unit tests decide platform-dependent paths at
+      # import time, so they cover the Windows branches only when run here.
+      - name: Carrier tests
+        run: pnpm vitest run --root . apps/desktop/tests
+
+      # Proves the pinned win-64 asset is an executable image of the right
+      # architecture before a packaging run buries it inside the installer.
+      - name: Bundled micromamba runs
+        run: |
+          pnpm --filter @deepseek-ai/dsh-desktop run fetch:micromamba win32-x64
+          ./apps/desktop/resources/bin/win32-x64/micromamba.exe --version
+
+      - name: Package
+        run: pnpm --filter @deepseek-ai/dsh-desktop run package:win
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/desktop-update.win32.json
+          if-no-files-found: error
+
+  draft:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    name: Collect into a draft release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: installers
+          merge-multiple: true
+
+      # A re-run replaces its own draft rather than appending a second set of
+      # installers to it. A published release under the same tag is never
+      # touched: this workflow only ever produces drafts, so finding one means
+      # the dispatched tag names a real release and the run stops.
+      - name: Publish draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          case "$draft" in
+            true) gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes ;;
+            false) echo "::error::$TAG already has a published release" >&2 ; exit 1 ;;
+          esac
+          gh release create "$TAG" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "PaperMachine $TAG" \
+            --notes "Unsigned installers built by the Desktop release workflow from $GITHUB_SHA."

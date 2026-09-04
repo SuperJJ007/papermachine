@@ -40,3 +40,16 @@ mac:
         - x64
 dmg:
   artifactName: PaperMachine-${version}-${arch}.${ext}
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  artifactName: PaperMachine-${version}-${arch}.${ext}
+  # Per-user install under %LOCALAPPDATA%: an unsigned per-machine installer
+  # adds a UAC prompt on top of the SmartScreen warning, and the app writes
+  # only under the user's home in any case.
+  perMachine: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true

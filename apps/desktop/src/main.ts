@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
-import { parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
+import { isDesktopPlatform, micromambaExecutableName, parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
 import { DesktopEnvironmentProvisioner, desktopEnvironmentsRoot, orderSourcesFrom, type ProvisioningProgress } from './provisioning.ts'
 import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
 import { ProvisioningCoordinator } from './provisioning-coordination.ts'
@@ -19,7 +19,7 @@ import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, w
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
 import { parseTelemetryConfig } from './telemetry-config.ts'
-import { resolveTelemetryEndpoints, TelemetryReporter } from './telemetry.ts'
+import { resolveTelemetryEndpoints, TelemetryReporter, type TelemetryArch, type TelemetryPlatform } from './telemetry.ts'
 import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
 import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
@@ -96,10 +96,20 @@ async function harnessHome(): Promise<string> {
 }
 
 function desktopPlatform(): DesktopPlatform {
-  if (process.platform !== 'darwin' || (process.arch !== 'arm64' && process.arch !== 'x64')) {
-    throw new Error(`desktop: unsupported platform ${process.platform}-${process.arch}`)
-  }
-  return `darwin-${process.arch}`
+  const target = `${process.platform}-${process.arch}`
+  if (!isDesktopPlatform(target)) throw new Error(`desktop: unsupported platform ${target}`)
+  return target
+}
+
+/**
+ * The telemetry envelope's platform and arch for each shipped target. A
+ * `Record` over the closed {@link DesktopPlatform} union so adding a target
+ * fails the build here rather than reporting the wrong platform.
+ */
+const TELEMETRY_TARGETS: Record<DesktopPlatform, { readonly platform: TelemetryPlatform; readonly arch: TelemetryArch }> = {
+  'darwin-arm64': { platform: 'darwin', arch: 'arm64' },
+  'darwin-x64': { platform: 'darwin', arch: 'x64' },
+  'win32-x64': { platform: 'win32', arch: 'x64' },
 }
 
 /**
@@ -118,8 +128,7 @@ async function createTelemetryReporter(dshHome: string): Promise<TelemetryReport
     context: {
       anonymousId,
       appVersion: app.getVersion(),
-      platform: 'darwin',
-      arch: desktopPlatform() === 'darwin-arm64' ? 'arm64' : 'x64',
+      ...TELEMETRY_TARGETS[desktopPlatform()],
     },
   })
 }
@@ -153,7 +162,8 @@ async function declarations(dshHome: string): Promise<readonly EnvironmentDeclar
 
 /** The bundled micromamba executable for this machine, shared by provisioning and the Host's package installer. */
 function micromambaPath(): string {
-  return join(resourceRoot(), 'bin', desktopPlatform(), 'micromamba')
+  const platform = desktopPlatform()
+  return join(resourceRoot(), 'bin', platform, micromambaExecutableName(platform))
 }
 
 /** The app-bundled default Science skills, staged alongside the app payload. */

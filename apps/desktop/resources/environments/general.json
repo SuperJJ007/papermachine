@@ -3,7 +3,7 @@
   "id": "general",
   "revision": "2026.09.1",
   "name": "通用科学环境 · General science",
-  "supportedPlatforms": ["darwin-arm64", "darwin-x64"],
+  "supportedPlatforms": ["darwin-arm64", "darwin-x64", "win32-x64"],
   "sources": [
     {
       "id": "tuna",

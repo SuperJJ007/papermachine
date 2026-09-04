@@ -445,16 +445,26 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+    // Both write-capable steps carry the review-state gate and, ahead of it,
+    // the repository gate: the App and the Project board it drives exist only
+    // upstream, so in a fork both steps skip and the job still reports success
+    // rather than failing on credentials it cannot have.
+    const gated = "${{ github.repository == 'deepseek-harness/deepseek-harness'"
+      + " && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}"
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
     expect(tokenStep).toMatchObject({ if: gated })
     expect(handleStep).toMatchObject({ if: gated })
 
-    // issue-policy owns PR validation; it is read-only and a real gate.
+    // issue-policy owns PR validation; it is read-only and a real gate, and it
+    // validates a label taxonomy that likewise exists only upstream.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
     expect(policyPullRequest.types).toContain('ready_for_review')
+    const policySteps = workflowJob(policy, 'policy').steps
+    if (!Array.isArray(policySteps)) throw new TypeError('Issue policy job must define steps')
+    const validateStep = policySteps.filter(isRecord).find(s => s.name === 'Validate pull request')
+    expect(validateStep).toMatchObject({ if: "${{ github.repository == 'deepseek-harness/deepseek-harness' }}" })
   })
 })
 

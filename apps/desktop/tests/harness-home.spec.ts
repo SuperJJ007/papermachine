@@ -59,4 +59,25 @@ describe('resolveHarnessHome', () => {
     expect(error).toBeInstanceOf(HarnessHomeSpaceError)
     expect((error as HarnessHomeSpaceError).path).toBe(join(realTarget, '.papermachine'))
   })
+
+  it('respects an explicit customHomeDir override when provided', async () => {
+    const home = await makeHome()
+    const custom = await makeHome()
+
+    const dshHome = await resolveHarnessHome(home, custom)
+
+    expect(dshHome).toBe(custom)
+  })
+
+  it('respects process.env.PAPERMACHINE_HOME when set', async () => {
+    const home = await makeHome()
+    const custom = await makeHome()
+    process.env.PAPERMACHINE_HOME = custom
+    try {
+      const dshHome = await resolveHarnessHome(home)
+      expect(dshHome).toBe(custom)
+    } finally {
+      delete process.env.PAPERMACHINE_HOME
+    }
+  })
 })

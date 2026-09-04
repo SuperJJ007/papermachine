@@ -55,11 +55,26 @@ function requireNoAsciiSpace(path: string): void {
  * @throws {@link HarnessHomeSpaceError} when the literal or canonical
  *   resolved path contains an ASCII space.
  */
-export async function resolveHarnessHome(osHomeDir: string): Promise<string> {
-  const dshHome = join(osHomeDir, '.papermachine')
-  requireNoAsciiSpace(dshHome)
-  await mkdir(dshHome, { recursive: true, mode: 0o700 })
-  const canonical = await realpath(dshHome)
+/**
+ * Resolve and create the Harness home directory used for `DSH_HOME`.
+ *
+ * Precedence:
+ * 1. `customHomeDir` passed explicitly (e.g. from onboarding directory selection or settings)
+ * 2. `process.env.PAPERMACHINE_HOME`
+ * 3. `process.env.DSH_HOME`
+ * 4. Default: `<osHomeDir>/.papermachine`
+ *
+ * Checks that neither the literal path nor its canonical realpath contains
+ * an ASCII space (preserving R TMPDIR safety across all platforms).
+ */
+export async function resolveHarnessHome(osHomeDir: string, customHomeDir?: string): Promise<string> {
+  const envHome = process.env.PAPERMACHINE_HOME ?? process.env.DSH_HOME
+  const candidate = customHomeDir !== undefined && customHomeDir.trim().length > 0
+    ? customHomeDir.trim()
+    : (envHome !== undefined && envHome.trim().length > 0 ? envHome.trim() : join(osHomeDir, '.papermachine'))
+  requireNoAsciiSpace(candidate)
+  await mkdir(candidate, { recursive: true, mode: 0o700 })
+  const canonical = await realpath(candidate)
   requireNoAsciiSpace(canonical)
   return canonical
 }

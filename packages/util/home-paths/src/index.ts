@@ -17,6 +17,9 @@ export const DEFAULT_DSH_HOME_DISPLAY = `~/${DSH_HOME_DIR_NAME}`
 /** Environment variable that overrides the default DeepSeek Harness home. */
 export const DSH_HOME_ENV = 'DSH_HOME'
 
+/** Environment variable that configures the PaperMachine home directory. */
+export const PAPERMACHINE_HOME_ENV = 'PAPERMACHINE_HOME'
+
 /**
  * Give a native filesystem watcher one canonical spelling of a path, even
  * when its final components do not exist yet. The deepest existing ancestor
@@ -85,7 +88,7 @@ export function expandHomePath(path: string): string {
  * @returns the normalized absolute harness home path.
  */
 export function resolveDshHome(configured?: string, env: Record<string, string | undefined> = process.env): string {
-  const fromEnv = env[DSH_HOME_ENV]
+  const fromEnv = env[PAPERMACHINE_HOME_ENV] ?? env[DSH_HOME_ENV]
   const selected = configured ?? (fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : defaultDshHome())
   return resolve(expandHomePath(selected))
 }

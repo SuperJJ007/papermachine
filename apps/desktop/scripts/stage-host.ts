@@ -5,6 +5,7 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rm } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -35,11 +36,14 @@ async function firstLink(directory: string): Promise<string | undefined> {
 
 if (!staging.startsWith(join(desktopRoot, '.stage') + sep)) throw new Error('desktop host staging escaped its owned directory')
 await rm(staging, { recursive: true, force: true })
-await run('pnpm', [
+// Resolved through `npm_execpath` rather than spawned by name: on Windows
+// pnpm is a `.cmd` shim, which a shell-free `spawn` cannot execute.
+const deploy = pnpmInvocation([
   '--offline', '--ignore-scripts', '--filter', '@deepseek-ai/dsh', 'deploy', '--prod',
   '--config.node-linker=hoisted',
   '--config.inject-workspace-packages=true', '--config.link-workspace-packages=true', staging,
 ])
+await run(deploy.command, deploy.args)
 
 const manifest = JSON.parse(await readFile(join(staging, 'package.json'), 'utf8')) as {
   readonly dependencies?: Readonly<Record<string, string>>

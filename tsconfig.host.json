@@ -103,6 +103,7 @@
     "examples/*/tests/**/*.ts",
     "packages/*/*/tests/**/*.ts",
     "scripts/**/*.ts",
+    "apps/desktop/scripts/**/*.ts",
     "website/**/*.ts",
     "website/.vitepress/**/*.ts"
   ],

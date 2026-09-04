@@ -38,7 +38,7 @@ Windows 安装包已能构建，carrier 自身的测试也在 Windows runner 上
 
 两个打包脚本都用 `pnpm -w run build --profile official` 选择官方 client profile，而不是前置 `DSH_BUILD_CLIENT_PROFILE=official`：pnpm 通过所在平台自己的 shell 运行 package script，而 cmd.exe 会把环境变量赋值当成命令拒绝，与外层 CI step 用的是哪个 shell 无关。两者也都传 `--publish never`，否则 Electron Builder 会读取 `repository` 字段，并在一次本已完成的构建末尾索要 GitHub token。
 
-`apps/desktop/tsconfig.json` 现在包含 `scripts`，此前没有任何 compiler face 检查它们。把它们纳入检查后，立刻发现了 `write-update-metadata.ts` 第一版参数处理里一个真实的窄化缺陷。
+`apps/desktop/scripts/**/*.ts` 现在与 `scripts/**/*.ts` 一同进入仓库级的 host face（`tsconfig.host.json`），此前没有任何 compiler face 检查它们。放进这个 face 而不是本包自己的 aggregate，是因为 `stage-host.ts` import 了仓库的 `scripts/pnpm-invocation.ts`，而包工程的 `rootDir` 够不到 `apps/desktop` 之外。纳入检查后立刻发现了 `write-update-metadata.ts` 第一版参数处理里一个真实的窄化缺陷。
 
 ## 验证
 
@@ -48,4 +48,4 @@ Windows 安装包已能构建，carrier 自身的测试也在 Windows runner 上
 
 workflow 的 Windows 作业在打包之前会运行 carrier 测试并执行取回的 `micromamba.exe --version`，因此架构错误或不可执行的资产会在被埋进安装包之前失败。
 
-第一次 dispatch 的运行立刻就回本了。它的 Windows 作业让两个从未在 POSIX 之外跑过的 carrier 测试失败：`stopProcessGroup` 的假 `ChildProcess` 只带了 `pid`，Windows 分支要调用的 `child.kill(signal)` 没有这个方法；environment-binding 那个测试断言 `0o600`，而该平台的权限存在 ACL 而不是 mode bits 里，`stat` 对任何可写文件都报 `0o666`。两者都改在测试上，不在产品上。它的 macOS 作业则在仓库级 `tsc -b tsconfig.host.json` 中因 V8 内存耗尽而中止：托管 macOS runner 是一台 7 GB 的机器，Node 把 old-space 定在其大约一半，因此 workflow 现在设置 `NODE_OPTIONS=--max-old-space-size=6144`。第二次运行随后成功构建了两个 DMG，并分别倒在 Electron Builder 的发布步骤和 cmd.exe 对环境变量前缀的拒绝上——即上面记录的那两条事实。
+第一次 dispatch 的运行立刻就回本了。它的 Windows 作业让两个从未在 POSIX 之外跑过的 carrier 测试失败：`stopProcessGroup` 的假 `ChildProcess` 只带了 `pid`，Windows 分支要调用的 `child.kill(signal)` 没有这个方法；environment-binding 那个测试断言 `0o600`，而该平台的权限存在 ACL 而不是 mode bits 里，`stat` 对任何可写文件都报 `0o666`。两者都改在测试上，不在产品上。它的 macOS 作业则在仓库级 `tsc -b tsconfig.host.json` 中因 V8 内存耗尽而中止：托管 macOS runner 是一台 7 GB 的机器，Node 把 old-space 定在其大约一半，因此 workflow 现在设置 `NODE_OPTIONS=--max-old-space-size=6144`。第二次运行随后成功构建了两个 DMG，并分别倒在 Electron Builder 的发布步骤和 cmd.exe 对环境变量前缀的拒绝上——即上面记录的那两条事实。第三次在 Windows 上走到了 host staging，`spawn('pnpm', …)` 抛出 `ENOENT`：pnpm 在该平台上是一个 `.cmd` shim，不经 shell 的 spawn 执行不了它。`stage-host.ts` 改为通过仓库的 `pnpmInvocation` helper 解析这次调用——它正是为此而存在，会用 `process.execPath` 运行 pnpm 自己的入口。

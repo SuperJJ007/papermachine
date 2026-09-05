@@ -105,7 +105,7 @@ async function boot(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-subprocess-local'",
     "- name: '@deepseek-ai/dsh-sandbox-local'",
     '  config:',
-    `    runnerCommand: [${JSON.stringify(runner)}]`,
+    `    runnerCommand: ${JSON.stringify(runner)}`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
     "- name: '@deepseek-ai/dsh-attachment-local'",
     '  config:',

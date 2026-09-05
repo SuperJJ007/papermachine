@@ -354,7 +354,7 @@ esac
  * interpreter's own graceful-interrupt reply, misreporting a real interrupt
  * as an abnormal exit).
  */
-export function createFakeSandboxRunner(root: string): readonly string[] {
+export function createFakeSandboxRunner(root: string): string[] {
   const runner = join(root, 'fake-sandbox-runner.mjs')
   writeFileSync(runner, `import { spawn } from 'node:child_process'
 const separator = process.argv.indexOf('--')

@@ -329,7 +329,7 @@ async function setup(options: SetupOptions = {}) {
   if (options.withRuntime !== false) {
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(LocalSandboxProvider, {
-      runnerCommand: [createFakeSandboxRunner(root)],
+      runnerCommand: createFakeSandboxRunner(root),
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     await ctx.plugin(LocalAttachmentStore, { dshHome: join(root, 'dsh-home') })

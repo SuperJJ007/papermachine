@@ -84,9 +84,13 @@ def rebind_std_streams():
     # Re-create sys.stdout/sys.stderr as fresh, non-owning wrappers around
     # whatever fd 1/2 currently mean. closefd=False is load-bearing: it is
     # what keeps a later sys.stdout.close() by user code from taking fd 1
-    # down with it.
-    sys.stdout = os.fdopen(1, "w", encoding="utf-8", closefd=False)
-    sys.stderr = os.fdopen(2, "w", encoding="utf-8", closefd=False)
+    # down with it. newline="\n" matches open_response_channel's win32 TCP
+    # wrapper: without it, Python's own universal-newline write translation
+    # turns every "\n" a run prints into "\r\n" on win32, corrupting
+    # stdoutPath/stderrPath capture relative to the identical run on
+    # darwin/linux.
+    sys.stdout = os.fdopen(1, "w", encoding="utf-8", newline="\n", closefd=False)
+    sys.stderr = os.fdopen(2, "w", encoding="utf-8", newline="\n", closefd=False)
 
 
 def execute_run(global_ns, run_id, source_path, cwd, stdout_path, stderr_path, artifact_dir, input_dir):
@@ -104,8 +108,13 @@ def execute_run(global_ns, run_id, source_path, cwd, stdout_path, stderr_path, a
     _dsh_charts.setdefault(run_id, {})
     _load_chart_module().install_savefig_hook(_register_chart)
 
-    stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-    stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    # getattr(os, "O_BINARY", 0) is win32-only (undefined, so a no-op, on
+    # darwin/linux): it stops a second, fd-level CRLF translation underneath
+    # rebind_std_streams' own "\n"-only fdopen wrappers -- the Windows CRT
+    # applies its text-mode LF->CRLF rewrite to any raw write() on this fd
+    # independently of what Python's io layer already decided.
+    stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o644)
+    stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o644)
     saved_stdout_fd = os.dup(1)
     saved_stderr_fd = os.dup(2)
 

@@ -329,8 +329,13 @@ execute_run <- function(run_id, source_path, cwd, stdout_path, stderr_path, arti
   out_sink_before <- sink.number(type = "output")
   msg_sink_before <- sink.number(type = "message")
 
-  out_con <- file(stdout_path, open = "wt")
-  err_con <- file(stderr_path, open = "wt")
+  # "wb" (binary), not "wt": R's own text-mode file connections apply the
+  # same win32 LF->CRLF translation on write as the Windows CRT, which would
+  # corrupt stdoutPath/stderrPath capture relative to the identical run on
+  # darwin/linux. Binary mode leaves cat()/print()'s own "\n" bytes intact;
+  # sink() writes character data through either mode identically otherwise.
+  out_con <- file(stdout_path, open = "wb")
+  err_con <- file(stderr_path, open = "wb")
   sink(out_con, type = "output")
   sink(err_con, type = "message")
   # Safety net for an interrupt landing between here and the tryCatch below:

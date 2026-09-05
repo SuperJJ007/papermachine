@@ -350,6 +350,13 @@ describe('ScienceRuntime.bindEnvironment', () => {
       stderr: { maxBytes: 8 * 1024 * 1024 },
     })
     expect(packagesSpec?.argv).toEqual([join(prefix, 'bin', 'python'), '-I', '-B', '-X', 'utf8', '-m', 'pip', 'list', '--format=json'])
+    // Every probe argv is ASCII-only: a win32 launcher that forwards the
+    // command line through an ANSI code page (conda-forge's Rscript.exe;
+    // see the equivalent R assertion below) never sees a byte it cannot
+    // represent, regardless of the platform this test itself runs on.
+    for (const spec of subprocess.specs) {
+      for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
+    }
     expect(sandbox.policies).toHaveLength(3)
     expect(sandbox.policies.every(policy => policy.mode === 'workspace-write')).toBe(true)
     expect(sandbox.policies.every(policy => policy.workspaceRoot.includes('/probes/'))).toBe(true)
@@ -378,11 +385,17 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const executable = join(prefix, 'bin', 'Rscript')
     expect(harness.subprocess.specs.map(spec => spec.argv)).toEqual([
       [executable, '--version'],
-      [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")'],
+      [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-\\u79d1\\u5b66-\\u2713"),sep="")'],
       [executable, '--vanilla', '--encoding=UTF-8', '-e',
         "m <- installed.packages()[, c('Package', 'Version'), drop = FALSE]; "
           + "write.table(m, file = stdout(), sep = '\\t', quote = FALSE, row.names = FALSE, col.names = FALSE)"],
     ])
+    // ASCII-only: conda-forge's win32 Scripts\Rscript.exe forwards its
+    // command line through CreateProcessA (ANSI), corrupting any byte
+    // outside the active code page before R ever sees it.
+    for (const spec of harness.subprocess.specs) {
+      for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
+    }
   })
 
   it('records a non-zero R version probe as an invalid environment observation', async () => {

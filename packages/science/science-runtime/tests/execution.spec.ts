@@ -9,7 +9,7 @@ import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { confineInterpreterArgv, confineWithEnforcement, interpreterArgv, interpreterPathEnv, quiesce, readCaptureTail } from '../src/execution.ts'
+import { confineInterpreterArgv, confineWithEnforcement, interpreterArgv, interpreterPathEnv, localeEnvironment, quiesce, readCaptureTail } from '../src/execution.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 
 const roots: string[] = []
@@ -133,6 +133,26 @@ describe('interpreterPathEnv', () => {
         'C:\\Users\\dsh\\conda\\envs\\general\\Scripts',
         'C:\\Users\\dsh\\conda\\envs\\general\\bin',
       ].join(';'))
+    } finally {
+      platform.mockRestore()
+    }
+  })
+})
+
+describe('localeEnvironment', () => {
+  it('uses en_US.UTF-8 on win32, not the POSIX C.UTF-8 other non-Darwin platforms get', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    try {
+      expect(localeEnvironment()).toEqual({ LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', TZ: 'UTC' })
+    } finally {
+      platform.mockRestore()
+    }
+  })
+
+  it('uses the POSIX C.UTF-8 on linux', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    try {
+      expect(localeEnvironment()).toEqual({ LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', TZ: 'UTC' })
     } finally {
       platform.mockRestore()
     }

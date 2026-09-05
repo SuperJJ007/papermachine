@@ -29,9 +29,22 @@ export const MAX_OUTPUT_BYTES = 64_000
 /** Fixed descendant grace before Runtime asks the subprocess seam to terminate. */
 export const DESCENDANT_GRACE_MS = 3_000
 const POSIX_LOCALE = 'C.UTF-8'
+/**
+ * `en_US.UTF-8`, not the POSIX `C.UTF-8` every other non-Darwin platform
+ * uses: a win32 R build (conda-forge's ucrt R 4.5.3) reads `LC_ALL`, and
+ * under `C` its `l10n_info()$"UTF-8"` reports `FALSE` with an active code
+ * page of 0 — every non-ASCII byte a spawned R process writes comes back as
+ * `<U+XXXX>` escapes instead of UTF-8. Under `en_US.UTF-8` R sets the active
+ * code page to 65001 (UTF-8) and starts with no locale warning. `C.UTF-8`
+ * itself is not an option on win32: the platform's `setlocale` rejects it,
+ * so R falls back to the same broken `C` behavior anyway. Confirmed on a
+ * real Windows box; see the
+ * [win32 locale and probe-argv Agent
+ * Note](../../../../.agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md).
+ */
 const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
   aix: POSIX_LOCALE, android: POSIX_LOCALE, darwin: 'en_US.UTF-8', freebsd: POSIX_LOCALE, haiku: POSIX_LOCALE,
-  linux: POSIX_LOCALE, netbsd: POSIX_LOCALE, openbsd: POSIX_LOCALE, sunos: POSIX_LOCALE, win32: POSIX_LOCALE, cygwin: POSIX_LOCALE,
+  linux: POSIX_LOCALE, netbsd: POSIX_LOCALE, openbsd: POSIX_LOCALE, sunos: POSIX_LOCALE, win32: 'en_US.UTF-8', cygwin: POSIX_LOCALE,
 }
 /** Fixed trailing system directories appended after a POSIX prefix's own `bin`. */
 const POSIX_PATH_SUFFIX = ':/usr/bin:/bin'

@@ -123,13 +123,28 @@ function probeArgv(language: ScienceLanguage, executable: string, kind: 'version
   if (language === 'python') {
     if (kind === 'version') return [executable, '-I', '-B', '-X', 'utf8', '--version']
     if (kind === 'utf8') {
-      return [executable, '-I', '-B', '-X', 'utf8', '-c', 'import sys;sys.stdout.buffer.write("dsh-科学-✓".encode("utf-8"))']
+      // `\u` escapes, not the literal characters: an ASCII-only argv survives a
+      // win32 launcher that forwards argv through an ANSI code page (see the
+      // R branch below for the launcher this defends against).
+      return [
+        executable, '-I', '-B', '-X', 'utf8', '-c',
+        'import sys;sys.stdout.buffer.write("dsh-\\u79d1\\u5b66-\\u2713".encode("utf-8"))',
+      ]
     }
     // `pip list` reports what the interpreter itself sees, requiring nothing outside the prefix.
     return [executable, '-I', '-B', '-X', 'utf8', '-m', 'pip', 'list', '--format=json']
   }
   if (kind === 'version') return [executable, '--version']
-  if (kind === 'utf8') return [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-科学-✓"),sep="")']
+  if (kind === 'utf8') {
+    // `\u` escapes, not the literal characters: conda-forge's win32
+    // `Scripts\Rscript.exe` is a launcher that forwards its command line
+    // through `CreateProcessA` (ANSI), so a non-ASCII byte outside the
+    // active code page arrives at R corrupted and R reports a re-encoding
+    // failure before it ever runs the expression. An ASCII-only argv with
+    // `\u` escapes sidesteps the launcher entirely; `enc2utf8` still forces
+    // the decoded string back to UTF-8 for output.
+    return [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-\\u79d1\\u5b66-\\u2713"),sep="")']
+  }
   return [executable, '--vanilla', '--encoding=UTF-8', '-e', R_PACKAGES_EXPR]
 }
 

@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import {
   DesktopEnvironmentProvisioner,
   orderSourcesFrom,
   parseMicromambaProgressLine,
+  resolvePackageCacheDir,
   runProvisioningProcess,
   stopProcessGroup,
   type ProcessRequest,
@@ -35,6 +36,8 @@ const declaration = parseEnvironmentDeclaration({
     { language: 'r', executable: 'Rscript', args: ['-e', 'TRUE'] },
   ],
 })
+
+const win32Declaration = parseEnvironmentDeclaration({ ...declaration, supportedPlatforms: ['win32-x64'] })
 
 /** Fakes a successful `create` step by populating the prefix's `bin` directory; skips the health-check steps. */
 const createOnly: (request: ProcessRequest) => Promise<void> = async (request) => {
@@ -256,6 +259,75 @@ describe('DesktopEnvironmentProvisioner', () => {
     expect(await provisioner.applied()).toBeUndefined()
   })
 
+  it('passes CONDA_PKGS_DIRS alongside MAMBA_ROOT_PREFIX, resolved from the provisioner root', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pkgs-dirs-'))
+    let seenEnv: NodeJS.ProcessEnv | undefined
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+      run: async (request) => {
+        if (request.args[0] !== 'create') return
+        seenEnv = request.env
+        const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+        await mkdir(join(prefix, 'bin'), { recursive: true })
+      },
+    })
+    await provisioner.provision(declaration, new AbortController().signal)
+
+    expect(seenEnv?.CONDA_PKGS_DIRS).toBe(resolvePackageCacheDir({ platform: 'darwin-arm64', root }))
+    expect(seenEnv?.CONDA_PKGS_DIRS).toBe(join(root, 'micromamba', 'pkgs'))
+  })
+
+  it('creates the package cache directory before the first create attempt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pkgs-mkdir-'))
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000, run: createOnly,
+    })
+    await provisioner.provision(declaration, new AbortController().signal)
+
+    const stats = await stat(resolvePackageCacheDir({ platform: 'darwin-arm64', root }))
+    expect(stats.isDirectory()).toBe(true)
+  })
+
+  it('fails loud, naming the path, when the package cache directory cannot be created', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pkgs-mkdir-fail-'))
+    // A file sitting where the cache directory's parent must go forces
+    // mkdir(..., { recursive: true }) to fail (ENOTDIR), simulating any
+    // reason the directory cannot be created without depending on a
+    // platform-specific unwritable path.
+    await writeFile(join(root, 'micromamba'), 'not a directory')
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+      run: async () => { throw new Error('must not run: cache directory creation should fail first') },
+    })
+
+    const cacheDir = resolvePackageCacheDir({ platform: 'darwin-arm64', root })
+    await expect(provisioner.provision(declaration, new AbortController().signal)).rejects.toThrow(
+      `desktop provisioning: could not create package cache directory ${cacheDir}`,
+    )
+  })
+
+  it('resolves win32 health-check executables to their platform layout, not the POSIX bin/ layout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-win32-health-'))
+    const calls: string[] = []
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'win32-x64', freeBytes: async () => 1_000,
+      run: async (request) => {
+        calls.push(request.executable)
+        if (request.args[0] === 'create') {
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(prefix, { recursive: true })
+        }
+      },
+    })
+    const applied = await provisioner.provision(win32Declaration, new AbortController().signal)
+
+    expect(calls).toEqual([
+      '/m',
+      join(applied.prefix, 'python.exe'),
+      join(applied.prefix, 'Scripts', 'Rscript.exe'),
+    ])
+  })
+
   describe('ordered source fallback', () => {
     const multiSource = parseEnvironmentDeclaration({ ...declaration, sources: [SOURCE_A, SOURCE_B, SOURCE_C] })
 
@@ -364,6 +436,42 @@ describe('DesktopEnvironmentProvisioner', () => {
       await expect(provisioner.provision(multiSource, new AbortController().signal, undefined, 'source-c')).rejects.toThrow()
       expect(attempts).toEqual(['source-c', 'source-a', 'source-b'])
     })
+  })
+})
+
+describe('resolvePackageCacheDir', () => {
+  it('resolves darwin to the pre-existing implicit default under the provisioner root', () => {
+    expect(resolvePackageCacheDir({ platform: 'darwin-arm64', root: '/Users/test/.papermachine/desktop-environments' }))
+      .toBe(join('/Users/test/.papermachine/desktop-environments', 'micromamba', 'pkgs'))
+    expect(resolvePackageCacheDir({ platform: 'darwin-x64', root: '/root' })).toBe(join('/root', 'micromamba', 'pkgs'))
+  })
+
+  it('resolves win32-x64 to a short path directly under the given system drive, ignoring the provisioner root', () => {
+    expect(resolvePackageCacheDir({
+      platform: 'win32-x64',
+      root: 'C:\\Users\\test\\.papermachine\\desktop-environments',
+      systemDrive: 'D:',
+    })).toBe('D:\\pm\\pkgs')
+  })
+
+  it('falls back to C: when SystemDrive is not given', () => {
+    expect(resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\anything' })).toBe('C:\\pm\\pkgs')
+  })
+
+  it('falls back to C: when SystemDrive is the empty string', () => {
+    expect(resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\anything', systemDrive: '' })).toBe('C:\\pm\\pkgs')
+  })
+
+  it('keeps the resolved win32 cache root short enough that the longest known layered relative path stays under MAX_PATH', () => {
+    // The longest relative path micromamba 2.x's layered package cache
+    // produces for the shipped `general` declaration's slowest mirror
+    // (TUNA) is about 245 characters
+    // (https://github.com/SuperJJ007/papermachine/issues/4); win32's
+    // MAX_PATH is 260.
+    const cacheDir = resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\Users\\test\\.papermachine\\desktop-environments' })
+    const LONGEST_KNOWN_RELATIVE_CACHE_PATH_LENGTH = 245
+    const WIN32_MAX_PATH = 260
+    expect(cacheDir.length + LONGEST_KNOWN_RELATIVE_CACHE_PATH_LENGTH).toBeLessThan(WIN32_MAX_PATH)
   })
 })
 

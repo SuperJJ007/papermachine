@@ -2,9 +2,10 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import type { DesktopPlatform, EnvironmentDeclaration, EnvironmentSource } from './environment-declaration.ts'
+import { interpreterLayout } from './interpreter-presence.ts'
 
 type ProvisioningPhase = 'checking' | 'solving' | 'installing' | 'verifying' | 'publishing' | 'ready'
 
@@ -342,6 +343,43 @@ export function provisionedEnvironmentsDirectory(root: string): string {
 }
 
 /**
+ * Resolve the micromamba package cache directory (`CONDA_PKGS_DIRS`)
+ * explicitly, rather than letting micromamba derive it implicitly from
+ * `MAMBA_ROOT_PREFIX` (`<MAMBA_ROOT_PREFIX>/pkgs`).
+ *
+ * On darwin this returns that same implicit default
+ * (`<root>/micromamba/pkgs`), unchanged from prior behavior. On win32-x64 it
+ * returns a short path directly under the system drive instead: micromamba
+ * 2.x lays its package cache out per source host and channel
+ * (`pkgs/https/<mirror host>/<channel path>/win-64/<package>/...`), and the
+ * `general` declaration's longest such relative path is about 245
+ * characters. Win32's `MAX_PATH` is 260 characters, and this application's
+ * own default cache root under `<root>/micromamba/pkgs`
+ * (`C:\Users\<user>\.papermachine\desktop-environments\micromamba\pkgs`) is
+ * itself already 60-70 characters before the layered relative path is even
+ * appended, so the combined path exceeds `MAX_PATH` and micromamba's package
+ * extraction fails with `remove_all: The directory is not empty`
+ * (reported: https://github.com/SuperJJ007/papermachine/issues/4). Keeping
+ * the resolved cache root itself under about 14 characters, including the
+ * drive, leaves the longest known relative path safely under `MAX_PATH`.
+ * @param options.platform - the platform provisioning is running on.
+ * @param options.root - the provisioner root ({@link desktopEnvironmentsRoot}), used on darwin.
+ * @param options.systemDrive - `process.env.SystemDrive` on win32-x64; a
+ *   missing value falls back to `C:` (the value Windows itself sets by
+ *   default, and the only sensible default when the variable is absent).
+ * @returns the absolute package cache directory to create and pass as `CONDA_PKGS_DIRS`.
+ */
+export function resolvePackageCacheDir(options: {
+  readonly platform: DesktopPlatform
+  readonly root: string
+  readonly systemDrive?: string
+}): string {
+  if (!options.platform.startsWith('win32-')) return join(options.root, 'micromamba', 'pkgs')
+  const drive = options.systemDrive !== undefined && options.systemDrive.length > 0 ? options.systemDrive : 'C:'
+  return win32Path.join(drive, 'pm', 'pkgs')
+}
+
+/**
  * Order `sources` for one provisioning run: `preferredId`, if given and
  * matches a source, moves to the front; every other source keeps its
  * existing relative order behind it. Provisioning tries each source in this
@@ -444,6 +482,19 @@ export class DesktopEnvironmentProvisioner {
     const environments = provisionedEnvironmentsDirectory(this.options.root)
     const prefix = join(environments, declaration.id, declaration.revision)
     await mkdir(join(environments, declaration.id), { recursive: true, mode: 0o700 })
+    const packageCacheDir = resolvePackageCacheDir({
+      platform: this.options.platform,
+      root: this.options.root,
+      ...(process.env.SystemDrive !== undefined && { systemDrive: process.env.SystemDrive }),
+    })
+    try {
+      await mkdir(packageCacheDir, { recursive: true })
+    } catch (error) {
+      throw new Error(
+        `desktop provisioning: could not create package cache directory ${packageCacheDir}`,
+        { cause: error },
+      )
+    }
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
@@ -475,7 +526,11 @@ export class DesktopEnvironmentProvisioner {
             ...source.channels.flatMap(channel => ['--channel', channel]),
             ...declaration.packages,
           ],
-          env: { ...buildProvisioningEnv(), MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba') },
+          env: {
+            ...buildProvisioningEnv(),
+            MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba'),
+            CONDA_PKGS_DIRS: packageCacheDir,
+          },
           signal,
           timeoutMs: declaration.timeoutMs,
           onLine: (line) => {
@@ -506,9 +561,10 @@ export class DesktopEnvironmentProvisioner {
       throw failureError
     }
     onProgress({ phase: 'verifying', message: 'Verifying Python and R', sourceId: succeededSourceId })
+    const layout = interpreterLayout(this.options.platform.startsWith('win32-'))
     for (const check of declaration.healthChecks) {
       await this.#run({
-        executable: join(prefix, 'bin', check.executable),
+        executable: join(prefix, ...layout[check.language]),
         args: check.args,
         env: buildProvisioningEnv(),
         signal,

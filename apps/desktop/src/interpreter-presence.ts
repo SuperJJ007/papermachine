@@ -42,16 +42,29 @@ async function regularFileExistsNoSymlink(path: string): Promise<boolean> {
   }
 }
 
+/** The two Science interpreters, keyed the same way as `EnvironmentHealthCheck.language`. */
+export type InterpreterLanguage = 'python' | 'r'
+
 /**
- * Where the two interpreters sit inside a conda prefix on this platform.
- * Mirrors `EXECUTABLE_LAYOUTS` in science-runtime's `environment.ts`, which
- * this carrier cannot import: the Host that owns that table runs as a
- * separate process staged into the package. The two must name the same
- * files, or a prefix this application accepts fails to bind in the Host.
+ * Where the two interpreters sit inside a conda prefix, keyed by whether the
+ * prefix is a Windows or POSIX layout. Mirrors `EXECUTABLE_LAYOUTS` in
+ * science-runtime's `environment.ts`, which this carrier cannot import: the
+ * Host that owns that table runs as a separate process staged into the
+ * package. The two must name the same files, or a prefix this application
+ * accepts fails to bind in the Host. Shared with `provisioning.ts`'s
+ * health-check step so the two never carry independent copies of this table.
+ * @param isWindows - whether the prefix follows the Windows layout
+ *   (`<prefix>\python.exe`, `<prefix>\Scripts\Rscript.exe`) rather than the
+ *   POSIX one (`<prefix>/bin/python`, `<prefix>/bin/Rscript`).
+ * @returns the path segments, relative to the prefix, for each interpreter.
  */
-const INTERPRETER_LAYOUT = process.platform === 'win32'
-  ? { python: ['python.exe'], r: ['Scripts', 'Rscript.exe'] } as const
-  : { python: ['bin', 'python'], r: ['bin', 'Rscript'] } as const
+export function interpreterLayout(isWindows: boolean): Readonly<Record<InterpreterLanguage, readonly string[]>> {
+  return isWindows
+    ? { python: ['python.exe'], r: ['Scripts', 'Rscript.exe'] }
+    : { python: ['bin', 'python'], r: ['bin', 'Rscript'] }
+}
+
+const INTERPRETER_LAYOUT = interpreterLayout(process.platform === 'win32')
 
 /** Which of the two Science interpreters a qualifying prefix has present. */
 export interface InterpreterPresence {

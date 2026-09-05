@@ -147,6 +147,23 @@ export async function assertProfileRunConfinement(
   }
 }
 
+/**
+ * Digest the prefix's `conda-meta/history` exactly as `staticInterpreter`
+ * does at bind time, so a later comparison against the durable
+ * `condaHistorySha256` is byte-for-byte the same computation. A missing
+ * or unreadable history reads as `undefined`: the caller decides whether
+ * that is drift (it always is — a bound prefix had one).
+ * @param canonicalPrefix - the binding's already-canonicalized prefix.
+ */
+export async function prefixHistoryDigest(canonicalPrefix: string): Promise<string | undefined> {
+  try {
+    return sha256(await readFile(join(canonicalPrefix, 'conda-meta', 'history')))
+  } catch (error) {
+    if (missingPathError(error)) return undefined
+    throw error
+  }
+}
+
 /** Return the platform executable candidate for a configured language prefix. */
 function executableCandidate(language: ScienceLanguage, prefix: string): string {
   return join(prefix, ...EXECUTABLE_LAYOUTS[process.platform][language])

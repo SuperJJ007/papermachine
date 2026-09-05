@@ -213,7 +213,7 @@ async function createHarness(
   })
   const runner = createFakeSandboxRunner(root)
   await ctx.plugin(LocalSandboxProvider, {
-    runnerCommand: [runner],
+    runnerCommand: runner,
     runnerFailureSignatures: ['science-runtime fake runner failure'],
   })
   const session = ctx.sessions.create(SessionId(id), { meta: { cwd: root } })

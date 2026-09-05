@@ -110,7 +110,7 @@ async function loadRuntime(): Promise<Context> {
     "- name: '@deepseek-ai/dsh-science-runtime/test-subprocess'",
     "- name: '@deepseek-ai/dsh-sandbox-local'",
     '  config:',
-    `    runnerCommand: [${quote(runner)}]`,
+    `    runnerCommand: [${runner.map(quote).join(', ')}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
     "- name: '@deepseek-ai/dsh-science-artifact-store'",
     '  config:',
@@ -137,7 +137,7 @@ async function loadRuntime(): Promise<Context> {
  */
 async function loadSettingsRestartRuntime(
   root: string,
-  runner: string,
+  runner: readonly string[],
   options?: { settingsYaml?: string; slowImport?: string },
 ): Promise<Context> {
   const dshHome = join(root, 'dsh-home')
@@ -155,7 +155,7 @@ async function loadSettingsRestartRuntime(
     "- name: '@deepseek-ai/dsh-science-runtime/test-subprocess'",
     "- name: '@deepseek-ai/dsh-sandbox-local'",
     '  config:',
-    `    runnerCommand: [${quote(runner)}]`,
+    `    runnerCommand: [${runner.map(quote).join(', ')}]`,
     "    runnerFailureSignatures: ['science-runtime fake runner failure']",
     "- name: '@deepseek-ai/dsh-science-artifact-store'",
     '  config:',
@@ -201,7 +201,7 @@ describe('Science Runtime real Loader composition', () => {
     const kernelServices = new Context()
     await kernelServices.plugin(LocalSubprocessRuntime)
     await kernelServices.plugin(LocalSandboxProvider, {
-      runnerCommand: [createFakeSandboxRunner(root!)],
+      runnerCommand: createFakeSandboxRunner(root!),
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     installTestKernelSet(loaded, loaded.scienceRuntime, {
@@ -249,7 +249,7 @@ describe('Science Runtime real Loader composition', () => {
     context = new Context()
     await context.plugin(LocalSubprocessRuntime)
     await context.plugin(LocalSandboxProvider, {
-      runnerCommand: [runner],
+      runnerCommand: runner,
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     const confined = context.sandbox.confine(['/usr/bin/env'], {

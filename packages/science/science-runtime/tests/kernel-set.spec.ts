@@ -231,7 +231,7 @@ async function createHarness(options: { readonly kernelIdleTimeoutMs?: number } 
   await ctx.plugin(LocalSubprocessRuntime)
   const runner = createFakeSandboxRunner(root)
   await ctx.plugin(LocalSandboxProvider, {
-    runnerCommand: [runner],
+    runnerCommand: runner,
     runnerFailureSignatures: ['science-runtime fake runner failure'],
   })
   const started: Recorded<ScienceKernelStartedFact>[] = []

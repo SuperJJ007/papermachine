@@ -353,7 +353,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await ctx.plugin(ChmodOnKernelSpawnSubprocess)
     const runner = createFakeSandboxRunner(root)
     await ctx.plugin(LocalSandboxProvider, {
-      runnerCommand: [runner],
+      runnerCommand: runner,
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     await mountArtifactStore(ctx, root)
@@ -801,7 +801,7 @@ esac
     await ctx.plugin(LocalSubprocessRuntime)
     const runner = createFakeSandboxRunner(root)
     await ctx.plugin(LocalSandboxProvider, {
-      runnerCommand: [runner],
+      runnerCommand: runner,
       runnerFailureSignatures: ['science-runtime fake runner failure'],
     })
     await mountArtifactStore(ctx, root)

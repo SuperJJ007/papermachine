@@ -333,22 +333,42 @@ esac
   return prefix
 }
 
-/** Return a bwrap-compatible no-policy test runner for real LocalSandboxProvider composition. */
-export function createFakeSandboxRunner(root: string): string {
-  const runner = join(root, 'fake-sandbox-runner')
-  writeFileSync(runner, `#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = '--' ]; then
-    shift
-    exec "$@"
-  fi
-  shift
-done
-printf 'science-runtime fake runner did not receive a command separator\\n' >&2
-exit 127
+/**
+ * Return a bwrap-compatible no-policy test runner for real LocalSandboxProvider
+ * composition, as a full `runnerCommand` argv: `sandbox-local` spawns
+ * `argv[0]` directly with `argv[1..]` as fixed prefix arguments before its own
+ * confinement args and the wrapped command, so this forwards through Node
+ * itself (`process.execPath` plus a co-written `.mjs` script) rather than a
+ * `#!/bin/sh` script an OS spawn call executes directly — the latter has no
+ * win32 equivalent (no POSIX shell interprets a shebang line there).
+ *
+ * Unlike the old script's `exec "$@"` (which replaced the shell's own process
+ * image, so the tracked pid became the real interpreter directly), a Node
+ * `spawn()` keeps this script's own process alive as the real interpreter's
+ * parent. `KernelProcess.interrupt()` sends SIGINT to only the direct
+ * child — this script's own pid — never the tree
+ * (`packages/subprocess/subprocess-local/src/spawn.ts`'s `interrupt()`), so
+ * this script forwards SIGINT to the real interpreter itself and, by
+ * registering a handler at all, suppresses Node's own default
+ * terminate-on-SIGINT (which would otherwise kill this script before the
+ * interpreter's own graceful-interrupt reply, misreporting a real interrupt
+ * as an abnormal exit).
+ */
+export function createFakeSandboxRunner(root: string): readonly string[] {
+  const runner = join(root, 'fake-sandbox-runner.mjs')
+  writeFileSync(runner, `import { spawn } from 'node:child_process'
+const separator = process.argv.indexOf('--')
+if (separator === -1) {
+  process.stderr.write('science-runtime fake runner did not receive a command separator\\n')
+  process.exit(127)
+}
+const [command, ...args] = process.argv.slice(separator + 1)
+const child = spawn(command, args, { stdio: 'inherit' })
+process.on('SIGINT', () => child.kill('SIGINT'))
+child.on('error', () => { process.exitCode = 127 })
+child.on('exit', (code, signal) => { process.exitCode = code ?? (signal === null ? 1 : 1) })
 `)
-  chmodSync(runner, 0o755)
-  return runner
+  return [process.execPath, runner]
 }
 
 /** Assemble the Runtime with deterministic host-local subprocess observations. */
@@ -594,7 +614,7 @@ export async function createKernelRuntimeHarness(
   await ctx.plugin(LocalSubprocessRuntime)
   const runner = createFakeSandboxRunner(root)
   await ctx.plugin(LocalSandboxProvider, {
-    runnerCommand: [runner],
+    runnerCommand: runner,
     runnerFailureSignatures: ['science-runtime fake runner failure'],
   })
   if (storeOverride === undefined) {

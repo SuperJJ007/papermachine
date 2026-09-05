@@ -30,10 +30,13 @@ function requireNoAsciiSpace(path: string): void {
  * stays Electron-owned, holding only its cookies, caches, and similar
  * Electron state — untouched by this resolution).
  *
- * Precedence: `customHomeDir` (an explicit choice, for example from
- * onboarding directory selection or settings) over `process.env.PAPERMACHINE_HOME`,
- * over `process.env.DSH_HOME`, over the fixed default `<osHomeDir>/.papermachine`
- * when none of those is set.
+ * Precedence: `customHomeDir` over `process.env.PAPERMACHINE_HOME`, over
+ * `process.env.DSH_HOME`, over the fixed default `<osHomeDir>/.papermachine`
+ * when none of those is set. In this application, `customHomeDir` is
+ * whatever `install-location.ts`'s `readInstallLocationPointer` returns for
+ * `osHomeDir` — the pointer file a user sets from onboarding's install-location
+ * "Change…" control — which is why it outranks both environment variables:
+ * it is the only tier a GUI user can set without one.
  *
  * The science-runtime R probe and kernel both refuse to run with an ASCII
  * space anywhere in their scratch `TMPDIR`

@@ -6,35 +6,24 @@ name: E2E (real DeepSeek API)
 # https://api.deepseek.com (DEEPSEEK_BASE_URL is pinned to it explicitly so a
 # stray repo-root .env can't redirect the run).
 #
-# pull_request IS a trigger, but GitHub withholds repo secrets from BOTH forked
-# PRs and Dependabot PRs (the latter are same-repo, fork==false, but still
-# keyless). The job-level `if:` below skips the whole job for those untrusted
-# PRs. The Dependabot test keys on the PR AUTHOR (pull_request.user.login), not
-# github.actor (the run trigger) — a maintainer reopening a Dependabot PR would
-# make github.actor human while the PR is still keyless. When the job runs, the
-# secret is expected, so the preflight hard-fails if it's missing (a missing
-# secret would otherwise make the self-skipping suite report a false green). A
-# job skipped by a job-level `if:` reports as a SUCCESSFUL check, so this
-# workflow is safe to use as a required status check if desired.
+# This repository has not configured the DEEPSEEK_API_KEY_EXTERNAL secret, so
+# the push, pull_request, and nightly schedule triggers stay off below and
+# workflow_dispatch is the only way to run this job. Restoring the other
+# triggers once the secret exists is a one-line addition to `on:`. The
+# job-level `if:` and preflight further down still assume a restored
+# pull_request trigger — GitHub withholds repo secrets from forked and
+# Dependabot PRs, so that guard stays in place for when the trigger returns.
 #
-# SECURITY — NEVER change this trigger to `pull_request_target`. `pull_request`
-# checks out and runs the PR's HEAD code WITHOUT secrets for forks, which is what
-# keeps an untrusted fork from exfiltrating the key. `pull_request_target` runs
-# in the BASE repo's context WITH secrets while still able to check out untrusted
-# fork code — a textbook key-leak vector, especially once this repo is public.
-# The fork/secret model and its public-repo implications are recorded in
+# SECURITY — NEVER add back pull_request as `pull_request_target`.
+# `pull_request` checks out and runs the PR's HEAD code WITHOUT secrets for
+# forks, which is what keeps an untrusted fork from exfiltrating the key.
+# `pull_request_target` runs in the BASE repo's context WITH secrets while
+# still able to check out untrusted fork code — a textbook key-leak vector,
+# especially once this repo is public. The fork/secret model and its
+# public-repo implications are recorded in
 # .agents/notes/implemented/testing/2026-06-19-real-api-e2e-ci.md.
-#
-# Note: scheduled triggers are auto-disabled after 60 days of repo inactivity;
-# push/pull_request/workflow_dispatch act as backstops.
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
-  pull_request:
-  schedule:
-    # 00:17 UTC nightly = 08:17 Asia/Shanghai — off the top-of-hour cron stampede.
-    - cron: '17 0 * * *'
 
 # Cancel a superseded PR run (it is on a stale commit); never cancel a
 # push/schedule run — it is already producing the post-merge/nightly signal.

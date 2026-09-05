@@ -2,15 +2,12 @@
 # entries, all on one version. The vendored framework and the native packages are
 # separate sequences with their own workflows and version lines.
 #
-# Pack runs without credentials on every pull request and master push, so a
-# pull request proves the whole publish set still packs. Publication is a manual
+# This repository does not publish the npm package family on pull requests, so
+# this workflow stays runnable only by hand. Publication is a manual
 # workflow_dispatch of release-publish.yml from a dsh-v* tag.
 name: Release (dsh)
 
 on:
-  pull_request:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 permissions:

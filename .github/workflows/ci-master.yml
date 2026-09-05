@@ -1,8 +1,8 @@
 name: CI master
 
+# The serial standby drills and the benchmark suites below need self-hosted
+# runners this repository does not have, so this workflow runs only by hand.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
     inputs:
       suite:

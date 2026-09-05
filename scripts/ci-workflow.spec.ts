@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -36,7 +36,7 @@ describe('CI workflow', () => {
     }
   })
 
-  it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
+  it('keeps a required Wine Windows job, a non-blocking native Windows job, and a dormant master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
     const masterWorkflow = loadWorkflow('.github/workflows/ci-master.yml')
     if (!isRecord(workflow.jobs)
@@ -73,14 +73,8 @@ describe('CI workflow', () => {
     expect(windows.if).toBe("github.event_name == 'pull_request'")
     expect(commandSteps.some(step => step.run.includes('wine-windows-gates.sh'))).toBe(true)
 
-    // windows-native: non-blocking native job with failover, runs windows-complete.
-    // Its pool is resolved by the Windows-specific switch.
-    expect(typeof windowsNative['runs-on']).toBe('string')
-    expect(windowsNative['runs-on']).toContain('DSH_CI_FAILOVER_WINDOWS')
-    expect(windowsNative['runs-on']).not.toContain('DSH_CI_FAILOVER_LINUX')
-    expect(windowsNative['runs-on']).toContain('self-hosted')
-    expect(windowsNative['runs-on']).toContain('dsh-win-ci')
-    expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    // windows-native: non-blocking hosted-Windows job, runs windows-complete.
+    expect(windowsNative['runs-on']).toBe('windows-latest')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
@@ -92,11 +86,12 @@ describe('CI workflow', () => {
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
-    // wine-apt-cache: master-only, seeds the Wine apt cache, lives in ci-master.
+    // wine-apt-cache and serial-windows still gate on a push to master, but
+    // ci-master.yml dropped its push trigger (see the hosted-runner-only
+    // tests below), so both stay dormant until this repository regains a
+    // push trigger and the self-hosted pool their `runs-on` still names.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(wineAptCache['runs-on']).toBe('ubuntu-latest')
-
-    // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
@@ -106,21 +101,15 @@ describe('CI workflow', () => {
     expect(aggregate.needs).not.toContain('windows-native')
     expect(aggregate.needs).not.toContain('serial-windows')
 
-    // Linux failover is a separate switch: the three required Linux workers
-    // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
-    // never the Windows switch.
+    // The three required Linux workers and the verdict job run on plain
+    // GitHub-hosted runners; this repository has no failover pool.
     for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
-      expect(typeof job['runs-on']).toBe('string')
-      expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
-      expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-      expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on'], `${jobName} runs-on must be a plain hosted runner`).toBe('ubuntu-latest')
     }
-    expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
-    expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
-    expect(aggregate['runs-on']).toContain('vm-backup')
+    expect(aggregate['runs-on']).toBe('ubuntu-latest')
   })
 
-  it('exempts push from cancellation in ci-master, so one master merge does not cancel the running drill', () => {
+  it('runs ci-master only by hand, leaving its push-gated drills dormant', () => {
     const workflow = loadWorkflow('.github/workflows/ci-master.yml')
     const prWorkflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs) || !isRecord(workflow.concurrency)) {
@@ -130,65 +119,59 @@ describe('CI workflow', () => {
       throw new TypeError('ci workflow must define jobs')
     }
 
-    // Cancellation applies to the whole superseded RUN, so this has to be
-    // decided at workflow level and gated on the event: a job-level group
-    // cannot exempt its job from its run being cancelled. Only push is exempt —
-    // a drill takes longer than the interval between master merges. The negated
-    // form is load-bearing: `== 'pull_request'` would also stop cancelling
-    // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
-    // larger runners for 15 minutes in this same group on master.
+    // ci-master.yml dropped its push trigger: this repository has neither the
+    // in-house standby pool the drills assume nor the larger hosted pool the
+    // benchmarks assume, so the workflow now runs only via workflow_dispatch.
+    if (!isRecord(workflow.on) || !isRecord(prWorkflow.on)) {
+      throw new TypeError('both CI workflows must define on')
+    }
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
+    expect(Object.keys(prWorkflow.on)).toEqual(['pull_request'])
+
+    // The push-cancellation carve-out is left in place unexercised: cancelling
+    // applies to the whole superseded RUN, so it is decided at workflow level.
+    // A future push trigger only needs to add the event back to `on:` above;
+    // this concurrency expression already exempts it correctly.
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name != 'push' }}")
 
     // The PR-only ci.yml still cancels a superseded run on a new push, so a
     // fresh head does not stack a second full 9-job run behind a stale one.
-    // Unlike ci-master it has no push carve-out: every PR event supersedes.
     expect(prWorkflow.concurrency).toMatchObject({
       'cancel-in-progress': true,
     })
 
-    // The exact event sets are what keep master-only jobs out of the PR check
-    // panel: ci-master triggers only on push(master) + workflow_dispatch and
-    // never on pull_request; ci.yml is exactly pull_request-only. Assert the
-    // full sets so losing the wrong event, or gaining an extra one, fails.
-    if (!isRecord(workflow.on) || !isRecord(prWorkflow.on)) {
-      throw new TypeError('both CI workflows must define on')
-    }
-    expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch'])
-    expect(Object.keys(prWorkflow.on)).toEqual(['pull_request'])
-
     // Neither drill may carry a job-level group: it would not exempt the job
-    // from run-scoped cancellation.
+    // from run-scoped cancellation. Both stay gated on the push event that
+    // ci-master.yml no longer receives, which is what keeps them dormant.
     for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
       const job = workflow.jobs[name]
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
-      // Both stay master-push-only; that is what makes the push carve-out safe.
       expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     }
 
-    // What bounds the cost of exempting push: a master push may only carry the
-    // cache seeder and the two drills. Any job reachable on push would start
-    // accumulating uncancelled runs, so the set is pinned here.
-    const NOT_PUSH_REACHABLE = new Set([
+    // Only the two benchmark suites are reachable now: everything else in
+    // this workflow requires the push event that was removed from `on:`.
+    const DISPATCH_REACHABLE = new Set([
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
     ])
-    const pushReachable = Object.entries(workflow.jobs)
+    const reachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
         if (!isRecord(job)) return false
         if (job.if === undefined) return true // unconditional: runs on every event
         if (job.if === false) return false // `if: false` parses as a boolean
         if (typeof job.if !== 'string') return true // unrecognized shape: surface it
-        return !NOT_PUSH_REACHABLE.has(job.if.trim())
+        return DISPATCH_REACHABLE.has(job.if.trim())
       })
       .map(([name]) => name)
       .sort()
-    expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
+    expect(reachable).toEqual(['consolidated-runner-benchmark', 'larger-runner-benchmark'])
 
     // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
-    // dozen larger runners at once, in this same group on master. If it stopped
-    // cancelling, a re-dispatch would queue ahead of a drill instead of
-    // replacing the stale measurement.
+    // dozen larger runners at once, in this same group. If it stopped
+    // cancelling, a re-dispatch would queue ahead instead of replacing the
+    // stale measurement.
     for (const name of ['larger-runner-benchmark', 'consolidated-runner-benchmark']) {
       const job = workflow.jobs[name]
       if (!isRecord(job) || !isRecord(job.strategy)) {
@@ -232,6 +215,46 @@ describe('CI workflow', () => {
 
     expect(config).not.toContain("pool: process.platform === 'win32' ? 'threads' : 'forks'")
     expect(config.match(/pool: 'forks'/g)).toHaveLength(2)
+  })
+})
+
+describe('Hosted-runner-only CI', () => {
+  const workflowsDir = resolve(root, '.github/workflows')
+  const workflowFiles = readdirSync(workflowsDir).filter(file => file.endsWith('.yml'))
+
+  it('confines the removed enterprise/self-hosted pool references to ci-master.yml', () => {
+    const forbidden = ['dsh-ubuntu-24-04-16core', 'dsh-windows-2025-16core', 'dsh-win-ci', 'vm-backup', 'DSH_CI_FAILOVER']
+    const offenders = workflowFiles
+      .filter(file => file !== 'ci-master.yml')
+      .filter(file => forbidden.some(token => readFileSync(resolve(workflowsDir, file), 'utf8').includes(token)))
+    expect(offenders).toEqual([])
+
+    // ci-master.yml is the one workflow allowed to keep them: its jobs that
+    // name a self-hosted pool are reachable only through workflow_dispatch.
+    const ciMasterContent = readFileSync(resolve(workflowsDir, 'ci-master.yml'), 'utf8')
+    expect(forbidden.some(token => ciMasterContent.includes(token))).toBe(true)
+    const ciMaster = loadWorkflow('.github/workflows/ci-master.yml')
+    if (!isRecord(ciMaster.on)) throw new TypeError('ci-master.yml must define on')
+    expect(Object.keys(ciMaster.on)).toEqual(['workflow_dispatch'])
+  })
+
+  it('keeps e2e, release, release-vendor, and ci-master runnable only by hand', () => {
+    // None of these workflows has the runner or secret this repository would
+    // need to run them from a pull request, push, or schedule.
+    for (const file of ['e2e.yml', 'release.yml', 'release-vendor.yml', 'ci-master.yml']) {
+      const workflow = loadWorkflow(`.github/workflows/${file}`)
+      if (!isRecord(workflow.on)) throw new TypeError(`${file} must define on`)
+      expect(Object.keys(workflow.on), file).toEqual(['workflow_dispatch'])
+    }
+  })
+
+  it('never triggers a workflow on push to the retired master branch', () => {
+    for (const file of workflowFiles) {
+      const workflow = loadWorkflow(`.github/workflows/${file}`)
+      const push = isRecord(workflow.on) ? workflow.on.push : undefined
+      if (!isRecord(push) || !Array.isArray(push.branches)) continue
+      expect(push.branches, file).not.toContain('master')
+    }
   })
 })
 

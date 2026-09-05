@@ -134,13 +134,26 @@ export function pathsOverlap(first: string, second: string): boolean {
   return containsPath(first, second) || containsPath(second, first)
 }
 
-/** Resolve an existing path without following an unexpected final symlink. */
-async function privateDirectory(path: string): Promise<void> {
+/**
+ * Resolve an existing path without following an unexpected final symlink,
+ * verifying it is a real directory and, on POSIX, that its mode bits are
+ * owner-only.
+ * @param path - Managed directory path to verify.
+ * @param platform - Host platform selecting the mode-bit check; defaults to
+ *   `process.platform` and is overridden only by a test.
+ */
+async function privateDirectory(path: string, platform: NodeJS.Platform = process.platform): Promise<void> {
   const entry = await lstat(path)
   if (!entry.isDirectory() || entry.isSymbolicLink()) {
     throw new Error(`science-runtime: managed path ${JSON.stringify(path)} must be a private directory`)
   }
-  if ((entry.mode & 0o077) !== 0) {
+  // Node's win32 `lstat` mode bits are synthetic and do not reflect a prior
+  // chmod: a freshly created 0700 directory reports 0666/0777 regardless.
+  // Skipping the POSIX check on win32 is not a privacy gap — a managed
+  // directory's privacy there comes from the user-profile ACL a Harness home
+  // inherits plus the ACL sandbox's own per-session SIDs, neither of which
+  // this mode-bit check observes.
+  if (platform !== 'win32' && (entry.mode & 0o077) !== 0) {
     throw new Error(`science-runtime: managed directory ${JSON.stringify(path)} is not private`)
   }
 }

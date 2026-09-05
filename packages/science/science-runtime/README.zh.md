@@ -120,7 +120,7 @@ Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。s
 
 kernel execution 在 darwin、linux 与 win32 上都能运行。response-channel transport 因平台而异(见上文)，而 win32 的 cooperative-interrupt 缺口(`interrupt()` 不起作用)意味着一次被取消或超时的 win32 run 总会丢失其 kernel 的内存状态，而 POSIX run 的 kernel 通常能存活下来——见"已知限制"。
 
-私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory，其中包括一个 `kernels/` 子树，容纳每个存活 kernel 自己的 scratch(其中就有它的 response FIFO,仅限 darwin 与 linux；win32 没有落盘的 response-channel 产物——loopback TCP listener 与其一次性 token 只存在于 Host process 内存中)。只有独占 marker 创建成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree——包括它拥有过的每一个 kernel——已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
+私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory，其中包括一个 `kernels/` 子树，容纳每个存活 kernel 自己的 scratch(其中就有它的 response FIFO,仅限 darwin 与 linux；win32 没有落盘的 response-channel 产物——loopback TCP listener 与其一次性 token 只存在于 Host process 内存中)。在 win32 上，Node 的 `lstat` 在 directory 上返回的 mode bits 是合成的，从不反映此前的 `chmod`，所以隐私校验在那里只检查 directory/symlink kind，不检查 mode bits；实际的隐私保证来自 Harness home 继承的 user-profile ACL，加上 ACL sandbox 自身的 per-session SID(`dsh-sandbox-windows-acl`)，而非 POSIX 权限位。只有独占 marker 创建成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree——包括它拥有过的每一个 kernel——已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
 
 ## 验证
 

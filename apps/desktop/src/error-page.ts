@@ -79,3 +79,17 @@ export function launchErrorPage(logPath: string | undefined, error: unknown): st
     ? harnessHomeSpaceErrorPage(error)
     : errorPage(logPath, undefined, error instanceof Error ? error.message : String(error))
 }
+
+/**
+ * Dedicated error page for Windows: informs the user honestly before any
+ * 520 MB environment download is attempted, rather than downloading an
+ * environment the Science kernel cannot yet run against on this platform.
+ * @returns a `data:text/html` URL ready to load.
+ */
+export function unsupportedPlatformErrorPage(): string {
+  return errorSurface(
+    'PaperMachine Analysis Not Supported on Windows',
+    'PaperMachine cannot yet run Python or R analyses on Windows in this release, so the environment was not downloaded. Windows support is on the roadmap; use a Mac in the meantime.',
+    false,
+  )
+}

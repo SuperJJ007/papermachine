@@ -24,7 +24,7 @@ import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts
 import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
-import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
+import { errorPage, launchErrorPage, RESTART_URL, unsupportedPlatformErrorPage } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
@@ -499,8 +499,19 @@ async function openOnboarding(): Promise<void> {
  * this directly, and `activate` calls it only after `coordinator.activate`
  * has waited out any in-flight provisioning run — a wait long enough for
  * quit to have begun in the meantime.
+ *
+ * The win32 branch creates its own window rather than reusing whatever
+ * `boot()`'s failure fallback would otherwise supply, since on a first
+ * launch this runs before any window exists; it skips
+ * {@link resolveWindowThemePreference} (and therefore the Harness home) so
+ * the platform check never depends on the home being resolvable.
  */
 async function openInitialSurface(): Promise<void> {
+  if (process.platform === 'win32') {
+    window ??= createWindow('system')
+    await window.loadURL(unsupportedPlatformErrorPage())
+    return
+  }
   const dshHome = await harnessHome()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind === 'bound') {

@@ -108,6 +108,10 @@ let pending: { readonly packages?: readonly string[]; readonly detail: string } 
 // The source chosen in the confirm panel's radio group, seeded from the
 // offered environment's `defaultSourceId` each time the panel opens.
 let selectedSourceId: string | undefined
+// The most recently attempted package source: seeded from the confirmed
+// choice, then kept current by each provisioning-progress update carrying a
+// `sourceId` — the diagnostic report's "Last source attempted" line.
+let lastSourceId: string | undefined
 
 /**
  * Render a byte count the way the confirm panel states it: whole megabytes
@@ -249,6 +253,7 @@ async function startConfirmed(): Promise<void> {
   const approved = pending
   if (approved === undefined) return
   const sourceId = selectedSourceId
+  lastSourceId = sourceId
   dismissConfirm()
   setBusy(true)
   progress.hidden = false
@@ -265,6 +270,7 @@ async function startConfirmed(): Promise<void> {
     statusNode.textContent = errorText
     progress.hidden = true
     setBusy(false)
+    const diagnostics = await window.desktopOnboarding.diagnostics().catch(() => undefined)
 
     let copyBtn = document.querySelector('#copy-diagnostics') as HTMLButtonElement | null
     if (!copyBtn) {
@@ -278,9 +284,12 @@ async function startConfirmed(): Promise<void> {
         const fence = '```'
         const report = [
           '## PaperMachine Environment Install Failure',
-          `- Platform: ${navigator.platform}`,
+          `- App version: ${diagnostics?.appVersion ?? 'unknown'}`,
+          `- Platform: ${diagnostics?.platform ?? navigator.platform}`,
           `- UserAgent: ${navigator.userAgent}`,
           `- Time: ${new Date().toISOString()}`,
+          `- Harness home: ${diagnostics?.harnessHome ?? 'unknown'}${diagnostics === undefined ? '' : diagnostics.installLocationCustomized ? ' (customized)' : ' (default)'}`,
+          `- Last source attempted: ${lastSourceId ?? 'unknown'}`,
           '- Error:',
           fence,
           errorText,
@@ -345,6 +354,7 @@ keepCurrent.addEventListener('click', () => {
   })
 })
 window.desktopOnboarding.onProvisioningProgress((update) => {
+  if (update.sourceId !== undefined) lastSourceId = update.sourceId
   progress.hidden = false
   if (update.phase === 'installing' && update.retryAttempt && update.retryAttempt.index > 1) {
     progressPhase.textContent = `安装中 · Installing (源 ${String(update.retryAttempt.index)}/${String(update.retryAttempt.total)})`

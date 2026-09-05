@@ -7,7 +7,7 @@
  * catching a regression in `src/onboarding.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChooseInstallLocationResult, CurrentEnvironment, DesktopOnboardingBridge, InstallLocation, OfferedEnvironment } from '../src/preload.ts'
+import type { ChooseInstallLocationResult, CurrentEnvironment, DesktopDiagnostics, DesktopOnboardingBridge, InstallLocation, OfferedEnvironment } from '../src/preload.ts'
 import type { ProvisioningProgress } from '../src/provisioning.ts'
 
 const STANDARD: OfferedEnvironment = {
@@ -108,6 +108,12 @@ function makeBridge(overrides: Partial<DesktopOnboardingBridge> = {}): DesktopOn
     installLocation: vi.fn(async () => DEFAULT_LOCATION),
     chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => ({ status: 'cancelled' })),
     resetInstallLocation: vi.fn(async () => ({ status: 'restarting' as const })),
+    diagnostics: vi.fn(async (): Promise<DesktopDiagnostics> => ({
+      appVersion: '0.1.0',
+      platform: 'darwin-arm64',
+      harnessHome: DEFAULT_LOCATION.path,
+      installLocationCustomized: DEFAULT_LOCATION.customized,
+    })),
     ...overrides,
   }
 }
@@ -363,9 +369,9 @@ describe('onboarding install route', () => {
     await loadOnboarding(bridge)
 
     expect(Object.keys(bridge).sort()).toEqual([
-      'cancelProvisioning', 'chooseInstallLocation', 'currentEnvironment', 'environments', 'installLocation',
-      'keepCurrentEnvironment', 'onProvisioningProgress', 'onboardingStatus', 'provision', 'provisionCustom',
-      'resetInstallLocation',
+      'cancelProvisioning', 'chooseInstallLocation', 'currentEnvironment', 'diagnostics', 'environments',
+      'installLocation', 'keepCurrentEnvironment', 'onProvisioningProgress', 'onboardingStatus', 'provision',
+      'provisionCustom', 'resetInstallLocation',
     ])
     expect(document.querySelector('#detected')).toBeNull()
     expect(document.querySelector('#bind')).toBeNull()
@@ -430,5 +436,25 @@ describe('install location', () => {
 
     await vi.waitFor(() => { expect(textOf('#status')).toContain('Restarting') })
     expect(resetInstallLocation).toHaveBeenCalledTimes(1)
+  })
+
+  it('includes the app version, Harness home, and last attempted source in the diagnostic report', async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error('solve failed') }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    chooseSource('tuna')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(document.querySelector('#copy-diagnostics')).not.toBeNull() })
+    click('#copy-diagnostics')
+
+    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
+    const report = writeText.mock.calls[0]?.[0]
+    expect(report).toContain('App version: 0.1.0')
+    expect(report).toContain(`Harness home: ${DEFAULT_LOCATION.path}`)
+    expect(report).toContain('Last source attempted: tuna')
   })
 })

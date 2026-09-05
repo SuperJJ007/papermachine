@@ -43,7 +43,7 @@ import type { Config, ConfiguredProfile } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
+import { assertProfileRunConfinement, observeProfile, prefixHistoryDigest, sameObservation } from './environment.ts'
 import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
@@ -818,7 +818,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     assertValidPackageSpecs(request.packages)
     const lease = await this.reserveQueued(request.session, request.signal, this.installTimeoutMs)
     try {
-      const { environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
+      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
       const binding = selectBinding(environment, request.language)
       const profile = this.profile(String(environment.profileId))
       const executable = await staticMicromamba(installer.micromambaPath)
@@ -857,48 +857,94 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         return { status: outcome.status, stdout: outcome.stdout, stderr: outcome.stderr }
       }
       this.assertPrepublication(request.session, lease.control)
-      const sessionScratch = await planSessionScratch(this.dshHome, request.session)
-      const observed = await observeProfile({
-        subprocess: this.ctx.subprocess,
-        sandbox: this.ctx.sandbox,
-        sessionScratch,
-        sessionId: request.session.id,
-        signal: lease.control.signal,
-        packagesMaxEntries: this.packagesMaxEntries,
-        packagesMaxBytes: this.packagesMaxBytes,
-      }, profile)
-      this.assertPrepublication(request.session, lease.control)
-      const current = this.assertSession(request.session).environment
-      // Unreachable: the durable Science fold only ever appends an
-      // environment revision, never clears one, so a session already
-      // holding an applied revision above can never replay back to
-      // `environment === null`. Narrows the type the projection's `.environment`
-      // field carries rather than asserting past a real defensive gap.
-      /* v8 ignore next 3 */
-      if (current === null) {
-        throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
+      const beforeRev = environment.revision
+      const next = await this.reobserveAndMaybeRebind(request.session, projection, environment, lease.control, 'install')
+      return {
+        status: 'success',
+        environment: next,
+        environmentChanged: next.revision > beforeRev,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
       }
-      // A redundant install (every requested spec was already on disk, or a
-      // prior attempt reporting 'timed-out' had in fact already finished
-      // writing the prefix — see runMicromambaInstall's own reordered
-      // classification) re-observes the identical binding for both
-      // languages. Appending a revision unconditionally here would advance
-      // `current.revision` past what changed, and the next `startRun` for
-      // either language would read that revision mismatch as a real rebind
-      // and restart an otherwise-unaffected kernel, discarding its in-memory
-      // variables for no environment change.
-      if (sameInstalledBinding(observed.python?.binding, current.python) && sameInstalledBinding(observed.r?.binding, current.r)) {
-        return { status: 'success', environment: current, environmentChanged: false, stdout: outcome.stdout, stderr: outcome.stderr }
-      }
-      const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
-      this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/environment-bound', { version: 1, environment: fresh })
-      return { status: 'success', environment: fresh, environmentChanged: true, stdout: outcome.stdout, stderr: outcome.stderr }
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {
       this.leases.release(lease)
     }
+  }
+
+  /**
+   * Re-observe the whole profile and, when the observation differs from the
+   * session's current binding for either language, append the next
+   * whole-value `science/environment-bound` revision. Shared by
+   * `installPackages` (after a successful micromamba run) and
+   * `startRun` (after `rebindIfPrefixDrifted` saw the prefix change under
+   * the session). Returns the binding the caller must proceed with.
+   */
+  private async reobserveAndMaybeRebind(
+    session: Session,
+    projection: ScienceProjection,
+    environment: ScienceEnvironmentBinding,
+    control: OperationControl,
+    reason: 'install' | 'drift',
+  ): Promise<ScienceEnvironmentBinding> {
+    const profile = this.profile(String(environment.profileId))
+    const sessionScratch = await planSessionScratch(this.dshHome, session)
+    const observed = await observeProfile({
+      subprocess: this.ctx.subprocess,
+      sandbox: this.ctx.sandbox,
+      sessionScratch,
+      sessionId: session.id,
+      signal: control.signal,
+      packagesMaxEntries: this.packagesMaxEntries,
+      packagesMaxBytes: this.packagesMaxBytes,
+    }, profile)
+    this.assertPrepublication(session, control)
+    const current = this.assertSession(session).environment
+    /* v8 ignore next 3 */
+    if (current === null) {
+      throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during re-observation')
+    }
+    if (sameInstalledBinding(observed.python?.binding, current.python) && sameInstalledBinding(observed.r?.binding, current.r)) {
+      return current
+    }
+    const next = environmentBinding(current.revision + 1, current.profileId, observed)
+    this.assertPrepublication(session, control)
+    session.append('science/environment-bound', { version: 1, environment: next })
+    this.ctx.logger.info(
+      `science-runtime: environment revision ${String(next.revision)} appended for session "${session.id}" (${reason})`,
+    )
+    return next
+  }
+
+  /**
+   * Pre-publication drift check: if the requested language's prefix has a
+   * different `conda-meta/history` than the one the session bound against,
+   * the durable environment no longer describes what this run would execute
+   * in. Re-observe and append the next revision so the run's own
+   * `environmentRevision`/`environmentFingerprint` — and every artifact it
+   * captures — name the real environment. The kernel-set's existing
+   * `environment-rebound` path restarts the stale kernel on acquire.
+   */
+  private async rebindIfPrefixDrifted(
+    session: Session,
+    projection: ScienceProjection,
+    environment: ScienceEnvironmentBinding,
+    language: ScienceLanguage,
+    control: OperationControl,
+  ): Promise<ScienceEnvironmentBinding> {
+    const binding = selectBinding(environment, language)
+    const digest = await prefixHistoryDigest(binding.canonicalPrefix)
+    if (digest === binding.condaHistorySha256) return environment
+    const next = await this.reobserveAndMaybeRebind(session, projection, environment, control, 'drift')
+    if (next.status !== 'applied') {
+      throw new ScienceRuntimeError(
+        'ENVIRONMENT_NOT_READY',
+        `Science ${language} environment changed on disk and is no longer usable: ${next.failureReason ?? 'unknown reason'}`,
+      )
+    }
+    return next
+  }
   }
 
   /**
@@ -925,7 +971,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
-      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
+      const { projection, environment: bound } = this.assertIdleAppliedEnvironment(request.session, lease.control)
+      const environment = await this.rebindIfPrefixDrifted(request.session, projection, bound, request.language, lease.control)
       const profile = this.profile(String(environment.profileId))
       const plan = planRun(environment, request.language, request.code)
       const projectId = await this.sessionProject(request.session)

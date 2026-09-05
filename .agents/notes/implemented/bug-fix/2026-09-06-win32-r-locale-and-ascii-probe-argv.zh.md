@@ -36,4 +36,4 @@ Status: implemented
 - 一次针对真实 `python.exe`/`Rscript.exe`(来自一个 Conda `science` prefix)的完整 `run-science.mts` profile 运行(`C:\pm\logs\v5-step3.log`):`bindEnvironment` 返回 `status: "applied"`,R 的 `capability: "available"`(此前是 `"invalid"`);对 `cat(enc2utf8("dsh-科学-✓"),sep="")` 的一次 `startRun` 返回的 stdout 十六进制是 `6473682de7a791e5ada62de29c93`,与期望的 `64 73 68 2d e7 a7 91 e5 ad a6 2d e2 9c 93` 完全一致(`"dsh-"` + `科学`(`e7 a7 91 e5 ad a6`)+ `"-"` + `✓`(`e2 9c 93`));Python 与 R 各自在同一个 `kernelEpoch` 上的两次运行之间都保住了内核状态(Python:`x = 4321` 再 `print(x)` → `"4321\n"`;R:`y <- 1234` 再 `cat(y)` → `"1234"`);一个 60 秒的 `time.sleep` 在 2 秒后被取消,分类为 `cancelled`;取消之后的下一次运行在一个新的 `kernelEpoch` 上成功。
 - 一次独立的 `run-science-py.mts` 运行(`C:\pm\logs\v5-step3-py.log`)只针对 Python 跑了同样的 `startRun` 序列,确认结果与 profile 里是否包含 R 无关。
 
-`packages/science/science-runtime/README.md`/`README.zh.md` 里"win32 kernel execution 只有 Python 拿到了真机确认"这条 Known Limitation 已经退休:R 的 `bindEnvironment` probe 路径现在拿到了与 Python 同等的真机确认。
+`packages/science/science-runtime/README.md`/`README.zh.md` 里"win32 上的 kernel execution 尚未在真实 Windows 主机上验证"这条 Known Limitation 已经退休:R 的 `bindEnvironment` probe 路径现在拿到了与 Python 同等的真机确认。

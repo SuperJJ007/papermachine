@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md
-2026-09-06-win32-r-locale-and-ascii-probe-argv.md: 55e4fda2e2dfba6f59018361474b585f87100ffc
-2026-09-06-win32-r-locale-and-ascii-probe-argv.zh.md: 0f5c5f3bef9d60dec8e25d0beb795ecf13a08361
+2026-09-06-win32-r-locale-and-ascii-probe-argv.md: c4c417baea47c01a15ce12b956444129db65c00a
+2026-09-06-win32-r-locale-and-ascii-probe-argv.zh.md: ca65e83bac62aa9a3a08b3f735927afa423defb9

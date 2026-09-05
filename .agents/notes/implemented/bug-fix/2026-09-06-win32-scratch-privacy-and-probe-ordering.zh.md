@@ -14,7 +14,11 @@ Status: implemented
 
 针对缺陷 1 的修复在真实 Windows 上做验证时，又暴露出同一根因的第四个、对称的实例：`scratch.ts` 的 `privateFile()` 对 managed regular file(owner marker JSON、一次 run 落盘的 source)携带着完全相同的 `(entry.mode & 0o077) === 0` 检查，而 Node 在 win32 上对 regular file 合成 mode bits 的方式与对 directory 完全一样。这在真机上使 `scratch.spec.ts` 的一些测试以 `... is not private` 失败，而这些测试本来期待的是另一个、故意注入的失败——这是掩盖了每个测试真实场景的连带失败，而不是场景本身的缺陷。
 
+修复缺陷 1 和 4 之后，同一次真机运行又暴露出第五个、此前一直被掩盖的阻断项：`scratch.ts` 的 `syncDirectory()` 在每次 managed file 的持久写入(owner marker、一次 run 落盘的 source、一个 artifact input)之后，都会以只读方式打开其所在 directory 并调用 `handle.sync()`——这是为崩溃时的持久性而做的、对父 directory 做 fsync 的步骤。Windows 上没有对应物：一个以 `O_RDONLY` 打开的 directory handle，其 `sync()` 在那里会以 `EPERM` 失败。这在本代码库中并非新问题——`dsh-storage-json` 的 `fsyncDirectory` 与 `dsh-session-persistence-jsonl` 早已记录并 no-op 了完全相同的 Windows 限制——只是 `scratch.ts` 自己的 `syncDirectory` 还没有跟上那个既有先例；一旦缺陷 1 和 4 不再掩盖它，它就成了整次真机测试运行中最常见的单一失败原因(全部约 320 个测试失败中有 99 个共享这同一个 `EPERM` 根因)。
+
 ## Decision
+
+**`syncDirectory()` 在 win32 上是一个 no-op。** 它遵循的是 `dsh-storage-json` 的 `fsyncDirectory` 与 `dsh-session-persistence-jsonl` 已经确立的既有惯例(`if (process.platform === 'win32') return`，配合包裹 POSIX-only 主体的 `/* v8 ignore start/stop */`)，而不是为同一个平台缺口另造一种新模式。由此带来的后果是：win32 上 scratch 记账用的 directory-entry 持久性不再有保证——这是一个可接受的、已记录的取舍，而不是回归：它与本代码库中已经为完全相同的原因做出完全相同选择的每一个其它包保持一致，也完全不触及 Session log 自身的持久性，后者不受影响。
 
 **`privateDirectory()` 与 `privateFile()` 都在 win32 上跳过 POSIX mode-bit 检查，保留各自的 directory/file/symlink kind 检查。** 二者都接受一个 `platform: NodeJS.Platform = process.platform` 参数(与 `kernel-transport.ts` 中 `selectKernelTransportKind` 已经使用的带默认值参数形状相同)，这样测试就能强制走任一分支，而不必去 mock 全局的 `process.platform`。win32 上的隐私本来就不是靠 POSIX mode bits 保证的——它来自 Harness home 继承的 user-profile ACL，加上 ACL sandbox 自身的 per-session SID(`dsh-sandbox-windows-acl`)，而这两者即便在此变更之前，这两个检查也都从未真正观察过。`packages/science/science-runtime/README.md`/`README.zh.md` 在既有的 mode-0700/mode-0600 描述旁边明确写出了这一点。
 
@@ -26,6 +30,7 @@ Status: implemented
 
 ## Alternatives considered
 
+- **也放宽真机上完整套件里那些仍在失败的、基于 chmod 的权限模拟测试(例如用 `chmodSync(dir, 0o000)` 模拟 `EACCES` 的 `run.spec.ts` 清理失败聚合测试)。** 拒绝：这些是与本次变更的五个根因都无关的、预先存在的、纯 POSIX 测试脚手架假设——Windows 根本不通过 POSIX mode bits 限制 directory 遍历，所以基于 `chmodSync(..., 0o000)` 的模拟在 Windows 上没有对应物可移植，与此变更本就已排除在范围之外的 `#!/bin/sh` fake-interpreter 测试属于同一类脚手架局限。
 - **把 `privateFile()` 中完全相同的 `0o077` 检查留到另一次独立变更里再改。** 一旦真实 Windows 运行给出直接证据，就拒绝了这个选项：`privateFile()` 触发的是与 `privateDirectory()` 完全相同的 win32 合成 mode bits 事实，走的还是 Fix 1 本就要解决的同一批调用路径(`ensureOwner`、`rollbackSessionScratch`)——把它推迟，只会让 marker 文件写入在 win32 上继续坏着，而理由仅仅是人为地把一个已经诊断清楚、单一根因的缺陷拆成两截。
 - **在 `prepareProbeAttempt`/`observePrepared` 内部加一个 win32-only 分支，而不是无条件地把 confinement 挪到目录创建之后。** 拒绝：POSIX backend 同样没有"先于目录存在就做 confine"的正确性理由——旧顺序之所以能跑通，只是因为 POSIX backend 恰好容忍了它，而不是因为那本来就是正确的顺序。对所有平台使用同一种顺序更简单，也省去了本需要单独测试矩阵的平台条件分支。
 - **让真实 driver 测试的 `canonicalPrefix` 依据 `EXECUTABLE_LAYOUTS` 的固定路径段数推导(例如在 win32 上从 `Rscript.exe` 固定向上取两次 `dirname()`)。** 拒绝：真实 Conda-forge R 构建的实际磁盘深度(`Lib\R\bin\x64\Rscript.exe`，三段)并不匹配 `WINDOWS_LAYOUT` 自身假设的两段(`Scripts\Rscript.exe`)，所以固定段数会为这个测试恰好需要跑通的那台机器推导出错误的 prefix。向上走到最近的 `conda-meta/history` 对任意深度都是正确的，也与 `staticInterpreter` 自身识别 Conda prefix 的方式一致。
@@ -34,4 +39,6 @@ Status: implemented
 
 `ensureSessionScratch`、`bindEnvironment` 的 probe 路径，以及 `KernelProcess.start()` 的 confinement 现在能在 win32 上继续推进，而不是在任何 scratch 或 process 工作之前就失败——这些都是一次真实 Windows Server 2022 验证运行发现的、预先存在的阻断项，此前 `main` 上已有的 transport 与 `minimumEnforcement` 工作已不再是限制因素。`packages/science/science-runtime/src/**/*.ts` 的逐文件覆盖率保持 100%(新增测试：`scratch.spec.ts` 针对同一个、真实的、权限设置错误的 directory 或 file，分别对 `privateDirectory()` 与 `privateFile()` 演练"POSIX mode-bit 被拒绝"和"win32 mode-bit 被跳过"两条分支；`environment.spec.ts` 新增一个 fake sandbox，其 `confine()` 会断言其 `workspaceRoot` 已经存在，从而直接证明新顺序，而不仅仅是通过"没有失败"来间接证明)。`kernel-transport-real.spec.ts` 中每一条关于"找不到可用 interpreter 时应自我跳过"的断言均未改变；改变的只是它如何去定位一个可用 interpreter。
 
-在真实 Windows Server 2022 机器上确认(关键事实；完整细节见验证用的 PR/会话)：`packages/science/science-runtime/tests` 整个套件中剩余的失败，绝大多数由 `#!/bin/sh` fake-interpreter 测试脚手架(`tests/harness.ts`)造成，那是纯 POSIX 的测试脚手架，不在此变更范围内，也不是产品缺陷；`kernel-transport-real.spec.ts` 针对真实绑定的 Conda prefix，Python 和 R 都真正运行(而非跳过)并通过；一个真实的端到端脚本——真实 `LocalSandboxProvider` 自动选中 `windows-acl`、`minimumEnforcement: 'partial'`——完成了 `bindEnvironment` 并记录 `sandboxEnforcement: 'partial'`，跑通了 Python 和 R，证明了同一 kernel 上的状态持久性，并演练了 response-transport Agent Note 中已记录的 win32 interrupt-loses-kernel-state 路径。
+修复 `syncDirectory()` 不需要新增测试：它遵循的正是 `dsh-storage-json` 的 `fsyncDirectory` 已经采用的、同一个被 `v8 ignore` 豁免的模式，所以那条无条件 fsync 分支的 POSIX 覆盖率(已经贯穿 `scratch.spec.ts`)就是该先例所依赖的同一份覆盖率证据；win32 no-op 分支之所以无法从一台 POSIX CI 主机上测到，理由与该先例的 `v8 ignore` 注释所陈述的完全一致。
+
+包含本次修复后，在真实 Windows Server 2022 机器上的验证结果待补：该机器上最近一次已确认的运行(`C:\pm\logs\step1-verify2.log`，319F/177P/23S)早于 `syncDirectory()` 的修复，仍然带着这次修复要消除的那批 `EPERM` 失败，所以本节暂不声称修复后的通过/失败数字，也不声称 `kernel-transport-real.spec.ts` 是否同时跑通 Python 和 R，或端到端脚本是否完成 `bindEnvironment` 并证明同一 kernel 上的状态持久性。这一段会在那次运行完成后，替换为真实机器上的实际结果。

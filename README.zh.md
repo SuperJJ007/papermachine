@@ -86,9 +86,26 @@ Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再�
 </details>
 
 <details>
+<summary>生物学学科环境（40 个包）</summary>
+
+通用科学环境的超集，增加计算生物学与湿实验分析库。
+
+| Python 3.13 | R 4.5 |
+|---|---|
+| Biopython、scanpy、anndata | survival、survminer |
+| leidenalg、python-igraph、umap-learn | vegan、ape、phangorn |
+| lifelines、scikit-posthocs | pheatmap、ggpubr、rstatix、emmeans、drc |
+
+</details>
+
+<details>
 <summary>技能与工具</summary>
 
-三个内置技能,在输入框键入 `/` 调用:`scientific-visualization`、`statistical-analysis`、`scientific-writing`。放在 `~/.papermachine/skills` 里的同名技能会覆盖内置的。
+内置九个技能，在输入框键入 `/` 调用：
+- 通用科学：`scientific-visualization`、`statistical-analysis`、`scientific-writing`
+- 生物学领域：`bulk-rnaseq-analysis`、`single-cell-analysis`、`sequence-analysis`、`survival-analysis`、`bioassay-and-dose-response`、`ecology-and-diversity`
+
+放在 `~/.papermachine/skills` 里的同名技能会覆盖内置的。
 
 模型可调用的五个科研工具:`run_python`、`run_r`、`get_science_state`、`annotate_artifact`、`install_science_packages`。模型对你的工作区只读,且没有 shell。
 
@@ -115,7 +132,7 @@ PaperMachine 0.1 是早期版本。已知限制:
 ## 路线图
 
 - Windows 分析运行支持：基于管道的内核传输与 Windows 后端显式沙箱等级策略。
-- 学科环境,从社会科学开始。
+- 学科环境：已内置生物学环境及领域技能；社会科学环境正在规划中。
 - 变量变化史视图:每个数据集在各清洗步骤中的形状变化。
 
 ## 反馈

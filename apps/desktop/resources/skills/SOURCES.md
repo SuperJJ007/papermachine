@@ -25,3 +25,33 @@ may change with the upstream content). Leave `references/`, `scripts/`, and
 `assets/` unmodified. Update the commit and copy date above. Do not hand-edit
 `references/`, `scripts/`, or `assets/` — a local fix belongs upstream, then flows
 back through the next re-copy.
+
+## Biology skills (authored in this repository)
+
+Six further directories — `bulk-rnaseq-analysis/`, `single-cell-analysis/`,
+`sequence-analysis/`, `survival-analysis/`, `bioassay-and-dose-response/`,
+`ecology-and-diversity/` — are **not** vendored. They were written for PaperMachine
+directly against the Science agent's tool set (`run_python`/`run_r`,
+`SCIENCE_ARTIFACT_DIR`, `raster_artifacts`, `install_science_packages`, read-only
+workspace, no shell) and against the shipped `biology` environment declaration
+(`resources/environments/biology.json`). Their `scripts/` and `references/` are
+first-party and may be edited in place; a fix does not need to flow through an
+upstream. Each `SKILL.md` frontmatter follows the same shape as the vendored
+three (`name`, `description` with Chinese trigger terms, `license`, `metadata`)
+so `dsh-skill`'s catalog lists all nine uniformly.
+
+- **License:** MIT, same as the repository (`LICENSE` at the repository root).
+- **Skill authors:** PaperMachine community; see each `SKILL.md` `metadata`.
+- **Environment assumption:** each skill's Installation table distinguishes
+  packages shipped in `biology.json` from packages installed on demand through
+  `install_science_packages`, and marks bioconda-only packages as macOS-only
+  (bioconda publishes no `win-64` builds). Skills remain usable on the `general`
+  environment: their first step then installs what the shipped set lacks.
+
+## Update method (biology skills)
+
+Edit in place. When `biology.json` gains or drops a package, update the matching
+Installation table row in every skill that names it, and the health-check import
+list in `biology.json`. Keep every `SKILL.md` body under roughly 1,400 words so
+the catalog entry plus body stays inside the model's context budget; move detail
+into `references/` and link it by path.

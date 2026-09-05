@@ -196,6 +196,35 @@ function dismissConfirm(): void {
   confirm.hidden = true
 }
 
+const offeredEnvironments = document.querySelector<HTMLDivElement>('#offered-environments')
+
+function renderOfferedEnvironments(
+  environments: readonly OfferedEnvironment[],
+  selectedId: string | undefined,
+  onSelect: (env: OfferedEnvironment) => void,
+): void {
+  if (!offeredEnvironments) return
+  offeredEnvironments.replaceChildren()
+  for (const env of environments) {
+    const label = document.createElement('label')
+    label.className = 'choice'
+    const input = document.createElement('input')
+    input.type = 'radio'
+    input.name = 'discipline-environment'
+    input.value = env.id
+    input.checked = env.id === selectedId
+    input.addEventListener('change', () => { onSelect(env) })
+    const copy = document.createElement('span')
+    const strong = document.createElement('strong')
+    strong.textContent = env.name
+    const small = document.createElement('small')
+    small.textContent = `${String(env.packages.length)} 个包 · 约 ${formatBytes(env.estimatedDownloadBytes)} · ${String(env.packages.length)} packages, ~${formatBytes(env.estimatedDownloadBytes)}`
+    copy.append(strong, small)
+    label.append(input, copy)
+    offeredEnvironments.append(label)
+  }
+}
+
 async function loadEnvironments(): Promise<void> {
   provision.disabled = true
   try {
@@ -203,10 +232,16 @@ async function loadEnvironments(): Promise<void> {
       window.desktopOnboarding.environments(),
       window.desktopOnboarding.currentEnvironment(),
     ])
-    const shipped = offered[0]
-    if (shipped === undefined) throw new Error(ENVIRONMENTS_UNAVAILABLE_MESSAGE)
+    const initial = offered[0]
+    if (initial === undefined) throw new Error(ENVIRONMENTS_UNAVAILABLE_MESSAGE)
     if (applied !== undefined) renderCurrent(applied)
-    renderStandard(shipped)
+    if (offered.length > 1 && offeredEnvironments) {
+      renderOfferedEnvironments(offered, initial.id, (selected) => {
+        renderStandard(selected)
+      })
+      offeredEnvironments.hidden = false
+    }
+    renderStandard(initial)
     provision.disabled = false
   } catch (error) {
     installSummary.textContent = error instanceof Error ? error.message : String(error)

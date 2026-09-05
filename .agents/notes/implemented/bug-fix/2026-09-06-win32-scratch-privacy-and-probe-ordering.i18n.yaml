@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-win32-scratch-privacy-and-probe-ordering.md
-2026-09-06-win32-scratch-privacy-and-probe-ordering.md: 93a6f878fe18158ccfcd82e75451647f876feab1
-2026-09-06-win32-scratch-privacy-and-probe-ordering.zh.md: a3cbefad720a7df9c30214663ed597f7c9981c5c
+2026-09-06-win32-scratch-privacy-and-probe-ordering.md: 56210b2af658ed277fc96aea76d81f79be269f0e
+2026-09-06-win32-scratch-privacy-and-probe-ordering.zh.md: d42ab25f539c0c7bf45b30374b40d41cf36fcb22

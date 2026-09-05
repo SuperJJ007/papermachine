@@ -40,7 +40,7 @@ export type TelemetryEventInput =
     /** The package source that succeeded (`tuna`/`ustc`/`official`, or a custom declaration's chosen source id). */
     readonly sourceId: string
     readonly durationMs: number
-    readonly environmentId: 'general' | 'custom'
+    readonly environmentId: 'general' | 'biology' | 'custom'
   }
   | {
     readonly event: 'environment.install-failed'

@@ -499,10 +499,17 @@ async function openOnboarding(): Promise<void> {
  * this directly, and `activate` calls it only after `coordinator.activate`
  * has waited out any in-flight provisioning run — a wait long enough for
  * quit to have begun in the meantime.
+ *
+ * The win32 branch creates its own window rather than reusing whatever
+ * `boot()`'s failure fallback would otherwise supply, since on a first
+ * launch this runs before any window exists; it skips
+ * {@link resolveWindowThemePreference} (and therefore the Harness home) so
+ * the platform check never depends on the home being resolvable.
  */
 async function openInitialSurface(): Promise<void> {
   if (process.platform === 'win32') {
-    await window?.loadURL(unsupportedPlatformErrorPage(process.platform))
+    window ??= createWindow('system')
+    await window.loadURL(unsupportedPlatformErrorPage())
     return
   }
   const dshHome = await harnessHome()

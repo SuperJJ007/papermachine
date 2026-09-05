@@ -83,11 +83,10 @@ describe('launchErrorPage', () => {
 
 describe('unsupportedPlatformErrorPage', () => {
   it('renders honest Windows analysis explanation without Restart Host link', () => {
-    const html = decode(unsupportedPlatformErrorPage('win32'))
+    const html = decode(unsupportedPlatformErrorPage())
 
     expect(html).toContain('PaperMachine Analysis Not Supported on Windows')
-    expect(html).toContain('POSIX transport')
+    expect(html).toContain('environment was not downloaded')
     expect(html).not.toContain(RESTART_URL)
   })
 })
-

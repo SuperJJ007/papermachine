@@ -110,7 +110,7 @@ PaperMachine sends three anonymous telemetry events (`app.launch`, `environment.
 
 PaperMachine 0.1 is an early release. Known limitations:
 
-- Analysis runs on macOS (Apple silicon and Intel) and Linux. A Windows x64 build is published for testing the desktop carrier, but the Science Runtime cannot yet execute Python or R on Windows: its kernel transport needs a POSIX FIFO and its sandbox requires full enforcement, which the Windows backend does not provide. The app informs you of this at launch instead of downloading the environment.
+- Analysis runs on macOS (Apple silicon and Intel). The Windows x64 installer is published, but the Science Runtime cannot yet execute Python or R on Windows: its kernel transport needs a POSIX FIFO, and sandbox enforcement is only partial on Windows. The app says so at launch instead of downloading the environment.
 - A DeepSeek API key is required; the app ships no key.
 - Neither installer is signed; see the notes above.
 - Updates are manual: download the next installer.

@@ -54,6 +54,14 @@ export interface RestartingResult {
   readonly status: 'restarting'
 }
 
+/** Diagnostic facts for the failed-install report: version, platform, and where the Harness home actually is. */
+export interface DesktopDiagnostics {
+  readonly appVersion: string
+  readonly platform: string
+  readonly harnessHome: string
+  readonly installLocationCustomized: boolean
+}
+
 export interface DesktopOnboardingBridge {
   /** Read the loud status message queued for the next onboarding load, if any (an invalid binding found at launch), consuming it. */
   onboardingStatus(): Promise<string | undefined>
@@ -89,6 +97,8 @@ export interface DesktopOnboardingBridge {
   chooseInstallLocation(): Promise<ChooseInstallLocationResult>
   /** Clear the install-location pointer and relaunch the application against the default Harness home. */
   resetInstallLocation(): Promise<RestartingResult>
+  /** Diagnostic facts for the failed-install report. */
+  diagnostics(): Promise<DesktopDiagnostics>
 }
 
 const bridge: DesktopOnboardingBridge = {
@@ -105,6 +115,7 @@ const bridge: DesktopOnboardingBridge = {
   installLocation: async () => ipcRenderer.invoke('desktop:install-location') as Promise<InstallLocation>,
   chooseInstallLocation: async () => ipcRenderer.invoke('desktop:choose-install-location') as Promise<ChooseInstallLocationResult>,
   resetInstallLocation: async () => ipcRenderer.invoke('desktop:reset-install-location') as Promise<RestartingResult>,
+  diagnostics: async () => ipcRenderer.invoke('desktop:diagnostics') as Promise<DesktopDiagnostics>,
 }
 
 contextBridge.exposeInMainWorld('desktopOnboarding', bridge)

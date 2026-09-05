@@ -685,6 +685,16 @@ async function boot(): Promise<void> {
     relaunchApplication()
     return { status: 'restarting' } as const
   })
+  ipcMain.handle('desktop:diagnostics', async () => {
+    const osHome = app.getPath('home')
+    const [harnessHomePath, pointer] = await Promise.all([harnessHome(), readInstallLocationPointer(osHome)])
+    return {
+      appVersion: app.getVersion(),
+      platform: `${process.platform}-${process.arch}`,
+      harnessHome: harnessHomePath,
+      installLocationCustomized: pointer !== undefined,
+    }
+  })
   ipcMain.handle('desktop:provision', async (_event, id: unknown, sourceId: unknown) => {
     if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
     if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')

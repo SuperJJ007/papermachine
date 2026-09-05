@@ -31,6 +31,29 @@ export interface CurrentEnvironment {
   readonly prefix: string
 }
 
+/** The Harness home this launch resolved, and whether an install-location pointer file set it. */
+export interface InstallLocation {
+  readonly path: string
+  readonly customized: boolean
+}
+
+/**
+ * The outcome of a `chooseInstallLocation()` call: `cancelled` covers both
+ * the directory picker being dismissed and the user declining a non-ASCII
+ * warning; `rejected` names why the chosen directory cannot be a Harness
+ * home (for example {@link HarnessHomeSpaceError}'s message); `restarting`
+ * means the pointer file was written and the application is relaunching.
+ */
+export type ChooseInstallLocationResult =
+  | { readonly status: 'cancelled' }
+  | { readonly status: 'rejected'; readonly reason: string }
+  | { readonly status: 'restarting' }
+
+/** The application is relaunching to apply a just-written or just-cleared install-location pointer. */
+export interface RestartingResult {
+  readonly status: 'restarting'
+}
+
 export interface DesktopOnboardingBridge {
   /** Read the loud status message queued for the next onboarding load, if any (an invalid binding found at launch), consuming it. */
   onboardingStatus(): Promise<string | undefined>
@@ -56,6 +79,16 @@ export interface DesktopOnboardingBridge {
   cancelProvisioning(): Promise<void>
   /** Subscribe to provisioning progress for the lifetime of the page. */
   onProvisioningProgress(listener: (progress: ProvisioningProgress) => void): void
+  /** The currently resolved Harness home and whether an install-location pointer file set it. */
+  installLocation(): Promise<InstallLocation>
+  /**
+   * Open a directory picker for a new install location; validates the
+   * choice, warns on a non-ASCII path, and relaunches the application on
+   * acceptance.
+   */
+  chooseInstallLocation(): Promise<ChooseInstallLocationResult>
+  /** Clear the install-location pointer and relaunch the application against the default Harness home. */
+  resetInstallLocation(): Promise<RestartingResult>
 }
 
 const bridge: DesktopOnboardingBridge = {
@@ -69,6 +102,9 @@ const bridge: DesktopOnboardingBridge = {
   onProvisioningProgress: (listener) => {
     ipcRenderer.on('desktop:provisioning-progress', (_event, progress: ProvisioningProgress) => { listener(progress) })
   },
+  installLocation: async () => ipcRenderer.invoke('desktop:install-location') as Promise<InstallLocation>,
+  chooseInstallLocation: async () => ipcRenderer.invoke('desktop:choose-install-location') as Promise<ChooseInstallLocationResult>,
+  resetInstallLocation: async () => ipcRenderer.invoke('desktop:reset-install-location') as Promise<RestartingResult>,
 }
 
 contextBridge.exposeInMainWorld('desktopOnboarding', bridge)

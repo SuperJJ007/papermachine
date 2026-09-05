@@ -2,9 +2,9 @@
 
 import { spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import type { HostCommand, HostExit } from './host-process.ts'
 import { HostLifecycle } from './host-lifecycle.ts'
 import { isDesktopPlatform, micromambaExecutableName, parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
@@ -15,6 +15,7 @@ import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
 import { resolveHarnessHome } from './harness-home.ts'
+import { clearInstallLocationPointer, hasNonAsciiCharacters, readInstallLocationPointer, writeInstallLocationPointer } from './install-location.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
@@ -90,9 +91,17 @@ function resourceRoot(): string {
   return app.isPackaged ? process.resourcesPath : join(REPOSITORY_ROOT, 'apps/desktop/resources')
 }
 
-/** Resolves and creates this launch's Harness home; see {@link resolveHarnessHome}. */
+/**
+ * Resolves and creates this launch's Harness home; see
+ * {@link resolveHarnessHome}. The install-location pointer file
+ * (`install-location.ts`), when present, supplies `customHomeDir` — a
+ * pointer that exists but is malformed throws here and propagates to
+ * `boot()`'s launch-error fallback, per the misconfiguration-fails-loud rule
+ * {@link resolveHarnessHome} itself applies to a space-containing candidate.
+ */
 async function harnessHome(): Promise<string> {
-  return resolveHarnessHome(app.getPath('home'))
+  const pointer = await readInstallLocationPointer(app.getPath('home'))
+  return resolveHarnessHome(app.getPath('home'), pointer)
 }
 
 function desktopPlatform(): DesktopPlatform {
@@ -525,6 +534,19 @@ async function restartHost(): Promise<void> {
 }
 
 /**
+ * Restart the application to apply a just-written or just-cleared
+ * install-location pointer. `app.relaunch()` only schedules the relaunch;
+ * `app.quit()` is what actually starts shutdown, which fires the
+ * `before-quit` handler registered in `boot()` and so still runs
+ * `coordinator.beforeQuit()` (aborting provisioning, stopping the Host, and
+ * flushing telemetry) before the process exits and Electron restarts it.
+ */
+function relaunchApplication(): void {
+  app.relaunch()
+  app.quit()
+}
+
+/**
  * Send one progress update to the active window's renderer. The window may
  * already be destroyed by the time a queued micromamba stdout line reaches
  * this callback (the setup window can close mid-run), and `send` throws on a
@@ -624,6 +646,45 @@ async function boot(): Promise<void> {
     return value
   })
   ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
+  ipcMain.handle('desktop:install-location', async () => {
+    const osHome = app.getPath('home')
+    const [path, pointer] = await Promise.all([harnessHome(), readInstallLocationPointer(osHome)])
+    return { path, customized: pointer !== undefined }
+  })
+  ipcMain.handle('desktop:choose-install-location', async () => {
+    if (window === undefined) throw new Error('desktop install location: no active window')
+    const osHome = app.getPath('home')
+    const result = await dialog.showOpenDialog(window, {
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: dirname(await harnessHome()),
+    })
+    const chosen = result.canceled ? undefined : result.filePaths[0]
+    if (chosen === undefined) return { status: 'cancelled' } as const
+    try {
+      await resolveHarnessHome(osHome, chosen)
+    } catch (error) {
+      return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) } as const
+    }
+    if (hasNonAsciiCharacters(chosen)) {
+      const warning = await dialog.showMessageBox(window, {
+        type: 'warning',
+        buttons: ['继续 · Continue', '选择其他位置 · Choose another location'],
+        defaultId: 1,
+        cancelId: 1,
+        message: '所选路径包含非 ASCII 字符 · The chosen path contains non-ASCII characters',
+        detail: '部分 conda 和 R 包可能无法在这样的路径下正常工作。 · Some conda and R packages may not work correctly under such a path.',
+      })
+      if (warning.response !== 0) return { status: 'cancelled' } as const
+    }
+    await writeInstallLocationPointer(osHome, chosen)
+    relaunchApplication()
+    return { status: 'restarting' } as const
+  })
+  ipcMain.handle('desktop:reset-install-location', async () => {
+    await clearInstallLocationPointer(app.getPath('home'))
+    relaunchApplication()
+    return { status: 'restarting' } as const
+  })
   ipcMain.handle('desktop:provision', async (_event, id: unknown, sourceId: unknown) => {
     if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
     if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')

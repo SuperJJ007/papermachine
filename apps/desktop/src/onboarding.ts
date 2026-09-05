@@ -12,6 +12,9 @@ declare global {
   }
 }
 
+const installLocationPathElement = document.querySelector('#install-location-path')
+const changeInstallLocationElement = document.querySelector('#change-install-location')
+const resetInstallLocationElement = document.querySelector('#reset-install-location')
 const installSummaryElement = document.querySelector('#install-summary')
 const currentEnvironmentElement = document.querySelector('#current-environment')
 const currentIdElement = document.querySelector('#current-id')
@@ -35,7 +38,10 @@ const progressPhaseElement = document.querySelector('#progress-phase')
 const progressMessageElement = document.querySelector('#progress-message')
 const cancelElement = document.querySelector('#cancel')
 const statusElement = document.querySelector('#status')
-if (!(installSummaryElement instanceof HTMLParagraphElement)
+if (!(installLocationPathElement instanceof HTMLElement)
+  || !(changeInstallLocationElement instanceof HTMLButtonElement)
+  || !(resetInstallLocationElement instanceof HTMLButtonElement)
+  || !(installSummaryElement instanceof HTMLParagraphElement)
   || !(currentEnvironmentElement instanceof HTMLElement)
   || !(currentIdElement instanceof HTMLElement)
   || !(currentRevisionElement instanceof HTMLElement)
@@ -60,6 +66,9 @@ if (!(installSummaryElement instanceof HTMLParagraphElement)
   || !(statusElement instanceof HTMLParagraphElement)) {
   throw new Error('desktop onboarding: required controls are missing')
 }
+const installLocationPath = installLocationPathElement
+const changeInstallLocation = changeInstallLocationElement
+const resetInstallLocation = resetInstallLocationElement
 const installSummary = installSummaryElement
 const currentEnvironment = currentEnvironmentElement
 const currentId = currentIdElement
@@ -196,6 +205,24 @@ function dismissConfirm(): void {
   confirm.hidden = true
 }
 
+/** Render the resolved Harness home path and show "Use default" only while a pointer file is in effect. */
+async function loadInstallLocation(): Promise<void> {
+  try {
+    const location = await window.desktopOnboarding.installLocation()
+    installLocationPath.textContent = location.path
+    resetInstallLocation.hidden = !location.customized
+  } catch (error) {
+    statusNode.textContent = error instanceof Error ? error.message : String(error)
+  }
+}
+
+/** Disable the install-location controls and report the pending relaunch; the page is about to be torn down. */
+function showRestarting(): void {
+  changeInstallLocation.disabled = true
+  resetInstallLocation.disabled = true
+  statusNode.textContent = '正在重启… · Restarting…'
+}
+
 async function loadEnvironments(): Promise<void> {
   provision.disabled = true
   try {
@@ -270,6 +297,25 @@ async function startConfirmed(): Promise<void> {
   }
 }
 
+changeInstallLocation.addEventListener('click', () => {
+  void (async () => {
+    changeInstallLocation.disabled = true
+    resetInstallLocation.disabled = true
+    const result = await window.desktopOnboarding.chooseInstallLocation()
+    if (result.status === 'restarting') {
+      showRestarting()
+      return
+    }
+    if (result.status === 'rejected') statusNode.textContent = result.reason
+    changeInstallLocation.disabled = false
+    resetInstallLocation.disabled = false
+  })()
+})
+resetInstallLocation.addEventListener('click', () => {
+  changeInstallLocation.disabled = true
+  resetInstallLocation.disabled = true
+  void window.desktopOnboarding.resetInstallLocation().then(() => { showRestarting() })
+})
 advanced.addEventListener('toggle', () => { provisionCustom.hidden = !advanced.open })
 provision.addEventListener('click', () => {
   if (standard === undefined) return
@@ -333,4 +379,5 @@ window.desktopOnboarding.onProvisioningProgress((update) => {
 // launch), if any.
 const entryStatus = await window.desktopOnboarding.onboardingStatus()
 if (entryStatus !== undefined) statusNode.textContent = entryStatus
+await loadInstallLocation()
 await loadEnvironments()

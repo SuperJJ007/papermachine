@@ -185,8 +185,7 @@ export async function assertProfileRunConfinement(
  * language prefix — the same fixed layout (`bin/python`/`bin/Rscript` on
  * POSIX, `python.exe`/`Scripts\Rscript.exe` on win32) every static and probe
  * check in this module uses. Exported so a real-driver test can locate a
- * real bound interpreter the way the product itself does, instead of a
- * hardcoded or platform-blind guess.
+ * real bound interpreter the way the product itself does.
  * @param language - selects the layout entry.
  * @param prefix - configured or canonicalized Conda prefix.
  * @returns the candidate executable path; existence is not checked here.

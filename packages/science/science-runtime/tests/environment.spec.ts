@@ -90,6 +90,20 @@ class EveryProbeFailureSandbox extends DirectSandbox {
   }
 }
 
+/**
+ * Prove the probe-directory-before-confinement ordering a real win32 ACL
+ * sandbox requires: `confine()` throws if its `workspaceRoot` is not
+ * already a real directory on disk.
+ */
+class RequireExistingWorkspaceRootSandbox extends DirectSandbox {
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    if (!existsSync(policy.workspaceRoot)) {
+      throw new Error(`science-runtime test: workspaceRoot ${policy.workspaceRoot} does not exist at confine() time`)
+    }
+    return super.confine(argv, policy)
+  }
+}
+
 /** Surface defensive subprocess-provider failures through the public bind operation. */
 class BrokenProbeSubprocess extends ControlledSubprocess {
   mode: 'error-rejection' | 'non-error-rejection' | 'no-outcome' | 'unquiescent' | 'missing-output' | 'version-both-streams' | 'version-nul' | 'version-stderr-only' = 'non-error-rejection'
@@ -141,8 +155,8 @@ class RetryPartialSandbox extends DirectSandbox {
   override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.wraps += 1
     const confined = super.confine(argv, policy)
-    // The first prepareProbeAttempt wraps three probes (version, utf8, packages) fully;
-    // only the retry's wraps report partial enforcement.
+    // The first attempt confines three probes (version, utf8, packages) fully;
+    // only the retry's confines report partial enforcement.
     if (this.wraps <= 3) return confined
     if (this.failRollback) staticFsFault.cleanupPath = dirname(dirname(policy.workspaceRoot))
     return { ...confined, enforcement: 'partial' }
@@ -462,7 +476,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
     expect(partialSession.events.map(event => event.type)).toEqual(['science/mode-bound'])
-    expect(existsSync(join(partialRoot, 'dsh-home', 'science'))).toBe(false)
+    // Confinement now runs after the probe directory (and therefore the
+    // owning Session tree) is created, so rejection rolls back this exact
+    // Session's root and marker rather than leaving nothing on disk at all.
+    expect(existsSync(join(partialRoot, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(partialSession)))).toBe(false)
 
     const unavailableRoot = mkdtempSync(join(process.cwd(), '.science-runtime-unavailable-'))
     roots.push(unavailableRoot)
@@ -478,7 +495,26 @@ describe('ScienceRuntime.bindEnvironment', () => {
       profileId: ScienceEnvironmentProfileId('fake'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
-    expect(existsSync(join(unavailableRoot, 'dsh-home', 'science'))).toBe(false)
+    expect(existsSync(join(unavailableRoot, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(unavailableSession)))).toBe(false)
+  })
+
+  it('confines every probe only after its private directory already exists on disk', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-confine-after-exists-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(RequireExistingWorkspaceRootSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-confine-after-exists')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
   })
 
   it('accepts a partial-reporting sandbox and records the accepted level once minimumEnforcement allows it', async () => {

@@ -71,7 +71,10 @@ export interface ObservationServices {
   readonly sessionScratch: ScienceSessionScratch
   readonly sessionId: SessionId
   readonly signal: AbortSignal
-  /** Create or verify the planned Session tree after every required probe is fully wrapped. */
+  /**
+   * Create or verify the planned Session tree once every required probe
+   * attempt is planned (paths and argv only, nothing confined yet).
+   */
   readonly prepareSessionScratch?: () => Promise<void>
   /** Configured maximum retained package-inventory entries. */
   readonly packagesMaxEntries: number
@@ -90,6 +93,13 @@ interface StaticInterpreterFacts {
 
 interface PreparedProbeAttempt {
   readonly scratch: ScienceProbeScratch
+  readonly version: readonly string[]
+  readonly utf8: readonly string[]
+  readonly packages: readonly string[]
+}
+
+/** One attempt's three probes, each confined once its probe directory exists. */
+interface ConfinedProbeAttempt {
   readonly version: ConfinedArgv
   readonly utf8: ConfinedArgv
   readonly packages: ConfinedArgv
@@ -155,8 +165,18 @@ export async function assertProfileRunConfinement(
   }
 }
 
-/** Return the platform executable candidate for a configured language prefix. */
-function executableCandidate(language: ScienceLanguage, prefix: string): string {
+/**
+ * Return the platform-specific executable candidate for a configured
+ * language prefix — the same fixed layout (`bin/python`/`bin/Rscript` on
+ * POSIX, `python.exe`/`Scripts\Rscript.exe` on win32) every static and probe
+ * check in this module uses. Exported so a real-driver test can locate a
+ * real bound interpreter the way the product itself does, instead of a
+ * hardcoded or platform-blind guess.
+ * @param language - selects the layout entry.
+ * @param prefix - configured or canonicalized Conda prefix.
+ * @returns the candidate executable path; existence is not checked here.
+ */
+export function executableCandidate(language: ScienceLanguage, prefix: string): string {
   return join(prefix, ...EXECUTABLE_LAYOUTS[process.platform][language])
 }
 
@@ -309,7 +329,7 @@ async function runProbe(
   return { stdout: stdout.text, stderr: stderr.text, ok: outcome.exitCode === 0 && outcome.signal === null }
 }
 
-/** Wrap one exact future probe before its private directory exists. */
+/** Sandbox-confine one probe argv against its already-created private probe directory. */
 function confineProbe(
   services: ObservationServices,
   prefix: string,
@@ -317,6 +337,20 @@ function confineProbe(
   argv: readonly string[],
 ): ConfinedArgv {
   return confineWithEnforcement(services.sandbox, prefix, probePolicy(scratch, services.sessionId), argv, services.minimumEnforcement)
+}
+
+/** Confine every probe of one attempt, in fixed order, against its already-created probe directory. */
+function confineProbeAttempt(
+  services: ObservationServices,
+  prefix: string,
+  scratch: ScienceProbeScratch,
+  attempt: PreparedProbeAttempt,
+): ConfinedProbeAttempt {
+  return {
+    version: confineProbe(services, prefix, scratch, attempt.version),
+    utf8: confineProbe(services, prefix, scratch, attempt.utf8),
+    packages: confineProbe(services, prefix, scratch, attempt.packages),
+  }
 }
 
 /** Distinguish an absent or structurally unusable configured interpreter from provider I/O failure. */
@@ -398,7 +432,14 @@ function staticFailure(language: ScienceLanguage, configuredPrefix: string, erro
   }
 }
 
-/** Plan and fully wrap one exact two-probe attempt before creating its paths. */
+/**
+ * Plan one exact attempt's probe directory and direct argv (version, UTF-8,
+ * and package-inventory probes) without creating the directory or confining
+ * any argv. Confinement needs the probe directory to exist — a real win32
+ * ACL sandbox `realpathSync.native`s the confined `workspaceRoot` — so it
+ * happens later, in {@link observePrepared} right after
+ * {@link createProbeScratch} materializes this planned directory.
+ */
 function prepareProbeAttempt(
   services: ObservationServices,
   language: ScienceLanguage,
@@ -411,28 +452,13 @@ function prepareProbeAttempt(
   }
   return {
     scratch,
-    version: confineProbe(
-      services,
-      staticFacts.prefix,
-      scratch,
-      probeArgv(language, staticFacts.executable, 'version'),
-    ),
-    utf8: confineProbe(
-      services,
-      staticFacts.prefix,
-      scratch,
-      probeArgv(language, staticFacts.executable, 'utf8'),
-    ),
-    packages: confineProbe(
-      services,
-      staticFacts.prefix,
-      scratch,
-      probeArgv(language, staticFacts.executable, 'packages'),
-    ),
+    version: probeArgv(language, staticFacts.executable, 'version'),
+    utf8: probeArgv(language, staticFacts.executable, 'utf8'),
+    packages: probeArgv(language, staticFacts.executable, 'packages'),
   }
 }
 
-/** Resolve static facts and wrap the first exact attempt without creating scratch. */
+/** Resolve static facts and plan the first exact attempt without creating scratch or confining anything. */
 async function prepareObservation(
   services: ObservationServices,
   language: ScienceLanguage,
@@ -456,7 +482,13 @@ async function prepareObservation(
   }
 }
 
-/** Execute pre-wrapped probes and calculate one stable binding digest. */
+/**
+ * Execute one planned attempt's probes and calculate one stable binding
+ * digest. Each attempt's probe directory is created first
+ * ({@link createProbeScratch}), then its three probes are confined against
+ * that now-existing directory ({@link confineProbeAttempt}), then run — the
+ * order a real win32 ACL sandbox requires.
+ */
 async function observePrepared(
   services: ObservationServices,
   prepared: PreparedObservation,
@@ -468,9 +500,10 @@ async function observePrepared(
     const scratch = await createProbeScratch(services.sessionScratch, preparedAttempt.scratch)
     let observationFailure: unknown
     try {
-      const version = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.version, VERSION_MAX_BYTES)
-      const utf8 = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.utf8, VERSION_MAX_BYTES)
-      const packages = await runProbe(services, staticFacts.prefix, scratch, preparedAttempt.packages, PACKAGES_PROBE_MAX_BYTES)
+      const confined = confineProbeAttempt(services, staticFacts.prefix, scratch, preparedAttempt)
+      const version = await runProbe(services, staticFacts.prefix, scratch, confined.version, VERSION_MAX_BYTES)
+      const utf8 = await runProbe(services, staticFacts.prefix, scratch, confined.utf8, VERSION_MAX_BYTES)
+      const packages = await runProbe(services, staticFacts.prefix, scratch, confined.packages, PACKAGES_PROBE_MAX_BYTES)
       const normalized = version.ok ? normalizeVersion(version.stdout, version.stderr) : undefined
       const after = await staticInterpreter(language, configuredPrefix)
       const stable = after.prefix === staticFacts.prefix
@@ -487,7 +520,7 @@ async function observePrepared(
           prefix: after.prefix,
           executable: after.executable,
           binding: { language, configuredPrefix, canonicalPrefix: after.prefix, capability: 'invalid', reason: 'environment changed during observation' },
-          enforcement: preparedAttempt.version.enforcement,
+          enforcement: confined.version.enforcement,
         }
       }
       if (normalized === undefined || !utf8.ok || utf8.stdout !== UTF8_PROBE_TEXT || utf8.stderr.length !== 0) {
@@ -495,7 +528,7 @@ async function observePrepared(
           prefix: staticFacts.prefix,
           executable: staticFacts.executable,
           binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'interpreter probes did not produce the required lossless output' },
-          enforcement: preparedAttempt.version.enforcement,
+          enforcement: confined.version.enforcement,
         }
       }
       const rawPackages = packages.ok ? parsePackages(language, packages.stdout) : undefined
@@ -504,7 +537,7 @@ async function observePrepared(
           prefix: staticFacts.prefix,
           executable: staticFacts.executable,
           binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
-          enforcement: preparedAttempt.version.enforcement,
+          enforcement: confined.version.enforcement,
         }
       }
       const historySha = sha256(staticFacts.history)
@@ -524,7 +557,7 @@ async function observePrepared(
           ...packageInventory(rawPackages, services.packagesMaxEntries, services.packagesMaxBytes),
           capability: 'available',
         },
-        enforcement: preparedAttempt.version.enforcement,
+        enforcement: confined.version.enforcement,
       }
     } catch (error) {
       observationFailure = error

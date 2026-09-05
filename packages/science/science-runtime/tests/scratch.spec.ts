@@ -104,20 +104,30 @@ async function sessionWithId(id: string) {
   return ctx.sessions.create(SessionId(id))
 }
 
-/** Assert a managed directory uses the exact private POSIX mode. */
+/**
+ * Assert a managed directory is a real, non-symlink directory and, on POSIX,
+ * uses the exact private mode. Skips the mode check on win32 for the same
+ * reason `privateDirectory()` does: Node's win32 `lstat` synthesizes mode
+ * bits that never reflect a prior `chmod`, so this assertion has no
+ * meaningful win32 form (see the win32-scratch-privacy Agent Note).
+ */
 function expectPrivateDirectory(path: string): void {
   const entry = lstatSync(path)
   expect(entry.isDirectory()).toBe(true)
   expect(entry.isSymbolicLink()).toBe(false)
-  expect(entry.mode & 0o777).toBe(0o700)
+  if (process.platform !== 'win32') expect(entry.mode & 0o777).toBe(0o700)
 }
 
-/** Assert a managed regular file uses the exact private POSIX mode. */
+/**
+ * Assert a managed regular file is a real, non-symlink file and, on POSIX,
+ * uses the exact private mode. Skips the mode check on win32; see
+ * {@link expectPrivateDirectory}.
+ */
 function expectPrivateFile(path: string): void {
   const entry = lstatSync(path)
   expect(entry.isFile()).toBe(true)
   expect(entry.isSymbolicLink()).toBe(false)
-  expect(entry.mode & 0o777).toBe(0o600)
+  if (process.platform !== 'win32') expect(entry.mode & 0o777).toBe(0o600)
 }
 
 describe('Science Runtime private scratch', () => {

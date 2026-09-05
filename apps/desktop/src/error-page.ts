@@ -79,3 +79,16 @@ export function launchErrorPage(logPath: string | undefined, error: unknown): st
     ? harnessHomeSpaceErrorPage(error)
     : errorPage(logPath, undefined, error instanceof Error ? error.message : String(error))
 }
+
+/**
+ * Dedicated error page for an unsupported platform: informs the user
+ * honestly before any 520 MB environment download is attempted.
+ */
+export function unsupportedPlatformErrorPage(platform: string): string {
+  return errorSurface(
+    'PaperMachine Analysis Not Supported on Windows',
+    'PaperMachine 0.1 cannot yet execute Python or R analyses on Windows: the Science kernel requires a POSIX transport and full sandbox confinement. Environment download has been prevented. Please consider using WSL2 or macOS for analysis.',
+    false,
+  )
+}
+

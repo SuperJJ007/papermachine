@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessHomeSpaceError } from '../src/harness-home.ts'
-import { errorPage, errorSurface, harnessHomeSpaceErrorPage, launchErrorPage, RESTART_URL } from '../src/error-page.ts'
+import { errorPage, errorSurface, harnessHomeSpaceErrorPage, launchErrorPage, RESTART_URL, unsupportedPlatformErrorPage } from '../src/error-page.ts'
 
 /** Decode one of this module's `data:text/html` URLs back to its HTML source. */
 function decode(dataUrl: string): string {
@@ -80,3 +80,14 @@ describe('launchErrorPage', () => {
     expect(decode(launchErrorPage(undefined, 'raw string failure'))).toContain('<p>raw string failure</p>')
   })
 })
+
+describe('unsupportedPlatformErrorPage', () => {
+  it('renders honest Windows analysis explanation without Restart Host link', () => {
+    const html = decode(unsupportedPlatformErrorPage('win32'))
+
+    expect(html).toContain('PaperMachine Analysis Not Supported on Windows')
+    expect(html).toContain('POSIX transport')
+    expect(html).not.toContain(RESTART_URL)
+  })
+})
+

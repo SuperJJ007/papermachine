@@ -24,7 +24,7 @@ import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts
 import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
-import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
+import { errorPage, launchErrorPage, RESTART_URL, unsupportedPlatformErrorPage } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
@@ -501,6 +501,10 @@ async function openOnboarding(): Promise<void> {
  * quit to have begun in the meantime.
  */
 async function openInitialSurface(): Promise<void> {
+  if (process.platform === 'win32') {
+    await window?.loadURL(unsupportedPlatformErrorPage(process.platform))
+    return
+  }
   const dshHome = await harnessHome()
   const status = await resolveEnvironmentBindingStatus(dshHome)
   if (status.kind === 'bound') {

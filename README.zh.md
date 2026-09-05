@@ -106,7 +106,7 @@ PaperMachine 发送三个匿名遥测事件(`app.launch`、`environment.installe
 
 PaperMachine 0.1 是早期版本。已知限制:
 
-- 支持 macOS(Apple 芯片与 Intel)与 Windows(x64)。Windows 版是新加的:它在 Windows runner 上构建并跑过测试,但还没有任何一版在真实 Windows 机器上完成过验收。
+- 分析运行支持 macOS(Apple 芯片与 Intel)与 Linux。提供 Windows x64 安装包用于测试桌面载体，但 Science Runtime 目前暂无法在 Windows 上执行 Python 或 R：其内核通信依赖 POSIX FIFO，且沙箱要求全强制等级，Windows 后端目前仅提供部分隔离。应用会在首次启动时说明这一点，而不是下载 520 MB 环境。
 - 需要 DeepSeek API key;应用不附带 key。
 - 两个平台的安装包都未签名;见上文说明。
 - 更新需手动:下载下一个安装包。
@@ -114,6 +114,7 @@ PaperMachine 0.1 是早期版本。已知限制:
 
 ## 路线图
 
+- Windows 分析运行支持：基于管道的内核传输与 Windows 后端显式沙箱等级策略。
 - 学科环境,从社会科学开始。
 - 变量变化史视图:每个数据集在各清洗步骤中的形状变化。
 

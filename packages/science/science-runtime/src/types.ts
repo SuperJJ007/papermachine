@@ -70,8 +70,6 @@ export type ScienceRuntimeErrorCode =
   | 'INPUT_TOO_LARGE'
   /** A persistent kernel's spawn, READY handshake, or start-time confinement failed; the message names the language and cause class. */
   | 'KERNEL_START_FAILED'
-  /** Kernel execution requires darwin or linux; rejected pre-publication on every other platform. */
-  | 'KERNEL_UNSUPPORTED_PLATFORM'
   | 'CHART_STALE_VERSION'
   | 'CHART_NOT_ADDRESSABLE'
   | 'CHART_ELEMENT_NOT_FOUND'

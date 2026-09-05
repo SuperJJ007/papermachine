@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { open, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, win32 as pathWin32 } from 'node:path'
 import { SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { ScienceRunId, ScienceScratchKey } from '@deepseek-ai/dsh-science-session'
@@ -33,13 +33,25 @@ const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
   aix: POSIX_LOCALE, android: POSIX_LOCALE, darwin: 'en_US.UTF-8', freebsd: POSIX_LOCALE, haiku: POSIX_LOCALE,
   linux: POSIX_LOCALE, netbsd: POSIX_LOCALE, openbsd: POSIX_LOCALE, sunos: POSIX_LOCALE, win32: POSIX_LOCALE, cygwin: POSIX_LOCALE,
 }
-const PATH_DIRECTORIES: Record<NodeJS.Platform, string> = {
-  aix: 'bin', android: 'bin', darwin: 'bin', freebsd: 'bin', haiku: 'bin', linux: 'bin',
-  netbsd: 'bin', openbsd: 'bin', sunos: 'bin', win32: 'Scripts', cygwin: 'bin',
-}
-const PATH_SUFFIXES: Record<NodeJS.Platform, string> = {
-  aix: ':/usr/bin:/bin', android: ':/usr/bin:/bin', darwin: ':/usr/bin:/bin', freebsd: ':/usr/bin:/bin', haiku: ':/usr/bin:/bin',
-  linux: ':/usr/bin:/bin', netbsd: ':/usr/bin:/bin', openbsd: ':/usr/bin:/bin', sunos: ':/usr/bin:/bin', win32: '', cygwin: ':/usr/bin:/bin',
+/** Fixed trailing system directories appended after a POSIX prefix's own `bin`. */
+const POSIX_PATH_SUFFIX = ':/usr/bin:/bin'
+/**
+ * Fixed ordered Conda prefix subdirectories a win32 `PATH` needs, mirroring
+ * what `conda activate` itself prepends on Windows: the prefix root first
+ * (`python.exe` lives there, not under a `bin`), then the MSYS2/MinGW-toolchain
+ * and Unix-utility shims under `Library`, then the prefix's own `Scripts`
+ * and `bin`. Declared as win32 path segments (backslash-joined via
+ * `path.win32`) regardless of the host platform this function runs on, since
+ * the value is a literal `PATH` string for a spawned win32 child, never a
+ * filesystem path this process itself resolves.
+ */
+const WINDOWS_PATH_SUBDIRECTORIES = ['', 'Library\\mingw-w64\\bin', 'Library\\usr\\bin', 'Library\\bin', 'Scripts', 'bin'] as const
+
+/** Win32 `PATH` value for a Conda prefix: see {@link WINDOWS_PATH_SUBDIRECTORIES}. */
+function windowsInterpreterPathEnv(canonicalPrefix: string): string {
+  return WINDOWS_PATH_SUBDIRECTORIES
+    .map(subdirectory => (subdirectory === '' ? canonicalPrefix : pathWin32.join(canonicalPrefix, subdirectory)))
+    .join(';')
 }
 
 /** Complete pre-publication plan with no Host scratch path exposed publicly. */
@@ -66,19 +78,22 @@ export function localeEnvironment(): Pick<NodeJS.ProcessEnv, 'LANG' | 'LC_ALL' |
 
 /**
  * Fixed `PATH` entry for a configured interpreter prefix: its own `bin`
- * (`Scripts` on Windows) ahead of the platform's ordinary system
- * directories. Shared by every confined interpreter spawn.
+ * ahead of the platform's ordinary system directories on POSIX, or the full
+ * ordered Conda subdirectory list `conda activate` itself would set on win32
+ * ({@link windowsInterpreterPathEnv}). Shared by every confined interpreter spawn.
  * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
  * @returns the exact `PATH` value for that prefix on this host platform.
  */
 export function interpreterPathEnv(canonicalPrefix: string): string {
-  return `${join(canonicalPrefix, PATH_DIRECTORIES[process.platform])}${PATH_SUFFIXES[process.platform]}`
+  if (process.platform === 'win32') return windowsInterpreterPathEnv(canonicalPrefix)
+  return `${join(canonicalPrefix, 'bin')}${POSIX_PATH_SUFFIX}`
 }
 
 /**
  * Direct argv for one persistent kernel's interpreter invocation: fixed
  * per-language hardening flags followed by the caller's trailing script
- * arguments — the driver script path plus its response-FIFO path argument.
+ * arguments — the driver script path plus its response-channel endpoint
+ * argument (an absolute FIFO path, or a `tcp:127.0.0.1:<port>:<token>` address on win32).
  * Never a shell command. Kernel-only: an interpreter probe builds its own
  * direct argv (`probeArgv` in `environment.ts`) and keeps Python `-I`
  * (isolated mode), since a probe never needs a writable package-install

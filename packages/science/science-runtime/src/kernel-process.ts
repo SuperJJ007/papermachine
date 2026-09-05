@@ -1,16 +1,18 @@
 /**
  * One confined persistent Science kernel subprocess speaking the kernel wire
- * protocol (`stdin` RUN/CHART_EXTRACT/CHART_APPLY/EXIT request frames, response-FIFO READY/DONE/CHART frames): spawn
- * sequence, execute-serialization, cooperative interrupt passthrough, and
- * teardown. An owned forwarding process reads the FIFO; Host reads its
- * stdout pipe without retaining a filesystem worker. Session-scoped lifecycle is out of scope here: this module knows
+ * protocol (`stdin` RUN/CHART_EXTRACT/CHART_APPLY/EXIT request frames,
+ * response-channel READY/DONE/CHART frames): spawn sequence,
+ * execute-serialization, cooperative interrupt passthrough, and teardown.
+ * The response channel itself — a POSIX FIFO with an owned forwarding `cat`
+ * reader, or a win32 loopback TCP connection — is `kernel-transport.ts`'s
+ * concern; this module only consumes the {@link KernelResponseTransport} it
+ * hands back: a readable byte stream plus a `faulted` signal, parsed the same
+ * way regardless of which transport produced them. Session-scoped lifecycle is out of scope here: this module knows
  * nothing about session events, kernel epochs, idle timers, or durable end
  * reasons beyond the generic diagnostic string `end()` accepts.
  * @module @deepseek-ai/dsh-science-runtime/kernel-process
  */
 
-import { unlink } from 'node:fs/promises'
-import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
@@ -27,14 +29,20 @@ import {
   quiesce,
 } from './execution.ts'
 import type { Quiescence } from './execution.ts'
+import {
+  assertNoFrameDelimiters,
+  createKernelResponseTransport,
+  selectKernelTransportKind,
+} from './kernel-transport.ts'
+import type { KernelResponseTransport, KernelTransportKind } from './kernel-transport.ts'
 import { createKernelScratch, planKernelScratch } from './scratch.ts'
 import type { ScienceKernelScratch, ScienceSessionScratch } from './scratch.ts'
 import { ScienceRuntimeError } from './types.ts'
 
 /**
  * Fatal kernel-driver protocol violation: an unparseable frame, an
- * unexpected response-FIFO EOF while the kernel process was still alive, or
- * a READY handshake timeout.
+ * unexpected response-channel EOF while the kernel process was still alive,
+ * or a READY handshake timeout.
  */
 export class KernelProtocolError extends Error {
   override name = 'KernelProtocolError'
@@ -77,6 +85,13 @@ export interface KernelProcessOptions {
    * operation-scoped signal of its own.
    */
   readonly signal?: AbortSignal | undefined
+  /**
+   * Force a specific response-channel transport instead of
+   * {@link selectKernelTransportKind}'s own platform default. Every
+   * production caller omits this; it exists so a test can exercise the
+   * loopback TCP transport on a POSIX host without mocking `process.platform` globally.
+   */
+  readonly transportKind?: KernelTransportKind | undefined
 }
 
 /** One RUN request: exact host-minted paths, never shell-interpreted or escaped. */
@@ -175,107 +190,33 @@ interface PendingChart {
 
 type PendingRequest = PendingExecute | PendingChart
 
-/** Reject a host-minted field that must never carry frame delimiters. */
-function assertNoFrameDelimiters(value: string, label: string): void {
-  if (value.includes('\t') || value.includes('\n')) {
-    throw new Error(`science-runtime: kernel ${label} must not contain a tab or newline`)
-  }
-}
-
-/** Whether an unknown error carries the POSIX `ENOENT` code. */
-function isEnoent(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { readonly code?: unknown }).code === 'ENOENT'
-}
-
-/** Remove the response FIFO, tolerating an already-absent path. */
-async function unlinkFifo(fifoPath: string): Promise<void> {
-  try {
-    await unlink(fifoPath)
-  } catch (error) {
-    if (!isEnoent(error)) throw error
-  }
-}
-
-/** Forward FIFO bytes over a subprocess pipe without blocking Host filesystem workers. */
-async function startResponseReader(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<SubprocessHandle> {
-  const cat = await subprocess.resolveExecutable('cat')
-  return subprocess.spawn({
-    argv: [cat, fifoPath],
-    cwd,
-    stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 4_096 } },
-    graceMs: DESCENDANT_GRACE_MS,
-    environmentBase: 'empty',
-  })
-}
-
-/** Stop a reader that may still be blocked opening its FIFO, retaining the provider's quiescence observation. */
-async function stopResponseReader(reader: SubprocessHandle): Promise<Quiescence> {
-  try {
-    reader.terminate()
-  } catch {
-    // A failed termination request leaves quiesce responsible for retry and exit observation.
-  }
-  return quiesce(reader)
-}
-
 /**
- * Full teardown for a kernel that failed anywhere between response-FIFO
- * creation and a successful READY handshake: quiesce the
- * subprocess when one was spawned, destroy the host's pipe reader, then
- * remove the FIFO file.
- * @param handle - the spawned subprocess handle, or `undefined` when spawn itself never ran.
- * @param fifoPath - absolute path of the response FIFO.
- * @param reader - the FIFO forwarding subprocess, if spawned.
+ * Fixed ambient Windows system variables carried through unchanged from the
+ * Host's own environment into a win32 kernel spawn — the POSIX allowlist's
+ * empty-base start stays exactly as narrow as before. A win32 process given
+ * no `SystemRoot` cannot initialize Winsock (Python's `socket` module fails
+ * with WinError 10106), so `TCP transport` selection on win32
+ * ({@link selectKernelTransportKind}) makes this list load-bearing, not
+ * cosmetic. `TEMP`/`TMP` are deliberately absent here: unlike these ambient
+ * identity/locale variables, they are the win32 equivalent of the POSIX
+ * `TMPDIR` entry below and are set to the kernel's own scratch directory,
+ * never the Host's ambient temp directory.
  */
-async function cleanupOnStartFailure(
-  handle: SubprocessHandle | undefined,
-  fifoPath: string,
-  reader: SubprocessHandle | undefined,
-): Promise<void> {
-  if (handle !== undefined) {
-    const result = await quiesce(handle)
-    if (!result.quiescent) await result.eventualQuiescence
-  }
-  if (reader !== undefined) {
-    const result = await stopResponseReader(reader)
-    if (!result.quiescent) await result.eventualQuiescence
-    reader.stdout?.destroy()
-  }
-  await unlinkFifo(fifoPath)
-}
+const WIN32_AMBIENT_ENVIRONMENT_KEYS = [
+  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+] as const
 
-/**
- * Create the kernel's response FIFO host-side, unconfined: spawns the
- * platform `mkfifo` binary directly through the subprocess seam, never
- * through the sandbox — the FIFO must exist before the confined
- * kernel argv is spawned. Removes a stale FIFO left at the same path by an
- * earlier failed attempt first: `mkfifo` refuses an existing
- * path, and a retry after a start failure reuses the same kernel-epoch
- * scratch directory.
- * @param subprocess - subprocess runtime used unconfined for this one call.
- * @param cwd - existing directory to spawn `mkfifo` from (irrelevant beyond existing, since `fifoPath` is absolute).
- * @param fifoPath - absolute path at which to create the FIFO.
- * @throws when the FIFO path carries a frame delimiter, `mkfifo` cannot be resolved, or it exits non-zero.
- */
-async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<void> {
-  assertNoFrameDelimiters(fifoPath, 'response FIFO path')
-  await unlinkFifo(fifoPath)
-  const mkfifo = await subprocess.resolveExecutable('mkfifo')
-  const handle = subprocess.spawn({
-    argv: [mkfifo, fifoPath],
-    cwd,
-    stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
-    graceMs: DESCENDANT_GRACE_MS,
-    environmentBase: 'empty',
-  })
-  const outcome = await handle.done
-  if (outcome.exitCode !== 0 || outcome.signal !== null) {
-    const stderrText = handle.collected.stderr?.readFrom(0).text ?? ''
-    throw new Error(
-      'science-runtime: mkfifo failed for the kernel response FIFO '
-      + `(exitCode=${String(outcome.exitCode)}, signal=${String(outcome.signal)}): ${stderrText}`,
-    )
+/** Carry through the fixed win32 ambient keys present in the Host's own environment; absent on every other platform. */
+function win32AmbientEnvironment(): NodeJS.ProcessEnv {
+  if (process.platform !== 'win32') return {}
+  const entries: [string, string][] = []
+  for (const key of WIN32_AMBIENT_ENVIRONMENT_KEYS) {
+    const value = process.env[key]
+    if (value !== undefined) entries.push([key, value])
   }
+  return Object.fromEntries(entries)
 }
 
 /**
@@ -288,9 +229,19 @@ async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fi
  * `R_LIBS_USER` (R): the writable target an inline `pip install`/
  * `install.packages()` falls back to under sandbox confinement, and the
  * location the dropped `-I` flag ({@link interpreterArgv}) lets Python's
- * `sys.path` see again within the same kernel.
+ * `sys.path` see again within the same kernel. On win32, `TEMP`/`TMP` join
+ * `TMPDIR` as the kernel's own scratch temp directory — neither Python's
+ * `tempfile` nor R's `tempdir()` consult `TMPDIR` on Windows — and a fixed
+ * set of ambient Windows system variables ({@link win32AmbientEnvironment})
+ * is carried through from the Host, since a process with none of them cannot
+ * initialize Winsock.
+ * @param binding - the observed interpreter binding selecting the language and canonical Conda prefix.
+ * @param session - the owning Science Session, read only for its immutable workspace `cwd`.
+ * @param sessionScratch - the Session's own private scratch (`HOME`/durable state).
+ * @param kernelScratch - this exact kernel instance's private scratch (TMPDIR, user-install base).
+ * @returns the complete empty-base environment for this kernel's confined spawn.
  */
-function kernelEnvironment(
+export function kernelEnvironment(
   binding: ScienceInterpreterAvailableBinding,
   session: Session,
   sessionScratch: ScienceSessionScratch,
@@ -299,6 +250,7 @@ function kernelEnvironment(
   return {
     HOME: sessionScratch.home,
     TMPDIR: kernelScratch.tmp,
+    ...(process.platform === 'win32' ? { TEMP: kernelScratch.tmp, TMP: kernelScratch.tmp } : {}),
     PATH: interpreterPathEnv(binding.canonicalPrefix),
     SCIENCE_STATE_DIR: sessionScratch.state,
     ...(session.header.cwd === undefined ? {} : { SCIENCE_WORKSPACE_DIR: session.header.cwd }),
@@ -306,6 +258,7 @@ function kernelEnvironment(
       ? { PYTHONUSERBASE: kernelScratch.userLibrary }
       : { R_LIBS_USER: kernelScratch.userLibrary }),
     ...localeEnvironment(),
+    ...win32AmbientEnvironment(),
   }
 }
 
@@ -337,9 +290,8 @@ export class KernelProcess {
 
   private constructor(
     private readonly handle: SubprocessHandle,
-    private readonly fifoPath: string,
-    private readonly reader: SubprocessHandle,
-    private readonly readStream: Readable,
+    private readonly transport: KernelResponseTransport,
+    readStream: Readable,
   ) {
     const stdin = handle.stdin
     if (stdin === undefined) throw new Error('science-runtime: kernel process was not spawned with a stdin pipe')
@@ -364,23 +316,26 @@ export class KernelProcess {
       (outcome) => { this.settleExit(outcome.exitCode, outcome.signal) },
       () => { this.settleExit(null, null) },
     )
-    void reader.done.catch((error: unknown) => { this.onFifoError(error) })
+    void transport.faulted.catch((error: unknown) => { this.onFifoError(error) })
   }
 
   /**
-   * Spawn one confined kernel and await its READY handshake.
+   * Spawn one confined kernel and await its READY handshake. Opens this
+   * kernel's response transport ({@link selectKernelTransportKind}: a POSIX
+   * FIFO or a win32 loopback TCP connection) before spawning it, so the
+   * transport's address is ready to embed in the driver's own argv.
    * @param options - services, binding, driver path, kernel index, start
    *   deadline, and the caller's own operation signal.
    * @returns a ready-to-use kernel process.
-   * @throws {@link KernelProtocolError} on a READY timeout, `options.signal`
-   *   aborting before READY, an unparseable frame before READY, or a
-   *   process exit/rejection before READY.
+   * @throws {@link KernelProtocolError} on a READY timeout, a response-channel
+   *   connect timeout, `options.signal` aborting before either, an
+   *   unparseable frame before READY, or a process exit/rejection before READY.
    * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
    *   sandbox is unavailable, reports less than full enforcement, or the R
    *   kernel's TMPDIR would contain a space.
    */
   static async start(options: KernelProcessOptions): Promise<KernelProcess> {
-    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal } = options
+    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal, transportKind } = options
     const kernelScratch = await createKernelScratch(
       services.sessionScratch,
       planKernelScratch(services.sessionScratch, binding.language, index),
@@ -388,23 +343,23 @@ export class KernelProcess {
     if (binding.language === 'r' && kernelScratch.tmp.includes(' ')) {
       throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R kernel TMPDIR cannot contain an ASCII space')
     }
-    const fifoPath = join(kernelScratch.directory, 'resp.fifo')
-    await createResponseFifo(services.subprocess, kernelScratch.directory, fifoPath)
-    let reader: SubprocessHandle | undefined
+    // Opened before the kernel spawns: a FIFO's forwarding reader is already
+    // spawned by this point (its stream is available immediately below), while
+    // a loopback TCP listener only has its address ready — its stream exists
+    // once the kernel actually connects, awaited via `connect()` after spawn.
+    const transport = await createKernelResponseTransport(
+      transportKind ?? selectKernelTransportKind(),
+      services.subprocess,
+      kernelScratch.directory,
+    )
     let handle: SubprocessHandle | undefined
     try {
-      // The helper owns blocking FIFO open/read; Host observes its ordinary
-      // subprocess pipe, including EOF on macOS and Linux.
-      reader = await startResponseReader(services.subprocess, kernelScratch.directory, fifoPath)
-      const readStream = reader.stdout
-      if (readStream === undefined) throw new Error('science-runtime: FIFO reader was not spawned with a stdout pipe')
-      readStream.setEncoding('utf8')
       const confined = confineInterpreterArgv(
         services.session,
         services.sessionScratch,
         services.sandbox,
         binding.canonicalPrefix,
-        interpreterArgv(binding.language, binding.executable, driverPath, fifoPath),
+        interpreterArgv(binding.language, binding.executable, driverPath, transport.endpointArg),
       )
       // NOT given `signal`: that spec field stays wired to the spawned
       // handle for the process's whole lifetime (subprocess-local's own
@@ -412,7 +367,7 @@ export class KernelProcess {
       // kernel outlives the one run whose operation `signal` this is —
       // wiring it here would let any later run's own cancellation
       // force-kill an already-READY, unrelated persistent kernel. `signal`
-      // only bounds the READY wait below; an abort during that wait is
+      // only bounds the connect/READY waits below; an abort during either is
       // handled entirely through `cleanupOnStartFailure`'s own `quiesce()`.
       handle = services.subprocess.spawn({
         argv: confined.argv,
@@ -426,11 +381,16 @@ export class KernelProcess {
         environmentBase: 'empty',
         env: kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch),
       })
-      const kernel = new KernelProcess(handle, fifoPath, reader, readStream)
+      const readStream = await transport.connect(handle, kernelStartTimeoutMs, signal)
+      const kernel = new KernelProcess(handle, transport, readStream)
       await kernel.awaitReady(kernelStartTimeoutMs, signal)
       return kernel
     } catch (error) {
-      await cleanupOnStartFailure(handle, fifoPath, reader)
+      if (handle !== undefined) {
+        const result = await quiesce(handle)
+        if (!result.quiescent) await result.eventualQuiescence
+      }
+      await transport.endStartFailure()
       throw error
     }
   }
@@ -546,8 +506,9 @@ export class KernelProcess {
   }
 
   /**
-   * Best-effort EXIT frame, then quiesce the interpreter and its FIFO
-   * forwarder, then stream/file cleanup. Idempotent: a second call awaits the same teardown.
+   * Best-effort EXIT frame, then quiesce the interpreter and its response
+   * transport (FIFO forwarder or TCP listener/connection). Idempotent: a
+   * second call awaits the same teardown.
    * Returns the escalation's {@link Quiescence} verdict rather than
    * discarding it: a caller responsible for same-id
    * quarantine bookkeeping (`KernelSet.teardown`) must keep quarantine
@@ -574,16 +535,14 @@ export class KernelProcess {
       // already underway (see onStdinError).
     }
     const quiescence = await quiesce(this.handle)
-    const readerQuiescence = await stopResponseReader(this.reader)
-    this.readStream.destroy()
-    await unlinkFifo(this.fifoPath)
-    if (quiescence.quiescent && readerQuiescence.quiescent) {
-      return { quiescent: true, forced: quiescence.forced || readerQuiescence.forced }
+    const transportQuiescence = await this.transport.end()
+    if (quiescence.quiescent && transportQuiescence.quiescent) {
+      return { quiescent: true, forced: quiescence.forced || transportQuiescence.forced }
     }
     return {
       quiescent: false,
       forced: true,
-      eventualQuiescence: Promise.all([quiescence, readerQuiescence].map(result =>
+      eventualQuiescence: Promise.all([quiescence, transportQuiescence].map(result =>
         result.quiescent ? Promise.resolve(true) : result.eventualQuiescence)).then(results => results.every(Boolean)),
     }
   }
@@ -620,7 +579,8 @@ export class KernelProcess {
     this.lineBuffer += chunk
     let newline: number
     while ((newline = this.lineBuffer.indexOf('\n')) !== -1) {
-      const line = this.lineBuffer.slice(0, newline)
+      let line = this.lineBuffer.slice(0, newline)
+      if (line.endsWith('\r')) line = line.slice(0, -1)
       this.lineBuffer = this.lineBuffer.slice(newline + 1)
       this.onFrameLine(line)
     }
@@ -679,10 +639,11 @@ export class KernelProcess {
 
   private async onFifoEnd(): Promise<void> {
     if (this.exitSettled || this.commandedReason !== undefined) return
-    // A crashing kernel closes its FIFO write end as an ordinary side effect
-    // of process death; give the authoritative process-exit observation a
+    // A crashing kernel closes its end of the response channel (the FIFO
+    // write end, or the TCP connection) as an ordinary side effect of
+    // process death; give the authoritative process-exit observation a
     // brief window to settle first so a genuine crash is not misreported as
-    // a protocol violation (a driver that closes only the FIFO and stays
+    // a protocol violation (a driver that closes only the channel and stays
     // alive is the genuine violation this grace distinguishes). Reuses the
     // one fixed descendant-grace constant rather than a
     // second, unexplained one.
@@ -694,7 +655,7 @@ export class KernelProcess {
     }
     if (this.hasExitSettled() || exited) return
     this.failProtocol(new KernelProtocolError(
-      'science-runtime: kernel response FIFO ended unexpectedly while the kernel process was still alive',
+      'science-runtime: kernel response channel ended unexpectedly while the kernel process was still alive',
     ))
   }
 
@@ -703,7 +664,7 @@ export class KernelProcess {
   }
 
   private onFifoError(error: unknown): void {
-    this.onStreamError('kernel response FIFO', error)
+    this.onStreamError('kernel response channel', error)
   }
 
   /**

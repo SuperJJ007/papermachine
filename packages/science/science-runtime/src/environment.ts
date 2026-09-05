@@ -447,12 +447,6 @@ async function prepareObservation(
     }
     throw error
   }
-  if (process.platform === 'win32') {
-    throw new ScienceRuntimeError(
-      'KERNEL_UNSUPPORTED_PLATFORM',
-      'Science kernels run on macOS and Linux only in this release; Windows is not yet supported',
-    )
-  }
   return {
     kind: 'probe',
     language,

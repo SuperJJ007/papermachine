@@ -2,7 +2,12 @@
 # environment of one long-lived process, so variables persist across runs
 # within a session. Base R only — no jsonlite, no third-party packages.
 #
-# Invocation: Rscript --vanilla --encoding=UTF-8 kernel_r.R <fifoPath>
+# Invocation: Rscript --vanilla --encoding=UTF-8 kernel_r.R <endpoint>
+#
+# <endpoint> is either an absolute response-FIFO path (darwin, linux) or
+# tcp:<host>:<port>:<token> (win32): connect to <host>:<port> and write
+# <token> followed by a newline as the connection's first line before any
+# frame, then use the connection exactly like the FIFO handle below.
 #
 # Frame grammar (single line, tab-separated, newline-terminated):
 #   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
@@ -22,17 +27,25 @@ PROTOCOL_VERSION <- 2L
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1) {
-  stop("usage: kernel_r.R <fifoPath>")
+  stop("usage: kernel_r.R <endpoint>")
 }
-fifo_path <- args[1]
+endpoint <- args[1]
 
 .dsh_chart_env <- new.env(parent = baseenv())
 .dsh_script_arg <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
 sys.source(file.path(dirname(normalizePath(.dsh_script_arg)), "chart_ggplot2.R"), envir = .dsh_chart_env)
 
-# Response FIFO. Opening for write blocks (on POSIX) until a reader opens
-# the other end.
-resp_con <- fifo(fifo_path, open = "w", blocking = TRUE)
+# Response channel: a POSIX FIFO (opening for write blocks until a reader
+# opens the other end), or a win32 loopback TCP connection whose first line
+# is this channel's own token.
+if (startsWith(endpoint, "tcp:")) {
+  endpoint_parts <- strsplit(endpoint, ":", fixed = TRUE)[[1]]
+  resp_con <- socketConnection(host = endpoint_parts[2], port = as.integer(endpoint_parts[3]), open = "w", blocking = TRUE)
+  writeLines(endpoint_parts[4], con = resp_con)
+  flush(resp_con)
+} else {
+  resp_con <- fifo(endpoint, open = "w", blocking = TRUE)
+}
 
 send <- function(frame) {
   writeLines(frame, con = resp_con)

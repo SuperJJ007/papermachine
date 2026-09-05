@@ -921,9 +921,6 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns A handle exposed only after `science/run-started` committed.
    */
   async startRun(request: StartScienceRunRequest): Promise<ScienceRunHandle> {
-    if (process.platform === 'win32') {
-      throw new ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', 'Science kernel execution requires macOS or Linux')
-    }
     this.assertSession(request.session)
     this.assertHostLocal()
     // Queues behind another run/bind/annotate operation already holding

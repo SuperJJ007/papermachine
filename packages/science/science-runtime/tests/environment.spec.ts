@@ -1058,7 +1058,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it('selects Windows executable candidates and refuses host probes on an unsupported platform', async () => {
+  it('selects Windows executable candidates and completes a host probe on win32', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-windows-probe-'))
     roots.push(root)
     const prefix = join(root, 'windows-prefix')
@@ -1076,8 +1076,9 @@ describe('ScienceRuntime.bindEnvironment', () => {
     try {
       await expect(harness.runtime.bindEnvironment({
         session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
-      })).rejects.toMatchObject({ code: 'KERNEL_UNSUPPORTED_PLATFORM' })
-      expect(harness.subprocess.specs).toEqual([])
+      })).resolves.toMatchObject({ status: 'applied' })
+      expect(harness.subprocess.specs.length).toBeGreaterThan(0)
+      expect(harness.subprocess.specs.every(spec => spec.argv[0]?.endsWith('python.exe'))).toBe(true)
     } finally {
       Object.defineProperty(process, 'platform', original)
     }

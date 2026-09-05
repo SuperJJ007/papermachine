@@ -2,14 +2,14 @@
 
 import { closeSync, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SandboxProvider, { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { confineInterpreterArgv, confineWithEnforcement, interpreterArgv, quiesce, readCaptureTail } from '../src/execution.ts'
+import { confineInterpreterArgv, confineWithEnforcement, interpreterArgv, interpreterPathEnv, quiesce, readCaptureTail } from '../src/execution.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 
 const roots: string[] = []
@@ -109,6 +109,33 @@ describe('confineInterpreterArgv', () => {
     sandbox.enforcement = 'partial'
     expect(confineInterpreterArgv(fakeSession, fakeScratch, sandbox, '/opt/conda-env', ['python'], 'partial'))
       .toMatchObject({ enforcement: 'partial' })
+  })
+})
+
+describe('interpreterPathEnv', () => {
+  it('joins the prefix bin with the fixed POSIX suffix on darwin/linux', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      expect(interpreterPathEnv('/prefix')).toBe('/prefix/bin:/usr/bin:/bin')
+    } finally {
+      platform.mockRestore()
+    }
+  })
+
+  it('builds the full ordered Conda subdirectory PATH conda activate itself uses on win32', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    try {
+      expect(interpreterPathEnv('C:\\Users\\dsh\\conda\\envs\\general')).toBe([
+        'C:\\Users\\dsh\\conda\\envs\\general',
+        'C:\\Users\\dsh\\conda\\envs\\general\\Library\\mingw-w64\\bin',
+        'C:\\Users\\dsh\\conda\\envs\\general\\Library\\usr\\bin',
+        'C:\\Users\\dsh\\conda\\envs\\general\\Library\\bin',
+        'C:\\Users\\dsh\\conda\\envs\\general\\Scripts',
+        'C:\\Users\\dsh\\conda\\envs\\general\\bin',
+      ].join(';'))
+    } finally {
+      platform.mockRestore()
+    }
   })
 })
 

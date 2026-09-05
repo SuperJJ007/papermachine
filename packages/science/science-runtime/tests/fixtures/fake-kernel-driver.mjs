@@ -8,7 +8,9 @@
 // Usage: node fake-kernel-driver.mjs <fifoPath>
 //
 // Per-run JSON action shape (all fields optional):
-//   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "..." }
+//   { "action": "reply", "status": "ok"|"error"|"interrupted", "detail": "...", "flags": "...", "crlf": true }
+//     -- crlf true: the DONE frame ends "\r\n" instead of "\n", the same
+//        line ending R's socketConnection text mode may emit on win32.
 //   { "action": "echo-request" }       -- replies DONE ok with detail = "<cwd>|<artifactDir>|<inputDir>"
 //   { "action": "garbage" }            -- writes one unparseable line instead of DONE
 //   { "action": "double-garbage" }     -- writes two unparseable lines instead of DONE
@@ -34,9 +36,9 @@ if (fifoPath === undefined) {
 let fifoFd = openSync(fifoPath, 'w')
 let fifoClosed = false
 
-function send(frame) {
+function send(frame, terminator = '\n') {
   if (fifoClosed) return
-  writeSync(fifoFd, `${frame}\n`)
+  writeSync(fifoFd, `${frame}${terminator}`)
 }
 
 function closeFifo() {
@@ -118,7 +120,7 @@ function handleRun(runId, sourcePath, cwd, artifactDir, inputDir) {
     return
   }
   if (kind === 'reply') {
-    send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
+    send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`, action.crlf === true ? '\r\n' : '\n')
     return
   }
   if (kind === 'garbage') {

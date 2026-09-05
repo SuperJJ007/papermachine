@@ -22,6 +22,7 @@ import {
   KernelExitedError,
   KernelProcess,
   KernelProtocolError,
+  kernelEnvironment,
 } from '../src/kernel-process.ts'
 import type { KernelExecuteRequest, KernelProcessServices } from '../src/kernel-process.ts'
 import { createKernelScratch, ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
@@ -336,6 +337,25 @@ describe('KernelProcess', () => {
     } finally {
       subprocess.proof.resolve(undefined)
     }
+    await rejection
+    expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
+  })
+
+  it('awaits the reader\'s eventual exit before removing the FIFO when it also lacks its stdout pipe', async () => {
+    const harness = await createHarness('kernel-reader-missing-stdout-delayed', { subprocess: DeferredExitSubprocess })
+    const subprocess = harness.services.subprocess as DeferredExitSubprocess
+    subprocess.defer = 'reader'
+    const spawn = DeferredExitSubprocess.prototype.spawn.bind(subprocess)
+    vi.spyOn(subprocess, 'spawn').mockImplementation((spec) => {
+      const handle = spawn(spec)
+      if (spec.stdio.stdout !== 'pipe') return handle
+      return { ...handle, stdout: undefined }
+    })
+    const start = startKernel(harness, 'python')
+    const rejection = expect(start).rejects.toThrow('FIFO reader was not spawned with a stdout pipe')
+    await subprocess.observing.promise
+    expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(true)
+    subprocess.proof.resolve(undefined)
     await rejection
     expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
   })
@@ -692,6 +712,18 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
+  it('tolerates exactly one trailing \\r before the newline, the CRLF line ending R\'s socketConnection may emit on win32', async () => {
+    const harness = await createHarness('kernel-crlf-frame')
+    const kernel = await startKernel(harness, 'python')
+    // flags is the DONE frame's last field, so an unstripped \\r lands
+    // inside it: `${'capture-degraded'}\\r` !== 'capture-degraded', which
+    // would silently flip captureDegraded to false if the parser did not
+    // strip the trailing \\r before splitting fields.
+    const result = await kernel.execute(await prepareRun(harness.root, 'run-crlf', { status: 'ok', detail: 'crlf-ok', flags: 'capture-degraded', crlf: true }))
+    expect(result).toEqual({ runId: ScienceRunId('run-crlf'), status: 'ok', detail: 'crlf-ok', captureDegraded: true })
+    await kernel.end('test-teardown')
+  })
+
   it('routes CHART_EXTRACT success and kernel-declared error responses', async () => {
     const harness = await createHarness('kernel-chart-frames')
     const kernel = await startKernel(harness, 'python')
@@ -947,5 +979,63 @@ describe('KernelProcess', () => {
     const result = await kernel.execute(await prepareRun(harness.root, 'run-r', { status: 'ok', detail: '' }))
     expect(result).toEqual({ runId: ScienceRunId('run-r'), status: 'ok', detail: '', captureDegraded: false })
     await kernel.end('test-teardown')
+  })
+})
+
+describe('kernelEnvironment', () => {
+  const sessionScratch: ScienceSessionScratch = {
+    root: '/session-root', home: '/session-root/home', state: '/session-root/state',
+    runs: '/session-root/runs', probes: '/session-root/probes', kernels: '/session-root/kernels',
+  }
+  const kernelScratch = planKernelScratch(sessionScratch, 'python', 0)
+  const fakeSession = { header: { cwd: '/workspace' } } as unknown as Session
+
+  it('carries no win32-only keys on POSIX', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const env = kernelEnvironment(fakeBinding('python', '/prefix'), fakeSession, sessionScratch, kernelScratch)
+      expect(env).not.toHaveProperty('TEMP')
+      expect(env).not.toHaveProperty('TMP')
+      expect(env).not.toHaveProperty('SystemRoot')
+      expect(env.TMPDIR).toBe(kernelScratch.tmp)
+    } finally {
+      platform.mockRestore()
+    }
+  })
+
+  it('adds TEMP/TMP and the fixed ambient allowlist on win32', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const ambient = {
+      SystemRoot: 'C:\\Windows', windir: 'C:\\Windows', SystemDrive: 'C:', ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      PATHEXT: '.COM;.EXE', USERPROFILE: 'C:\\Users\\dsh', APPDATA: 'C:\\Users\\dsh\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\dsh\\AppData\\Local', PROGRAMDATA: 'C:\\ProgramData',
+      NUMBER_OF_PROCESSORS: '8', PROCESSOR_ARCHITECTURE: 'AMD64',
+    }
+    const priorEnv = { ...process.env }
+    Object.assign(process.env, ambient)
+    try {
+      const env = kernelEnvironment(fakeBinding('python', '/prefix'), fakeSession, sessionScratch, kernelScratch)
+      expect(env.TEMP).toBe(kernelScratch.tmp)
+      expect(env.TMP).toBe(kernelScratch.tmp)
+      expect(env.TMPDIR).toBe(kernelScratch.tmp)
+      for (const [key, value] of Object.entries(ambient)) expect(env[key]).toBe(value)
+    } finally {
+      platform.mockRestore()
+      for (const key of Object.keys(ambient)) Reflect.deleteProperty(process.env, key)
+      Object.assign(process.env, priorEnv)
+    }
+  })
+
+  it('omits a win32 ambient key absent from the Host environment instead of forwarding an empty value', () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const priorSystemRoot = process.env.SystemRoot
+    delete process.env.SystemRoot
+    try {
+      const env = kernelEnvironment(fakeBinding('python', '/prefix'), fakeSession, sessionScratch, kernelScratch)
+      expect(env).not.toHaveProperty('SystemRoot')
+    } finally {
+      platform.mockRestore()
+      if (priorSystemRoot !== undefined) process.env.SystemRoot = priorSystemRoot
+    }
   })
 })

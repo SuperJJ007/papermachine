@@ -3,7 +3,12 @@
 long-lived process's module-level globals dict, so variables persist across
 runs within a session. Python stdlib only — no third-party imports.
 
-Invocation: python3 -B -u -X utf8 kernel_python.py <fifoPath>
+Invocation: python3 -B -u -X utf8 kernel_python.py <endpoint>
+
+<endpoint> is either an absolute response-FIFO path (darwin, linux) or
+tcp:<host>:<port>:<token> (win32): connect to <host>:<port> and write <token>
+followed by a newline as the connection's first line before any frame, then
+use the connection exactly like the FIFO handle below.
 
 Frame grammar (single line, tab-separated, newline-terminated):
   host -> kernel:  RUN\t<runId>\t<sourcePath>\t<cwd>\t<stdoutPath>\t<stderrPath>\t<artifactDir>\t<inputDir>
@@ -25,6 +30,7 @@ import importlib.util
 import json
 import signal
 import site
+import socket
 import sys
 import traceback
 
@@ -244,20 +250,32 @@ def ensure_user_site_importable():
         site.addsitedir(user_site)
 
 
+def open_response_channel(endpoint):
+    """Open the response channel `send()` writes frames to: a POSIX FIFO
+    (blocks until a reader opens the other end), or a win32 loopback TCP
+    connection whose first line is this channel's own token."""
+    if endpoint.startswith("tcp:"):
+        _, host, port, token = endpoint.split(":", 3)
+        sock = socket.create_connection((host, int(port)))
+        resp = sock.makefile("w", encoding="utf-8", newline="\n")
+        resp.write(token + "\n")
+        resp.flush()
+        return resp
+    return open(endpoint, "w", encoding="utf-8")
+
+
 def main():
     if len(sys.argv) != 2:
-        print("usage: kernel_python.py <fifoPath>", file=sys.stderr)
+        print("usage: kernel_python.py <endpoint>", file=sys.stderr)
         sys.exit(2)
-    fifo_path = sys.argv[1]
+    endpoint = sys.argv[1]
 
     ensure_user_site_importable()
 
     # Idle SIGINT hardening: ignored except during exec (see execute_run).
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    # Open the response FIFO for writing. On POSIX this blocks until a
-    # reader opens the other end.
-    resp = open(fifo_path, "w", encoding="utf-8")
+    resp = open_response_channel(endpoint)
 
     send(resp, "READY\t%d\t%d" % (PROTOCOL_VERSION, os.getpid()))
 

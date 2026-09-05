@@ -236,22 +236,6 @@ describe('ScienceRuntime.startRun preflight', () => {
     })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
   })
 
-  it('rejects kernel execution pre-publication on win32', async () => {
-    const { runtime, session } = await readyPythonHarness('science-run-win32')
-    const original = Object.getOwnPropertyDescriptor(process, 'platform')
-    if (original === undefined) throw new Error('process.platform descriptor is unavailable')
-    Object.defineProperty(process, 'platform', { ...original, value: 'win32' })
-    try {
-      await expect(runtime.startRun({
-        session, language: 'python', code: kernelAction({ status: 'ok' }),
-        ...authorizePythonRun(session), signal: new AbortController().signal,
-      })).rejects.toMatchObject({ code: 'KERNEL_UNSUPPORTED_PLATFORM' })
-    } finally {
-      Object.defineProperty(process, 'platform', original)
-    }
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
-  })
-
   it('rejects an R run whose session scratch directory would contain an ASCII space', async () => {
     // bindEnvironment's own R probe already rejects a space in the same
     // session-scratch root (environment.spec.ts's own "spaced" coverage), so

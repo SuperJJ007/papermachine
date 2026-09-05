@@ -179,13 +179,20 @@ async function createPrivateTree(home: string, segments: readonly string[]): Pro
   return current
 }
 
-/** Require a regular private managed file. */
-async function privateFile(path: string): Promise<void> {
+/**
+ * Require a regular managed file and, on POSIX, that its mode bits are
+ * owner-only. See {@link privateDirectory} for why win32 skips the mode-bit
+ * check: the same synthetic-`lstat`-mode fact applies to regular files.
+ * @param path - Managed file path to verify.
+ * @param platform - Host platform selecting the mode-bit check; defaults to
+ *   `process.platform` and is overridden only by a test.
+ */
+async function privateFile(path: string, platform: NodeJS.Platform = process.platform): Promise<void> {
   const entry = await lstat(path)
   if (!entry.isFile() || entry.isSymbolicLink()) {
     throw new Error(`science-runtime: managed path ${JSON.stringify(path)} must be a regular file`)
   }
-  if ((entry.mode & 0o077) !== 0) {
+  if (platform !== 'win32' && (entry.mode & 0o077) !== 0) {
     throw new Error(`science-runtime: managed file ${JSON.stringify(path)} is not private`)
   }
 }

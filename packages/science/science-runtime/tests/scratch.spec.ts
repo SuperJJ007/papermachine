@@ -440,6 +440,27 @@ describe('Science Runtime private scratch', () => {
     }
   })
 
+  it('skips the POSIX mode-bit privacy check for a managed marker file on win32', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-win32-private-file-'))
+    roots.push(root)
+    const dshHome = join(root, 'dsh-home')
+    const session = await sessionWithId('science-scratch-win32-private-file')
+    await ensureSessionScratch(dshHome, session)
+    const marker = join(dshHome, 'science', 'v1', 'owners', `${sessionScratchKey(session)}.json`)
+    // Real, wrong POSIX mode bits on this host — proving win32 truly bypasses
+    // the check rather than the marker file happening to already be private.
+    chmodSync(marker, 0o644)
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')
+    if (original === undefined) throw new Error('process.platform descriptor is unavailable')
+    Object.defineProperty(process, 'platform', { ...original, value: 'win32' })
+    try {
+      await expect(ensureSessionScratch(dshHome, session)).resolves.toBeDefined()
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+      chmodSync(marker, 0o600)
+    }
+  })
+
   it('removes only a quiescent provider-owned probe and rejects a generic-temp scratch root', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-probe-'))
     roots.push(root)

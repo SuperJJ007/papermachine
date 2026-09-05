@@ -95,11 +95,9 @@ export interface KernelProcessOptions {
   /**
    * Lowest sandbox enforcement level this kernel's confinement accepts
    * (`science-runtime`'s configured `minimumEnforcement`, forwarded through
-   * `KernelSetOptions`). Omitted only by a caller that has not threaded the
-   * configured value through — {@link confineInterpreterArgv}'s own default
-   * of `'full'` then applies, matching this option's absence exactly.
+   * `KernelSetOptions`).
    */
-  readonly minimumEnforcement?: SandboxEnforcement | undefined
+  readonly minimumEnforcement: SandboxEnforcement
 }
 
 /** One RUN request: exact host-minted paths, never shell-interpreted or escaped. */

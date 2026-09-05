@@ -12,7 +12,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEventType } from '@deepseek-ai/dsh-session'
 import SandboxProvider from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
@@ -342,11 +342,9 @@ esac
  * `#!/bin/sh` script an OS spawn call executes directly — the latter has no
  * win32 equivalent (no POSIX shell interprets a shebang line there).
  *
- * Unlike the old script's `exec "$@"` (which replaced the shell's own process
- * image, so the tracked pid became the real interpreter directly), a Node
- * `spawn()` keeps this script's own process alive as the real interpreter's
- * parent. `KernelProcess.interrupt()` sends SIGINT to only the direct
- * child — this script's own pid — never the tree
+ * A Node `spawn()` keeps this script's own process alive as the real
+ * interpreter's parent rather than replacing it. `KernelProcess.interrupt()`
+ * sends SIGINT to only the direct child — this script's own pid — never the tree
  * (`packages/subprocess/subprocess-local/src/spawn.ts`'s `interrupt()`), so
  * this script forwards SIGINT to the real interpreter itself and, by
  * registering a handler at all, suppresses Node's own default
@@ -365,8 +363,11 @@ if (separator === -1) {
 const [command, ...args] = process.argv.slice(separator + 1)
 const child = spawn(command, args, { stdio: 'inherit' })
 process.on('SIGINT', () => child.kill('SIGINT'))
-child.on('error', () => { process.exitCode = 127 })
-child.on('exit', (code, signal) => { process.exitCode = code ?? (signal === null ? 1 : 1) })
+child.on('error', (error) => {
+  process.stderr.write('science-runtime fake runner failed to spawn ' + command + ': ' + String(error) + '\\n')
+  process.exitCode = 127
+})
+child.on('exit', (code) => { process.exitCode = code ?? 1 })
 `)
   return [process.execPath, runner]
 }
@@ -540,7 +541,12 @@ export function authorizeAnnotateArtifact(session: Session, id = 'science-runtim
  * reach `leases` (TypeScript `readonly` has no runtime effect), so the
  * replacement kernel set still commits durable facts through the exact same
  * code the production one runs — only `assetsRoot`/the timeouts/the
- * subprocess-sandbox pair differ.
+ * subprocess-sandbox pair differ. `minimumEnforcement` is read from the same
+ * private `minimumEnforcement` field `ScienceRuntime`'s constructor already
+ * resolved from `Config` (not a separate test-supplied value), so a
+ * `configOverrides.minimumEnforcement` a caller passed to
+ * {@link createKernelRuntimeHarness} still reaches this replacement kernel
+ * set's own confinement the same way it reaches the production one.
  * @param ctx - the context that mounted `runtime`; also the default source of `subprocess`/`sandbox` when `options` omits them.
  * @param runtime - the live `ScienceRuntime` whose kernel set is replaced.
  * @param options - the fake driver assets root, kernel timeouts, and (for a
@@ -560,6 +566,7 @@ export function installTestKernelSet(
 ): void {
   const internal = runtime as unknown as {
     kernels: KernelSet
+    minimumEnforcement: SandboxEnforcement
     appendKernelStarted(session: Session, fact: ScienceKernelStartedFact): void
     appendKernelEnded(session: Session, fact: ScienceKernelEndedFact): void
     nextKernelEpoch(session: Session): number
@@ -570,6 +577,7 @@ export function installTestKernelSet(
     assetsRoot: options.assetsRoot ?? KERNEL_ASSETS_FULL_ROOT,
     kernelIdleTimeoutMs: options.kernelIdleTimeoutMs ?? 1_800_000,
     kernelStartTimeoutMs: options.kernelStartTimeoutMs ?? TEST_KERNEL_START_TIMEOUT_MS,
+    minimumEnforcement: internal.minimumEnforcement,
     nextEpoch: session => internal.nextKernelEpoch(session),
     onKernelStarted: (session, fact) => { internal.appendKernelStarted(session, fact) },
     onKernelEnded: (session, fact) => { internal.appendKernelEnded(session, fact) },

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import type { SandboxEnforcement } from '@deepseek-ai/dsh-sandbox'
 import { ScienceEnvironmentProfileId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceEnvironmentBinding, ScienceInterpreterAvailableBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -31,7 +32,7 @@ import {
 import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
 import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
-import { TEST_KERNEL_START_TIMEOUT_MS, attachScienceSession, createFakeSandboxRunner } from './harness.ts'
+import { DirectSandbox, TEST_KERNEL_START_TIMEOUT_MS, attachScienceSession, createFakeSandboxRunner } from './harness.ts'
 
 // Every case here spawns a real kernel subprocess through
 // LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
@@ -241,7 +242,73 @@ async function createHarness(options: { readonly kernelIdleTimeoutMs?: number } 
     subprocess: ctx.subprocess,
     sandbox: ctx.sandbox,
     assetsRoot: ASSETS_ROOT,
+    minimumEnforcement: 'full',
     kernelIdleTimeoutMs: options.kernelIdleTimeoutMs ?? 1_800_000,
+    kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+    nextEpoch: epochAllocator.fn,
+    onKernelStarted: (session, fact) => { started.push({ session, fact }) },
+    onKernelEnded: (session, fact) => { ended.push({ session, fact }) },
+  })
+  const pythonPrefix = createFakeInterpreterPrefix(root, 'python')
+  const rPrefix = createFakeInterpreterPrefix(root, 'r')
+  return {
+    root,
+    ctx,
+    dshHome,
+    kernelSet,
+    started,
+    ended,
+    epochAllocator,
+    session: async (id) => {
+      const session = ctx.sessions.create(SessionId(id))
+      const sessionScratch = await ensureSessionScratch(dshHome, session)
+      return { session, sessionScratch }
+    },
+    environment: (revision, languages) => ({
+      revision,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      configuredAt: Date.now(),
+      validatedAt: Date.now(),
+      status: 'applied',
+      ...(languages.includes('python') ? { python: fakeBinding('python', pythonPrefix) } : {}),
+      ...(languages.includes('r') ? { r: fakeBinding('r', rPrefix) } : {}),
+    }),
+  }
+}
+
+/**
+ * Assemble one real Session/subprocess-local `KernelSet` against a
+ * `DirectSandbox` reporting a caller-chosen enforcement level, for
+ * `KernelSetOptions.minimumEnforcement` forwarding coverage:
+ * `spawnKernel` (the `acquire()` path) and `startIsolated` each read
+ * `this.minimumEnforcement` and forward it, unchanged, into their own
+ * `KernelProcess.start` call — deleting either forwarding line makes a
+ * partial-reporting sandbox with a partial configured minimum behave as
+ * though the minimum were `'full'`, which the tests below assert against.
+ */
+async function createEnforcementHarness(
+  minimumEnforcement: SandboxEnforcement,
+  reportedEnforcement: SandboxEnforcement,
+): Promise<Harness> {
+  const root = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-set-enforcement-'))
+  roots.push(root)
+  const dshHome = join(root, 'dsh-home')
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(LocalSubprocessRuntime)
+  await ctx.plugin(DirectSandbox)
+  const sandbox = ctx.sandbox as DirectSandbox
+  sandbox.enforcement = reportedEnforcement
+  const started: Recorded<ScienceKernelStartedFact>[] = []
+  const ended: Recorded<ScienceKernelEndedFact>[] = []
+  const epochAllocator = createEpochAllocator()
+  const kernelSet = new KernelSet({
+    subprocess: ctx.subprocess,
+    sandbox,
+    assetsRoot: ASSETS_ROOT,
+    minimumEnforcement,
+    kernelIdleTimeoutMs: 1_800_000,
     kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
     nextEpoch: epochAllocator.fn,
     onKernelStarted: (session, fact) => { started.push({ session, fact }) },
@@ -564,6 +631,7 @@ describe('KernelSet', () => {
       subprocess: wrapped,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -616,6 +684,7 @@ describe('KernelSet', () => {
       subprocess: wrapped,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -656,6 +725,7 @@ describe('KernelSet', () => {
       subprocess: wrapped,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -691,6 +761,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -723,6 +794,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -761,6 +833,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: () => (facts.at(-1)?.kernelEpoch ?? 0) + 1,
@@ -793,6 +866,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -887,6 +961,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -959,6 +1034,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -999,6 +1075,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -1038,6 +1115,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: NO_READY_ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: 200,
       nextEpoch: createEpochAllocator().fn,
@@ -1068,6 +1146,7 @@ describe('KernelSet', () => {
       subprocess: harness.ctx.subprocess,
       sandbox: harness.ctx.sandbox,
       assetsRoot: DELAYED_READY_ASSETS_ROOT,
+      minimumEnforcement: 'full',
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
@@ -1085,5 +1164,38 @@ describe('KernelSet', () => {
       results.every(result => result.status === 'fulfilled'))
     expect(ended).toHaveLength(1)
     expect(ended[0]?.fact.reason).toBe('service-disposed')
+  })
+
+  describe('minimumEnforcement forwarding', () => {
+    it('spawns a fresh kernel through acquire() against a partial-reporting sandbox when the configured minimum is partial', async () => {
+      const harness = await createEnforcementHarness('partial', 'partial')
+      const { session, sessionScratch } = await harness.session('kernel-enforcement-acquire-partial')
+      const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
+      await kernel.end('test-teardown')
+    })
+
+    it('rejects acquire() against a partial-reporting sandbox when the configured minimum is full', async () => {
+      const harness = await createEnforcementHarness('full', 'partial')
+      const { session, sessionScratch } = await harness.session('kernel-enforcement-acquire-full')
+      await expect(harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch))
+        .rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    })
+
+    it('starts an isolated recovery kernel through startIsolated() against a partial-reporting sandbox when the configured minimum is partial', async () => {
+      const harness = await createEnforcementHarness('partial', 'partial')
+      const { session, sessionScratch } = await harness.session('kernel-enforcement-isolated-partial')
+      const kernel = await harness.kernelSet.startIsolated(
+        session, 'python', harness.environment(1, ['python']), sessionScratch, new AbortController().signal,
+      )
+      await kernel.end('test-teardown')
+    })
+
+    it('rejects startIsolated() against a partial-reporting sandbox when the configured minimum is full', async () => {
+      const harness = await createEnforcementHarness('full', 'partial')
+      const { session, sessionScratch } = await harness.session('kernel-enforcement-isolated-full')
+      await expect(harness.kernelSet.startIsolated(
+        session, 'python', harness.environment(1, ['python']), sessionScratch, new AbortController().signal,
+      )).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    })
   })
 })

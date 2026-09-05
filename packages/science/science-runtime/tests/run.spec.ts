@@ -27,6 +27,7 @@ import {
   createFakeSandboxRunner,
   createKernelRuntimeHarness,
   createScienceSession,
+  DirectSandbox,
   installTestKernelSet,
   KERNEL_ASSETS_DELAYED_READY_ROOT,
   KERNEL_ASSETS_NO_READY_ROOT,
@@ -819,6 +820,62 @@ esac
     })
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'success' } })
     expect(session.events.some(event => event.type === 'science/kernel-state')).toBe(true)
+  })
+
+  it('threads a configured partial minimumEnforcement through the constructor\'s own KernelSet into a real kernel-spawn confinement', async () => {
+    // Same "never a test replacement" real-wiring trick as the case above, so
+    // this exercises index.ts's own `this.minimumEnforcement` forwarding into
+    // the constructor-built KernelSet (kernel-set.spec.ts's
+    // `minimumEnforcement forwarding` tests cover KernelSet's own forwarding
+    // into KernelProcess.start directly, against a directly constructed
+    // KernelSet). A DirectSandbox, not LocalSandboxProvider, lets the test
+    // force a `'partial'`-reporting confinement independent of any real
+    // sandbox backend's actual behavior.
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-enforcement-wiring-'))
+    roots.push(root)
+    const fakeDriverPath = join(FIXTURES, 'fake-kernel-driver.mjs')
+    const prefix = join(root, 'fake-conda-enforcement-wiring')
+    mkdirSync(join(prefix, 'bin'), { recursive: true })
+    mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
+    writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-13 <==\n+python-3.13.5\n')
+    const executable = join(prefix, 'bin', 'python')
+    writeFileSync(executable, `#!/bin/sh
+case " $* " in
+  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+  *" -m "*) printf '[{"name":"pip","version":"24.0"}]' ;;
+  *" -c "*) printf 'dsh-科学-✓' ;;
+  *)
+    while [ "$#" -gt 2 ]; do shift; done
+    exec "${process.execPath}" "${fakeDriverPath}" "$2"
+    ;;
+esac
+`)
+    chmodSync(executable, 0o700)
+
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(DirectSandbox)
+    const sandbox = ctx.sandbox as DirectSandbox
+    sandbox.enforcement = 'partial'
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      timeoutMs: 30_000,
+      minimumEnforcement: 'partial',
+    })
+    const runtime = ctx.scienceRuntime
+    const session = createScienceSession(ctx, 'science-enforcement-wiring')
+    await bindFakePython(runtime, session)
+    const handle = await runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }),
+      ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'success' } })
   })
 })
 

@@ -91,13 +91,13 @@ describe('confineInterpreterArgv', () => {
   const fakeSession = { id: SessionId('test-session') } as unknown as Session
   const fakeScratch = { root: '/workspace' } as unknown as ScienceSessionScratch
 
-  it('defaults to a full minimum for a caller that does not pass one', async () => {
+  it('rejects a partial-reporting sandbox when the caller passes a full minimum', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(FakeSandbox)
     const sandbox = ctx.sandbox as FakeSandbox
     sandbox.enforcement = 'partial'
-    expect(() => confineInterpreterArgv(fakeSession, fakeScratch, sandbox, '/opt/conda-env', ['python']))
+    expect(() => confineInterpreterArgv(fakeSession, fakeScratch, sandbox, '/opt/conda-env', ['python'], 'full'))
       .toThrow(/Science requires at least full sandbox enforcement; the sandbox reported partial/)
   })
 

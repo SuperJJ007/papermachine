@@ -278,8 +278,7 @@ export function confineWithEnforcement(
  * @param minimumEnforcement - lowest enforcement level Science is configured
  *   to accept (`KernelProcessOptions.minimumEnforcement`, itself
  *   `science-runtime`'s configured `minimumEnforcement` forwarded through
- *   `KernelSetOptions`); defaults to `'full'` only for a caller — a test —
- *   that omits it.
+ *   `KernelSetOptions`).
  * @returns the confined argv and its denial/runner-failure classification evidence.
  * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
  *   sandbox is unavailable or reports less than `minimumEnforcement`.
@@ -290,7 +289,7 @@ export function confineInterpreterArgv(
   sandbox: SandboxProvider,
   canonicalPrefix: string,
   argv: readonly string[],
-  minimumEnforcement: SandboxEnforcement = 'full',
+  minimumEnforcement: SandboxEnforcement,
 ): ConfinedArgv {
   return confineWithEnforcement(sandbox, canonicalPrefix, confinementPolicy(session, scratch), argv, minimumEnforcement)
 }

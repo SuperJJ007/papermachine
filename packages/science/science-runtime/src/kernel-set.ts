@@ -102,11 +102,9 @@ export interface KernelSetOptions {
   /**
    * Lowest sandbox enforcement level a spawned kernel's confinement
    * accepts, forwarded to {@link KernelProcess.start}
-   * (`science-runtime`'s configured `minimumEnforcement`). Omitted only by
-   * a caller that has not threaded the configured value through —
-   * `KernelProcess.start`'s own default of `'full'` then applies.
+   * (`science-runtime`'s configured `minimumEnforcement`).
    */
-  readonly minimumEnforcement?: SandboxEnforcement | undefined
+  readonly minimumEnforcement: SandboxEnforcement
   /**
    * Allocate the next session-local kernel epoch. `KernelSet` never reads
    * durable state itself; it only asserts the returned value is strictly
@@ -282,7 +280,7 @@ export class KernelSet {
   private readonly assetsRoot: string
   private readonly kernelIdleTimeoutMs: number
   private readonly kernelStartTimeoutMs: number
-  private readonly minimumEnforcement: SandboxEnforcement | undefined
+  private readonly minimumEnforcement: SandboxEnforcement
   private readonly nextEpoch: (session: Session) => number
   private readonly onKernelStarted: KernelStartedCallback
   private readonly onKernelEnded: KernelEndedCallback

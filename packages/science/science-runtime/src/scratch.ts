@@ -139,10 +139,8 @@ export function pathsOverlap(first: string, second: string): boolean {
  * verifying it is a real directory and, on POSIX, that its mode bits are
  * owner-only.
  * @param path - Managed directory path to verify.
- * @param platform - Host platform selecting the mode-bit check; defaults to
- *   `process.platform` and is overridden only by a test.
  */
-async function privateDirectory(path: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+async function privateDirectory(path: string): Promise<void> {
   const entry = await lstat(path)
   if (!entry.isDirectory() || entry.isSymbolicLink()) {
     throw new Error(`science-runtime: managed path ${JSON.stringify(path)} must be a private directory`)
@@ -153,7 +151,7 @@ async function privateDirectory(path: string, platform: NodeJS.Platform = proces
   // directory's privacy there comes from the user-profile ACL a Harness home
   // inherits plus the ACL sandbox's own per-session SIDs, neither of which
   // this mode-bit check observes.
-  if (platform !== 'win32' && (entry.mode & 0o077) !== 0) {
+  if (process.platform !== 'win32' && (entry.mode & 0o077) !== 0) {
     throw new Error(`science-runtime: managed directory ${JSON.stringify(path)} is not private`)
   }
 }
@@ -184,15 +182,13 @@ async function createPrivateTree(home: string, segments: readonly string[]): Pro
  * owner-only. See {@link privateDirectory} for why win32 skips the mode-bit
  * check: the same synthetic-`lstat`-mode fact applies to regular files.
  * @param path - Managed file path to verify.
- * @param platform - Host platform selecting the mode-bit check; defaults to
- *   `process.platform` and is overridden only by a test.
  */
-async function privateFile(path: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+async function privateFile(path: string): Promise<void> {
   const entry = await lstat(path)
   if (!entry.isFile() || entry.isSymbolicLink()) {
     throw new Error(`science-runtime: managed path ${JSON.stringify(path)} must be a regular file`)
   }
-  if (platform !== 'win32' && (entry.mode & 0o077) !== 0) {
+  if (process.platform !== 'win32' && (entry.mode & 0o077) !== 0) {
     throw new Error(`science-runtime: managed file ${JSON.stringify(path)} is not private`)
   }
 }

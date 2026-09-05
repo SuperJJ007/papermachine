@@ -60,6 +60,7 @@ export function installTestKernelSet(ctx: Context, runtime: ScienceRuntime): voi
     assetsRoot: KERNEL_ASSETS,
     kernelIdleTimeoutMs: 1_800_000,
     kernelStartTimeoutMs: 5_000,
+    minimumEnforcement: 'full',
     nextEpoch: session => internal.nextKernelEpoch(session),
     onKernelStarted: (session, fact) => { internal.appendKernelStarted(session, fact) },
     onKernelEnded: (session, fact) => { internal.appendKernelEnded(session, fact) },

@@ -192,6 +192,7 @@ describe('KernelProcess over the loopback TCP transport (forced, real driver)', 
         driverPath: resolveKernelDriverPath(KERNEL_ASSETS_ROOT, 'python'),
         index: 0,
         kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+        minimumEnforcement: 'full',
         transportKind: 'tcp',
       })
       try {
@@ -220,6 +221,7 @@ describe('KernelProcess over the loopback TCP transport (forced, real driver)', 
         driverPath: resolveKernelDriverPath(KERNEL_ASSETS_ROOT, 'r'),
         index: 0,
         kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+        minimumEnforcement: 'full',
         transportKind: 'tcp',
       })
       try {

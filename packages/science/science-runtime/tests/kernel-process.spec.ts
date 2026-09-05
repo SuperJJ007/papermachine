@@ -256,6 +256,7 @@ function startKernel(
     driverPath: overrides.driverPath ?? DRIVER_PATH,
     index: overrides.index ?? 0,
     kernelStartTimeoutMs: overrides.kernelStartTimeoutMs ?? TEST_KERNEL_START_TIMEOUT_MS,
+    minimumEnforcement: 'full',
     signal: overrides.signal,
   })
 }
@@ -543,6 +544,7 @@ describe('KernelProcess', () => {
       driverPath: DRIVER_PATH,
       index: 0,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+      minimumEnforcement: 'full',
     })).rejects.toThrow(ScienceRuntimeError)
     // Retry at the SAME index (the same response-FIFO path) with a valid
     // prefix: `mkfifo` must not fail with "File exists" against a FIFO the
@@ -639,7 +641,7 @@ describe('KernelProcess', () => {
     await expect(startKernel(harness, 'r')).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
   })
 
-  it('rejects kernel spawn against a partial-reporting sandbox when minimumEnforcement is omitted (defaults to full)', async () => {
+  it('rejects kernel spawn against a partial-reporting sandbox when the caller passes minimumEnforcement: full', async () => {
     const harness = await createHarness('kernel-enforcement-default')
     const sandbox = await createDirectSandbox()
     sandbox.enforcement = 'partial'
@@ -650,6 +652,7 @@ describe('KernelProcess', () => {
       driverPath: DRIVER_PATH,
       index: 0,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+      minimumEnforcement: 'full',
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
   })
 

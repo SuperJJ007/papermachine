@@ -22,6 +22,101 @@ export interface ProvisioningProgress {
    * attempting.
    */
   readonly sourceId?: string
+  /** Cumulative bytes downloaded for the current installation or package set. */
+  readonly bytesDownloaded?: number
+  /** Total bytes to download across the package set or current package. */
+  readonly bytesTotal?: number
+  /** Instantaneous download speed in bytes per second. */
+  readonly speedBytesPerSec?: number
+  /** Estimated time remaining in seconds until downloads complete. */
+  readonly etaSeconds?: number
+  /** Name of the package currently being downloaded, extracted, or linked. */
+  readonly currentPackage?: string
+  /** Completion percentage (0 to 100). */
+  readonly percent?: number
+  /** Which source attempt is running out of total fallback sources. */
+  readonly retryAttempt?: { readonly index: number; readonly total: number }
+}
+
+export interface ParsedProgress {
+  readonly currentPackage?: string
+  readonly bytesDownloaded?: number
+  readonly bytesTotal?: number
+  readonly speedBytesPerSec?: number
+  readonly etaSeconds?: number
+  readonly percent?: number
+}
+
+function parseUnitMultiplier(unitStr?: string): number {
+  if (!unitStr) return 1
+  const u = unitStr.toUpperCase()
+  if (u.startsWith('K')) return 1024
+  if (u.startsWith('M')) return 1024 * 1024
+  if (u.startsWith('G')) return 1024 * 1024 * 1024
+  return 1
+}
+
+function parseSize(numStr: string, unitStr?: string): number | undefined {
+  const n = parseFloat(numStr)
+  if (Number.isNaN(n)) return undefined
+  return Math.round(n * parseUnitMultiplier(unitStr))
+}
+
+/**
+ * Parse micromamba console progress lines containing package names,
+ * download sizes (e.g. `12.5MB / 25.0MB`), transfer speeds (`2.5MB/s`),
+ * percentages, or extraction/linking status.
+ */
+export function parseMicromambaProgressLine(line: string): ParsedProgress {
+  let bytesDownloaded: number | undefined
+  let bytesTotal: number | undefined
+  let speedBytesPerSec: number | undefined
+  let etaSeconds: number | undefined
+  let currentPackage: string | undefined
+  let percent: number | undefined
+
+  const percentMatch = line.match(/(\d+(?:\.\d+)?)%/)
+  if (percentMatch && percentMatch[1] !== undefined) {
+    percent = parseFloat(percentMatch[1])
+  }
+
+  const bytesMatch = line.match(/(\d+(?:\.\d+)?)\s*([KMGT]?i?B)?\s*\/\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B)?/i)
+  if (bytesMatch && bytesMatch[1] !== undefined && bytesMatch[3] !== undefined) {
+    const unit1 = bytesMatch[2] ?? bytesMatch[4]
+    const unit2 = bytesMatch[4] ?? bytesMatch[2]
+    bytesDownloaded = parseSize(bytesMatch[1], unit1)
+    bytesTotal = parseSize(bytesMatch[3], unit2)
+  }
+
+  const speedMatch = line.match(/(\d+(?:\.\d+)?)\s*([KMGT]?i?B)?\/s/i)
+  if (speedMatch && speedMatch[1] !== undefined) {
+    speedBytesPerSec = parseSize(speedMatch[1], speedMatch[2])
+  }
+
+  if (bytesDownloaded !== undefined && bytesTotal !== undefined && speedBytesPerSec !== undefined && speedBytesPerSec > 0) {
+    if (bytesTotal >= bytesDownloaded) {
+      etaSeconds = Math.round((bytesTotal - bytesDownloaded) / speedBytesPerSec)
+    }
+  }
+
+  const pkgActionMatch = line.match(/(?:Downloading|Extracting|Linking|Fetching)\s+([a-z0-9_\-.]+)/i)
+  if (pkgActionMatch && pkgActionMatch[1] !== undefined) {
+    currentPackage = pkgActionMatch[1]
+  } else {
+    const pkgLeadMatch = line.match(/^([a-z0-9_\-.]+)\s+.*(?:\d+%.*|\d+\s*[KMGT]?B)/i)
+    if (pkgLeadMatch && pkgLeadMatch[1] !== undefined && !['download', 'extract', 'total', 'progress'].includes(pkgLeadMatch[1].toLowerCase())) {
+      currentPackage = pkgLeadMatch[1]
+    }
+  }
+
+  return {
+    ...(bytesDownloaded !== undefined && { bytesDownloaded }),
+    ...(bytesTotal !== undefined && { bytesTotal }),
+    ...(speedBytesPerSec !== undefined && { speedBytesPerSec }),
+    ...(etaSeconds !== undefined && { etaSeconds }),
+    ...(currentPackage !== undefined && { currentPackage }),
+    ...(percent !== undefined && { percent }),
+  }
 }
 
 /** Published pointer to the only prefix desktop Runtime configuration may consume. */
@@ -176,9 +271,12 @@ export const runProvisioningProcess: ProcessRunner = async (request) => {
       stream.setEncoding('utf8')
       stream.on('data', (chunk: string) => {
         pending += chunk
-        const lines = pending.split(/\r?\n/u)
+        const lines = pending.split(/\r?\n|\r/u)
         pending = lines.pop() ?? ''
-        for (const line of lines) if (line.length > 0) request.onLine?.(line.slice(0, 500))
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed.length > 0) request.onLine?.(trimmed.slice(0, 500))
+        }
       })
     }
     child.once('error', (error) => { finish(error) })
@@ -353,6 +451,12 @@ export class DesktopEnvironmentProvisioner {
     const attempts = orderSourcesFrom(declaration.sources, preferredSourceId)
     let lastError: unknown
     let succeededSourceId: string | undefined
+    const logRingBuffer: string[] = []
+    const recordLog = (line: string): void => {
+      if (logRingBuffer.length >= 200) logRingBuffer.shift()
+      logRingBuffer.push(line)
+    }
+
     for (const [index, source] of attempts.entries()) {
       await rm(prefix, { recursive: true, force: true })
       onProgress({
@@ -361,6 +465,7 @@ export class DesktopEnvironmentProvisioner {
           ? `Resolving ${declaration.name} packages via ${source.name}`
           : `Retrying via ${source.name} (source ${String(index + 1)} of ${String(attempts.length)})`,
         sourceId: source.id,
+        retryAttempt: { index: index + 1, total: attempts.length },
       })
       try {
         await this.#run({
@@ -373,7 +478,17 @@ export class DesktopEnvironmentProvisioner {
           env: { ...buildProvisioningEnv(), MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba') },
           signal,
           timeoutMs: declaration.timeoutMs,
-          onLine: (line) => { onProgress({ phase: 'installing', message: line, sourceId: source.id }) },
+          onLine: (line) => {
+            recordLog(line)
+            const parsed = parseMicromambaProgressLine(line)
+            onProgress({
+              phase: 'installing',
+              message: line,
+              sourceId: source.id,
+              ...parsed,
+              retryAttempt: { index: index + 1, total: attempts.length },
+            })
+          },
         })
         succeededSourceId = source.id
         break
@@ -382,7 +497,14 @@ export class DesktopEnvironmentProvisioner {
         if (signal.aborted) throw error
       }
     }
-    if (succeededSourceId === undefined) throw lastError instanceof Error ? lastError : new Error(String(lastError))
+    if (succeededSourceId === undefined) {
+      const recentLogs = logRingBuffer.slice(-200)
+      const baseMessage = lastError instanceof Error ? lastError.message : String(lastError)
+      const logSummary = recentLogs.length > 0 ? `\n\nLast ${String(recentLogs.length)} log lines:\n${recentLogs.join('\n')}` : ''
+      const failureError = new Error(`${baseMessage}${logSummary}`)
+      ;(failureError as unknown as { recentLogs: readonly string[] }).recentLogs = recentLogs
+      throw failureError
+    }
     onProgress({ phase: 'verifying', message: 'Verifying Python and R', sourceId: succeededSourceId })
     for (const check of declaration.healthChecks) {
       await this.#run({

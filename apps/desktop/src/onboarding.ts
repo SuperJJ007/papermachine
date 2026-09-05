@@ -234,9 +234,39 @@ async function startConfirmed(): Promise<void> {
       ? window.desktopOnboarding.provision(standard?.id ?? '', sourceId ?? '')
       : window.desktopOnboarding.provisionCustom(approved.packages, sourceId ?? ''))
   } catch (error) {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    const errorText = error instanceof Error ? error.message : String(error)
+    statusNode.textContent = errorText
     progress.hidden = true
     setBusy(false)
+
+    let copyBtn = document.querySelector('#copy-diagnostics') as HTMLButtonElement | null
+    if (!copyBtn) {
+      copyBtn = document.createElement('button')
+      copyBtn.id = 'copy-diagnostics'
+      copyBtn.className = 'choice'
+      copyBtn.style.marginTop = '12px'
+      copyBtn.style.cursor = 'pointer'
+      copyBtn.textContent = '📋 一键复制报错诊断 · Copy Diagnostic Report'
+      copyBtn.addEventListener('click', () => {
+        const fence = '```'
+        const report = [
+          '## PaperMachine Environment Install Failure',
+          `- Platform: ${navigator.platform}`,
+          `- UserAgent: ${navigator.userAgent}`,
+          `- Time: ${new Date().toISOString()}`,
+          '- Error:',
+          fence,
+          errorText,
+          fence,
+          '',
+        ].join('\n')
+        void navigator.clipboard.writeText(report).then(() => {
+          if (copyBtn) copyBtn.textContent = '✓ 已复制诊断信息 · Copied!'
+          setTimeout(() => { if (copyBtn) copyBtn.textContent = '📋 一键复制报错诊断 · Copy Diagnostic Report' }, 2000)
+        })
+      })
+      statusNode.parentElement?.append(copyBtn)
+    }
   }
 }
 
@@ -270,8 +300,33 @@ keepCurrent.addEventListener('click', () => {
 })
 window.desktopOnboarding.onProvisioningProgress((update) => {
   progress.hidden = false
-  progressPhase.textContent = update.phase
-  progressMessage.textContent = update.message
+  if (update.phase === 'installing' && update.retryAttempt && update.retryAttempt.index > 1) {
+    progressPhase.textContent = `安装中 · Installing (源 ${String(update.retryAttempt.index)}/${String(update.retryAttempt.total)})`
+  } else {
+    progressPhase.textContent = update.phase
+  }
+
+  let text = update.message
+  if (update.phase === 'installing') {
+    const metrics: string[] = []
+    if (update.currentPackage) metrics.push(`[${update.currentPackage}]`)
+    if (update.percent !== undefined) metrics.push(`${update.percent.toFixed(0)}%`)
+    if (update.bytesDownloaded !== undefined && update.bytesTotal !== undefined) {
+      metrics.push(`${formatBytes(update.bytesDownloaded)} / ${formatBytes(update.bytesTotal)}`)
+    }
+    if (update.speedBytesPerSec !== undefined) {
+      metrics.push(`${formatBytes(update.speedBytesPerSec)}/s`)
+    }
+    if (update.etaSeconds !== undefined) {
+      const mins = Math.floor(update.etaSeconds / 60)
+      const secs = update.etaSeconds % 60
+      metrics.push(`ETA ${mins > 0 ? `${String(mins)}m ${String(secs)}s` : `${String(secs)}s`}`)
+    }
+    if (metrics.length > 0) {
+      text = `${metrics.join(' · ')}\n${update.message}`
+    }
+  }
+  progressMessage.textContent = text
 })
 
 // The loud status this window opened with (an invalid binding found at

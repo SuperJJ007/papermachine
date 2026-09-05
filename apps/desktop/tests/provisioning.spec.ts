@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 import {
-  buildProvisioningEnv, DesktopEnvironmentProvisioner, orderSourcesFrom, runProvisioningProcess, stopProcessGroup,
+  buildProvisioningEnv,
+  DesktopEnvironmentProvisioner,
+  orderSourcesFrom,
+  parseMicromambaProgressLine,
+  runProvisioningProcess,
+  stopProcessGroup,
   type ProcessRequest,
 } from '../src/provisioning.ts'
 import { resolveDisciplineStatus } from '../src/discipline-status.ts'
@@ -510,5 +515,25 @@ describe('stopProcessGroup', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('parseMicromambaProgressLine', () => {
+  it('parses download progress with bytes, speed, ETA, and package name', () => {
+    const parsed = parseMicromambaProgressLine('python-3.13.0-xxx    10.0MB / 20.0MB (2.0MB/s)    50%')
+    expect(parsed.currentPackage).toBe('python-3.13.0-xxx')
+    expect(parsed.bytesDownloaded).toBe(10 * 1024 * 1024)
+    expect(parsed.bytesTotal).toBe(20 * 1024 * 1024)
+    expect(parsed.speedBytesPerSec).toBe(2 * 1024 * 1024)
+    expect(parsed.etaSeconds).toBe(5)
+    expect(parsed.percent).toBe(50)
+  })
+
+  it('parses package action lines during extraction and linking', () => {
+    const extracted = parseMicromambaProgressLine('Extracting python-3.13.0-h123')
+    expect(extracted.currentPackage).toBe('python-3.13.0-h123')
+
+    const linked = parseMicromambaProgressLine('Linking r-base-4.5.0-h456')
+    expect(linked.currentPackage).toBe('r-base-4.5.0-h456')
   })
 })

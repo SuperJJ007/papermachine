@@ -7,7 +7,7 @@
  * catching a regression in `src/onboarding.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CurrentEnvironment, DesktopOnboardingBridge, OfferedEnvironment } from '../src/preload.ts'
+import type { ChooseInstallLocationResult, CurrentEnvironment, DesktopDiagnostics, DesktopOnboardingBridge, InstallLocation, OfferedEnvironment } from '../src/preload.ts'
 import type { ProvisioningProgress } from '../src/provisioning.ts'
 
 const STANDARD: OfferedEnvironment = {
@@ -32,6 +32,8 @@ const CURRENT: CurrentEnvironment = {
   prefix: '/Users/scientist/.papermachine/desktop-environments/environments/general/2026.09.1',
 }
 
+const DEFAULT_LOCATION: InstallLocation = { path: '/Users/scientist/.papermachine', customized: false }
+
 function setDom(): void {
   document.body.innerHTML = `
     <section id="current-environment" hidden>
@@ -43,6 +45,12 @@ function setDom(): void {
       <button id="keep-current"></button>
     </section>
     <section id="install">
+      <div class="actions">
+        <span>Install location: <code id="install-location-path"></code></span>
+        <button id="change-install-location"></button>
+        <button id="reset-install-location" hidden></button>
+      </div>
+      <p id="install-location-note"></p>
       <p id="install-summary"></p>
       <ul id="packages"></ul>
       <details id="advanced"><summary>advanced</summary><textarea id="custom-packages"></textarea></details>
@@ -97,6 +105,15 @@ function makeBridge(overrides: Partial<DesktopOnboardingBridge> = {}): DesktopOn
     provisionCustom: vi.fn(async () => {}),
     cancelProvisioning: vi.fn(async () => {}),
     onProvisioningProgress: (listener) => { progressListener = listener },
+    installLocation: vi.fn(async () => DEFAULT_LOCATION),
+    chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => ({ status: 'cancelled' })),
+    resetInstallLocation: vi.fn(async () => ({ status: 'restarting' as const })),
+    diagnostics: vi.fn(async (): Promise<DesktopDiagnostics> => ({
+      appVersion: '0.1.0',
+      platform: 'darwin-arm64',
+      harnessHome: DEFAULT_LOCATION.path,
+      installLocationCustomized: DEFAULT_LOCATION.customized,
+    })),
     ...overrides,
   }
 }
@@ -352,11 +369,92 @@ describe('onboarding install route', () => {
     await loadOnboarding(bridge)
 
     expect(Object.keys(bridge).sort()).toEqual([
-      'cancelProvisioning', 'currentEnvironment', 'environments', 'keepCurrentEnvironment', 'onProvisioningProgress',
-      'onboardingStatus', 'provision', 'provisionCustom',
+      'cancelProvisioning', 'chooseInstallLocation', 'currentEnvironment', 'diagnostics', 'environments',
+      'installLocation', 'keepCurrentEnvironment', 'onProvisioningProgress', 'onboardingStatus', 'provision',
+      'provisionCustom', 'resetInstallLocation',
     ])
     expect(document.querySelector('#detected')).toBeNull()
     expect(document.querySelector('#bind')).toBeNull()
     expect(document.querySelector('#redetect')).toBeNull()
+  })
+})
+
+describe('install location', () => {
+  it('renders the resolved install location and hides "Use default" for the pointer-free default', async () => {
+    const { bridge } = installBridge()
+    await loadOnboarding(bridge)
+
+    expect(textOf('#install-location-path')).toBe(DEFAULT_LOCATION.path)
+    expect(hiddenState('#reset-install-location')).toBe(true)
+  })
+
+  it('shows "Use default" only while an install-location pointer file is in effect', async () => {
+    const { bridge } = installBridge({
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+    })
+    await loadOnboarding(bridge)
+
+    expect(textOf('#install-location-path')).toBe('/Volumes/Data/.papermachine')
+    expect(hiddenState('#reset-install-location')).toBe(false)
+  })
+
+  it('shows the rejection reason from a chosen install location that fails validation, and re-enables the controls', async () => {
+    const { bridge } = installBridge({
+      chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => ({ status: 'rejected', reason: 'contains a space' })),
+    })
+    await loadOnboarding(bridge)
+
+    click('#change-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toBe('contains a space') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('disables the install-location controls and reports restarting once a location change is accepted', async () => {
+    const { bridge } = installBridge({
+      chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => ({ status: 'restarting' })),
+    })
+    await loadOnboarding(bridge)
+
+    click('#change-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toContain('Restarting') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(true)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('clears the pointer and reports restarting through "Use default"', async () => {
+    const resetInstallLocation = vi.fn(async () => ({ status: 'restarting' as const }))
+    const { bridge } = installBridge({
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      resetInstallLocation,
+    })
+    await loadOnboarding(bridge)
+
+    click('#reset-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toContain('Restarting') })
+    expect(resetInstallLocation).toHaveBeenCalledTimes(1)
+  })
+
+  it('includes the app version, Harness home, and last attempted source in the diagnostic report', async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error('solve failed') }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    chooseSource('tuna')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(document.querySelector('#copy-diagnostics')).not.toBeNull() })
+    click('#copy-diagnostics')
+
+    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
+    const report = writeText.mock.calls[0]?.[0]
+    expect(report).toContain('App version: 0.1.0')
+    expect(report).toContain(`Harness home: ${DEFAULT_LOCATION.path}`)
+    expect(report).toContain('Last source attempted: tuna')
   })
 })

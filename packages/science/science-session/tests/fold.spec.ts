@@ -164,6 +164,10 @@ describe('strict Science fold', () => {
       }),
     }))).toMatchObject({ status: 'drifted', python: { capability: 'drifted' } })
 
+    expect(decodeScienceEnvironment(environment({ sandboxEnforcement: 'partial' })))
+      .toMatchObject({ sandboxEnforcement: 'partial' })
+    expect(decodeScienceEnvironment(environment())).not.toHaveProperty('sandboxEnforcement')
+
     const invalidStarts: unknown[] = [
       runStarted({ runDirectoryRef: 'runs/not-the-run/' }),
     ]

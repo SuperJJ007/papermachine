@@ -39,7 +39,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import { capturablePngPaths, captureRunArtifacts } from './capture.ts'
 import type { CaptureRunArtifactsResult, RasterCapturePolicy } from './capture.ts'
 import { configSchema, resolveConfig } from './config.ts'
-import type { Config, ConfiguredProfile } from './config.ts'
+import type { Config, ConfiguredProfile, ResolvedConfig } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -112,6 +112,12 @@ function environmentBinding(
   const bindings = [observed.python?.binding, observed.r?.binding].filter(binding => binding !== undefined)
   const failures = bindings.filter(binding => binding.capability !== 'available')
   const now = Date.now()
+  // Both declared languages' probes confine under the same sandbox provider
+  // and the same configured minimum, so whichever ran actually reports the
+  // same enforcement level; the first present value is enough. Absent only
+  // when every declared interpreter failed static checks before any
+  // confinement was attempted (`environment.ts`'s `staticFailure`).
+  const sandboxEnforcement = observed.python?.enforcement ?? observed.r?.enforcement
   return {
     revision,
     profileId,
@@ -121,6 +127,7 @@ function environmentBinding(
     ...(observed.python === undefined ? {} : { python: observed.python.binding }),
     ...(observed.r === undefined ? {} : { r: observed.r.binding }),
     ...(failures.length === 0 ? {} : { failureReason: failures.map(binding => binding.reason).join('; ') }),
+    ...(sandboxEnforcement === undefined ? {} : { sandboxEnforcement }),
   }
 }
 
@@ -422,6 +429,8 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
   private readonly reconcileRetryDelayMs: number
   /** Configured bound on runs `annotate_artifact`'s not-found diagnostic inspects for a retained, uncaptured PNG. */
   private readonly annotateDiagnosticMaxRuns: number
+  /** Lowest sandbox enforcement level Science is configured to accept for an interpreter probe confinement. */
+  private readonly minimumEnforcement: ResolvedConfig['minimumEnforcement']
   /** Exact-object reservation and same-id quarantine owner. */
   private readonly leases = new LeaseRegistry()
   /** Resolved owning project per exact live Session, cached for its lifetime. */
@@ -481,6 +490,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     this.reconcileMaxSessions = resolved.reconcileMaxSessions
     this.reconcileRetryDelayMs = resolved.reconcileRetryDelayMs
     this.annotateDiagnosticMaxRuns = resolved.annotateDiagnosticMaxRuns
+    this.minimumEnforcement = resolved.minimumEnforcement
     this.kernels = new KernelSet({
       subprocess: ctx.subprocess,
       sandbox: ctx.sandbox,
@@ -763,6 +773,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         },
         packagesMaxEntries: this.packagesMaxEntries,
         packagesMaxBytes: this.packagesMaxBytes,
+        minimumEnforcement: this.minimumEnforcement,
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session)
@@ -866,6 +877,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         signal: lease.control.signal,
         packagesMaxEntries: this.packagesMaxEntries,
         packagesMaxBytes: this.packagesMaxBytes,
+        minimumEnforcement: this.minimumEnforcement,
       }, profile)
       this.assertPrepublication(request.session, lease.control)
       const current = this.assertSession(request.session).environment

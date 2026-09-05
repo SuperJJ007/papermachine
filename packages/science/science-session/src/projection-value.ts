@@ -65,6 +65,7 @@ function clientEnvironment(environment: ScienceEnvironmentBinding): ScienceClien
     status: environment.status,
     ...environment.python === undefined ? {} : { python: clientInterpreter(environment.python) },
     ...environment.r === undefined ? {} : { r: clientInterpreter(environment.r) },
+    ...environment.sandboxEnforcement === undefined ? {} : { sandboxEnforcement: environment.sandboxEnforcement },
   }
 }
 

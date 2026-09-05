@@ -293,6 +293,12 @@ const environmentSchema = z.object({
   python: interpreterSchema.optional(),
   r: interpreterSchema.optional(),
   failureReason: text(MAX_REASON_LENGTH).optional(),
+  // Additive optional field (2026-09-05): absent on every log written before
+  // it existed, and a `.strict()` schema is safe to extend this way
+  // pre-release, per the session-log version mechanism's own domain-payload
+  // precedent above (`artifactSchema`'s doc) — not the header/envelope/
+  // surface mechanism `SESSION_FORMAT_VERSION` gates.
+  sandboxEnforcement: z.enum(['full', 'partial']).optional(),
 }).strict().superRefine((environment, ctx) => {
   if (environment.python === undefined && environment.r === undefined) {
     issue(ctx, 'an environment requires at least one interpreter binding')

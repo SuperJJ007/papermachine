@@ -1,5 +1,7 @@
 /** Desktop-owned Host composition applied above the generic Web bundle. */
 
+import type { DesktopPlatform } from './environment-declaration.ts'
+
 /**
  * Fixed deadline for one `install_science_packages` micromamba
  * solve/install attempt, matching the bound this Host's own provisioning
@@ -33,6 +35,16 @@ export interface RuntimeOverlayInput {
    * (`resources/skills`, staged from `process.resourcesPath` by `main.ts`).
    */
   readonly skillsRoot: string
+  /**
+   * This launch's platform+arch target. Only `win32-x64` needs
+   * `science-runtime`'s `minimumEnforcement` lowered to `'partial'`: the
+   * shipped Windows sandbox (`dsh-sandbox-windows-acl`) is a write-restricted
+   * ACL token that cannot reach full enforcement (Everyone-writable external
+   * objects and NTFS hard links stay reachable — see that package's README).
+   * Every darwin target keeps the Config default (`'full'`) by omitting the
+   * field.
+   */
+  readonly platform: DesktopPlatform
 }
 
 /**
@@ -67,7 +79,7 @@ export interface RuntimeOverlayInput {
  * `~/.papermachine/skills` (the preset row's `user-dsh` root) always wins
  * over a same-named bundled one, regardless of either root's discovery rank.
  * @param input - the prefix(es) to bind, the micromamba executable, the
- *   ordered install channels, and the bundled skills root.
+ *   ordered install channels, the bundled skills root, and this launch's platform+arch target.
  * @throws when neither prefix is present or `installChannels` is empty.
  */
 export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string {
@@ -82,5 +94,9 @@ export function renderDesktopRuntimeOverlay(input: RuntimeOverlayInput): string 
     ...(input.rPrefix === undefined ? [] : [`        rPrefix: ${JSON.stringify(input.rPrefix)}`]),
   ].join('\n')
   const channels = input.installChannels.map(url => `      - ${JSON.stringify(url)}`).join('\n')
-  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    installTimeoutMs: ${String(INSTALL_TIMEOUT_MS)}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n- id: skill-filesystem\n  disabled: false\n  config:\n    providerName: bundled-skills\n    includeDefaultRoots: false\n    bundledSkillDir: ${JSON.stringify(input.skillsRoot)}\n`
+  // win32-x64 is the only shipped target whose sandbox backend
+  // (dsh-sandbox-windows-acl) cannot reach full enforcement; every darwin
+  // target omits the field and keeps the Config default ('full').
+  const minimumEnforcement = input.platform === 'win32-x64' ? '\n    minimumEnforcement: partial' : ''
+  return `- id: science-runtime\n  config:\n    micromambaPath: ${JSON.stringify(input.micromambaPath)}\n    installChannels:\n${channels}\n    installTimeoutMs: ${String(INSTALL_TIMEOUT_MS)}${minimumEnforcement}\n    profiles:\n      science:\n${fields}\n- id: agent-presets\n  config:\n    default: science\n- id: ui-agent-preset\n  disabled: true\n- id: ui-science\n  config:\n    toggleScope: global\n- id: hmr\n  disabled: true\n- id: ui-brand-official\n  disabled: true\n- id: ui-brand-papermachine\n  disabled: false\n- id: skill-filesystem\n  disabled: false\n  config:\n    providerName: bundled-skills\n    includeDefaultRoots: false\n    bundledSkillDir: ${JSON.stringify(input.skillsRoot)}\n`
 }

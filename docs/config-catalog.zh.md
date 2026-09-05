@@ -2003,6 +2003,18 @@ export interface Config {
    * once per retained run in the session, inside the runtime lease.
    */
   readonly annotateDiagnosticMaxRuns?: number
+  /**
+   * Lowest sandbox enforcement level Science accepts for interpreter probes
+   * and persistent kernels, defaulting to `'full'`. `'partial'` is meant for
+   * deployments on win32, where the ACL restricted-token backend
+   * (`dsh-sandbox-windows-acl`) cannot reach full enforcement — its
+   * documented write-boundary gaps (Everyone-writable external objects,
+   * NTFS hard links) stay reachable even under `'partial'`. Whichever level
+   * a confinement call actually reports is recorded on every environment
+   * binding (`ScienceEnvironmentBinding.sandboxEnforcement`) so provenance
+   * shows what Science accepted, not only what it required.
+   */
+  readonly minimumEnforcement?: SandboxEnforcement
 }
 
 /** One allowlisted existing Conda prefix. */
@@ -2024,7 +2036,9 @@ export interface ScienceEnvironmentProfileConfig {
 export type RasterCapturePolicy = 'declared' | 'always'
 ```
 
-来源：[`packages/science/science-runtime/src/config.ts:137`](../packages/science/science-runtime/src/config.ts)
+依赖：[`SandboxEnforcement`](../packages/sandbox/sandbox/src/index.ts)
+
+来源：[`packages/science/science-runtime/src/config.ts:146`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 

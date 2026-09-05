@@ -288,6 +288,7 @@ async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding)
     micromambaPath: micromambaPath(),
     installChannels: sources.flatMap(source => source.channels),
     skillsRoot: skillsRoot(),
+    platform: desktopPlatform(),
   }), { mode: 0o600 })
   return overlay
 }

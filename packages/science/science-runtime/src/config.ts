@@ -2,12 +2,21 @@
 
 import { isAbsolute } from 'node:path'
 import z from '@deepseek-ai/schemastery'
+import type { SandboxEnforcement } from '@deepseek-ai/dsh-sandbox'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceEnvironmentProfileId as ScienceEnvironmentProfileIdType } from '@deepseek-ai/dsh-science-session'
 import type { RasterCapturePolicy } from './capture.ts'
 
 /** Default raster-capture policy: a `.png` is auto-captured only when the run declares it via `raster_artifacts`. */
 export const DEFAULT_RASTER_CAPTURE: RasterCapturePolicy = 'declared'
+
+/**
+ * Default minimum sandbox enforcement Science accepts: `'full'`. A
+ * deployment lowers it to `'partial'` only where a supported backend cannot
+ * reach full enforcement — win32's ACL restricted-token backend
+ * (`dsh-sandbox-windows-acl`) is the shipped case.
+ */
+export const DEFAULT_MINIMUM_ENFORCEMENT: SandboxEnforcement = 'full'
 
 /** Fixed default timeout for one bind or run operation. */
 export const DEFAULT_TIMEOUT_MS = 120_000
@@ -249,6 +258,18 @@ export interface Config {
    * once per retained run in the session, inside the runtime lease.
    */
   readonly annotateDiagnosticMaxRuns?: number
+  /**
+   * Lowest sandbox enforcement level Science accepts for interpreter probes
+   * and persistent kernels, defaulting to `'full'`. `'partial'` is meant for
+   * deployments on win32, where the ACL restricted-token backend
+   * (`dsh-sandbox-windows-acl`) cannot reach full enforcement — its
+   * documented write-boundary gaps (Everyone-writable external objects,
+   * NTFS hard links) stay reachable even under `'partial'`. Whichever level
+   * a confinement call actually reports is recorded on every environment
+   * binding (`ScienceEnvironmentBinding.sandboxEnforcement`) so provenance
+   * shows what Science accepted, not only what it required.
+   */
+  readonly minimumEnforcement?: SandboxEnforcement
 }
 
 /** Parsed profile with its durable identifier preserved. */
@@ -359,6 +380,7 @@ export const configSchema: z<Config> = z.object({
   annotateDiagnosticMaxRuns: z.number().step(1)
     .min(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS).max(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)
     .default(DEFAULT_ANNOTATE_DIAGNOSTIC_MAX_RUNS),
+  minimumEnforcement: z.union(['full', 'partial'] as const).default(DEFAULT_MINIMUM_ENFORCEMENT),
 })
 
 /** Parsed immutable runtime configuration. */
@@ -405,6 +427,8 @@ export interface ResolvedConfig {
   readonly reconcileRetryDelayMs: number
   /** Explicitly resolved bound on runs inspected by the `annotate_artifact` not-found diagnostic. */
   readonly annotateDiagnosticMaxRuns: number
+  /** Explicitly resolved minimum sandbox enforcement Science accepts. */
+  readonly minimumEnforcement: SandboxEnforcement
 }
 
 /** Require that a configuration record has no undeclared fields. */
@@ -426,6 +450,18 @@ function assertKnownKeys(value: unknown, allowed: readonly string[], label: stri
 function assertRasterCapture(value: unknown): asserts value is RasterCapturePolicy {
   if (value !== 'declared' && value !== 'always') {
     throw new Error('science-runtime: rasterCapture must be "declared" or "always"')
+  }
+}
+
+/**
+ * Require that a value is a valid minimum sandbox enforcement level. Takes
+ * `unknown` for the same reason as {@link assertRasterCapture}: it validates
+ * a cordis.yml-sourced runtime value against the closed set, not an
+ * already-narrow static type.
+ */
+function assertMinimumEnforcement(value: unknown): asserts value is SandboxEnforcement {
+  if (value !== 'full' && value !== 'partial') {
+    throw new Error('science-runtime: minimumEnforcement must be "full" or "partial"')
   }
 }
 
@@ -484,6 +520,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       'kernelIdleTimeoutMs', 'kernelStartTimeoutMs',
       'chartExtractTimeoutMs', 'chartLiveRunsRetained',
       'reconcileMaxSessions', 'reconcileRetryDelayMs', 'annotateDiagnosticMaxRuns',
+      'minimumEnforcement',
     ],
     'config',
   )
@@ -600,6 +637,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     || annotateDiagnosticMaxRuns > MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS) {
     throw new Error(`science-runtime: annotateDiagnosticMaxRuns must be a safe integer from ${String(MIN_ANNOTATE_DIAGNOSTIC_MAX_RUNS)} through ${String(MAX_ANNOTATE_DIAGNOSTIC_MAX_RUNS)}`)
   }
+  const minimumEnforcement: unknown = config.minimumEnforcement ?? DEFAULT_MINIMUM_ENFORCEMENT
+  assertMinimumEnforcement(minimumEnforcement)
   return {
     dshHome: config.dshHome,
     micromambaPath: config.micromambaPath,
@@ -622,5 +661,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     reconcileMaxSessions,
     reconcileRetryDelayMs,
     annotateDiagnosticMaxRuns,
+    minimumEnforcement,
   }
 }

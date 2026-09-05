@@ -3,7 +3,7 @@
  * Installing writes into the target Conda prefix by design, the opposite of
  * every other Runtime confinement site (probes and kernels require the
  * prefix read-only) — see {@link confineInstallArgv}'s own doc for the
- * resulting divergence from `execution.ts`'s `confineWithFullEnforcement`.
+ * resulting divergence from `execution.ts`'s `confineWithEnforcement`.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -193,7 +193,7 @@ function installConfinementPolicy(session: Session, canonicalPrefix: string): Sa
 /**
  * Sandbox-confine the install argv under a policy that grants exactly the
  * target prefix as its writable root. This is the mirror image of
- * `execution.ts`'s `confineWithFullEnforcement`: every other confinement
+ * `execution.ts`'s `confineWithEnforcement`: every other confinement
  * site in this Runtime asserts the interpreter's own prefix stays OUTSIDE
  * every writable root, because a probe or kernel must never write the
  * environment it observes or runs against. An install's entire purpose is

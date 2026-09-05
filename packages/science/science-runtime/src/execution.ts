@@ -5,7 +5,7 @@ import { Buffer } from 'node:buffer'
 import { open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SandboxUnavailableError, writableRoots } from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { ScienceRunId, ScienceScratchKey } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceEnvironmentBinding,
@@ -182,23 +182,42 @@ export function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): voi
 }
 
 /**
+ * Whether a confinement's reported enforcement satisfies a configured
+ * minimum: `'full'` accepts only a `'full'` report; `'partial'` accepts
+ * either `'full'` or `'partial'`. The sandbox provider itself never sees
+ * this comparison — it always reports the level it actually achieved.
+ * @param reported - enforcement level `SandboxProvider.confine` reported.
+ * @param minimum - lowest level Science is configured to accept.
+ * @returns whether `reported` meets or exceeds `minimum`.
+ */
+function meetsMinimumEnforcement(reported: SandboxEnforcement, minimum: SandboxEnforcement): boolean {
+  return minimum === 'partial' || reported === 'full'
+}
+
+/**
  * Sandbox-confine one argv under an already-built policy: asserts the
- * interpreter's own prefix stays read-only and requires full enforcement.
- * Shared by every Science confinement site — persistent kernel spawn and
- * interpreter probes alike — each of which builds its own policy (a probe's
- * differs from a kernel's: a narrower `workspaceRoot`).
+ * interpreter's own prefix stays read-only and requires at least
+ * `minimumEnforcement`. Shared by every Science confinement site —
+ * persistent kernel spawn and interpreter probes alike — each of which
+ * builds its own policy (a probe's differs from a kernel's: a narrower
+ * `workspaceRoot`).
  * @param sandbox - sandbox provider performing the confinement.
  * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
  * @param policy - the caller's already-built confinement policy.
  * @param argv - direct, unconfined argv (see {@link interpreterArgv}).
+ * @param minimumEnforcement - lowest enforcement level Science is configured
+ *   to accept (`science-runtime`'s `minimumEnforcement` Config field).
  * @returns the confined argv and its denial/runner-failure classification evidence.
- * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the sandbox is unavailable or reports less than full enforcement.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
+ *   sandbox is unavailable or reports less than `minimumEnforcement`; the
+ *   message names both the reported and the required level.
  */
-export function confineWithFullEnforcement(
+export function confineWithEnforcement(
   sandbox: SandboxProvider,
   canonicalPrefix: string,
   policy: SandboxPolicy,
   argv: readonly string[],
+  minimumEnforcement: SandboxEnforcement,
 ): ConfinedArgv {
   assertPrefixReadOnly(canonicalPrefix, policy)
   let confined: ConfinedArgv
@@ -206,12 +225,15 @@ export function confineWithFullEnforcement(
     confined = sandbox.confine(argv, policy)
   } catch (error) {
     if (error instanceof SandboxUnavailableError) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available full sandbox', { cause: error })
+      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available sandbox', { cause: error })
     }
     throw error
   }
-  if (confined.enforcement !== 'full') {
-    throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires full sandbox enforcement')
+  if (!meetsMinimumEnforcement(confined.enforcement, minimumEnforcement)) {
+    throw new ScienceRuntimeError(
+      'CONFINEMENT_UNAVAILABLE',
+      `Science requires at least ${minimumEnforcement} sandbox enforcement; the sandbox reported ${confined.enforcement}`,
+    )
   }
   return confined
 }
@@ -225,8 +247,12 @@ export function confineWithFullEnforcement(
  * @param sandbox - sandbox provider performing the confinement.
  * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
  * @param argv - direct, unconfined argv (see {@link interpreterArgv}).
+ * @param minimumEnforcement - lowest enforcement level Science is configured
+ *   to accept; defaults to `'full'` for a caller that does not yet thread
+ *   `science-runtime`'s configured value through to kernel spawn.
  * @returns the confined argv and its denial/runner-failure classification evidence.
- * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the sandbox is unavailable or reports less than full enforcement.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
+ *   sandbox is unavailable or reports less than `minimumEnforcement`.
  */
 export function confineInterpreterArgv(
   session: Session,
@@ -234,8 +260,9 @@ export function confineInterpreterArgv(
   sandbox: SandboxProvider,
   canonicalPrefix: string,
   argv: readonly string[],
+  minimumEnforcement: SandboxEnforcement = 'full',
 ): ConfinedArgv {
-  return confineWithFullEnforcement(sandbox, canonicalPrefix, confinementPolicy(session, scratch), argv)
+  return confineWithEnforcement(sandbox, canonicalPrefix, confinementPolicy(session, scratch), argv, minimumEnforcement)
 }
 
 /**

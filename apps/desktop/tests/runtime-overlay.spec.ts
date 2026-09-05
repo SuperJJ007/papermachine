@@ -43,6 +43,7 @@ const installer = {
   micromambaPath: '/Applications/PaperMachine.app/Contents/Resources/bin/darwin-arm64/micromamba',
   installChannels: ['https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge', 'https://conda.anaconda.org/conda-forge'],
   skillsRoot: '/Applications/PaperMachine.app/Contents/Resources/skills',
+  platform: 'darwin-arm64',
 } as const
 
 describe('desktop Runtime overlay', () => {
@@ -92,12 +93,27 @@ describe('desktop Runtime overlay', () => {
     expect(() => renderDesktopRuntimeOverlay({ ...installer })).toThrow(/requires pythonPrefix or rPrefix/)
   })
 
+  it('lowers the minimum sandbox enforcement to partial only on win32-x64', () => {
+    const darwin = yaml.load(renderDesktopRuntimeOverlay({
+      pythonPrefix: '/py/prefix', ...installer,
+    })) as CordisEntry[]
+    const darwinById = new Map(darwin.map(entry => [entry.id, entry]))
+    expect(darwinById.get('science-runtime')?.config?.minimumEnforcement).toBeUndefined()
+
+    const win32 = yaml.load(renderDesktopRuntimeOverlay({
+      pythonPrefix: 'C:\\Users\\science\\env', ...installer, platform: 'win32-x64',
+    })) as CordisEntry[]
+    const win32ById = new Map(win32.map(entry => [entry.id, entry]))
+    expect(win32ById.get('science-runtime')?.config?.minimumEnforcement).toBe('partial')
+  })
+
   it('rejects an empty install-channel list, since science-runtime requires the channels alongside micromambaPath', () => {
     expect(() => renderDesktopRuntimeOverlay({
       pythonPrefix: '/py/prefix',
       micromambaPath: installer.micromambaPath,
       installChannels: [],
       skillsRoot: installer.skillsRoot,
+      platform: installer.platform,
     })).toThrow(/requires at least one install channel/)
   })
 

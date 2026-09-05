@@ -4,8 +4,13 @@ import { closeSync, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import SandboxProvider, { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { interpreterArgv, quiesce, readCaptureTail } from '../src/execution.ts'
+import { confineInterpreterArgv, confineWithEnforcement, interpreterArgv, quiesce, readCaptureTail } from '../src/execution.ts'
+import type { ScienceSessionScratch } from '../src/scratch.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -24,6 +29,86 @@ describe('interpreterArgv', () => {
   it('leaves the R kernel flag set unaffected', () => {
     expect(interpreterArgv('r', '/prefix/bin/Rscript', '/driver.R', '/resp.fifo'))
       .toEqual(['/prefix/bin/Rscript', '--vanilla', '--encoding=UTF-8', '/driver.R', '/resp.fifo'])
+  })
+})
+
+/** Test-selected enforcement or unavailability, reporting the caller's policy so a test can assert its writable root. */
+class FakeSandbox extends SandboxProvider {
+  enforcement: 'full' | 'partial' = 'full'
+  unavailable = false
+
+  confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    if (this.unavailable) throw new SandboxUnavailableError('workspace-write')
+    return { argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [] }
+  }
+}
+
+describe('confineWithEnforcement', () => {
+  async function fakeSandbox(): Promise<{ readonly ctx: Context; readonly sandbox: FakeSandbox }> {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(FakeSandbox)
+    return { ctx, sandbox: ctx.sandbox as FakeSandbox }
+  }
+
+  const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: '/workspace', sessionId: SessionId('test-session') }
+
+  it('accepts a full report against a full minimum', async () => {
+    const { sandbox } = await fakeSandbox()
+    expect(confineWithEnforcement(sandbox, '/opt/conda-env', policy, ['python'], 'full'))
+      .toMatchObject({ enforcement: 'full' })
+  })
+
+  it('rejects a partial report against a full minimum, naming both levels', async () => {
+    const { sandbox } = await fakeSandbox()
+    sandbox.enforcement = 'partial'
+    expect(() => confineWithEnforcement(sandbox, '/opt/conda-env', policy, ['python'], 'full'))
+      .toThrow(/Science requires at least full sandbox enforcement; the sandbox reported partial/)
+  })
+
+  it('accepts a partial report against a partial minimum', async () => {
+    const { sandbox } = await fakeSandbox()
+    sandbox.enforcement = 'partial'
+    expect(confineWithEnforcement(sandbox, '/opt/conda-env', policy, ['python'], 'partial'))
+      .toMatchObject({ enforcement: 'partial' })
+  })
+
+  it('accepts a full report against a partial minimum', async () => {
+    const { sandbox } = await fakeSandbox()
+    expect(confineWithEnforcement(sandbox, '/opt/conda-env', policy, ['python'], 'partial'))
+      .toMatchObject({ enforcement: 'full' })
+  })
+
+  it('rejects an unavailable sandbox regardless of the configured minimum', async () => {
+    const { sandbox } = await fakeSandbox()
+    sandbox.unavailable = true
+    expect(() => confineWithEnforcement(sandbox, '/opt/conda-env', policy, ['python'], 'partial'))
+      .toThrow(/Science requires an available sandbox/)
+  })
+})
+
+describe('confineInterpreterArgv', () => {
+  const fakeSession = { id: SessionId('test-session') } as unknown as Session
+  const fakeScratch = { root: '/workspace' } as unknown as ScienceSessionScratch
+
+  it('defaults to a full minimum for a caller that does not pass one', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(FakeSandbox)
+    const sandbox = ctx.sandbox as FakeSandbox
+    sandbox.enforcement = 'partial'
+    expect(() => confineInterpreterArgv(fakeSession, fakeScratch, sandbox, '/opt/conda-env', ['python']))
+      .toThrow(/Science requires at least full sandbox enforcement; the sandbox reported partial/)
+  })
+
+  it('accepts a caller-passed minimum below full', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(FakeSandbox)
+    const sandbox = ctx.sandbox as FakeSandbox
+    sandbox.enforcement = 'partial'
+    expect(confineInterpreterArgv(fakeSession, fakeScratch, sandbox, '/opt/conda-env', ['python'], 'partial'))
+      .toMatchObject({ enforcement: 'partial' })
   })
 })
 

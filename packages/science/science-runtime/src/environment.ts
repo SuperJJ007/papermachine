@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import { canonicalizeWatchPath } from '@deepseek-ai/dsh-home-paths'
 import type { ScienceInterpreterBinding, ScienceLanguage, SciencePackage } from '@deepseek-ai/dsh-science-session'
@@ -11,7 +11,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
 import type { ConfiguredProfile } from './config.ts'
-import { assertPrefixReadOnly, confineWithFullEnforcement, interpreterPathEnv, localeEnvironment } from './execution.ts'
+import { assertPrefixReadOnly, confineWithEnforcement, interpreterPathEnv, localeEnvironment } from './execution.ts'
 import { containsPath, createProbeScratch, planProbeScratch, removeProbeScratch } from './scratch.ts'
 import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
@@ -46,6 +46,12 @@ export interface ObservedInterpreter {
   readonly prefix: string
   /** Canonical executable used in direct argv. */
   readonly executable: string
+  /**
+   * Sandbox enforcement level this language's probe confinement actually
+   * reported. Absent when static interpreter checks failed before any
+   * confinement was attempted (`staticFailure`) — no observation, honestly no value.
+   */
+  readonly enforcement?: SandboxEnforcement
 }
 
 /** Stable observations for every configured language in one profile. */
@@ -71,6 +77,8 @@ export interface ObservationServices {
   readonly packagesMaxEntries: number
   /** Configured maximum retained package-inventory UTF-8 bytes. */
   readonly packagesMaxBytes: number
+  /** Lowest sandbox enforcement level Science is configured to accept for a probe confinement. */
+  readonly minimumEnforcement: SandboxEnforcement
 }
 
 interface StaticInterpreterFacts {
@@ -308,7 +316,7 @@ function confineProbe(
   scratch: ScienceProbeScratch,
   argv: readonly string[],
 ): ConfinedArgv {
-  return confineWithFullEnforcement(services.sandbox, prefix, probePolicy(scratch, services.sessionId), argv)
+  return confineWithEnforcement(services.sandbox, prefix, probePolicy(scratch, services.sessionId), argv, services.minimumEnforcement)
 }
 
 /** Distinguish an absent or structurally unusable configured interpreter from provider I/O failure. */
@@ -485,6 +493,7 @@ async function observePrepared(
           prefix: after.prefix,
           executable: after.executable,
           binding: { language, configuredPrefix, canonicalPrefix: after.prefix, capability: 'invalid', reason: 'environment changed during observation' },
+          enforcement: preparedAttempt.version.enforcement,
         }
       }
       if (normalized === undefined || !utf8.ok || utf8.stdout !== UTF8_PROBE_TEXT || utf8.stderr.length !== 0) {
@@ -492,6 +501,7 @@ async function observePrepared(
           prefix: staticFacts.prefix,
           executable: staticFacts.executable,
           binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'interpreter probes did not produce the required lossless output' },
+          enforcement: preparedAttempt.version.enforcement,
         }
       }
       const rawPackages = packages.ok ? parsePackages(language, packages.stdout) : undefined
@@ -500,6 +510,7 @@ async function observePrepared(
           prefix: staticFacts.prefix,
           executable: staticFacts.executable,
           binding: { language, configuredPrefix, canonicalPrefix: staticFacts.prefix, executable: staticFacts.executable, capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+          enforcement: preparedAttempt.version.enforcement,
         }
       }
       const historySha = sha256(staticFacts.history)
@@ -519,6 +530,7 @@ async function observePrepared(
           ...packageInventory(rawPackages, services.packagesMaxEntries, services.packagesMaxBytes),
           capability: 'available',
         },
+        enforcement: preparedAttempt.version.enforcement,
       }
     } catch (error) {
       observationFailure = error

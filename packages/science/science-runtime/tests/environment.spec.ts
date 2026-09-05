@@ -481,6 +481,23 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(existsSync(join(unavailableRoot, 'dsh-home', 'science'))).toBe(false)
   })
 
+  it('accepts a partial-reporting sandbox and records the accepted level once minimumEnforcement allows it', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-accept-partial-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { minimumEnforcement: 'partial' },
+    )
+    contexts.push(harness.ctx)
+    harness.sandbox.enforcement = 'partial'
+    const session = createScienceSession(harness.ctx, 'science-accept-partial')
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
+  })
+
   it('records an invalid revision for a missing prefix or invalid retained UTF-8 without spawning user source', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-invalid-'))
     roots.push(root)
@@ -510,11 +527,17 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(invalid).toMatchObject({
       status: 'invalid',
       python: { capability: 'invalid', canonicalPrefix: invalidPrefix, executable: join(invalidPrefix, 'bin', 'python') },
+      // A probe actually ran (and confined) before the UTF-8 mismatch made
+      // the observation invalid, so the accepted enforcement level is known.
+      sandboxEnforcement: 'full',
     })
     expect(missing).toMatchObject({
       status: 'invalid',
       python: { capability: 'invalid', configuredPrefix: missingPrefix },
     })
+    // A missing prefix fails static checks before any confinement is
+    // attempted, so no enforcement level was ever observed to record.
+    expect(missing.sandboxEnforcement).toBeUndefined()
     expect(subprocess.specs).toHaveLength(beforeMissing)
   })
 
@@ -546,6 +569,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
       packagesMaxEntries: 2_000,
       packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
     }, { id: ScienceEnvironmentProfileId('r-only'), rPrefix: sharedPrefix })).resolves.toMatchObject({ r: { binding: { capability: 'available' } } })
 
     const rPrefix = createFakeRPrefix(spaceRoot)
@@ -886,6 +910,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
       packagesMaxEntries: 2_000,
       packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toThrow(/observations failed after all probe cleanup settled/)
@@ -900,6 +925,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
       packagesMaxEntries: 2_000,
       packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
@@ -913,6 +939,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       signal: new AbortController().signal,
       packagesMaxEntries: 2_000,
       packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
     }, {
       id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
     })).rejects.toMatchObject({ errors: [expect.any(Error), 'injected non-Error observation failure'] })
@@ -1647,6 +1674,19 @@ describe('Science Runtime configuration', () => {
     const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
     expect(resolved.kernelIdleTimeoutMs).toBe(1_800_000)
     expect(resolved.kernelStartTimeoutMs).toBe(30_000)
+  })
+
+  it('validates minimumEnforcement, defaulting to full and accepting only full or partial', () => {
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }).minimumEnforcement).toBe('full')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'full',
+    }).minimumEnforcement).toBe('full')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'partial',
+    }).minimumEnforcement).toBe('partial')
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'none' as never,
+    })).toThrow(/minimumEnforcement must be "full" or "partial"/)
   })
 })
 

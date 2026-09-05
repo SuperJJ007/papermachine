@@ -137,6 +137,20 @@ export interface ScienceEnvironmentBinding {
   readonly r?: ScienceInterpreterBinding
   /** Stable human-readable failure or drift reason. */
   readonly failureReason?: string
+  /**
+   * Sandbox enforcement level Science actually accepted for this revision's
+   * interpreter confinement, mirroring `dsh-sandbox`'s `SandboxEnforcement`
+   * values (`'full'` or `'partial'`) without this package depending on that
+   * package. Present whenever at least one declared interpreter's static
+   * checks passed far enough to reach sandbox confinement; absent when every
+   * declared interpreter failed before any confinement was attempted (for
+   * example, a missing configured prefix). `'partial'` records that
+   * `science-runtime`'s configured `minimumEnforcement` explicitly accepted
+   * a backend that cannot reach full enforcement — the Windows ACL backend's
+   * documented write-boundary gaps
+   * (`packages/sandbox/sandbox-windows-acl/README.md`) are the shipped case.
+   */
+  readonly sandboxEnforcement?: 'full' | 'partial'
 }
 
 /** Exact immutable Science artifact version identity. */
@@ -558,6 +572,8 @@ export interface ScienceClientEnvironmentBinding {
   readonly status: ScienceEnvironmentStatus
   readonly python?: ScienceClientInterpreterBinding
   readonly r?: ScienceClientInterpreterBinding
+  /** Sandbox enforcement level Science accepted for this revision; carries no Host path or secret, so it passes through unredacted. */
+  readonly sandboxEnforcement?: 'full' | 'partial'
 }
 
 /**

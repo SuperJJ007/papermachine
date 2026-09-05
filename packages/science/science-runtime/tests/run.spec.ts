@@ -703,7 +703,10 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     await expect(harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session), signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE', message: 'Science requires full sandbox enforcement' })
+    })).rejects.toMatchObject({
+      code: 'CONFINEMENT_UNAVAILABLE',
+      message: 'Science requires at least full sandbox enforcement; the sandbox reported partial',
+    })
   })
 
   it('bounds kernel spawn by the run\'s own cancellation, not only kernelStartTimeoutMs', async () => {

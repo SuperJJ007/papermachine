@@ -187,6 +187,7 @@ describe('Science projection replay', () => {
       python: { capability: 'available', fingerprintPreview: FINGERPRINT.slice(0, 12) },
       r: { capability: 'unavailable' },
     })
+    expect(client.environment).not.toHaveProperty('sandboxEnforcement')
     expect(client.environment?.python).not.toHaveProperty('languageVersion')
     expect(client.environment?.r).not.toHaveProperty('languageVersion')
     expect(client.environment?.r).not.toHaveProperty('fingerprintPreview')
@@ -203,6 +204,14 @@ describe('Science projection replay', () => {
       ...host,
       environment: { ...environmentWithoutPython, r: unavailableR },
     })?.environment).not.toHaveProperty('python')
+  })
+
+  it('passes a recorded sandbox enforcement level through to the client unredacted', () => {
+    const host = replayScience(legalEvents())!
+    expect(toClientScienceProjection({
+      ...host,
+      environment: { ...host.environment!, sandboxEnforcement: 'partial' },
+    })?.environment).toMatchObject({ sandboxEnforcement: 'partial' })
   })
 
   it('reuses the same client artifact object across repeated projections of an unchanged version', () => {

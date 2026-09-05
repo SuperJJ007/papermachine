@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 import {
-  buildProvisioningEnv, DesktopEnvironmentProvisioner, orderSourcesFrom, parseMicromambaProgressLine, runProvisioningProcess, stopProcessGroup,
+  buildProvisioningEnv,
+  DesktopEnvironmentProvisioner,
+  orderSourcesFrom,
+  parseMicromambaProgressLine,
+  runProvisioningProcess,
+  stopProcessGroup,
   type ProcessRequest,
 } from '../src/provisioning.ts'
 import { resolveDisciplineStatus } from '../src/discipline-status.ts'

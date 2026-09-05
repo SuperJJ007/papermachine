@@ -99,17 +99,24 @@ export function parseMicromambaProgressLine(line: string): ParsedProgress {
     }
   }
 
-  const pkgActionMatch = line.match(/(?:Downloading|Extracting|Linking|Fetching)\s+([a-zA-Z0-9_\-.]+)/i)
+  const pkgActionMatch = line.match(/(?:Downloading|Extracting|Linking|Fetching)\s+([a-z0-9_\-.]+)/i)
   if (pkgActionMatch && pkgActionMatch[1] !== undefined) {
     currentPackage = pkgActionMatch[1]
   } else {
-    const pkgLeadMatch = line.match(/^([a-zA-Z0-9_\-.]+)\s+.*(?:\d+%.*|\d+\s*[KMGT]?B)/i)
+    const pkgLeadMatch = line.match(/^([a-z0-9_\-.]+)\s+.*(?:\d+%.*|\d+\s*[KMGT]?B)/i)
     if (pkgLeadMatch && pkgLeadMatch[1] !== undefined && !['download', 'extract', 'total', 'progress'].includes(pkgLeadMatch[1].toLowerCase())) {
       currentPackage = pkgLeadMatch[1]
     }
   }
 
-  return { bytesDownloaded, bytesTotal, speedBytesPerSec, etaSeconds, currentPackage, percent }
+  return {
+    ...(bytesDownloaded !== undefined && { bytesDownloaded }),
+    ...(bytesTotal !== undefined && { bytesTotal }),
+    ...(speedBytesPerSec !== undefined && { speedBytesPerSec }),
+    ...(etaSeconds !== undefined && { etaSeconds }),
+    ...(currentPackage !== undefined && { currentPackage }),
+    ...(percent !== undefined && { percent }),
+  }
 }
 
 /** Published pointer to the only prefix desktop Runtime configuration may consume. */
@@ -478,12 +485,7 @@ export class DesktopEnvironmentProvisioner {
               phase: 'installing',
               message: line,
               sourceId: source.id,
-              bytesDownloaded: parsed.bytesDownloaded,
-              bytesTotal: parsed.bytesTotal,
-              speedBytesPerSec: parsed.speedBytesPerSec,
-              etaSeconds: parsed.etaSeconds,
-              currentPackage: parsed.currentPackage,
-              percent: parsed.percent,
+              ...parsed,
               retryAttempt: { index: index + 1, total: attempts.length },
             })
           },

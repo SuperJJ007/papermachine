@@ -248,7 +248,18 @@ async function startConfirmed(): Promise<void> {
       copyBtn.style.cursor = 'pointer'
       copyBtn.textContent = '📋 一键复制报错诊断 · Copy Diagnostic Report'
       copyBtn.addEventListener('click', () => {
-        const report = `## PaperMachine Environment Install Failure\n- Platform: ${navigator.platform}\n- UserAgent: ${navigator.userAgent}\n- Time: ${new Date().toISOString()}\n- Error:\n```\n${errorText}\n```\n`
+        const fence = '```'
+        const report = [
+          '## PaperMachine Environment Install Failure',
+          `- Platform: ${navigator.platform}`,
+          `- UserAgent: ${navigator.userAgent}`,
+          `- Time: ${new Date().toISOString()}`,
+          '- Error:',
+          fence,
+          errorText,
+          fence,
+          '',
+        ].join('\n')
         void navigator.clipboard.writeText(report).then(() => {
           if (copyBtn) copyBtn.textContent = '✓ 已复制诊断信息 · Copied!'
           setTimeout(() => { if (copyBtn) copyBtn.textContent = '📋 一键复制报错诊断 · Copy Diagnostic Report' }, 2000)

@@ -15,7 +15,7 @@
 
 import type { Readable, Writable } from 'node:stream'
 import { deadline } from '@deepseek-ai/dsh-timeout'
-import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxEnforcement, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { ScienceInterpreterAvailableBinding, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -92,6 +92,14 @@ export interface KernelProcessOptions {
    * loopback TCP transport on a POSIX host without mocking `process.platform` globally.
    */
   readonly transportKind?: KernelTransportKind | undefined
+  /**
+   * Lowest sandbox enforcement level this kernel's confinement accepts
+   * (`science-runtime`'s configured `minimumEnforcement`, forwarded through
+   * `KernelSetOptions`). Omitted only by a caller that has not threaded the
+   * configured value through — {@link confineInterpreterArgv}'s own default
+   * of `'full'` then applies, matching this option's absence exactly.
+   */
+  readonly minimumEnforcement?: SandboxEnforcement | undefined
 }
 
 /** One RUN request: exact host-minted paths, never shell-interpreted or escaped. */
@@ -331,11 +339,11 @@ export class KernelProcess {
    *   connect timeout, `options.signal` aborting before either, an
    *   unparseable frame before READY, or a process exit/rejection before READY.
    * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
-   *   sandbox is unavailable, reports less than full enforcement, or the R
-   *   kernel's TMPDIR would contain a space.
+   *   sandbox is unavailable, reports less than `options.minimumEnforcement`,
+   *   or the R kernel's TMPDIR would contain a space.
    */
   static async start(options: KernelProcessOptions): Promise<KernelProcess> {
-    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal, transportKind } = options
+    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal, transportKind, minimumEnforcement } = options
     const kernelScratch = await createKernelScratch(
       services.sessionScratch,
       planKernelScratch(services.sessionScratch, binding.language, index),
@@ -360,6 +368,7 @@ export class KernelProcess {
         services.sandbox,
         binding.canonicalPrefix,
         interpreterArgv(binding.language, binding.executable, driverPath, transport.endpointArg),
+        minimumEnforcement,
       )
       // NOT given `signal`: that spec field stays wired to the spawned
       // handle for the process's whole lifetime (subprocess-local's own

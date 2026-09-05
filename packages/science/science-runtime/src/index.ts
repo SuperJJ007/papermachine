@@ -497,6 +497,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       assetsRoot: KERNEL_ASSETS_ROOT,
       kernelIdleTimeoutMs: this.kernelIdleTimeoutMs,
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
+      minimumEnforcement: this.minimumEnforcement,
       nextEpoch: session => this.nextKernelEpoch(session),
       onKernelStarted: (session, fact) => { this.appendKernelStarted(session, fact) },
       onKernelEnded: (session, fact) => { this.appendKernelEnded(session, fact) },

@@ -28,7 +28,7 @@
  * @module @deepseek-ai/dsh-science-runtime/kernel-set
  */
 
-import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { SandboxEnforcement, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { ScienceEnvironmentBinding, ScienceKernelEndReason, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -99,6 +99,14 @@ export interface KernelSetOptions {
   readonly kernelIdleTimeoutMs: number
   /** Spawn-to-READY deadline forwarded to {@link KernelProcess.start}. */
   readonly kernelStartTimeoutMs: number
+  /**
+   * Lowest sandbox enforcement level a spawned kernel's confinement
+   * accepts, forwarded to {@link KernelProcess.start}
+   * (`science-runtime`'s configured `minimumEnforcement`). Omitted only by
+   * a caller that has not threaded the configured value through —
+   * `KernelProcess.start`'s own default of `'full'` then applies.
+   */
+  readonly minimumEnforcement?: SandboxEnforcement | undefined
   /**
    * Allocate the next session-local kernel epoch. `KernelSet` never reads
    * durable state itself; it only asserts the returned value is strictly
@@ -274,6 +282,7 @@ export class KernelSet {
   private readonly assetsRoot: string
   private readonly kernelIdleTimeoutMs: number
   private readonly kernelStartTimeoutMs: number
+  private readonly minimumEnforcement: SandboxEnforcement | undefined
   private readonly nextEpoch: (session: Session) => number
   private readonly onKernelStarted: KernelStartedCallback
   private readonly onKernelEnded: KernelEndedCallback
@@ -288,6 +297,7 @@ export class KernelSet {
     this.assetsRoot = options.assetsRoot
     this.kernelIdleTimeoutMs = options.kernelIdleTimeoutMs
     this.kernelStartTimeoutMs = options.kernelStartTimeoutMs
+    this.minimumEnforcement = options.minimumEnforcement
     this.nextEpoch = options.nextEpoch
     this.onKernelStarted = options.onKernelStarted
     this.onKernelEnded = options.onKernelEnded
@@ -359,6 +369,7 @@ export class KernelSet {
       driverPath: resolveKernelDriverPath(this.assetsRoot, language),
       index: 0,
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
+      minimumEnforcement: this.minimumEnforcement,
       signal,
     })
   }
@@ -607,6 +618,7 @@ export class KernelSet {
       // same-language predecessor whose teardown has not yet completed.
       index: kernelEpoch,
       kernelStartTimeoutMs: this.kernelStartTimeoutMs,
+      minimumEnforcement: this.minimumEnforcement,
       signal,
     })
     // Captured only after the READY handshake resolves: the

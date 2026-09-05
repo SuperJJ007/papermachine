@@ -263,8 +263,10 @@ export function confineWithEnforcement(
  * @param canonicalPrefix - the observed binding's canonicalized Conda prefix.
  * @param argv - direct, unconfined argv (see {@link interpreterArgv}).
  * @param minimumEnforcement - lowest enforcement level Science is configured
- *   to accept; defaults to `'full'` for a caller that does not yet thread
- *   `science-runtime`'s configured value through to kernel spawn.
+ *   to accept (`KernelProcessOptions.minimumEnforcement`, itself
+ *   `science-runtime`'s configured `minimumEnforcement` forwarded through
+ *   `KernelSetOptions`); defaults to `'full'` only for a caller — a test —
+ *   that omits it.
  * @returns the confined argv and its denial/runner-failure classification evidence.
  * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
  *   sandbox is unavailable or reports less than `minimumEnforcement`.

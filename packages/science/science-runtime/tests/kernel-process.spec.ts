@@ -28,7 +28,7 @@ import type { KernelExecuteRequest, KernelProcessServices } from '../src/kernel-
 import { createKernelScratch, ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
 import { ScienceRuntimeError } from '../src/types.ts'
-import { TEST_KERNEL_START_TIMEOUT_MS, createFakeSandboxRunner } from './harness.ts'
+import { DirectSandbox, TEST_KERNEL_START_TIMEOUT_MS, createFakeSandboxRunner } from './harness.ts'
 
 // Every case here spawns a real kernel subprocess through
 // LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
@@ -162,6 +162,19 @@ function createFakeInterpreterPrefix(root: string, language: ScienceLanguage): s
   writeFileSync(executable, `#!/bin/sh\nwhile [ "$#" -gt 2 ]; do shift; done\nexec "${process.execPath}" "$1" "$2"\n`)
   chmodSync(executable, 0o755)
   return prefix
+}
+
+/**
+ * A `DirectSandbox` on its own dedicated Context, for a test that needs a
+ * sandbox reporting a specific enforcement level instead of the real
+ * fake-runner-backed `LocalSandboxProvider` every other test in this file
+ * shares.
+ */
+async function createDirectSandbox(): Promise<DirectSandbox> {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(DirectSandbox)
+  return ctx.sandbox as DirectSandbox
 }
 
 /** Fabricate an already-observed available binding; KernelProcess never re-validates it. */
@@ -624,6 +637,36 @@ describe('KernelProcess', () => {
   it('rejects an R kernel whose scratch TMPDIR would contain an ASCII space', async () => {
     const harness = await createHarness('kernel-r-space', { rootPrefix: '.science runtime-kernel-r-space-' })
     await expect(startKernel(harness, 'r')).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+  })
+
+  it('rejects kernel spawn against a partial-reporting sandbox when minimumEnforcement is omitted (defaults to full)', async () => {
+    const harness = await createHarness('kernel-enforcement-default')
+    const sandbox = await createDirectSandbox()
+    sandbox.enforcement = 'partial'
+    const prefix = createFakeInterpreterPrefix(harness.root, 'python')
+    await expect(KernelProcess.start({
+      services: { ...harness.services, sandbox },
+      binding: fakeBinding('python', prefix),
+      driverPath: DRIVER_PATH,
+      index: 0,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+  })
+
+  it('accepts kernel spawn against a partial-reporting sandbox when the caller passes minimumEnforcement: partial', async () => {
+    const harness = await createHarness('kernel-enforcement-partial')
+    const sandbox = await createDirectSandbox()
+    sandbox.enforcement = 'partial'
+    const prefix = createFakeInterpreterPrefix(harness.root, 'python')
+    const kernel = await KernelProcess.start({
+      services: { ...harness.services, sandbox },
+      binding: fakeBinding('python', prefix),
+      driverPath: DRIVER_PATH,
+      index: 0,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+      minimumEnforcement: 'partial',
+    })
+    await kernel.end('test-teardown')
   })
 
   it('treats a malformed line before READY as a fatal handshake failure', async () => {

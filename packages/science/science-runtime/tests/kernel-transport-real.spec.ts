@@ -13,14 +13,16 @@
  * Self-skips per language with a clear reason when no usable bound
  * interpreter exists: reads `pythonPrefix`/`rPrefix` from
  * `~/.papermachine/environment-binding.json` (the desktop app's own
- * environment-binding record), falling back to a bare `python3`/`Rscript`
+ * environment-binding record) and locates the executable the way the
+ * product itself does ({@link executableCandidate}'s per-platform layout),
+ * falling back to a bare `python3`/`Rscript` (`.exe`-suffixed on win32)
  * resolved off this machine's PATH.
  */
 
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
@@ -28,6 +30,7 @@ import { ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterAvailableBinding, ScienceLanguage } from '@deepseek-ai/dsh-science-session'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { executableCandidate } from '../src/environment.ts'
 import { resolveKernelDriverPath, KERNEL_ASSETS_ROOT } from '../src/kernel-assets.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
 import type { KernelExecuteRequest } from '../src/kernel-process.ts'
@@ -51,15 +54,38 @@ function readEnvironmentBinding(): EnvironmentBinding {
 
 const binding = readEnvironmentBinding()
 
-/** Find one bare command name on this process's own PATH, tolerating total absence. */
-function resolveOnPath(command: string): string | undefined {
+/**
+ * Walk upward from a resolved executable's directory to the nearest
+ * ancestor that is itself a Conda prefix (carries `conda-meta/history`),
+ * so a PATH-resolved Rscript works whether this build places it at
+ * `Scripts\Rscript.exe` or `Lib\R\bin\x64\Rscript.exe` on win32. Falls back
+ * to the fixed `<prefix>/bin/<executable>` shape for a plain, non-Conda
+ * system interpreter, where no ancestor ever carries `conda-meta`.
+ */
+function deriveCanonicalPrefix(executable: string): string {
+  let candidate = dirname(executable)
+  let previous: string | undefined
+  while (candidate !== previous) {
+    if (existsSync(join(candidate, 'conda-meta', 'history'))) return candidate
+    previous = candidate
+    candidate = dirname(candidate)
+  }
+  return dirname(dirname(executable))
+}
+
+/** Find one language's bare command on this process's own PATH, tolerating total absence. */
+function resolveOnPath(
+  language: ScienceLanguage,
+): { readonly executable: string; readonly canonicalPrefix: string } | undefined {
+  const bareName = language === 'python' ? 'python3' : 'Rscript'
+  const name = process.platform === 'win32' ? `${bareName}.exe` : bareName
   const path = process.env.PATH ?? ''
-  for (const dir of path.split(':')) {
+  for (const dir of path.split(delimiter)) {
     if (dir.length === 0) continue
-    const candidate = join(dir, command)
+    const candidate = join(dir, name)
     try {
       accessSync(candidate, constants.X_OK)
-      return candidate
+      return { executable: candidate, canonicalPrefix: deriveCanonicalPrefix(candidate) }
     } catch {
       // Try the next PATH directory; a final miss is reported by the caller.
     }
@@ -72,14 +98,12 @@ function resolveRealInterpreter(
   language: ScienceLanguage,
 ): { readonly executable: string; readonly canonicalPrefix: string } | { readonly skip: string } {
   const boundPrefix = language === 'python' ? binding.pythonPrefix : binding.rPrefix
-  const boundExecutable = boundPrefix === undefined
-    ? undefined
-    : join(boundPrefix, 'bin', language === 'python' ? 'python3' : 'Rscript')
-  if (boundExecutable !== undefined && existsSync(boundExecutable)) {
-    return { executable: boundExecutable, canonicalPrefix: boundPrefix! }
+  if (boundPrefix !== undefined) {
+    const boundExecutable = executableCandidate(language, boundPrefix)
+    if (existsSync(boundExecutable)) return { executable: boundExecutable, canonicalPrefix: boundPrefix }
   }
-  const resolved = resolveOnPath(language === 'python' ? 'python3' : 'Rscript')
-  if (resolved !== undefined) return { executable: resolved, canonicalPrefix: dirname(dirname(resolved)) }
+  const resolved = resolveOnPath(language)
+  if (resolved !== undefined) return resolved
   return {
     skip: `no usable ${language} interpreter: neither environment-binding.json's `
       + `${language === 'python' ? 'pythonPrefix' : 'rPrefix'} nor a PATH-resolved `

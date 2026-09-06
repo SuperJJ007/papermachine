@@ -566,6 +566,25 @@ function relaunchApplication(): void {
 }
 
 /**
+ * Compute the Harness home path from a directory the install-location picker
+ * returned. Returns `chosen` unchanged today — the picker's `defaultPath` is
+ * the current Harness home's own parent directory, so confirming without
+ * navigating anywhere reuses that parent directory itself as the new
+ * Harness home, scattering `environments/`, `micromamba/`, and every
+ * session file directly into it. Appending a fixed subdirectory segment
+ * (e.g. `PaperMachine`) to `chosen` would need product sign-off on the
+ * segment name and on whether the resulting path is shown to the user
+ * before it is written; this function is the single place
+ * `desktop:choose-install-location` computes that final path, so that
+ * change touches only here.
+ * @param chosen - the directory `dialog.showOpenDialog` returned.
+ * @returns the path to validate and, if accepted, persist as the new Harness home.
+ */
+function resolveChosenInstallLocationPath(chosen: string): string {
+  return chosen
+}
+
+/**
  * Send one progress update to the active window's renderer. The window may
  * already be destroyed by the time a queued micromamba stdout line reaches
  * this callback (the setup window can close mid-run), and `send` throws on a
@@ -708,20 +727,21 @@ async function boot(): Promise<void> {
     })
     const chosen = result.canceled ? undefined : result.filePaths[0]
     if (chosen === undefined) return { status: 'cancelled' } as const
+    const target = resolveChosenInstallLocationPath(chosen)
     try {
-      await resolveHarnessHome(osHome, chosen)
+      await resolveHarnessHome(osHome, target)
     } catch (error) {
       // HarnessHomeSpaceError's own message names "your user home directory",
       // accurate for the default-location failure it was written for but
       // wrong here: the offending path is the folder just chosen, not the OS
       // home directory, so this rewrites the reason around the right noun
-      // rather than relaying the shared message verbatim.
+      // rather than relaying the shared message unchanged.
       const reason = error instanceof HarnessHomeSpaceError
         ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
         : (error instanceof Error ? error.message : String(error))
       return { status: 'rejected', reason } as const
     }
-    if (hasNonAsciiCharacters(chosen)) {
+    if (hasNonAsciiCharacters(target)) {
       const warning = await dialog.showMessageBox(window, {
         type: 'warning',
         buttons: ['继续 · Continue', '选择其他位置 · Choose another location'],
@@ -732,7 +752,7 @@ async function boot(): Promise<void> {
       })
       if (warning.response !== 0) return { status: 'cancelled' } as const
     }
-    await writeInstallLocationPointer(osHome, chosen)
+    await writeInstallLocationPointer(osHome, target)
     relaunchApplication()
     return { status: 'restarting' } as const
   })

@@ -305,6 +305,7 @@ function readToken(socket: Socket, token: string): Promise<Readable> {
             cleanup()
             socket.destroy()
             reject(new Error('science-runtime: kernel response channel token line exceeded its bound'))
+            return
           }
           continue
         }
@@ -338,24 +339,62 @@ function readToken(socket: Socket, token: string): Promise<Readable> {
 
 /**
  * A win32 kernel's response channel: the Host listens on `127.0.0.1` with an
- * OS-assigned port, accepts exactly one connection, and requires it to
- * present this transport's own random token before treating it as the
- * response stream (see this package's README for why a named pipe is
- * rejected instead). The listener stops accepting further connections the
- * moment the one connection arrives, whether or not its token later proves
- * valid.
+ * OS-assigned port and accepts connections until one presents this
+ * transport's own random token (see this package's README for why a named
+ * pipe is rejected instead). A connection that fails the handshake in any
+ * way — wrong, missing, or oversized token line, premature EOF, or a socket
+ * error — is destroyed, but the listener keeps accepting further connections
+ * until {@link connect}'s own deadline or the kernel process itself exits:
+ * the token is 128 bits of CSPRNG output, so an indefinite guessing channel
+ * is not a realistic threat, and closing the listener on the first
+ * connection regardless of its token would let any other unrelated local
+ * process — accidentally or on purpose — fail every kernel start by winning
+ * the race to connect first. Only a connection that actually presents the
+ * correct token stops the listener.
  */
 export class LoopbackTcpTransport implements KernelResponseTransport {
   /** Never settles: a TCP socket's own carrier fault surfaces through the resolved stream's `'error'`/`'end'` events instead. */
   readonly faulted: Promise<never> = new Promise<never>(() => {})
 
   private connectionSocket: Socket | undefined
+  /**
+   * Set by the listener's own long-lived `'error'` handler; {@link connect}
+   * checks it first so a fault that already happened before it was ever
+   * called fails fast instead of hanging until the deadline.
+   */
+  private listenerError: Error | undefined
+  /**
+   * Connections accepted with no attempt in progress for them yet: the
+   * kernel driver connects as soon as it starts, which can race ahead of
+   * this Host process reaching its own {@link connect} call, so a
+   * connection arriving in that window is queued here instead of being
+   * accepted with no listener at all and leaked open.
+   */
+  private readonly pendingSockets: Socket[] = []
+  private waiter: ReturnType<typeof Promise.withResolvers<Readable>> | undefined
 
   private constructor(
     private readonly server: Server,
     private readonly port: number,
     private readonly token: string,
-  ) {}
+  ) {
+    // Long-lived: `create()` returns before any caller invokes `connect()`
+    // (this transport's own address must be embedded in the kernel driver's
+    // argv first), and a server-level fault (e.g. EMFILE during accept)
+    // landing in that window has no other listener yet and would otherwise
+    // crash the Host process as an uncaught 'error' event.
+    this.server.on('error', (error: unknown) => {
+      const normalized = error instanceof Error ? error : new Error(String(error))
+      this.listenerError = normalized
+      this.waiter?.reject(normalized)
+    })
+    // Long-lived, for the same reason: see `pendingSockets`' own doc.
+    this.server.on('connection', (socket: Socket) => {
+      this.connectionSocket = socket
+      this.pendingSockets.push(socket)
+      this.drainPending()
+    })
+  }
 
   /**
    * Open a fresh loopback listener with a fresh random token, without waiting for any connection.
@@ -384,46 +423,61 @@ export class LoopbackTcpTransport implements KernelResponseTransport {
     return `tcp:127.0.0.1:${String(this.port)}:${this.token}`
   }
 
+  /**
+   * Attempt every currently queued connection against the token, once a
+   * caller is actually waiting for one. A losing attempt destroys that one
+   * socket and leaves every other queued or future connection unaffected;
+   * a winning one stops the listener and settles the waiter (a second,
+   * differently-timed winner is a no-op against the already-cleared waiter
+   * — the token makes two independent winners unreachable in practice).
+   */
+  private drainPending(): void {
+    if (this.waiter === undefined) return
+    for (const socket of this.pendingSockets.splice(0)) {
+      readToken(socket, this.token).then(
+        (stream) => {
+          this.server.close()
+          const waiter = this.waiter
+          this.waiter = undefined
+          waiter?.resolve(stream)
+        },
+        () => { socket.destroy() },
+      )
+    }
+  }
+
   connect(handle: SubprocessHandle, kernelStartTimeoutMs: number, signal: AbortSignal | undefined): Promise<Readable> {
+    if (this.listenerError !== undefined) return Promise.reject(this.listenerError)
     const bound = deadline(signal, kernelStartTimeoutMs, 'KERNEL_START_TIMEOUT')
     const waiter = Promise.withResolvers<Readable>()
-    const onConnection = (socket: Socket): void => {
-      // Exactly one connection is ever handled: stop listening immediately,
-      // valid token or not, so a genuine second connection is refused.
-      this.server.close()
-      this.connectionSocket = socket
-      readToken(socket, this.token).then(waiter.resolve, waiter.reject)
-    }
-    const onServerError = (error: unknown): void => {
-      waiter.reject(error instanceof Error ? error : new Error(String(error)))
-    }
+    this.waiter = waiter
+    this.drainPending()
     const onExit = (): void => {
       waiter.reject(new Error('science-runtime: kernel process exited before connecting to its response channel'))
     }
     const onAbort = (): void => {
       waiter.reject(new Error(`science-runtime: kernel did not connect to its response channel within ${String(kernelStartTimeoutMs)}ms`))
     }
-    this.server.once('connection', onConnection)
-    this.server.once('error', onServerError)
     void handle.done.then(onExit, onExit)
     bound.signal.addEventListener('abort', onAbort, { once: true })
     if (bound.signal.aborted) onAbort()
     return waiter.promise.finally(() => {
       bound.signal.removeEventListener('abort', onAbort)
       bound[Symbol.dispose]()
-      this.server.off('connection', onConnection)
-      this.server.off('error', onServerError)
+      if (this.waiter === waiter) this.waiter = undefined
     })
   }
 
   async end(): Promise<Quiescence> {
     this.connectionSocket?.destroy()
+    for (const socket of this.pendingSockets.splice(0)) socket.destroy()
     await closeServer(this.server)
     return { quiescent: true, forced: false }
   }
 
   async endStartFailure(): Promise<void> {
     this.connectionSocket?.destroy()
+    for (const socket of this.pendingSockets.splice(0)) socket.destroy()
     await closeServer(this.server)
   }
 }

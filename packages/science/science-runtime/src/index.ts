@@ -30,7 +30,7 @@ import type {
   ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-sandbox'
+import type { SandboxEnforcement } from '@deepseek-ai/dsh-sandbox'
 import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import type { ReconcileCursor } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-science-session'
@@ -104,6 +104,23 @@ import type {
   StartScienceRunRequest,
 } from './types.ts'
 
+/**
+ * The weaker of two optional confinement-reported enforcement levels
+ * (`'partial'` if either present value is `'partial'`), or whichever one is
+ * present when only one is, or `undefined` when neither is. Used instead of
+ * "the first present value" so the recorded `sandboxEnforcement` stays an
+ * auditable security fact even if a future change ever makes the two
+ * languages' probes disagree.
+ * @param a - one language's observed enforcement, if that language is declared and its probe ran.
+ * @param b - the other language's observed enforcement, under the same condition.
+ * @returns the weaker of the two present values.
+ */
+function weakerEnforcement(a: SandboxEnforcement | undefined, b: SandboxEnforcement | undefined): SandboxEnforcement | undefined {
+  if (a === undefined) return b
+  if (b === undefined) return a
+  return a === 'partial' || b === 'partial' ? 'partial' : 'full'
+}
+
 function environmentBinding(
   revision: number,
   profileId: ScienceEnvironmentBinding['profileId'],
@@ -114,10 +131,12 @@ function environmentBinding(
   const now = Date.now()
   // Both declared languages' probes confine under the same sandbox provider
   // and the same configured minimum, so whichever ran actually reports the
-  // same enforcement level; the first present value is enough. Absent only
-  // when every declared interpreter failed static checks before any
-  // confinement was attempted (`environment.ts`'s `staticFailure`).
-  const sandboxEnforcement = observed.python?.enforcement ?? observed.r?.enforcement
+  // same enforcement level in practice; weakerEnforcement is the auditable
+  // security fact regardless (never "whichever happened to be present
+  // first"). Absent only when every declared interpreter failed static
+  // checks before any confinement was attempted (`environment.ts`'s
+  // `staticFailure`).
+  const sandboxEnforcement = weakerEnforcement(observed.python?.enforcement, observed.r?.enforcement)
   return {
     revision,
     profileId,

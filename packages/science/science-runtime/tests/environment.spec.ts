@@ -104,6 +104,21 @@ class RequireExistingWorkspaceRootSandbox extends DirectSandbox {
   }
 }
 
+/**
+ * Reports a different enforcement level per language's own probe argv (`R`'s
+ * `Rscript` executable vs. Python's), for `environmentBinding`'s own
+ * `weakerEnforcement` coverage: the two declared languages' probes confine
+ * under the same provider in production, but the recorded `sandboxEnforcement`
+ * must still be an honest minimum rather than "whichever ran first" if that
+ * were ever not the case.
+ */
+class MixedEnforcementSandbox extends DirectSandbox {
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    const confined = super.confine(argv, policy)
+    return { ...confined, enforcement: argv[0]?.includes('Rscript') === true ? 'partial' : 'full' }
+  }
+}
+
 /** Surface defensive subprocess-provider failures through the public bind operation. */
 class BrokenProbeSubprocess extends ControlledSubprocess {
   mode: 'error-rejection' | 'non-error-rejection' | 'no-outcome' | 'unquiescent' | 'missing-output' | 'version-both-streams' | 'version-nul' | 'version-stderr-only' = 'non-error-rejection'
@@ -589,6 +604,33 @@ describe('ScienceRuntime.bindEnvironment', () => {
       session,
       profileId: ScienceEnvironmentProfileId('fake'),
       signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
+  })
+
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records the weaker of two differing per-language enforcement levels, not whichever ran first', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-mixed-enforcement-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    createFakeRPrefix(root, prefix)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(MixedEnforcementSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { both: { pythonPrefix: prefix, rPrefix: prefix } },
+      minimumEnforcement: 'partial',
+    })
+    const session = createScienceSession(ctx, 'science-mixed-enforcement')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('both'), signal: new AbortController().signal,
     })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
   })
 

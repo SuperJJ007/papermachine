@@ -110,7 +110,7 @@ PaperMachine sends three anonymous telemetry events (`app.launch`, `environment.
 
 PaperMachine 0.1 is an early release. Known limitations:
 
-- Analysis runs on macOS (Apple silicon and Intel). The Windows x64 installer is published, but the Science Runtime cannot yet execute Python or R on Windows: its kernel transport needs a POSIX FIFO, and sandbox enforcement is only partial on Windows. The app says so at launch instead of downloading the environment.
+- Analysis runs on macOS (Apple silicon and Intel) and Windows x64. Windows sandbox enforcement is file-write confinement only (`partial`); macOS enforces `full`. Cancelling or timing out a run on Windows always restarts its kernel and loses every variable that kernel held, where macOS usually survives an interrupt. Windows kernel execution's real-hardware evidence is one manual verification, not a repeatable CI gate. The Windows desktop first-launch flow (onboarding, environment download and install) has not yet been verified on Windows hardware; kernel execution has.
 - A DeepSeek API key is required; the app ships no key.
 - Neither installer is signed; see the notes above.
 - Updates are manual: download the next installer.
@@ -118,7 +118,8 @@ PaperMachine 0.1 is an early release. Known limitations:
 
 ## Roadmap
 
-- Windows analysis support: pipe-based kernel transport and explicit sandbox policy for the Windows backend.
+- Cooperative interrupt on Windows: cancelling or timing out a run without losing its kernel's state.
+- A repeatable Windows CI gate against real hardware, replacing today's manual verification.
 - Discipline environments, starting with the social sciences.
 - A variable history view: shape changes of each dataset across cleaning steps.
 

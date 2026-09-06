@@ -86,6 +86,19 @@ describe('CI workflow', () => {
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
+    // The real-Windows Science step runs before the native gate inventory
+    // and never blocks it: its own `if: always()` runs it after an earlier
+    // step's failure, and the native gate inventory's `if: always()` runs
+    // regardless of this step's own outcome — so a Science failure stays a
+    // real, unmasked job failure without hiding check:ci:windows-complete's
+    // result.
+    const scienceStepIndex = nativeCommandSteps.findIndex(step => step.run.includes('packages/science/science-runtime'))
+    const windowsCompleteStepIndex = nativeCommandSteps.findIndex(step => step.run === 'pnpm run check:ci:windows-complete')
+    expect(scienceStepIndex).toBeGreaterThanOrEqual(0)
+    expect(scienceStepIndex).toBeLessThan(windowsCompleteStepIndex)
+    expect(nativeCommandSteps[scienceStepIndex]).toMatchObject({ if: 'always()' })
+    expect(nativeCommandSteps[windowsCompleteStepIndex]).toMatchObject({ if: 'always()' })
+
     // wine-apt-cache and serial-windows still gate on a push to master, but
     // ci-master.yml dropped its push trigger (see the hosted-runner-only
     // tests below), so both stay dormant until this repository regains a

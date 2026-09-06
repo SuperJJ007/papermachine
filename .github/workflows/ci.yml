@@ -395,7 +395,54 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      # Same pinned win-64 asset desktop-release.yml fetches for packaging
+      # (apps/desktop/resources/micromamba.json), reused here so this job
+      # trusts one checksum-verified micromamba source rather than a second
+      # one.
+      - name: Fetch pinned micromamba (win32-x64)
+        shell: pwsh
+        run: pnpm --filter @deepseek-ai/dsh-desktop run fetch:micromamba win32-x64
+
+      # Cached by the pinned micromamba version plus this exact package
+      # spec, so either changing invalidates the cache. Only python and
+      # r-base: the science-runtime/tool-science/sandbox-windows-acl real-
+      # interpreter tests below need one reachable Python and R install, not
+      # environments/general.json's full desktop package family.
+      - name: Restore cached Science env
+        id: science-env-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\science
+          key: windows-science-env-${{ hashFiles('apps/desktop/resources/micromamba.json') }}-python-3.13-r-base-4.5
+
+      - name: Create Science env (python + r-base)
+        if: steps.science-env-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: .\apps\desktop\resources\bin\win32-x64\micromamba.exe create -y -p "${{ runner.temp }}\science" -c conda-forge python=3.13 r-base=4.5
+
+      # The one CI step that runs the three Science-owning packages' tests
+      # against a real, installed Python/R kernel rather than the POSIX-only
+      # fake-interpreter fixtures those suites otherwise skip on win32 (see
+      # each spec's own skipIf reasons). `if: always()` runs it even after an
+      # earlier step in this chain fails (e.g. the micromamba fetch or the
+      # env create) — DSH_SCIENCE_REAL_PREFIX then names a prefix with no
+      # interpreter at it, and kernel-transport-real.spec.ts's own missing-
+      # prefix handling self-skips rather than erroring. This step's own
+      # failure is a real, unmasked job failure (no continue-on-error): this
+      # job already stays out of all-checks-passed.needs, which is this
+      # repository's sanctioned non-blocking mechanism — escalating that
+      # exclusion is a product decision this change does not make. The
+      # following step keeps its own `if: always()` so this step's failure
+      # never hides the existing native gate inventory result.
+      - name: Science on real Windows
+        if: always()
+        shell: pwsh
+        env:
+          DSH_SCIENCE_REAL_PREFIX: ${{ runner.temp }}\science
+        run: pnpm vitest run packages/science/science-runtime packages/science/tool-science packages/sandbox/sandbox-windows-acl
+
       - name: Run complete native Windows gate inventory
+        if: always()
         shell: pwsh
         run: pnpm run check:ci:windows-complete
 

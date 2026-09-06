@@ -1188,6 +1188,7 @@ describe('kernelEnvironment', () => {
   })
 
   it('adds TEMP/TMP and the fixed ambient allowlist on win32', () => {
+    const hostPlatform = process.platform
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const ambient = {
       SystemRoot: 'C:\\Windows', windir: 'C:\\Windows', SystemDrive: 'C:', ComSpec: 'C:\\Windows\\System32\\cmd.exe',
@@ -1202,15 +1203,19 @@ describe('kernelEnvironment', () => {
       expect(env.TEMP).toBe(kernelScratch.tmp)
       expect(env.TMP).toBe(kernelScratch.tmp)
       expect(env.TMPDIR).toBe(kernelScratch.tmp)
-      // NUMBER_OF_PROCESSORS is excluded from the exact-value check: confirmed
-      // on real Windows (`node -e` probe against a live process) that
-      // `process.env.NUMBER_OF_PROCESSORS = '8'` does not take effect —
-      // Node/libuv resolve this one key from the OS's live processor count on
-      // every read rather than the process's own environment block, so this
-      // mock's override is unobservable there. Its presence in `env` still
-      // proves win32AmbientEnvironment carries the key through at all.
+      // NUMBER_OF_PROCESSORS is excluded from the exact-value check only on a
+      // real win32 host: confirmed on real Windows (`node -e` probe against a
+      // live process) that `process.env.NUMBER_OF_PROCESSORS = '8'` does not
+      // take effect there — Node/libuv resolve this one key from the OS's
+      // live processor count on every read rather than the process's own
+      // environment block, so this mock's override is unobservable. On a
+      // POSIX host (this test's `process.platform` mock only fakes win32 for
+      // `kernelEnvironment`'s own branch, not for Node/libuv's read of this
+      // key) the override does take effect, so the exact-value check still
+      // applies there. Either way, this key's presence in `env` still proves
+      // win32AmbientEnvironment carries it through at all.
       for (const [key, value] of Object.entries(ambient)) {
-        if (key === 'NUMBER_OF_PROCESSORS') {
+        if (key === 'NUMBER_OF_PROCESSORS' && hostPlatform === 'win32') {
           expect(env).toHaveProperty(key)
           continue
         }

@@ -23,7 +23,11 @@
  * (the desktop app's own environment-binding record); else a bare
  * `python3`/`Rscript` (`.exe`-suffixed on win32) resolved off this machine's
  * PATH. Every tier locates the executable the way the product itself does
- * ({@link executableCandidate}'s per-platform layout).
+ * ({@link executableCandidate}'s per-platform layout). `DSH_SCIENCE_REAL_PREFIX`
+ * is the one tier that never falls through: set but naming a prefix with no
+ * usable interpreter throws instead of trying the binding or PATH, so a CI
+ * environment that failed (or half-failed) to provision fails this suite
+ * rather than silently testing an unconfigured interpreter or skipping.
  */
 
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -100,7 +104,14 @@ function resolveOnPath(
   return undefined
 }
 
-/** Resolve one language's real usable interpreter for this machine, or a skip reason. */
+/**
+ * Resolve one language's real usable interpreter for this machine, or a skip reason.
+ * `DSH_SCIENCE_REAL_PREFIX` is an explicit instruction, not a hint: once set, a missing
+ * interpreter under it throws rather than falling back to `environment-binding.json` or PATH,
+ * so a CI environment that failed to provision (or provisioned a partial prefix) fails the run
+ * instead of silently testing a different, unconfigured interpreter — or none at all when R also
+ * self-skips. Unset, the fallback chain (binding, then PATH, then skip) is unchanged.
+ */
 function resolveRealInterpreter(
   language: ScienceLanguage,
 ): { readonly executable: string; readonly canonicalPrefix: string } | { readonly skip: string } {
@@ -108,6 +119,12 @@ function resolveRealInterpreter(
   if (envPrefix !== undefined) {
     const envExecutable = executableCandidate(language, envPrefix)
     if (existsSync(envExecutable)) return { executable: envExecutable, canonicalPrefix: envPrefix }
+    throw new Error(
+      `DSH_SCIENCE_REAL_PREFIX is set to ${envPrefix}, but no ${language} interpreter exists there `
+      + `(expected ${envExecutable}); an explicit DSH_SCIENCE_REAL_PREFIX never falls back to `
+      + 'environment-binding.json or PATH, so a misconfigured or partially provisioned prefix fails '
+      + 'this suite instead of silently testing a different interpreter',
+    )
   }
   const boundPrefix = language === 'python' ? binding.pythonPrefix : binding.rPrefix
   if (boundPrefix !== undefined) {
@@ -246,4 +263,19 @@ describe('KernelProcess over the loopback TCP transport (forced, real driver)', 
       }
     },
   )
+})
+
+describe('resolveRealInterpreter with an explicit but unusable DSH_SCIENCE_REAL_PREFIX', () => {
+  it('throws naming DSH_SCIENCE_REAL_PREFIX instead of falling back to environment-binding.json or PATH', () => {
+    const previous = process.env.DSH_SCIENCE_REAL_PREFIX
+    const emptyRoot = mkdtempSync(join(process.cwd(), '.science-runtime-kernel-tcp-real-empty-'))
+    roots.push(emptyRoot)
+    process.env.DSH_SCIENCE_REAL_PREFIX = join(emptyRoot, 'no-such-prefix')
+    try {
+      expect(() => resolveRealInterpreter('python')).toThrow(/DSH_SCIENCE_REAL_PREFIX/)
+    } finally {
+      if (previous === undefined) delete process.env.DSH_SCIENCE_REAL_PREFIX
+      else process.env.DSH_SCIENCE_REAL_PREFIX = previous
+    }
+  })
 })

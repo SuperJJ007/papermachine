@@ -403,22 +403,40 @@ jobs:
         shell: pwsh
         run: pnpm --filter @deepseek-ai/dsh-desktop run fetch:micromamba win32-x64
 
-      # Cached by the pinned micromamba version plus this exact package
-      # spec, so either changing invalidates the cache. Only python and
-      # r-base: the science-runtime/tool-science/sandbox-windows-acl real-
-      # interpreter tests below need one reachable Python and R install, not
+      # Cached by the pinned micromamba version plus the package spec in
+      # `.github/science-ci-spec.txt` (this workflow's one source of truth
+      # for that spec: the create step below reads the same file, so the
+      # key and the create command can never drift the way a literal
+      # repeated in both places could). Only python and r-base: the
+      # science-runtime/tool-science/sandbox-windows-acl real-interpreter
+      # tests below need one reachable Python and R install, not
       # environments/general.json's full desktop package family.
       - name: Restore cached Science env
         id: science-env-cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}\science
-          key: windows-science-env-${{ hashFiles('apps/desktop/resources/micromamba.json') }}-python-3.13-r-base-4.5
+          path: C:\mm\science
+          key: windows-science-env-${{ hashFiles('apps/desktop/resources/micromamba.json', '.github/science-ci-spec.txt') }}
 
+      # `MAMBA_ROOT_PREFIX`/`CONDA_PKGS_DIRS` pin micromamba's package cache
+      # to a short path for the same reason the desktop app's own installer
+      # does (`apps/desktop/src/provisioning.ts`'s `resolvePackageCacheDir`,
+      # Agent Note `2026-09-05-win32-package-cache-max-path.md`, issue #4):
+      # micromamba 2.x layers its cache by source host and channel, and
+      # r-base's own `lib/R/library/...` tree is deep enough that the
+      # default per-user root prefix pushes the combined relative path past
+      # Win32's 260-character `MAX_PATH`, failing extraction with
+      # `remove_all: The directory is not empty`. `C:\mm\...` and the
+      # `C:\mm\science` target prefix below stay well under that budget.
       - name: Create Science env (python + r-base)
         if: steps.science-env-cache.outputs.cache-hit != 'true'
         shell: pwsh
-        run: .\apps\desktop\resources\bin\win32-x64\micromamba.exe create -y -p "${{ runner.temp }}\science" -c conda-forge python=3.13 r-base=4.5
+        env:
+          MAMBA_ROOT_PREFIX: C:\mm\root
+          CONDA_PKGS_DIRS: C:\mm\pkgs
+        run: |
+          $packages = (Get-Content -Raw -Path .github/science-ci-spec.txt).Trim() -split '\s+'
+          & .\apps\desktop\resources\bin\win32-x64\micromamba.exe create -y -p C:\mm\science -c conda-forge @packages
 
       # The one CI step that runs the three Science-owning packages' tests
       # against a real, installed Python/R kernel rather than the POSIX-only
@@ -427,18 +445,21 @@ jobs:
       # earlier step in this chain fails (e.g. the micromamba fetch or the
       # env create) — DSH_SCIENCE_REAL_PREFIX then names a prefix with no
       # interpreter at it, and kernel-transport-real.spec.ts's own missing-
-      # prefix handling self-skips rather than erroring. This step's own
-      # failure is a real, unmasked job failure (no continue-on-error): this
-      # job already stays out of all-checks-passed.needs, which is this
-      # repository's sanctioned non-blocking mechanism — escalating that
-      # exclusion is a product decision this change does not make. The
-      # following step keeps its own `if: always()` so this step's failure
-      # never hides the existing native gate inventory result.
+      # prefix handling fails loud rather than silently falling back to
+      # environment-binding.json or PATH, so a failed or partial create
+      # surfaces as a real test failure instead of a silent pass against an
+      # unconfigured interpreter. This step's own failure is a real,
+      # unmasked job failure (no continue-on-error): this job already stays
+      # out of all-checks-passed.needs, which is this repository's
+      # sanctioned non-blocking mechanism — escalating that exclusion is a
+      # product decision this change does not make. The following step
+      # keeps its own `if: always()` so this step's failure never hides the
+      # existing native gate inventory result.
       - name: Science on real Windows
         if: always()
         shell: pwsh
         env:
-          DSH_SCIENCE_REAL_PREFIX: ${{ runner.temp }}\science
+          DSH_SCIENCE_REAL_PREFIX: C:\mm\science
         run: pnpm vitest run packages/science/science-runtime packages/science/tool-science packages/sandbox/sandbox-windows-acl
 
       - name: Run complete native Windows gate inventory

@@ -122,6 +122,51 @@ describe('CI workflow', () => {
     expect(aggregate['runs-on']).toBe('ubuntu-latest')
   })
 
+  it('derives the Windows Science env cache key and create command from one version-controlled spec file, and keeps both under MAX_PATH', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const windowsNative = workflowJob(workflow, 'windows-native')
+    if (!Array.isArray(windowsNative.steps)) {
+      throw new TypeError('windows-native must define steps')
+    }
+    const steps = windowsNative.steps.filter(isRecord)
+    const cacheStep = steps.find(step => step.name === 'Restore cached Science env')
+    const createStep = steps.find(step => step.name === 'Create Science env (python + r-base)')
+    const scienceStep = steps.find(step => step.name === 'Science on real Windows')
+    if (!isRecord(cacheStep) || !isRecord(cacheStep.with)
+      || !isRecord(createStep) || !isRecord(createStep.env) || typeof createStep.run !== 'string'
+      || !isRecord(scienceStep) || !isRecord(scienceStep.env)) {
+      throw new TypeError('windows-native must define the Science env cache, create, and real-Windows steps')
+    }
+
+    // The package spec lives in exactly one place: `.github/science-ci-spec.txt`.
+    // Both the cache key and the create command read it, so changing the spec
+    // without changing the other can never happen (this is what B3 in the CI
+    // review closed off — the key and the create command used to carry the
+    // same fact as two independent literals).
+    const specFile = readFileSync(resolve(root, '.github/science-ci-spec.txt'), 'utf8').trim()
+    expect(specFile.length).toBeGreaterThan(0)
+    expect(cacheStep.with.key).toBe(
+      "windows-science-env-${{ hashFiles('apps/desktop/resources/micromamba.json', '.github/science-ci-spec.txt') }}",
+    )
+    expect(createStep.run).toContain('.github/science-ci-spec.txt')
+    expect(createStep.run).not.toMatch(/python=|r-base=/)
+
+    // The target prefix and micromamba's own root/package-cache directories
+    // all stay short (`C:\mm\...`): this is the same MAX_PATH avoidance the
+    // desktop installer's `resolvePackageCacheDir` applies for the same
+    // reason (Agent Note 2026-09-05-win32-package-cache-max-path.md), and the
+    // create step, the cached path, and the real-Windows step's
+    // DSH_SCIENCE_REAL_PREFIX must all name the identical prefix.
+    const sciencePrefix = 'C:\\mm\\science'
+    expect(cacheStep.with.path).toBe(sciencePrefix)
+    expect(createStep.env).toMatchObject({
+      MAMBA_ROOT_PREFIX: 'C:\\mm\\root',
+      CONDA_PKGS_DIRS: 'C:\\mm\\pkgs',
+    })
+    expect(createStep.run).toContain(sciencePrefix)
+    expect(scienceStep.env).toMatchObject({ DSH_SCIENCE_REAL_PREFIX: sciencePrefix })
+  })
+
   it('runs ci-master only by hand, leaving its push-gated drills dormant', () => {
     const workflow = loadWorkflow('.github/workflows/ci-master.yml')
     const prWorkflow = loadWorkflow('.github/workflows/ci.yml')

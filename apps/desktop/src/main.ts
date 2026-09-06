@@ -15,7 +15,7 @@ import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
-import { clearInstallLocationPointer, confirmsInstallLocation, hasNonAsciiCharacters, installLocationConfirmationDialog, installLocationPointerPath, isInstallLocationUnavailable, readInstallLocationPointer, resolveChosenInstallLocationPath, writeInstallLocationPointer } from './install-location.ts'
+import { classifyBootInstallLocationFailure, clearInstallLocationPointer, confirmsInstallLocation, hasNonAsciiCharacters, installLocationConfirmationDialog, installLocationPointerPath, readInstallLocationPointer, resolveChosenInstallLocationPath, writeInstallLocationPointer } from './install-location.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
@@ -100,10 +100,14 @@ function resourceRoot(): string {
 /**
  * Resolves and creates this launch's Harness home; see
  * {@link resolveHarnessHome}. The install-location pointer file
- * (`install-location.ts`), when present, supplies `customHomeDir` — a
- * pointer that exists but is malformed throws here and propagates to
- * `boot()`'s launch-error fallback, per the misconfiguration-fails-loud rule
- * {@link resolveHarnessHome} itself applies to a space-containing candidate.
+ * (`install-location.ts`), when present, supplies `customHomeDir`. A
+ * pointer that cannot be read or resolved throws here and propagates to
+ * whichever caller awaited it — `openInitialSurface()`'s `.catch` fallback
+ * renders the general launch-error page, and an IPC handler's caller sees
+ * the rejection. `boot()`'s own first Harness-home resolution does not call
+ * this function: it reads the pointer and calls {@link resolveHarnessHome}
+ * directly so a failure there can route to the install-location recovery
+ * page instead.
  */
 async function harnessHome(): Promise<string> {
   const pointer = await readInstallLocationPointer(app.getPath('home'))
@@ -615,6 +619,25 @@ function refreshApplicationMenu(): void {
 app.setName('PaperMachine')
 
 /**
+ * Opens the dedicated recovery window {@link installLocationUnavailableErrorPage}
+ * renders, in place of the app's normal windows and IPC handlers, when
+ * {@link boot}'s own first Harness-home resolution cannot proceed because of
+ * an install-location pointer this launch cannot use.
+ * @param osHome - the OS user home directory the pointer file lives under.
+ * @param target - the install location to name in the recovery page: the
+ *   pointer's resolved but unreachable path, or a placeholder when the
+ *   pointer file itself could not be read.
+ * @param reason - the failure to name in the recovery page.
+ */
+async function showInstallLocationRecoveryWindow(osHome: string, target: string, reason: string): Promise<void> {
+  const created = createWindow('system')
+  window = created
+  created.once('closed', () => { if (window === created) window = undefined; app.quit() })
+  await created.loadURL(installLocationUnavailableErrorPage(installLocationPointerPath(osHome), target, reason))
+  created.show()
+}
+
+/**
  * Everything that depends on Electron's app-ready signal: telemetry setup
  * and the `app.launch` report, the application menu, IPC handlers, the
  * initial window, and the lifecycle listeners that react to later
@@ -628,33 +651,36 @@ app.setName('PaperMachine')
  * a loud build/launch error rather than a silently disabled feature.
  *
  * The very first Harness-home resolution is singled out from every other
- * `harnessHome()` call in this file: {@link isInstallLocationUnavailable}
- * decides whether its failure is an install-location pointer naming a
- * target this launch cannot reach, in which case a dedicated recovery
- * window opens and this function returns before registering any IPC
- * handler, menu, or quit listener — there is nothing running yet to tear
- * down. Every other failure (no pointer in effect, or a
- * {@link HarnessHomeSpaceError} already routed to its own page by
- * `launchErrorPage`) rethrows unchanged, preserving this function's
+ * `harnessHome()` call in this file: reading the install-location pointer
+ * and resolving it happen directly here, not through `harnessHome()`, so a
+ * failure in either step can route to {@link showInstallLocationRecoveryWindow}
+ * instead of the general launch-error page. {@link classifyBootInstallLocationFailure}
+ * decides which failures qualify — including a pointer file that cannot be
+ * read or parsed at all, which has no valid target path to name but is
+ * still recoverable the same way — and this function returns before
+ * registering any IPC handler, menu, or quit listener when it does; there
+ * is nothing running yet to tear down. Every other failure (no pointer in
+ * effect, or a {@link HarnessHomeSpaceError} already routed to its own page
+ * by `launchErrorPage`) rethrows unchanged, preserving this function's
  * pre-existing loud-failure behavior.
  */
 async function boot(): Promise<void> {
   const osHome = app.getPath('home')
-  const pointer = await readInstallLocationPointer(osHome)
+  let pointer: string | undefined
+  let pointerUnreadable = false
   let dshHome: string
   try {
+    try {
+      pointer = await readInstallLocationPointer(osHome)
+    } catch (error) {
+      pointerUnreadable = true
+      throw error
+    }
     dshHome = await resolveHarnessHome(osHome, pointer)
   } catch (error) {
-    if (!isInstallLocationUnavailable(pointer, error)) throw error
-    const created = createWindow('system')
-    window = created
-    created.once('closed', () => { if (window === created) window = undefined; app.quit() })
-    await created.loadURL(installLocationUnavailableErrorPage(
-      installLocationPointerPath(osHome),
-      pointer,
-      error instanceof Error ? error.message : String(error),
-    ))
-    created.show()
+    const target = classifyBootInstallLocationFailure(pointer, pointerUnreadable, error)
+    if (target === undefined) throw error
+    await showInstallLocationRecoveryWindow(osHome, target, error instanceof Error ? error.message : String(error))
     return
   }
   hostLogPath = join(dshHome, 'logs', 'host.log')
@@ -709,19 +735,6 @@ async function boot(): Promise<void> {
     const chosen = result.canceled ? undefined : result.filePaths[0]
     if (chosen === undefined) return { status: 'cancelled' } as const
     const target = resolveChosenInstallLocationPath(chosen, process.platform)
-    try {
-      await resolveHarnessHome(osHome, target)
-    } catch (error) {
-      // HarnessHomeSpaceError's own message names "your user home directory",
-      // accurate for the default-location failure it was written for but
-      // wrong here: the offending path is the folder just chosen, not the OS
-      // home directory, so this rewrites the reason around the right noun
-      // rather than relaying the shared message unchanged.
-      const reason = error instanceof HarnessHomeSpaceError
-        ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
-        : (error instanceof Error ? error.message : String(error))
-      return { status: 'rejected', reason } as const
-    }
     if (hasNonAsciiCharacters(target)) {
       const warning = await dialog.showMessageBox(window, {
         type: 'warning',
@@ -743,6 +756,24 @@ async function boot(): Promise<void> {
       detail: confirmation.detail,
     })
     if (!confirmsInstallLocation(confirmed.response)) return { status: 'cancelled' } as const
+    // Validating (and creating) the target directory only after every
+    // cancellable step above keeps a decline at any of them from leaving a
+    // newly created, empty directory behind — resolveHarnessHome's mkdir is
+    // the only filesystem side effect this handler has before the pointer
+    // write below.
+    try {
+      await resolveHarnessHome(osHome, target)
+    } catch (error) {
+      // HarnessHomeSpaceError's own message names "your user home directory",
+      // accurate for the default-location failure it was written for but
+      // wrong here: the offending path is the folder just chosen, not the OS
+      // home directory, so this rewrites the reason around the right noun
+      // rather than relaying the shared message unchanged.
+      const reason = error instanceof HarnessHomeSpaceError
+        ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
+        : (error instanceof Error ? error.message : String(error))
+      return { status: 'rejected', reason } as const
+    }
     await writeInstallLocationPointer(osHome, target)
     relaunchApplication()
     return { status: 'restarting' } as const

@@ -485,10 +485,9 @@ describe('install location', () => {
     expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
   })
 
-  // `loadInstallLocation()` already has a try/catch; these two cover the two
-  // click handlers, which — unlike that load path — used to have none (an
-  // unhandled rejection left the buttons disabled forever, per AGENTS.md's
-  // "Prefer symmetry for parallel values").
+  // Each install-location click handler catches its own IPC rejection and
+  // re-enables its controls, symmetric with `loadInstallLocation()`'s
+  // try/catch (AGENTS.md's "Prefer symmetry for parallel values").
   it('recovers from a chooseInstallLocation() IPC rejection by reporting it and re-enabling the controls', async () => {
     const { bridge } = installBridge({
       chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => { throw new Error('desktop install location: no active window') }),

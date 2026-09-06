@@ -81,16 +81,18 @@ export function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError): string 
 }
 
 /**
- * The dedicated error page for a launch whose install-location pointer names
- * a target this launch cannot reach — an unplugged drive, an unmounted
- * network share, or a permission change — a startup configuration failure,
- * not a Host crash, so the ordinary Restart Host action (which would
- * relaunch against the same unreachable pointer) is replaced with a
+ * The dedicated error page for a launch whose install-location pointer
+ * cannot be used — the pointer names a target this launch cannot reach (an
+ * unplugged drive, an unmounted network share, a permission change), or the
+ * pointer file itself cannot be read or parsed — a startup configuration
+ * failure, not a Host crash, so the ordinary Restart Host action (which
+ * would relaunch against the same unusable pointer) is replaced with a
  * self-rescue action that clears the pointer and relaunches against the
  * default Harness home.
  * @param pointerPath - the install-location pointer file's path, named so
  *   the user can also delete it manually.
- * @param target - the pointer's unreachable target directory.
+ * @param target - the pointer's unreachable target directory, or a
+ *   placeholder when the pointer file itself could not be read.
  * @param reason - the underlying resolution failure's message.
  * @returns a `data:text/html` URL ready to load.
  */

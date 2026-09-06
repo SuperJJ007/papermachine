@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { HarnessHomeSpaceError } from '../src/harness-home.ts'
 import {
+  classifyBootInstallLocationFailure,
   clearInstallLocationPointer,
   confirmsInstallLocation,
   hasNonAsciiCharacters,
@@ -12,6 +13,7 @@ import {
   isInstallLocationUnavailable,
   readInstallLocationPointer,
   resolveChosenInstallLocationPath,
+  UNREADABLE_INSTALL_LOCATION_POINTER_TARGET,
   writeInstallLocationPointer,
 } from '../src/install-location.ts'
 
@@ -196,5 +198,25 @@ describe('isInstallLocationUnavailable', () => {
 
   it('is false for a space-containing path, which has its own dedicated error page', () => {
     expect(isInstallLocationUnavailable('/a user/.papermachine', new HarnessHomeSpaceError('/a user/.papermachine'))).toBe(false)
+  })
+})
+
+describe('classifyBootInstallLocationFailure', () => {
+  it('routes a pointer file that could not be read at all to the placeholder target', () => {
+    expect(classifyBootInstallLocationFailure(undefined, true, new Error('desktop install location: /home/.papermachine-home is empty')))
+      .toBe(UNREADABLE_INSTALL_LOCATION_POINTER_TARGET)
+  })
+
+  it('routes a pointer whose target is unreachable to that target, same as isInstallLocationUnavailable', () => {
+    expect(classifyBootInstallLocationFailure('/Volumes/Data/PaperMachine', false, new Error('ENOENT: no such file or directory')))
+      .toBe('/Volumes/Data/PaperMachine')
+  })
+
+  it('rethrows when no pointer is in effect and reading it did not fail', () => {
+    expect(classifyBootInstallLocationFailure(undefined, false, new Error('ENOENT: no such file or directory'))).toBeUndefined()
+  })
+
+  it('rethrows for a space-containing path, which has its own dedicated error page', () => {
+    expect(classifyBootInstallLocationFailure('/a user/.papermachine', false, new HarnessHomeSpaceError('/a user/.papermachine'))).toBeUndefined()
   })
 })

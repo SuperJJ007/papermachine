@@ -144,7 +144,7 @@ export interface InstallLocationConfirmationDialog {
 export function installLocationConfirmationDialog(target: string): InstallLocationConfirmationDialog {
   return {
     message: '确认安装位置 · Confirm install location',
-    detail: `PaperMachine 将安装到以下目录：\n${target}\n\n · PaperMachine will install to the following directory:\n${target}`,
+    detail: `PaperMachine 将安装到以下目录：\n${target}\n\nPaperMachine will install to the following directory:\n${target}`,
     buttons: ['确定 · OK', '取消 · Cancel'],
     defaultId: 0,
     cancelId: 1,
@@ -182,4 +182,36 @@ export function confirmsInstallLocation(response: number): boolean {
  */
 export function isInstallLocationUnavailable(pointer: string | undefined, error: unknown): pointer is string {
   return pointer !== undefined && !(error instanceof HarnessHomeSpaceError)
+}
+
+/**
+ * Placeholder target {@link classifyBootInstallLocationFailure} returns for
+ * a pointer file that could not be read at all — there is no resolved path
+ * to name, only a pointer in effect that this launch cannot use.
+ */
+export const UNREADABLE_INSTALL_LOCATION_POINTER_TARGET = '(unknown — the install-location pointer file could not be read)'
+
+/**
+ * Classify a failure in `main.ts`'s `boot()`'s very first Harness-home
+ * resolution: the target its install-location recovery page should name,
+ * or `undefined` when the failure should rethrow unchanged instead (no
+ * pointer is in effect, or the failure is a {@link HarnessHomeSpaceError}
+ * already routed to its own page). A pointer file that exists but cannot be
+ * read or parsed — `pointerUnreadable` — is always recoverable: a pointer
+ * is in effect (that is why reading it failed) and the fix, clearing it, is
+ * the same one {@link isInstallLocationUnavailable}'s cases use.
+ * @param pointer - the install-location pointer this launch read, or
+ *   `undefined` when reading it failed or no pointer file exists.
+ * @param pointerUnreadable - whether `readInstallLocationPointer` itself
+ *   threw, rather than `resolveHarnessHome`.
+ * @param error - the error thrown by whichever of those two calls failed.
+ * @returns the recovery page's target, or `undefined` to rethrow `error` unchanged.
+ */
+export function classifyBootInstallLocationFailure(
+  pointer: string | undefined,
+  pointerUnreadable: boolean,
+  error: unknown,
+): string | undefined {
+  if (pointerUnreadable) return UNREADABLE_INSTALL_LOCATION_POINTER_TARGET
+  return isInstallLocationUnavailable(pointer, error) ? pointer : undefined
 }

@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
@@ -9,6 +9,7 @@ import {
   DesktopEnvironmentProvisioner,
   orderSourcesFrom,
   parseMicromambaProgressLine,
+  provisioningScratchTempDir,
   resolvePackageCacheDir,
   runProvisioningProcess,
   stopProcessGroup,
@@ -494,8 +495,8 @@ describe('orderSourcesFrom', () => {
 })
 
 describe('buildProvisioningEnv', () => {
-  it('keeps the allowlist and drops everything credential-shaped', () => {
-    const env = buildProvisioningEnv({
+  it('keeps the allowlist and drops everything credential-shaped on darwin, untouched by the win32 additions', () => {
+    const env = buildProvisioningEnv({ platform: 'darwin-arm64', root: '/Users/test/.papermachine/desktop-environments' }, {
       PATH: '/usr/bin',
       HOME: '/Users/test',
       TMPDIR: '/tmp',
@@ -507,6 +508,7 @@ describe('buildProvisioningEnv', () => {
       GITHUB_TOKEN: 'ghp-secret',
       SOME_PASSWORD: 'hunter2',
       RANDOM_UNRELATED_VAR: 'noise',
+      SystemRoot: 'C:\\Windows',
     })
     expect(env).toEqual({
       PATH: '/usr/bin',
@@ -517,6 +519,50 @@ describe('buildProvisioningEnv', () => {
       HTTPS_PROXY: 'http://proxy:8080',
       no_proxy: 'localhost',
     })
+  })
+
+  it('on win32, carries through the ambient system keys, points TEMP/TMP at its own scratch directory, and prepends execPath\'s directory to PATH', () => {
+    const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
+    const env = buildProvisioningEnv({ platform: 'win32-x64', root }, {
+      PATH: 'C:\\Windows\\System32',
+      HOME: 'C:\\Users\\test',
+      LANG: 'en_US.UTF-8',
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      SystemDrive: 'C:',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      PATHEXT: '.COM;.EXE',
+      USERPROFILE: 'C:\\Users\\test',
+      APPDATA: 'C:\\Users\\test\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local',
+      PROGRAMDATA: 'C:\\ProgramData',
+      NUMBER_OF_PROCESSORS: '8',
+      PROCESSOR_ARCHITECTURE: 'AMD64',
+      DEEPSEEK_API_KEY: 'sk-secret',
+    })
+    expect(env).toMatchObject({
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      SystemDrive: 'C:',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      PATHEXT: '.COM;.EXE',
+      USERPROFILE: 'C:\\Users\\test',
+      APPDATA: 'C:\\Users\\test\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\test\\AppData\\Local',
+      PROGRAMDATA: 'C:\\ProgramData',
+      NUMBER_OF_PROCESSORS: '8',
+      PROCESSOR_ARCHITECTURE: 'AMD64',
+    })
+    expect(env.TEMP).toBe(provisioningScratchTempDir(root))
+    expect(env.TMP).toBe(provisioningScratchTempDir(root))
+    expect(env.PATH?.split(';')[0]).toBe(dirname(process.execPath))
+    expect(env.DEEPSEEK_API_KEY).toBeUndefined()
+  })
+
+  it('on win32, an ambient key absent from the source is not fabricated', () => {
+    const env = buildProvisioningEnv({ platform: 'win32-x64', root: 'C:\\pm\\desktop-environments' }, { PATH: 'C:\\Windows\\System32' })
+    expect(env.SystemRoot).toBeUndefined()
+    expect(env.USERPROFILE).toBeUndefined()
   })
 })
 

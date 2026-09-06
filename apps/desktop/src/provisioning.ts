@@ -2,7 +2,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
-import { join, win32 as win32Path } from 'node:path'
+import { dirname, join, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import type { DesktopPlatform, EnvironmentDeclaration, EnvironmentSource } from './environment-declaration.ts'
 import { interpreterLayout } from './interpreter-presence.ts'
@@ -298,6 +298,46 @@ const SECRET_ENV_PATTERN = /KEY|SECRET|TOKEN|PASSWORD/iu
 const PROXY_ENV_NAMES = new Set(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'])
 
 /**
+ * Fixed ambient Windows system variables carried through unchanged from the
+ * Host process into a win32 provisioning child (micromamba, and the Python
+ * or R health-check interpreter it installs). Duplicated from
+ * science-runtime's `kernel-process.ts` `WIN32_AMBIENT_ENVIRONMENT_KEYS`
+ * rather than imported — this application cannot depend on science-runtime,
+ * which runs as a separate Host process staged into the package — and kept
+ * identical to it by a source-text comparison test in
+ * `provisioning.spec.ts`. A win32 process given none of these cannot
+ * initialize Winsock (WinError 10106), which both micromamba's TLS download
+ * and a health-check interpreter's own networking need; `TEMP`/`TMP` are
+ * deliberately absent here, since {@link buildProvisioningEnv} points those
+ * at {@link provisioningScratchTempDir} instead of the Host's own ambient
+ * temp directory.
+ */
+const WIN32_AMBIENT_ENVIRONMENT_KEYS = [
+  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+] as const
+
+/**
+ * The win32 scratch temp directory this application points `TEMP`/`TMP` at
+ * for provisioning children, instead of forwarding the Host's own ambient
+ * temp directory. Neither Python's `tempfile` nor R's `tempdir()` consult
+ * `TMPDIR` on win32, so leaving `TEMP`/`TMP` unset falls back to
+ * `GetTempPath()`, which resolves to the Windows directory (not writable by
+ * a standard user) whenever `TEMP`, `TMP`, and `USERPROFILE` are all absent
+ * from the child's own environment. `<root>/tmp` sits under the provisioner
+ * root ({@link desktopEnvironmentsRoot}), which is already free of ASCII
+ * spaces — the Harness home this root derives from rejects them in
+ * `harness-home.ts` — rather than under the Host's ambient temp directory,
+ * whose path this application does not own or control the shape of.
+ * @param root - the provisioner root, {@link desktopEnvironmentsRoot}.
+ * @returns the absolute directory to create and pass as `TEMP`/`TMP`.
+ */
+export function provisioningScratchTempDir(root: string): string {
+  return join(root, 'tmp')
+}
+
+/**
  * Build the minimal environment for a provisioning child from an allowlist —
  * `PATH`, `HOME`, `TMPDIR`, locale (`LANG`/`LC_*`), and the proxy variables
  * provisioning legitimately needs to reach package channels — excluding
@@ -305,10 +345,28 @@ const PROXY_ENV_NAMES = new Set(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_
  * health-check interpreters never see the desktop process's full ambient
  * environment, so a credential exported into that process cannot leak into
  * installer output relayed verbatim to the renderer.
+ *
+ * On win32, this also carries through {@link WIN32_AMBIENT_ENVIRONMENT_KEYS}
+ * (without them the child cannot initialize Winsock at all), points
+ * `TEMP`/`TMP` at {@link provisioningScratchTempDir} rather than the Host's
+ * ambient temp directory, and prepends the Electron executable's own
+ * directory to `PATH`: that directory ships `vcruntime140.dll`/
+ * `msvcp140.dll` next to the application binary, and a bare Windows host
+ * with no Visual C++ Runtime installed otherwise fails the separately
+ * spawned `micromamba.exe` with `STATUS_DLL_NOT_FOUND` (observed on real
+ * Windows Server hardware with no other Visual C++ Runtime installed;
+ * untested by this repository's own automation — see the accompanying
+ * Agent Note).
+ * @param options.platform - the platform the child will run on.
+ * @param options.root - the provisioner root, {@link desktopEnvironmentsRoot};
+ *   used on win32 to derive {@link provisioningScratchTempDir}.
  * @param source - the environment to allowlist from; defaults to `process.env`.
  * @returns the scrubbed environment to pass to the child.
  */
-export function buildProvisioningEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function buildProvisioningEnv(
+  options: { readonly platform: DesktopPlatform; readonly root: string },
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined || SECRET_ENV_PATTERN.test(key)) continue
@@ -316,6 +374,16 @@ export function buildProvisioningEnv(source: NodeJS.ProcessEnv = process.env): N
       env[key] = value
     }
   }
+  if (!options.platform.startsWith('win32-')) return env
+  for (const key of WIN32_AMBIENT_ENVIRONMENT_KEYS) {
+    const value = source[key]
+    if (value !== undefined) env[key] = value
+  }
+  const scratchTemp = provisioningScratchTempDir(options.root)
+  env.TEMP = scratchTemp
+  env.TMP = scratchTemp
+  const execDir = dirname(process.execPath)
+  env.PATH = env.PATH === undefined ? execDir : `${execDir};${env.PATH}`
   return env
 }
 
@@ -495,6 +563,17 @@ export class DesktopEnvironmentProvisioner {
         { cause: error },
       )
     }
+    if (this.options.platform.startsWith('win32-')) {
+      const scratchTempDir = provisioningScratchTempDir(this.options.root)
+      try {
+        await mkdir(scratchTempDir, { recursive: true })
+      } catch (error) {
+        throw new Error(
+          `desktop provisioning: could not create scratch temp directory ${scratchTempDir}`,
+          { cause: error },
+        )
+      }
+    }
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
@@ -527,7 +606,7 @@ export class DesktopEnvironmentProvisioner {
             ...declaration.packages,
           ],
           env: {
-            ...buildProvisioningEnv(),
+            ...buildProvisioningEnv({ platform: this.options.platform, root: this.options.root }),
             MAMBA_ROOT_PREFIX: join(this.options.root, 'micromamba'),
             CONDA_PKGS_DIRS: packageCacheDir,
           },
@@ -566,7 +645,7 @@ export class DesktopEnvironmentProvisioner {
       await this.#run({
         executable: join(prefix, ...layout[check.language]),
         args: check.args,
-        env: buildProvisioningEnv(),
+        env: buildProvisioningEnv({ platform: this.options.platform, root: this.options.root }),
         signal,
         timeoutMs: Math.min(declaration.timeoutMs, 120_000),
       })

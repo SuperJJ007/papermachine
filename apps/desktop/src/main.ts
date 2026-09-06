@@ -14,7 +14,7 @@ import { ProvisioningCoordinator } from './provisioning-coordination.ts'
 import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
-import { resolveHarnessHome } from './harness-home.ts'
+import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
 import { clearInstallLocationPointer, hasNonAsciiCharacters, installLocationPointerPath, isInstallLocationUnavailable, readInstallLocationPointer, writeInstallLocationPointer } from './install-location.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
@@ -31,6 +31,12 @@ const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
 // (SIGTERM) before escalating to SIGKILL.
 const HOST_STOP_GRACE_MS = 5000
+// `desktop:choose-install-location` / `desktop:reset-install-location`'s
+// rejection reason while `provisioning` is set: changing the pointer
+// relaunches the application (`relaunchApplication`), which aborts any
+// in-flight run and discards its downloaded bytes with no confirmation, so
+// both handlers refuse outright rather than letting that happen silently.
+const INSTALL_LOCATION_BUSY_REASON = '安装正在进行中，无法更改安装位置。 · Installation is in progress; the install location cannot be changed right now.'
 let window: BrowserWindow | undefined
 let activeOrigin: string | undefined
 // The in-flight `desktop:provision` IPC handler's own AbortController, if
@@ -694,6 +700,7 @@ async function boot(): Promise<void> {
   })
   ipcMain.handle('desktop:choose-install-location', async () => {
     if (window === undefined) throw new Error('desktop install location: no active window')
+    if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const
     const osHome = app.getPath('home')
     const result = await dialog.showOpenDialog(window, {
       properties: ['openDirectory', 'createDirectory'],
@@ -704,7 +711,15 @@ async function boot(): Promise<void> {
     try {
       await resolveHarnessHome(osHome, chosen)
     } catch (error) {
-      return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) } as const
+      // HarnessHomeSpaceError's own message names "your user home directory",
+      // accurate for the default-location failure it was written for but
+      // wrong here: the offending path is the folder just chosen, not the OS
+      // home directory, so this rewrites the reason around the right noun
+      // rather than relaying the shared message verbatim.
+      const reason = error instanceof HarnessHomeSpaceError
+        ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
+        : (error instanceof Error ? error.message : String(error))
+      return { status: 'rejected', reason } as const
     }
     if (hasNonAsciiCharacters(chosen)) {
       const warning = await dialog.showMessageBox(window, {
@@ -722,6 +737,7 @@ async function boot(): Promise<void> {
     return { status: 'restarting' } as const
   })
   ipcMain.handle('desktop:reset-install-location', async () => {
+    if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const
     await clearInstallLocationPointer(app.getPath('home'))
     relaunchApplication()
     return { status: 'restarting' } as const

@@ -7,7 +7,7 @@
  * catching a regression in `src/onboarding.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChooseInstallLocationResult, CurrentEnvironment, DesktopDiagnostics, DesktopOnboardingBridge, InstallLocation, OfferedEnvironment } from '../src/preload.ts'
+import type { ChooseInstallLocationResult, CurrentEnvironment, DesktopDiagnostics, DesktopOnboardingBridge, InstallLocation, OfferedEnvironment, ResetInstallLocationResult } from '../src/preload.ts'
 import type { ProvisioningProgress } from '../src/provisioning.ts'
 
 const STANDARD: OfferedEnvironment = {
@@ -436,6 +436,84 @@ describe('install location', () => {
 
     await vi.waitFor(() => { expect(textOf('#status')).toContain('Restarting') })
     expect(resetInstallLocation).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the reason and re-enables the controls when the main process rejects a change because a provisioning run is in progress', async () => {
+    const { bridge } = installBridge({
+      chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => ({ status: 'rejected', reason: 'Installation is in progress; the install location cannot be changed right now.' })),
+    })
+    await loadOnboarding(bridge)
+
+    click('#change-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toContain('Installation is in progress') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows the reason and re-enables the controls when the main process rejects "Use default" for the same reason', async () => {
+    const { bridge } = installBridge({
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      resetInstallLocation: vi.fn(async (): Promise<ResetInstallLocationResult> => ({ status: 'rejected', reason: 'Installation is in progress; the install location cannot be changed right now.' })),
+    })
+    await loadOnboarding(bridge)
+
+    click('#reset-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toContain('Installation is in progress') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('disables "Change…"/"Use default" for the duration of a provisioning run and re-enables them if it fails', async () => {
+    let rejectProvision: ((error: Error) => void) | undefined
+    const { bridge } = installBridge({
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      provision: vi.fn(() => new Promise<void>((_resolve, reject) => { rejectProvision = reject })),
+    })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(true) })
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(true)
+
+    rejectProvision?.(new Error('solve failed'))
+
+    await vi.waitFor(() => { expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false) })
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // `loadInstallLocation()` already has a try/catch; these two cover the two
+  // click handlers, which — unlike that load path — used to have none (an
+  // unhandled rejection left the buttons disabled forever, per AGENTS.md's
+  // "Prefer symmetry for parallel values").
+  it('recovers from a chooseInstallLocation() IPC rejection by reporting it and re-enabling the controls', async () => {
+    const { bridge } = installBridge({
+      chooseInstallLocation: vi.fn(async (): Promise<ChooseInstallLocationResult> => { throw new Error('desktop install location: no active window') }),
+    })
+    await loadOnboarding(bridge)
+
+    click('#change-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toBe('desktop install location: no active window') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('recovers from a resetInstallLocation() IPC rejection the same way', async () => {
+    const { bridge } = installBridge({
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      resetInstallLocation: vi.fn(async (): Promise<ResetInstallLocationResult> => { throw new Error('boom') }),
+    })
+    await loadOnboarding(bridge)
+
+    click('#reset-install-location')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toBe('boom') })
+    expect((requireElement('#change-install-location') as HTMLButtonElement).disabled).toBe(false)
+    expect((requireElement('#reset-install-location') as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('includes the app version, Harness home, and last attempted source in the diagnostic report', async () => {

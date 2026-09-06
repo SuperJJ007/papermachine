@@ -188,11 +188,30 @@ function renderCurrent(environment: CurrentEnvironment): void {
   currentEnvironment.hidden = false
 }
 
+// True for the lifetime of one provisioning run; combined with
+// `installLocationActionPending` by `refreshInstallLocationControls` so
+// either condition alone disables "Change…"/"Use default" — changing the
+// install-location pointer mid-run relaunches the application
+// (`desktop:choose-install-location` in `main.ts`), which aborts the run
+// and discards its downloaded bytes with no confirmation.
+let provisioningBusy = false
+// True while a `chooseInstallLocation()`/`resetInstallLocation()` call is
+// itself in flight, independently of `provisioningBusy`.
+let installLocationActionPending = false
+
+/** Recompute the install-location controls' disabled state from both busy sources above. */
+function refreshInstallLocationControls(): void {
+  changeInstallLocation.disabled = provisioningBusy || installLocationActionPending
+  resetInstallLocation.disabled = provisioningBusy || installLocationActionPending
+}
+
 /** Enable or disable every control that starts new work, for the lifetime of one provisioning run. */
 function setBusy(busy: boolean): void {
+  provisioningBusy = busy
   provision.disabled = busy || standard === undefined
   provisionCustom.disabled = busy
   keepCurrent.disabled = busy
+  refreshInstallLocationControls()
 }
 
 /** Show the confirm panel for a download the user has not yet approved. */
@@ -306,24 +325,41 @@ async function startConfirmed(): Promise<void> {
   }
 }
 
+/** Undo the busy state one install-location click set, after its call settles (success, rejection, or a caught IPC failure). */
+function finishInstallLocationAction(): void {
+  installLocationActionPending = false
+  refreshInstallLocationControls()
+}
+
 changeInstallLocation.addEventListener('click', () => {
-  void (async () => {
-    changeInstallLocation.disabled = true
-    resetInstallLocation.disabled = true
-    const result = await window.desktopOnboarding.chooseInstallLocation()
+  installLocationActionPending = true
+  refreshInstallLocationControls()
+  void window.desktopOnboarding.chooseInstallLocation().then((result) => {
     if (result.status === 'restarting') {
       showRestarting()
       return
     }
     if (result.status === 'rejected') statusNode.textContent = result.reason
-    changeInstallLocation.disabled = false
-    resetInstallLocation.disabled = false
-  })()
+    finishInstallLocationAction()
+  }).catch((error: unknown) => {
+    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    finishInstallLocationAction()
+  })
 })
 resetInstallLocation.addEventListener('click', () => {
-  changeInstallLocation.disabled = true
-  resetInstallLocation.disabled = true
-  void window.desktopOnboarding.resetInstallLocation().then(() => { showRestarting() })
+  installLocationActionPending = true
+  refreshInstallLocationControls()
+  void window.desktopOnboarding.resetInstallLocation().then((result) => {
+    if (result.status === 'restarting') {
+      showRestarting()
+      return
+    }
+    statusNode.textContent = result.reason
+    finishInstallLocationAction()
+  }).catch((error: unknown) => {
+    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    finishInstallLocationAction()
+  })
 })
 advanced.addEventListener('toggle', () => { provisionCustom.hidden = !advanced.open })
 provision.addEventListener('click', () => {

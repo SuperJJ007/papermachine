@@ -41,18 +41,25 @@ export interface InstallLocation {
  * The outcome of a `chooseInstallLocation()` call: `cancelled` covers both
  * the directory picker being dismissed and the user declining a non-ASCII
  * warning; `rejected` names why the chosen directory cannot be a Harness
- * home (for example {@link HarnessHomeSpaceError}'s message); `restarting`
- * means the pointer file was written and the application is relaunching.
+ * home (for example {@link HarnessHomeSpaceError}'s message, or that a
+ * provisioning run is already in progress); `restarting` means the pointer
+ * file was written and the application is relaunching.
  */
 export type ChooseInstallLocationResult =
   | { readonly status: 'cancelled' }
   | { readonly status: 'rejected'; readonly reason: string }
   | { readonly status: 'restarting' }
 
-/** The application is relaunching to apply a just-written or just-cleared install-location pointer. */
-export interface RestartingResult {
-  readonly status: 'restarting'
-}
+/**
+ * The outcome of a `resetInstallLocation()` call: `rejected` names why the
+ * pointer cannot be cleared right now (a provisioning run in progress);
+ * `restarting` means the pointer file was cleared and the application is
+ * relaunching. Has no `cancelled` variant — unlike `chooseInstallLocation`,
+ * there is no picker to dismiss.
+ */
+export type ResetInstallLocationResult =
+  | { readonly status: 'rejected'; readonly reason: string }
+  | { readonly status: 'restarting' }
 
 /** Diagnostic facts for the failed-install report: version, platform, and where the Harness home actually is. */
 export interface DesktopDiagnostics {
@@ -95,8 +102,11 @@ export interface DesktopOnboardingBridge {
    * acceptance.
    */
   chooseInstallLocation(): Promise<ChooseInstallLocationResult>
-  /** Clear the install-location pointer and relaunch the application against the default Harness home. */
-  resetInstallLocation(): Promise<RestartingResult>
+  /**
+   * Clear the install-location pointer and relaunch the application against
+   * the default Harness home; rejected while a provisioning run is in progress.
+   */
+  resetInstallLocation(): Promise<ResetInstallLocationResult>
   /** Diagnostic facts for the failed-install report. */
   diagnostics(): Promise<DesktopDiagnostics>
 }
@@ -114,7 +124,7 @@ const bridge: DesktopOnboardingBridge = {
   },
   installLocation: async () => ipcRenderer.invoke('desktop:install-location') as Promise<InstallLocation>,
   chooseInstallLocation: async () => ipcRenderer.invoke('desktop:choose-install-location') as Promise<ChooseInstallLocationResult>,
-  resetInstallLocation: async () => ipcRenderer.invoke('desktop:reset-install-location') as Promise<RestartingResult>,
+  resetInstallLocation: async () => ipcRenderer.invoke('desktop:reset-install-location') as Promise<ResetInstallLocationResult>,
   diagnostics: async () => ipcRenderer.invoke('desktop:diagnostics') as Promise<DesktopDiagnostics>,
 }
 

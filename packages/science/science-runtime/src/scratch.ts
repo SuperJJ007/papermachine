@@ -201,8 +201,8 @@ async function privateFile(path: string): Promise<void> {
  * `O_RDONLY`-opened directory handle's `sync()` fails there), and NTFS's own
  * write-through namespace operations make it unnecessary.
  */
-/* v8 ignore start -- Windows rejects O_RDONLY directory opens; POSIX coverage exercises this. */
 async function syncDirectory(path: string): Promise<void> {
+  /* v8 ignore next -- Windows rejects O_RDONLY directory opens; POSIX CI never runs as win32. */
   if (process.platform === 'win32') return
   const handle = await open(path, constants.O_RDONLY)
   try {
@@ -211,7 +211,6 @@ async function syncDirectory(path: string): Promise<void> {
     await handle.close()
   }
 }
-/* v8 ignore stop */
 
 /** Write one new mode-0600 managed file with durable contents. */
 async function writePrivateFile(path: string, data: Uint8Array | string): Promise<void> {

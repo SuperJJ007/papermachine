@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-science-runtime-minimum-sandbox-enforcement.md
-2026-09-05-science-runtime-minimum-sandbox-enforcement.md: 73bd16e3dc173a3dcb84d78badc8aa7f321c91da
-2026-09-05-science-runtime-minimum-sandbox-enforcement.zh.md: 1a04d68f76d826d9e021600fc2bf014f437d5162
+2026-09-05-science-runtime-minimum-sandbox-enforcement.md: 733f1d43ac4299df1e8bcad6d5022acc0f26bc2b
+2026-09-05-science-runtime-minimum-sandbox-enforcement.zh.md: 0ac926863e1ccae6d792298f0b66a52855f635df
